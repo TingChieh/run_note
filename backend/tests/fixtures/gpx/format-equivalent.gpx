@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx xmlns="http://www.topografix.com/GPX/1/1" version="1.1" creator="RunNote synthetic golden v1">
+  <metadata>
+  <name>Different metadata</name>
+  </metadata>
+  <trk>
+  <trkseg>
+  <trkpt lat="0" lon="0.000">
+  <ele>10</ele>
+  <time>2024-01-01T00:00:00Z</time>
+  </trkpt>
+  <trkpt lat="0" lon="0.002">
+  <ele>10</ele>
+  <time>2024-01-01T00:02:00Z</time>
+  </trkpt>
+  <trkpt lat="0" lon="0.004">
+  <ele>10</ele>
+  <time>2024-01-01T00:04:00Z</time>
+  </trkpt>
+  <trkpt lat="0" lon="0.006">
+  <ele>10</ele>
+  <time>2024-01-01T00:06:00Z</time>
+  </trkpt>
+  <trkpt lat="0" lon="0.008">
+  <ele>10</ele>
+  <time>2024-01-01T00:08:00Z</time>
+  </trkpt>
+  <trkpt lat="0" lon="0.010">
+  <ele>10</ele>
+  <time>2024-01-01T00:10:00Z</time>
+  </trkpt>
+  </trkseg>
+  </trk>
+  </gpx>

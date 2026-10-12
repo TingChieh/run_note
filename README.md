@@ -16,6 +16,8 @@
 | [技术风险、测试与毕业交付](docs/06-risks-and-validation.md) | 风险、性能及毕业交付 |
 | [第一阶段实施记录](docs/07-phase-one-implementation.md) | 实际版本、文件清单、命令结果与限制 |
 | [第一阶段 OpenAPI](docs/openapi-phase-one.json) | 已实现 API 的生成快照 |
+| [第二阶段技术方案与实施计划](docs/08-phase-two-implementation-plan.md) | 认证、GPX、轨迹存储、指标、去重、安全迁移及逐步验收 |
+| [第二阶段开发进度](docs/09-phase-two-progress.md) | 仅 S2-01 的规则、依赖、样本和测试环境准备；其余步骤未开始 |
 
 前六份文档起始于 2026-10-09 的设计基线，开发与部署方案于 2026-10-12 调整为非容器化；其中未实现业务仍属于后续阶段。实际验证状态以实施记录为准。
 
@@ -119,7 +121,9 @@ createdb -h 127.0.0.1 -p 5432 -U <管理员角色> -O run_note running_note_phas
 psql -h 127.0.0.1 -p 5432 -U <管理员角色> -d running_note_phase_one_test -c 'CREATE EXTENSION IF NOT EXISTS postgis;'
 ```
 
-在根目录 `.env` 设置 `TEST_DATABASE_URL`，或仅通过进程环境提供。已有 `.env` 不自动改写；可使用[实施记录中的脚本](docs/07-phase-one-implementation.md#独立测试库与权限)从现有连接派生测试 URL。配置完成后：
+测试需要 `TEST_DATABASE_URL` 和显式允许目标的 `TEST_DATABASE_ALLOWED_TARGETS`（例如 `127.0.0.1:5432/running_note_phase_one_test`，多目标用逗号分隔）。测试库名称必须不同于 `DATABASE_URL` 中的数据库名；即使另一个端口/主机也不能用同名库。连接 URL 不允许 query 覆盖参数，守卫还会以只读连接验证实际库名与端口，失败时先于集成测试 DDL 拒绝。
+
+可仅通过进程环境提供这两个变量，不必修改已有 `.env`；安全执行脚本见[第二阶段进度记录](docs/09-phase-two-progress.md#运行测试)。第一阶段历史记录的旧脚本未包含新增允许目标变量，不再直接作为当前运行命令。配置完成后：
 
 ```bash
 cd backend

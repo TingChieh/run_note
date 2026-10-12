@@ -1,0 +1,870 @@
+{
+  "fixture_version": "gpx-golden-v1",
+  "rules": {
+    "parser": "gpx-parser-v1",
+    "metrics": "gpx-v1",
+    "fingerprint": "canonical-v1"
+  },
+  "cases": [
+    {
+      "id": "equator-six",
+      "file": "equator-six.gpx",
+      "sha256": "92eb5e48278e5053958a051cbbb96674621804b9c90dc721141c60023cc97e15",
+      "categories": [
+        "normal",
+        "spatial-reference",
+        "pace"
+      ],
+      "expected": {
+        "input_point_count": 6,
+        "valid_point_count": 6,
+        "derived_segment_count": 1,
+        "temporal_quality": "complete",
+        "distance_m": 1113.194908,
+        "elapsed_seconds": 600,
+        "avg_pace_seconds_per_km": 538.98917,
+        "canonical_eligible": true,
+        "activity_date": "2024-01-01"
+      },
+      "request": {
+        "timezone": "UTC"
+      }
+    },
+    {
+      "id": "equator-six-gpx10",
+      "file": "equator-six-gpx10.gpx",
+      "sha256": "eab23e4ba3a52e186538c05573bdc3e56e46b819e715532dd225aa2074511688",
+      "categories": [
+        "gpx10"
+      ],
+      "expected": {
+        "input_point_count": 6,
+        "valid_point_count": 6,
+        "derived_segment_count": 1,
+        "temporal_quality": "complete",
+        "distance_m": 1113.194908,
+        "elapsed_seconds": 600,
+        "avg_pace_seconds_per_km": 538.98917,
+        "canonical_eligible": true,
+        "activity_date": "2024-01-01"
+      },
+      "relation": {
+        "raw_equal": false,
+        "canonical_reference": "equator-six",
+        "expected_equal": true
+      }
+    },
+    {
+      "id": "format-equivalent",
+      "file": "format-equivalent.gpx",
+      "sha256": "90b679431fea3ae0fd4c4414497907053b507616b5fb62b7ac62e14d86837249",
+      "categories": [
+        "canonical-duplicate"
+      ],
+      "expected": {
+        "input_point_count": 6,
+        "valid_point_count": 6,
+        "derived_segment_count": 1,
+        "temporal_quality": "complete",
+        "distance_m": 1113.194908,
+        "elapsed_seconds": 600,
+        "avg_pace_seconds_per_km": 538.98917,
+        "canonical_eligible": true,
+        "activity_date": "2024-01-01"
+      },
+      "relation": {
+        "raw_equal": false,
+        "canonical_reference": "equator-six",
+        "expected_equal": true
+      }
+    },
+    {
+      "id": "utc-offset-equivalent",
+      "file": "utc-offset-equivalent.gpx",
+      "sha256": "53d655c7c10f143259ea991a2daaf43c7426377ed300c3bfbc8329d80d4bc678",
+      "categories": [
+        "utc-offset",
+        "canonical-duplicate"
+      ],
+      "expected": {
+        "input_point_count": 6,
+        "valid_point_count": 6,
+        "derived_segment_count": 1,
+        "temporal_quality": "complete",
+        "distance_m": 1113.194908,
+        "elapsed_seconds": 600,
+        "avg_pace_seconds_per_km": 538.98917,
+        "canonical_eligible": true,
+        "activity_date": "2024-01-01"
+      },
+      "relation": {
+        "raw_equal": false,
+        "canonical_reference": "equator-six",
+        "expected_equal": true
+      }
+    },
+    {
+      "id": "different-date",
+      "file": "different-date.gpx",
+      "sha256": "b986a29caa9888b340c11ed7ee60ce939fe5a84a99d9ee11dba8be2d28ef73a9",
+      "categories": [
+        "not-duplicate"
+      ],
+      "expected": {
+        "input_point_count": 6,
+        "valid_point_count": 6,
+        "derived_segment_count": 1,
+        "temporal_quality": "complete",
+        "distance_m": 1113.194908,
+        "elapsed_seconds": 600,
+        "avg_pace_seconds_per_km": 538.98917,
+        "canonical_eligible": true,
+        "activity_date": "2024-01-02"
+      },
+      "relation": {
+        "canonical_reference": "equator-six",
+        "expected_equal": false
+      }
+    },
+    {
+      "id": "multiple-tracks",
+      "file": "multiple-tracks.gpx",
+      "sha256": "cddfff8010dfc06081ab3544aadb495dbd4add8bf8c2cc33defb081e9a982760",
+      "categories": [
+        "multi-track",
+        "multi-segment",
+        "single-point",
+        "no-bridge"
+      ],
+      "expected": {
+        "input_point_count": 5,
+        "valid_point_count": 5,
+        "derived_segment_count": 3,
+        "distance_m": 222.638982,
+        "elapsed_seconds": 240,
+        "temporal_quality": "complete"
+      }
+    },
+    {
+      "id": "single-point",
+      "file": "single-point.gpx",
+      "sha256": "b4d7f62604cf924a5f495bcd66288947e080d27f2ae7bd37556db8a05efa015b",
+      "categories": [
+        "single-point",
+        "zero-metrics"
+      ],
+      "expected": {
+        "valid_point_count": 1,
+        "derived_segment_count": 1,
+        "geom": null,
+        "distance_m": 0,
+        "elapsed_seconds": 0,
+        "avg_pace_seconds_per_km": null,
+        "temporal_quality": "complete"
+      }
+    },
+    {
+      "id": "empty-segment",
+      "file": "empty-segment.gpx",
+      "sha256": "1980c19c84270e4de414a1ceeab9a578c9258cbeecc9dbb9d42563deafef0817",
+      "categories": [
+        "empty-segment"
+      ],
+      "expected": {
+        "input_segment_count": 2,
+        "empty_segment_count": 1,
+        "derived_segment_count": 1
+      }
+    },
+    {
+      "id": "exact-duplicate-point",
+      "file": "exact-duplicate-point.gpx",
+      "sha256": "767035513d805b607cc2a9f4b776cbb11aa34a7cee7806cde66a842a653810e6",
+      "categories": [
+        "duplicate-point"
+      ],
+      "expected": {
+        "input_point_count": 7,
+        "valid_point_count": 6,
+        "derived_segment_count": 1,
+        "temporal_quality": "complete",
+        "distance_m": 1113.194908,
+        "elapsed_seconds": 600,
+        "avg_pace_seconds_per_km": 538.98917,
+        "canonical_eligible": true,
+        "activity_date": "2024-01-01",
+        "deduplicated_point_count": 1
+      }
+    },
+    {
+      "id": "null-time-repeated-points",
+      "file": "null-time-repeated-points.gpx",
+      "sha256": "328f08b5a431d3e9fc6f8c0996c94945ff95371a42d30e8e53440db8db0d5359",
+      "categories": [
+        "duplicate-null-time",
+        "date-required"
+      ],
+      "expected": {
+        "valid_point_count": 2,
+        "deduplicated_point_count": 0,
+        "temporal_quality": "incomplete",
+        "elapsed_seconds": null,
+        "canonical_eligible": false
+      },
+      "request": {
+        "activity_date": "2024-01-01"
+      }
+    },
+    {
+      "id": "stationary-pause",
+      "file": "stationary-pause.gpx",
+      "sha256": "9ebbe01ae6935e2689c9de40d12f76acac1fb6886de7440dd52c30a6fffb79f9",
+      "categories": [
+        "pause",
+        "zero-length-edge"
+      ],
+      "expected": {
+        "valid_point_count": 4,
+        "distance_m": 222.638982,
+        "elapsed_seconds": 240,
+        "avg_pace_seconds_per_km": 1077.978341,
+        "temporal_quality": "complete"
+      }
+    },
+    {
+      "id": "invalid-middle-coordinate",
+      "file": "invalid-middle-coordinate.gpx",
+      "sha256": "d7aff657dc6cd07f7b5ec76cbd118753ddfb4aa75fa11772d77d6e47edf78a0e",
+      "categories": [
+        "invalid-coordinate",
+        "no-bridge"
+      ],
+      "expected": {
+        "valid_point_count": 2,
+        "derived_segment_count": 2,
+        "invalid_coordinate_count": 1,
+        "distance_m": 0,
+        "elapsed_seconds": 120,
+        "canonical_eligible": false
+      }
+    },
+    {
+      "id": "missing-coordinate",
+      "file": "missing-coordinate.gpx",
+      "sha256": "3f3884d8b864511e73c3b6e4f9c0247d58c099200b3c991d2cc4c60a5597900c",
+      "categories": [
+        "missing-coordinate"
+      ],
+      "expected": {
+        "valid_point_count": 1,
+        "invalid_coordinate_count": 1,
+        "distance_m": 0,
+        "canonical_eligible": false
+      }
+    },
+    {
+      "id": "nonfinite-coordinate",
+      "file": "nonfinite-coordinate.gpx",
+      "sha256": "ed93c8871268f055e8659cb35068a1c4100706cb02fa46961e7f87c5c620c6ea",
+      "categories": [
+        "nonfinite-coordinate"
+      ],
+      "expected": {
+        "valid_point_count": 1,
+        "invalid_coordinate_count": 2,
+        "canonical_eligible": false
+      }
+    },
+    {
+      "id": "partial-time",
+      "file": "partial-time.gpx",
+      "sha256": "1802658546d3ba65745c490272faa155434a2548883809f7ce5fd289c76c6377",
+      "categories": [
+        "partial-time",
+        "speed-check-unavailable"
+      ],
+      "expected": {
+        "valid_point_count": 3,
+        "distance_m": 222.638982,
+        "temporal_quality": "incomplete",
+        "elapsed_seconds": null,
+        "avg_pace_seconds_per_km": null,
+        "canonical_eligible": false
+      }
+    },
+    {
+      "id": "naive-time",
+      "file": "naive-time.gpx",
+      "sha256": "22c565288801db851c541796aa4fb900debeadb464753156743545b85e5bbc9b",
+      "categories": [
+        "naive-time",
+        "date-required"
+      ],
+      "expected": {
+        "temporal_quality": "incomplete",
+        "started_at": null,
+        "elapsed_seconds": null,
+        "canonical_eligible": false
+      },
+      "request": {
+        "activity_date": "2024-01-01"
+      }
+    },
+    {
+      "id": "bad-time",
+      "file": "bad-time.gpx",
+      "sha256": "55b2628d20923e02f689b81d62cc77cba66895f386d881c73a01b902ff93afbe",
+      "categories": [
+        "bad-time",
+        "date-required"
+      ],
+      "expected": {
+        "temporal_quality": "incomplete",
+        "started_at": null,
+        "elapsed_seconds": null,
+        "canonical_eligible": false
+      },
+      "request": {
+        "activity_date": "2024-01-01"
+      }
+    },
+    {
+      "id": "time-reversal",
+      "file": "time-reversal.gpx",
+      "sha256": "81d86680ea727888d48bef543f06fcd9b5f03338184c7aafdc7904a04d4ebf11",
+      "categories": [
+        "time-reversal"
+      ],
+      "expected": {
+        "derived_segment_count": 2,
+        "temporal_quality": "invalid",
+        "ended_at": null,
+        "elapsed_seconds": null,
+        "avg_pace_seconds_per_km": null,
+        "canonical_eligible": false
+      }
+    },
+    {
+      "id": "reversal-across-null",
+      "file": "reversal-across-null.gpx",
+      "sha256": "8fa0902f894c0b15e33fb93801b92aa6f231c4439ff87dfc262ea2897d9a80a2",
+      "categories": [
+        "time-reversal",
+        "invalid-over-incomplete"
+      ],
+      "expected": {
+        "temporal_quality": "invalid",
+        "ended_at": null,
+        "elapsed_seconds": null,
+        "canonical_eligible": false
+      }
+    },
+    {
+      "id": "zero-time-movement",
+      "file": "zero-time-movement.gpx",
+      "sha256": "84a01139e3adc28db2b06ab876d7f3d286d65d5e13086405259e0a24511901ed",
+      "categories": [
+        "zero-time-movement"
+      ],
+      "expected": {
+        "derived_segment_count": 2,
+        "distance_m": 0,
+        "temporal_quality": "invalid",
+        "elapsed_seconds": null
+      }
+    },
+    {
+      "id": "zero-length-line",
+      "file": "zero-length-line.gpx",
+      "sha256": "269dc1ba0211b64c777d977f29310c8db242e865045db8fa80368e97534c6323",
+      "categories": [
+        "zero-length-line"
+      ],
+      "expected": {
+        "derived_segment_count": 1,
+        "distance_m": 0,
+        "elapsed_seconds": 60,
+        "avg_pace_seconds_per_km": null,
+        "temporal_quality": "complete"
+      }
+    },
+    {
+      "id": "cross-segment-reversal",
+      "file": "cross-segment-reversal.gpx",
+      "sha256": "bee6879fdf87ff987e47da8f82a50d56fe5dc59e78d09f79b691705df78f9a1a",
+      "categories": [
+        "cross-segment-time-reversal"
+      ],
+      "expected": {
+        "derived_segment_count": 2,
+        "temporal_quality": "invalid",
+        "elapsed_seconds": null
+      }
+    },
+    {
+      "id": "speed-jump",
+      "file": "speed-jump.gpx",
+      "sha256": "a1af4d551f0802e07a092e8c5ece7b73f62815e8dc66e920aae28c0bdb0c5234",
+      "categories": [
+        "speed-jump",
+        "no-bridge"
+      ],
+      "expected": {
+        "derived_segment_count": 2,
+        "distance_m": 111.319491,
+        "elapsed_seconds": 61,
+        "temporal_quality": "complete",
+        "speed_jump_count": 1
+      }
+    },
+    {
+      "id": "gap-at-limit",
+      "file": "gap-at-limit.gpx",
+      "sha256": "f155488eea6c5a3e74edca32ea0999473abd4b75a1cd4c9957b0168818ac5ce6",
+      "categories": [
+        "gap-boundary"
+      ],
+      "expected": {
+        "derived_segment_count": 1,
+        "distance_m": 111.319491,
+        "elapsed_seconds": 300
+      }
+    },
+    {
+      "id": "gap-over-limit",
+      "file": "gap-over-limit.gpx",
+      "sha256": "02a741c2b72e7d23fa780f1729f4166381f486f506b7d2ac1a5d7d476046fb64",
+      "categories": [
+        "gap-boundary"
+      ],
+      "expected": {
+        "derived_segment_count": 2,
+        "distance_m": 0,
+        "elapsed_seconds": 301,
+        "avg_pace_seconds_per_km": null
+      }
+    },
+    {
+      "id": "missing-elevation",
+      "file": "missing-elevation.gpx",
+      "sha256": "a6d6ed974096931b2fe1aa6011870b0db4b9c238932e8e449a99b588474d4ef8",
+      "categories": [
+        "missing-elevation"
+      ],
+      "expected": {
+        "distance_m": 111.319491,
+        "elapsed_seconds": 60,
+        "elevation_m": null
+      }
+    },
+    {
+      "id": "bad-elevation",
+      "file": "bad-elevation.gpx",
+      "sha256": "71bde9324e4a4733e88ff0291884b498e8546bdf021d8833bec1eee179046b57",
+      "categories": [
+        "bad-elevation"
+      ],
+      "expected": {
+        "distance_m": 111.319491,
+        "elapsed_seconds": 60,
+        "elevation_m": null
+      }
+    },
+    {
+      "id": "dateline-crossing",
+      "file": "dateline-crossing.gpx",
+      "sha256": "ebd074c0ebb242f4c9adc5ed232d0ab0c1f76e3c837363ff30cf3fe0ecc3406b",
+      "categories": [
+        "dateline",
+        "spatial-reference"
+      ],
+      "expected": {
+        "distance_m": 111.319491,
+        "elapsed_seconds": 60,
+        "temporal_quality": "complete"
+      }
+    },
+    {
+      "id": "high-latitude",
+      "file": "high-latitude.gpx",
+      "sha256": "6847657b4b86e1cf8b5ace4a5aca3606ee806165f5998e05f6b6b8522537533c",
+      "categories": [
+        "high-latitude"
+      ],
+      "expected": {
+        "temporal_quality": "complete",
+        "distance_m": 19.493267246415
+      }
+    },
+    {
+      "id": "cross-midnight",
+      "file": "cross-midnight.gpx",
+      "sha256": "fd43bf9027cfbcee58ef097fc06ef5f08dd7c5921c431b3662722bc1b9cf13b0",
+      "categories": [
+        "cross-midnight"
+      ],
+      "expected": {
+        "elapsed_seconds": 120,
+        "activity_date": "2024-01-01"
+      },
+      "request": {
+        "timezone": "Asia/Shanghai"
+      }
+    },
+    {
+      "id": "dst-transition",
+      "file": "dst-transition.gpx",
+      "sha256": "f58d196f41233f6b5382b5a8376b129eeae841eaff04e3ff093ed29cdf7cfbd8",
+      "categories": [
+        "dst"
+      ],
+      "expected": {
+        "elapsed_seconds": 120,
+        "activity_date": "2024-03-10"
+      },
+      "request": {
+        "timezone": "America/New_York"
+      }
+    },
+    {
+      "id": "date-conflict",
+      "file": "date-conflict.gpx",
+      "sha256": "92eb5e48278e5053958a051cbbb96674621804b9c90dc721141c60023cc97e15",
+      "categories": [
+        "date-conflict"
+      ],
+      "expected": {
+        "http_status": 422,
+        "code": "ACTIVITY_DATE_CONFLICT"
+      },
+      "request": {
+        "timezone": "UTC",
+        "activity_date": "2024-01-02"
+      }
+    },
+    {
+      "id": "date-required",
+      "file": "date-required.gpx",
+      "sha256": "09ffcbe7c77fbfc9ade3da0b085757412f66be7d24b466ad706b0b4b4ff090af",
+      "categories": [
+        "date-required"
+      ],
+      "expected": {
+        "http_status": 422,
+        "code": "ACTIVITY_DATE_REQUIRED"
+      }
+    },
+    {
+      "id": "empty-file",
+      "file": "empty-file.gpx",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "categories": [
+        "empty-file"
+      ],
+      "expected": {
+        "http_status": 400,
+        "code": "GPX_XML_INVALID"
+      }
+    },
+    {
+      "id": "malformed-xml",
+      "file": "malformed-xml.gpx",
+      "sha256": "62c4bd4697d54e0af2ecc2a46408cbaf9b9252c4d45ea1c50e6235ed4f585239",
+      "categories": [
+        "malformed-xml"
+      ],
+      "expected": {
+        "http_status": 400,
+        "code": "GPX_XML_INVALID"
+      }
+    },
+    {
+      "id": "no-tracks",
+      "file": "no-tracks.gpx",
+      "sha256": "4c6dcefe818665085d27185096a593862d3d58354318a7c2d66e50656a49b66d",
+      "categories": [
+        "no-tracks"
+      ],
+      "expected": {
+        "http_status": 422,
+        "code": "GPX_NO_VALID_POINTS"
+      }
+    },
+    {
+      "id": "route-only",
+      "file": "route-only.gpx",
+      "sha256": "379031db456b609ef65fe47382372c7ac5d84f2a2747f75156b7a14637cd7857",
+      "categories": [
+        "route-only"
+      ],
+      "expected": {
+        "http_status": 422,
+        "code": "GPX_NO_VALID_POINTS"
+      }
+    },
+    {
+      "id": "waypoint-only",
+      "file": "waypoint-only.gpx",
+      "sha256": "16c8b63e4fa006899c7c58ef62674685b6b434b9b642523dd50549886af5afa4",
+      "categories": [
+        "waypoint-only"
+      ],
+      "expected": {
+        "http_status": 422,
+        "code": "GPX_NO_VALID_POINTS"
+      }
+    },
+    {
+      "id": "external-entity",
+      "file": "external-entity.gpx",
+      "sha256": "29a8f3021bf4c3f4dc99d2b434bd98a2bf71fed40e006ea95d6368a45ed81f93",
+      "categories": [
+        "dtd",
+        "external-entity"
+      ],
+      "expected": {
+        "http_status": 400,
+        "code": "GPX_XML_INVALID",
+        "external_resources_opened": 0
+      }
+    },
+    {
+      "id": "internal-entity",
+      "file": "internal-entity.gpx",
+      "sha256": "7df06f56924756b6d15b5a12c8dd64595fbb6a0afdc60439f5fdec632f557258",
+      "categories": [
+        "dtd",
+        "internal-entity"
+      ],
+      "expected": {
+        "http_status": 400,
+        "code": "GPX_XML_INVALID"
+      }
+    },
+    {
+      "id": "point-limit-exact",
+      "recipe": {
+        "kind": "point-limit",
+        "count": 50000
+      },
+      "categories": [
+        "point-limit"
+      ],
+      "expected": {
+        "input_point_count": 50000,
+        "within_point_limit": true
+      }
+    },
+    {
+      "id": "point-limit-exceeded",
+      "recipe": {
+        "kind": "point-limit",
+        "count": 50001
+      },
+      "categories": [
+        "point-limit"
+      ],
+      "expected": {
+        "http_status": 422,
+        "code": "GPX_LIMIT_EXCEEDED"
+      }
+    },
+    {
+      "id": "segment-limit-exact",
+      "recipe": {
+        "kind": "segment-limit",
+        "count": 1000
+      },
+      "categories": [
+        "segment-limit"
+      ],
+      "expected": {
+        "input_segment_count": 1000,
+        "within_segment_limit": true
+      }
+    },
+    {
+      "id": "segment-limit-exceeded",
+      "recipe": {
+        "kind": "segment-limit",
+        "count": 1001
+      },
+      "categories": [
+        "segment-limit"
+      ],
+      "expected": {
+        "http_status": 422,
+        "code": "GPX_LIMIT_EXCEEDED"
+      }
+    },
+    {
+      "id": "byte-limit-exact",
+      "recipe": {
+        "kind": "byte-limit",
+        "count": 10485760
+      },
+      "categories": [
+        "byte-limit"
+      ],
+      "expected": {
+        "byte_size": 10485760,
+        "within_byte_limit": true
+      }
+    },
+    {
+      "id": "byte-limit-exceeded",
+      "recipe": {
+        "kind": "byte-limit",
+        "count": 10485761
+      },
+      "categories": [
+        "byte-limit"
+      ],
+      "expected": {
+        "http_status": 413,
+        "code": "GPX_TOO_LARGE"
+      }
+    },
+    {
+      "id": "deep-xml",
+      "recipe": {
+        "kind": "processing-budget",
+        "count": 15000
+      },
+      "categories": [
+        "processing-budget"
+      ],
+      "expected": {
+        "scenario": "must finish within budget or return controlled timeout; no orphan process"
+      }
+    },
+    {
+      "id": "missing-latitude",
+      "file": "missing-latitude.gpx",
+      "sha256": "9f7b23d376ab71b66b6945c6a405b68438d1796ac285d586765dffceefbf02f7",
+      "categories": [
+        "missing-coordinate"
+      ],
+      "expected": {
+        "valid_point_count": 1,
+        "invalid_coordinate_count": 1,
+        "canonical_eligible": false
+      }
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "raw-duplicate",
+      "fixture": "equator-six",
+      "users": [
+        "A",
+        "A"
+      ],
+      "expected": "first 201, replay 409 raw, one activity; version +1"
+    },
+    {
+      "id": "canonical-duplicate",
+      "fixtures": [
+        "equator-six",
+        "format-equivalent"
+      ],
+      "users": [
+        "A",
+        "A"
+      ],
+      "expected": "first 201, second 409 canonical"
+    },
+    {
+      "id": "cross-user-same-file",
+      "fixture": "equator-six",
+      "users": [
+        "A",
+        "B"
+      ],
+      "expected": "one independent activity each; no foreign IDs"
+    },
+    {
+      "id": "concurrent-import",
+      "fixture": "equator-six",
+      "users": [
+        "A",
+        "A"
+      ],
+      "expected": "at most one committed activity; overlapping request may 429, replay 409"
+    },
+    {
+      "id": "ownership-forgery",
+      "fixture": "equator-six",
+      "request": {
+        "owner_id": "B"
+      },
+      "expected": "422, no writes"
+    },
+    {
+      "id": "unauthenticated-import",
+      "fixture": "equator-six",
+      "expected": "401, no writes"
+    },
+    {
+      "id": "csrf-origin-rejected",
+      "fixture": "equator-six",
+      "expected": "403, no writes"
+    },
+    {
+      "id": "write-fault",
+      "fixture": "equator-six",
+      "injection": "after segments before point batch",
+      "expected": "rollback all four tables; version unchanged"
+    },
+    {
+      "id": "db-disconnection",
+      "fixture": "equator-six",
+      "expected": "controlled dependency error; no partial commit"
+    },
+    {
+      "id": "session-rotation",
+      "expected": "login new session and csrf; old token revoked; no hash exposure"
+    },
+    {
+      "id": "session-expiry",
+      "expected": "absolute/idle boundary rejected at equality; no cookie-only authority"
+    },
+    {
+      "id": "rate-limits",
+      "expected": "shared DB atomic count across workers, 429 with Retry-After"
+    },
+    {
+      "id": "migration-upgrade",
+      "expected": "isolated old-revision snapshot upgrade retains sentinel/data; no dev DDL"
+    },
+    {
+      "id": "browser-isolation",
+      "expected": "A/B cookies and SSR isolated; logout clears private state"
+    },
+    {
+      "id": "haversine-edge-values",
+      "inputs": [
+        "same point",
+        "near point",
+        "near antipodal",
+        "polar",
+        "dateline"
+      ],
+      "expected": "finite sphere distances with R=6371008.8m; not authoritative DB metrics"
+    },
+    {
+      "id": "speed-exact-boundary",
+      "input": {
+        "edge_distance_m": 120,
+        "delta_seconds": 10
+      },
+      "expected": "accepted; >12 m/s rejected"
+    },
+    {
+      "id": "parsed-time-budget",
+      "fixture": "equator-six",
+      "injection": "parser exceeds 15 seconds",
+      "expected": "503 GPX_PROCESSING_TIMEOUT; child terminated and reaped"
+    }
+  ]
+}
