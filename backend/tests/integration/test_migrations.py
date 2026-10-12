@@ -354,10 +354,10 @@ def test_auth_storage_defaults_anonymous_session_and_unique_identity(db):
             )
         )
         session.flush()
-        anonymous = session.query(AuthSession).one()
+        anonymous = session.query(AuthSession).filter_by(token_hash="a" * 64).one()
         assert anonymous.user_id is None
         assert anonymous.revoked_at is None
-        assert session.query(AuthRateBucket).one().attempts == 0
+        assert session.query(AuthRateBucket).filter_by(subject_hash="c" * 64).one().attempts == 0
         session.commit()
     rejected(db, "UPDATE users SET activity_data_version=-1 WHERE id=:id", {"id": owner})
     second = user(db)
@@ -373,8 +373,14 @@ def test_auth_storage_defaults_anonymous_session_and_unique_identity(db):
         "VALUES (:id,:hash,'csrf',now())",
         {"id": uuid4(), "hash": "a" * 64},
     )
-    rejected(db, "UPDATE auth_rate_buckets SET attempts=-1")
-    rejected(db, "UPDATE auth_rate_buckets SET scope='unsupported'")
+    rejected(
+        db, "UPDATE auth_rate_buckets SET attempts=-1 WHERE subject_hash=:hash", {"hash": "c" * 64}
+    )
+    rejected(
+        db,
+        "UPDATE auth_rate_buckets SET scope='unsupported' WHERE subject_hash=:hash",
+        {"hash": "c" * 64},
+    )
 
 
 @pytest.mark.parametrize("size,content", [(0, b""), (2, b"x"), (10485761, b"x")])

@@ -1,6 +1,8 @@
 # 第二阶段实际开发进度
 
-日期：2026-10-12。**S2-01、S2-02 已完成本步本地验收；S2-03 至 S2-08 未开始。** 实施依据为 [第二阶段计划](08-phase-two-implementation-plan.md#s2-01冻结规则依赖和测试环境)。原计划保留规划时的未完成复选框，本文件记录实际状态，不将准备或存储层工作写成整阶段业务完成。
+最新 S2-03 本地浏览器认证结果、配置/启动、测试证据与关闭判断见 [本地认证验收记录](10-s2-03-local-auth-acceptance.md)。GPX 完整业务流程最新结果见 [导入与地图验收](11-gpx-import-map-acceptance.md)。年度日历、基础统计与道路底图最新结果见 [历史回顾验收](12-calendar-statistics-map-acceptance.md)。下方原有运行限制属于历史快照，以最新验收记录为准。
+
+日期：2026-10-12。**S2-01、S2-02 已完成本步本地验收；S2-03 后端及本地浏览器认证验收通过，可正式关闭本步；S2-04–S2-06 已完成本轮本地业务验收；S2-07 已接入认证和上传所需最小前端；用户授权提前实现阶段三的本人列表/路线/地图，未完成整个 S2-07/S2-08 或阶段三。** 实施依据为 [第二阶段计划](08-phase-two-implementation-plan.md#s2-01冻结规则依赖和测试环境)。原计划保留规划时的未完成复选框，本文件记录实际状态，不将准备或存储层工作写成整阶段业务完成。
 
 ## S2-01 执行前检查与范围（历史记录）
 
@@ -368,3 +370,109 @@ http://127.0.0.1:8000/api/health
 - 对已运行的本地后端只读HTTP复核live/ready/health：均200、error=null，live status=ok，ready/health database=connected、postgis=enabled、schema=current。
 - 本轮未运行真实DB集成测试，因为现有fixtures会调用 `alembic upgrade head`，与本次“不执行数据库迁移”约束冲突。之前74项全量测试和38项真实DB集成证据仍以S2-02实施记录为准，不冒称本轮重新执行。未改PostgreSQL服务，未重新启动测试实例或恢复数据。
 - 本节随本次S2-02提交归档，实际hash以 `git log` 和完成报告为准；不将尚未执行的远端push/CI写成通过。
+
+## S2-03：认证安全原语与后端接口
+
+日期：2026-10-12（Asia/Shanghai）。状态：**IMPLEMENTED / TECHNICAL_PASS：后端单元、真实数据库与两个OS worker验收通过**。现有开发库未写入、现有开发服务未重启，尚未配置认证HMAC密钥；这不是浏览器/部署验收或整阶段完成。S2-04–S2-08未开始。
+
+### 执行前检查与保护
+
+- 已阅读README、docs/08与本记录；仓库及适用上级目录未发现AGENTS.md。开发范围只按docs/08的S2-03、第2/7节实现；GPX模型保留，无解析、上传、活动API或前端认证页面。
+- 开始为干净的 `main...origin/main [ahead 1]`，已有提交保持不变；未fetch，不宣称远端最新。未提交或推送。
+- 开始/结束均只读核对 `127.0.0.1:5432/running_note`，角色run_note、PostgreSQL18.6、PostGIS3.6.4、唯一revision `0003_gpx_storage`；七张业务表均为0行，未对开发库执行DDL/DML/迁移，也未重启日常数据库或现有Uvicorn。
+- `.env` 开始/结束SHA256均为 `2f38bc025bb23749d776b23d4e67d4d734eebb7f958ac24368650bdbdb1db0ab`。依赖锁、既有模型/迁移、GPX样本与冻结parser/metrics/fingerprint规则未修改；没有使用Docker。
+- 沙箱最初拒绝本机TCP连接；获准后执行只读预检与显式独立目标测试。不绕过S2-01的目标允许列表和实际数据库身份守卫。
+
+### 实现与契约验收
+
+| S2-03契约 | 实际实现与证据 | 状态 |
+| --- | --- | --- |
+| Argon2id及密码边界 | memory=19456KiB、time=2、parallelism=1、salt=16/hash=32；12/128接受，11/129拒绝；密码不trim；不同用户同密码不同盐；真实dummy verify，错误账号与错误密码均INVALID_CREDENTIALS；登录成功支持rehash | PASS |
+| 令牌、预认证和Cookie | session/CSRF各32随机字节；DB只存session SHA256；预认证10分钟；登录7天；本地run_session与生产__Host-run_session属性、清除属性一致，无Domain | PASS |
+| 时间、闲置与撤销 | UTC可替换服务器时钟；绝对/闲置临界拒绝；24小时闲置，last_seen最多5分钟更新，保留计划中的保守提前失效边界；失效预认证重新创建 | PASS |
+| 来源/CSRF | Origin精确匹配SITE_ORIGIN；Origin存在且非法不回退；无Origin才取Referer来源；两者皆无拒绝；CSRF常量时间比较；旧Cookie/旧CSRF不可复用 | PASS |
+| 注册/登录/冲突 | 用户与新会话同事务，旧会话条件UPDATE只能成功消费一次；邮箱规范化，用户名固定；已知邮箱/用户名唯一冲突409；真实并发注册只有1条用户记录 | PASS |
+| 数据库限流 | HMAC scope+subject，独立短事务upsert；账号10/15分钟、IP60/15分钟、注册10/小时、预认证创建60/小时；包含成功尝试，失败业务不回滚计数；429含Retry-After；固定窗口到期重新可用 | PASS |
+| 跨worker与并发 | 两个应用实例共享桶，20个并发尝试恰有10成功/10受限；另用spawn启动两个不同OS进程、独立Engine/Cookie，均成功登录同一用户，改密码后均401 | PASS |
+| IP信任边界 | 默认实际连接IP；伪造X-Forwarded-For不改变身份；只接受明确可信代理的有效IP链，从右向左在第一个不可信hop停止 | PASS |
+| 会话/资料读写 | 匿名及预认证无法访问身份；两个用户资料隔离；PATCH仅显示名/IANA时区，email/username/public/owner与未知字段422；空PATCH、显式NULL、不存在时区拒绝 | PASS |
+| 密码修改/登出 | 校验旧密码；修改密码撤销全部原会话并清Cookie；旧密码登录失败、新密码成功；登录轮换保留其他设备会话；登出只撤销当前会话，无效身份401；登出未知JSON字段422 | PASS |
+| 响应/日志/数据库 | 白名单本人资料，不包含密码哈希/session哈希/HMAC密钥；响应及日志不包含密码或原session；Cookie为HttpOnly；统一data/error/meta、request_id和no-store；用户默认为私有且data_version仍0 | PASS |
+| 健康/存储回归 | 现有schema/迁移/约束/空间、旧revision拒绝与健康检查回归通过；自动OpenAPI含全部7个认证/资料路径 | PASS |
+
+实际接口：`GET /api/v1/auth/csrf`、`POST /api/v1/auth/register`、`POST /api/v1/auth/login`、`POST /api/v1/auth/logout`、`GET /api/v1/auth/session`、`GET /api/v1/me`、`PATCH /api/v1/me`、`PATCH /api/v1/me/password`。注册201、登录200，返回 `{user,csrf_token}`；session返回 `{authenticated:true,user}`；me返回6字段本人资料。所有写接口校验来源与CSRF。
+
+### 红绿过程与审查
+
+- 安全原语19项预期先失败，认证集成14项因未实现接口404等先失败；实现后相关测试通过。
+- 追加并发同预认证会话注册测试先出现 `[201,201]`，改为条件UPDATE revoked_at IS NULL，随后只有 `[201,403]`；败方用户写入随事务回滚。
+- 独立只读审查发现同池嵌套借连接：5并发带Cookie请求各占一个连接后等待限流的第二连接。真实数据库barrier复现5个500；限流前rollback释放只读连接，计数后重新查询时间/会话/CSRF；5并发恢复为5个正常401。无扩大连接池、无关闭限流。
+- 登出未知JSON原先200，先补失败测试再加StrictInput Body，变为422且会话仍有效。
+- 全量测试首次暴露旧存储测试 `query(...).one()` 假定整表只有它创建的记录。改为精确筛选本用例token/subject，并限定其约束更新目标；未删/清任何表或已有测试数据。
+- 审查复核关闭上述2项发现，确认条件撤销及跨OS进程验证；未遗留已知P0/P1问题。审查只读，未执行数据库写测试。
+
+### 测试环境、命令及结果
+
+先在显式允许的 `running_note_phase_one_test` 运行红绿用例，只应用已有head迁移，没有清理旧数据。最终完整回归改为原生临时实例：`127.0.0.1:55443`，独立角色s203_admin，仅属于该实例；两个新库 `runnote_s203_test`、`runnote_s203_snapshot_test`。后者先应用已有 `0001_postgis`，再由既有升级测试验证到head及哨兵保留；主测试库应用既有head。开发DSN保留在Settings供安全守卫比较，API测试的Settings仅指向测试库；HMAC密钥由测试fixture注入，同一测试的两个worker共享值，无写回.env。
+
+实际完整测试通过临时编排脚本 `/private/tmp/runnote-isolated-suite.py` 执行；脚本用initdb/pg_ctl建立全新目录、只在独立实例CREATE DATABASE，随后在子进程注入TEST_DATABASE_URL、TEST_SNAPSHOT_DATABASE_URL与两个显式允许目标。核心实际命令：
+
+```bash
+# backend目录；编排脚本包含try/finally，完成后停止本次临时实例。
+PYTHONPATH=. .venv/bin/python /private/tmp/runnote-isolated-suite.py
+# 脚本内执行既有迁移和完整pytest，均只指向上述新_test库：
+.venv/bin/alembic upgrade 0001_postgis
+.venv/bin/pytest -q --tb=short
+.venv/bin/ruff check app migrations tests
+.venv/bin/ruff format --check app migrations tests
+```
+
+本脚本是本次临时工具，不是持久项目依赖。后续已有独立目标的常规回归可用本记录“运行测试”中的进程环境脚本；若要覆盖快照升级参数，还需配置另外一个显式允许的TEST_SNAPSHOT_DATABASE_URL，否则该用例会skip，不能冒称全量零skip。
+
+| 检查 | 结果 |
+| --- | --- |
+| 完整后端pytest | **130 passed，0 skipped**，19.33s；64单元 + 66集成，其中28项S2-03真实DB/API场景 |
+| Ruff check | All checks passed |
+| Ruff format --check | 51 files already formatted |
+| 前端pnpm test | 5 passed |
+| 前端pnpm check | 0 errors / 0 warnings |
+| 前端pnpm build | 成功；仅既有NO_COLOR/FORCE_COLOR提示 |
+| git diff --check | 通过 |
+| 开发库最终只读复核 | revision/head与七表0行一致，.env摘要一致 |
+| 临时实例停止 | pg_ctl stop成功；lsof确认55443无监听；日常5432保持运行 |
+
+最终临时实例数据保留于 `/var/folders/nq/btgfkmq15c78jyqcz4zpt1lh0000gn/T/runnote-s203-lx849kpz`，已停止，没有删除目录。首次失败全量回归的临时目录 `runnote-s203-6c4vt1df` 同样已停止并保留。
+
+本机Python3.12.15、arm64；Argon2参数实测20轮hash+verify，中位28.05ms、p95（第19顺序统计量）29.46ms；4线程20次hash总113.18ms。配置内存每hash19456KiB；没有测量生产负载或并发RSS，不将该微基准冒称生产容量验收。
+
+### 修改文件与运行限制
+
+新增：
+
+- `backend/app/core/security.py`：密码、随机令牌、UTC时钟、来源/CSRF、会话有效性。
+- `backend/app/modules/auth/{router,schema,service,rate_limit}.py`：认证契约、会话事务、独立限流。
+- `backend/app/modules/users/{router,schema,service}.py`：本人白名单资料及密码修改。
+- `backend/tests/unit/test_security.py`、`backend/tests/integration/test_auth.py`：边界/权限/并发/两个OSworker/脱敏验证。
+- `docs/superpowers/plans/2026-10-12-s2-03.md`：仅本步实施计划，不新增业务设计或迁移。
+
+修改：`backend/app/core/config.py`（精确SITE_ORIGIN、SecretStr HMAC密钥、可信代理、生产要求）、`core/errors.py`（仅安全整型Retry-After）、`api/dependencies.py`（数据库身份及写操作校验）、`main.py`（路由与实例级配置/时钟）、`tests/integration/test_migrations.py`（精确限定旧用例记录）、`.env.example`（安全配置说明）、README与本进度记录。
+
+**当前开发运行限制**：实际Settings确认 `AUTH_RATE_HASH_KEY` 未配置，SITE_ORIGIN为 `http://localhost:5173`。为了保留现有.env，不自动生成/注入运行密钥，不重启旧服务。启动新版开发认证前，需通过安全的服务端进程环境设置至少32字节随机密钥，并跨worker/重启保持一致；密钥轮换会使旧限流桶不再命中。development/test缺密钥时所有认证/本人接口返回脱敏503，health仍可用；production缺密钥或非HTTPS来源直接拒绝启动。绝不使用随机启动密钥、硬编码备用密钥或测试模式免CSRF。
+
+未验证：现有开发服务的新认证API/浏览器Cookie实际交互、SSR、前端认证页面（S2-07）、HTTPS/真实反向代理部署、远程CI与生产负载。限流桶过期清理任务未属于S2-03接口实施范围；expires_at已存储，不宣称后台清理已实现。没有开始S2-04解析，也没有自动提交/推送、修改.env或升级开发数据库。
+
+
+## GPX 导入、持久化与路线地图交付
+
+日期：2026-10-12。本轮按用户最新目标推进，S2-03 保持正式关闭。已交付 S2-04 安全解析/限额/spawn、S2-05 geography 指标/时间/指纹、S2-06 原子导入/owner 隔离、S2-07 最小上传/详情前端及阶段三提前授权的列表/GeoJSON/MapLibre 路线。未自动扩展其他功能。
+
+实际结果：**215 项相关后端测试通过**（独立既有测试库，未迁移/清理）、**18 项前端测试通过**、类型检查0错误/警告、构建成功、Ruff和diff检查通过。真实 Chrome 正常注册后完成上传、查看、刷新、错误/重复、多段、缺失时间、匿名401/跨用户404及A/B独立导入；开发库原文与点/派生线只读核对通过。独立审查的两项P2已修复复核。
+
+可用页面 http://127.0.0.1:5183/activities，详情 /activities/{id}；API8001。未修改.env，schema仍0003_gpx_storage；保留8000/5173原服务。详细启动、命令、全部变更文件、实测活动地址、截图和未验证范围见 [GPX 验收记录](11-gpx-import-map-acceptance.md)。
+
+范围限制：地图暂无道路底图，MapLibre按需chunk有体积提示；未验证生产容量/部署、真实设备兼容性和远程CI，未宣称完整S2-07/S2-08或阶段三关闭。本次用户要求的业务流程本地验收PASS，停止于此，不自动开发日历、热力图、分享或AI。
+
+
+## 2026-10-12 历史回顾功能
+
+已完成阶段三地图底图增强及阶段四年度日历/基础统计最小范围：本人即时聚合、时区日期快照、未知耗时覆盖量、加权可靠配速、ECharts周/月趋势和当天分页记录。Chrome底图正常与阻断降级、日历/刷新恢复和匿名/A/B隔离通过；后端220项、前端27项、类型检查及构建通过。详见 [本轮完整验收](12-calendar-statistics-map-acceptance.md)。之前“暂无底图/统计”的记录为历史快照。未宣称整阶段四关闭，停止于本轮范围。

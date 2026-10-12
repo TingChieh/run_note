@@ -11,7 +11,21 @@ logger = logging.getLogger(__name__)
 
 
 class ApiError(Exception):
-    def __init__(self, status_code: int, code: str, message: str):
+    def __init__(
+        self,
+        status_code: int,
+        code: str,
+        message: str,
+        *,
+        retry_after: int | None = None,
+        details: list[dict[str, str]] | None = None,
+    ):
+        allowed = {"field", "reason", "existing_activity_id", "duplicate_kind"}
+        self.details = [
+            {k: v for k, v in item.items() if k in allowed and isinstance(v, str) and len(v) <= 200}
+            for item in (details or [])
+        ]
+        self.retry_after = retry_after
         self.status_code = status_code
         self.code = code
         self.message = message
@@ -39,7 +53,10 @@ def error_response(
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def api_error(request: Request, exc: ApiError):
-        return error_response(request, exc.status_code, exc.code, exc.message)
+        response = error_response(request, exc.status_code, exc.code, exc.message, exc.details)
+        if exc.retry_after is not None:
+            response.headers["Retry-After"] = str(max(1, int(exc.retry_after)))
+        return response
 
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, exc: HTTPException):

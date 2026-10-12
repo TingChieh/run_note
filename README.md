@@ -2,7 +2,7 @@
 
 软件工程本科毕业设计：**基于 Web 的跑步数据管理与可视化分析系统的设计与实现**。
 
-当前已实现第一阶段代码骨架：前端布局和占位页、健康检查、数据库连接及初始 PostGIS 迁移。尚未实现用户认证、GPX、地图、统计、分享或 AI。实际验收结果及未验证事项见[第一阶段实施记录](docs/07-phase-one-implementation.md)。
+当前已实现第一阶段骨架及第二阶段 S2-01–S2-06 的本地业务：存储模型/迁移、后端认证、会话安全、限流、资料接口及 GPX 解析/指标/原子导入。已接入前端注册、登录、退出、当前用户展示及私人页面保护。现已交付 GPX 安全解析/原子导入、本人活动列表/详情与 MapLibre 分段路线及起终点；刷新可重读。现已接入可降级的 OpenStreetMap 道路底图、年度运动日历与后端聚合基础统计（ECharts周/月趋势）；分享与 AI 尚未实现。最新结果见[日历统计与底图验收](docs/12-calendar-statistics-map-acceptance.md)。实际验收和未验证事项见[第二阶段进度](docs/09-phase-two-progress.md)。
 
 ## 文档导航
 
@@ -17,7 +17,10 @@
 | [第一阶段实施记录](docs/07-phase-one-implementation.md) | 实际版本、文件清单、命令结果与限制 |
 | [第一阶段 OpenAPI](docs/openapi-phase-one.json) | 已实现 API 的生成快照 |
 | [第二阶段技术方案与实施计划](docs/08-phase-two-implementation-plan.md) | 认证、GPX、轨迹存储、指标、去重、安全迁移及逐步验收 |
-| [第二阶段开发进度](docs/09-phase-two-progress.md) | 仅 S2-01 的规则、依赖、样本和测试环境准备；其余步骤未开始 |
+| [第二阶段开发进度](docs/09-phase-two-progress.md) | S2-01–S2-06 及本轮最小前端/路线的实际证据与边界 |
+| [S2-03 本地认证验收](docs/10-s2-03-local-auth-acceptance.md) | 前端认证、本地密钥、真实浏览器、关闭判断与未验证范围 |
+| [GPX 导入与地图验收](docs/11-gpx-import-map-acceptance.md) | 实际接口、页面、215项后端测试、浏览器上传/刷新/隔离及变更文件 |
+| [日历统计与底图验收](docs/12-calendar-statistics-map-acceptance.md) | 年度日历、ECharts趋势、本人数据聚合、瓦片服务及浏览器证据 |
 
 前六份文档起始于 2026-10-09 的设计基线，开发与部署方案于 2026-10-12 调整为非容器化；其中未实现业务仍属于后续阶段。实际验证状态以实施记录为准。
 
@@ -70,12 +73,30 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 cd backend
 python3.12 -m venv .venv
 .venv/bin/python -m pip install --require-hashes -r requirements.lock
-.venv/bin/alembic upgrade head
 .venv/bin/alembic current
-.venv/bin/uvicorn app.main:create_app --factory --reload --host 127.0.0.1 --port 8000
+# 既有开发库已在 0003_gpx_storage，不执行迁移。
+cd ..
+backend/.venv/bin/python scripts/local-auth.py init
+backend/.venv/bin/python scripts/local-auth.py serve
 ```
 
-迁移只启用 PostGIS 并记录 Alembic 版本，不创建业务表。缺少必填数据库配置会拒绝启动。服务可启动不等于数据库已就绪。
+当前迁移 head 为 `0003_gpx_storage`，包含 PostGIS 与七张业务表；既有开发库已在 head，不需重复升级。缺少必填数据库配置会拒绝启动。服务可启动不等于数据库已就绪。
+
+S2-03 认证还需在服务端进程环境安全配置 `AUTH_RATE_HASH_KEY`（至少32字节随机密钥，所有 worker 和重启使用同一值），`SITE_ORIGIN` 必须精确匹配浏览器来源。生产要求 HTTPS 来源与密钥，否则拒绝启动；development 缺密钥时健康检查可用，认证接口返回503。现有 `.env` 不自动修改；密钥轮换会使旧限流桶不再命中。默认不信任转发IP；明确的反向代理环境才配置 `AUTH_TRUSTED_PROXIES`（JSON数组，精确IP）。
+
+本地脚本首次创建独立 `.env.auth-rate.key`（Git 忽略，权限600）：随机48字节生成64个URL-safe字符，读取要求UTF-8至少32字节。密钥只用于限流标识HMAC-SHA256，不是密码或会话签名密钥；没有强制hex/base64格式。脚本保留已有文件、重启复用值、显式进程环境优先，不输出密钥、不改 `.env`、不迁移。不要把密钥放入前端或命令行参数，不要为绕过限流轮换它。默认精确来源为 `http://127.0.0.1:5173`，不要混用localhost。
+
+本轮保留原有8000/5173服务（认证缺密钥），可用认证实例为 **http://127.0.0.1:5183**（API8001）。实例仍运行时直接访问，不重复启动；停止后分别从仓库根目录启动：
+
+```bash
+# 终端一：复用本地密钥，仅启动API
+backend/.venv/bin/python scripts/local-auth.py serve --port 8001 --site-origin http://127.0.0.1:5183
+# 终端二：进程环境覆盖内部API目标，不改.env
+cd frontend
+INTERNAL_API_BASE_URL=http://127.0.0.1:8001 pnpm dev --port 5183
+```
+
+注册受每IP每小时10次的真实限制。此前认证及本轮GPX浏览器验收均使用正常注册，未重置计数；配额用尽后等待窗口结束。反复浏览器测试应使用已有且版本正确的独立测试库，不清理开发库。
 
 前端（另一终端）：
 
@@ -85,7 +106,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-打开 <http://127.0.0.1:5173>，首页会实际请求 `/api/health`。Vite 把同源 `/api` 转发给 `.env` 中的 `INTERNAL_API_BASE_URL`，数据库 URL 和密码不进入浏览器配置。占位页为 `/activities`、`/dashboard`、`/settings`。
+打开 <http://127.0.0.1:5173>，首页会实际请求 `/api/health`。SvelteKit 服务端把同源 `/api` 转发给服务端环境中的 `INTERNAL_API_BASE_URL`（进程环境优先于 `.env`），数据库 URL 和密码不进入浏览器配置。`/login`、`/register` 可直接使用；`/settings` 展示当前用户；`/activities` 可上传并查询本人跑步记录，`/activities/{id}` 展示指标和路线；`/dashboard` 展示年度日历、运动统计与周/月趋势，私人页面均需登录。认证 Cookie 为 HttpOnly、SameSite=Lax；不在 localStorage 存凭证或用户资料。
 
 健康接口及 API 文档：
 
@@ -130,7 +151,7 @@ cd backend
 .venv/bin/pytest -q
 ```
 
-未设置测试 URL 时，3 个集成用例会跳过，不能视为数据库验收通过。
+未设置独立测试 URL 时，数据库集成用例会跳过，不能视为数据库验收通过。
 
 前端：
 
@@ -147,13 +168,13 @@ E2E 要求后端已启动且数据库 ready；测试自动启动前端。使用�
 
 ## 结构与实现边界
 
-- `frontend/`：SvelteKit 3 / Svelte 5 / TypeScript，Tailwind 4；`src/lib/components/ui` 与 `components.json` 仅预留 shadcn-svelte 结构。
+- `frontend/`：认证页面、请求级SSR身份、同源API代理与私人页面保护；SvelteKit 3 / Svelte 5 / TypeScript，Tailwind 4；`src/lib/components/ui` 与 `components.json` 仅预留 shadcn-svelte 结构。
 - `backend/app/core`：环境、响应、错误与日志；`api`：依赖；`db`：会话和 Base；`models`：模型层预留；`modules/health`：Router、Service、Schema。
 - `backend/migrations`：Alembic；`backend/tests`：单元和真实 PostGIS 集成测试。
 - `.github/workflows/ci.yml`：原生 Homebrew 临时测试集群与前端检查流程。
 - `infra/compose.dev.yml`：保留的历史配置，已停用，不属于启动、测试或部署方案。
 
-SvelteKit 3 的实际配置位于 `vite.config.ts`，TS 继承 `$app/tsconfig`，原生包导入别名为 `#lib/*`。这些是锁定版本的兼容配置，未沿用旧版 `$lib` 或 `svelte.config.js`。
+SvelteKit 3 的实际配置位于 `vite.config.ts`，TS 继承 `$app/tsconfig`，原生包导入别名为 `#lib/*`；服务端变量通过 `src/env.ts` 声明并从 `$app/env/private` 导入，hooks 类型从 `@sveltejs/kit/hooks` 导入。这些是锁定版本的兼容配置，未沿用旧版 `$lib` 或 `svelte.config.js`。
 
 ## 生产部署计划
 

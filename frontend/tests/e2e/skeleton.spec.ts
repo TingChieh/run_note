@@ -6,8 +6,8 @@ test('browser reaches the real API through the frontend proxy', async ({ page })
   expect((await apiResponse).status()).toBe(200);
   await expect(page.getByTestId('health-status')).toContainText('均已就绪');
   await page.getByRole('navigation').getByRole('link', { name: '跑步记录' }).click();
-  await expect(page.getByRole('heading', { name: '跑步记录', exact: true })).toBeVisible();
-  await expect(page.getByText('此页面为第一阶段占位。', { exact: false })).toBeVisible();
+  await expect(page).toHaveURL(/\/login\?next=/);
+  await expect(page.getByRole('heading', { name: '登录', exact: true })).toBeVisible();
 });
 
 test('browser displays a database outage rather than a healthy status', async ({ page }) => {

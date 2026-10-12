@@ -6,9 +6,16 @@ import app.models  # noqa: F401 -- register the complete shared ORM metadata at 
 from app.core.config import Settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, register_request_metadata
+from app.core.security import utc_now
 from app.db.schema import get_expected_revision
 from app.db.session import create_session_factory
+from app.modules.activities.router import router as activities_router
+from app.modules.auth.router import router as auth_router
+from app.modules.gpx.body_limit import GpxBodyLimit
+from app.modules.gpx.router import router as gpx_router
 from app.modules.health.router import router
+from app.modules.statistics.router import router as statistics_router
+from app.modules.users.router import router as users_router
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -25,9 +32,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             engine.dispose()
 
     app = FastAPI(title="Run Note API", version="0.1.0", lifespan=lifespan)
+    app.state.settings = settings
+    app.state.clock = utc_now
     app.state.session_factory = session_factory
     app.state.expected_revision = expected_revision
+    app.add_middleware(GpxBodyLimit)
     register_request_metadata(app)
     register_error_handlers(app)
     app.include_router(router)
+    app.include_router(gpx_router)
+    app.include_router(activities_router)
+    app.include_router(statistics_router)
+    app.include_router(auth_router)
+    app.include_router(users_router)
     return app

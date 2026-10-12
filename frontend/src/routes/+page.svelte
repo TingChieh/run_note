@@ -27,7 +27,7 @@
   <meta name="description" content="跑步数据管理与可视化分析系统的本地开发骨架" />
 </svelte:head>
 
-<p class="mb-3 text-sm font-medium text-primary">PHASE 01</p>
+<p class="mb-3 text-sm font-medium text-primary">PHASE 02 · S2-03</p>
 <h1 class="text-3xl font-semibold leading-tight sm:text-4xl">跑步数据管理与可视化分析</h1>
 <p class="mt-4 max-w-2xl leading-7 text-muted-foreground">
   本阶段建立前端、API 与空间数据库的连接。记录管理、轨迹地图和分析功能尚未实现。
@@ -59,7 +59,7 @@
   {#each [
     { title: '跑步记录', text: '记录列表与导入界面将在后续阶段实现。', href: '/activities' },
     { title: '运动统计', text: '年度日历与统计图表目前仅预留入口。', href: '/dashboard' },
-    { title: '个人设置', text: '此阶段不涉及账号与身份认证。', href: '/settings' }
+    { title: '个人设置', text: '查看当前登录账号与会话状态。', href: '/settings' }
   ] as item}
     <a href={item.href} class="rounded-xl border border-border bg-white p-5 hover:border-primary">
       <h2 class="font-semibold">{item.title}</h2>

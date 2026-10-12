@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import field_validator, model_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
@@ -16,6 +16,55 @@ class Settings(BaseSettings):
 
     app_env: Literal["development", "test", "production"] = "development"
     database_url: str
+    site_origin: str = "http://localhost:5173"
+    auth_rate_hash_key: SecretStr | None = None
+    auth_trusted_proxies: tuple[str, ...] = ()
+
+    @field_validator("site_origin")
+    @classmethod
+    def validate_site_origin(cls, value):
+        from urllib.parse import urlsplit
+
+        try:
+            url = urlsplit(value)
+            port = url.port
+        except ValueError:
+            raise ValueError("SITE_ORIGIN must be an exact HTTP(S) origin") from None
+        if (
+            url.scheme not in {"http", "https"}
+            or not url.hostname
+            or url.username
+            or url.password
+            or url.path
+            or url.query
+            or url.fragment
+            or value != f"{url.scheme}://{url.netloc}"
+            or (port is not None and port == 0)
+        ):
+            raise ValueError("SITE_ORIGIN must be an exact HTTP(S) origin")
+        return value
+
+    @field_validator("auth_rate_hash_key")
+    @classmethod
+    def validate_rate_key(cls, value):
+        if value is not None and len(value.get_secret_value().encode()) < 32:
+            raise ValueError("AUTH_RATE_HASH_KEY requires at least 32 bytes")
+        return value
+
+    @field_validator("auth_trusted_proxies")
+    @classmethod
+    def validate_proxies(cls, value):
+        from ipaddress import ip_address
+
+        return tuple(str(ip_address(item)) for item in value)
+
+    @model_validator(mode="after")
+    def production_auth_config(self):
+        if self.app_env == "production" and (
+            not self.site_origin.startswith("https://") or self.auth_rate_hash_key is None
+        ):
+            raise ValueError("Production requires HTTPS SITE_ORIGIN and AUTH_RATE_HASH_KEY")
+        return self
 
     @field_validator("database_url")
     @classmethod
