@@ -1,0 +1,27 @@
+name: run-note
+
+services:
+  db:
+    image: postgis/postgis:18-3.6
+    # The upstream PostGIS tag is amd64-only; Docker Desktop can emulate it on ARM.
+    platform: linux/amd64
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-run_note}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-run_note}
+      TZ: UTC
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # PostgreSQL 18 images use a versioned PGDATA beneath /var/lib/postgresql.
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

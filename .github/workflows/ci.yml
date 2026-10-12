@@ -1,0 +1,58 @@
+name: Phase one checks
+
+on: [push, pull_request]
+
+jobs:
+  backend:
+    runs-on: macos-latest
+    env:
+      APP_ENV: test
+      # A disposable native cluster with loopback-only trust; never use for deployment.
+      DATABASE_URL: postgresql+psycopg://run_note@127.0.0.1:55432/run_note_test
+      TEST_DATABASE_URL: postgresql+psycopg://run_note@127.0.0.1:55432/run_note_test
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Start isolated native PostgreSQL/PostGIS
+        run: |
+          brew install postgresql@18 postgis
+          pg_bin="$(brew --prefix postgresql@18)/bin"
+          "$pg_bin/pg_config" --version
+          brew list --versions postgresql@18 postgis
+          "$pg_bin/initdb" -D "$RUNNER_TEMP/run-note-pg" -U run_note -A trust --no-locale -E UTF8
+          "$pg_bin/pg_ctl" -D "$RUNNER_TEMP/run-note-pg" -l "$RUNNER_TEMP/run-note-pg.log" -o "-h 127.0.0.1 -p 55432 -k $RUNNER_TEMP" -w start
+          "$pg_bin/createdb" -h 127.0.0.1 -p 55432 -U run_note run_note_test
+      - run: python -m venv .venv
+      - run: .venv/bin/python -m pip install --require-hashes -r requirements.lock
+      - run: .venv/bin/ruff check app migrations tests
+      - run: .venv/bin/pytest -q
+      - name: Stop isolated test cluster
+        if: always()
+        run: |
+          pg_bin="$(brew --prefix postgresql@18)/bin"
+          if [ -f "$RUNNER_TEMP/run-note-pg/postmaster.pid" ]; then
+            "$pg_bin/pg_ctl" -D "$RUNNER_TEMP/run-note-pg" -m fast -w stop
+          fi
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm check
+      - run: pnpm build
