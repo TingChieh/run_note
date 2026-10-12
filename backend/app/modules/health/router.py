@@ -20,5 +20,6 @@ def live(request: Request):
 @router.get("/api/v1/health/ready", response_model=ApiResponse[ReadyStatus])
 def ready(request: Request, session: Annotated[Session, Depends(get_session)]):
     return ApiResponse(
-        data=check_readiness(session), meta=ResponseMeta(request_id=request.state.request_id)
+        data=check_readiness(session, request.app.state.expected_revision),
+        meta=ResponseMeta(request_id=request.state.request_id),
     )

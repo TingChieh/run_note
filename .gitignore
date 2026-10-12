@@ -17,3 +17,15 @@ playwright-report/
 test-results/
 .DS_Store
 *.egg-info/
+
+# Local database archives, keys and scratch files are never Git checkpoints.
+*.dump
+*.pgdump
+*.backup
+*.pem
+*.key
+*.p12
+*.pfx
+/backups/
+/tmp/
+/backend/tmp/

@@ -40,7 +40,8 @@ def test_migration_enables_postgis_and_spatial_functions(database_url):
     try:
         with engine.connect() as connection:
             assert (
-                connection.scalar(text("SELECT version_num FROM alembic_version")) == "0001_postgis"
+                connection.scalar(text("SELECT version_num FROM alembic_version"))
+                == "0003_gpx_storage"
             )
             distance = connection.scalar(
                 text(

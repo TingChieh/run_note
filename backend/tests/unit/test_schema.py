@@ -1,0 +1,49 @@
+import pytest
+
+
+def test_release_head_follows_complete_chain():
+    from app.db.schema import get_expected_revision
+
+    assert get_expected_revision() == "0003_gpx_storage"
+
+
+@pytest.mark.parametrize("revisions", [[], [("a", None), ("b", None)]])
+def test_release_rejects_missing_or_multiple_heads(tmp_path, revisions):
+    from app.db.schema import get_expected_revision
+
+    versions = tmp_path / "versions"
+    versions.mkdir()
+    for revision, parent in revisions:
+        (versions / f"{revision}.py").write_text(
+            f"revision = {revision!r}\ndown_revision = {parent!r}\n"
+        )
+    with pytest.raises(RuntimeError, match="unique Alembic head"):
+        get_expected_revision(tmp_path)
+
+
+def test_model_registry_and_autogenerate_preserve_unmanaged_tables():
+    from app import models
+    from app.db.schema import include_name
+
+    expected = {
+        "users",
+        "auth_sessions",
+        "auth_rate_buckets",
+        "activities",
+        "gpx_imports",
+        "activity_segments",
+        "activity_points",
+    }
+    assert set(models.Base.metadata.tables) == expected
+    assert include_name("users", "table", {})
+    assert not include_name("spatial_ref_sys", "table", {})
+    assert not include_name("legacy_sentinel", "table", {})
+    assert not include_name("other_schema", "schema", {})
+    assert include_name(None, "schema", {})
+
+
+def test_revision_discovery_does_not_depend_on_working_directory(tmp_path, monkeypatch):
+    from app.db.schema import get_expected_revision
+
+    monkeypatch.chdir(tmp_path)
+    assert get_expected_revision() == "0003_gpx_storage"
