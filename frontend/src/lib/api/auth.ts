@@ -5,6 +5,8 @@ export interface User {
   display_name: string;
   timezone: string;
   created_at: string;
+  bio: string;
+  profile_is_public: boolean;
 }
 export class AuthError extends Error {
   constructor(message: string, public status: number, public code: string) { super(message); }
@@ -43,4 +45,4 @@ export function safeNext(value: string | null): string {
   if (/^\/(login|register|api)(\/|$)/.test(path)) return '/settings';
   return value;
 }
-export function isProtected(path: string): boolean { return /^\/(activities|dashboard|settings)(\/|$)/.test(path); }
+export function isProtected(path: string): boolean { return /^\/(activities|dashboard|footprints|settings)(\/|$)/.test(path); }

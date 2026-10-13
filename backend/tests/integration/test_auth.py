@@ -37,7 +37,7 @@ def auth_database():
             with engine.connect() as connection:
                 assert connection.execute(
                     text("SELECT version_num FROM alembic_version")
-                ).scalars().all() == ["0003_gpx_storage"], (
+                ).scalars().all() == ["0004_public_sharing"], (
                     "Existing isolated test schema must already be current"
                 )
         finally:
@@ -136,6 +136,8 @@ def test_register_rotation_storage_and_identity_isolation(workers):
         "display_name",
         "timezone",
         "created_at",
+        "bio",
+        "profile_is_public",
     }
     engine.dispose()
 
@@ -156,7 +158,7 @@ def test_profile_password_revokes_all_workers_and_logout(workers):
     for payload in [
         {"email": "bad"},
         {"username": "bad"},
-        {"profile_is_public": True},
+        {"profile_is_public": None},
         {"user_id": r.json()["data"]["user"]["id"]},
         {"timezone": "No/Such"},
         {"display_name": None},

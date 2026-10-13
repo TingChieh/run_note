@@ -19,6 +19,8 @@ class ActivityView(BaseModel):
     temporal_quality: str
     quality_summary: dict[str, Any]
     metrics_version: str
+    visibility: str
+    allow_shared_route: bool
     has_route: bool
     created_at: datetime
 

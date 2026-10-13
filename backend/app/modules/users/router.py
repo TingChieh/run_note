@@ -35,7 +35,10 @@ def update_me(
     identity: Annotated[tuple, Depends(require_write)],
     db: Annotated[Session, Depends(get_session)],
 ):
-    data = service.update_profile(identity[1], payload)
+    from app.modules.sharing.service import lock_owner
+
+    user = lock_owner(db, identity[1].id)
+    data = service.update_profile(user, payload)
     db.commit()
     return envelope(request, data)
 

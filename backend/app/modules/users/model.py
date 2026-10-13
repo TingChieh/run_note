@@ -11,6 +11,7 @@ class User(Base):
     __tablename__ = "users"
     __table_args__ = (
         CheckConstraint("activity_data_version >= 0", name="data_version_nonnegative"),
+        CheckConstraint("char_length(bio) <= 500", name="bio_length"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -20,6 +21,7 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(80))
     timezone: Mapped[str] = mapped_column(String(64), server_default="Asia/Shanghai")
     profile_is_public: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    bio: Mapped[str] = mapped_column(String(500), server_default="")
     activity_data_version: Mapped[int] = mapped_column(BigInteger, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

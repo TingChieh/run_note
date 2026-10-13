@@ -2,7 +2,7 @@
 
 软件工程本科毕业设计：**基于 Web 的跑步数据管理与可视化分析系统的设计与实现**。
 
-当前已实现第一阶段骨架及第二阶段 S2-01–S2-06 的本地业务：存储模型/迁移、后端认证、会话安全、限流、资料接口及 GPX 解析/指标/原子导入。已接入前端注册、登录、退出、当前用户展示及私人页面保护。现已交付 GPX 安全解析/原子导入、本人活动列表/详情与 MapLibre 分段路线及起终点；刷新可重读。现已接入可降级的 OpenStreetMap 道路底图、年度运动日历与后端聚合基础统计（ECharts周/月趋势）；分享与 AI 尚未实现。最新结果见[日历统计与底图验收](docs/12-calendar-statistics-map-acceptance.md)。实际验收和未验证事项见[第二阶段进度](docs/09-phase-two-progress.md)。
+当前已实现第一阶段骨架及第二阶段 S2-01–S2-06 的本地业务：存储模型/迁移、后端认证、会话安全、限流、资料接口及 GPX 解析/指标/原子导入。已接入前端注册、登录、退出、当前用户展示及私人页面保护。现已交付 GPX 安全解析/原子导入、本人活动列表/详情与 MapLibre 分段路线及起终点；刷新可重读。现已接入可降级的 OpenStreetMap 道路底图、年度运动日历与后端聚合基础统计（ECharts周/月趋势）；分享与 AI 尚未实现。现已交付个人足迹地图、多轨迹叠加与固定网格经过记录数热力图；最新结果见[足迹与热力图验收](docs/13-footprints-heatmap-acceptance.md)。实际验收和未验证事项见[第二阶段进度](docs/09-phase-two-progress.md)。
 
 ## 文档导航
 
@@ -20,6 +20,7 @@
 | [第二阶段开发进度](docs/09-phase-two-progress.md) | S2-01–S2-06 及本轮最小前端/路线的实际证据与边界 |
 | [S2-03 本地认证验收](docs/10-s2-03-local-auth-acceptance.md) | 前端认证、本地密钥、真实浏览器、关闭判断与未验证范围 |
 | [GPX 导入与地图验收](docs/11-gpx-import-map-acceptance.md) | 实际接口、页面、215项后端测试、浏览器上传/刷新/隔离及变更文件 |
+| [足迹与热力图验收](docs/13-footprints-heatmap-acceptance.md) | 固定网格、完整路线相交、本人轨迹叠加与Chrome证据 |
 | [日历统计与底图验收](docs/12-calendar-statistics-map-acceptance.md) | 年度日历、ECharts趋势、本人数据聚合、瓦片服务及浏览器证据 |
 
 前六份文档起始于 2026-10-09 的设计基线，开发与部署方案于 2026-10-12 调整为非容器化；其中未实现业务仍属于后续阶段。实际验证状态以实施记录为准。
@@ -106,7 +107,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-打开 <http://127.0.0.1:5173>，首页会实际请求 `/api/health`。SvelteKit 服务端把同源 `/api` 转发给服务端环境中的 `INTERNAL_API_BASE_URL`（进程环境优先于 `.env`），数据库 URL 和密码不进入浏览器配置。`/login`、`/register` 可直接使用；`/settings` 展示当前用户；`/activities` 可上传并查询本人跑步记录，`/activities/{id}` 展示指标和路线；`/dashboard` 展示年度日历、运动统计与周/月趋势，私人页面均需登录。认证 Cookie 为 HttpOnly、SameSite=Lax；不在 localStorage 存凭证或用户资料。
+打开 <http://127.0.0.1:5173>，首页会实际请求 `/api/health`。SvelteKit 服务端把同源 `/api` 转发给服务端环境中的 `INTERNAL_API_BASE_URL`（进程环境优先于 `.env`），数据库 URL 和密码不进入浏览器配置。`/login`、`/register` 可直接使用；`/settings` 编辑昵称、简介和公开主页开关；`/activities` 可上传并查询本人跑步记录，`/activities/{id}` 展示指标和路线；`/dashboard` 展示年度日历、运动统计与周/月趋势，`/footprints` 支持个人路线叠加、年份/日期范围筛选和运动热力图，私人页面均需登录。公开主页 `/u/{username}`、单条公开记录 `/public/activities/{id}`、令牌摘要分享 `/shared/{token}` 可匿名浏览；在记录详情管理 private/unlisted/public 和创建/撤销分享。本轮分享完全不公开坐标与精确起终点，公开主页仅统计 public 记录。关闭主页不会撤销独立分享或单条公开记录，须单独撤销链接/设为私人。认证 Cookie 为 HttpOnly、SameSite=Lax；不在 localStorage 存凭证或用户资料。
 
 健康接口及 API 文档：
 
@@ -187,3 +188,5 @@ Linux 主机原生安装 PostgreSQL/PostGIS、Python、Node.js 与 Caddy。应�
 前后端终端使用 Ctrl-C。数据库由 Homebrew 独立管理，停止应用不需要停止数据库。本次文档调整不修改或重启现有 PostgreSQL 服务。持久性测试在独立受控实例进行，避免影响正在使用的数据库。
 
 `.env`、虚拟环境、依赖目录及生成产物均被 Git 忽略。历史容器文件保留但停用；本项目不使用 Docker、Compose 或其他容器方案。第一阶段 Git 基线检查与本轮回归结果见实施记录第 10 节；不自动推送远程仓库。
+
+本轮公开主页与分享的隔离库迁移、权限矩阵和真实 Chrome 证据见 [验收记录](docs/14-public-sharing-acceptance.md)。开发库仍停留0003，本轮未对其迁移；使用新版本连接开发库前需单独备份并应用0004迁移。

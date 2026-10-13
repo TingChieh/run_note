@@ -37,7 +37,7 @@
 </script>
 <svelte:head><title>跑步记录 · Run Note</title></svelte:head>
 <h1 class="text-3xl font-semibold">跑步记录</h1>
-<p class="mt-3 text-muted-foreground">导入 GPX，保存你的跑步轨迹与指标。记录仅本人可见。</p>
+<p class="mt-3 text-muted-foreground">导入 GPX，保存你的跑步轨迹与指标。新记录默认仅本人可见；可在详情页自主设置公开或链接分享。</p>
 <section class="mt-7 rounded-xl border border-border bg-white p-5" aria-labelledby="import-title">
   <h2 id="import-title" class="text-xl font-semibold">导入 GPX</h2>
   <form method="POST" enctype="multipart/form-data" onsubmit={submit} class="mt-4 grid gap-4 sm:grid-cols-2">

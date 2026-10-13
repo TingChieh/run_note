@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { page } from '$app/state';
+  import SharePanel from '#lib/components/SharePanel.svelte';
   import RouteMap from '#lib/components/RouteMap.svelte';
   import { ActivityError, readActivity, readRoute, formatDate, formatDistance, formatDuration, formatPace, qualityLabel, qualityEntries, type Activity, type Route } from '#lib/api/activities.ts';
   let activity = $state<Activity | null>(null), route = $state<Route | null>(null), loading = $state(true), routeLoading = $state(false), message = $state(''), routeError = $state(''), disposed = false;
@@ -38,6 +39,7 @@
     <div class="rounded-xl border border-border bg-white p-5"><dt class="text-sm text-muted-foreground">平均配速</dt><dd class="mt-2 text-2xl font-semibold">{formatPace(activity.avg_pace_seconds_per_km)}</dd></div>
   </dl>
   <p class="mt-2 text-sm text-muted-foreground">“—”表示缺失或无法可靠计算。指标版本：{activity.metrics_version}</p>
+  <SharePanel {activity} />
   <section class="mt-7" aria-labelledby="route-title"><h2 id="route-title" class="text-xl font-semibold">路线</h2>
     {#if route}<RouteMap {route} />{:else if routeLoading}<p role="status" class="mt-4">正在读取路线…</p>{:else if routeError}<p role="alert" class="mt-4 text-red-700">{routeError}</p><button onclick={() => void loadRoute(activity!.id)} class="mt-2 text-primary underline">重新读取路线</button>{:else}<p class="mt-4 text-muted-foreground">此活动没有路线。</p>{/if}
   </section>

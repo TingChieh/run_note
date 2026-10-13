@@ -93,3 +93,11 @@ Index(
     Activity.activity_date.desc(),
     Activity.id.desc(),
 )
+
+Index(
+    "ix_activities_public_owner_date",
+    Activity.user_id,
+    Activity.activity_date.desc(),
+    Activity.id.desc(),
+    postgresql_where=Activity.visibility == "public",
+)

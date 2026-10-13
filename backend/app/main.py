@@ -11,9 +11,11 @@ from app.db.schema import get_expected_revision
 from app.db.session import create_session_factory
 from app.modules.activities.router import router as activities_router
 from app.modules.auth.router import router as auth_router
+from app.modules.footprints.router import router as footprints_router
 from app.modules.gpx.body_limit import GpxBodyLimit
 from app.modules.gpx.router import router as gpx_router
 from app.modules.health.router import router
+from app.modules.sharing.router import router as sharing_router
 from app.modules.statistics.router import router as statistics_router
 from app.modules.users.router import router as users_router
 
@@ -43,6 +45,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(gpx_router)
     app.include_router(activities_router)
     app.include_router(statistics_router)
+    app.include_router(footprints_router)
     app.include_router(auth_router)
     app.include_router(users_router)
+    app.include_router(sharing_router)
     return app

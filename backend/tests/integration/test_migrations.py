@@ -92,7 +92,7 @@ def test_upgrade_paths_preserve_baseline_and_are_idempotent(variable):
                 if "alembic_version" in before
                 else []
             )
-        if revisions != ["0003_gpx_storage"]:
+        if revisions != ["0004_public_sharing"]:
             with TestClient(
                 create_app(Settings(database_url=url, app_env="test", _env_file=None))
             ) as client:
@@ -101,7 +101,7 @@ def test_upgrade_paths_preserve_baseline_and_are_idempotent(variable):
         migrate(url, "upgrade", "head")
         with engine.connect() as c:
             assert c.scalars(text("SELECT version_num FROM alembic_version")).all() == [
-                "0003_gpx_storage"
+                "0004_public_sharing"
             ]
             assert set(inspect(c).get_table_names()) - before <= {
                 "alembic_version",
@@ -113,6 +113,7 @@ def test_upgrade_paths_preserve_baseline_and_are_idempotent(variable):
                 "gpx_imports",
                 "activity_segments",
                 "activity_points",
+                "activity_share_links",
             }
             if spatial:
                 assert spatial_hash(c) == spatial
@@ -210,7 +211,12 @@ def test_owner_fingerprint_uniqueness_and_nullable_canonical(db):
             insert(a, raw, canonical, target)
     insert(a, "e")
     insert(a, "f")
-    assert db.scalar(text("SELECT count(*) FROM gpx_imports")) == 4
+    assert (
+        db.scalar(
+            text("SELECT count(*) FROM gpx_imports WHERE user_id IN (:a,:b)"), {"a": a, "b": b}
+        )
+        == 4
+    )
 
 
 @pytest.mark.parametrize(
@@ -303,7 +309,8 @@ def test_zero_length_line_single_point_and_microseconds_roundtrip(db):
 
 
 @pytest.mark.parametrize(
-    "rows", [["0001_postgis"], ["0002_auth"], ["unknown"], [], ["0003_gpx_storage", "unexpected"]]
+    "rows",
+    [["0001_postgis"], ["0002_auth"], ["unknown"], [], ["0004_public_sharing", "unexpected"]],
 )
 def test_ready_requires_exact_release_revision_and_live_stays_available(db, rows):
     db.execute(
@@ -471,15 +478,17 @@ def test_golden_six_points_preserve_order_null_elevation_and_geography(db):
     rows = db.execute(
         text(
             "SELECT point_index,source_point_index,ST_X(position),ST_Y(position),"
-            "elevation_m FROM activity_points ORDER BY point_index"
-        )
+            "elevation_m FROM activity_points WHERE segment_id=:segment ORDER BY point_index"
+        ),
+        {"segment": segment},
     ).all()
     assert [r[0] for r in rows] == [0, 1, 2, 3, 4, 5]
     assert [r[1] for r in rows] == [0, 1, 2, 3, 4, 5]
     assert [r[2] for r in rows] == pytest.approx([0, 0.002, 0.004, 0.006, 0.008, 0.01])
     assert all(r[3] == 0 and r[4] is None for r in rows)
     assert db.scalar(
-        text("SELECT ST_Length(geom::geography) FROM activity_segments")
+        text("SELECT ST_Length(geom::geography) FROM activity_segments WHERE id=:segment"),
+        {"segment": segment},
     ) == pytest.approx(1113.194908, abs=0.001)
     rejected(db, "UPDATE activity_points SET elevation_m='NaN' WHERE point_index=0")
     rejected(db, "UPDATE activity_points SET point_index=-1 WHERE point_index=0")

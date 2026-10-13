@@ -15,6 +15,10 @@ export const handle: Handle = async ({ event, resolve }) => {
   }
   const response = await resolve(event);
   response.headers.set('Cache-Control', 'no-store');
+  if (/^\/(shared|public|u)(\/|$)/.test(event.url.pathname)) {
+    response.headers.set('Referrer-Policy','no-referrer');
+    response.headers.set('X-Robots-Tag','noindex, nofollow');
+  }
   response.headers.append('Vary', 'Cookie');
   return response;
 };

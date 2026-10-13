@@ -14,6 +14,8 @@ def view(user):
         display_name=user.display_name,
         timezone=user.timezone,
         created_at=user.created_at,
+        bio=user.bio,
+        profile_is_public=user.profile_is_public,
     )
 
 

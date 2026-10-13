@@ -3,6 +3,7 @@ export interface Activity {
   id: string; title: string; activity_date: string; timezone: string;
   started_at: string | null; ended_at: string | null; distance_m: Metric; elapsed_seconds: Metric;
   avg_pace_seconds_per_km: Metric; temporal_quality: 'complete' | 'incomplete' | 'invalid' | 'manual';
+  visibility: 'private' | 'unlisted' | 'public'; allow_shared_route: boolean;
   quality_summary: Record<string, unknown>; metrics_version: string; has_route: boolean; created_at: string;
 }
 export interface ActivityList { items: Activity[]; total: number; limit: number; offset: number }

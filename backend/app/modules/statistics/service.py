@@ -53,10 +53,12 @@ def expressions():
     ]
 
 
-def query(db, owner, start=None, end=None, *, daily=False):
+def query(db, owner, start=None, end=None, *, daily=False, public_only=False):
     statement = select(*([A.activity_date.label("date")] if daily else []), *expressions()).where(
         A.user_id == owner
     )
+    if public_only:
+        statement = statement.where(A.visibility == "public")
     if start is not None:
         statement = statement.where(A.activity_date >= start, A.activity_date < end)
     if daily:
@@ -83,14 +85,14 @@ def finalize(raw):
     return Summary(**values)
 
 
-def summary(db, owner, start=None, end=None):
+def summary(db, owner, start=None, end=None, *, public_only=False):
     validate_range(start, end, optional=True)
-    return finalize(query(db, owner, start, end)[0])
+    return finalize(query(db, owner, start, end, public_only=public_only)[0])
 
 
-def calendar(db, owner, year, metric):
+def calendar(db, owner, year, metric, *, public_only=False):
     start, end = date(year, 1, 1), date(year + 1, 1, 1)
-    rows = query(db, owner, start, end, daily=True)
+    rows = query(db, owner, start, end, daily=True, public_only=public_only)
     indexed = {r["date"]: r for r in rows}
     days = []
     current = start

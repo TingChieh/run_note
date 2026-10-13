@@ -9,7 +9,7 @@
   let checking = $state(false), busy = $state(false), mounted = $state(false), message = $state('');
   const navigation = [
     { href: '/', label: '项目概览' }, { href: '/activities', label: '跑步记录' },
-    { href: '/dashboard', label: '运动统计' }, { href: '/settings', label: '设置' }
+    { href: '/footprints', label: '个人足迹' }, { href: '/dashboard', label: '运动统计' }, { href: '/settings', label: '设置' }
   ];
   async function logout() {
     if (busy) return; busy = true; message = '';
