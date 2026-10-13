@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
@@ -19,6 +19,47 @@ class Settings(BaseSettings):
     site_origin: str = "http://localhost:5173"
     auth_rate_hash_key: SecretStr | None = None
     auth_trusted_proxies: tuple[str, ...] = ()
+    ai_base_url: str | None = None
+    ai_model: str | None = Field(default=None, min_length=1, max_length=100)
+    ai_api_key: SecretStr | None = None
+    ai_daily_limit: int = Field(default=5, ge=1, le=100)
+    ai_total_timeout_seconds: float = Field(default=30, ge=1, le=30)
+
+    @property
+    def ai_configured(self) -> bool:
+        return bool(
+            self.ai_base_url
+            and self.ai_model
+            and self.ai_api_key
+            and self.ai_api_key.get_secret_value().strip()
+        )
+
+    @field_validator("ai_base_url")
+    @classmethod
+    def validate_ai_url(cls, value):
+        from urllib.parse import urlsplit
+
+        if value is None:
+            return None
+        try:
+            url = urlsplit(value)
+            port = url.port
+        except ValueError:
+            raise ValueError("AI_BASE_URL must be a fixed HTTP(S) API base URL") from None
+        if (
+            url.scheme not in {"http", "https"}
+            or not url.hostname
+            or url.username
+            or url.password
+            or url.query
+            or url.fragment
+            or port == 0
+            or any(c.isspace() for c in value)
+        ):
+            raise ValueError("AI_BASE_URL must be a fixed HTTP(S) API base URL")
+        if url.scheme == "http" and url.hostname not in {"localhost", "127.0.0.1", "::1"}:
+            raise ValueError("Non-loopback AI endpoints require HTTPS")
+        return value.rstrip("/")
 
     @field_validator("site_origin")
     @classmethod

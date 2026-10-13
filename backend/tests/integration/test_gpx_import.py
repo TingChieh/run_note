@@ -28,7 +28,7 @@ def clients():
     engine = create_engine(url, hide_parameters=True)
     with engine.connect() as c:
         assert c.execute(text("SELECT version_num FROM alembic_version")).scalars().all() == [
-            "0004_public_sharing"
+            "0005_ai_reports"
         ]
     settings = Settings(
         database_url=url, site_origin=ORIGIN, auth_rate_hash_key=uuid4().hex, _env_file=None

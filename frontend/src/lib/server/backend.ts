@@ -10,7 +10,7 @@ export async function backendRequest(path: string, request: Request, method = 'G
   if (url.origin !== target.origin || !url.pathname.startsWith('/api/')) throw new Error('Invalid API path');
   const headers = new Headers();
   // Never synthesize Origin or trust client forwarding headers. FastAPI checks the real source.
-  for (const name of ['cookie', 'origin', 'referer', 'x-csrf-token', 'content-type', 'accept']) {
+  for (const name of ['cookie', 'origin', 'referer', 'x-csrf-token', 'content-type', 'accept', 'idempotency-key']) {
     const value = request.headers.get(name); if (value) headers.set(name, value);
   }
   return fetch(url, { method, headers, body, redirect: 'manual', cache: 'no-store', signal: AbortSignal.timeout(upstreamTimeout(path, method)) });

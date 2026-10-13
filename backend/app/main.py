@@ -10,6 +10,8 @@ from app.core.security import utc_now
 from app.db.schema import get_expected_revision
 from app.db.session import create_session_factory
 from app.modules.activities.router import router as activities_router
+from app.modules.ai_reports.provider import OpenAIProvider
+from app.modules.ai_reports.router import router as ai_router
 from app.modules.auth.router import router as auth_router
 from app.modules.footprints.router import router as footprints_router
 from app.modules.gpx.body_limit import GpxBodyLimit
@@ -35,6 +37,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Run Note API", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
+    app.state.ai_provider = OpenAIProvider()
     app.state.clock = utc_now
     app.state.session_factory = session_factory
     app.state.expected_revision = expected_revision
@@ -49,4 +52,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router)
     app.include_router(users_router)
     app.include_router(sharing_router)
+    app.include_router(ai_router)
     return app

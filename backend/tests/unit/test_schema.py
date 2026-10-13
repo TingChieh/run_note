@@ -4,7 +4,7 @@ import pytest
 def test_release_head_follows_complete_chain():
     from app.db.schema import get_expected_revision
 
-    assert get_expected_revision() == "0004_public_sharing"
+    assert get_expected_revision() == "0005_ai_reports"
 
 
 @pytest.mark.parametrize("revisions", [[], [("a", None), ("b", None)]])
@@ -28,6 +28,7 @@ def test_model_registry_and_autogenerate_preserve_unmanaged_tables():
     expected = {
         "users",
         "activity_share_links",
+        "ai_reports",
         "auth_sessions",
         "auth_rate_buckets",
         "activities",
@@ -47,4 +48,4 @@ def test_revision_discovery_does_not_depend_on_working_directory(tmp_path, monke
     from app.db.schema import get_expected_revision
 
     monkeypatch.chdir(tmp_path)
-    assert get_expected_revision() == "0004_public_sharing"
+    assert get_expected_revision() == "0005_ai_reports"

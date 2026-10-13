@@ -41,7 +41,7 @@ def test_migration_enables_postgis_and_spatial_functions(database_url):
         with engine.connect() as connection:
             assert (
                 connection.scalar(text("SELECT version_num FROM alembic_version"))
-                == "0004_public_sharing"
+                == "0005_ai_reports"
             )
             distance = connection.scalar(
                 text(

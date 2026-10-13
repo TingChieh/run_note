@@ -37,7 +37,7 @@ def auth_database():
             with engine.connect() as connection:
                 assert connection.execute(
                     text("SELECT version_num FROM alembic_version")
-                ).scalars().all() == ["0004_public_sharing"], (
+                ).scalars().all() == ["0005_ai_reports"], (
                     "Existing isolated test schema must already be current"
                 )
         finally:

@@ -45,4 +45,4 @@ export function safeNext(value: string | null): string {
   if (/^\/(login|register|api)(\/|$)/.test(path)) return '/settings';
   return value;
 }
-export function isProtected(path: string): boolean { return /^\/(activities|dashboard|footprints|settings)(\/|$)/.test(path); }
+export function isProtected(path: string): boolean { return /^\/(activities|dashboard|footprints|settings|ai)(\/|$)/.test(path); }

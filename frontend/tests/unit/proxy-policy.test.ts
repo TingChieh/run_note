@@ -1,5 +1,10 @@
 import { expect, it } from 'vitest';
 import { readProxyBody, upstreamTimeout } from '../../src/lib/server/proxy-policy';
+it('reserves the AI generation deadline only for explicit report creation', () => {
+  expect(upstreamTimeout('/api/v1/ai-reports', 'POST')).toBe(40000);
+  expect(upstreamTimeout('/api/v1/ai-reports', 'GET')).toBe(8000);
+  expect(upstreamTimeout('/api/v1/ai-reports/other', 'POST')).toBe(8000);
+});
 it('extends only the exact GPX upload timeout', () => {
   expect(upstreamTimeout('/api/v1/gpx-imports?x=1', 'POST')).toBe(45000);
   expect(upstreamTimeout('/api/v1/auth/login', 'POST')).toBe(8000);

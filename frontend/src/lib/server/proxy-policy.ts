@@ -1,6 +1,6 @@
 const MAX_UPLOAD_BODY = 11 * 1024 * 1024;
 export const isGpxUpload = (path: string, method: string) => method === 'POST' && path.split('?')[0] === '/api/v1/gpx-imports';
-export const upstreamTimeout = (path: string, method: string) => isGpxUpload(path, method) ? 45000 : 8000;
+export const upstreamTimeout = (path: string, method: string) => isGpxUpload(path, method) ? 45000 : method === 'POST' && path.split('?')[0] === '/api/v1/ai-reports' ? 40000 : 8000;
 export class ProxyBodyError extends Error { status = 413; }
 export async function readProxyBody(request: Request, upload: boolean): Promise<ArrayBuffer | undefined> {
   if (['GET', 'HEAD'].includes(request.method)) return undefined;
