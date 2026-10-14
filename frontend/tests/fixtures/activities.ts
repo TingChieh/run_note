@@ -9,7 +9,7 @@ export const sampleActivity: Activity = {
 };
 export const incompleteActivity: Activity = { ...sampleActivity, id: '22222222-2222-4222-8222-222222222222', title: '缺少时间的长标题记录，用于检查手机布局和质量提示', activity_date: '2026-10-12', elapsed_seconds: null, avg_pace_seconds_per_km: null, temporal_quality: 'incomplete', visibility: 'unlisted', has_route: false, quality_summary: { missing_time_count: 2, warnings: ['TIME_INCOMPLETE'] } };
 export async function loginRunner(page: Page) {
-  await page.goto('/login');
+  await page.goto('/login?next=%2Fsettings');
   await page.getByLabel('邮箱', { exact: true }).fill('runner@example.com');
   await page.getByLabel('密码', { exact: true }).fill('Synthetic-ui-password-2026');
   await page.getByRole('button', { name: '登录', exact: true }).click();

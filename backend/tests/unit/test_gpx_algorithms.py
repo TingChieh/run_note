@@ -164,7 +164,10 @@ def test_authoritative_speed_threshold(distance, expected):
     "root",
     [
         b'<gpx version="1.1"/>',
-        b'<gpx xmlns="http://www.topografix.com/GPX/1/1" version="1.0"/>',
+        b'<gpx xmlns="http://www.topografix.com/GPX/1/1" version="1.2"/>',
+        b'<gpx xmlns="https://example.com/GPX/1/1" version="1.1"/>',
+        b'<other xmlns="http://www.topografix.com/GPX/1/1" version="1.1"/>',
+        b'<gpx xmlns="http://www.topografix.com/GPX/1/1"/>',
         b"<!DOCTYPE gpx><gpx/>",
     ],
 )
@@ -173,6 +176,23 @@ def test_root_namespace_version_and_dtd_are_strict(root):
     with pytest.raises(ApiError) as caught:
         parse(root)
     assert caught.value.code == "GPX_XML_INVALID"
+
+
+@pytest.mark.parametrize("version,namespace_version", [("1.0", "1/1"), ("1.1", "1/0")])
+def test_export_with_mismatched_version_preserves_track_data(version, namespace_version):
+    parse, prepare, derive, canonical = modules()
+    standard = xml(point() + point("0.001", "2024-01-01T00:01:00Z"))
+    exported = standard.replace(b'version="1.1"', f'version="{version}"'.encode()).replace(
+        b"GPX/1/1", f"GPX/{namespace_version}".encode()
+    )
+    parsed = parse(exported)
+    assert parsed.counts["input_point_count"] == 2
+    assert parsed.tracks == parse(standard).tracks
+    assert canonical(parsed) == canonical(parse(standard))
+    result = derive(parsed, prepare(parsed), [[111.319490793]], "UTC", None)
+    assert result.temporal_quality == "complete"
+    assert result.elapsed_seconds == 60
+    assert result.activity_date == date(2024, 1, 1)
 
 
 def slow_target(raw, pipe):

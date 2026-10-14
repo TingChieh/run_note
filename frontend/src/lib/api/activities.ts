@@ -1,3 +1,4 @@
+import { dashboardDistance } from './dashboard-format';
 export type Metric = number | string | null;
 export interface Activity {
   id: string; title: string; activity_date: string; timezone: string;
@@ -76,7 +77,7 @@ export async function uploadGpx(form: FormData, fetcher: typeof fetch = fetch): 
   return { activity: parseActivity(value.activity), warnings: value.warnings };
 }
 export const formatDate = (value: string) => calendarDate(value) ? value : '—';
-export const formatDistance = (value: Metric) => number(value) === null ? '—' : `${(number(value)! / 1000).toFixed(3)} km`;
+export const formatDistance = (value: Metric) => dashboardDistance(number(value));
 export function formatDuration(value: Metric): string {
   const n = number(value); if (n === null) return '—';
   const seconds = Math.round(n), hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds / 60) % 60;

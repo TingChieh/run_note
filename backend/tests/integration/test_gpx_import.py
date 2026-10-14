@@ -28,7 +28,7 @@ def clients():
     engine = create_engine(url, hide_parameters=True)
     with engine.connect() as c:
         assert c.execute(text("SELECT version_num FROM alembic_version")).scalars().all() == [
-            "0005_ai_reports"
+            "0006_running_goals"
         ]
     settings = Settings(
         database_url=url, site_origin=ORIGIN, auth_rate_hash_key=uuid4().hex, _env_file=None
@@ -82,6 +82,33 @@ def test_import_requires_identity_and_source_before_parsing(clients):
     register(a)
     assert upload(a, extra_headers={"Origin": "https://evil.example"}).status_code == 403
     assert upload(a, extra_headers={"X-CSRF-Token": "bad"}).status_code == 403
+
+
+def test_mismatched_export_version_imports_and_preserves_original(clients):
+    a, b, engine, _ = clients
+    owner = register(a)
+    register(b)
+    raw = (FIXTURES / "equator-six.gpx").read_bytes().replace(b'version="1.1"', b'version="1.0"')
+    response = upload(a, raw=raw)
+    assert response.status_code == 201, response.json()
+    data = response.json()["data"]
+    activity = data["activity"]
+    identifier = activity["id"]
+    assert data["point_count"] == 6
+    assert data["segment_count"] == 1
+    assert float(activity["distance_m"]) == pytest.approx(1113.195, abs=0.001)
+    assert float(activity["elapsed_seconds"]) == 600
+    assert activity["visibility"] == "private"
+    assert a.get(f"/api/v1/activities/{identifier}/route").status_code == 200
+    assert b.get(f"/api/v1/activities/{identifier}/route").status_code == 404
+    assert upload(a).status_code == 409  # Same track with a standard header is still a duplicate.
+    with engine.connect() as c:
+        saved = c.execute(
+            text("SELECT raw_gpx,user_id FROM gpx_imports WHERE activity_id=:id"),
+            {"id": identifier},
+        ).one()
+        assert bytes(saved.raw_gpx) == raw
+        assert str(saved.user_id) == owner
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda c: c["id"])

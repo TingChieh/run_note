@@ -5,11 +5,11 @@ const populated = { ...empty, activity_count: 2, distance_m: '10246.912', durati
 async function fixture(page: Page) {
   const state = { cumulativeFailures: 0, summaryFailures: 0, calendarFailures: 0, trendFailures: 0, dayFailures: 0, expired: false };
   await page.route('**/api/v1/statistics/**', async route => {
-    const url = new URL(route.request().url()); const year = Number(url.searchParams.get('year') ?? url.searchParams.get('date_from')?.slice(0,4) ?? '2026');
+    const url = new URL(route.request().url()); if (url.pathname.endsWith('/streaks')) return route.fallback(); const year = Number(url.searchParams.get('year') ?? url.searchParams.get('date_from')?.slice(0,4) ?? '2026');
     const summary = year === 2026 ? populated : empty;
     const send = (data: unknown, status = 200) => route.fulfill({ status, json: { data, error: status >= 400 ? { message: '统计暂时不可用' } : null } });
     if (state.expired) return send(null,401);
-    if (url.pathname.endsWith('/summary')) { if (!url.searchParams.has('date_from') && state.cumulativeFailures-- > 0) return send(null,503); if (url.searchParams.has('date_from') && state.summaryFailures-- > 0) return send(null,503); return send(summary); }
+    if (url.pathname.endsWith('/summary')) { if (!url.searchParams.has('date_from') && state.cumulativeFailures-- > 0) return send(null,503); if (url.searchParams.get('date_from')?.endsWith('-01-01') && url.searchParams.get('date_to') === `${year+1}-01-01` && state.summaryFailures-- > 0) return send(null,503); return send(summary); }
     if (url.pathname.endsWith('/calendar')) {
       if (state.calendarFailures-- > 0) return send(null,503);
       const days = [];
@@ -43,6 +43,44 @@ async function capture(page: Page, name: string) {
   await page.evaluate(async () => { (document.activeElement as HTMLElement)?.blur(); window.scrollTo(0,0); await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); });
   await page.screenshot({path:`test-results/dashboard-${name}.png`,fullPage:false});
 }
+test('home opens data summary, preserves filters and exposes all feature entrances', async ({ page, request }) => {
+  const redirect = await request.get('/?year=2026&metric=count', { maxRedirects: 0 });
+  expect(redirect.status()).toBe(303);
+  expect(redirect.headers().location).toBe('/dashboard?year=2026&metric=count');
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/login\?next=%2Fdashboard/);
+  await fixture(page);
+  await page.goto('/login');
+  await page.getByLabel('邮箱', { exact: true }).fill('runner@example.com');
+  await page.getByLabel('密码', { exact: true }).fill('Synthetic-ui-password-2026');
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard/);
+  await page.goto('/?year=2026&metric=count');
+  await expect(page.getByRole('heading', { level: 1, name: '数据汇总', exact: true })).toBeVisible();
+  await expect(page.getByTestId('annual-distance')).toHaveText('10.2 km');
+  await expect(page.getByText(/GPX|导入/)).toHaveCount(0);
+  await expect(page.getByLabel('日历维度')).toHaveValue('count');
+  const nav = page.getByRole('navigation', { name: '主要导航' });
+  await expect(nav.getByRole('link', { name: '数据汇总', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(nav.getByRole('link', { name: '项目概览' })).toHaveCount(0);
+  const features = page.getByRole('navigation', { name: '功能入口' });
+  for (const [name, href] of [['跑步记录', '/activities'], ['个人足迹', '/footprints'], ['AI 分析', '/ai'], ['设置', '/settings']]) {
+    await expect(features.getByRole('link', { name: new RegExp(name) })).toHaveAttribute('href', href);
+  }
+  await features.getByRole('link', { name: /个人足迹/ }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/footprints$/);
+  await page.getByRole('link', { name: 'RunNote 数据汇总', exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1, name: '数据汇总', exact: true })).toBeVisible();
+  await expect(page.getByTestId('annual-distance')).toHaveText('10.2 km');
+  await expect(page.locator('.calendar')).toBeVisible();
+  for (const width of [320, 390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect(features).toBeVisible();
+    if (width === 390 || width === 1440) await capture(page, `home-${width}`);
+  }
+});
 test('populated dashboard: hierarchy, disclosure, calendar keyboard, date and chart controls', async ({page}) => {
   await fixture(page); await loginRunner(page); await page.goto('/dashboard?year=2026');
   await expect(page.getByTestId('annual-distance')).toHaveText('10.2 km');
@@ -56,7 +94,7 @@ test('populated dashboard: hierarchy, disclosure, calendar keyboard, date and ch
   await expect(page.getByRole('button',{name:/2026-10-12，/})).toBeFocused();
   await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
   await expect(page.getByRole('heading',{name:/2026-10-13 的活动/})).toBeVisible();
-  await expect(page.getByRole('link',{name:/河畔晨跑/})).toBeVisible();
+  await expect(page.locator('.day-activity').filter({hasText:'河畔晨跑'})).toBeVisible();
   await expect(page).toHaveURL(/day=2026-10-13/);
   await page.getByLabel('日历维度').selectOption('count');
   await expect(page).toHaveURL(/metric=count/);
@@ -82,9 +120,10 @@ test('populated dashboard: hierarchy, disclosure, calendar keyboard, date and ch
   await page.getByRole('heading',{name:'运动趋势',exact:true}).scrollIntoViewIfNeeded();
   await page.screenshot({path:'test-results/dashboard-mobile-trend.png',fullPage:false});
 });
-test('empty years, leap year, year controls, compact import guidance and reload', async ({page}) => {
+test('empty years, leap year, year controls, activity navigation and reload', async ({page}) => {
   await fixture(page); await loginRunner(page); await page.goto('/dashboard?year=2025');
   await expect(page.getByTestId('trend-empty')).toBeVisible(); await expect(page.locator('canvas')).toHaveCount(0);
+  await expect(page.getByText(/GPX|导入/)).toHaveCount(0);
   await capture(page,'desktop-empty');
   await page.getByRole('button',{name:'上一年',exact:true}).click();
   await expect(page.getByRole('button',{name:/2024-02-29，/})).toHaveCount(1);
@@ -93,7 +132,7 @@ test('empty years, leap year, year controls, compact import guidance and reload'
   await expect(page.getByLabel('年份',{exact:true})).toHaveValue('2025');
   await page.setViewportSize({width:390,height:1100}); await capture(page,'mobile-empty');
   await page.getByTestId('trend-empty').scrollIntoViewIfNeeded(); await page.screenshot({path:'test-results/dashboard-mobile-empty-trend.png',fullPage:false});
-  await page.getByTestId('trend-empty').getByRole('link',{name:'导入 GPX'}).click(); await expect(page).toHaveURL(/\/activities$/);
+  await page.getByTestId('trend-empty').getByRole('link',{name:'查看跑步记录'}).click(); await expect(page).toHaveURL(/\/activities$/);
 });
 test('statistics and date errors have independent retries; session expiry redirects', async ({page}) => {
   const state = await fixture(page); state.cumulativeFailures=1; state.summaryFailures=1; state.calendarFailures=1; state.trendFailures=1;
@@ -106,7 +145,7 @@ test('statistics and date errors have independent retries; session expiry redire
   await expect(page.getByTestId('annual-distance')).toHaveText('10.2 km');
   await expect(page.locator('canvas')).toBeVisible();
   state.dayFailures=1; await page.getByRole('button',{name:/2026-10-13，/}).click();
-  await page.getByRole('button',{name:'重试当天活动'}).click(); await expect(page.getByRole('link',{name:/河畔晨跑/})).toBeVisible();
+  await page.getByRole('button',{name:'重试当天活动'}).click(); await expect(page.locator('.day-activity').filter({hasText:'河畔晨跑'})).toBeVisible();
   state.trendFailures=1; await page.getByLabel('趋势周期').selectOption('week');
   await page.getByRole('button',{name:'重新读取趋势'}).click(); await expect(page.locator('canvas')).toBeVisible();
   state.expired=true; await page.getByRole('button',{name:'上一年',exact:true}).click(); await expect(page).toHaveURL(/login\?reason=expired/);
@@ -115,7 +154,7 @@ test('statistics and date errors have independent retries; session expiry redire
 test('year input, boundaries, URL date restore and slow previous-year response', async ({page}) => {
   await fixture(page); await loginRunner(page);
   await page.goto('/dashboard?year=2026&day=2026-10-13&metric=count&period=week');
-  await expect(page.getByRole('link',{name:/河畔晨跑/})).toBeVisible();
+  await expect(page.locator('.day-activity').filter({hasText:'河畔晨跑'})).toBeVisible();
   await expect(page.getByLabel('日历维度')).toHaveValue('count');
   await expect(page.getByLabel('趋势周期')).toHaveValue('week');
   await page.getByLabel('年份',{exact:true}).fill('abc'); await page.getByRole('button',{name:'查看',exact:true}).click();

@@ -14,7 +14,7 @@ async function register(page: Page, user: ReturnType<typeof identity>) {
   await page.getByLabel('用户名', { exact: true }).fill(user.username);
   await page.getByLabel('密码', { exact: true }).fill(password);
   await page.getByRole('button', { name: '注册', exact: true }).click();
-  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page).toHaveURL(/\/dashboard$/);
 }
 
 test('GPX upload works while forged Origin, missing CSRF and cross-user writes stay blocked', async ({ browser, baseURL }) => {

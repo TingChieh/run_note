@@ -1,6 +1,7 @@
 <script lang="ts">
   import PageHeader from '#lib/components/PageHeader.svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
+  import DatePicker from '#lib/components/DatePicker.svelte';
   import { onMount } from 'svelte';
   import { page } from '$app/state';
   import FootprintMap from '#lib/components/FootprintMap.svelte';
@@ -37,7 +38,7 @@
     <form onsubmit={e=>{e.preventDefault();void load();}} class="filter-controls">
       <label>时间筛选<select aria-label="时间筛选" bind:value={selection.filter}><option value="year">按年份</option><option value="range">日期范围</option></select></label>
       {#if selection.filter==='year'}<label>年份<input aria-label="年份" type="number" min="1900" max="2100" step="1" bind:value={selection.year} required /></label>
-      {:else}<label>开始日期<input aria-label="开始日期" type="date" min="1900-01-01" max="2100-12-31" bind:value={selection.from} required /></label><label>结束日期（含当天）<input aria-label="结束日期（含当天）" type="date" min={selection.from} max="2100-12-31" bind:value={selection.to} required /></label>{/if}
+      {:else}<DatePicker label="开始日期" bind:value={selection.from} timezone={page.data.user?.timezone ?? 'UTC'} required /><DatePicker label="结束日期（含当天）" bind:value={selection.to} min={selection.from || '1900-01-01'} timezone={page.data.user?.timezone ?? 'UTC'} required />{/if}
       <button disabled={!mounted} class="apply-button">应用筛选</button>
     </form>
   </details>

@@ -4,7 +4,7 @@ const activity = { id: '11111111-1111-4111-8111-111111111111', title: '晨跑', 
 const envelope = (data: unknown) => Response.json({ data, error: null });
 describe('activity display and privacy boundary', () => {
   it('preserves calendar dates and never turns missing metrics into zero', () => {
-    expect(formatDate('2026-10-12')).toBe('2026-10-12'); expect(formatDistance('1234.567')).toBe('1.235 km');
+    expect(formatDate('2026-10-12')).toBe('2026-10-12'); expect(formatDistance('1234.567')).toBe('1.2 km');
     expect(formatDistance(null)).toBe('—'); expect(formatDuration(null)).toBe('—'); expect(formatDuration(3661)).toBe('1:01:01');
     expect(formatPace(null)).toBe('—'); expect(formatPace('359.9')).toBe('6:00 /km');
   });

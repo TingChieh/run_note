@@ -1,5 +1,6 @@
 from datetime import date
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
@@ -9,10 +10,19 @@ from app.core.responses import ApiResponse
 from app.modules.activities.router import envelope
 from app.modules.statistics import service
 from app.modules.statistics.schema import Calendar, Summary, Trends
+from app.modules.statistics.streaks import read_streaks
 
 router = APIRouter(prefix="/api/v1/statistics", tags=["statistics"])
 Identity = Annotated[tuple, Depends(get_identity)]
 Database = Annotated[Session, Depends(get_session)]
+
+
+@router.get("/streaks")
+def streaks(request: Request, identity: Identity, db: Database):
+    today = request.app.state.clock().astimezone(ZoneInfo(identity[1].timezone)).date()
+    data = read_streaks(db, identity[1].id, today)
+    db.commit()
+    return envelope(request, data)
 
 
 @router.get("/calendar", response_model=ApiResponse[Calendar])

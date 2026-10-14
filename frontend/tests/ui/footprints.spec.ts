@@ -17,6 +17,41 @@ async function fixture(page: Page) {
 }
 async function ready(page:Page){await expect(page.getByTestId('footprint-map-ready')).toBeVisible();}
 async function capture(page:Page,name:string){await page.evaluate(async()=>{(document.activeElement as HTMLElement)?.blur();scrollTo(0,0);await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});await page.screenshot({path:`test-results/footprints-${name}.png`,fullPage:false});}
+test('themed date picker supports keyboard selection, range limits and narrow screens',async({page})=>{
+  const state=await fixture(page);await loginRunner(page);await page.goto('/footprints?filter=range&from=2026-10-01&to=2026-12-31');await ready(page);
+  const start=page.getByRole('button',{name:'选择开始日期',exact:true});
+  await start.focus();await page.keyboard.press('Enter');
+  const calendar=page.getByRole('dialog',{name:'选择开始日期',exact:true});
+  const selected=calendar.getByRole('button',{name:'2026年10月1日',exact:true});
+  await expect(selected).toBeFocused();await expect(selected).toHaveAttribute('aria-pressed','true');
+  expect(await selected.evaluate(el=>getComputedStyle(el).backgroundColor)).toBe('rgb(23, 116, 92)');
+  await calendar.getByRole('button',{name:'下个月',exact:true}).click();await page.keyboard.press('Tab');
+  await expect(calendar.getByRole('button',{name:'2026年11月1日',exact:true})).toBeFocused();
+  await page.keyboard.press('PageUp');await expect(selected).toBeFocused();
+  await page.keyboard.press('ArrowRight');await page.keyboard.press('Enter');
+  await expect(page.getByLabel('开始日期',{exact:true})).toHaveValue('2026-10-02');await expect(start).toBeFocused();
+  await page.getByRole('button',{name:'选择结束日期（含当天）',exact:true}).click();
+  const endCalendar=page.getByRole('dialog',{name:'选择结束日期（含当天）',exact:true});
+  await endCalendar.getByLabel('月份',{exact:true}).selectOption('9');
+  await expect(endCalendar.getByRole('button',{name:'2026年10月1日',exact:true})).toBeDisabled();
+  await endCalendar.getByRole('button',{name:'2026年10月13日',exact:true}).click();
+  await page.getByRole('button',{name:'应用筛选'}).click();await ready(page);
+  expect(state.requests.at(-1)?.searchParams.get('date_to')).toBe('2026-10-14');
+  for(const width of [1440,390,320]){
+    await page.setViewportSize({width,height:844});
+    if(!await start.isVisible())await page.locator('.filter-panel > summary').click();
+    await start.click();await expect(calendar).toBeVisible();
+    const box=(await calendar.boundingBox())!;expect(box.x).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(width);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await page.screenshot({path:`test-results/date-picker-${width}.png`});
+    await page.keyboard.press('Escape');await expect(calendar).toBeHidden();await expect(start).toBeFocused();
+  }
+  await start.click();await calendar.getByRole('button',{name:'清除',exact:true}).click();
+  await expect(page.getByLabel('开始日期',{exact:true})).toHaveValue('');
+  const requestCount=state.requests.length;await page.getByRole('button',{name:'应用筛选'}).click();expect(state.requests).toHaveLength(requestCount);
+  await start.click();await calendar.getByRole('button',{name:'今天',exact:true}).click();
+  await expect(page.getByLabel('开始日期',{exact:true})).not.toHaveValue('');
+});
 test('map-first modes and collapsible filters preserve ranges, legend and keyboard data access',async({page})=>{
   const state=await fixture(page);await loginRunner(page);await page.goto('/footprints?year=2026');await ready(page);
   await expect(page.getByRole('button',{name:'轨迹叠加',exact:true})).toHaveAttribute('aria-pressed','true');
@@ -27,15 +62,15 @@ test('map-first modes and collapsible filters preserve ranges, legend and keyboa
   await page.getByText('查看热区数据',{exact:false}).click();
   await page.getByRole('button',{name:'定位热区 1'}).focus();await page.keyboard.press('Enter');
   await expect(page.getByRole('status').filter({hasText:'所选网格：2 条不同运动记录'})).toBeVisible();
-  await page.getByLabel('时间筛选').selectOption('range');await page.getByLabel('开始日期').fill('2026-10-12');await page.getByLabel('结束日期（含当天）').fill('2026-10-13');
+  await page.getByLabel('时间筛选').selectOption('range');await page.getByLabel('开始日期',{exact:true}).fill('2026-10-12');await page.getByLabel('结束日期（含当天）',{exact:true}).fill('2026-10-13');
   await page.getByRole('button',{name:'应用筛选'}).click();await ready(page);
   expect(state.requests.at(-1)?.searchParams.get('date_to')).toBe('2026-10-14');
-  await page.reload();await ready(page);await expect(page.getByLabel('开始日期')).toHaveValue('2026-10-12');
+  await page.reload();await ready(page);await expect(page.getByLabel('开始日期',{exact:true})).toHaveValue('2026-10-12');
   await page.setViewportSize({width:1440,height:1400});await capture(page,'desktop-heatmap');
   await page.setViewportSize({width:390,height:1000});await page.reload();await ready(page);
   await expect(page.getByLabel('时间筛选')).toBeHidden();
   await page.locator('.filter-panel > summary').focus();await page.keyboard.press('Enter');
-  await expect(page.getByLabel('开始日期')).toBeVisible();
+  await expect(page.getByLabel('开始日期',{exact:true})).toBeVisible();
   await page.locator('.filter-panel > summary').click();await capture(page,'mobile-heatmap');
   await page.locator('.map-toolbar').evaluate(el=>el.scrollIntoView({block:'start'}));await page.screenshot({path:'test-results/footprints-mobile-heatmap-map.png',fullPage:false});
 });
@@ -53,7 +88,7 @@ test('overlapping routes expose every hit and keyboard record selection links to
   for(const width of [320,390,768,1024,1440]){await page.setViewportSize({width,height:1000});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(await page.getByTestId('footprint-map-ready').evaluate(el=>el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(420);}
   await page.setViewportSize({width:390,height:1000});await page.locator('.filter-panel > summary').click();await capture(page,'mobile-tracks');
   await page.locator('.map-toolbar').evaluate(el=>el.scrollIntoView({block:'start'}));await page.screenshot({path:'test-results/footprints-mobile-tracks-map.png',fullPage:false});
-  await page.getByTestId('route-choices').getByRole('link').click();await expect(page).toHaveURL(new RegExp(`/activities/${sampleActivity.id}$`));await expect(page.getByRole('heading',{name:sampleActivity.title,exact:true})).toBeVisible();
+  await page.getByTestId('route-choices').getByRole('link').click();await expect(page).toHaveURL(new RegExp(`/activities/${sampleActivity.id}$`));await expect(page.getByRole('heading',{name:sampleActivity.title,exact:true,level:1})).toBeVisible();
 });
 test('single line and point render; empty filters, data and tile failures offer distinct retries',async({page})=>{
   const state=await fixture(page);state.scenario='single';await loginRunner(page);await page.goto('/footprints?year=2026');await ready(page);

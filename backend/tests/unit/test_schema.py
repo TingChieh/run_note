@@ -4,7 +4,7 @@ import pytest
 def test_release_head_follows_complete_chain():
     from app.db.schema import get_expected_revision
 
-    assert get_expected_revision() == "0005_ai_reports"
+    assert get_expected_revision() == "0006_running_goals"
 
 
 @pytest.mark.parametrize("revisions", [[], [("a", None), ("b", None)]])
@@ -29,6 +29,7 @@ def test_model_registry_and_autogenerate_preserve_unmanaged_tables():
         "users",
         "activity_share_links",
         "ai_reports",
+        "running_goals",
         "auth_sessions",
         "auth_rate_buckets",
         "activities",
@@ -48,4 +49,4 @@ def test_revision_discovery_does_not_depend_on_working_directory(tmp_path, monke
     from app.db.schema import get_expected_revision
 
     monkeypatch.chdir(tmp_path)
-    assert get_expected_revision() == "0005_ai_reports"
+    assert get_expected_revision() == "0006_running_goals"

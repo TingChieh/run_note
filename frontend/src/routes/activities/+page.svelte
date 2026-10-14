@@ -40,7 +40,7 @@
   onMount(() => { mounted = true; void load(); return () => { disposed = true; }; });
 </script>
 <svelte:head><title>跑步记录 · Run Note</title></svelte:head>
-<PageHeader title="跑步记录" description="每一次跑步，都值得留下。导入 GPX，回顾你的轨迹与运动表现。" />
+<PageHeader title="跑步记录" description="每一次跑步，都值得留下。导入 GPX，回顾你的轨迹与运动表现。">{#snippet actions()}<a href="/activities/wall" data-sveltekit-reload class="button-secondary">查看足迹墙</a>{/snippet}</PageHeader>
 <section class="import-card" aria-labelledby="import-title">
   <div class="flex flex-wrap items-baseline justify-between gap-2"><h2 id="import-title" class="text-xl font-semibold">导入 GPX</h2><span class="text-sm text-muted-foreground">新记录默认仅自己可见</span></div>
   <form method="POST" enctype="multipart/form-data" onsubmit={submit} class="mt-5" aria-busy={busy}>
@@ -61,7 +61,7 @@
   </form>
   {#if busy}<div class="mt-4"><FeedbackState kind="loading" title="正在上传、解析并保存"><p>较大文件可能需要数十秒，请勿重复提交。</p></FeedbackState></div>{/if}
   {#if message}<div class="mt-4"><FeedbackState kind="error" title={message}>{#if duplicateId}<a href={`/activities/${duplicateId}`} data-sveltekit-reload class="text-primary underline">查看已有活动</a>{:else}<p>可以重试当前文件；若格式有误，请选择修正后的 GPX。</p>{/if}</FeedbackState></div>{/if}
-  {#if successId}<div class="mt-4"><FeedbackState kind="success" title="导入成功。"><a href={`/activities/${successId}`} data-sveltekit-reload class="text-primary underline">查看活动与路线</a></FeedbackState></div>{/if}
+  {#if successId}<div class="mt-4"><FeedbackState kind="success" title="导入成功。"><a href={`/activities/${successId}`} data-sveltekit-reload class="text-primary underline">查看活动与路线</a><span aria-hidden="true"> · </span><a href="/activities/wall" data-sveltekit-reload class="text-primary underline">足迹卡片已生成，查看足迹墙</a></FeedbackState></div>{/if}
   {#if warnings.length}<div class="import-warnings"><p class="font-medium">导入完成，部分数据需要留意</p><ul class="mt-2 list-inside list-disc text-sm">{#each warnings as warning}<li>{warningLabel(warning)}</li>{/each}</ul></div>{/if}
 </section>
 <section class="mt-8" aria-labelledby="records-title">

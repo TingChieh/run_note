@@ -37,7 +37,8 @@ describe('authentication boundary', () => {
     await expect(authWrite('login', {}, async () => Response.json({ error: { code: 'AUTH_RATE_LIMITED', message: '请求过于频繁' } }, { status: 429, headers: { 'Retry-After': '20' } }))).rejects.toThrow('20 秒');
   });
   it('only allows local paths after authentication', () => {
+    expect(safeNext(null)).toBe('/dashboard');
     expect(safeNext('/settings?tab=me')).toBe('/settings?tab=me');
-    for (const value of ['https://evil.example', '//evil.example', '/\\evil.example', '/login', '/register', '/api/v1/me', '/%2f%2fevil.example', '/settings\n']) expect(safeNext(value)).toBe('/settings');
+    for (const value of ['https://evil.example', '//evil.example', '/\\evil.example', '/login', '/register', '/api/v1/me', '/%2f%2fevil.example', '/settings\n']) expect(safeNext(value)).toBe('/dashboard');
   });
 });

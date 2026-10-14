@@ -15,7 +15,7 @@ function invalid(): never { throw new ActivityError('统计服务返回了无效
 function base(v: unknown): v is Record<string, unknown> {
   return object(v) && ['activity_count','known_duration_count','missing_duration_count'].every(k => count(v[k])) && metric(v.distance_m) && metric(v.duration_sum_seconds, true) && Number(v.known_duration_count) + Number(v.missing_duration_count) === v.activity_count && (v.known_duration_count === 0 ? v.duration_sum_seconds === null : v.duration_sum_seconds !== null);
 }
-function summary(v: unknown): Summary {
+export function parseSummary(v: unknown): Summary {
   if (!base(v) || !['activity_days','pace_eligible_count','quality_warning_count'].every(k => count(v[k])) || !metric(v.pace_eligible_distance_m) || !metric(v.avg_pace_seconds_per_km, true) || v.date_assignment !== 'activity_local_date') invalid();
   return v as unknown as Summary;
 }
@@ -28,7 +28,7 @@ export function calendarCells(year: number): (string | null)[] {
   while (cells.length % 7) cells.push(null); return cells;
 }
 export async function readSummary(year?: number, fetcher: typeof fetch = fetch): Promise<Summary> {
-  return summary(await request(`/api/v1/statistics/summary${year === undefined ? '' : `?date_from=${year}-01-01&date_to=${year + 1}-01-01`}`, {}, fetcher));
+  return parseSummary(await request(`/api/v1/statistics/summary${year === undefined ? '' : `?date_from=${year}-01-01&date_to=${year + 1}-01-01`}`, {}, fetcher));
 }
 export async function readCalendar(year: number, selectedMetric: CalendarMetric, fetcher: typeof fetch = fetch): Promise<Calendar> {
   const dates = calendarCells(year).filter(Boolean), v = await request(`/api/v1/statistics/calendar?year=${year}&metric=${selectedMetric}`, {}, fetcher);
@@ -39,6 +39,6 @@ export async function readTrends(year: number, period: Trends['period'], fetcher
   const from = `${year}-01-01`, to = `${year + 1}-01-01`, v = await request(`/api/v1/statistics/trends?date_from=${from}&date_to=${to}&period=${period}`, {}, fetcher);
   if (!object(v) || v.period !== period || v.date_from !== from || v.date_to !== to || v.week_start !== 'monday' || v.date_assignment !== 'activity_local_date' || !Array.isArray(v.buckets) || !v.buckets.length) invalid();
   let cursor = from;
-  for (const b of v.buckets) { summary(b); if (!object(b) || b.bucket_start !== cursor || typeof b.bucket_end !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(b.bucket_end) || b.bucket_end <= cursor || b.bucket_end > to || typeof b.is_partial !== 'boolean') invalid(); cursor = b.bucket_end; }
+  for (const b of v.buckets) { parseSummary(b); if (!object(b) || b.bucket_start !== cursor || typeof b.bucket_end !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(b.bucket_end) || b.bucket_end <= cursor || b.bucket_end > to || typeof b.is_partial !== 'boolean') invalid(); cursor = b.bucket_end; }
   if (cursor !== to) invalid(); return v as unknown as Trends;
 }

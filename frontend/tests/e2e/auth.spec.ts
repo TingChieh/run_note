@@ -10,7 +10,7 @@ async function register(page: Page, user: ReturnType<typeof identity>) {
   await page.getByLabel('用户名', { exact: true }).fill(user.username);
   await page.getByLabel('密码', { exact: true }).fill(password);
   await page.getByRole('button', { name: '注册', exact: true }).click();
-  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.getByTestId('current-user')).toContainText(user.email);
 }
 async function logout(page: Page) {
@@ -66,7 +66,7 @@ test('real registration, duplicate error, wrong password, login, refresh, logout
   await login(page, user.email, 'Incorrect-password-2026');
   await expect(page.getByRole('alert')).toContainText('邮箱或密码不正确');
   await login(page, user.email);
-  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page).toHaveURL(/\/dashboard$/);
   await page.reload();
   await expect(page.getByTestId('current-user')).toContainText(user.email);
   await logout(page);
@@ -107,7 +107,7 @@ test('two users, SSR requests and identity changes in another tab never reuse pr
     await expect(second.getByTestId('current-user')).not.toContainText(ua.email);
     await expect(pb.getByTestId('current-user')).toContainText(ub.email);
     await login(pa, ub.email);
-    await expect(pa).toHaveURL(/\/settings$/);
+    await expect(pa).toHaveURL(/\/dashboard$/);
     await expect(pa.getByTestId('current-user')).toContainText(ub.email);
     await expect(pa.locator('body')).not.toContainText(ua.email);
     // Back/forward cache must not resurrect A's page after switching to B.

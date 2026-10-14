@@ -21,7 +21,7 @@
 {:else if profile && calendar && list}
   <PageHeader title={profile.display_name} description={`@${profile.username} · 公开运动主页`} />
   <p class="mt-4 whitespace-pre-wrap">{profile.bio || '这位跑者还没有填写个人简介。'}</p>
-  <div class="mt-6"><MetricSummary items={[{label:'公开运动总数',value:`${profile.summary.activity_count} 次`},{label:'公开运动总距离',value:dashboardDistance(profile.summary.distance_m)},{label:'公开运动天数',value:`${profile.summary.activity_days} 天`}]} /></div>
+  <div class="mt-6"><MetricSummary items={[{label:'公开运动总数',icon:'count',value:`${profile.summary.activity_count} 次`},{label:'公开运动总距离',icon:'distance',value:dashboardDistance(profile.summary.distance_m)},{label:'公开运动天数',icon:'days',value:`${profile.summary.activity_days} 天`}]} /></div>
   <p class="mt-3 text-sm text-muted-foreground">统计和日历仅基于公开记录，不包含私人或仅链接可见的记录。</p>
   {#if profile.summary.activity_count===0}<div class="mt-5"><FeedbackState kind="empty" title="尚无公开跑步记录。" /></div>{/if}
   <section class="aux-panel mt-6" aria-label="年度公开运动日历">

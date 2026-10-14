@@ -8,7 +8,7 @@
   <h2 class="text-xl font-semibold">运动统计依据</h2>
   <p class="mt-2 text-sm text-muted-foreground">{facts.date_from} 至 {facts.date_to}（结束日期不包含在内）。按活动本地日期归属，完整自然周从周一开始。</p>
   {#if facts.evidence_limited}<p role="note" class="mt-3 rounded bg-amber-50 p-3 text-amber-900">分析依据有限：活动较少或覆盖周数不足，无法判断长期运动表现。</p>{/if}
-  <dl class="my-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
+  <dl class="facts-metrics my-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
     <div><dt class="text-sm text-muted-foreground">总跑量</dt><dd class="text-2xl font-semibold">{dashboardDistance(facts.summary.distance_m)}</dd></div>
     <div><dt class="text-sm text-muted-foreground">运动次数</dt><dd class="text-2xl font-semibold">{facts.summary.activity_count} 次</dd></div>
     <div><dt class="text-sm text-muted-foreground">平均每周频率</dt><dd class="text-2xl font-semibold">{Number(facts.average_runs_per_week).toFixed(1)} 次/周</dd></div>
@@ -26,3 +26,13 @@
   <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-muted-foreground">{#each facts.limitations as note}<li>{note}</li>{/each}</ul>
   </details>
 </section>
+
+<style>
+  .facts-metrics > div { min-width:0; padding:1rem; border-radius:1rem; background:var(--background); }
+  .facts-metrics dt { display:flex; align-items:center; gap:.5rem; }
+  .facts-metrics dt::before { content:''; display:block; flex-shrink:0; width:.75rem; height:.75rem; border-radius:50%; background:var(--sport-green); }
+  .facts-metrics > div:nth-child(2) dt::before { background:var(--sport-blue); }
+  .facts-metrics > div:nth-child(3) dt::before { background:var(--sport-yellow); }
+  .facts-metrics > div:nth-child(4) dt::before { background:var(--sport-coral); }
+  .facts-metrics dd { margin-top:.75rem; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+</style>

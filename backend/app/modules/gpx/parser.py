@@ -50,12 +50,16 @@ def parse_gpx(raw: bytes) -> ParsedGPX:
     except (ET.ParseError, DefusedXmlException, ValueError):
         raise ApiError(400, "GPX_XML_INVALID", "GPX XML 不合法") from None
     version = root.get("version")
-    namespace = {
+    namespaces = {
         "1.0": "http://www.topografix.com/GPX/1/0",
         "1.1": "http://www.topografix.com/GPX/1/1",
-    }.get(version)
-    if namespace is None or root.tag != f"{{{namespace}}}gpx":
+    }
+    namespace = next((uri for uri in namespaces.values() if root.tag == f"{{{uri}}}gpx"), None)
+    if version not in namespaces or namespace is None:
         raise ApiError(400, "GPX_XML_INVALID", "不支持的 GPX 根元素或版本")
+    # Some exporters declare 1.0 while using 1.1 tags. Read the actual namespace
+    # and generate a consistent safe GPX tree without changing the source bytes.
+    version = next(v for v, uri in namespaces.items() if uri == namespace)
     ns = "{" + namespace + "}"
     counts = dict.fromkeys(
         (

@@ -17,7 +17,7 @@
   .activity-card:hover { border-color: var(--primary); }
   .record-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-6); }
   time { color: var(--muted-foreground); font-size: .8125rem; font-variant-numeric: tabular-nums; }
-  h3 { margin-top: .375rem; font-size: 1.125rem; font-weight: 650; overflow-wrap: anywhere; }
+  h3 { margin-top: .375rem; font-size: 1.25rem; font-weight: 700; overflow-wrap: anywhere; }
   .visibility { flex-shrink: 0; padding: .125rem .5rem; border-radius: .375rem; background: var(--muted); color: var(--muted-foreground); font-size: .75rem; }
   .record-footer { display: flex; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--border); color: var(--muted-foreground); font-size: .75rem; }
   .record-entry { color: var(--primary); font-weight: 550; flex-shrink: 0; }

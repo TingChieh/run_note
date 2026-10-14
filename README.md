@@ -25,6 +25,7 @@
 | [AI 工程基线与安全升级方案](docs/15-ai-engineering-baseline.md) | Git、敏感文件、备份状态与仅供审查的升级方案 |
 | [AI 跑步分析验收](docs/16-ai-running-analysis-acceptance.md) | 统计口径、模拟报告、自动化和真实 Chrome 结果 |
 | [日历统计与底图验收](docs/12-calendar-statistics-map-acceptance.md) | 年度日历、ECharts趋势、本人数据聚合、瓦片服务及浏览器证据 |
+| [目标、足迹地图与足迹墙](docs/27-running-milestones-and-wall.md) | 数据汇总首页目标组件、省份点亮与私人活动卡片墙的实现和验收 |
 | [V1.0 集成验收](docs/17-v1-integration-acceptance.md) | 正式升级、完整备份/恢复、同库业务Chrome/Mock验收及UI/UX阶段判断 |
 
 前六份文档起始于 2026-10-09 的设计基线，开发与部署方案于 2026-10-12 调整为非容器化；其中未实现业务仍属于后续阶段。实际验证状态以实施记录为准。
@@ -93,6 +94,20 @@ S2-03 认证还需在服务端进程环境安全配置 `AUTH_RATE_HASH_KEY`（�
 
 本轮保留原有8000/5173服务（认证缺密钥），可用认证实例为 **http://127.0.0.1:5183**（API8001）。实例仍运行时直接访问，不重复启动；停止后分别从仓库根目录启动：
 
+日常测试可以双击根目录 `backend.command`，在菜单中启动、关闭、重启后端或查看状态/日志。该脚本只管理本仓库的后端，默认端口8001、前端来源5183；复用现有 `.env` 与本地密钥，不执行数据库迁移或重置。前端仍使用下方的独立启动命令。
+
+```bash
+./backend.command start
+./backend.command stop
+./backend.command restart
+./backend.command status
+./backend.command logs
+# 可选：使用另一后端端口/前端来源（后续关闭也需传入同一端口）
+BACKEND_PORT=8002 SITE_ORIGIN=http://127.0.0.1:5184 ./backend.command start
+```
+
+日志与PID位于 Git 忽略的 `.cache/backend-8001/`。关闭时先核对端口占用进程的启动命令与工作目录；其他程序占用端口时拒绝操作，使用正常的TERM信号等待后端退出。
+
 ```bash
 # 终端一：复用本地密钥，仅启动API
 backend/.venv/bin/python scripts/local-auth.py serve --port 8001 --site-origin http://127.0.0.1:5183
@@ -123,7 +138,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-打开 <http://127.0.0.1:5173>，首页会实际请求 `/api/health`。SvelteKit 服务端把同源 `/api` 转发给服务端环境中的 `INTERNAL_API_BASE_URL`（进程环境优先于 `.env`），数据库 URL 和密码不进入浏览器配置。`/login`、`/register` 可直接使用；`/settings` 编辑昵称、简介和公开主页开关；`/activities` 可上传并查询本人跑步记录，`/activities/{id}` 展示指标和路线；`/dashboard` 展示年度日历、运动统计与周/月趋势，`/footprints` 支持个人路线叠加、年份/日期范围筛选和运动热力图，私人页面均需登录。公开主页 `/u/{username}`、单条公开记录 `/public/activities/{id}`、令牌摘要分享 `/shared/{token}` 可匿名浏览；在记录详情管理 private/unlisted/public 和创建/撤销分享。本轮分享完全不公开坐标与精确起终点，公开主页仅统计 public 记录。关闭主页不会撤销独立分享或单条公开记录，须单独撤销链接/设为私人。认证 Cookie 为 HttpOnly、SameSite=Lax；不在 localStorage 存凭证或用户资料。
+打开 <http://127.0.0.1:5173>，首页进入数据汇总（`/dashboard`），集中展示累计/年度摘要、年度/月度/周目标、连续记录、省份点亮地图、近期足迹墙、运动日历与趋势，并提供记录、足迹、AI 分析和设置入口；首页不展示 GPX 导入操作；未登录时先进入登录页，登录/注册默认返回数据汇总。SvelteKit 服务端把同源 `/api` 转发给服务端环境中的 `INTERNAL_API_BASE_URL`（进程环境优先于 `.env`），数据库 URL 和密码不进入浏览器配置。`/login`、`/register` 可直接使用；`/settings` 编辑昵称、简介和公开主页开关；`/activities` 可上传并查询本人跑步记录，`/activities/{id}` 展示指标、路线与本次足迹卡片，`/activities/wall` 按记录自动生成私人足迹墙并支持全部历史分页；`/dashboard` 展示年度日历、运动统计与周/月趋势，`/footprints` 支持个人路线叠加、年份/日期范围筛选和运动热力图，私人页面均需登录。公开主页 `/u/{username}`、单条公开记录 `/public/activities/{id}`、令牌摘要分享 `/shared/{token}` 可匿名浏览；在记录详情管理 private/unlisted/public 和创建/撤销分享。本轮分享完全不公开坐标与精确起终点，公开主页仅统计 public 记录。关闭主页不会撤销独立分享或单条公开记录，须单独撤销链接/设为私人。认证 Cookie 为 HttpOnly、SameSite=Lax；不在 localStorage 存凭证或用户资料。
 
 健康接口及 API 文档：
 

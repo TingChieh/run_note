@@ -92,7 +92,7 @@ def test_upgrade_paths_preserve_baseline_and_are_idempotent(variable):
                 if "alembic_version" in before
                 else []
             )
-        if revisions != ["0005_ai_reports"]:
+        if revisions != ["0006_running_goals"]:
             with TestClient(
                 create_app(Settings(database_url=url, app_env="test", _env_file=None))
             ) as client:
@@ -101,7 +101,7 @@ def test_upgrade_paths_preserve_baseline_and_are_idempotent(variable):
         migrate(url, "upgrade", "head")
         with engine.connect() as c:
             assert c.scalars(text("SELECT version_num FROM alembic_version")).all() == [
-                "0005_ai_reports"
+                "0006_running_goals"
             ]
             assert set(inspect(c).get_table_names()) - before <= {
                 "alembic_version",
@@ -115,6 +115,7 @@ def test_upgrade_paths_preserve_baseline_and_are_idempotent(variable):
                 "activity_points",
                 "activity_share_links",
                 "ai_reports",
+                "running_goals",
             }
             if spatial:
                 assert spatial_hash(c) == spatial
@@ -311,7 +312,7 @@ def test_zero_length_line_single_point_and_microseconds_roundtrip(db):
 
 @pytest.mark.parametrize(
     "rows",
-    [["0001_postgis"], ["0002_auth"], ["unknown"], [], ["0005_ai_reports", "unexpected"]],
+    [["0001_postgis"], ["0002_auth"], ["unknown"], [], ["0006_running_goals", "unexpected"]],
 )
 def test_ready_requires_exact_release_revision_and_live_stays_available(db, rows):
     db.execute(

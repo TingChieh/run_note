@@ -9,17 +9,20 @@ async function capture(page: Page, name: string, scrollTo?: string) {
   await page.evaluate(async()=>{(document.activeElement as HTMLElement)?.blur();await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);});
   await page.screenshot({path:`test-results/sport-detail-${name}.png`});
 }
-test('detail sports sample gives map a desktop column and preserves other route themes',async({page})=>{
+test('detail keeps a compact overview beside a spacious route and stays consistent on other routes',async({page})=>{
   await installActivities(page);await loginRunner(page);await page.goto(`/activities/${sampleActivity.id}`);await ready(page);
   await expect(page.getByTestId('sport-hero')).toContainText('河畔晨跑');await expect(page.getByTestId('sport-hero')).toContainText('2026-10-13');
-  await expect(page.getByTestId('activity-distance')).toHaveText('5.123 km');
+  await expect(page.getByTestId('activity-distance')).toHaveText('5.1 km');
   const metrics=await page.getByRole('region',{name:'运动指标'}).boundingBox(),map=await page.getByRole('region',{name:'路线',exact:true}).boundingBox();
-  expect(map!.x).toBeGreaterThan(metrics!.x+metrics!.width);expect(Math.abs(map!.y-metrics!.y)).toBeLessThan(5);expect(map!.width).toBeGreaterThan(metrics!.width);
+  expect(map!.x).toBeGreaterThan(metrics!.x+metrics!.width);expect(Math.abs(map!.y-metrics!.y)).toBeLessThan(2);expect(metrics!.width).toBeLessThanOrEqual(320);expect(map!.width).toBeGreaterThan(metrics!.width*2);expect(metrics!.height).toBeLessThan(map!.height*.75);
+  const cards = page.locator('.metric-panel .metrics'), routeCanvas = page.locator('.route-map');
+  const cardBounds = await cards.boundingBox(), canvasBounds = await routeCanvas.boundingBox();
+  expect(Math.abs(cardBounds!.y-canvasBounds!.y)).toBeLessThan(2);expect(cardBounds!.height).toBeLessThan(canvasBounds!.height*.75);
   const sidebar=page.locator('.app-sidebar'),color=await sidebar.evaluate(el=>getComputedStyle(el).backgroundColor);expect(color).toBe('rgb(33, 133, 56)');
   const active=page.getByRole('navigation',{name:'主要导航'}).getByRole('link',{name:'跑步记录',exact:true});await expect(active).toHaveAttribute('aria-current','page');await active.focus();expect(await active.evaluate(el=>getComputedStyle(el).outlineStyle)).toBe('solid');
   await capture(page,'desktop');await page.getByText('数据质量与指标说明',{exact:true}).focus();await page.keyboard.press('Enter');await expect(page.getByText('有效轨迹点',{exact:true})).toBeVisible();await page.keyboard.press('Enter');
   await page.getByRole('button',{name:'关闭底图',exact:true}).click();await page.getByRole('button',{name:'开启底图',exact:true}).click();await ready(page);
-  await active.click();await expect(page).toHaveURL(/\/activities$/);await expect(page.locator('.sport-sample')).toHaveCount(0);expect(await sidebar.evaluate(el=>getComputedStyle(el).backgroundColor)).toBe('rgb(255, 255, 255)');
+  await active.click();await expect(page).toHaveURL(/\/activities$/);await expect(page.locator('.sport-theme')).toHaveCount(1);expect(await sidebar.evaluate(el=>getComputedStyle(el).backgroundColor)).toBe('rgb(33, 133, 56)');
 });
 test('sports detail fits phones with usable map, navigation and existing privacy controls',async({page})=>{
   await installActivities(page);await loginRunner(page);await page.goto(`/activities/${sampleActivity.id}`);await ready(page);
@@ -37,7 +40,7 @@ test('long titles, missing values, empty route and errors stay usable in the sam
   await expect(page.getByRole('heading',{level:1})).toHaveText(state.records[1].title);await expect(page.getByRole('status').filter({hasText:'此活动没有路线。'})).toBeVisible();await expect(page.getByRole('region',{name:'运动指标'})).toContainText('—');await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await capture(page,'mobile-missing');
   await page.getByText('数据质量与指标说明',{exact:true}).click();await expect(page.getByText('缺失时间点',{exact:true})).toBeVisible();
   state.detailFailures=1;await page.goto(`/activities/${sampleActivity.id}`);await expect(page.getByRole('alert')).toContainText('暂时无法读取');await page.getByRole('button',{name:'重新读取活动详情'}).click();await ready(page);
-  await page.route(`**/api/v1/activities/${sampleActivity.id}`,route=>route.fulfill({status:401,json:{error:{message:'登录已过期'}}}));await page.reload();await expect(page).toHaveURL(/login\?reason=expired/);await expect(page.getByTestId('sport-hero')).toHaveCount(0);await expect(page.locator('.sport-sample')).toHaveCount(0);
+  await page.route(`**/api/v1/activities/${sampleActivity.id}`,route=>route.fulfill({status:401,json:{error:{message:'登录已过期'}}}));await page.reload();await expect(page).toHaveURL(/login\?reason=expired/);await expect(page.getByTestId('sport-hero')).toHaveCount(0);await expect(page.locator('.app-sidebar')).toHaveCount(0); await expect(page.getByRole('region',{name:'跑量目标'})).toHaveCount(0);
 });
 
 test('capture sample with standard OSM basemap or its visible fallback',async({page})=>{
@@ -64,12 +67,16 @@ test('sidebar goals save separate periods, survive reload, reject invalid input 
   await widget.getByRole('button',{name:'设置',exact:true}).click();
   await widget.getByLabel('目标距离（km）').fill('0'); await widget.getByRole('button',{name:'保存',exact:true}).click();
   await expect(widget).toContainText('请输入大于0');
-  await widget.getByLabel('目标距离（km）').fill('50'); await widget.getByRole('button',{name:'保存',exact:true}).click();
+  await widget.getByLabel('目标距离（km）').fill('50');
+  const verified = page.waitForResponse(response => response.url().endsWith('/api/v1/auth/session'));
+  await page.evaluate(() => window.dispatchEvent(new Event('focus'))); await verified;
+  await expect(widget.getByLabel('目标距离（km）')).toHaveValue('50');
+  await widget.getByRole('button',{name:'保存',exact:true}).click();
   await expect(widget).toContainText('已完成 25%');
   await widget.getByLabel('目标周期').selectOption('month'); await expect(widget).toContainText('未设目标');
   await widget.getByRole('button',{name:'设置',exact:true}).click(); await widget.getByLabel('目标距离（km）').fill('100'); await widget.getByRole('button',{name:'保存',exact:true}).click();
   await widget.getByLabel('目标周期').selectOption('year'); await expect(widget).toContainText('未设目标');
-  await widget.getByText('今年 · 统计范围').click(); await expect(widget).toContainText('2026-01-01 至 2027-01-01');
+  await widget.getByText('今年 · 统计范围').click(); await expect(widget).toContainText('2026-01-01 至 2026-10-15');
   await page.reload(); await ready(page); await expect(widget).toContainText('已完成 25%');
   await widget.getByLabel('目标周期').selectOption('month'); await expect(widget).toContainText('已完成 13%');
   await page.route('**/api/v1/statistics/summary?**',route=>route.fulfill({status:503,json:{error:{message:'统计失败'}}}));

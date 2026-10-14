@@ -27,7 +27,7 @@ test('register native validation, password visibility, busy and failure retry, s
   await expect(page.getByLabel('密码',{exact:true})).toHaveValue('');
   await page.unroute('**/api/v1/auth/register');
   await page.getByLabel('密码',{exact:true}).fill('Synthetic-ui-password-2026');
-  await page.getByRole('button',{name:'注册',exact:true}).click();await expect(page).toHaveURL(/\/settings$/);
+  await page.getByRole('button',{name:'注册',exact:true}).click();await expect(page).toHaveURL(/\/dashboard$/);
 });
 test('settings separates draft from saved public state and saves with retry',async({page})=>{
   await loginRunner(page);await responsive(page,'settings');
@@ -88,7 +88,7 @@ test('login error receives keyboard focus and supports retry on mobile',async({p
   await page.getByLabel('邮箱',{exact:true}).fill('runner@example.com');await page.getByLabel('密码',{exact:true}).fill('Synthetic-ui-password-2026');
   await page.route('**/api/v1/auth/login',route=>route.fulfill({status:401,json:{error:{message:'邮箱或密码不正确'}}}));
   await page.getByRole('button',{name:'登录',exact:true}).click();await expect(page.locator('#auth-error')).toBeFocused();await expect(page.getByRole('alert')).toContainText('邮箱或密码不正确');
-  await page.unroute('**/api/v1/auth/login');await page.getByLabel('密码',{exact:true}).fill('Synthetic-ui-password-2026');await page.getByRole('button',{name:'登录',exact:true}).click();await expect(page).toHaveURL(/\/settings$/);
+  await page.unroute('**/api/v1/auth/login');await page.getByLabel('密码',{exact:true}).fill('Synthetic-ui-password-2026');await page.getByRole('button',{name:'登录',exact:true}).click();await expect(page).toHaveURL(/\/dashboard$/);
 });
 test('historical AI failed, pending and stale snapshots remain accessible without calls',async({page})=>{
   const state=await installAI(page);state.reports=[{...report,status:'failed',analysis:null,error_code:'PROVIDER_ERROR',is_stale:true}];

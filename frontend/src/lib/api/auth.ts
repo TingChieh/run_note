@@ -40,9 +40,9 @@ export async function authWrite(action: 'login' | 'register' | 'logout', data: u
   }, fetcher);
 }
 export function safeNext(value: string | null): string {
-  if (!value || !value.startsWith('/') || value.startsWith('//') || /[\\\s%]/.test(value)) return '/settings';
+  if (!value || !value.startsWith('/') || value.startsWith('//') || /[\\\s%]/.test(value)) return '/dashboard';
   const path = value.split(/[?#]/)[0];
-  if (/^\/(login|register|api)(\/|$)/.test(path)) return '/settings';
+  if (/^\/(login|register|api)(\/|$)/.test(path)) return '/dashboard';
   return value;
 }
 export function isProtected(path: string): boolean { return /^\/(activities|dashboard|footprints|settings|ai)(\/|$)/.test(path); }

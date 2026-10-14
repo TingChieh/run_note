@@ -1,15 +1,28 @@
 from datetime import date
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_identity, get_session
 from app.core.errors import ApiError
 from app.modules.activities.router import envelope
+from app.modules.footprints.provinces import province_summary
 from app.modules.footprints.service import footprints
 
 router = APIRouter(prefix="/api/v1/footprints", tags=["footprints"])
+
+
+@router.get("/provinces")
+def provinces(
+    request: Request,
+    identity: Annotated[tuple, Depends(get_identity)],
+    db: Annotated[Session, Depends(get_session)],
+    year: Annotated[int, Query(ge=1900, le=2100)],
+):
+    data = province_summary(db, identity[1].id, year)
+    db.commit()
+    return envelope(request, data)
 
 
 @router.get("")

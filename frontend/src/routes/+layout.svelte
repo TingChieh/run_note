@@ -9,8 +9,8 @@
 
   let { children }: { children: Snippet } = $props();
   let checking = $state(false), busy = $state(false), mounted = $state(false), message = $state('');
+  let identityBlocked = $state(false);
   const appLayout = $derived(!!page.data.user && (isProtected(page.url.pathname) || page.url.pathname === '/'));
-  const sportSample = $derived(appLayout && /^\/activities\/[^/]+\/?$/.test(page.url.pathname));
   const authPage = $derived(/^\/(login|register)\/?$/.test(page.url.pathname));
   async function logout() {
     if (busy) return; busy = true; message = '';
@@ -36,13 +36,15 @@
         const current = await readSession();
         if (disposed || busy || pending) return;
         if ((current?.id ?? null) !== (page.data.user?.id ?? null)) {
+          identityBlocked = true;
           if (isProtected(page.url.pathname) && !current) window.location.replace('/login?reason=changed');
           else window.location.reload();
           return;
         }
-        checking = false;
+        identityBlocked = false; checking = false;
       } catch (cause) {
         // Fail closed: hide private children until identity can be confirmed.
+        identityBlocked = true;
         message = cause instanceof Error ? cause.message : '无法确认登录状态';
       } finally {
         inFlight = false;
@@ -64,10 +66,10 @@
   });
 </script>
 <a href="#main" class="skip-link">跳转到主要内容</a>
-<div class:app-shell={appLayout} class:public-shell={!appLayout} class:sport-sample={sportSample}>
+<div class:app-shell={appLayout} class:public-shell={!appLayout} class="sport-theme">
   <header data-auth-ready={mounted}>
     {#if appLayout && page.data.user}
-      <AppNavigation pathname={page.url.pathname} user={page.data.user} {checking} {busy} {mounted} {sportSample} onlogout={logout} />
+      <AppNavigation pathname={page.url.pathname} user={page.data.user} {checking} {busy} {mounted} {identityBlocked} sports onlogout={logout} />
     {:else}
       <div class="public-header">
         <a href="/" class="brand"><span class="brand-mark" aria-hidden="true">R</span>RunNote</a>
@@ -84,7 +86,11 @@
       {#if message || page.data.authError}<div class="mb-5"><FeedbackState kind="error" title={message || page.data.authError || ''} /></div>{/if}
       {#if checking && isProtected(page.url.pathname)}
         <FeedbackState kind="loading" title="正在确认登录状态。若检查失败，请刷新重试。" />
-      {:else}{@render children()}{/if}
+      {/if}
+      {#if !(identityBlocked && isProtected(page.url.pathname))}
+        <!-- Preserve file inputs and drafts across successful focus/session checks. -->
+        <div hidden={checking && isProtected(page.url.pathname)} inert={checking && isProtected(page.url.pathname)}>{@render children()}</div>
+      {/if}
     </main>
     <footer class="app-footer"><span>RunNote</span><span>记录每一步，看见你的进步。</span></footer>
   </div>
