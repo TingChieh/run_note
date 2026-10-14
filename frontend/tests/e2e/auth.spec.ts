@@ -120,8 +120,8 @@ test('two users, SSR requests and identity changes in another tab never reuse pr
 test('a genuinely expired backend session clears the browser identity and redirects protected pages', async ({ page, context }) => {
   const user = identity(); await register(page, user);
   const token = (await context.cookies()).find(c => c.name === 'run_session')!.value;
-  // Expire only this test-created session. No DDL, deletes, or database cleanup.
-  const script = `from app.core.config import Settings\nfrom app.core.security import token_hash\nfrom sqlalchemy import create_engine,text\nimport os\ne=create_engine(Settings().database_url,hide_parameters=True)\nwith e.begin() as c:\n r=c.execute(text("UPDATE auth_sessions SET expires_at=now()-interval '1 second' WHERE token_hash=:token"), {'token':token_hash(os.environ['RUNNOTE_TEST_SESSION'])})\n assert r.rowcount==1\ne.dispose()`;
+  // Require an explicitly allowlisted isolated database before expiring this test session.
+  const script = `from app.core.config import IntegrationSettings\nfrom app.core.security import token_hash\nfrom sqlalchemy import create_engine,text\nfrom sqlalchemy.engine import make_url\nimport os\ns=IntegrationSettings()\nif not s.test_database_url:\n raise RuntimeError("Explicit TEST_DATABASE_URL and TEST_DATABASE_ALLOWED_TARGETS are required")\nu=make_url(s.test_database_url)\ne=create_engine(s.test_database_url,hide_parameters=True)\nwith e.begin() as c:\n assert c.execute(text("SELECT current_database(),inet_server_port()")).one()==(u.database,u.port or 5432)\n r=c.execute(text("UPDATE auth_sessions SET expires_at=now()-interval '1 second' WHERE token_hash=:token"), {'token':token_hash(os.environ['RUNNOTE_TEST_SESSION'])})\n assert r.rowcount==1\ne.dispose()`;
   const result = spawnSync('.venv/bin/python', ['-c', script], { cwd: '../backend', env: { ...process.env, RUNNOTE_TEST_SESSION: token }, encoding: 'utf8' });
   expect(result.status, 'test session expiry injection succeeded').toBe(0);
   await page.reload();

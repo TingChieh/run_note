@@ -1,15 +1,16 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import type { Trends } from '#lib/api/statistics.ts';
+  import { dashboardDistance } from '#lib/api/dashboard-format.ts';
   import { formatDistance, formatDuration, formatPace } from '#lib/api/activities.ts';
-  let { trends, metric }: { trends: Trends; metric: 'distance' | 'count' | 'duration' | 'pace' } = $props();
+  let { trends, metric, enhanced = false }: { trends: Trends; metric: 'distance' | 'count' | 'duration' | 'pace'; enhanced?: boolean } = $props();
   let container: HTMLDivElement, mounted = $state(false), message = $state('');
   let chart: import('echarts/core').ECharts | undefined;
   const labels = { distance: '距离（km）', count: '活动次数', duration: '已知耗时（分钟）', pace: '可靠配速（分钟/km）' };
   function value(b: Trends['buckets'][number]) { const n = metric === 'distance' ? b.distance_m : metric === 'count' ? b.activity_count : metric === 'duration' ? b.duration_sum_seconds : b.avg_pace_seconds_per_km; return n === null ? null : Number(n) / (metric === 'distance' ? 1000 : metric === 'count' ? 1 : 60); }
-  function display(b: Trends['buckets'][number]) { return metric === 'distance' ? formatDistance(b.distance_m) : metric === 'count' ? `${b.activity_count} 次` : metric === 'duration' ? formatDuration(b.duration_sum_seconds) : formatPace(b.avg_pace_seconds_per_km); }
+  function display(b: Trends['buckets'][number]) { return metric === 'distance' ? (enhanced ? dashboardDistance(b.distance_m) : formatDistance(b.distance_m)) : metric === 'count' ? `${b.activity_count} 次` : metric === 'duration' ? formatDuration(b.duration_sum_seconds) : formatPace(b.avg_pace_seconds_per_km); }
   function draw() {
-    chart?.setOption({ animation: false, tooltip: { trigger: 'axis', renderMode: 'richText' }, grid: { left: 65, right: 20, top: 40, bottom: 60 }, xAxis: { type: 'category', data: trends.buckets.map(b => `${b.bucket_start}${b.is_partial ? '（部分）' : ''}`), axisLabel: { rotate: 35, fontSize: 10 } }, yAxis: { type: 'value', name: labels[metric], min: 0 }, series: [{ name: labels[metric], type: metric === 'count' || metric === 'distance' ? 'bar' : 'line', connectNulls: false, data: trends.buckets.map(value), itemStyle: {color:'#27815c'} }] }, { notMerge: true });
+    chart?.setOption({ animation: false, tooltip: { trigger: 'axis', renderMode: 'richText', valueFormatter: enhanced ? (value: number | null) => value === null ? '—' : metric === 'distance' && enhanced ? dashboardDistance(value * 1000) : metric === 'pace' ? formatPace(value * 60) : metric === 'count' ? `${value} 次` : `${value} 分钟` : undefined }, grid: { left: enhanced ? 45 : 65, right: 20, top: 40, bottom: 60 }, xAxis: { type: 'category', data: trends.buckets.map(b => `${b.bucket_start}${b.is_partial ? '（部分）' : ''}`), axisLabel: { rotate: enhanced ? 0 : 35, fontSize: enhanced ? 11 : 10, formatter: (label: string) => enhanced ? label.slice(5) : label } }, yAxis: { type: 'value', name: labels[metric], min: 0 }, series: [{ name: labels[metric], type: metric === 'count' || metric === 'distance' ? 'bar' : 'line', connectNulls: false, data: trends.buckets.map(value), itemStyle: {color:'#27815c'} }] }, { notMerge: true });
   }
   $effect(() => { trends; metric; if (mounted) draw(); });
   onMount(() => {

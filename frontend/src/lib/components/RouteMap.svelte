@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import FeedbackState from './FeedbackState.svelte';
   import type { Map as MapLibreMap, Marker, LngLatBounds } from 'maplibre-gl';
   import type { Route, Coordinate } from '#lib/api/activities.ts';
   import { BASEMAP_SOURCE, BASEMAP_LAYER, BASEMAP_TIMEOUT_MS, createRouteMapStyle, createBasemapSource, isBasemapError } from '#lib/api/map-style.ts';
   import 'maplibre-gl/dist/maplibre-gl.css';
-  let { route }: { route: Route } = $props();
+  let { route, spacious = false }: { route: Route; spacious?: boolean } = $props();
   let container: HTMLDivElement;
   let map: MapLibreMap | undefined, markers: Marker[] = [], disposed = false;
   let loaded = $state(false), error = $state('');
@@ -93,18 +94,19 @@
   });
   onDestroy(() => { disposed = true; clearTimeout(basemapTimer); observer?.disconnect(); if (resizeFrame) cancelAnimationFrame(resizeFrame); for (const marker of markers) marker.remove(); map?.remove(); map = undefined; });
 </script>
-<div class="relative mt-4 overflow-hidden rounded-xl border border-border">
-  <div bind:this={container} class="h-[420px] w-full" role="img" aria-label="活动路线地图，绿色为路线，起与终标记起终点" data-testid={loaded ? 'route-map-ready' : 'route-map-loading'}></div>
-  <div class="absolute left-3 top-3 rounded bg-white/95 p-2 text-sm shadow">
-    <button type="button" onclick={toggleBasemap} aria-pressed={basemapEnabled} class="rounded border border-border px-2 py-1">{basemapEnabled ? '关闭底图' : '开启底图'}</button>
-    {#if basemapStatus === 'failed'}
-      <p role="status" class="mt-1 max-w-64">底图暂不可用，轨迹仍可查看。</p>
-      <button type="button" onclick={loadBasemap} class="mt-1 underline">重试底图</button>
-    {:else if basemapStatus === 'loading'}<p role="status" class="mt-1">正在加载底图…</p>{/if}
-  </div>
-  {#if basemapEnabled}
-    <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" class="absolute bottom-0 right-0 bg-white/95 px-2 py-1 text-xs underline">© OpenStreetMap contributors</a>
-  {/if}
-  {#if error}<p role="alert" class="absolute bottom-10 left-3 right-3 rounded bg-white p-3 text-red-700">{error}</p>{:else if !loaded}<p role="status" class="absolute bottom-10 left-3 rounded bg-white p-2 text-sm">正在绘制路线…</p>{/if}
+<div class="relative mt-4 overflow-hidden rounded-xl border border-border" class:spacious>
+  <div bind:this={container} class="route-map w-full" role="img" aria-label="活动路线地图，绿色为路线，起与终标记起终点" data-testid={loaded ? 'route-map-ready' : 'route-map-loading'}></div>
+  <div class="absolute left-3 top-3"><button type="button" onclick={toggleBasemap} aria-pressed={basemapEnabled} class="rounded border border-border bg-white px-3 py-2 text-sm">{basemapEnabled ? '关闭底图' : '开启底图'}</button></div>
+  {#if basemapEnabled}<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" class="absolute bottom-0 right-0 bg-white/95 px-2 py-1 text-xs underline">© OpenStreetMap contributors</a>{/if}
 </div>
-<p class="mt-2 text-sm text-muted-foreground">底图会向 OpenStreetMap 请求当前地图区域的瓦片；完整 GPX 与轨迹点不会发送给底图服务，路径在本地绘制。关闭底图可停止后续瓦片请求。不同轨迹段不会连线，起终点重合时两个标记分别显示。公共底图为尽力服务，可能暂不可用。</p>
+{#if error}<div class="mt-3"><FeedbackState kind="error" title={error} /></div>{:else if !loaded}<div class="mt-3"><FeedbackState kind="loading" title="正在绘制路线…" /></div>{/if}
+{#if basemapStatus === 'failed'}<div class="basemap-feedback" role="status"><span>底图暂不可用，轨迹仍可查看。</span><button type="button" onclick={loadBasemap} class="font-medium text-primary underline">重试底图</button></div>
+{:else if basemapStatus === 'loading'}<p role="status" class="mt-3 text-sm">正在加载底图…</p>{/if}
+<details class="mt-3 text-sm text-muted-foreground"><summary class="w-fit font-medium">地图与隐私说明</summary><p class="mt-2 leading-6">底图会向 OpenStreetMap 请求当前地图区域的瓦片；完整 GPX 与轨迹点不会发送给底图服务，路径在本地绘制。关闭底图可停止后续瓦片请求。不同轨迹段不会连线，起终点重合时两个标记分别显示。公共底图为尽力服务，可能暂不可用。</p></details>
+<style>
+  .route-map { height: clamp(18rem, 50svh, 32rem); }
+  .basemap-feedback { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-3); margin-top: var(--space-3); color: var(--muted-foreground); font-size: .875rem; }
+  .spacious .route-map { height: 32.5rem; }
+  @media (max-width: 1199px) { .spacious .route-map { height: clamp(22.5rem, 55svh, 32.5rem); } }
+  @media (max-width: 639px) { .route-map { height: clamp(17rem, 40svh, 22rem); } }
+</style>

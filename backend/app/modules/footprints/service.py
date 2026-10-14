@@ -14,21 +14,25 @@ MAX_CANDIDATES = 500000
 
 # Every original edge remains inside its source segment. Shift only short dateline
 # crossings; split/wrap at 180 before projection, then clip unsupported polar latitudes.
-GEOMETRIES = """WITH selected AS MATERIALIZED (
+SELECTED = """WITH selected AS MATERIALIZED (
     SELECT s.id,s.activity_id,s.segment_index,s.point_count,a.title,a.activity_date,
         COALESCE(s.geom,(SELECT p.position FROM activity_points p
             WHERE p.segment_id=s.id ORDER BY p.point_index LIMIT 1)) AS geom
     FROM activities a JOIN activity_segments s ON s.activity_id=a.id
     WHERE a.user_id=:owner AND a.activity_date>=:start AND a.activity_date<:end
-), edges AS (
+) """
+
+SPATIAL_EDGES = """, edges AS (
     SELECT s.*,CASE WHEN ST_Length(e.geom)=0 THEN ST_StartPoint(e.geom) ELSE e.geom END AS edge
-    FROM selected s CROSS JOIN LATERAL ST_DumpSegments(s.geom) e
+    FROM edge_sources s CROSS JOIN LATERAL ST_DumpSegments(s.geom) e
     WHERE s.point_count>1
     UNION ALL
-    SELECT s.*,s.geom AS edge FROM selected s WHERE s.point_count=1
+    SELECT s.*,s.geom AS edge FROM edge_sources s WHERE s.point_count=1
 ), wrapped AS (
     SELECT *,CASE WHEN ST_XMax(Box3D(edge))-ST_XMin(Box3D(edge))>180
-        THEN ST_Split(ST_ShiftLongitude(edge),ST_GeomFromText('LINESTRING(180 -90,180 90)',4326))
+        THEN ST_Collect(
+            ST_Intersection(ST_ShiftLongitude(edge),ST_MakeEnvelope(0,-90,180,90,4326)),
+            ST_Intersection(ST_ShiftLongitude(edge),ST_MakeEnvelope(180,-90,360,90,4326)))
         ELSE edge END AS safe
     FROM edges
 ) , split_edges AS (
@@ -44,6 +48,34 @@ GEOMETRIES = """WITH selected AS MATERIALIZED (
 ), usable AS (
     SELECT * FROM projected WHERE NOT ST_IsEmpty(geom)
 ) """
+
+
+# Full edges remain authoritative for heatmap counts. Ordinary display routes can
+# use the stored ordered segment directly: no clipping/projection is needed within
+# one supported world. This preserves every original bend, repeat and segment gap.
+GEOMETRIES = SELECTED + ", edge_sources AS (SELECT * FROM selected) " + SPATIAL_EDGES
+SAFE_DISPLAY = """ST_XMax(Box3D(geom))-ST_XMin(Box3D(geom))<=180
+    AND ST_YMin(Box3D(geom))>=-85.0511287798
+    AND ST_YMax(Box3D(geom))<=85.0511287798"""
+TRACKS = (
+    SELECTED
+    + ", edge_sources AS (SELECT * FROM selected WHERE NOT ("
+    + SAFE_DISPLAY
+    + ")) "
+    + SPATIAL_EDGES
+    + """, display AS (
+        SELECT activity_id,segment_index,title,activity_date,
+            ST_AsGeoJSON(CASE WHEN GeometryType(geom)='LINESTRING' AND ST_Length(geom)=0
+                THEN ST_StartPoint(geom) ELSE geom END,9)::json AS geometry
+        FROM selected WHERE """
+    + SAFE_DISPLAY
+    + """
+        UNION ALL
+        SELECT activity_id,segment_index,title,activity_date,
+            ST_AsGeoJSON(ST_Transform(ST_Collect(geom),4326),9)::json AS geometry
+        FROM usable GROUP BY activity_id,segment_index,title,activity_date
+    ) SELECT * FROM display ORDER BY activity_date DESC,activity_id,segment_index"""
+)
 
 
 def limit_error():
@@ -73,13 +105,7 @@ def footprints(db, owner, start, end, mode):
         if mode == "tracks":
             rows = (
                 db.execute(
-                    text(
-                        GEOMETRIES
-                        + """SELECT activity_id,segment_index,title,
-                activity_date,ST_AsGeoJSON(ST_Transform(ST_Collect(geom),4326),9)::json AS geometry
-                FROM usable GROUP BY activity_id,segment_index,title,activity_date
-                ORDER BY activity_date DESC,activity_id,segment_index"""
-                    ),
+                    text(TRACKS),
                     params,
                 )
                 .mappings()

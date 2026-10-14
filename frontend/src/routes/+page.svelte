@@ -27,10 +27,10 @@
   <meta name="description" content="跑步数据管理与可视化分析系统的本地开发骨架" />
 </svelte:head>
 
-<p class="mb-3 text-sm font-medium text-primary">PHASE 02 · S2-03</p>
+<p class="mb-3 text-sm font-medium text-primary">RUNNOTE · 每一步都有意义</p>
 <h1 class="text-3xl font-semibold leading-tight sm:text-4xl">跑步数据管理与可视化分析</h1>
 <p class="mt-4 max-w-2xl leading-7 text-muted-foreground">
-  本阶段建立前端、API 与空间数据库的连接。记录管理、轨迹地图和分析功能尚未实现。
+  导入跑步记录，探索走过的路线，用年度活动日历与趋势统计回顾你的进步。你的记录默认仅自己可见。
 </p>
 
 <section aria-labelledby="health-title" class="mt-9 rounded-xl border border-border bg-white p-6">
@@ -57,8 +57,8 @@
 
 <div class="mt-6 grid gap-4 sm:grid-cols-3">
   {#each [
-    { title: '跑步记录', text: '记录列表与导入界面将在后续阶段实现。', href: '/activities' },
-    { title: '运动统计', text: '年度日历与统计图表目前仅预留入口。', href: '/dashboard' },
+    { title: '跑步记录', text: '导入 GPX，集中查看每次跑步的距离、耗时与路线。', href: '/activities' },
+    { title: '运动统计', text: '通过年度活动日历和趋势图，回顾你的运动节奏。', href: '/dashboard' },
     { title: '个人设置', text: '查看当前登录账号与会话状态。', href: '/settings' }
   ] as item}
     <a href={item.href} class="rounded-xl border border-border bg-white p-5 hover:border-primary">

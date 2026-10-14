@@ -54,27 +54,54 @@ export async function readFootprints(s: Selection, signal: AbortSignal, fetcher:
   if (!response.ok || body.error) throw new FootprintError(body.error?.message??'无法读取足迹，请稍后重试',response.status);
   return parseFootprints(body.data);
 }
+// Traverse in place. Bounds/anchor consumers do not need a flattened copy of
+// every coordinate; a 100k-point collection should allocate only its result.
+export function forEachCoordinate(g: Geometry, visit: (point: [number,number]) => void): void {
+  if(g.type==='GeometryCollection') { for(const child of g.geometries)forEachCoordinate(child,visit); return; }
+  const walk=(v: unknown): void => {
+    if(!Array.isArray(v))return;
+    if(typeof v[0]==='number')visit(v as [number,number]);
+    else for(const child of v)walk(child);
+  };
+  walk(g.coordinates);
+}
 export function coordinates(g: Geometry): [number,number][] {
-  if(g.type==='GeometryCollection') return g.geometries.flatMap(coordinates);
-  const flatten=(v: unknown): [number,number][] => Array.isArray(v) && typeof v[0]==='number' ? [v as [number,number]] : Array.isArray(v) ? v.flatMap(flatten) : [];
-  return flatten(g.coordinates);
+  const points: [number,number][]=[];
+  forEachCoordinate(g,p=>points.push(p));
+  return points;
+}
+export function geometryBounds(geometries: Geometry[]): [[number,number],[number,number]] | null {
+  let bounds: [[number,number],[number,number]] | null=null;
+  for(const g of geometries)forEachCoordinate(g,([x,y])=>{
+    if(!bounds)bounds=[[x,y],[x,y]];
+    else { bounds[0][0]=Math.min(bounds[0][0],x); bounds[0][1]=Math.min(bounds[0][1],y); bounds[1][0]=Math.max(bounds[1][0],x); bounds[1][1]=Math.max(bounds[1][1],y); }
+  });
+  return bounds;
 }
 
 // Only display coordinates change. Server grid keys/counts retain their fixed CRS.
-// Each dumped line/grid is small; move whole pieces to the world copy nearest
-// the first piece, so a short route at ±180 does not fit a full-world viewport.
+// Move whole pieces to the world copy nearest the first piece. Reuse geometry
+// when its offset is zero; shifted pieces always get new coordinate arrays.
 export function displayFootprints(data: Footprints): Footprints {
-  const anchor=data.features.flatMap(f=>coordinates(f.geometry))[0]?.[0]??0;
+  const first=(value: unknown): number | undefined => Array.isArray(value)
+    ? typeof value[0]==='number' ? value[0] : first(value[0]) : undefined;
+  const firstLongitude=(g: Geometry): number | undefined => g.type==='GeometryCollection'
+    ? g.geometries.map(firstLongitude).find((v: number | undefined)=>v!==undefined) : first(g.coordinates);
+  const anchor=data.features.map(f=>firstLongitude(f.geometry)).find(v=>v!==undefined)??0;
   const move=(v: unknown, offset: number): unknown => Array.isArray(v)
     ? typeof v[0]==='number' ? [v[0]+offset,v[1]] : v.map(c=>move(c,offset)) : v;
   const piece=(v: unknown): unknown => {
-    const first=(value: unknown): number => Array.isArray(value) ? typeof value[0]==='number' ? value[0] : first(value[0]) : anchor;
-    return move(v,Math.round((anchor-first(v))/360)*360);
+    const offset=Math.round((anchor-(first(v)??anchor))/360)*360;
+    return offset===0?v:move(v,offset);
   };
   const display=(g: Geometry): Geometry => {
     if(g.type==='GeometryCollection')return {...g,geometries:g.geometries.map(display)};
-    if(g.type==='MultiLineString' || g.type==='MultiPoint' || g.type==='MultiPolygon')return {...g,coordinates:g.coordinates.map(piece)} as Geometry;
-    return {...g,coordinates:piece(g.coordinates)} as Geometry;
+    if(g.type==='MultiLineString' || g.type==='MultiPoint' || g.type==='MultiPolygon') {
+      const shifted=g.coordinates.map(piece);
+      return shifted.every((c: unknown,i: number)=>c===g.coordinates[i])?g:{...g,coordinates:shifted} as Geometry;
+    }
+    const shifted=piece(g.coordinates);
+    return shifted===g.coordinates?g:{...g,coordinates:shifted} as Geometry;
   };
   return {...data,features:data.features.map(f=>({...f,geometry:display(f.geometry)}))};
 }

@@ -25,6 +25,7 @@
 | [AI 工程基线与安全升级方案](docs/15-ai-engineering-baseline.md) | Git、敏感文件、备份状态与仅供审查的升级方案 |
 | [AI 跑步分析验收](docs/16-ai-running-analysis-acceptance.md) | 统计口径、模拟报告、自动化和真实 Chrome 结果 |
 | [日历统计与底图验收](docs/12-calendar-statistics-map-acceptance.md) | 年度日历、ECharts趋势、本人数据聚合、瓦片服务及浏览器证据 |
+| [V1.0 集成验收](docs/17-v1-integration-acceptance.md) | 正式升级、完整备份/恢复、同库业务Chrome/Mock验收及UI/UX阶段判断 |
 
 前六份文档起始于 2026-10-09 的设计基线，开发与部署方案于 2026-10-12 调整为非容器化；其中未实现业务仍属于后续阶段。实际验证状态以实施记录为准。
 
@@ -78,13 +79,13 @@ cd backend
 python3.12 -m venv .venv
 .venv/bin/python -m pip install --require-hashes -r requirements.lock
 .venv/bin/alembic current
-# 既有开发库已在 0003_gpx_storage，不执行迁移。
+# 本机开发库现为 0005_ai_reports；启动前核对目标数据库和当前 revision。
 cd ..
 backend/.venv/bin/python scripts/local-auth.py init
 backend/.venv/bin/python scripts/local-auth.py serve
 ```
 
-代码迁移 head 为 `0005_ai_reports`；现有开发库仍为 `0003_gpx_storage`（17用户、14活动），本轮不升级。新版分享/AI业务需包含0004/0005的隔离数据库；不要直接将新版完整业务接到未升级开发库。缺少必填数据库配置会拒绝启动。服务可启动不等于数据库已就绪。
+代码迁移 head 与本机开发库均为 `0005_ai_reports`。该库含17用户、14活动；本地升级备份、恢复和联调证据见 [V1.0集成验收](docs/17-v1-integration-acceptance.md)。其他环境应先确认数据库目标、备份并恢复验证，再按受控流程执行迁移。缺少必填数据库配置会拒绝启动。服务可启动不等于数据库已就绪。
 
 S2-03 认证还需在服务端进程环境安全配置 `AUTH_RATE_HASH_KEY`（至少32字节随机密钥，所有 worker 和重启使用同一值），`SITE_ORIGIN` 必须精确匹配浏览器来源。生产要求 HTTPS 来源与密钥，否则拒绝启动；development 缺密钥时健康检查可用，认证接口返回503。现有 `.env` 不自动修改；密钥轮换会使旧限流桶不再命中。默认不信任转发IP；明确的反向代理环境才配置 `AUTH_TRUSTED_PROXIES`（JSON数组，精确IP）。
 
@@ -101,6 +102,18 @@ INTERNAL_API_BASE_URL=http://127.0.0.1:8001 pnpm dev --port 5183
 ```
 
 注册受每IP每小时10次的真实限制。此前认证及本轮GPX浏览器验收均使用正常注册，未重置计数；配额用尽后等待窗口结束。反复浏览器测试应使用已有且版本正确的独立测试库，不清理开发库。
+
+构建产物在本机通过 HTTP 使用时，adapter-node 必须显式使用与浏览器一致的来源；否则其生产 CSRF 校验会按默认 HTTPS 推断请求来源并拒绝 multipart 写入。只在本地回环地址运行构建产物可用：
+
+```bash
+# 终端一：API 的 --site-origin 必须与前端本地来源完全一致
+backend/.venv/bin/python scripts/local-auth.py serve --port 8001 --site-origin http://127.0.0.1:5184
+# 终端二：先在 frontend 执行 pnpm build，再启动 adapter-node 构建产物
+cd frontend
+INTERNAL_API_BASE_URL=http://127.0.0.1:8001 PORT=5184 HOST=127.0.0.1 pnpm start:local
+```
+
+`start:local` 只允许 `127.0.0.1` 或 `localhost`。它在本地 HTTP listener 内覆盖 adapter-node 的协议头为 `http`，不是读取浏览器传来的转发头；同源比较仍使用实际 Host，API仍以 `SITE_ORIGIN` 独立校验 Origin 和 CSRF Token。不要通过 `csrf.trustedOrigins` 放行跨站来源。HTTPS 反向代理部署须让 Node 仅能由受控代理访问，并只信任代理覆盖设置的协议头；API `SITE_ORIGIN` 应与外部 HTTPS 来源完全一致。
 
 前端（另一终端）：
 
@@ -170,6 +183,8 @@ pnpm test:e2e
 
 E2E 要求后端已启动且数据库 ready；测试自动启动前端。使用已安装 Chrome 时可替换为 `PLAYWRIGHT_CHANNEL=chrome pnpm test:e2e`，无需下载 Chromium。
 
+E2E 会注册合成账号和导入记录，后端必须连接隔离测试库，不能使用开发业务库。会话过期用例另需向 Playwright 进程传入同一隔离库的 `TEST_DATABASE_URL` 和 `TEST_DATABASE_ALLOWED_TARGETS`；缺失、非 `_test` 库、与开发库同名或未列入允许目标时拒绝执行过期 SQL，不再从 `.env` 的业务库选择写入目标。构建版验收结果及本轮复跑命令见 [V1.2 稳定化验收](docs/25-v1.2-stabilization-acceptance.md)。
+
 ## 结构与实现边界
 
 - `frontend/`：认证页面、请求级SSR身份、同源API代理与私人页面保护；SvelteKit 3 / Svelte 5 / TypeScript，Tailwind 4；`src/lib/components/ui` 与 `components.json` 仅预留 shadcn-svelte 结构。
@@ -192,7 +207,7 @@ Linux 主机原生安装 PostgreSQL/PostGIS、Python、Node.js 与 Caddy。应�
 
 `.env`、虚拟环境、依赖目录及生成产物均被 Git 忽略。历史容器文件保留但停用；本项目不使用 Docker、Compose 或其他容器方案。第一阶段 Git 基线检查与本轮回归结果见实施记录第 10 节；不自动推送远程仓库。
 
-本轮公开主页与分享的隔离库迁移、权限矩阵和真实 Chrome 证据见 [验收记录](docs/14-public-sharing-acceptance.md)。开发库仍停留0003，本轮未对其迁移；将新版本连接开发库前，需按工程基线方案重新备份并另行授权0004/0005升级；本轮只验证隔离库。
+本轮公开主页与分享的隔离库迁移、权限矩阵和真实 Chrome 证据见 [验收记录](docs/14-public-sharing-acceptance.md)。开发库已在另行授权后从0003升级到0005，完整备份、恢复、数据核对及联调结果见 [V1.0集成验收](docs/17-v1-integration-acceptance.md)。
 
 
 ## AI 跑步分析
@@ -203,4 +218,4 @@ Linux 主机原生安装 PostgreSQL/PostGIS、Python、Node.js 与 Caddy。应�
 
 真实接口须通过FastAPI进程环境配置 `AI_BASE_URL`（含API前缀）、`AI_MODEL`、`AI_API_KEY`；可选 `AI_DAILY_LIMIT`（默认5）和 `AI_TOTAL_TIMEOUT_SECONDS`（默认30、最多30秒）。密钥仅服务端，禁止放入PUBLIC_*或前端；保留现有.env及认证密钥。默认未配置时页面提示不可用，没有生产Mock替代开关。不向供应商发送GPX、坐标、邮箱、用户名、标题或备注。
 
-完整指标、模拟报告、测试证据和待办见 [AI验收记录](docs/16-ai-running-analysis-acceptance.md)。真实模型兼容性、计费/质量及生产部署尚未验收；未调用付费接口、提交或推送。
+完整指标、模拟报告、测试证据和待办见 [AI验收记录](docs/16-ai-running-analysis-acceptance.md)。隔离库使用模拟供应商完成验收；开发库未配置AI，真实模型兼容性、计费/质量及生产部署尚未验收；未调用付费接口。

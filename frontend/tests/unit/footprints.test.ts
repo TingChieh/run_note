@@ -31,3 +31,42 @@ it('moves each whole line as one world copy without stretching opposite routes',
   const points=coordinates(displayFootprints(source).features[0].geometry);
   expect(Math.abs(points[3][0]-points[2][0])).toBeCloseTo(0.002,6);
 });
+
+it('visits geometry coordinates in order without expanding a temporary array', async () => {
+  const { forEachCoordinate, geometryBounds } = await import('../../src/lib/api/footprints');
+  const g={type:'GeometryCollection',geometries:[{type:'LineString',coordinates:[[179,1],[180,2]]},{type:'Point',coordinates:[181,-1]}]} as Parameters<typeof forEachCoordinate>[0];
+  const points:number[][]=[];
+  forEachCoordinate(g,p=>points.push(p));
+  expect(points).toEqual([[179,1],[180,2],[181,-1]]);
+  expect(geometryBounds([g])).toEqual([[179,-1],[181,2]]);
+  expect(geometryBounds([])).toBeNull();
+});
+
+it('reuses unchanged display geometry but never shifts original dateline coordinates', async () => {
+  const { displayFootprints } = await import('../../src/lib/api/footprints');
+  const g={type:'LineString',coordinates:[[121,31],[122,32]]};
+  const source={features:[{type:'Feature',geometry:g,properties:{}}]} as unknown as import('../../src/lib/api/footprints').Footprints;
+  expect(displayFootprints(source).features[0].geometry).toBe(g);
+  expect(g.coordinates).toEqual([[121,31],[122,32]]);
+});
+
+it('keeps frozen mixed geometries intact across world shifting and repeated framing', async () => {
+  const { displayFootprints, geometryBounds } = await import('../../src/lib/api/footprints');
+  const line={type:'LineString',coordinates:[[179,1],[180,2]]};
+  const multi={type:'MultiLineString',coordinates:[[[179,1],[180,2]],[[-180,1],[-179,2]]]};
+  const polygon={type:'Polygon',coordinates:[[[-180,0],[-179,0],[-179,1],[-180,0]]]};
+  const source={features:[{type:'Feature',geometry:{type:'GeometryCollection',geometries:[line,multi,polygon]},properties:{}}]} as unknown as import('../../src/lib/api/footprints').Footprints;
+  const freeze=(value: unknown): void => { if(value && typeof value==='object') { Object.values(value).forEach(freeze); Object.freeze(value); } };
+  const original=JSON.stringify(source);freeze(source);
+  for(let i=0;i<2;i++) {
+    const displayed=displayFootprints(source);
+    expect(geometryBounds(displayed.features.map(f=>f.geometry))).toEqual([[179,0],[181,2]]);
+    const g=displayed.features[0].geometry as typeof source.features[0]['geometry'] & {geometries: [typeof line,typeof multi,typeof polygon]};
+    expect(g.geometries[0]).toBe(line);
+    expect(g.geometries[1].coordinates[0]).toBe(multi.coordinates[0]);
+    expect(g.geometries[1].coordinates[1]).not.toBe(multi.coordinates[1]);
+    expect(g.geometries[2].coordinates).not.toBe(polygon.coordinates);
+  }
+  expect(JSON.stringify(source)).toBe(original);
+  expect(geometryBounds(source.features.map(f=>f.geometry))).toEqual([[-180,0],[180,2]]);
+});

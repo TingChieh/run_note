@@ -3,14 +3,15 @@
   import type { Snippet } from 'svelte';
   import { onMount } from 'svelte';
   import { page } from '$app/state';
+  import AppNavigation from '#lib/components/AppNavigation.svelte';
+  import FeedbackState from '#lib/components/FeedbackState.svelte';
   import { AuthError, authWrite, isProtected, readSession } from '#lib/api/auth.ts';
 
   let { children }: { children: Snippet } = $props();
   let checking = $state(false), busy = $state(false), mounted = $state(false), message = $state('');
-  const navigation = [
-    { href: '/', label: '项目概览' }, { href: '/activities', label: '跑步记录' },
-    { href: '/footprints', label: '个人足迹' }, { href: '/dashboard', label: '运动统计' }, { href: '/ai', label: 'AI 分析' }, { href: '/settings', label: '设置' }
-  ];
+  const appLayout = $derived(!!page.data.user && (isProtected(page.url.pathname) || page.url.pathname === '/'));
+  const sportSample = $derived(appLayout && /^\/activities\/[^/]+\/?$/.test(page.url.pathname));
+  const authPage = $derived(/^\/(login|register)\/?$/.test(page.url.pathname));
   async function logout() {
     if (busy) return; busy = true; message = '';
     try {
@@ -62,27 +63,29 @@
     };
   });
 </script>
-<a href="#main" class="sr-only focus:not-sr-only">跳转到主要内容</a>
-<header data-auth-ready={mounted} class="border-b border-border bg-white">
-  <div class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-5 px-6 py-5">
-    <a href="/" class="text-xl font-semibold tracking-tight">Run Note</a>
-    <nav aria-label="主要导航" class="flex flex-wrap gap-5 text-sm text-muted-foreground">
-      {#each navigation as item}<a href={item.href} data-sveltekit-reload class="hover:text-primary">{item.label}</a>{/each}
-    </nav>
-    <div class="flex flex-wrap items-center gap-3 text-sm">
-      <span data-testid="current-user">{checking ? '正在确认身份…' : page.data.user ? `已登录：${page.data.user.email}` : '未登录'}</span>
-      {#if page.data.user && !checking}
-        <button onclick={logout} disabled={busy || !mounted} class="text-primary underline disabled:opacity-50">{busy ? '退出中…' : '退出登录'}</button>
-      {:else if !checking}
-        <a href="/login" class="text-primary underline">登录</a><a href="/register" class="text-primary underline">注册</a>
-      {/if}
-    </div>
+<a href="#main" class="skip-link">跳转到主要内容</a>
+<div class:app-shell={appLayout} class:public-shell={!appLayout} class:sport-sample={sportSample}>
+  <header data-auth-ready={mounted}>
+    {#if appLayout && page.data.user}
+      <AppNavigation pathname={page.url.pathname} user={page.data.user} {checking} {busy} {mounted} {sportSample} onlogout={logout} />
+    {:else}
+      <div class="public-header">
+        <a href="/" class="brand"><span class="brand-mark" aria-hidden="true">R</span>RunNote</a>
+        <nav aria-label="主要导航" class="public-navigation">
+          {#if page.data.user}<a href="/dashboard" data-sveltekit-reload class="button-secondary">我的运动统计</a>{#if !checking}<button type="button" onclick={logout} disabled={busy || !mounted} class="button-secondary">{busy ? '退出中…' : '退出登录'}</button>{/if}
+          {:else}<a href="/activities" data-sveltekit-reload class="public-activities">跑步记录</a><a href="/login" aria-current={page.url.pathname === '/login' ? 'page' : undefined}>登录</a><a href="/register" class="button-secondary" aria-current={page.url.pathname === '/register' ? 'page' : undefined}>注册</a>{/if}
+        </nav>
+        <span class="sr-only" data-testid="current-user">{checking ? '正在确认身份…' : page.data.user ? `已登录：${page.data.user.email}` : '未登录'}</span>
+      </div>
+    {/if}
+  </header>
+  <div class="content-column">
+    <main id="main" tabindex="-1" class="page-content" class:auth-content={authPage}>
+      {#if message || page.data.authError}<div class="mb-5"><FeedbackState kind="error" title={message || page.data.authError || ''} /></div>{/if}
+      {#if checking && isProtected(page.url.pathname)}
+        <FeedbackState kind="loading" title="正在确认登录状态。若检查失败，请刷新重试。" />
+      {:else}{@render children()}{/if}
+    </main>
+    <footer class="app-footer"><span>RunNote</span><span>记录每一步，看见你的进步。</span></footer>
   </div>
-</header>
-<main id="main" class="mx-auto min-h-[75vh] max-w-5xl px-6 py-10">
-  {#if message || page.data.authError}<p role="alert" class="mb-5 text-red-700">{message || page.data.authError}</p>{/if}
-  {#if checking && isProtected(page.url.pathname)}
-    <p role="status">正在确认登录状态。若检查失败，请刷新重试。</p>
-  {:else}{@render children()}{/if}
-</main>
-<footer class="mx-auto max-w-5xl border-t border-border px-6 py-5 text-sm text-muted-foreground">软件工程毕业设计 · GPX 导入与路线地图</footer>
+</div>

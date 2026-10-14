@@ -3,10 +3,15 @@
   import { page } from '$app/state';
   import { replaceState } from '$app/navigation';
   import { AIError, confirmedRequestOutcome, readContext, readReports, readReport, generateReport, deleteReport, type Context, type Report, type ReportList, type Create } from '#lib/api/ai.ts';
+  import PageHeader from '#lib/components/PageHeader.svelte';
+  import FeedbackState from '#lib/components/FeedbackState.svelte';
   import AnalysisFacts from '#lib/components/AnalysisFacts.svelte';
   let context = $state<Context | null>(null), history = $state<ReportList | null>(null), selected = $state<Report | null>(null);
   let from = $state(''), to = $state(''), consent = $state(false), loading = $state(true), busy = $state(false), historyLoading = $state(false), detailLoading = $state(false);
   let message = $state(''), historyError = $state(''), notice = $state('');
+  let requestedReport = $state<string | null>(null);
+  let detailError = $state('');
+  async function retryContext() { if (busy || loading) return; loading = true; message = ''; try { await loadContext(!from || !to); } catch (cause) { message = fail(cause); } finally { loading = false; } }
   let pending = $state<{ key: string; payload: Create } | null>(null);
   let disposed = false, historyToken = 0, detailToken = 0;
   const storageKey = () => `runnote-ai-pending:${page.data.user?.id}`;
@@ -33,21 +38,22 @@
     finally { if (!disposed && token === historyToken) historyLoading = false; }
   }
   async function openReport(id: string) {
+    requestedReport = id; detailError = '';
     const token = ++detailToken; selected = null; detailLoading = true; message = ''; notice = '';
     try { const report = await readReport(id); if (!disposed && token === detailToken) { selected = report; selectURL(id); } }
-    catch (cause) { if (!disposed && token === detailToken) message = fail(cause); }
+    catch (cause) { if (!disposed && token === detailToken) detailError = fail(cause); }
     finally { if (!disposed && token === detailToken) detailLoading = false; }
   }
   async function preview(event: SubmitEvent) {
     event.preventDefault(); if (busy || pending) return;
     loading = true; message = ''; notice = ''; context = null; consent = false;
-    selected = null; ++detailToken; detailLoading = false; selectURL(null);
+    selected = null; requestedReport = null; detailError = ''; ++detailToken; detailLoading = false; selectURL(null);
     try { await loadContext(); } catch (cause) { if (!disposed) message = fail(cause); }
     finally { if (!disposed) loading = false; }
   }
   async function generate(replay = false) {
     if (busy || !consent || !context || !context.configured || from !== context.date_from || to !== context.date_to) return;
-    busy = true; message = ''; notice = ''; selected = null; ++detailToken; detailLoading = false;
+    busy = true; message = ''; notice = ''; selected = null; requestedReport = null; detailError = ''; ++detailToken; detailLoading = false;
     const attempt = replay && pending ? pending : {key:crypto.randomUUID(),payload:{date_from:context.date_from,date_to:context.date_to,consent_to_send_summary:true as const}};
     remember(attempt);
     try {
@@ -82,33 +88,35 @@
   });
 </script>
 <svelte:head><title>AI 跑步分析 · Run Note</title></svelte:head>
-<h1 class="text-3xl font-semibold">AI 跑步分析</h1>
-<p class="mt-3 text-muted-foreground">查看近期运动总结、趋势解释与下周辅助训练建议。真实指标由后端计算，AI只解释汇总数据。</p>
+<PageHeader title="AI 跑步分析" description="从运动数据出发，了解近期趋势与下周训练建议。AI 仅解释统计摘要。" />
 <p class="mt-4 rounded-lg bg-amber-50 p-4 text-sm text-amber-900">AI训练建议仅供参考，不构成医疗建议。疼痛或明显不适时停止训练并寻求专业意见。</p>
-{#if message}<p role="alert" class="mt-4 rounded border border-red-200 p-4 text-red-800">{message}</p>{/if}
-{#if notice}<p role="status" class="mt-4 text-green-800">{notice}</p>{/if}
-<section class="my-6 rounded-xl border border-border p-5" aria-label="分析设置">
-  <form onsubmit={preview} method="POST" class="flex flex-wrap items-end gap-4">
+{#if message}<div class="mt-4"><FeedbackState kind="error" title={message} /></div>{/if}
+{#if notice}<div class="mt-4"><FeedbackState kind="success" title={notice} /></div>{/if}
+<section class="aux-panel my-6" aria-label="分析设置" aria-busy={busy || loading}>
+  <h2 class="mb-5 text-xl font-semibold">生成运动分析</h2>
+  <form onsubmit={preview} method="POST" class="aux-date-form">
     <label class="grid gap-2">开始日期（周一）<input aria-label="开始日期（周一）" type="date" bind:value={from} disabled={busy || !!pending} required class="rounded border p-2" /></label>
     <label class="grid gap-2">结束日期（周一，不含）<input aria-label="结束日期（周一，不含）" type="date" bind:value={to} disabled={busy || !!pending} required class="rounded border p-2" /></label>
     <button type="submit" disabled={loading || busy || !!pending} class="rounded border px-4 py-2 disabled:opacity-50">读取统计依据</button>
   </form>
   <p class="mt-3 text-sm text-muted-foreground">默认最近四个已结束自然周。修改日期后先读取统计依据。刷新页面和查询历史不会生成分析。</p>
+  {#if !context && !loading}<button onclick={() => void retryContext()} class="button-secondary mt-4">重试读取统计依据</button>{/if}
   {#if context}
     <p class="mt-4 text-sm">模型：{context.model ?? '未配置'} · 今日剩余额度：{context.remaining_today}/{context.daily_limit}（UTC日期；失败调用也计入额度）</p>
     {#if !context.configured}<p role="note" class="mt-3 text-amber-900">AI服务尚未配置，请联系服务端维护者；运动记录和统计仍可使用。</p>{/if}
-    {#if context.stats_snapshot.summary.activity_count === 0}<p role="note" class="mt-3 text-amber-900">该范围没有运动记录，无法分析；不会调用AI或扣减额度。</p>{/if}
-    <label class="mt-4 flex items-start gap-3 text-sm"><input type="checkbox" bind:checked={consent} disabled={busy} class="mt-1" /><span>我同意向已配置的AI服务发送所选日期范围的最小统计摘要（周跑量、频率、配速、覆盖率和质量数量）；不包含GPX、坐标、邮箱、用户名、标题或备注。</span></label>
+    {#if context.stats_snapshot.summary.activity_count === 0}<p role="note" class="mt-3 text-amber-900">该范围没有运动记录，无法分析；不会调用AI或扣减额度。</p><a href="/activities" class="button-secondary mt-3">导入 GPX</a>{/if}
+    <label class="mt-5 flex items-start gap-3 rounded-lg border border-border bg-muted p-4 text-sm leading-6"><input type="checkbox" bind:checked={consent} disabled={busy} class="mt-1" /><span>我同意向已配置的AI服务发送所选日期范围的最小统计摘要（周跑量、频率、配速、覆盖率和质量数量）；不包含GPX、坐标、邮箱、用户名、标题或备注。</span></label>
     {#if pending}<p class="mt-3 text-sm text-amber-900">上次请求结果尚未确认。先读取历史，或按原标识重试；不会因网络中断自动另发新请求。</p>{/if}
     <button onclick={() => generate(!!pending)} disabled={busy || loading || !consent || !context.configured || from !== context.date_from || to !== context.date_to || context.stats_snapshot.summary.activity_count === 0 || !pending && context.remaining_today === 0} class="mt-4 rounded bg-primary px-5 py-3 text-white disabled:opacity-50">{busy ? '正在生成分析…' : pending ? '按原请求标识重试（防重复）' : '生成近期总结与下周建议'}</button>
   {/if}
-  {#if loading}<p role="status" class="mt-4">正在读取统计依据…</p>{/if}
-  {#if busy}<p role="status" class="mt-4">正在处理请求，请勿重复提交。生成后会保存报告。</p>{/if}
+  {#if loading}<div class="mt-4"><FeedbackState kind="loading" title="正在读取统计依据…" /></div>{/if}
+  {#if busy}<div class="mt-4"><FeedbackState kind="loading" title="正在处理请求，请勿重复提交。生成后会保存报告。" /></div>{/if}
 </section>
 {#if selected}
-  <section aria-label="当前报告" class="mb-6 rounded-xl border border-border p-5">
+  <section aria-label="当前报告" class="aux-panel mb-6">
     <div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-xl font-semibold">分析报告 · {label(selected)}</h2><button onclick={remove} disabled={busy || selected.status === 'pending'} class="text-red-800 underline disabled:opacity-50">删除报告</button></div>
-    <p class="mt-2 text-sm text-muted-foreground">{selected.date_from} 至 {selected.date_to} · {selected.model} · {selected.prompt_version}</p>
+    <p class="mt-2 text-sm text-muted-foreground">{selected.date_from} 至 {selected.date_to}（结束日期不含）</p>
+    <details class="mt-3 text-sm text-muted-foreground"><summary>报告信息</summary><p class="mt-2">模型：{selected.model} · 提示词版本：{selected.prompt_version}</p></details>
     {#if selected.is_stale}<p class="mt-3 text-amber-900">运动数据已变化；这是生成时的历史快照，建议重新分析。</p>{/if}
     {#if selected.analysis}
       <h3 class="mt-5 font-semibold">近期总结与趋势解释</h3><p class="mt-2 whitespace-pre-wrap">{selected.analysis.trend_summary}</p>
@@ -118,14 +126,15 @@
     {:else}<p role="status" class="mt-4">报告正在生成。请稍后点击历史中的“查看报告”更新状态。</p>{/if}
   </section>
 {/if}
-{#if detailLoading}<p role="status">正在读取报告…</p>{/if}
+{#if detailLoading}<div class="mb-6"><FeedbackState kind="loading" title="正在读取报告…" /></div>{/if}
+{#if detailError}<div class="aux-panel mb-6"><FeedbackState kind="error" title={detailError} /><button class="button-secondary mt-3" disabled={busy || detailLoading} onclick={() => { if (requestedReport) void openReport(requestedReport); }}>重试读取报告</button></div>{/if}
 {#if selected}<AnalysisFacts facts={selected.stats_snapshot} />{:else if context}<AnalysisFacts facts={context.stats_snapshot} />{/if}
-<section class="mt-8" aria-label="分析历史">
-  <div class="flex items-center justify-between"><h2 class="text-2xl font-semibold">分析历史</h2><button onclick={() => refreshHistory()} disabled={historyLoading || busy} class="underline">读取历史</button></div>
-  {#if historyLoading}<p role="status" class="mt-3">正在读取历史…</p>{/if}
-  {#if historyError}<p role="alert" class="mt-3 text-red-800">{historyError}</p>{/if}
+<section class="aux-panel mt-6" aria-label="分析历史">
+  <div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-2xl font-semibold">分析历史</h2><button onclick={() => refreshHistory()} disabled={historyLoading || busy} class="button-secondary">读取历史</button></div>
+  {#if historyLoading}<div class="mt-3"><FeedbackState kind="loading" title="正在读取历史…" /></div>{/if}
+  {#if historyError}<div class="mt-3"><FeedbackState kind="error" title={historyError} /></div>{/if}
   {#if history}
-    {#if history.items.length === 0}<p class="mt-4 text-muted-foreground">尚无分析报告。</p>{/if}
+    {#if history.items.length === 0}<div class="mt-4"><FeedbackState kind="empty" title="尚无分析报告。"><p>选择日期、读取依据并明确同意后，主动生成第一份分析。</p></FeedbackState></div>{/if}
     <ul class="mt-4 space-y-3">{#each history.items as report}<li class="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4"><div><p>{report.date_from} 至 {report.date_to} · {label(report)}</p><p class="mt-1 text-sm text-muted-foreground">{new Date(report.created_at).toLocaleString()} {report.is_stale ? '· 数据已变化' : ''}</p></div><button onclick={() => openReport(report.id)} disabled={busy || detailLoading} class="text-primary underline">查看报告</button></li>{/each}</ul>
     <div class="mt-4 flex items-center gap-4"><button disabled={history.offset === 0 || historyLoading || busy} onclick={() => refreshHistory(Math.max(0,history!.offset-10))}>上一页</button><span class="text-sm">共 {history.total} 份报告</span><button disabled={history.offset+10 >= history.total || historyLoading || busy} onclick={() => refreshHistory(history!.offset+10)}>下一页</button></div>
   {/if}
