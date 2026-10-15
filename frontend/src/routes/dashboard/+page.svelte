@@ -73,9 +73,12 @@
       {/each}
     </dl>
   {/if}
-  <div class="milestone-layout">
-    {#if page.data.user}{#key page.data.user.id}<GoalOverview user={page.data.user} />{/key}{/if}
-    <ProvinceMap {year} />
+  <div class="milestone-section">
+    <div class="milestone-layout">
+      {#if page.data.user}{#key page.data.user.id}<GoalOverview user={page.data.user} />{/key}{/if}
+      <ProvinceMap {year} />
+    </div>
+    <p class="goal-explanation">当前周期截至今天，同期按相同日历进度比较；连续记录按活动当地日期计算，今日/本周尚未结束时保留昨日/上周延续。</p>
   </div>
   <nav class="feature-entrances" aria-label="功能入口">
     {#each [
@@ -132,7 +135,9 @@
   </div></details>
 </div>
 <style>
-  .milestone-layout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:1.5rem;align-items:start;}
+  .milestone-section{display:grid;gap:var(--dashboard-card-gap);min-width:0;}
+  .milestone-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--dashboard-card-gap);align-items:stretch;}
+  .goal-explanation{font-size:.75rem;line-height:1.6;color:var(--muted-foreground);}
   @media(max-width:1199px){.milestone-layout{grid-template-columns:1fr;}}
   .feature-entrances { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--space-4); }
   .feature-entrance { display:flex; align-items:center; gap:.85rem; min-width:0; padding:1.1rem; border:1px solid var(--border); border-radius:var(--radius-card); background:var(--surface); }
@@ -152,10 +157,10 @@
 
   .button-primary { display: inline-flex; align-items: center; justify-content: center; min-height: 2.75rem; padding: .55rem 1rem; border-radius: var(--radius-control); background: var(--primary); color: var(--primary-foreground); font-weight: 600; font-size: .875rem; }
   .button-primary:hover { background: var(--primary-hover); color: var(--primary-foreground); }
-  .dashboard { display: grid; gap: var(--space-6); margin-top: var(--space-6); min-width: 0; }
+  .dashboard { --dashboard-card-gap:var(--space-4); display: grid; gap: var(--space-6); margin-top: var(--space-6); min-width: 0; }
   .cumulative { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem; font-size: .875rem; color: var(--muted-foreground); }
   .cumulative strong { color: var(--foreground); font-weight: 600; }
-  .annual-metrics { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: var(--space-4); }
+  .annual-metrics { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: var(--dashboard-card-gap); }
   .annual-metrics > div { min-width: 0; padding: var(--space-6); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
   dt { font-size: .875rem; color: var(--muted-foreground); }
   dd { margin-top: .75rem; font-size: clamp(1.5rem, 2.7vw, 2.4rem); line-height: 1.2; font-weight: 700; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
@@ -177,6 +182,6 @@
   .notes-content { display: grid; gap: .75rem; margin-top: 1rem; line-height: 1.8; }
   .day-activity { display: block; border: 1px solid var(--border); border-radius: var(--radius-control); padding: 1rem; }
   .day-activity:hover { border-color: var(--primary); }
-  @media (max-width: 767px) { .annual-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); gap: .75rem; } .annual-metrics > div { padding: 1rem; } .dashboard-card { padding: 1rem; } dd { font-size: 1.65rem; } .calendar-card h2 { font-size: 1.3rem; } .keyboard-hint { display: none; } }
+  @media (max-width: 767px) { .dashboard { --dashboard-card-gap:.75rem; } .annual-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); } .annual-metrics > div { padding: 1rem; } .dashboard-card { padding: 1rem; } dd { font-size: 1.65rem; } .calendar-card h2 { font-size: 1.3rem; } .keyboard-hint { display: none; } }
   @media (max-width: 359px) { dd { font-size: 1.4rem; } }
 </style>

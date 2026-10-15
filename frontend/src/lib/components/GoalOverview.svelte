@@ -100,11 +100,10 @@
       <p class="streak-best"><span aria-hidden="true">✦</span> 最长 {streaks.longest_days} 天 / {streaks.longest_weeks} 周</p>
     {/if}
   </section>
-  <p class="goal-explanation">当前周期截至今天，同期按相同日历进度比较；连续记录按活动当地日期计算，今日/本周尚未结束时保留昨日/上周延续。</p>
 </section>
 
 <style>
-  .goal-overview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;min-width:0;}
+  .goal-overview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--dashboard-card-gap,1rem);min-width:0;}
   .goal-card{min-width:0;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);padding:1.5rem;}
   .goal-heading{display:flex;align-items:center;justify-content:space-between;gap:.5rem;}
   h2{display:flex;align-items:center;gap:.6rem;color:var(--muted-foreground);font-size:1rem;font-weight:600;}
@@ -119,9 +118,9 @@
   .goal-facts{display:flex;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-top:1rem;color:var(--muted-foreground);font-size:.875rem;}.goal-facts span[aria-hidden]{color:var(--primary);font-size:1.25rem;}
   .goal-comparison{margin-top:.5rem;color:var(--primary);font-size:.875rem;}.goal-comparison.down{color:#c33e52;}
   .goal-form{margin:.5rem 0;}.goal-form label{font-size:.875rem;}.goal-form>div{display:flex;gap:.5rem;margin-top:.35rem;}.goal-form input{min-width:0;width:100%;}.goal-feedback{font-size:.8rem;margin-top:.5rem;color:var(--primary);}
-  .week-strip{display:flex;gap:.8rem;align-items:center;margin:1rem 0;}.week-strip ol{display:flex;justify-content:space-between;gap:.2rem;flex:1;min-width:0;}.week-strip li{display:grid;justify-items:center;gap:.35rem;min-width:0;font-size:.75rem;color:var(--muted-foreground);}
-  .week-day{display:grid;place-items:center;width:2rem;height:2rem;border-radius:50%;font-variant-numeric:tabular-nums;}.week-day.active{background:var(--sport-green);color:var(--sport-ink);font-weight:700;}.week-day.today{outline:2px solid var(--primary);outline-offset:2px;}
-  .week-flame{display:grid;justify-items:center;color:var(--muted-foreground);font-size:.75rem;min-width:2rem;}.week-flame>span:first-child{color:#f68721;font-size:1.6rem;}.week-flame strong{color:var(--foreground);}
-  .streak-best{color:var(--muted-foreground);font-size:.875rem;}.streak-best span{color:var(--primary);}.goal-explanation{grid-column:1/-1;font-size:.75rem;line-height:1.6;color:var(--muted-foreground);}
-  @media(max-width:639px){.goal-overview{grid-template-columns:1fr;}.goal-card{padding:1.15rem;}.week-strip{gap:.5rem;}.week-day{width:1.8rem;height:1.8rem;}}
+  .week-strip{display:flex;gap:.5rem;align-items:center;margin:1rem 0;}.week-strip ol{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:.2rem;flex:1;min-width:0;}.week-strip li{display:grid;grid-template-columns:minmax(0,1fr);justify-items:center;gap:.35rem;min-width:0;font-size:.75rem;color:var(--muted-foreground);}
+  .week-day{display:grid;place-items:center;width:100%;max-width:2rem;aspect-ratio:1;border-radius:50%;font-variant-numeric:tabular-nums;}.week-day.active{background:var(--sport-green);color:var(--sport-ink);font-weight:700;}.week-day.today{outline:2px solid var(--primary);outline-offset:2px;}
+  .week-flame{display:grid;justify-items:center;color:var(--muted-foreground);font-size:.75rem;min-width:1.5rem;}.week-flame>span:first-child{color:#f68721;font-size:1.6rem;}.week-flame strong{color:var(--foreground);}
+  .streak-best{color:var(--muted-foreground);font-size:.875rem;}.streak-best span{color:var(--primary);}
+  @media(max-width:639px){.goal-overview{grid-template-columns:1fr;}.goal-card{padding:1.15rem;}.week-strip{gap:.5rem;}.week-day{max-width:1.8rem;}}
 </style>
