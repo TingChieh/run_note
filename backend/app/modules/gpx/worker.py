@@ -3,33 +3,48 @@
 import multiprocessing
 import threading
 import time
+from functools import partial
 
 from app.core.errors import ApiError
 from app.modules.gpx.parser import MAX_BYTES, parse_gpx
 from app.modules.gpx.schema import ParsedGPX
+from app.modules.tcx.parser import parse_tcx
 
 _SLOT = threading.Semaphore(1)
 
 
-def _parse_target(raw, pipe):
+def _parse_target(raw, pipe, format="gpx", timezone="UTC", time_mode="absolute"):
     try:
-        pipe.send(("ok", parse_gpx(raw)))
+        parsed = parse_tcx(raw, timezone, time_mode) if format == "tcx" else parse_gpx(raw)
+        pipe.send(("ok", parsed))
     except ApiError as error:
         pipe.send(("error", (error.status_code, error.code, error.message)))
     except Exception:
-        pipe.send(("error", (400, "GPX_XML_INVALID", "GPX 无法解析")))
+        pipe.send(("error", (400, f"{format.upper()}_XML_INVALID", "轨迹文件无法解析")))
     finally:
         pipe.close()
 
 
-def bounded_parse(raw: bytes, timeout: float = 15, *, _target=None) -> ParsedGPX:
+def bounded_parse(
+    raw: bytes,
+    timeout: float = 15,
+    *,
+    _target=None,
+    format="gpx",
+    timezone="UTC",
+    time_mode="absolute",
+) -> ParsedGPX:
+    prefix = format.upper()
     if len(raw) > MAX_BYTES:
-        raise ApiError(413, "GPX_TOO_LARGE", "GPX 文件超过大小限制")
+        raise ApiError(413, f"{prefix}_TOO_LARGE", "轨迹文件超过大小限制")
     if not _SLOT.acquire(blocking=False):
         raise ApiError(429, "IMPORT_BUSY", "解析服务正忙", retry_after=1)
     context = multiprocessing.get_context("spawn")
     receiver, sender = context.Pipe(duplex=False)
-    process = context.Process(target=_target or _parse_target, args=(raw, sender))
+    target = _target or partial(
+        _parse_target, format=format, timezone=timezone, time_mode=time_mode
+    )
+    process = context.Process(target=target, args=(raw, sender))
     started = False
     watchdog = None
     expired = threading.Event()
@@ -54,22 +69,22 @@ def bounded_parse(raw: bytes, timeout: float = 15, *, _target=None) -> ParsedGPX
         watchdog.start()
         # Receive before joining: a 50000-point payload exceeds pipe capacity.
         if not receiver.poll(max(0, deadline - time.monotonic())):
-            raise ApiError(503, "GPX_PROCESSING_TIMEOUT", "GPX 解析超时")
+            raise ApiError(503, f"{prefix}_PROCESSING_TIMEOUT", "轨迹解析超时")
         try:
             kind, result = receiver.recv()
         except (EOFError, OSError):
             if expired.is_set() or time.monotonic() >= deadline:
-                raise ApiError(503, "GPX_PROCESSING_TIMEOUT", "GPX 解析超时") from None
-            raise ApiError(503, "GPX_PROCESSING_FAILED", "GPX 解析失败") from None
+                raise ApiError(503, f"{prefix}_PROCESSING_TIMEOUT", "轨迹解析超时") from None
+            raise ApiError(503, f"{prefix}_PROCESSING_FAILED", "轨迹解析失败") from None
         if time.monotonic() > deadline:
-            raise ApiError(503, "GPX_PROCESSING_TIMEOUT", "GPX 解析超时")
+            raise ApiError(503, f"{prefix}_PROCESSING_TIMEOUT", "轨迹解析超时")
         process.join(max(0, deadline - time.monotonic()))
         if process.is_alive():
-            raise ApiError(503, "GPX_PROCESSING_TIMEOUT", "GPX 解析超时")
+            raise ApiError(503, f"{prefix}_PROCESSING_TIMEOUT", "轨迹解析超时")
         if kind == "error":
             raise ApiError(*result)
         if kind != "ok" or not isinstance(result, ParsedGPX):
-            raise ApiError(503, "GPX_PROCESSING_FAILED", "GPX 解析失败")
+            raise ApiError(503, f"{prefix}_PROCESSING_FAILED", "轨迹解析失败")
         return result
     finally:
         if watchdog is not None:

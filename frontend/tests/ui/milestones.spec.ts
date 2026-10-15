@@ -35,8 +35,8 @@ test('home has real period goals, streaks, province lighting and a private wall 
   await expect(map.getByTestId('province-count')).toHaveText('1 / 34');
   await map.getByRole('button',{name:'上海市，已点亮，1 次活动'}).click();
   await expect(map.getByRole('status')).toContainText('上海市');
-  await expect(page.getByRole('region',{name:'近期足迹墙'}).getByRole('link',{name:/河畔晨跑/})).toBeVisible();
-  await expect(page.getByText(/GPX|导入/)).toHaveCount(0);
+  await expect(page.getByRole('region',{name:'运动足迹',exact:true}).getByRole('button',{name:'选择运动 河畔晨跑',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:/导入/})).toHaveCount(0);
   for (const width of [320,390,768,1440]) {
     await page.setViewportSize({width,height:1000});
     await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
@@ -45,7 +45,7 @@ test('home has real period goals, streaks, province lighting and a private wall 
       await page.screenshot({path:`test-results/milestones-home-${width}.png`,fullPage:false});
       await goals.screenshot({path:`test-results/milestones-goals-${width}.png`});
       await map.screenshot({path:`test-results/milestones-provinces-${width}.png`});
-      const wall=page.getByRole('region',{name:'近期足迹墙'});await wall.scrollIntoViewIfNeeded();
+      const wall=page.getByRole('region',{name:'运动足迹',exact:true});await wall.getByRole('button',{name:'选择运动 河畔晨跑',exact:true}).scrollIntoViewIfNeeded();
       await expect(wall.getByRole('img',{name:/河畔晨跑的路线轮廓/})).toBeVisible();
       await wall.screenshot({path:`test-results/milestones-wall-${width}.png`});
     }

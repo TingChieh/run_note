@@ -27,11 +27,12 @@ def validate_range(start, end, *, optional=False):
 
 
 def expressions():
-    known = A.elapsed_seconds.is_not(None)
+    duration = func.coalesce(A.timer_seconds, A.elapsed_seconds)
+    known = duration.is_not(None)
     eligible = (
         (A.distance_m > 0)
-        & (A.elapsed_seconds > 0)
-        & A.temporal_quality.in_(["complete", "manual"])
+        & (duration > 0)
+        & (A.timer_seconds.is_not(None) | A.temporal_quality.in_(["complete", "manual"]))
     )
     warnings = A.quality_summary["warnings"]
     warning_count = case(
@@ -41,12 +42,12 @@ def expressions():
         func.count().label("activity_count"),
         func.coalesce(func.sum(A.distance_m), 0).label("distance_m"),
         func.count(func.distinct(A.activity_date)).label("activity_days"),
-        func.sum(A.elapsed_seconds).label("duration_sum_seconds"),
+        func.sum(duration).label("duration_sum_seconds"),
         func.count().filter(known).label("known_duration_count"),
         func.count().filter(~known).label("missing_duration_count"),
         func.count().filter(eligible).label("pace_eligible_count"),
         func.coalesce(func.sum(A.distance_m).filter(eligible), 0).label("pace_eligible_distance_m"),
-        func.coalesce(func.sum(A.elapsed_seconds).filter(eligible), 0).label("eligible_duration"),
+        func.coalesce(func.sum(duration).filter(eligible), 0).label("eligible_duration"),
         func.count()
         .filter((warning_count > 0) | A.temporal_quality.in_(["incomplete", "invalid"]))
         .label("quality_warning_count"),

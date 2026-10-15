@@ -23,21 +23,34 @@ async def import_gpx(
     identity: Annotated[tuple, Depends(require_write)],
     db: Annotated[Session, Depends(get_session)],
 ):
+    return await import_file(request, identity, db, "gpx")
+
+
+async def import_file(request, identity, db, format):
+    label = format.upper()
+    allowed = {"file", "title", "timezone", "activity_date"}
+    if format == "tcx":
+        allowed.add("time_mode")
     owner, default_timezone = identity[1].id, identity[1].timezone
     db.commit()  # Authentication's user lock must not cover reading/parsing a file.
     try:
-        async with request.form(max_files=1, max_fields=3, max_part_size=4096) as form:
+        async with request.form(
+            max_files=1, max_fields=len(allowed) - 1, max_part_size=4096
+        ) as form:
             values = form.multi_items()
             if len(values) != len({key for key, _ in values}) or any(
-                key not in {"file", "title", "timezone", "activity_date"} for key, _ in values
+                key not in allowed for key, _ in values
             ):
-                raise ApiError(422, "VALIDATION_ERROR", "只允许单个 GPX 文件、标题、时区和活动日期")
+                raise ApiError(422, "VALIDATION_ERROR", "只允许单个轨迹文件和受支持的导入选项")
             file = form.get("file")
             if not isinstance(file, UploadFile):
-                raise ApiError(422, "VALIDATION_ERROR", "请选择单个 GPX 文件")
+                raise ApiError(422, "VALIDATION_ERROR", "请选择单个轨迹文件")
             fields = {key: value for key, value in values if key != "file"}
             if any(not isinstance(v, str) for v in fields.values()):
                 raise ApiError(422, "VALIDATION_ERROR", "表单字段不合法")
+            time_mode = fields.get("time_mode") or "absolute"
+            if time_mode not in {"absolute", "local"}:
+                raise ApiError(422, "VALIDATION_ERROR", "时间解释方式不合法")
             title = fields.get("title") or None
             timezone = fields.get("timezone") or default_timezone
             if title and (len(title) > 120 or not title.strip()):
@@ -57,9 +70,11 @@ async def import_gpx(
             while chunk := await file.read(1024 * 1024):
                 raw.extend(chunk)
                 if len(raw) > 10485760:
-                    raise ApiError(413, "GPX_TOO_LARGE", "GPX 文件不能超过 10 MiB")
+                    raise ApiError(413, f"{label}_TOO_LARGE", "轨迹文件不能超过 10 MiB")
+            importer = service.import_gpx if format == "gpx" else service.import_track
+            options = {"format": "tcx", "time_mode": time_mode} if format == "tcx" else {}
             data = await run_in_threadpool(
-                service.import_gpx,
+                importer,
                 request,
                 db,
                 owner,
@@ -68,6 +83,7 @@ async def import_gpx(
                 title,
                 timezone,
                 activity_date,
+                **options,
             )
     except HTTPException:
         raise ApiError(

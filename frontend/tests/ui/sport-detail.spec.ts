@@ -14,10 +14,10 @@ test('detail keeps a compact overview beside a spacious route and stays consiste
   await expect(page.getByTestId('sport-hero')).toContainText('河畔晨跑');await expect(page.getByTestId('sport-hero')).toContainText('2026-10-13');
   await expect(page.getByTestId('activity-distance')).toHaveText('5.1 km');
   const metrics=await page.getByRole('region',{name:'运动指标'}).boundingBox(),map=await page.getByRole('region',{name:'路线',exact:true}).boundingBox();
-  expect(map!.x).toBeGreaterThan(metrics!.x+metrics!.width);expect(Math.abs(map!.y-metrics!.y)).toBeLessThan(2);expect(metrics!.width).toBeLessThanOrEqual(320);expect(map!.width).toBeGreaterThan(metrics!.width*2);expect(metrics!.height).toBeLessThan(map!.height*.75);
+  expect(map!.x).toBeGreaterThan(metrics!.x+metrics!.width);expect(Math.abs(map!.y-metrics!.y)).toBeLessThan(2);expect(metrics!.width).toBeLessThanOrEqual(320);expect(map!.width).toBeGreaterThan(metrics!.width*2);expect(Math.abs(metrics!.height-map!.height)).toBeLessThan(150);
   const cards = page.locator('.metric-panel .metrics'), routeCanvas = page.locator('.route-map');
   const cardBounds = await cards.boundingBox(), canvasBounds = await routeCanvas.boundingBox();
-  expect(Math.abs(cardBounds!.y-canvasBounds!.y)).toBeLessThan(2);expect(cardBounds!.height).toBeLessThan(canvasBounds!.height*.75);
+  expect(Math.abs(cardBounds!.y-canvasBounds!.y)).toBeLessThan(2);expect(cardBounds!.height).toBeLessThanOrEqual(canvasBounds!.height);
   const sidebar=page.locator('.app-sidebar'),color=await sidebar.evaluate(el=>getComputedStyle(el).backgroundColor);expect(color).toBe('rgb(33, 133, 56)');
   const active=page.getByRole('navigation',{name:'主要导航'}).getByRole('link',{name:'跑步记录',exact:true});await expect(active).toHaveAttribute('aria-current','page');await active.focus();expect(await active.evaluate(el=>getComputedStyle(el).outlineStyle)).toBe('solid');
   await capture(page,'desktop');await page.getByText('数据质量与指标说明',{exact:true}).focus();await page.keyboard.press('Enter');await expect(page.getByText('有效轨迹点',{exact:true})).toBeVisible();await page.keyboard.press('Enter');

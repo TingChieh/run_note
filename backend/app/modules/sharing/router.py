@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_identity, get_session, require_write
 from app.core.responses import ApiResponse
 from app.modules.activities.router import envelope
-from app.modules.activities.schema import ActivityView
 from app.modules.sharing import service
 from app.modules.sharing.schema import (
     PublicActivity,
@@ -17,7 +16,6 @@ from app.modules.sharing.schema import (
     ShareCreate,
     ShareCreated,
     ShareList,
-    VisibilityUpdate,
 )
 from app.modules.statistics import service as statistics
 from app.modules.statistics.schema import Calendar
@@ -26,17 +24,6 @@ router = APIRouter(prefix="/api/v1", tags=["sharing"])
 DB = Annotated[Session, Depends(get_session)]
 Write = Annotated[tuple, Depends(require_write)]
 Read = Annotated[tuple, Depends(get_identity)]
-
-
-@router.patch("/activities/{identifier}", response_model=ApiResponse[ActivityView])
-def visibility(
-    identifier: UUID, payload: VisibilityUpdate, request: Request, identity: Write, db: DB
-):
-    data = service.visibility(
-        db, identity[1].id, identifier, payload.visibility, request.app.state.clock()
-    )
-    db.commit()
-    return envelope(request, data)
 
 
 @router.post(

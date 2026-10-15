@@ -43,6 +43,42 @@ def test_payload_reconstructs_nested_whitelist():
     assert json.loads(content)["summary"]["distance_m"] == "7000"
 
 
+def test_device_metrics_survive_only_as_explicit_aggregate_whitelist():
+    metrics = {
+        "heart_rate_record_count": 2,
+        "heart_rate_weighted_count": 2,
+        "heart_rate_weighted_duration_seconds": "1200.000",
+        "avg_heart_rate_bpm": "150.000",
+        "calories_record_count": 1,
+        "calories_kcal": 100,
+        "steps_record_count": 1,
+        "steps": 1000,
+        "raw_tcx": "RAW_PRIVATE_SENTINEL",
+        "coordinates": [1, 2],
+        "user": {"email": "HIDDEN_EMAIL_SENTINEL"},
+    }
+    snapshot = {
+        **SNAPSHOT,
+        "schema_version": "running-summary-v2",
+        "device_metrics": metrics,
+        "weeks": [{**SNAPSHOT["weeks"][0], "device_metrics": metrics}],
+    }
+    content = request_body(snapshot, "test")["messages"][1]["content"]
+    result = json.loads(content)
+    assert result["device_metrics"]["avg_heart_rate_bpm"] == "150.000"
+    assert result["weeks"][0]["device_metrics"]["steps"] == 1000
+    assert all(
+        secret not in content
+        for secret in [
+            "RAW_PRIVATE_SENTINEL",
+            "HIDDEN_EMAIL_SENTINEL",
+            "coordinates",
+            "raw_tcx",
+            "user",
+        ]
+    )
+
+
 def test_total_deadline_terminates_child():
     before = {p.pid for p in multiprocessing.active_children()}
     start = time.monotonic()

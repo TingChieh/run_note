@@ -6,13 +6,13 @@
   import { page } from '$app/state';
   import { replaceState } from '$app/navigation';
   import { dashboardQuery, dashboardSelection } from '#lib/api/dashboard-query.ts';
-  import { ActivityError, readActivities, formatDuration, formatPace, qualityLabel, type ActivityList } from '#lib/api/activities.ts';
+  import { ActivityError, readActivities, formatDuration, activityDuration, formatPace, qualityLabel, type ActivityList } from '#lib/api/activities.ts';
   import { currentYear, readSummary, readCalendar, readTrends, type Summary, type Calendar, type Trends, type CalendarMetric } from '#lib/api/statistics.ts';
   import CalendarGrid from '#lib/components/CalendarGrid.svelte';
   import TrendChart from '#lib/components/TrendChart.svelte';
   import GoalOverview from '#lib/components/GoalOverview.svelte';
   import ProvinceMap from '#lib/components/ProvinceMap.svelte';
-  import FootprintWall from '#lib/components/FootprintWall.svelte';
+  import ActivityExplorer from '#lib/components/ActivityExplorer.svelte';
   let year = $state(2026), yearInput = $state('2026'), calendarMetric = $state<CalendarMetric>('distance'), period = $state<Trends['period']>('month'), trendMetric = $state<'distance' | 'count' | 'duration' | 'pace'>('distance');
   let annual = $state<Summary | null>(null), cumulative = $state<Summary | null>(null), calendar = $state<Calendar | null>(null), trends = $state<Trends | null>(null), records = $state<ActivityList | null>(null);
   let selectedDate = $state<string | null>(null), loading = $state(true), dayLoading = $state(false), trendLoading = $state(false), message = $state(''), cumulativeMessage = $state(''), yearMessage = $state(''), dayMessage = $state(''), trendMessage = $state('');
@@ -56,7 +56,7 @@
     if (next < 1900 || next > 2100) return;
     yearMessage = ''; year = next; yearInput = String(next); selectedDate = null; saveSelection(); void loadYear();
   }
-  function changeYear(event: SubmitEvent) { event.preventDefault(); const next = Number(yearInput); if (!/^\d{4}$/.test(String(yearInput)) || !Number.isInteger(next) || next < 1900 || next > 2100) { yearMessage = '请输入 1900–2100 年'; return; } setYear(next); }
+  function changeYear(value: string) { yearInput = value; const next = Number(value); if (!/^\d{4}$/.test(value) || next < 1900 || next > 2100) { yearMessage = '请输入 1900–2100 年'; return; } yearMessage = ''; if (next !== year) setYear(next); }
   let hasTrendActivities = $derived(trends?.buckets.some(bucket => bucket.activity_count > 0) ?? false);
   onMount(() => { const selection = dashboardSelection(new URL(window.location.href).searchParams, currentYear(page.data.user?.timezone ?? 'UTC')); year = selection.year; calendarMetric = selection.metric; period = selection.period; yearInput = String(year); selectedDate = selection.day; saveSelection(); void loadYear(selection.day); void loadCumulative(); return () => { disposed = true; yearRequest++; dayRequest++; trendRequest++; annual = null; cumulative = null; calendar = null; trends = null; records = null; }; });
 </script>
@@ -95,17 +95,16 @@
       </a>
     {/each}
   </nav>
-  <FootprintWall preview />
+  <ActivityExplorer />
   <section class="dashboard-card calendar-card" aria-labelledby="calendar-title" aria-busy={loading}>
     <div class="card-heading"><div><p class="eyebrow">每一天，都算数</p><h2 id="calendar-title">{year} 年运动日历</h2></div>
-      <form onsubmit={changeYear} class="year-controls">
+      <div class="year-controls">
         <button type="button" class="button-secondary year-arrow" aria-label="上一年" disabled={year <= 1900} onclick={() => setYear(year - 1)}>‹</button>
-        <label class="sr-only" for="calendar-year">年份</label><input id="calendar-year" aria-describedby={yearMessage ? 'year-error' : undefined} aria-invalid={yearMessage ? true : undefined} type="text" inputmode="numeric" maxlength="4" bind:value={yearInput} />
-        <button type="submit" class="button-secondary">查看</button>
+        <label class="sr-only" for="calendar-year">年份</label><input id="calendar-year" aria-describedby={yearMessage ? 'year-error' : undefined} aria-invalid={yearMessage ? true : undefined} type="text" inputmode="numeric" maxlength="4" value={yearInput} oninput={event => changeYear(event.currentTarget.value)} />
         <button type="button" class="button-secondary year-arrow" aria-label="下一年" disabled={year >= 2100} onclick={() => setYear(year + 1)}>›</button>
-      </form>
+      </div>
     </div>
-    {#if yearMessage}<p id="year-error" role="alert" class="mt-3 text-red-700">{yearMessage}</p>{/if}
+    {#if yearMessage}<p id="year-error" role="alert" class="mt-3 text-destructive">{yearMessage}</p>{/if}
     <div class="calendar-toolbar"><label>日历维度 <select aria-label="日历维度" bind:value={calendarMetric} onchange={saveSelection}><option value="distance">距离</option><option value="count">次数</option></select></label><p>选择日期查看记录<span class="keyboard-hint"> · 方向键移动</span></p></div>
     {#if loading}<FeedbackState kind="loading" title={`正在读取 ${year} 年统计…`} />{:else if calendar}
       <CalendarGrid {calendar} metric={calendarMetric} selected={selectedDate} enhanced onselect={(date) => { void selectDay(date); }} />
@@ -116,7 +115,7 @@
     <div class="card-heading"><h2 id="day-title">{selectedDate} 的活动{records ? `（${records.total}）` : ''}</h2><button class="button-secondary" onclick={() => { ++dayRequest; selectedDate = null; records = null; dayLoading = false; dayMessage = ''; saveSelection(); }}>收起当天记录</button></div>
     <div class="mt-4">{#if dayLoading}<FeedbackState kind="loading" title="正在读取当天活动…" />{:else if dayMessage}<FeedbackState kind="error" title={dayMessage}><button onclick={() => { void selectDay(selectedDate!); }} class="button-secondary">重试当天活动</button></FeedbackState>{:else if records}
       {#if records.items.length === 0}<FeedbackState title="当天没有活动记录">选择其他日期，或<a href="/activities" data-sveltekit-reload class="text-primary underline">查看跑步记录</a>。</FeedbackState>{:else}
-        <ul class="space-y-3">{#each records.items as activity (activity.id)}<li><a href={`/activities/${activity.id}`} data-sveltekit-reload class="day-activity"><div class="flex flex-wrap justify-between gap-2"><h3 class="font-semibold">{activity.title || '未命名活动'}</h3><strong>{dashboardDistance(activity.distance_m)}</strong></div><p class="mt-2 text-sm text-muted-foreground">用时 {formatDuration(activity.elapsed_seconds)} · 配速 {formatPace(activity.avg_pace_seconds_per_km)} · {qualityLabel(activity.temporal_quality)}</p></a></li>{/each}</ul>
+        <ul class="space-y-3">{#each records.items as activity (activity.id)}<li><a href={`/activities/${activity.id}`} data-sveltekit-reload class="day-activity"><div class="flex flex-wrap justify-between gap-2"><h3 class="font-semibold">{activity.title || '未命名活动'}</h3><strong>{dashboardDistance(activity.distance_m)}</strong></div><p class="mt-2 text-sm text-muted-foreground">用时 {formatDuration(activityDuration(activity))} · 配速 {formatPace(activity.avg_pace_seconds_per_km)} · {qualityLabel(activity.temporal_quality)}</p></a></li>{/each}</ul>
       {/if}
       {#if records.total > 20}<div class="mt-4 flex flex-wrap items-center gap-3"><button disabled={records.offset === 0} onclick={() => { void selectDay(selectedDate!, Math.max(0, records!.offset - 20)); }} class="button-secondary">上一页</button><span class="text-sm">第 {Math.floor(records.offset / 20) + 1} 页</span><button disabled={records.offset + records.items.length >= records.total} onclick={() => { void selectDay(selectedDate!, records!.offset + 20); }} class="button-secondary">下一页</button></div>{/if}
     {/if}</div>
@@ -144,14 +143,14 @@
   .feature-entrance:hover { border-color:var(--primary); background:var(--muted); }
   .feature-icon { display:grid; place-items:center; flex-shrink:0; width:2.5rem; height:2.5rem; border-radius:50%; background:var(--sport-green); color:var(--sport-ink); font-size:1.2rem; }
   .feature-entrance:nth-child(2) .feature-icon { background:var(--sport-blue); }
-  .feature-entrance:nth-child(3) .feature-icon { background:var(--sport-yellow); }
+  .feature-entrance:nth-child(3) .feature-icon { background:var(--sport-yellow-accent); }
   .feature-entrance:nth-child(4) .feature-icon { background:var(--sport-coral); }
   .feature-description { display:block; margin-top:.25rem; font-size:.8rem; color:var(--muted-foreground); }
   .feature-arrow { margin-left:auto; color:var(--primary); }
   @media (max-width:639px) { .feature-entrances { grid-template-columns:1fr; } }
   .annual-icon { display:inline-grid; place-items:center; width:2.5rem; height:2.5rem; flex-shrink:0; margin-right:.65rem; border-radius:50%; font-size:1.2rem; font-weight:700; background:var(--sport-green); color:var(--sport-ink); }
   .annual-metrics > div:nth-child(2) .annual-icon { background:var(--sport-blue); }
-  .annual-metrics > div:nth-child(3) .annual-icon { background:var(--sport-yellow); }
+  .annual-metrics > div:nth-child(3) .annual-icon { background:var(--sport-yellow-accent); }
   .annual-metrics > div:nth-child(4) .annual-icon { background:var(--sport-coral); }
   .annual-metrics dt { display:flex; align-items:center; }
 

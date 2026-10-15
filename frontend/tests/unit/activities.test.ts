@@ -46,3 +46,30 @@ describe('activity display and privacy boundary', () => {
     expect(() => unwrapRoute({ ...route, start: [190, 10] })).toThrow('无效响应');
   });
 });
+
+describe('TCX private metrics and upload', () => {
+  it('uploads TCX with explicit time interpretation through fresh CSRF', async () => {
+    const { uploadTcx } = await import('../../src/lib/api/activities');
+    const form = new FormData(); form.append('file', new Blob(['<TrainingCenterDatabase/>']), 'run.tcx'); form.append('time_mode', 'local');
+    const fetcher: typeof fetch = async (input, init) => {
+      if (input === '/api/v1/auth/csrf') return envelope({ csrf_token: 'tcx-token' });
+      expect(input).toBe('/api/v1/tcx-imports');
+      expect(new Headers(init?.headers).get('X-CSRF-Token')).toBe('tcx-token');
+      expect(init?.body).toBe(form);
+      return envelope({ activity: { ...activity, timer_seconds:'1166', avg_heart_rate_bpm:156, calories_kcal:144, steps:3262 }, warnings:[] });
+    };
+    await expect(uploadTcx(form, fetcher)).resolves.toMatchObject({ activity: { avg_heart_rate_bpm:156, timer_seconds:'1166' } });
+  });
+  it('prefers device duration without converting zero or missing data and formats corrected start time', async () => {
+    const { activityDuration, formatStartTime } = await import('../../src/lib/api/activities');
+    expect(activityDuration({ ...activity, elapsed_seconds:'1322', timer_seconds:'1166' })).toBe('1166');
+    expect(activityDuration({ ...activity, elapsed_seconds:'1322', timer_seconds:0 })).toBe(0);
+    expect(activityDuration(activity)).toBeNull();
+    expect(formatStartTime('2026-10-04T08:15:20Z', 'Asia/Shanghai')).toBe('16:15:20');
+  });
+  it('rejects corrupted physiological metrics instead of showing impossible values', async () => {
+    for (const fields of [{ avg_heart_rate_bpm:999 }, { steps:-1 }, { calories_kcal:2.5 }, { timer_seconds:'NaN' }]) {
+      await expect(readActivity(activity.id, async () => envelope({ ...activity,...fields }))).rejects.toThrow('无效响应');
+    }
+  });
+});

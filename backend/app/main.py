@@ -20,6 +20,7 @@ from app.modules.health.router import router
 from app.modules.running_goals.router import router as running_goals_router
 from app.modules.sharing.router import router as sharing_router
 from app.modules.statistics.router import router as statistics_router
+from app.modules.tcx.router import router as tcx_router
 from app.modules.users.router import router as users_router
 
 
@@ -47,6 +48,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_error_handlers(app)
     app.include_router(router)
     app.include_router(gpx_router)
+    app.include_router(tcx_router)
     app.include_router(activities_router)
     app.include_router(statistics_router)
     app.include_router(footprints_router)

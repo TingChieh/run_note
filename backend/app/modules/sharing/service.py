@@ -2,12 +2,12 @@ import re
 import secrets
 from datetime import timedelta
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 
 from app.core.errors import ApiError
 from app.core.security import token_hash
 from app.modules.activities.model import Activity
-from app.modules.activities.service import detail, owned_activity
+from app.modules.activities.service import lock_owner, owned_activity
 from app.modules.sharing.model import ActivityShareLink as Link
 from app.modules.sharing.schema import (
     PublicActivity,
@@ -52,10 +52,15 @@ def public_view(db, activity):
                 "title",
                 "activity_date",
                 "distance_m",
-                "elapsed_seconds",
                 "avg_pace_seconds_per_km",
             )
         },
+        # The public allowlist keeps one duration, coherent with its displayed pace.
+        elapsed_seconds=(
+            activity.timer_seconds
+            if activity.timer_seconds is not None
+            else activity.elapsed_seconds
+        ),
         author=PublicAuthor(username=user.username, display_name=user.display_name),
     )
 
@@ -87,32 +92,6 @@ def public_listing(db, username, limit, offset, day):
         limit=limit,
         offset=offset,
     )
-
-
-def lock_owner(db, owner):
-    return db.scalar(
-        select(User)
-        .where(User.id == owner)
-        .with_for_update()
-        .execution_options(populate_existing=True)
-    )
-
-
-def visibility(db, owner, identifier, value, now):
-    user = lock_owner(db, owner)
-    activity = owned_activity(db, owner, identifier)
-    activity.visibility = value
-    # This release shares only summaries, never coordinates.
-    activity.allow_shared_route = False
-    if value == "private":
-        db.execute(
-            update(Link)
-            .where(Link.activity_id == identifier, Link.revoked_at.is_(None))
-            .values(revoked_at=now)
-        )
-    user.activity_data_version += 1
-    db.flush()
-    return detail(db, owner, identifier)
 
 
 def create_link(db, owner, identifier, payload, now, origin):

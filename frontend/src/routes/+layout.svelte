@@ -1,15 +1,23 @@
 <script lang="ts">
   import '../app.css';
-  import type { Snippet } from 'svelte';
+  import type { Component, Snippet } from 'svelte';
   import { onMount } from 'svelte';
   import { page } from '$app/state';
   import AppNavigation from '#lib/components/AppNavigation.svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import { AuthError, authWrite, isProtected, readSession } from '#lib/api/auth.ts';
+  import { liquidGlass } from '#lib/styles/liquid-glass.ts';
 
   let { children }: { children: Snippet } = $props();
   let checking = $state(false), busy = $state(false), mounted = $state(false), message = $state('');
   let identityBlocked = $state(false);
+  let GlassTuner = $state<Component | null>(null);
+  onMount(() => {
+    if (!import.meta.env.DEV) return;
+    let disposed = false;
+    void import('#lib/components/LiquidGlassTuner.svelte').then(module => { if (!disposed) GlassTuner = module.default; }).catch(() => { /* The optional dev panel must not block the page. */ });
+    return () => { disposed = true; };
+  });
   const appLayout = $derived(!!page.data.user && (isProtected(page.url.pathname) || page.url.pathname === '/'));
   const authPage = $derived(/^\/(login|register)\/?$/.test(page.url.pathname));
   async function logout() {
@@ -66,7 +74,7 @@
   });
 </script>
 <a href="#main" class="skip-link">跳转到主要内容</a>
-<div class:app-shell={appLayout} class:public-shell={!appLayout} class="sport-theme">
+<div use:liquidGlass class:app-shell={appLayout} class:public-shell={!appLayout} class="sport-theme">
   <header data-auth-ready={mounted}>
     {#if appLayout && page.data.user}
       <AppNavigation pathname={page.url.pathname} user={page.data.user} {checking} {busy} {mounted} {identityBlocked} sports onlogout={logout} />
@@ -94,4 +102,5 @@
     </main>
     <footer class="app-footer"><span>RunNote</span><span>记录每一步，看见你的进步。</span></footer>
   </div>
+  {#if GlassTuner}<GlassTuner />{/if}
 </div>

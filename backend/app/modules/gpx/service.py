@@ -21,6 +21,7 @@ from app.modules.gpx.model import ActivityPoint, ActivitySegment, GpxImport
 from app.modules.gpx.normalization import derive, prepare_segments
 from app.modules.gpx.queries import edge_distances, line_wkt, route_distance
 from app.modules.gpx.worker import bounded_parse
+from app.modules.tcx.model import TcxImport
 
 
 def lock_key(owner):
@@ -52,30 +53,29 @@ def import_lock(engine, owner):
                     connection.invalidate()
 
 
-def duplicate(db, owner, raw_hash, canonical=None):
-    # Never disclose another owner's matching original file or resource ID.
-    row = db.execute(
-        select(GpxImport.activity_id).where(
-            GpxImport.user_id == owner, GpxImport.raw_sha256 == raw_hash
-        )
-    ).first()
-    kind = "raw"
-    if row is None and canonical is not None:
+def duplicate(db, owner, raw_hash, canonical=None, format="gpx"):
+    # All source formats share the per-owner lock. No other owner's IDs are disclosed.
+    for model in (GpxImport, TcxImport):
         row = db.execute(
-            select(GpxImport.activity_id).where(
-                GpxImport.user_id == owner,
-                GpxImport.fingerprint_version == "canonical-v1",
-                GpxImport.canonical_sha256 == canonical,
-            )
+            select(model.activity_id).where(model.user_id == owner, model.raw_sha256 == raw_hash)
         ).first()
-        kind = "canonical"
-    if row:
-        raise ApiError(
-            409,
-            "GPX_DUPLICATE",
-            "此 GPX 已经导入",
-            details=[{"existing_activity_id": str(row.activity_id), "duplicate_kind": kind}],
-        )
+        kind = "raw"
+        if row is None and canonical is not None:
+            row = db.execute(
+                select(model.activity_id).where(
+                    model.user_id == owner,
+                    model.fingerprint_version == "canonical-v1",
+                    model.canonical_sha256 == canonical,
+                )
+            ).first()
+            kind = "canonical"
+        if row:
+            raise ApiError(
+                409,
+                f"{format.upper()}_DUPLICATE",
+                "此运动记录已经导入",
+                details=[{"existing_activity_id": str(row.activity_id), "duplicate_kind": kind}],
+            )
 
 
 def insert_points(db, rows):
@@ -83,12 +83,12 @@ def insert_points(db, rows):
         db.execute(insert(ActivityPoint), rows[start : start + 1000])
 
 
-def safe_filename(name):
-    base = (name or "activity.gpx").replace("\\", "/").split("/")[-1]
-    return re.sub(r"[\x00-\x1f\x7f]", "_", base)[:255] or "activity.gpx"
+def safe_filename(name, format="gpx"):
+    base = (name or f"activity.{format}").replace("\\", "/").split("/")[-1]
+    return re.sub(r"[\x00-\x1f\x7f]", "_", base)[:255] or f"activity.{format}"
 
 
-def import_gpx(
+def import_track(
     request,
     db,
     owner,
@@ -97,20 +97,38 @@ def import_gpx(
     title: str | None,
     timezone: str,
     activity_date: date | None,
+    *,
+    format="gpx",
+    time_mode="absolute",
 ):
     raw_hash = hashlib.sha256(raw).hexdigest()
+    canonical = None
+    version = f"{format}-v1"
     engine = db.get_bind()
     try:
         with import_lock(engine, owner):
-            duplicate(db, owner, raw_hash)
+            duplicate(db, owner, raw_hash, format=format)
             db.rollback()  # No pool slot or transaction held during the child parse.
-            parsed = bounded_parse(raw)
+            parsed = (
+                bounded_parse(raw, format="tcx", timezone=timezone, time_mode=time_mode)
+                if format == "tcx"
+                else bounded_parse(raw)
+            )
+            summary = parsed.summary if format == "tcx" else {}
             source = prepare_segments(parsed)
             derived = derive(parsed, source, edge_distances(db, source), timezone, activity_date)
             canonical = canonical_hash(parsed)
-            duplicate(db, owner, raw_hash, canonical)
+            duplicate(db, owner, raw_hash, canonical, format=format)
             exact_distance = route_distance(db, derived.segments)
-            distance = round_metric(exact_distance)
+            route_metric = round_metric(exact_distance)
+            device_distance = summary.get("distance_m")
+            distance = (
+                round_metric(device_distance) if device_distance is not None else route_metric
+            )
+            pace_distance = device_distance if device_distance is not None else exact_distance
+            timer = summary.get("timer_seconds")
+            if timer is not None:
+                timer = round_metric(timer)
             exact_elapsed = None
             if derived.temporal_quality == "complete":
                 delta = derived.ended_at - derived.started_at
@@ -118,14 +136,38 @@ def import_gpx(
                     Decimal(delta.days * 86400 + delta.seconds)
                     + Decimal(delta.microseconds) / 1000000
                 )
+            pace_duration = timer if timer is not None else exact_elapsed
+            stored_duration = timer if timer is not None else derived.elapsed_seconds
             average = (
-                pace(exact_elapsed, exact_distance)
+                pace(pace_duration, pace_distance)
                 if distance > 0
-                and derived.elapsed_seconds is not None
-                and derived.elapsed_seconds > 0
+                and stored_duration is not None
+                and stored_duration > 0
+                and pace_duration is not None
+                and pace_duration > 0
                 else None
             )
             warnings = derived.quality_summary["warnings"]
+            if format == "tcx":
+                if timer is not None:
+                    warnings[:] = [
+                        "TRACK_" + code if code in {"TIME_INVALID", "TIME_INCOMPLETE"} else code
+                        for code in warnings
+                    ]
+                derived.quality_summary.update(
+                    time_interpretation=time_mode,
+                    distance_source="device" if device_distance is not None else "route",
+                    duration_source="device" if timer is not None else "track_timestamps",
+                    route_distance_m=str(route_metric),
+                )
+                if time_mode == "local":
+                    warnings.append("LOCAL_TIME_INTERPRETED")
+                if (
+                    timer is not None
+                    and derived.elapsed_seconds is not None
+                    and timer > derived.elapsed_seconds
+                ):
+                    warnings.append("DEVICE_TIMER_EXCEEDS_ELAPSED")
             if distance == 0:
                 warnings.append("ZERO_DISTANCE")
             if average is None:
@@ -139,7 +181,7 @@ def import_gpx(
                 activity = Activity(
                     id=uuid4(),
                     user_id=owner,
-                    source="gpx",
+                    source=format,
                     title=title or f"跑步 · {derived.activity_date}",
                     activity_date=derived.activity_date,
                     date_source=derived.date_source,
@@ -148,26 +190,41 @@ def import_gpx(
                     ended_at=derived.ended_at,
                     distance_m=distance,
                     elapsed_seconds=derived.elapsed_seconds,
+                    timer_seconds=timer,
+                    calories_kcal=summary.get("calories_kcal"),
+                    steps=summary.get("steps"),
+                    avg_heart_rate_bpm=summary.get("avg_heart_rate_bpm"),
                     avg_pace_seconds_per_km=average,
                     temporal_quality=derived.temporal_quality,
                     quality_summary=derived.quality_summary,
-                    metrics_version="gpx-v1",
+                    metrics_version=version,
                     visibility="private",
                     allow_shared_route=False,
                 )
                 db.add(activity)
                 db.flush()
-                imported = GpxImport(
+                source_model = TcxImport if format == "tcx" else GpxImport
+                provenance = (
+                    dict(
+                        raw_tcx=raw,
+                        time_mode=time_mode,
+                        timezone=timezone,
+                        route_distance_m=route_metric,
+                    )
+                    if format == "tcx"
+                    else dict(raw_gpx=raw)
+                )
+                imported = source_model(
                     id=uuid4(),
                     activity_id=activity.id,
                     user_id=owner,
-                    original_filename=safe_filename(filename),
-                    raw_gpx=raw,
+                    original_filename=safe_filename(filename, format),
+                    **provenance,
                     byte_size=len(raw),
                     raw_sha256=raw_hash,
                     canonical_sha256=canonical,
                     fingerprint_version="canonical-v1",
-                    parser_version="gpx-parser-v1",
+                    parser_version=f"{format}-parser-v1",
                 )
                 db.add(imported)
                 db.flush()
@@ -210,17 +267,26 @@ def import_gpx(
                     warnings=warnings,
                     point_count=len(points),
                     segment_count=len(segments),
-                    metrics_version="gpx-v1",
+                    metrics_version=version,
                 )
             return response
     except IntegrityError as error:
         db.rollback()
         name = getattr(getattr(error.orig, "diag", None), "constraint_name", "")
-        if name in {"uq_gpx_imports_owner_raw", "uq_gpx_imports_owner_canonical"}:
-            duplicate(db, owner, raw_hash, canonical)
+        if name in {
+            "uq_gpx_imports_owner_raw",
+            "uq_gpx_imports_owner_canonical",
+            "uq_tcx_imports_owner_raw",
+            "uq_tcx_imports_owner_canonical",
+        }:
+            duplicate(db, owner, raw_hash, canonical, format=format)
         raise ApiError(503, "DEPENDENCY_UNAVAILABLE", "保存暂时失败，请稍后重试") from None
     except SQLAlchemyError:
         db.rollback()
         raise ApiError(503, "DEPENDENCY_UNAVAILABLE", "数据库暂时不可用，请稍后重试") from None
     finally:
         db.rollback()
+
+
+def import_gpx(request, db, owner, raw, filename, title, timezone, activity_date):
+    return import_track(request, db, owner, raw, filename, title, timezone, activity_date)

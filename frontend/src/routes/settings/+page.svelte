@@ -24,7 +24,7 @@
     <label class="flex items-center gap-3"><input type="checkbox" bind:checked={enabled} disabled={busy} />开启公开个人主页</label>
     <p class="text-sm text-muted-foreground">主页仅展示主动设为公开的记录、统计和日历。开启主页不会公开历史私人记录。关闭主页不会撤销独立分享链接或单条公开记录。</p><details class="text-sm text-muted-foreground"><summary>关闭与隐私说明</summary><p class="mt-2">关闭主页会立即关闭主页及其资料、统计、日历和列表接口。独立记录需到详情单独撤销链接或设为私人；已被他人保存的摘要无法收回。</p></details>
     {#if dirty}<p class="text-sm text-primary" role="status">有未保存的更改</p>{/if}
-    <button disabled={busy} class="rounded bg-primary px-4 py-2 text-white disabled:opacity-50">{busy?'保存中…':'保存公开设置'}</button>
+    <button disabled={busy} class="rounded bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">{busy?'保存中…':'保存公开设置'}</button>
     {#if busy}<FeedbackState kind="loading" title="正在保存资料与公开设置…" />{/if}
     {#if message}<FeedbackState kind="success" title={message} />{/if}{#if error}<FeedbackState kind="error" title={error} />{/if}
   </form>

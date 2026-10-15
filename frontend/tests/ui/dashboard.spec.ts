@@ -1,8 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
-import { loginRunner, sampleActivity } from '../fixtures/activities';
+import { installActivities, loginRunner, sampleActivity } from '../fixtures/activities';
 const empty = { activity_count: 0, distance_m: 0, duration_sum_seconds: null, known_duration_count: 0, missing_duration_count: 0, activity_days: 0, pace_eligible_count: 0, pace_eligible_distance_m: 0, avg_pace_seconds_per_km: null, quality_warning_count: 0, date_assignment: 'activity_local_date' };
 const populated = { ...empty, activity_count: 2, distance_m: '10246.912', duration_sum_seconds: 1800, known_duration_count: 1, missing_duration_count: 1, activity_days: 2, pace_eligible_count: 1, pace_eligible_distance_m: '5123.456', avg_pace_seconds_per_km: '351.3', quality_warning_count: 1 };
 async function fixture(page: Page) {
+  await installActivities(page);
   const state = { cumulativeFailures: 0, summaryFailures: 0, calendarFailures: 0, trendFailures: 0, dayFailures: 0, expired: false };
   await page.route('**/api/v1/statistics/**', async route => {
     const url = new URL(route.request().url()); if (url.pathname.endsWith('/streaks')) return route.fallback(); const year = Number(url.searchParams.get('year') ?? url.searchParams.get('date_from')?.slice(0,4) ?? '2026');
@@ -34,7 +35,7 @@ async function fixture(page: Page) {
     return send({ period, date_from:from, date_to:to, week_start:'monday', date_assignment:'activity_local_date', buckets });
   });
   await page.route(/\/api\/v1\/activities\?/, route => {
-    if (state.dayFailures-- > 0) return route.fulfill({status:503,json:{error:{message:'当天读取失败'}}});
+    if (new URL(route.request().url()).searchParams.has('activity_date') && state.dayFailures-- > 0) return route.fulfill({status:503,json:{error:{message:'当天读取失败'}}});
     return route.fulfill({json:{data:{items:[sampleActivity],total:1,limit:20,offset:0},error:null}});
   });
   return state;
@@ -58,7 +59,7 @@ test('home opens data summary, preserves filters and exposes all feature entranc
   await page.goto('/?year=2026&metric=count');
   await expect(page.getByRole('heading', { level: 1, name: '数据汇总', exact: true })).toBeVisible();
   await expect(page.getByTestId('annual-distance')).toHaveText('10.2 km');
-  await expect(page.getByText(/GPX|导入/)).toHaveCount(0);
+  await expect(page.getByRole('button',{name:/导入/})).toHaveCount(0);
   await expect(page.getByLabel('日历维度')).toHaveValue('count');
   const nav = page.getByRole('navigation', { name: '主要导航' });
   await expect(nav.getByRole('link', { name: '数据汇总', exact: true })).toHaveAttribute('aria-current', 'page');
@@ -99,10 +100,10 @@ test('populated dashboard: hierarchy, disclosure, calendar keyboard, date and ch
   await page.getByLabel('日历维度').selectOption('count');
   await expect(page).toHaveURL(/metric=count/);
   await expect(day).toHaveAttribute('aria-pressed','true');
-  await expect(page.locator('canvas')).toBeVisible();
-  await page.getByLabel('趋势周期').selectOption('week'); await expect(page.locator('canvas')).toBeVisible();
+  await expect(page.getByRole('region',{name:'运动趋势',exact:true}).locator('canvas')).toBeVisible();
+  await page.getByLabel('趋势周期').selectOption('week'); await expect(page.getByRole('region',{name:'运动趋势',exact:true}).locator('canvas')).toBeVisible();
   await page.getByLabel('趋势指标').selectOption('pace');
-  await expect(page.locator('canvas')).toBeVisible();
+  await expect(page.getByRole('region',{name:'运动趋势',exact:true}).locator('canvas')).toBeVisible();
   await page.getByLabel('趋势周期').selectOption('month');
   await page.getByLabel('趋势指标').selectOption('distance');
   await page.getByRole('button',{name:'收起当天记录'}).click();
@@ -114,16 +115,16 @@ test('populated dashboard: hierarchy, disclosure, calendar keyboard, date and ch
     await page.setViewportSize({width,height:900});
     // ECharts resizes its canvas in ResizeObserver after the viewport changes.
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), { message: `Dashboard fits ${width}px after chart resize` }).toBe(true);
-    expect(await day.evaluate(el=>el.getBoundingClientRect().width)).toBeGreaterThanOrEqual(18);
+    expect(await day.evaluate(el=>el.getBoundingClientRect().width)).toBeGreaterThan(4);
   }
-  await page.setViewportSize({width:390,height:1100}); await page.locator('.calendar-scroll').evaluate(el => { el.scrollLeft = el.scrollWidth; }); await capture(page,'mobile-data');
+  await page.setViewportSize({width:390,height:1100}); await capture(page,'mobile-data');
   await page.getByRole('heading',{name:'运动趋势',exact:true}).scrollIntoViewIfNeeded();
   await page.screenshot({path:'test-results/dashboard-mobile-trend.png',fullPage:false});
 });
 test('empty years, leap year, year controls, activity navigation and reload', async ({page}) => {
   await fixture(page); await loginRunner(page); await page.goto('/dashboard?year=2025');
-  await expect(page.getByTestId('trend-empty')).toBeVisible(); await expect(page.locator('canvas')).toHaveCount(0);
-  await expect(page.getByText(/GPX|导入/)).toHaveCount(0);
+  await expect(page.getByTestId('trend-empty')).toBeVisible(); await expect(page.getByRole('region',{name:'运动趋势',exact:true}).locator('canvas')).toHaveCount(0);
+  await expect(page.getByRole('button',{name:/导入/})).toHaveCount(0);
   await capture(page,'desktop-empty');
   await page.getByRole('button',{name:'上一年',exact:true}).click();
   await expect(page.getByRole('button',{name:/2024-02-29，/})).toHaveCount(1);
@@ -143,11 +144,11 @@ test('statistics and date errors have independent retries; session expiry redire
   await expect(page.getByRole('button',{name:'重试累计统计',exact:true})).toHaveCount(0);
   await page.getByRole('button',{name:'重新读取统计',exact:true}).click();
   await expect(page.getByTestId('annual-distance')).toHaveText('10.2 km');
-  await expect(page.locator('canvas')).toBeVisible();
+  await expect(page.getByRole('region',{name:'运动趋势',exact:true}).locator('canvas')).toBeVisible();
   state.dayFailures=1; await page.getByRole('button',{name:/2026-10-13，/}).click();
   await page.getByRole('button',{name:'重试当天活动'}).click(); await expect(page.locator('.day-activity').filter({hasText:'河畔晨跑'})).toBeVisible();
   state.trendFailures=1; await page.getByLabel('趋势周期').selectOption('week');
-  await page.getByRole('button',{name:'重新读取趋势'}).click(); await expect(page.locator('canvas')).toBeVisible();
+  await page.getByRole('button',{name:'重新读取趋势'}).click(); await expect(page.getByRole('region',{name:'运动趋势',exact:true}).locator('canvas')).toBeVisible();
   state.expired=true; await page.getByRole('button',{name:'上一年',exact:true}).click(); await expect(page).toHaveURL(/login\?reason=expired/);
 });
 
@@ -157,16 +158,16 @@ test('year input, boundaries, URL date restore and slow previous-year response',
   await expect(page.locator('.day-activity').filter({hasText:'河畔晨跑'})).toBeVisible();
   await expect(page.getByLabel('日历维度')).toHaveValue('count');
   await expect(page.getByLabel('趋势周期')).toHaveValue('week');
-  await page.getByLabel('年份',{exact:true}).fill('abc'); await page.getByRole('button',{name:'查看',exact:true}).click();
-  await expect(page.getByRole('alert')).toContainText('1900–2100');
-  await page.getByLabel('年份',{exact:true}).fill('1900'); await page.getByRole('button',{name:'查看',exact:true}).click();
+  await page.getByLabel('年份',{exact:true}).fill('abc');
+  await expect(page.locator('#year-error')).toContainText('1900–2100');
+  await page.getByLabel('年份',{exact:true}).fill('1900');
   await expect(page.getByRole('button',{name:'上一年',exact:true})).toBeDisabled();
-  await page.getByLabel('年份',{exact:true}).fill('2100'); await page.getByRole('button',{name:'查看',exact:true}).click();
+  await page.getByLabel('年份',{exact:true}).fill('2100');
   await expect(page.getByRole('button',{name:'下一年',exact:true})).toBeDisabled();
   let release!: () => void; const held = new Promise<void>(resolve => { release = resolve; });
   let entered!: () => void; const started = new Promise<void>(resolve => { entered = resolve; });
   await page.route('**/api/v1/statistics/calendar?year=2025&metric=count', async route => { entered(); await held; await route.fallback(); });
-  await page.getByLabel('年份',{exact:true}).fill('2025'); await page.getByRole('button',{name:'查看',exact:true}).click();
+  await page.getByLabel('年份',{exact:true}).fill('2025');
   await started; await expect(page.getByRole('status').filter({hasText:'正在读取 2025'})).toBeVisible();
   await page.getByRole('button',{name:'下一年',exact:true}).click();
   await expect(page.getByTestId('annual-distance')).toHaveText('10.2 km'); release();

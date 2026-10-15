@@ -60,7 +60,7 @@ test('AI unknown failure retries same request; read failures recover without gen
   state.failDetail=true;await page.getByRole('button',{name:'查看报告'}).click();await expect(page.getByRole('button',{name:'重试读取报告'})).toBeVisible();state.failDetail=false;await page.getByRole('button',{name:'重试读取报告'}).click();await expect(page.getByRole('region',{name:'当前报告'})).toBeVisible();
 });
 test('AI no data, unavailable and quota block generation',async({page})=>{
-  const state=await installAI(page);await loginRunner(page);state.empty=true;await page.goto('/ai');await expect(page.getByRole('link',{name:'导入 GPX'})).toBeVisible();await page.getByRole('checkbox').check();await expect(page.getByRole('button',{name:'生成近期总结与下周建议'})).toBeDisabled();
+  const state=await installAI(page);await loginRunner(page);state.empty=true;await page.goto('/ai');await expect(page.getByRole('link',{name:'导入 GPX / TCX'})).toBeVisible();await page.getByRole('checkbox').check();await expect(page.getByRole('button',{name:'生成近期总结与下周建议'})).toBeDisabled();
   state.empty=false;state.configured=false;await page.reload();await expect(page.getByText(/AI服务尚未配置/)).toBeVisible();state.configured=true;state.quota=0;await page.reload();await page.getByRole('checkbox').check();await expect(page.getByRole('button',{name:'生成近期总结与下周建议'})).toBeDisabled();expect(state.calls).toHaveLength(0);
 });
 test('anonymous public profile calendar, whitelist detail and revocation',async({page})=>{

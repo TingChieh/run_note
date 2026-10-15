@@ -1,0 +1,43 @@
+import { expect, test } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
+const points = Array.from({length:21},(_,i) => {
+  const time = new Date(Date.UTC(2026,9,4,16,15,20)+Math.round(i*1322/20)*1000).toISOString();
+  return `<Trackpoint><Time>${time}</Time><Position><LatitudeDegrees>0</LatitudeDegrees><LongitudeDegrees>${i*0.001}</LongitudeDegrees></Position></Trackpoint>`;
+}).join('');
+const raw=`<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2" creator="Mi Fitness"><Activities><Activity Sport=""><Lap><TotalTimeSeconds>1166</TotalTimeSeconds><DistanceMeters>2999</DistanceMeters><Calories>144</Calories><HeartRateBpm>156</HeartRateBpm><Steps>3262</Steps><Track>${points}</Track></Lap></Activity></Activities></TrainingCenterDatabase>`;
+
+test('real authenticated TCX upload persists corrected device metrics through same-origin proxy',async({page,context})=>{
+  await page.route('**/*tile.openstreetmap.org/**',route=>route.abort());
+  const id=randomUUID().replaceAll('-','').slice(0,18);
+  await page.goto('/register');
+  await page.getByLabel('邮箱',{exact:true}).fill(`${id}@example.com`);
+  await page.getByLabel('用户名',{exact:true}).fill(`u_${id}`);
+  await page.getByLabel('密码',{exact:true}).fill('Synthetic-TCX-e2e-2026');
+  await page.getByRole('button',{name:'注册',exact:true}).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.goto('/activities');
+  await expect(page.getByRole('button',{name:'导入 GPX',exact:true})).toBeEnabled();
+  const file={name:'synthetic.tcx',mimeType:'application/xml',buffer:Buffer.from(raw)};
+  await page.locator('input[type=file]').setInputFiles(file);
+  await page.getByLabel('时间解释',{exact:true}).selectOption('local');
+  await page.getByText('补充导入信息',{exact:true}).click();
+  await page.getByLabel('时区（可选）').fill('Asia/Shanghai');
+  await page.getByRole('button',{name:'导入 TCX',exact:true}).click();
+  await expect(page.getByRole('status').filter({hasText:'导入成功'})).toBeVisible({timeout:20000});
+  await page.getByRole('link',{name:'查看活动与路线',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'跑步 · 2026-10-04',exact:true,level:1})).toBeVisible();
+  await expect(page.getByText('156 bpm',{exact:true})).toBeVisible();
+  await expect(page.getByText('16:15:20 · Asia/Shanghai',{exact:true})).toBeVisible();
+  await expect(page.getByText('19:26',{exact:true}).first()).toBeVisible();
+  await expect(page.getByText('22:02',{exact:true})).toBeVisible();
+  await expect(page.getByTestId('route-map-ready')).toBeVisible({timeout:15000});
+  await page.reload();
+  await expect(page.getByText('156 bpm',{exact:true})).toBeVisible();
+  const response=await context.request.get('/api/v1/statistics/summary');
+  const summary=(await response.json()).data;
+  expect(Number(summary.distance_m)).toBe(2999);
+  expect(Number(summary.duration_sum_seconds)).toBe(1166);
+  expect(Number(summary.avg_pace_seconds_per_km)).toBe(388.796);
+  const bad=await context.request.post('/api/v1/tcx-imports',{headers:{Origin:'https://evil.example'},multipart:{file}});
+  expect(bad.status()).toBe(403);
+});

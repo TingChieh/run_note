@@ -1,0 +1,52 @@
+import { expect, test } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+
+test('real library persists labels and routes, shows distance achievement and batch deletes both sources', async ({ page, context, browser }) => {
+  await page.route('**/*tile.openstreetmap.org/**', route => route.abort());
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  const unique = randomUUID().replaceAll('-', '').slice(0, 18);
+  await page.goto('/register');
+  await page.getByLabel('邮箱', { exact: true }).fill(`${unique}@example.com`);
+  await page.getByLabel('用户名', { exact: true }).fill(`u_${unique}`);
+  await page.getByLabel('密码', { exact: true }).fill('Synthetic-library-e2e-2026');
+  await page.getByRole('button', { name: '注册', exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard$/); await page.goto('/activities');
+  for (const format of ['gpx', 'tcx']) {
+    await expect(page.getByRole('button', { name: /导入 (GPX|TCX)$/, exact: false })).toBeEnabled();
+    const tcx = `<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"><Activities><Activity Sport="Running"><Lap><TotalTimeSeconds>3000</TotalTimeSeconds><DistanceMeters>10000</DistanceMeters><Track><Trackpoint><Time>2026-10-04T00:00:00Z</Time><Position><LatitudeDegrees>0</LatitudeDegrees><LongitudeDegrees>0</LongitudeDegrees></Position></Trackpoint><Trackpoint><Time>2026-10-04T00:50:00Z</Time><Position><LatitudeDegrees>0</LatitudeDegrees><LongitudeDegrees>0.001</LongitudeDegrees></Position></Trackpoint></Track></Lap></Activity></Activities></TrainingCenterDatabase>`;
+    await page.locator('input[type=file]').setInputFiles({ name: `library.${format}`, mimeType: 'application/xml', buffer: format === 'gpx' ? readFileSync('../backend/tests/fixtures/gpx/equator-six.gpx') : Buffer.from(tcx) });
+    await page.getByRole('button', { name: `导入 ${format.toUpperCase()}`, exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: '导入成功' })).toBeVisible({ timeout: 20000 });
+    await expect(page.locator('.activity-card')).toHaveCount(format === 'gpx' ? 1 : 2);
+  }
+  await expect(page.getByText('10 km 达成', { exact: true })).toBeVisible();
+  const tcxCard = page.locator('.activity-card').filter({ hasText: '10 km 达成' });
+  await tcxCard.scrollIntoViewIfNeeded();
+  await expect(tcxCard.getByRole('img')).toBeVisible();
+  const href = await tcxCard.getByRole('link').getAttribute('href');
+  await page.getByRole('button', { name: '编辑', exact: true }).click();
+  await tcxCard.getByRole('button', { name: /^编辑 / }).click();
+  const dialog = page.getByRole('dialog', { name: '编辑跑步记录', exact: true });
+  await dialog.getByLabel('标题', { exact: true }).fill('我的十公里');
+  await dialog.getByLabel('分类', { exact: true }).fill('长距离');
+  await dialog.getByLabel('标签', { exact: true }).fill('清晨，公园,清晨');
+  await dialog.getByRole('button', { name: '保存修改', exact: true }).click();
+  await expect(dialog).not.toBeVisible(); await page.reload();
+  const updated = page.locator('.activity-card').filter({ hasText: '我的十公里' });
+  await expect(updated.getByText('长距离', { exact: true })).toBeVisible();
+  await expect(updated.getByText('#清晨', { exact: true })).toBeVisible();
+  const stored = (await (await context.request.get('/api/v1' + href)).json()).data;
+  expect(stored.category).toBe('长距离'); expect(stored.tags).toEqual(['清晨', '公园']);
+  const anonymous = await browser.newContext();
+  expect((await anonymous.request.get(new URL('/api/v1' + href, page.url()).href)).status()).toBe(401);
+  await anonymous.close();
+  await page.getByRole('button', { name: '编辑', exact: true }).click();
+  await page.getByRole('checkbox', { name: '全选本页', exact: true }).check();
+  await page.getByRole('button', { name: '删除所选', exact: true }).click();
+  await page.getByRole('dialog', { name: '删除 2 条跑步记录？', exact: true }).getByRole('button', { name: '确认删除', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '我的活动（0）', exact: true })).toBeVisible();
+  expect((await context.request.get('/api/v1' + href)).status()).toBe(404);
+  expect((await (await context.request.get('/api/v1/statistics/summary')).json()).data.activity_count).toBe(0);
+  expect(errors).toEqual([]);
+});

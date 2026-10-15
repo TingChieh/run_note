@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./lib/styles/liquid-glass.css";
 
 @theme inline {
   --color-background: var(--background);
@@ -11,6 +12,8 @@
   --color-ring: var(--ring);
   --color-card: var(--surface);
   --color-destructive: var(--error);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
   --radius-lg: var(--radius-control);
   --radius-xl: var(--radius-card);
 }
@@ -32,6 +35,23 @@
   --error-soft: #fff1f1;
   --success: #176448;
   --success-soft: #ecf7ef;
+  --error-border: #efc9cc;
+  --success-border: #bcdcca;
+  --warning: #805412;
+  --warning-soft: #fff8e9;
+  --warning-border: #ead7b3;
+  --control-hover-border: #91aca0;
+  --calendar-0: #e7ecea;
+  --calendar-1: #c8e6d8;
+  --calendar-2: #83c6a5;
+  --calendar-3: #399769;
+  --calendar-4: #176344;
+  --calendar-ring: #183f30;
+  --route-thumbnail: #e9f3de;
+  --province-unvisited: #d8ded4;
+  --province-sea: #a8b3a2;
+  --comparison-down: #c33e52;
+  --chart-series: #27815c;
   --space-1: .25rem;
   --space-2: .5rem;
   --space-3: .75rem;
@@ -40,6 +60,7 @@
   --space-8: 2rem;
   --space-12: 3rem;
   --radius-control: .75rem;
+  --radius-pill: 9999px;
   --radius-card: 1.5rem;
   --content-width: 86rem;
   --sidebar-width: 15rem;
@@ -48,6 +69,25 @@
   --text-small: .8125rem;
   --text-title: clamp(1.75rem, 2.5vw, 2.25rem);
   --transition-control: 150ms ease;
+  --glass-surface: #ffffff70;
+  --glass-surface-hover: #ffffffa3;
+  --glass-edge: #ffffffc2;
+  --glass-sheen: #ffffff99;
+  --glass-reflection: #ffffff1a;
+  --glass-rim: #45665524;
+  --glass-shadow: #182b2424;
+  --glass-tint-sheen: #ffffff1f;
+  --glass-danger-foreground: #ffffff;
+  --glass-opacity: .14;
+  --glass-fill-base: #ffffff;
+  --glass-light-fill: #ffffff;
+  --glass-light-foreground: #10251b;
+  --glass-action-tint-factor: 1;
+  --glass-action-foreground: #10251b;
+  --glass-danger-ink: #6d1320;
+  --glass-preview-a: #8fc5de;
+  --glass-preview-b: #e6bd89;
+  --glass-preview-c: #93c9b0;
 }
 
 @layer base {
@@ -67,14 +107,14 @@
   input::file-selector-button { border: 0; border-radius: .375rem; background: var(--muted); color: var(--foreground); padding: .35rem .5rem; margin-right: .5rem; cursor: pointer; }
   :where(label) { font-weight: 500; }
   :where(.rounded-xl.border.bg-white) { border-radius: var(--radius-card); }
-  :where(p[role="alert"]) { padding: var(--space-3) var(--space-4); border: 1px solid #efc9cc; border-radius: var(--radius-control); background: var(--error-soft); color: var(--error); overflow-wrap: anywhere; }
+  :where(p[role="alert"]) { padding: var(--space-3) var(--space-4); border: 1px solid var(--error-border); border-radius: var(--radius-control); background: var(--error-soft); color: var(--error); overflow-wrap: anywhere; }
   :where(p[role="status"]) { padding: var(--space-3) var(--space-4); border-radius: var(--radius-control); background: var(--muted); overflow-wrap: anywhere; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
 }
 
 @layer components {
-  .skip-link { position: fixed; top: -6rem; left: var(--space-4); z-index: 100; border-radius: var(--radius-control); background: var(--primary); color: white; padding: var(--space-3) var(--space-4); }
-  .skip-link:focus { top: var(--space-4); color: white; }
+  .skip-link { position: fixed; top: -6rem; left: var(--space-4); z-index: 100; border-radius: var(--radius-control); background: var(--primary); color: var(--primary-foreground); padding: var(--space-3) var(--space-4); }
+  .skip-link:focus { top: var(--space-4); color: var(--primary-foreground); }
   .brand { display: inline-flex; align-items: center; gap: .625rem; width: fit-content; color: var(--foreground); font-size: 1.25rem; line-height: 1; font-weight: 750; letter-spacing: -.04em; }
   .brand-mark { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .625rem; background: var(--primary); color: white; font-size: 1.25rem; font-style: italic; }
   .app-sidebar { position: fixed; inset: 0 auto 0 0; width: var(--sidebar-width); display: flex; flex-direction: column; padding: var(--space-8) var(--space-4) var(--space-6); background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; }
@@ -110,8 +150,8 @@
   .feedback { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--muted); color: var(--foreground); }
   .feedback-icon { flex-shrink: 0; width: 1.25rem; height: 1.25rem; margin-top: .15rem; display: grid; place-items: center; border: 1px solid currentColor; border-radius: 50%; font-size: .75rem; line-height: 1; }
   .feedback-spinner { border: 2px solid var(--border); border-top-color: var(--primary); animation: feedback-spin .8s linear infinite; }
-  .feedback-error { background: var(--error-soft); color: var(--error); border-color: #efc9cc; }
-  .feedback-success { background: var(--success-soft); color: var(--success); border-color: #bcdcca; }
+  .feedback-error { background: var(--error-soft); color: var(--error); border-color: var(--error-border); }
+  .feedback-success { background: var(--success-soft); color: var(--success); border-color: var(--success-border); }
   .feedback-empty { background: var(--surface); color: var(--muted-foreground); border-style: dashed; padding: var(--space-6); }
   @keyframes feedback-spin { to { transform: rotate(360deg); } }
   @media (max-width: 1023px) {
@@ -135,7 +175,7 @@
 /* State rules must outrank Tailwind background/border utilities. */
 :where(button.bg-primary):not(:disabled):hover { background: var(--primary-hover); color: var(--primary-foreground); }
 :where(button.border):not(:disabled):hover { background: var(--muted); border-color: var(--primary); }
-:where(input, select, textarea):not(:disabled):hover { border-color: #91aca0; }
+:where(input, select, textarea):not(:disabled):hover { border-color: var(--control-hover-border); }
 
 @layer components {
   .aux-panel { min-width: 0; padding: clamp(1rem, 3vw, 1.5rem); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
@@ -153,11 +193,17 @@
   .sport-theme {
     --sport-green: #86a912;
     --sport-yellow: #f5c519;
+    --sport-yellow-accent: #f5c519;
     --sport-blue: #4bb6df;
     --sport-coral: #f06373;
     --sport-ink: #20332b;
     --sport-sidebar: #218538;
     --sport-nav-hover: #0000000a;
+    --sport-nav-active: #e8f6df;
+    --sport-nav-active-ink: #18592a;
+    --sport-heading-ink: #20332b;
+    --sport-detail-ink: #263120;
+    --sport-heading-border: #b5a43d;
     --background: #f6f7f4;
     --foreground: #202d23;
     --primary: #17745c;
@@ -181,17 +227,17 @@
   .sport-theme .app-sidebar nav { gap: .5rem; }
   .sport-theme .nav-link { color: white; background: transparent; min-height: 3.5rem; padding: .8rem .75rem; border-radius: .75rem; font-size: 1.0625rem; }
   .sport-theme .nav-link:hover { background: var(--sport-nav-hover); }
-  .sport-theme .nav-link[aria-current="page"] { color: #18592a; background: #e8f6df; box-shadow: none; font-weight: 700; }
+  .sport-theme .nav-link[aria-current="page"] { color: var(--sport-nav-active-ink); background: var(--sport-nav-active); box-shadow: none; font-weight: 700; }
   .sport-theme .nav-account { border-color: #ffffff40; }
   .sport-theme .nav-account .running-goal { margin: 0 0 1rem; }
   .sport-theme .runner-identity { display: flex; align-items: center; gap: .75rem; }
   .sport-theme .runner-identity-text { flex: 1; min-width: 0; }
   .sport-theme .runner-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sport-theme .runner-avatar { display: grid; place-items: center; flex-shrink: 0; width: 3rem; height: 3rem; border-radius: 50%; background: #e8f6df; color: #18592a; font-size: 1.5rem; font-weight: 700; }
+  .sport-theme .runner-avatar { display: grid; place-items: center; flex-shrink: 0; width: 3rem; height: 3rem; border-radius: 50%; background: var(--sport-nav-active); color: var(--sport-nav-active-ink); font-size: 1.5rem; font-weight: 700; }
   .sport-theme .app-sidebar :focus-visible { outline-color: white; }
   .sport-theme .app-sidebar .nav-link:focus-visible { outline-color: white; outline-offset: -4px; }
-  .sport-theme .app-sidebar .nav-link[aria-current="page"]:focus-visible { outline-color: #173c20; }
-  .sport-theme .running-goal :focus-visible { outline-color: #17745c; }
+  .sport-theme .app-sidebar .nav-link[aria-current="page"]:focus-visible { outline-color: var(--sport-nav-active-ink); }
+  .sport-theme .running-goal :focus-visible { outline-color: var(--ring); }
   .sport-theme .nav-account .button-secondary { background: transparent; color: white; border-color: #ffffff80; }
   .sport-theme .nav-account .button-secondary:hover { background: var(--sport-nav-hover); }
   .sport-theme .page-content { padding-top: 2rem; }
@@ -205,12 +251,12 @@
 }
 
 @layer components {
-  .sport-theme .page-header { padding: clamp(1.25rem, 3vw, 2rem); background: var(--sport-yellow); border-radius: var(--radius-card); color: var(--sport-ink); align-items: center; }
+  .sport-theme .page-header { padding: clamp(1.25rem, 3vw, 2rem); background: var(--sport-yellow); border-radius: var(--radius-card); color: var(--sport-heading-ink); align-items: center; }
   .sport-theme .page-header h1 { font-size: clamp(1.75rem, 3vw, 2.5rem); font-weight: 750; }
-  .sport-theme .page-description { color: var(--sport-ink); max-width: 48rem; }
+  .sport-theme .page-description { color: var(--sport-heading-ink); max-width: 48rem; }
   .sport-theme .public-header { background: var(--surface); }
   .sport-theme .public-header .brand-mark { background: var(--sport-sidebar); }
-  .sport-theme .public-header .brand { color: var(--sport-ink); }
+  .sport-theme .public-header .brand { color: var(--foreground); }
   .sport-theme .button-primary { font-weight: 650; padding: .75rem 1.25rem; }
   .sport-theme .button-secondary { font-weight: 600; }
   .sport-theme .page-actions { flex-shrink: 0; }
@@ -218,10 +264,78 @@
 }
 
 @layer components {
-  .sport-theme .auth-intro { padding: 1.25rem; background: var(--sport-yellow); border-radius: 1rem; color: var(--sport-ink); }
-  .sport-theme .auth-intro p { color: var(--sport-ink); }
+  .sport-theme .auth-intro { padding: 1.25rem; background: var(--sport-yellow); border-radius: 1rem; color: var(--sport-heading-ink); }
+  .sport-theme .auth-intro p { color: var(--sport-heading-ink); }
   .sport-theme .auth-eyebrow { font-size: .75rem; font-weight: 650; margin-bottom: .75rem; }
 }
 
 /* Keep shared control shapes consistent when pages use Tailwind utilities. */
 .sport-theme :where(button.bg-primary, button.border, input:not([type="checkbox"]):not([type="radio"]), select, textarea) { border-radius: var(--radius-control); }
+
+/* CSS applies the device preference before hydration and on every live change.
+   Include the sports shell because it owns its own light palette. */
+@media (prefers-color-scheme: dark) {
+  :root, .sport-theme {
+    color-scheme: dark;
+    --background: #101a16;
+    --surface: #1b2922;
+    --foreground: #e4eee7;
+    --primary: #77d4ac;
+    --primary-hover: #9ce4c3;
+    --primary-soft: #233e30;
+    --primary-foreground: #10251b;
+    --muted: #26362d;
+    --muted-foreground: #b1c3b6;
+    --border: #405348;
+    --ring: #9ce4c3;
+    --error: #ffadb1;
+    --error-soft: #40252a;
+    --error-border: #91525c;
+    --success: #9fe1b6;
+    --success-soft: #203d2c;
+    --success-border: #4c8362;
+    --warning: #f5d391;
+    --warning-soft: #3a3020;
+    --warning-border: #806b41;
+    --control-hover-border: #8da996;
+    --sport-sidebar: #173c2b;
+    --sport-nav-hover: #ffffff12;
+    --sport-nav-active: #2a5138;
+    --sport-nav-active-ink: #daf3c8;
+    --sport-yellow: #58471e;
+    --sport-heading-ink: #ffe9a5;
+    --sport-detail-ink: #ffe9a5;
+    --sport-heading-border: #9c884f;
+    --calendar-0: #2c3d32;
+    --calendar-1: #365d47;
+    --calendar-2: #488362;
+    --calendar-3: #69ae86;
+    --calendar-4: #9ed7b4;
+    --calendar-ring: #e4eee7;
+    --route-thumbnail: #273d2b;
+    --province-unvisited: #354a3d;
+    --province-sea: #749781;
+    --comparison-down: #ffadb1;
+    --chart-series: #77d4ac;
+    --glass-surface: #263e3266;
+    --glass-surface-hover: #35544099;
+    --glass-edge: #ffffff40;
+    --glass-sheen: #ffffff2e;
+    --glass-reflection: #ffffff05;
+    --glass-rim: #00000038;
+    --glass-shadow: #00000047;
+    --glass-tint-sheen: #ffffff14;
+    --glass-danger-foreground: #301318;
+    --glass-fill-base: #263e32;
+    --glass-action-tint-factor: .65;
+    --glass-action-foreground: #e4eee7;
+    --glass-danger-ink: #ffebed;
+    --glass-preview-a: #203f55;
+    --glass-preview-b: #5c4326;
+    --glass-preview-c: #204d3d;
+  }
+  .sport-theme .maplibregl-ctrl-group { background: var(--surface); box-shadow: 0 0 0 2px var(--border); }
+  .sport-theme .maplibregl-ctrl-group button + button { border-top-color: var(--border); }
+  .sport-theme .maplibregl-ctrl-group button:hover { background-color: var(--muted); }
+  .sport-theme .maplibregl-ctrl-icon { filter: invert(1); }
+}

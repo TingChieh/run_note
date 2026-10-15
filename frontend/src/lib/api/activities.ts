@@ -2,7 +2,9 @@ import { dashboardDistance } from './dashboard-format';
 export type Metric = number | string | null;
 export interface Activity {
   id: string; title: string; activity_date: string; timezone: string;
+  notes?: string; category?: string; tags?: string[];
   started_at: string | null; ended_at: string | null; distance_m: Metric; elapsed_seconds: Metric;
+  timer_seconds?: Metric; calories_kcal?: number | null; steps?: number | null; avg_heart_rate_bpm?: number | null;
   avg_pace_seconds_per_km: Metric; temporal_quality: 'complete' | 'incomplete' | 'invalid' | 'manual';
   visibility: 'private' | 'unlisted' | 'public'; allow_shared_route: boolean;
   quality_summary: Record<string, unknown>; metrics_version: string; has_route: boolean; created_at: string;
@@ -24,6 +26,9 @@ function number(value: Metric): number | null {
 }
 function parseActivity(value: unknown): Activity {
   if (!object(value) || typeof value.id !== 'string' || !uuid.test(value.id) || typeof value.title !== 'string' || !calendarDate(value.activity_date) || typeof value.timezone !== 'string' || typeof value.has_route !== 'boolean' || typeof value.metrics_version !== 'string' || !object(value.quality_summary) || !['complete', 'incomplete', 'invalid', 'manual'].includes(String(value.temporal_quality))) invalid();
+  if (value.notes !== undefined && typeof value.notes !== 'string') invalid();
+  if (value.category !== undefined && (typeof value.category !== 'string' || [...value.category].length > 30)) invalid();
+  if (value.tags !== undefined && (!Array.isArray(value.tags) || value.tags.length > 10 || value.tags.some(tag => typeof tag !== 'string' || !tag.trim() || [...tag].length > 30))) invalid();
   for (const field of ['distance_m', 'elapsed_seconds', 'avg_pace_seconds_per_km']) {
     const metric = value[field];
     if (metric !== null && ((typeof metric !== 'number' && typeof metric !== 'string') || number(metric) === null)) invalid();
@@ -32,6 +37,12 @@ function parseActivity(value: unknown): Activity {
     const timestamp = value[field];
     if (timestamp === null && field !== 'created_at') continue;
     if (typeof timestamp !== 'string' || !Number.isFinite(Date.parse(timestamp))) invalid();
+  }
+  if (value.timer_seconds !== undefined && value.timer_seconds !== null &&
+      ((typeof value.timer_seconds !== 'number' && typeof value.timer_seconds !== 'string') || number(value.timer_seconds) === null || number(value.timer_seconds)! >= 1e9)) invalid();
+  for (const field of ['calories_kcal', 'steps', 'avg_heart_rate_bpm']) {
+    const metric = value[field];
+    if (metric !== undefined && metric !== null && (typeof metric !== 'number' || !Number.isInteger(metric) || metric < (field === 'avg_heart_rate_bpm' ? 1 : 0) || metric > (field === 'avg_heart_rate_bpm' ? 300 : 999999999))) invalid();
   }
   return value as unknown as Activity;
 }
@@ -54,9 +65,15 @@ export async function request(path: string, init: RequestInit, fetcher: typeof f
   }
   return body.data;
 }
-export async function readActivities(fetcher: typeof fetch = fetch, offset = 0, activityDate?: string): Promise<ActivityList> {
+export async function readActivityCategories(fetcher: typeof fetch = fetch): Promise<string[]> {
+  const value = await request('/api/v1/activities/categories', {}, fetcher);
+  if (!Array.isArray(value) || value.some(item => typeof item !== 'string' || [...item].length > 30) || new Set(value).size !== value.length) invalid();
+  return value as string[];
+}
+export async function readActivities(fetcher: typeof fetch = fetch, offset = 0, activityDate?: string, category?: string, activityMonth?: string): Promise<ActivityList> {
   if (activityDate !== undefined && !calendarDate(activityDate)) invalid();
-  const value = await request(`/api/v1/activities?limit=20&offset=${offset}${activityDate ? `&activity_date=${activityDate}` : ''}`, {}, fetcher);
+  if (activityMonth !== undefined && !/^(?!0000)[0-9]{4}-(0[1-9]|1[0-2])$/.test(activityMonth)) invalid();
+  const value = await request(`/api/v1/activities?limit=20&offset=${offset}${activityDate ? `&activity_date=${activityDate}` : ''}${category === undefined ? '' : `&category=${encodeURIComponent(category)}`}${activityMonth ? `&activity_month=${activityMonth}` : ''}`, {}, fetcher);
   if (!object(value) || !Array.isArray(value.items) || !Number.isInteger(value.total) || (value.total as number) < 0 || value.limit !== 20 || value.offset !== offset) invalid();
   return { items: value.items.map(parseActivity), total: value.total as number, limit: 20, offset };
 }
@@ -65,16 +82,51 @@ export async function readActivity(id: string, fetcher: typeof fetch = fetch): P
   const value = parseActivity(await request(`/api/v1/activities/${id}`, {}, fetcher));
   if (value.id !== id) invalid(); return value;
 }
+async function mutateActivity(id: string, method: 'PATCH' | 'DELETE', body: unknown, fetcher: typeof fetch): Promise<unknown> {
+  if (!uuid.test(id)) throw new ActivityError('找不到这条活动', 404);
+  const csrf = await request('/api/v1/auth/csrf', {}, fetcher);
+  if (!object(csrf) || typeof csrf.csrf_token !== 'string' || !csrf.csrf_token) invalid();
+  return request(`/api/v1/activities/${id}`, {
+    method, headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf.csrf_token },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) })
+  }, fetcher);
+}
+export async function updateActivity(id: string, changes: { title: string; notes: string; category?: string; tags?: string[] }, fetcher: typeof fetch = fetch): Promise<Activity> {
+  const value = parseActivity(await mutateActivity(id, 'PATCH', { title: changes.title, notes: changes.notes, ...(changes.category === undefined ? {} : { category: changes.category }), ...(changes.tags === undefined ? {} : { tags: changes.tags }) }, fetcher));
+  if (value.id !== id || typeof value.notes !== 'string') invalid();
+  return value;
+}
+export async function deleteActivity(id: string, fetcher: typeof fetch = fetch): Promise<void> {
+  const value = await mutateActivity(id, 'DELETE', undefined, fetcher);
+  if (!object(value) || value.deleted !== true) invalid();
+}
+export async function deleteActivities(ids: string[], fetcher: typeof fetch = fetch): Promise<void> {
+  if (!ids.length || ids.length > 100 || new Set(ids).size !== ids.length || ids.some(id => !uuid.test(id))) throw new ActivityError('请选择 1–100 条不同的记录', 422);
+  const csrf = await request('/api/v1/auth/csrf', {}, fetcher);
+  if (!object(csrf) || typeof csrf.csrf_token !== 'string' || !csrf.csrf_token) invalid();
+  const value = await request('/api/v1/activities/batch-delete', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf.csrf_token }, body: JSON.stringify({ ids })
+  }, fetcher);
+  if (!object(value) || value.deleted !== true || value.deleted_count !== ids.length) invalid();
+}
 export async function readRoute(id: string, fetcher: typeof fetch = fetch): Promise<Route> {
   if (!uuid.test(id)) throw new ActivityError('找不到这条活动', 404);
   return unwrapRoute(await request(`/api/v1/activities/${id}/route`, {}, fetcher));
 }
-export async function uploadGpx(form: FormData, fetcher: typeof fetch = fetch): Promise<{ activity: Activity; warnings: string[] }> {
+export const uploadGpx = (form: FormData, fetcher: typeof fetch = fetch) => uploadTrack(form, 'gpx', fetcher);
+export const uploadTcx = (form: FormData, fetcher: typeof fetch = fetch) => uploadTrack(form, 'tcx', fetcher);
+async function uploadTrack(form: FormData, format: 'gpx' | 'tcx', fetcher: typeof fetch): Promise<{ activity: Activity; warnings: string[] }> {
   const csrf = await request('/api/v1/auth/csrf', {}, fetcher);
   if (!object(csrf) || typeof csrf.csrf_token !== 'string' || !csrf.csrf_token) invalid();
-  const value = await request('/api/v1/gpx-imports', { method: 'POST', headers: { 'X-CSRF-Token': csrf.csrf_token }, body: form }, fetcher, 45000);
+  const value = await request(`/api/v1/${format}-imports`, { method: 'POST', headers: { 'X-CSRF-Token': csrf.csrf_token }, body: form }, fetcher, 45000);
   if (!object(value) || !Array.isArray(value.warnings) || !value.warnings.every(w => typeof w === 'string')) invalid();
   return { activity: parseActivity(value.activity), warnings: value.warnings };
+}
+export const activityDuration = (activity: Pick<Activity, 'timer_seconds' | 'elapsed_seconds'>): Metric => activity.timer_seconds ?? activity.elapsed_seconds;
+export function formatStartTime(value: string | null, timezone: string): string {
+  if (!value) return '—';
+  try { return new Intl.DateTimeFormat('zh-CN', { timeZone: timezone, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).format(new Date(value)); }
+  catch { return '—'; }
 }
 export const formatDate = (value: string) => calendarDate(value) ? value : '—';
 export const formatDistance = (value: Metric) => dashboardDistance(number(value));
@@ -103,6 +155,8 @@ export function unwrapRoute(value: unknown): Route {
 }
 
 const warningLabels: Record<string, string> = {
+  TRACK_TIME_INVALID: '轨迹时间顺序无效，设备汇总已单独保留', TRACK_TIME_INCOMPLETE: '轨迹时间不完整，设备汇总已单独保留',
+  LOCAL_TIME_INTERPRETED: '已按所选时区的当地时间解释文件时间', DEVICE_TIMER_EXCEEDS_ELAPSED: '设备用时超过轨迹经过时间，请核对原记录',
   INVALID_COORDINATE: '已跳过无效坐标，并保留断点', SPEED_CHECK_UNAVAILABLE: '部分点缺少时间，无法完整检查速度',
   ELEVATION_UNAVAILABLE: '部分点缺少海拔', TIME_GAP: '相邻点时间间隔超过 300 秒，已分段', SPEED_JUMP: '相邻点速度超过 12 m/s，已分段',
   EMPTY_SEGMENT: '已跳过空轨迹段', TIME_INVALID: '时间顺序无效，用时与配速不可用', TIME_INCOMPLETE: '时间不完整，用时与配速不可用',
@@ -110,6 +164,7 @@ const warningLabels: Record<string, string> = {
 };
 export const warningLabel = (value: string): string => warningLabels[value] ?? value;
 const qualityLabels: Record<string, string> = {
+  time_interpretation: '时间解释', distance_source: '距离来源', duration_source: '用时来源', route_distance_m: '轨迹计算距离（米）',
   input_point_count: '源轨迹点', input_segment_count: '源轨迹段', empty_segment_count: '空轨迹段',
   invalid_coordinate_count: '无效坐标点', missing_time_count: '缺失时间点', missing_elevation_count: '缺失海拔点',
   deduplicated_point_count: '去除的重复点', time_reversal_count: '时间倒序断点', zero_time_movement_count: '零时间移动断点',
@@ -117,5 +172,5 @@ const qualityLabels: Record<string, string> = {
 };
 export function qualityEntries(value: Record<string, unknown>): [string, string][] {
   return Object.entries(value).map(([key, item]) => [key === 'warnings' ? '质量提示' : qualityLabels[key] ?? key,
-    key === 'warnings' && Array.isArray(item) ? item.map(code => warningLabel(String(code))).join('；') || '无' : typeof item === 'string' ? item : JSON.stringify(item)]);
+    key === 'warnings' && Array.isArray(item) ? item.map(code => warningLabel(String(code))).join('；') || '无' : typeof item === 'string' ? ({ local: '按所选时区当地时间', absolute: '遵守文件时区', device: '设备汇总', route: '轨迹计算', track_timestamps: '轨迹时间差' } as Record<string,string>)[item] ?? item : JSON.stringify(item)]);
 }

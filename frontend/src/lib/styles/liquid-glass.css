@@ -1,0 +1,173 @@
+/* Material only: component sizes, shapes, focus outlines and actions stay local. */
+.sport-theme {
+  --glass-surface: color-mix(in srgb, var(--glass-fill-base) calc(var(--glass-opacity) * 100%), transparent);
+  --glass-surface-hover: color-mix(in srgb, var(--glass-fill-base) calc((var(--glass-opacity) + .12) * 100%), transparent);
+  --glass-tint-opacity: calc((.35 + var(--glass-opacity) * .65) * var(--glass-action-tint-factor));
+  --button-glass-fill: var(--glass-surface);
+  --button-glass-hover: var(--glass-surface-hover);
+  --button-glass-sheen: var(--glass-sheen);
+  --button-glass-fallback: var(--surface);
+  --button-glass-selection: inset 0 0 0 0 transparent;
+}
+
+.sport-theme :is(.app-sidebar, .mobile-bar) {
+  --button-glass-fill: color-mix(in srgb, var(--sport-sidebar) calc(var(--glass-opacity) * 100%), transparent);
+  --button-glass-hover: color-mix(in srgb, var(--sport-sidebar) calc((var(--glass-opacity) + .12) * 100%), transparent);
+  --button-glass-sheen: var(--glass-tint-sheen);
+  --button-glass-fallback: var(--sport-sidebar);
+}
+
+/* The goal editor is a light/dark card within the coloured sidebar. */
+.sport-theme .running-goal {
+  --button-glass-fill: var(--glass-surface);
+  --button-glass-hover: var(--glass-surface-hover);
+  --button-glass-sheen: var(--glass-sheen);
+  --button-glass-fallback: var(--surface);
+}
+
+.sport-theme :is(button.bg-primary, .button-primary, button.save, button.apply-button, .mode-switch button[aria-pressed="true"]) {
+  --button-glass-fill: color-mix(in srgb, var(--primary) calc(var(--glass-tint-opacity) * 100%), transparent);
+  --button-glass-hover: color-mix(in srgb, var(--primary-hover) calc((var(--glass-tint-opacity) + .05) * 100%), transparent);
+  --button-glass-sheen: var(--glass-tint-sheen);
+  --button-glass-fallback: var(--primary);
+}
+
+.sport-theme button.delete-confirm {
+  --button-glass-fill: color-mix(in srgb, var(--error) calc(var(--glass-tint-opacity) * 100%), transparent);
+  --button-glass-hover: color-mix(in srgb, var(--error) calc((var(--glass-tint-opacity) + .05) * 100%), transparent);
+  --button-glass-sheen: var(--glass-tint-sheen);
+  --button-glass-fallback: var(--error);
+  color: var(--glass-danger-foreground) !important;
+}
+
+.sport-theme button.history-card.selected {
+  --button-glass-fill: color-mix(in srgb, var(--primary-soft) 92%, transparent);
+  --button-glass-hover: var(--primary-soft);
+  --button-glass-selection: inset 0 0 0 1px var(--primary);
+  --button-glass-fallback: var(--primary-soft);
+}
+
+.sport-theme .calendar-days button.today {
+  --button-glass-selection: inset 0 0 0 1px var(--primary);
+}
+
+/* Important material properties unify scoped Svelte and third-party controls. */
+.sport-theme :is(button, a.button-primary, a.button-secondary) {
+  box-shadow: var(--button-glass-selection), inset 0 1px 0 var(--glass-edge), inset 0 -1px 0 var(--glass-rim), 0 .25rem .875rem var(--glass-shadow) !important;
+  transition: color var(--transition-control), background-color var(--transition-control), border-color var(--transition-control), box-shadow var(--transition-control);
+}
+
+/* Adjacent segments share one shadow instead of casting shadows onto each other. */
+.sport-theme .mode-switch {
+  box-shadow: inset 0 1px 0 var(--glass-reflection), 0 .125rem .375rem color-mix(in srgb, var(--glass-shadow) 50%, transparent);
+}
+.sport-theme .mode-switch button {
+  --button-glass-sheen: var(--glass-reflection);
+  box-shadow: inset 0 0 0 1px var(--glass-reflection) !important;
+}
+
+/* Attribution buttons use a background image for their icon. */
+.sport-theme :is(button:not(.maplibregl-ctrl-attrib-button), a.button-primary, a.button-secondary) {
+  background-image: linear-gradient(145deg, var(--button-glass-sheen), transparent 48%, var(--glass-reflection)) !important;
+}
+
+/* MapLibre's focus ring uses box-shadow, which the material replaces. */
+.sport-theme .maplibregl-ctrl-group button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+/* Data colours carry meaning; a thin sheen adds glass without washing them out. */
+.sport-theme button[data-date] {
+  background-image: linear-gradient(145deg, var(--glass-reflection), transparent 60%) !important;
+  box-shadow: var(--button-glass-selection), inset 0 1px 0 var(--glass-reflection) !important;
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sport-theme :is(button.bg-primary, .button-primary, button.save, button.apply-button, .mode-switch button[aria-pressed="true"]) { color: var(--glass-action-foreground) !important; }
+  .sport-theme button.delete-confirm { color: var(--glass-danger-ink) !important; }
+  .sport-theme :is(button:not([data-date]), a.button-primary, a.button-secondary) {
+    background-color: var(--button-glass-fill) !important;
+    -webkit-backdrop-filter: blur(14px) saturate(1.5);
+    backdrop-filter: blur(14px) saturate(1.5);
+  }
+  .sport-theme :is(button:not([data-date]), a.button-primary, a.button-secondary):not(:disabled):not([aria-disabled="true"]):hover {
+    background-color: var(--button-glass-hover) !important;
+  }
+  .sport-theme .maplibregl-ctrl-group {
+    background-color: var(--glass-surface) !important;
+  }
+}
+
+.sport-theme input::file-selector-button {
+  background: linear-gradient(145deg, var(--glass-sheen), transparent 48%, var(--glass-reflection)), var(--glass-surface);
+  box-shadow: inset 0 1px 0 var(--glass-edge), inset 0 -1px 0 var(--glass-rim), 0 .125rem .375rem var(--glass-shadow);
+}
+.sport-theme input:not(:disabled)::file-selector-button:hover { background-color: var(--glass-surface-hover); }
+
+/* LgButton uses separate shadow, optical and tint layers with 12px of press room. */
+.sport-theme :is(.button-primary, .button-secondary, button.bg-primary, button.save, button.apply-button, .mode-switch, .mode-switch button) {
+  border-radius: var(--radius-pill) !important;
+}
+.sport-theme :is(button, a).rn-glass-control:not([data-date]):not(.history-card) {
+  isolation: isolate;
+  overflow: visible;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  border-color: transparent !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+.sport-theme .rn-glass-control:not(.maplibregl-ctrl-attrib-button) { background-image: none !important; }
+.rn-glass-surface { position: absolute; inset: 0; pointer-events: none; z-index: -1; overflow: clip; overflow-clip-margin: 12px; }
+.rn-glass-body { position: absolute; inset: -12px; }
+.rn-glass-layer { position: absolute; inset: 0; overflow: hidden; }
+.rn-glass-shadow, .rn-glass-tint { position: absolute; left: 0; top: 0; }
+.rn-glass-shadow { box-shadow: inset 0 1px 0 color-mix(in srgb, var(--glass-edge) 45%, transparent), 0 .25rem .75rem color-mix(in srgb, var(--glass-shadow) 65%, transparent); }
+.rn-glass-tint { background: var(--button-glass-fill); transition: background-color var(--transition-control); }
+.rn-glass-control:not(:disabled):not([aria-disabled="true"]):hover > .rn-glass-surface .rn-glass-tint { background: var(--button-glass-hover); }
+.rn-glass-copy { position: absolute; left: 0; top: 0; display: block; max-width: none; max-height: none; }
+.sport-theme .mode-switch .rn-glass-shadow { box-shadow: inset 0 0 0 1px var(--glass-reflection); }
+.sport-theme .preview-stage button.rn-glass-control { color: var(--glass-light-foreground) !important; }
+.sport-theme .rn-glass-control[data-glass-tone="light"] {
+  color: var(--glass-light-foreground) !important;
+  --button-glass-fill: color-mix(in srgb, var(--glass-light-fill) calc((var(--glass-opacity) + .36) * 100%), transparent);
+  --button-glass-hover: color-mix(in srgb, var(--glass-light-fill) calc((var(--glass-opacity) + .42) * 100%), transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sport-theme :is(button, a.button-primary, a.button-secondary) { transition: none !important; scale: 1 !important; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .sport-theme { --glass-action-foreground: var(--primary-foreground); --glass-danger-ink: var(--glass-danger-foreground); }
+  .sport-theme :is(button, a.button-primary, a.button-secondary) {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  .sport-theme :is(button:not(.maplibregl-ctrl-attrib-button), a.button-primary, a.button-secondary) { background-image: none !important; }
+  .sport-theme :is(button:not([data-date]), a.button-primary, a.button-secondary),
+  .sport-theme :is(button:not([data-date]), a.button-primary, a.button-secondary):not(:disabled):not([aria-disabled="true"]):hover {
+    background-color: var(--button-glass-fallback) !important;
+  }
+  .sport-theme .maplibregl-ctrl-group, .sport-theme input::file-selector-button { background: var(--surface) !important; }
+}
+
+@media (forced-colors: active) {
+  .sport-theme { --glass-action-foreground: ButtonText; --glass-danger-ink: ButtonText; }
+  .sport-theme .mode-switch, .sport-theme .mode-switch button { box-shadow: none !important; }
+  .sport-theme :is(button, a.button-primary, a.button-secondary),
+  .sport-theme :is(button, a.button-primary, a.button-secondary):not(:disabled):not([aria-disabled="true"]):hover,
+  .sport-theme input::file-selector-button {
+    background-color: ButtonFace !important;
+    color: ButtonText !important;
+    box-shadow: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  .sport-theme :is(button:not(.maplibregl-ctrl-attrib-button), a.button-primary, a.button-secondary),
+  .sport-theme input::file-selector-button { background-image: none !important; }
+  .sport-theme :is(button, a.button-primary, a.button-secondary):is(:disabled, [aria-disabled="true"]) { color: GrayText !important; }
+  .sport-theme button:is([aria-pressed="true"], .selected, .today) { outline: 2px solid Highlight; outline-offset: -2px; }
+  .sport-theme .maplibregl-ctrl-group button:focus-visible { outline-color: Highlight; }
+}

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { watchSystemTheme } from './system-theme';
   import type { Trends } from '#lib/api/statistics.ts';
   import { dashboardDistance } from '#lib/api/dashboard-format.ts';
   import { formatDistance, formatDuration, formatPace } from '#lib/api/activities.ts';
@@ -10,13 +11,26 @@
   function value(b: Trends['buckets'][number]) { const n = metric === 'distance' ? b.distance_m : metric === 'count' ? b.activity_count : metric === 'duration' ? b.duration_sum_seconds : b.avg_pace_seconds_per_km; return n === null ? null : Number(n) / (metric === 'distance' ? 1000 : metric === 'count' ? 1 : 60); }
   function display(b: Trends['buckets'][number]) { return metric === 'distance' ? (enhanced ? dashboardDistance(b.distance_m) : formatDistance(b.distance_m)) : metric === 'count' ? `${b.activity_count} 次` : metric === 'duration' ? formatDuration(b.duration_sum_seconds) : formatPace(b.avg_pace_seconds_per_km); }
   function draw() {
-    chart?.setOption({ animation: false, tooltip: { trigger: 'axis', renderMode: 'richText', valueFormatter: enhanced ? (value: number | null) => value === null ? '—' : metric === 'distance' && enhanced ? dashboardDistance(value * 1000) : metric === 'pace' ? formatPace(value * 60) : metric === 'count' ? `${value} 次` : `${value} 分钟` : undefined }, grid: { left: enhanced ? 45 : 65, right: 20, top: 40, bottom: 60 }, xAxis: { type: 'category', data: trends.buckets.map(b => `${b.bucket_start}${b.is_partial ? '（部分）' : ''}`), axisLabel: { rotate: enhanced ? 0 : 35, fontSize: enhanced ? 11 : 10, formatter: (label: string) => enhanced ? label.slice(5) : label } }, yAxis: { type: 'value', name: labels[metric], min: 0 }, series: [{ name: labels[metric], type: metric === 'count' || metric === 'distance' ? 'bar' : 'line', connectNulls: false, data: trends.buckets.map(value), itemStyle: {color:'#27815c'} }] }, { notMerge: true });
+    if (!chart) return;
+    const style = getComputedStyle(container);
+    const color = (name: string) => style.getPropertyValue(name).trim();
+    const foreground = color('--foreground'), muted = color('--muted-foreground'), border = color('--border');
+    chart.setOption({
+      animation: false,
+      textStyle: { color: foreground },
+      tooltip: { trigger: 'axis', renderMode: 'richText', backgroundColor: color('--surface'), borderColor: border, textStyle: { color: foreground }, valueFormatter: enhanced ? (value: number | null) => value === null ? '—' : metric === 'distance' && enhanced ? dashboardDistance(value * 1000) : metric === 'pace' ? formatPace(value * 60) : metric === 'count' ? `${value} 次` : `${value} 分钟` : undefined },
+      grid: { left: enhanced ? 45 : 65, right: 20, top: 40, bottom: 60 },
+      xAxis: { type: 'category', data: trends.buckets.map(b => `${b.bucket_start}${b.is_partial ? '（部分）' : ''}`), axisLine: { lineStyle: { color: border } }, axisTick: { lineStyle: { color: border } }, axisLabel: { color: muted, rotate: enhanced ? 0 : 35, fontSize: enhanced ? 11 : 10, formatter: (label: string) => enhanced ? label.slice(5) : label } },
+      yAxis: { type: 'value', name: labels[metric], min: 0, nameTextStyle: { color: muted }, axisLabel: { color: muted }, splitLine: { lineStyle: { color: border } } },
+      series: [{ name: labels[metric], type: metric === 'count' || metric === 'distance' ? 'bar' : 'line', connectNulls: false, data: trends.buckets.map(value), itemStyle: { color: color('--chart-series') }, lineStyle: { color: color('--chart-series') } }]
+    }, { notMerge: true });
   }
   $effect(() => { trends; metric; if (mounted) draw(); });
   onMount(() => {
     let disposed = false; let observer: ResizeObserver | undefined;
+    const stopTheme = watchSystemTheme(() => draw());
     void (async () => { try { const ec = await import('./trend-chart-runtime'); if (disposed) return; chart = ec.init(container); mounted = true; draw(); observer = new ResizeObserver(() => chart?.resize()); observer.observe(container); } catch { if (!disposed) message = '图表暂时无法显示，下方数据表仍可查看。'; } })();
-    return () => { disposed = true; observer?.disconnect(); chart?.dispose(); chart = undefined; };
+    return () => { disposed = true; stopTheme(); observer?.disconnect(); chart?.dispose(); chart = undefined; };
   });
 </script>
 {#if message}<p role="status">{message}</p>{/if}

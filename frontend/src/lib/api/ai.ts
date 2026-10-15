@@ -1,8 +1,14 @@
 import { ActivityError, type Metric } from './activities';
 import type { Summary } from './statistics';
+export interface DeviceMetrics {
+  heart_rate_record_count: number; heart_rate_weighted_count: number;
+  heart_rate_weighted_duration_seconds: Metric; avg_heart_rate_bpm: Metric;
+  calories_record_count: number; calories_kcal: number | null;
+  steps_record_count: number; steps: number | null;
+}
 export interface Snapshot {
-  schema_version: 'running-summary-v1'; date_from: string; date_to: string; summary: Summary;
-  weeks: (Summary & { bucket_start: string; bucket_end: string; distance_change_pct: Metric })[];
+  schema_version: 'running-summary-v1' | 'running-summary-v2'; device_metrics?: DeviceMetrics; date_from: string; date_to: string; summary: Summary;
+  weeks: (Summary & { bucket_start: string; bucket_end: string; distance_change_pct: Metric; device_metrics?: DeviceMetrics })[];
   average_runs_per_week: string; evidence_limited: boolean; limitations: string[];
 }
 export interface Analysis { trend_summary: string; recommendations: string[]; limitations: string }
@@ -23,10 +29,32 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function invalid(): never { throw new AIError('分析服务返回无效响应',502,'INVALID_RESPONSE'); }
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
 const numeric = (v: unknown) => (typeof v === 'string' && v.trim() !== '' || typeof v === 'number') && Number.isFinite(Number(v));
+function validateDeviceMetrics(value: unknown, total: number): void {
+  if (!object(value)) invalid();
+  const count = (key: string, max = total) => {
+    const v = value[key];
+    if (typeof v !== 'number' || !Number.isSafeInteger(v) || v < 0 || v > max) invalid();
+    return v;
+  };
+  const hr = count('heart_rate_record_count');
+  const weighted = count('heart_rate_weighted_count', hr);
+  for (const [key, n] of [['calories_kcal', count('calories_record_count')], ['steps', count('steps_record_count')]] as const) {
+    const v = value[key];
+    if (n === 0 ? v !== null : typeof v !== 'number' || !Number.isSafeInteger(v) || v < 0) invalid();
+  }
+  const duration = value.heart_rate_weighted_duration_seconds, bpm = value.avg_heart_rate_bpm;
+  if (weighted === 0) {
+    if (duration !== null || bpm !== null) invalid();
+  } else if (!numeric(duration) || Number(duration) <= 0 || !numeric(bpm) || Number(bpm) < 1 || Number(bpm) > 300) invalid();
+}
 function snapshot(value: unknown): Snapshot {
-  if (!object(value) || value.schema_version !== 'running-summary-v1' || !object(value.summary) || !Array.isArray(value.weeks) || typeof value.evidence_limited !== 'boolean' || !Array.isArray(value.limitations) || !value.limitations.every(v => typeof v === 'string') || !numeric(value.average_runs_per_week)) invalid();
+  if (!object(value) || !['running-summary-v1', 'running-summary-v2'].includes(String(value.schema_version)) || !object(value.summary) || !Array.isArray(value.weeks) || typeof value.evidence_limited !== 'boolean' || !Array.isArray(value.limitations) || !value.limitations.every(v => typeof v === 'string') || !numeric(value.average_runs_per_week)) invalid();
   for (const s of [value.summary, ...value.weeks]) {
     if (!object(s) || !Number.isInteger(s.activity_count) || Number(s.activity_count) < 0 || !numeric(s.distance_m) || Number(s.distance_m) < 0 || s.avg_pace_seconds_per_km !== null && !numeric(s.avg_pace_seconds_per_km)) invalid();
+  }
+  if (value.schema_version === 'running-summary-v2') {
+    validateDeviceMetrics(value.device_metrics, Number(value.summary.activity_count));
+    for (const week of value.weeks) validateDeviceMetrics(week.device_metrics, Number(week.activity_count));
   }
   return value as unknown as Snapshot;
 }

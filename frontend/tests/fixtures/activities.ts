@@ -27,9 +27,17 @@ export async function installActivities(page: Page) {
     if (path === '/api/v1/activities') {
       if (state.listFailures-- > 0) return send(null, 503);
       const offset = Number(url.searchParams.get('offset') ?? 0);
-      return send({ items: state.records.slice(offset, offset + 20), total: state.records.length, limit: 20, offset });
+      const records = state.records.filter(item => (!url.searchParams.has('category') || (item.category ?? '') === url.searchParams.get('category')) && (!url.searchParams.has('activity_month') || item.activity_date.startsWith(url.searchParams.get('activity_month')!)));
+      return send({ items: records.slice(offset, offset + 20), total: records.length, limit: 20, offset });
     }
+    if (path === '/api/v1/activities/categories') return send([...new Set(state.records.map(item => item.category ?? ''))].sort());
     if (req.method() !== 'GET') state.writes.push({ method: req.method(), path, data: req.postData() ? req.postDataJSON() : null });
+    if (path === '/api/v1/activities/batch-delete' && req.method() === 'POST') {
+      const ids = req.postDataJSON().ids as string[];
+      if (ids.some(id => !state.records.some(record => record.id === id))) return send(null, 404);
+      state.records = state.records.filter(record => !ids.includes(record.id));
+      return send({ deleted: true, deleted_count: ids.length });
+    }
     if (path.endsWith('/route')) return send({ type: 'FeatureCollection', start: [121.48,31.23], end: [121.49,31.237], features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: [[121.48,31.23],[121.485,31.235],[121.49,31.237]] }, properties: { segment_index: 0, point_count: 3 } }] });
     if (path.endsWith('/shares') && req.method() === 'GET') return send({ items: state.links });
     if (path.endsWith('/shares') && req.method() === 'POST') {

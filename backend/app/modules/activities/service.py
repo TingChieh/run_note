@@ -1,12 +1,16 @@
 import json
+from calendar import monthrange
+from datetime import date
 from uuid import UUID
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 
 from app.core.errors import ApiError
 from app.modules.activities.model import Activity
 from app.modules.activities.schema import ActivityList, ActivityView
 from app.modules.gpx.model import ActivitySegment
+from app.modules.sharing.model import ActivityShareLink
+from app.modules.users.model import User
 
 
 def view(activity, has_route=True):
@@ -25,6 +29,46 @@ def owned_activity(db, owner: UUID, identifier: UUID):
     return activity
 
 
+def lock_owner(db, owner):
+    return db.scalar(
+        select(User)
+        .where(User.id == owner)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+
+
+def update_activity(db, owner, identifier, payload, now):
+    user = lock_owner(db, owner)
+    activity = owned_activity(db, owner, identifier)
+    for name, value in payload.model_dump(exclude_unset=True).items():
+        setattr(activity, name, value)
+    if "visibility" in payload.model_fields_set:
+        # Sharing remains summary-only; private transitions revoke old links atomically.
+        activity.allow_shared_route = False
+        if activity.visibility == "private":
+            db.execute(
+                update(ActivityShareLink)
+                .where(
+                    ActivityShareLink.activity_id == identifier,
+                    ActivityShareLink.revoked_at.is_(None),
+                )
+                .values(revoked_at=now)
+            )
+    user.activity_data_version += 1
+    db.flush()
+    return detail(db, owner, identifier)
+
+
+def delete_activity(db, owner, identifier):
+    user = lock_owner(db, owner)
+    activity = owned_activity(db, owner, identifier)
+    db.delete(activity)
+    user.activity_data_version += 1
+    db.flush()
+    return {"deleted": True}
+
+
 def detail(db, owner, identifier):
     activity = owned_activity(db, owner, identifier)
     exists = db.scalar(
@@ -33,10 +77,31 @@ def detail(db, owner, identifier):
     return view(activity, exists is not None)
 
 
-def listing(db, owner, limit, offset, activity_date=None):
+def categories(db, owner):
+    return list(
+        db.scalars(
+            select(Activity.category)
+            .where(Activity.user_id == owner)
+            .distinct()
+            .order_by(Activity.category)
+        )
+    )
+
+
+def listing(db, owner, limit, offset, activity_date=None, category=None, activity_month=None):
     filters = [Activity.user_id == owner]
     if activity_date is not None:
         filters.append(Activity.activity_date == activity_date)
+    if category is not None:
+        filters.append(Activity.category == category)
+    if activity_month is not None:
+        year, month = map(int, activity_month.split("-"))
+        filters.extend(
+            [
+                Activity.activity_date >= date(year, month, 1),
+                Activity.activity_date <= date(year, month, monthrange(year, month)[1]),
+            ]
+        )
     activities = db.scalars(
         select(Activity)
         .where(*filters)
@@ -92,3 +157,17 @@ def route(db, owner, identifier):
         "start": rows[0].first["coordinates"] if rows else None,
         "end": rows[-1].last["coordinates"] if rows else None,
     }
+
+
+def delete_activities(db, owner, identifiers):
+    user = lock_owner(db, owner)
+    activities = db.scalars(
+        select(Activity).where(Activity.id.in_(identifiers), Activity.user_id == owner)
+    ).all()
+    if len(activities) != len(identifiers):
+        raise ApiError(404, "RESOURCE_NOT_FOUND", "部分记录不存在，请刷新后重试")
+    for activity in activities:
+        db.delete(activity)
+    user.activity_data_version += 1
+    db.flush()
+    return {"deleted": True, "deleted_count": len(activities)}

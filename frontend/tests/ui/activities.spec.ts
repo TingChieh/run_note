@@ -58,7 +58,7 @@ test('list error retry, empty guidance and pagination remain usable', async ({ p
   await page.reload(); await page.getByRole('button', { name: '下一页' }).click();
   await expect(page.getByRole('heading', { name: '第 21 条跑步' })).toBeVisible(); await expect(page.getByRole('button', { name: '下一页' })).toBeDisabled();
   await page.getByRole('button', { name: '上一页' }).click(); await expect(page.getByRole('heading', { name: '第 1 条跑步', exact: true })).toBeVisible();
-  state.records = []; await page.reload(); await expect(page.getByRole('status')).toContainText('还没有活动'); await noOverflow(page);
+  state.records = []; await page.reload(); await expect(page.getByRole('region', { name: /^我的活动/ }).getByRole('status')).toContainText('还没有活动'); await noOverflow(page);
 });
 test('detail puts route before sharing and keeps quality available through keyboard disclosure', async ({ page }) => {
   await installActivities(page); await loginRunner(page); await page.goto(`/activities/${sampleActivity.id}`);
@@ -95,7 +95,7 @@ test('successful import followed by list outage reports separate outcomes and re
   await page.getByRole('button', { name: '导入 GPX', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: '导入成功' })).toBeVisible();
   await expect(page.getByRole('region', { name: '我的活动', exact: true }).getByRole('alert')).toContainText('暂时无法读取');
-  await expect(page.getByRole('region', { name: '导入 GPX', exact: true }).getByRole('alert')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: '导入 GPX / TCX', exact: true }).getByRole('alert')).toHaveCount(0);
   await page.getByRole('button', { name: '重新读取活动' }).click(); await expect(page.getByRole('heading', { name: '新导入的跑步', level: 3 })).toBeVisible();
   expect(state.uploadCount).toBe(1);
 });

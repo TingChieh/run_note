@@ -78,14 +78,14 @@
   {#if feedback}<p id="goal-feedback" role="alert" class="goal-note">{feedback}</p>{/if}
 </section>
 <style>
-  .running-goal { margin-top:1rem; padding:1rem; border-radius:1rem; background:#ffffff; color:#20332b; }
+  .running-goal { margin-top:1rem; padding:1rem; border-radius:1rem; background:var(--surface); color:var(--foreground); }
   .goal-heading { display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
-  button { min-height:44px; padding:.4rem .5rem; color:#17745c; font-weight:650; border-radius:.5rem; }
-  button:hover { background:#e8f6df; }
-  select { margin:.3rem 0 .5rem; width:100%; min-height:44px; font-size:.875rem; color:#20332b; }
-  .goal-distance { margin:.3rem 0; line-height:1.6; } .goal-distance strong { font-size:1.4rem; font-variant-numeric:tabular-nums; } .goal-distance span { font-size:.75rem; color:#5c695e; }
-  progress { display:block; width:100%; height:.5rem; accent-color:#218538; border:0; border-radius:1rem; overflow:hidden; }
-  progress::-webkit-progress-bar { background:#e8f6df; } progress::-webkit-progress-value { background:#218538; }
-  .goal-note, details { font-size:.75rem; line-height:1.6; margin-top:.4rem; } .goal-note { color:#5c695e; } summary { cursor:pointer; }
+  button { min-height:44px; padding:.4rem .5rem; color:var(--primary); font-weight:650; border-radius:.5rem; }
+  button:hover { background:var(--primary-soft); }
+  select { margin:.3rem 0 .5rem; width:100%; min-height:44px; font-size:.875rem; color:var(--foreground); }
+  .goal-distance { margin:.3rem 0; line-height:1.6; } .goal-distance strong { font-size:1.4rem; font-variant-numeric:tabular-nums; } .goal-distance span { font-size:.75rem; color:var(--muted-foreground); }
+  progress { display:block; width:100%; height:.5rem; accent-color:var(--primary); border:0; border-radius:1rem; overflow:hidden; }
+  progress::-webkit-progress-bar { background:var(--primary-soft); } progress::-webkit-progress-value { background:var(--primary); }
+  .goal-note, details { font-size:.75rem; line-height:1.6; margin-top:.4rem; } .goal-note { color:var(--muted-foreground); } summary { cursor:pointer; }
   label { font-size:.8rem; } .goal-input { display:flex; gap:.25rem; } input { min-width:0; width:100%; } form { margin:.5rem 0; }
 </style>

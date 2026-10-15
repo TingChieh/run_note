@@ -4,7 +4,8 @@
   import type { Map as LibreMap } from 'maplibre-gl';
   import type { Footprints } from '#lib/api/footprints.ts';
   import { geometryBounds, displayFootprints } from '#lib/api/footprints.ts';
-  import { BASEMAP_SOURCE, BASEMAP_LAYER, BASEMAP_TIMEOUT_MS, createRouteMapStyle, createBasemapSource, isBasemapError } from '#lib/api/map-style.ts';
+  import { BASEMAP_SOURCE, BASEMAP_LAYER, BASEMAP_TIMEOUT_MS, createRouteMapStyle, createBasemapSource, isBasemapError, applyMapTheme } from '#lib/api/map-style.ts';
+  import { watchSystemTheme } from './system-theme';
   import 'maplibre-gl/dist/maplibre-gl.css';
   let { data, onretry }: {data: Footprints; onretry: () => void} = $props();
   let container: HTMLDivElement, map: LibreMap | undefined, disposed=false;
@@ -12,6 +13,7 @@
   let choices=$state<{id:string;title:string;date:string}[]>([]), heat=$state<number|null>(null);
   let timer: ReturnType<typeof setTimeout>|undefined, observer: ResizeObserver|undefined;
   let heatDataOpen=$state(false), heatPage=$state(0), recordsOpen=$state(false);
+  let dark=false, stopTheme: (() => void) | undefined;
   const heatPageSize=50;
   let selectedIds=$state<string[]>([]);
   const displayData=$derived(displayFootprints(data));
@@ -35,14 +37,14 @@
   const palette=['#14785b','#315caf','#b4552c','#854caa','#397d87','#ba3970'];
   function removeBasemap() { clearTimeout(timer); if(map?.getLayer(BASEMAP_LAYER))map.removeLayer(BASEMAP_LAYER); if(map?.getSource(BASEMAP_SOURCE))map.removeSource(BASEMAP_SOURCE); }
   function failBasemap() { if(disposed || basemap==='off')return; removeBasemap(); basemap='failed'; }
-  function loadBasemap() { if(!map || disposed)return; removeBasemap(); basemap='loading'; map.addSource(BASEMAP_SOURCE,createBasemapSource()); map.addLayer({id:BASEMAP_LAYER,type:'raster',source:BASEMAP_SOURCE},'footprint-fill'); timer=setTimeout(failBasemap,BASEMAP_TIMEOUT_MS); }
+  function loadBasemap() { if(!map || disposed)return; removeBasemap(); basemap='loading'; map.addSource(BASEMAP_SOURCE,createBasemapSource()); map.addLayer({id:BASEMAP_LAYER,type:'raster',source:BASEMAP_SOURCE},'footprint-fill'); applyMapTheme(map,dark); timer=setTimeout(failBasemap,BASEMAP_TIMEOUT_MS); }
   function toggleBasemap() { if(basemap==='off')loadBasemap(); else {removeBasemap();basemap='off';} }
-  onMount(()=>{void(async()=>{
+  onMount(()=>{stopTheme=watchSystemTheme(value=>{dark=value;if(map && !disposed)applyMapTheme(map,dark);});void(async()=>{
     try {
       const lib=await import('maplibre-gl'); if(disposed)return;
       const display=displayData;
       const bounds=allBounds;
-      map=new lib.Map({container,fadeDuration:0,locale:{'NavigationControl.ZoomIn':'放大地图','NavigationControl.ZoomOut':'缩小地图','Map.Title':'足迹地图'},style:createRouteMapStyle(),center:bounds?.[0]??[0,0],zoom:13,maxZoom:19,attributionControl:false});
+      map=new lib.Map({container,fadeDuration:0,locale:{'NavigationControl.ZoomIn':'放大地图','NavigationControl.ZoomOut':'缩小地图','Map.Title':'足迹地图'},style:createRouteMapStyle(dark),center:bounds?.[0]??[0,0],zoom:13,maxZoom:19,attributionControl:false});
       map.addControl(new lib.NavigationControl({showCompass:false}),'top-right');
       observer=new ResizeObserver(()=>map?.resize()); observer.observe(container);
       map.on('webglcontextlost',()=>{clearTimeout(timer);ready=false;error='地图绘图上下文已丢失，请重新绘制地图。下方数据入口仍可使用。';});
@@ -56,6 +58,7 @@
         map.addLayer({id:'footprint-fill',type:'fill',source:'footprints',filter:['==','$type','Polygon'],paint:{'fill-color':['step',['get','count'],'#c0dfac',2,'#72b78a',4,'#2d9474',8,'#e69338',16,'#bd432c'],'fill-opacity':0.8}});
         map.addLayer({id:'footprint-lines',type:'line',source:'footprints',filter:['==','$type','LineString'],paint:{'line-color':['get','color'],'line-width':3,'line-opacity':0.8},layout:{'line-join':'round','line-cap':'round'}});
         map.addLayer({id:'footprint-points',type:'circle',source:'footprints',filter:['==','$type','Point'],paint:{'circle-color':['get','color'],'circle-radius':5}});
+        applyMapTheme(map,dark);
         map.on('click',e=>{
           if(!map)return;
           const hits=map.queryRenderedFeatures([[e.point.x-5,e.point.y-5],[e.point.x+5,e.point.y+5]],{layers:['footprint-lines','footprint-points','footprint-fill']});
@@ -69,7 +72,7 @@
       });
     }catch{if(!disposed)error='无法初始化地图，请使用支持 WebGL 的浏览器。';}
   })();});
-  onDestroy(()=>{disposed=true;clearTimeout(timer);observer?.disconnect();map?.remove();map=undefined;});
+  onDestroy(()=>{disposed=true;stopTheme?.();clearTimeout(timer);observer?.disconnect();map?.remove();map=undefined;});
 </script>
 <div class="map-section">
   <div class="map-toolbar"><div class="toolbar-actions"><button type="button" onclick={overview} disabled={!ready || !!error} class="button-secondary">回到全部足迹</button><button type="button" onclick={toggleBasemap} disabled={!ready || !!error} aria-pressed={basemap!=='off'} class="button-secondary">{basemap==='off'?'开启底图':'关闭底图'}</button></div><p class="map-hint" id="footprint-map-help">拖动或缩放探索 · 方向键移动 · + / − 缩放</p></div>

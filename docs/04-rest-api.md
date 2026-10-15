@@ -92,10 +92,12 @@ HTTP状态反映真实结果，错误不统一塞进200。删除返回200与`dat
 | --- | --- | --- | --- |
 | POST | `/gpx-imports` | multipart file,timezone可选,activity_date可选,title可选 | 201 活动摘要+import_id+质量警告；Location指向活动详情 |
 | POST | `/activities` | 手动创建JSON，见下 | 201 本人活动详情 |
-| GET | `/activities` | page,page_size,date_from,date_to,source,visibility | 200 本人摘要列表；不加载轨迹点/raw_gpx |
+| GET | `/activities` | limit(1–100),offset,activity_date可选,activity_month可选（YYYY-MM）,category可选（最多30字符，精确匹配，空串为未分类） | 200 本人摘要列表；不加载轨迹点/raw_gpx |
+| GET | `/activities/categories` | 无 | 200 本人全部活动的去重分类字符串数组（含已有空分类）；不含他人分类 |
 | GET | `/activities/{id}` | UUID | 200 本人详情、质量、has_route；不含原始GPX字节 |
-| PATCH | `/activities/{id}` | 允许字段子集 | 200 更新后详情；服务端重新计算手动指标 |
+| PATCH | `/activities/{id}` | title,notes,category,tags,visibility 的非空子集 | 200 本人更新后详情；运动指标只读 |
 | DELETE | `/activities/{id}` | UUID | 200 deleted=true；原文、段、点、分享链接级联清理 |
+| POST | `/activities/batch-delete` | ids：1–100 个不重复 UUID | 200 deleted=true,deleted_count=N；全部归属校验通过后原子删除 |
 | GET | `/activities/{id}/route` | zoom可选，整数0–22 | 200 geojson、start_point、end_point、bounds、simplification元数据 |
 
 ### 3.1 导入细则
@@ -107,6 +109,8 @@ HTTP状态反映真实结果，错误不统一塞进200。删除返回200与`dat
 导入不是任意URL抓取，不接受URL或客户端owner_id。失败不生成活动。处理预算超时返回503 GPX_PROCESSING_TIMEOUT，点数/段数超限返回422，字节超限返回413。
 
 ### 3.2 手动创建与编辑
+
+当前已实现的编辑范围（2026-10-15）：`PATCH /activities/{id}` 接受 `title`、`notes`、`category`、`tags`、`visibility` 的非空字段子集。标题去除首尾空白后为 1–120 字符，备注最多 5000 字符；分类去首尾空白后最多 30 字符；标签数组最多 10 个，每个去首尾空白后 1–30 字符并保序去重。备注、分类、标签仅本人可见；显式 null、空请求和其他字段返回 422。日期、距离、耗时等仍只读；下面的手动创建及额外编辑字段为后续规划。`DELETE /activities/{id}` 已实现，仅本人且通过 Origin/CSRF 检查可调用，与数据版本递增同事务执行，级联清理 GPX/TCX 原文、段、点和分享链接。重复删除不存在的记录返回 404。`POST /activities/batch-delete` 接受 `{ids:[UUID...]}`，1–100 个不重复 ID；校验全部属于本人且存在后才同事务删除，并仅递增一次数据版本。混入他人或不存在的记录时返回 404，不会部分删除。
 
 手动创建示例：
 

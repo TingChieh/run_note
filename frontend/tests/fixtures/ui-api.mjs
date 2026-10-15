@@ -27,6 +27,7 @@ createServer(async (req, res) => {
     let body = ''; for await (const chunk of req) body += chunk;
     const value = JSON.parse(body); Object.assign(user, { display_name: value.display_name, bio: value.bio, profile_is_public: value.profile_is_public }); return send(user);
   }
+  if (url.pathname === '/api/v1/activities/categories') return send([]);
   if (url.pathname === '/api/v1/activities') return send({ items: [], total: 0, limit: 20, offset: 0 });
   if (url.pathname === '/api/v1/footprints/provinces') return send({ year:Number(url.searchParams.get('year')),total:34,provinces:[],activity_count:0,located_activity_count:0 });
   if (url.pathname.endsWith('/statistics/streaks')) {

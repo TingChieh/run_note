@@ -16,3 +16,11 @@ it('bounds GPX body streams even without trustworthy Content-Length', async () =
   await expect(readProxyBody(request([new Uint8Array(11 * 1024 * 1024), new Uint8Array(1)], '1'), true)).rejects.toMatchObject({ status: 413 });
   await expect(readProxyBody(request([], String(11 * 1024 * 1024 + 1)), true)).rejects.toMatchObject({ status: 413 });
 });
+it('applies upload limits and deadline to the exact TCX endpoint', async () => {
+  const { isGpxUpload } = await import('../../src/lib/server/proxy-policy');
+  expect(isGpxUpload('/api/v1/tcx-imports', 'POST')).toBe(true);
+  expect(upstreamTimeout('/api/v1/tcx-imports?time_mode=local','POST')).toBe(45000);
+  expect(upstreamTimeout('/api/v1/tcx-imports/other','POST')).toBe(8000);
+  const request = new Request('http://localhost/api/v1/tcx-imports', {method:'POST',body:'x',headers:{'Content-Length':String(12*1024*1024)}});
+  await expect(readProxyBody(request,isGpxUpload('/api/v1/tcx-imports','POST'))).rejects.toMatchObject({status:413});
+});

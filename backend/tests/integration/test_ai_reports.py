@@ -1,3 +1,4 @@
+import json
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -103,6 +104,152 @@ def post(a, key=None, payload=None):
         headers={**headers(a), "Idempotency-Key": str(key or uuid4())},
         json=payload or PAYLOAD,
     )
+
+
+def test_device_snapshot_weights_timer_and_preserves_missing_zero_and_owner_scope(ai_clients):
+    a, b, app, provider = ai_clients
+    owner, other = register(a), register(b)
+    seed(app, owner)
+    seed(app, other)
+    with app.state.session_factory.begin() as db:
+        rows = db.scalars(
+            select(Activity).where(Activity.user_id == owner).order_by(Activity.activity_date)
+        ).all()
+        rows[0].avg_heart_rate_bpm = 120
+        rows[0].calories_kcal = 100
+        rows[0].steps = 1000
+        rows[1].activity_date = date(2024, 1, 2)
+        rows[1].elapsed_seconds = 1200
+        rows[1].timer_seconds = 600
+        rows[1].avg_heart_rate_bpm = 180
+        rows[1].steps = 0
+        rows[2].avg_heart_rate_bpm = 200
+        rows[2].calories_kcal = 0
+        other_row = db.scalar(select(Activity).where(Activity.user_id == other))
+        other_row.avg_heart_rate_bpm = 300
+        other_row.calories_kcal = 99999
+        other_row.steps = 99999
+        # End date is exclusive, even if all device fields are available.
+        db.add(
+            Activity(
+                user_id=owner,
+                source="manual",
+                title="Excluded boundary",
+                activity_date=date(2024, 1, 29),
+                date_source="manual",
+                timezone="UTC",
+                distance_m=1000,
+                elapsed_seconds=600,
+                avg_heart_rate_bpm=300,
+                calories_kcal=99999,
+                steps=99999,
+                temporal_quality="manual",
+                quality_summary={"warnings": []},
+                metrics_version="test-v1",
+            )
+        )
+    preview = a.get("/api/v1/ai-reports/context?date_from=2024-01-01&date_to=2024-01-29")
+    assert preview.status_code == 200, preview.text
+    assert not provider.calls  # Reading facts never calls the model.
+    snapshot = preview.json()["data"]["stats_snapshot"]
+    assert snapshot["schema_version"] == "running-summary-v2"
+    assert snapshot["device_metrics"] == {
+        "heart_rate_record_count": 3,
+        "heart_rate_weighted_count": 2,
+        "heart_rate_weighted_duration_seconds": "1200.000",
+        "avg_heart_rate_bpm": "150.000",
+        "calories_record_count": 2,
+        "calories_kcal": 100,
+        "steps_record_count": 2,
+        "steps": 1000,
+    }
+    weeks = snapshot["weeks"]
+    assert weeks[0]["device_metrics"]["avg_heart_rate_bpm"] == "150.000"
+    assert weeks[0]["device_metrics"]["heart_rate_record_count"] == 2
+    assert weeks[1]["activity_count"] == 0
+    assert weeks[1]["device_metrics"]["calories_kcal"] is None
+    assert weeks[1]["device_metrics"]["heart_rate_record_count"] == 0
+    assert weeks[2]["device_metrics"]["heart_rate_record_count"] == 1
+    assert weeks[2]["device_metrics"]["avg_heart_rate_bpm"] is None
+    assert weeks[2]["device_metrics"]["calories_kcal"] == 0
+    generated = post(a)
+    assert generated.status_code == 201, generated.text
+    report = generated.json()["data"]
+    sent = json.loads(provider.calls[0]["messages"][1]["content"])
+    assert sent["device_metrics"]["avg_heart_rate_bpm"] == "150.000"
+    assert sent["weeks"][0]["device_metrics"]["steps"] == 1000
+    with app.state.session_factory.begin() as db:
+        db.get(Activity, rows[0].id).avg_heart_rate_bpm = 240
+        db.get(User, UUID(owner)).activity_data_version += 1
+    saved = a.get("/api/v1/ai-reports/" + report["id"]).json()["data"]
+    assert saved["stats_snapshot"]["device_metrics"]["avg_heart_rate_bpm"] == "150.000"
+    assert saved["is_stale"] is True
+    assert len(provider.calls) == 1
+    assert b.get("/api/v1/ai-reports/" + report["id"]).status_code == 404
+
+
+def test_zero_device_timer_excludes_heart_rate_without_falling_back_to_wall_time(ai_clients):
+    a, _, app, _ = ai_clients
+    owner = register(a)
+    seed(app, owner)
+    with app.state.session_factory.begin() as db:
+        row = db.scalar(
+            select(Activity).where(Activity.user_id == owner).order_by(Activity.activity_date)
+        )
+        row.timer_seconds = 0
+        row.avg_heart_rate_bpm = 156
+    snapshot = a.get("/api/v1/ai-reports/context?date_from=2024-01-01&date_to=2024-01-29").json()[
+        "data"
+    ]["stats_snapshot"]
+    metrics = snapshot["device_metrics"]
+    assert metrics["heart_rate_record_count"] == 1
+    assert metrics["heart_rate_weighted_count"] == 0
+    assert metrics["avg_heart_rate_bpm"] is None
+    assert metrics["heart_rate_weighted_duration_seconds"] is None
+    assert metrics["calories_record_count"] == 0 and metrics["calories_kcal"] is None
+    assert metrics["steps_record_count"] == 0 and metrics["steps"] is None
+
+
+def test_overall_heart_rate_uses_duration_instead_of_mean_of_weekly_means(ai_clients):
+    a, _, app, _ = ai_clients
+    owner = register(a)
+    seed(app, owner)
+    with app.state.session_factory.begin() as db:
+        rows = db.scalars(
+            select(Activity).where(Activity.user_id == owner).order_by(Activity.activity_date)
+        ).all()
+        rows[0].avg_heart_rate_bpm = 120  # 600 seconds
+        rows[1].avg_heart_rate_bpm = 180  # 750 seconds in a different week
+    snapshot = a.get("/api/v1/ai-reports/context?date_from=2024-01-01&date_to=2024-01-29").json()[
+        "data"
+    ]["stats_snapshot"]
+    assert snapshot["device_metrics"]["avg_heart_rate_bpm"] == "153.333"
+    assert snapshot["device_metrics"]["heart_rate_weighted_duration_seconds"] == "1350.000"
+    assert snapshot["weeks"][0]["device_metrics"]["avg_heart_rate_bpm"] == "120.000"
+    assert snapshot["weeks"][1]["device_metrics"]["avg_heart_rate_bpm"] == "180.000"
+
+
+def test_legacy_report_remains_readable_without_rewriting_or_provider_call(ai_clients):
+    from app.modules.ai_reports.model import AIReport
+
+    a, _, app, provider = ai_clients
+    owner = register(a)
+    seed(app, owner)
+    created = post(a).json()["data"]
+    legacy = created["stats_snapshot"]
+    legacy["schema_version"] = "running-summary-v1"
+    legacy.pop("device_metrics")
+    for week in legacy["weeks"]:
+        week.pop("device_metrics")
+    with app.state.session_factory.begin() as db:
+        row = db.get(AIReport, UUID(created["id"]))
+        row.stats_snapshot = legacy
+        row.prompt_version = "running-qualitative-v1"
+    saved = a.get("/api/v1/ai-reports/" + created["id"]).json()["data"]
+    assert saved["stats_snapshot"] == legacy
+    assert saved["analysis"] == TEXT
+    assert saved["prompt_version"] == "running-qualitative-v1"
+    assert len(provider.calls) == 1
 
 
 def test_end_to_end_snapshot_isolation_and_idempotency(ai_clients):

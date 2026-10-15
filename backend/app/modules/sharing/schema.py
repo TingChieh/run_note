@@ -37,10 +37,6 @@ class PublicActivityList(BaseModel):
     offset: int
 
 
-class VisibilityUpdate(StrictInput):
-    visibility: Literal["private", "unlisted", "public"]
-
-
 class ShareCreate(StrictInput):
     expires_at: datetime | None = None
 

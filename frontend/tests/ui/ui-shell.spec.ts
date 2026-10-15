@@ -22,7 +22,7 @@ test('desktop sidebar highlights route, keyboard skip works, session survives na
   await expect(page.getByRole('heading', { name: '数据汇总', exact: true })).toBeVisible();
   await expect(nav.getByRole('link', { name: '数据汇总', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('status').filter({ hasText: '正在读取' })).toHaveCount(0);
-  await expect(page.locator('.calendar')).toBeVisible();
+  await expect(page.locator('.calendar-scroll')).toBeVisible();
   await expect(page.getByTestId('trend-empty')).toBeVisible();
   await expect(page.locator('canvas')).toHaveCount(0);
   await expect(page.getByRole('button', {name:'退出登录',exact:true})).toBeEnabled();
@@ -75,7 +75,7 @@ test('mobile menu supports keyboard, Escape and navigation without overflow', as
   await expect(page.getByRole('heading', { name: /年运动日历/ })).toBeVisible();
   await noOverflow(page);
   await expect(page.getByRole('status').filter({ hasText: '正在读取' })).toHaveCount(0);
-  await expect(page.locator('.calendar')).toBeVisible();
+  await expect(page.locator('.calendar-scroll')).toBeVisible();
   await expect(page.getByTestId('trend-empty')).toBeVisible();
   await expect(page.locator('canvas')).toHaveCount(0);
   await page.screenshot({ path: 'test-results/ui-mobile-dashboard.png', fullPage: true });
@@ -141,7 +141,7 @@ test('long saved nickname stays inside navigation at mobile and desktop widths',
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/dashboard');
-    await expect(page.locator('.calendar')).toBeVisible();
+    await expect(page.locator('.calendar-scroll')).toBeVisible();
     if (width < 1024) await page.getByRole('button', { name: '打开导航' }).click();
     const sidebar = page.locator('.app-sidebar');
     await expect(sidebar).toBeVisible();

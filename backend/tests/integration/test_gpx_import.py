@@ -28,7 +28,7 @@ def clients():
     engine = create_engine(url, hide_parameters=True)
     with engine.connect() as c:
         assert c.execute(text("SELECT version_num FROM alembic_version")).scalars().all() == [
-            "0006_running_goals"
+            "0008_activity_labels"
         ]
     settings = Settings(
         database_url=url, site_origin=ORIGIN, auth_rate_hash_key=uuid4().hex, _env_file=None
@@ -82,6 +82,21 @@ def test_import_requires_identity_and_source_before_parsing(clients):
     register(a)
     assert upload(a, extra_headers={"Origin": "https://evil.example"}).status_code == 403
     assert upload(a, extra_headers={"X-CSRF-Token": "bad"}).status_code == 403
+
+
+def test_submillisecond_gpx_preserves_zero_stored_duration_without_pace(clients):
+    a, _, _, _ = clients
+    register(a)
+    raw = b"""<gpx xmlns="http://www.topografix.com/GPX/1/1" version="1.1">
+    <trk><trkseg>
+    <trkpt lat="0" lon="0"><time>2026-10-04T00:00:00Z</time></trkpt>
+    <trkpt lat="0" lon="0.00000001"><time>2026-10-04T00:00:00.0004Z</time></trkpt>
+    </trkseg></trk></gpx>"""
+    result = upload(a, raw=raw)
+    assert result.status_code == 201, result.text
+    activity = result.json()["data"]["activity"]
+    assert float(activity["elapsed_seconds"]) == 0
+    assert activity["avg_pace_seconds_per_km"] is None
 
 
 def test_mismatched_export_version_imports_and_preserves_original(clients):

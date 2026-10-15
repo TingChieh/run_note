@@ -6,7 +6,8 @@
   import SharePanel from '#lib/components/SharePanel.svelte';
   import RouteMap from '#lib/components/RouteMap.svelte';
   import WallCard from '#lib/components/WallCard.svelte';
-  import { ActivityError, readActivity, readRoute, formatDate, formatDistance, formatDuration, formatPace, qualityLabel, qualityEntries, type Activity, type Route } from '#lib/api/activities.ts';
+  import ActivityActions from '#lib/components/ActivityActions.svelte';
+  import { ActivityError, readActivity, readRoute, formatDate, formatDistance, formatDuration, activityDuration, formatStartTime, formatPace, qualityLabel, qualityEntries, type Activity, type Route } from '#lib/api/activities.ts';
   let activity = $state<Activity | null>(null), route = $state<Route | null>(null), loading = $state(true), routeLoading = $state(false), message = $state(''), routeError = $state(''), disposed = false;
   function expired(cause: unknown): boolean {
     if (!(cause instanceof ActivityError) || cause.status !== 401) return false;
@@ -37,9 +38,19 @@
     <div class="hero-copy"><p class="hero-kicker"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5 19 5-5 4 3 4-7 M3 8h4 M3 12h2" /><circle cx="15" cy="5" r="2" /></svg>跑步详情</p><h1 id="activity-title">{activity.title || '未命名活动'}</h1><p class="hero-date">{formatDate(activity.activity_date)} <span>· {activity.timezone}</span></p></div>
     <div class="hero-distance" aria-hidden="true"><span>本次距离</span><strong>{formatDistance(activity.distance_m)}</strong></div>
   </section>
+  <ActivityActions {activity} onupdated={(value) => { activity = value; }} />
   <div class="detail-workspace">
     <section class="metric-panel" aria-label="运动指标"><div class="panel-heading"><h2>每一步，都算数</h2><p class="section-caption">本次运动概览</p></div>
-      <div class="metric-cards"><MetricSummary stacked appearance="sport" items={[{ label: '距离', value: formatDistance(activity.distance_m), testId: 'activity-distance', icon: 'distance' }, { label: '经过时间', value: formatDuration(activity.elapsed_seconds), icon: 'duration' }, { label: '平均配速', value: formatPace(activity.avg_pace_seconds_per_km), icon: 'pace' }]} /></div>
+      <div class="metric-cards"><MetricSummary stacked appearance="sport" items={[
+        { label: '距离', value: formatDistance(activity.distance_m), testId: 'activity-distance', icon: 'distance' },
+        { label: activity.timer_seconds != null ? '设备用时' : '经过时间', value: formatDuration(activityDuration(activity)), icon: 'duration' },
+        { label: '平均配速', value: formatPace(activity.avg_pace_seconds_per_km), icon: 'pace' },
+        ...(activity.timer_seconds != null ? [{ label: '经过时间', value: formatDuration(activity.elapsed_seconds), icon: 'elapsed' as const }] : []),
+        { label: '平均心率', value: activity.avg_heart_rate_bpm == null ? '—' : `${activity.avg_heart_rate_bpm} bpm`, icon: 'heart' },
+        { label: '热量', value: activity.calories_kcal == null ? '—' : `${activity.calories_kcal} kcal`, icon: 'calories' },
+        { label: '步数', value: activity.steps == null ? '—' : `${activity.steps} 步`, icon: 'steps' }
+      ]} /></div>
+      <dl class="start-time"><div><dt>开始时间</dt><dd>{formatStartTime(activity.started_at, activity.timezone)} · {activity.timezone}</dd></div></dl>
       {#if activity.temporal_quality !== 'complete'}<p class="metric-note">{qualityLabel(activity.temporal_quality)} · 缺失或无法可靠计算的指标以“—”显示，详情见数据质量说明。</p>{/if}
     </section>
     <section class="route-panel" aria-labelledby="route-title"><div class="panel-heading"><div class="route-heading"><h2 id="route-title">路线</h2><span class="route-tag">{activity.has_route ? '个人轨迹' : '运动记录'}</span></div><p class="section-caption">本次运动轨迹</p></div>
@@ -57,7 +68,7 @@
 {:else if loading}<div class="mt-6"><FeedbackState kind="loading" title="正在读取活动…" /></div>{/if}
 <style>
   .activity-wall-card{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1.5rem;margin-top:1.5rem;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);padding:1.5rem;}.activity-wall-card h2{font-size:1.25rem;font-weight:700;}.activity-wall-card p{color:var(--muted-foreground);margin:.5rem 0 1rem;font-size:.875rem;}.wall-card-preview{width:20rem;max-width:100%;}
-  .sport-hero { display: flex; justify-content: space-between; align-items: center; gap: 2rem; background: var(--sport-yellow); border-radius: var(--radius-card); padding: clamp(1.5rem, 3vw, 2rem); margin-top: 1.5rem; color: #263120; }
+  .sport-hero { display: flex; justify-content: space-between; align-items: center; gap: 2rem; background: var(--sport-yellow); border-radius: var(--radius-card); padding: clamp(1.5rem, 3vw, 2rem); margin-top: 1.5rem; color: var(--sport-detail-ink); }
   .hero-copy { min-width: 0; }
   .hero-kicker { display: flex; align-items: center; gap: .5rem; font-size: .875rem; font-weight: 600; }
   .sport-hero h1 { margin-top: .75rem; font-size: clamp(2rem, 3vw, 2.5rem); font-weight: 750; line-height: 1.2; }
@@ -66,7 +77,7 @@
   .hero-distance { display: grid; flex-shrink: 0; gap: .25rem; text-align: right; font-variant-numeric: tabular-nums; }
   .hero-distance span { font-size: .8125rem; }
   .hero-distance strong { font-size: clamp(2rem, 3vw, 2.75rem); line-height: 1.2; letter-spacing: -.04em; }
-  .detail-workspace { --detail-content-height: 32.5rem; display: grid; grid-template-columns: 15rem minmax(0, 1fr); gap: 1.5rem; margin-top: 1.5rem; align-items: start; padding: 1.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
+  .detail-workspace { --detail-content-height: 42rem; display: grid; grid-template-columns: 15rem minmax(0, 1fr); gap: 1.5rem; margin-top: 1.5rem; align-items: start; padding: 1.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
   .metric-panel, .route-panel { min-width: 0; }
   .route-panel { padding-left: 1.5rem; border-left: 1px solid var(--border); }
   .metric-panel h2, .route-panel h2 { font-size: 1.25rem; font-weight: 700; }
@@ -79,6 +90,9 @@
   .metric-cards :global(.metrics dt), .metric-cards :global(.metrics dd) { padding-left: 3.75rem; }
   .metric-cards :global(.metrics dd) { font-size: 1.875rem; }
   .metric-cards :global(.metric-icon) { left: 0; width: 2.75rem; height: 2.75rem; }
+  .start-time { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); font-size: .875rem; overflow-wrap: anywhere; }
+  .start-time dt { color: var(--muted-foreground); }
+  .start-time dd { margin-top: .25rem; font-variant-numeric: tabular-nums; }
   .route-panel :global(.spacious) { border-radius: var(--radius-card); }
   .route-panel :global(.spacious .route-map) { height: var(--detail-content-height); }
   .metric-note { margin-top: 1rem; color: var(--muted-foreground); font-size: .8125rem; }
@@ -88,5 +102,6 @@
   .quality-details { margin-top: var(--space-6); padding: var(--space-4) var(--space-6); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
   summary { color: var(--foreground); font-size: .9375rem; font-weight: 600; }
   @media (max-width: 1199px) { .detail-workspace { --detail-content-height: clamp(22.5rem, 55svh, 32.5rem); grid-template-columns: 1fr; } .route-panel { border-left: 0; border-top: 1px solid var(--border); padding-left: 0; padding-top: 1.5rem; } }
-  @media (max-width: 639px) { .quality-details { padding: var(--space-4); } .sport-hero { flex-direction: column; align-items: stretch; gap: 1rem; } .hero-distance { text-align: left; border-top: 1px solid #b5a43d; padding-top: 1rem; } .hero-distance strong { font-size: 2.25rem; } .detail-workspace { padding: 1rem; } .metric-cards :global(.metrics dd) { font-size: 1.75rem; } }
+  @media (min-width: 640px) and (max-width: 1199px) { .metric-cards :global(.metrics) { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 1.5rem; } }
+  @media (max-width: 639px) { .quality-details { padding: var(--space-4); } .sport-hero { flex-direction: column; align-items: stretch; gap: 1rem; } .hero-distance { text-align: left; border-top: 1px solid var(--sport-heading-border); padding-top: 1rem; } .hero-distance strong { font-size: 2.25rem; } .detail-workspace { padding: 1rem; } .metric-cards :global(.metrics dd) { font-size: 1.75rem; } }
 </style>
