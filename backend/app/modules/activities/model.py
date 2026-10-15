@@ -26,7 +26,7 @@ class Activity(Base):
     __tablename__ = "activities"
     __table_args__ = (
         UniqueConstraint("id", "user_id", name="uq_activities_id_user_id"),
-        CheckConstraint("source IN ('gpx','manual','tcx')", name="source"),
+        CheckConstraint("source IN ('gpx','manual','tcx','mifitness')", name="source"),
         CheckConstraint("date_source IN ('timestamp','manual')", name="date_source"),
         CheckConstraint(
             "temporal_quality IN ('complete','incomplete','invalid','manual')",
@@ -68,6 +68,30 @@ class Activity(Base):
         CheckConstraint("calories_kcal >= 0 AND calories_kcal < 1000000000", name="calories_range"),
         CheckConstraint("steps >= 0 AND steps < 1000000000", name="steps_range"),
         CheckConstraint("avg_heart_rate_bpm BETWEEN 1 AND 300", name="heart_rate_range"),
+        CheckConstraint("max_heart_rate_bpm BETWEEN 1 AND 300", name="max_heart_rate_range"),
+        CheckConstraint("min_heart_rate_bpm BETWEEN 1 AND 300", name="min_heart_rate_range"),
+        CheckConstraint(
+            "min_heart_rate_bpm <= avg_heart_rate_bpm AND "
+            "avg_heart_rate_bpm <= max_heart_rate_bpm AND "
+            "min_heart_rate_bpm <= max_heart_rate_bpm",
+            name="heart_rate_order",
+        ),
+        CheckConstraint("avg_cadence_spm <= max_cadence_spm", name="cadence_order"),
+        *(
+            CheckConstraint(f"{field} > 0 AND {field} <= {maximum}", name=f"{field}_range")
+            for field, maximum in (
+                ("avg_cadence_spm", 400),
+                ("max_cadence_spm", 400),
+                ("vo2_max_ml_kg_min", 150),
+            )
+        ),
+        CheckConstraint(
+            "training_load >= 0 AND training_load < 1000000000", name="training_load_range"
+        ),
+        *(
+            CheckConstraint(f"{field} BETWEEN 0 AND 5", name=f"{field}_range")
+            for field in ("aerobic_training_effect", "anaerobic_training_effect")
+        ),
         *(
             CheckConstraint(f"{field} >= 0 AND {field} < 1000000000", name=f"{field}_finite_range")
             for field in ("distance_m", "elapsed_seconds", "avg_pace_seconds_per_km")
@@ -92,6 +116,14 @@ class Activity(Base):
     calories_kcal: Mapped[int | None] = mapped_column(Integer)
     steps: Mapped[int | None] = mapped_column(Integer)
     avg_heart_rate_bpm: Mapped[int | None] = mapped_column(Integer)
+    max_heart_rate_bpm: Mapped[int | None] = mapped_column(Integer)
+    min_heart_rate_bpm: Mapped[int | None] = mapped_column(Integer)
+    avg_cadence_spm: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
+    max_cadence_spm: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
+    vo2_max_ml_kg_min: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
+    training_load: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
+    aerobic_training_effect: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
+    anaerobic_training_effect: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
     avg_pace_seconds_per_km: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
     temporal_quality: Mapped[str] = mapped_column(String(16))
     quality_summary: Mapped[dict] = mapped_column(JSONB)

@@ -18,6 +18,13 @@ describe('running milestones', () => {
     expect(() => parseStreaks({ current_days: -1 })).toThrow();
     expect(() => parseProvinces({ year: 2026, total: 35, provinces: [] }, 2026)).toThrow();
   });
+  it('accepts cumulative provinces while rejecting a mismatched time scope', () => {
+    const cumulative = { year: null, total: 34, activity_count: 3, located_activity_count: 2, provinces: [{ code: 310000, name: '上海市', activity_count: 2 }] };
+    expect(parseProvinces(cumulative)).toEqual(cumulative);
+    expect(() => parseProvinces(cumulative, 2026)).toThrow();
+    expect(() => parseProvinces({ ...cumulative, year: 2026 })).toThrow();
+    expect(() => parseProvinces({ ...cumulative, located_activity_count: 4 })).toThrow();
+  });
 });
 
 describe('activity route drawings', () => {

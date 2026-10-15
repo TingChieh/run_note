@@ -9,6 +9,7 @@ import pytest
 from app.core.config import Settings
 from app.core.errors import ApiError
 from app.modules.ai_reports.provider import OpenAIProvider, bounded_request, request_body
+from app.modules.ai_reports.schema import AnalysisText
 
 SNAPSHOT = {
     "schema_version": "running-summary-v1",
@@ -41,6 +42,58 @@ def test_payload_reconstructs_nested_whitelist():
         for secret in ["hidden@example.com", "coordinates", "raw_gpx", "secret"]
     )
     assert json.loads(content)["summary"]["distance_m"] == "7000"
+
+
+def test_prompt_json_example_satisfies_the_same_output_validation():
+    prompt = request_body(SNAPSHOT, "test")["messages"][0]["content"]
+    example, _ = json.JSONDecoder().raw_decode(prompt[prompt.index("{") :])
+    assert AnalysisText.model_validate(example)
+
+
+@pytest.mark.parametrize("base_url", ["https://api.deepseek.com", "https://api.deepseek.com/v1"])
+def test_deepseek_default_thinking_does_not_exhaust_report_budget(monkeypatch, base_url):
+    def respond(url, key, body, timeout):
+        # DeepSeek defaults to thinking: the output budget can be spent before
+        # any final JSON is emitted. Model the observed provider boundary.
+        if body.get("thinking") == {"type": "disabled"} and body.get("response_format") == {
+            "type": "json_object"
+        }:
+            content, finish = json.dumps(TEXT), "stop"
+        else:
+            content, finish = "", "length"
+        return json.dumps(
+            {"choices": [{"message": {"content": content}, "finish_reason": finish}]}
+        ).encode()
+
+    monkeypatch.setattr("app.modules.ai_reports.provider.bounded_request", respond)
+    settings = Settings(
+        database_url="postgresql+psycopg://fake@127.0.0.1:1/test",
+        ai_base_url=base_url,
+        ai_api_key="local-test-secret",
+        ai_model="deepseek-flash",
+        _env_file=None,
+    )
+    result = OpenAIProvider().generate(SNAPSHOT, settings)
+    assert result.analysis.model_dump() == TEXT
+
+
+def test_truncated_response_is_rejected_even_if_json_is_parseable(monkeypatch):
+    def respond(*args):
+        return json.dumps(
+            {"choices": [{"message": {"content": json.dumps(TEXT)}, "finish_reason": "length"}]}
+        ).encode()
+
+    monkeypatch.setattr("app.modules.ai_reports.provider.bounded_request", respond)
+    settings = Settings(
+        database_url="postgresql+psycopg://fake@127.0.0.1:1/test",
+        ai_base_url="https://api.deepseek.com",
+        ai_api_key="local-test-secret",
+        ai_model="deepseek-flash",
+        _env_file=None,
+    )
+    with pytest.raises(ApiError) as exc:
+        OpenAIProvider().generate(SNAPSHOT, settings)
+    assert exc.value.code == "AI_OUTPUT_INVALID"
 
 
 def test_device_metrics_survive_only_as_explicit_aggregate_whitelist():
@@ -163,6 +216,7 @@ def test_real_adapter_against_local_mock_http(mode, code, caplog):
         assert calls[0][0] == "/v1/chat/completions"
         assert calls[0][1] == "Bearer local-test-secret"
         assert calls[0][2]["max_tokens"] == 2000
+        assert "thinking" not in calls[0][2] and "response_format" not in calls[0][2]
         assert "local-test-secret" not in caplog.text and "7000" not in caplog.text
     finally:
         server.shutdown()

@@ -31,6 +31,27 @@ async function explorer(page: Page) {
   return state;
 }
 
+test('explorer omits the extra device section, fits desktop heights and keeps mobile content accessible', async ({page}) => {
+  const state = await explorer(page);
+  state.records[0] = {...state.records[0], max_heart_rate_bpm:172, min_heart_rate_bpm:107, max_cadence_spm:180};
+  await page.reload();
+  const region = page.getByRole('region',{name:'运动足迹',exact:true});
+  await expect(region.getByRole('region',{name:'设备指标'})).toHaveCount(0);
+  for (const [width,height] of [[1366,768],[1440,900],[1920,1080],[1024,768]]) {
+    await page.setViewportSize({width,height});
+    await expect(region.getByTestId('route-map-ready')).toBeVisible();
+    await expect.poll(()=>region.evaluate(el=>el.getBoundingClientRect().height)).toBeLessThan(height-24);
+    await region.evaluate(el=>el.scrollIntoView({block:'start'}));
+    await expect(region.getByRole('button',{name:'选择运动 运动 1',exact:true})).toBeInViewport();
+    await region.screenshot({path:`test-results/compact-explorer-${width}-${height}.png`});
+  }
+  await page.setViewportSize({width:390,height:844});
+  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await expect(region.getByTestId('explorer-metrics').locator('dd')).toHaveCount(7);
+  await region.getByRole('button',{name:'选择运动 运动 1',exact:true}).scrollIntoViewIfNeeded();
+  await region.screenshot({path:'test-results/compact-explorer-mobile.png'});
+});
+
 test('whole calendar fits every year and valid year input refreshes automatically',async({page})=>{
   await loginRunner(page);await page.goto('/dashboard?year=2026');
   await expect(page.getByRole('button',{name:'查看',exact:true})).toHaveCount(0);
@@ -47,7 +68,7 @@ test('whole calendar fits every year and valid year input refreshes automaticall
   await expect(page).toHaveURL(/year=2024/);
 });
 
-test('latest selection, private category history, paging, keyboard and compact horizontal cards',async({page})=>{
+test('latest selection, private category history, twenty-record limit, keyboard and compact horizontal cards',async({page})=>{
   const state=await explorer(page);
   const region=page.getByRole('region',{name:'运动足迹',exact:true});
   await expect(region.getByRole('heading',{name:'运动 1',exact:true})).toBeVisible();
@@ -70,19 +91,9 @@ test('latest selection, private category history, paging, keyboard and compact h
   const twentieth=region.getByRole('button',{name:'选择运动 运动 20',exact:true});
   await twentieth.focus();await page.keyboard.press('Enter');
   await expect(region.getByRole('heading',{name:'运动 20',exact:true})).toBeVisible();
-  state.listFailures=1;
-  await region.getByRole('button',{name:'下一条运动记录',exact:true}).click();
-  await expect(region.getByRole('button',{name:'重试足迹记录',exact:true})).toBeVisible();
-  await expect(region.getByRole('heading',{name:'运动 20',exact:true})).toBeVisible();
-  await region.getByRole('button',{name:'下一条运动记录',exact:true}).click();
-  await expect(region.getByRole('heading',{name:'运动 21',exact:true})).toBeVisible();
-  await expect(region.getByRole('button',{name:'选择运动 运动 22',exact:true})).toBeAttached();
-  await region.getByRole('button',{name:'下一条运动记录',exact:true}).focus();
-  await page.keyboard.press('Enter');
-  await expect(region.getByRole('heading',{name:'运动 22',exact:true})).toBeVisible();
   await expect(region.getByRole('button',{name:'下一条运动记录',exact:true})).toBeDisabled();
-  await region.getByRole('button',{name:'上一条运动记录',exact:true}).click();
-  await expect(region.getByRole('heading',{name:'运动 21',exact:true})).toBeVisible();
+  await expect(region.locator('.history-card')).toHaveCount(20);
+  await expect(region.getByRole('button',{name:/加载.*更多记录/})).toHaveCount(0);
   for(const width of [320,390,768,1440]) {
     await page.setViewportSize({width,height:1000});
     await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
@@ -188,6 +199,7 @@ test('thumbnail expiry clears the selected private map and metrics before login 
 });
 
 test('monthly calendar dates remain readable at every heat level in light and dark themes',async({page})=>{
+  await page.emulateMedia({reducedMotion:'reduce'});
   await page.setViewportSize({width:390,height:1000});
   await page.route('**/api/v1/statistics/calendar?**',async route=>{
     const response=await route.fetch(), body=await response.json();
@@ -197,8 +209,11 @@ test('monthly calendar dates remain readable at every heat level in light and da
   });
   await loginRunner(page);await page.goto('/dashboard?year=2026');
   await expect(page.locator('.month-days button')).toHaveCount(365);
+  await page.getByLabel('日历维度').selectOption('distance');
+  for (const level of [0,1,2,3,4]) await expect(page.locator(`.month-days .day-level-${level}`).first()).toBeVisible();
   for(const colorScheme of ['light','dark'] as const) {
     await page.emulateMedia({colorScheme});
+    await expect(page.locator('html')).toHaveAttribute('data-theme',colorScheme);
     await expect.poll(()=>page.locator('.month-days button').evaluateAll(elements=>{
       const luminance=(color:string)=>{const rgb=color.match(/[\d.]+/g)!.slice(0,3).map(Number).map(n=>{const v=n/255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;});return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722;};
       return Math.min(...elements.slice(0,5).map(el=>{const style=getComputedStyle(el),bg=luminance(style.backgroundColor),fg=luminance(style.color);return(Math.max(bg,fg)+.05)/(Math.min(bg,fg)+.05);}));
@@ -235,56 +250,55 @@ for (const width of [390,1440]) test(`switching a record keeps the map, metrics 
   expect(await geometry()).toEqual(before);
 });
 
-test('month browsing defaults to latest month and combines category with empty and older months',async({page})=>{
+test('recent records span months, stop at twenty and retain record dates with category filtering',async({page})=>{
   const state=await installActivities(page);
-  state.records=[{...sampleActivity,title:'十月记录',category:'轻松跑'},
-    {...sampleActivity,id:'22222222-2222-4222-8222-222222222222',title:'八月记录',category:'轻松跑',activity_date:'2026-08-15'},
-    {...sampleActivity,id:'33333333-3333-4333-8333-333333333333',title:'八月比赛',category:'比赛',activity_date:'2026-08-01'}];
+  state.records=Array.from({length:25},(_,i)=>({...sampleActivity,
+    id:`11111111-1111-4111-8111-${String(i+1).padStart(12,'0')}`,
+    title:`跨月记录 ${i+1}`,category:i===24?'比赛':'轻松跑',
+    activity_date:`2026-${String(10-Math.floor(i/10)).padStart(2,'0')}-${String(24-i%10).padStart(2,'0')}`}));
+  const queries:URLSearchParams[]=[];
+  page.on('request',request=>{const url=new URL(request.url());if(url.pathname==='/api/v1/activities')queries.push(url.searchParams);});
   await loginRunner(page);await page.goto('/dashboard');
   const region=page.getByRole('region',{name:'运动足迹',exact:true});
-  await expect(region.getByLabel('足迹月份')).toHaveValue('2026-10');
-  await expect(region.locator('.history-card')).toHaveCount(1);
-  await region.getByRole('button',{name:'上个月',exact:true}).click();
-  await expect(region.getByLabel('足迹月份')).toHaveValue('2026-09');
-  await expect(region.getByText('此月份与分类下没有运动记录',{exact:true})).toBeVisible();
-  await region.getByRole('button',{name:'上个月',exact:true}).click();
-  await expect(region.getByLabel('足迹月份')).toHaveValue('2026-08');
-  await expect(region.getByRole('heading',{name:'八月记录',exact:true})).toBeVisible();
-  await expect(region.locator('.history-card')).toHaveCount(2);
+  await expect(region.getByRole('heading',{name:'跨月记录 1',exact:true})).toBeVisible();
+  await expect(region.locator('.history-card')).toHaveCount(20);
+  await expect(region.getByLabel('足迹月份')).toHaveCount(0);
+  await expect(region.locator('input[type=month]')).toHaveCount(0);
+  await expect(region.getByRole('button',{name:/加载.*更多记录/})).toHaveCount(0);
+  await expect(region.locator('.history-card time')).toHaveCount(20);
+  await expect(region.locator('.history-card').last()).toContainText('2026-09-15');
+  expect(queries).toHaveLength(1);
+  expect(queries[0].get('limit')).toBe('20');expect(queries[0].get('offset')).toBe('0');
+  expect(queries[0].has('activity_month')).toBe(false);expect(queries[0].has('activity_date')).toBe(false);
   await region.getByLabel('足迹分类').selectOption('比赛');
-  await expect(region.getByRole('heading',{name:'八月比赛',exact:true})).toBeVisible();
+  await expect(region.getByRole('heading',{name:'跨月记录 25',exact:true})).toBeVisible();
   await expect(region.locator('.history-card')).toHaveCount(1);
-  await region.getByRole('button',{name:'下个月',exact:true}).click();
-  await expect(region.getByText('此月份与分类下没有运动记录',{exact:true})).toBeVisible();
+  state.records=[];
+  await region.getByLabel('足迹分类').selectOption('轻松跑');
+  await expect(region.getByText('此分类下没有运动记录',{exact:true})).toBeVisible();
   await expect(region.locator('.history-card')).toHaveCount(0);
   await expect(region.getByTestId('route-map-ready')).toHaveCount(0);
-  await expect(region.getByLabel('足迹分类')).toHaveValue('category:比赛');
-  await region.getByLabel('足迹月份').fill('2026-12');
-  await region.getByRole('button',{name:'下个月',exact:true}).click();
-  await expect(region.getByLabel('足迹月份')).toHaveValue('2027-01');
-  await region.getByRole('button',{name:'上个月',exact:true}).focus();
-  await page.keyboard.press('Enter');
-  await expect(region.getByLabel('足迹月份')).toHaveValue('2026-12');
 });
 
-test('month control stays above the record strip including empty months on desktop and mobile',async({page})=>{
+test('slow category reads retain the previous map, metrics and cards until data is ready',async({page})=>{
   await explorer(page);
   const region=page.getByRole('region',{name:'运动足迹',exact:true});
   await expect(region.getByTestId('route-map-ready')).toBeVisible();
-  for(const width of [1440,390,320]) {
-    await page.setViewportSize({width,height:1000});
-    const location=await region.evaluate(el=>{
-      const input=el.querySelector('input[type=month]')!,controls=el.querySelector('.browse-controls')!,workspace=el.querySelector('.explorer-workspace')!,strip=el.querySelector('.activity-strip')!;
-      const month=input.getBoundingClientRect(),content=workspace.getBoundingClientRect(),cards=strip.getBoundingClientRect();
-      return {inside:controls.contains(input),afterMap:month.top>=content.bottom,beforeCards:month.bottom<=cards.top,within:month.right<=el.getBoundingClientRect().right};
-    });
-    expect(location).toEqual({inside:true,afterMap:true,beforeCards:true,within:true});
-  }
-  await region.getByLabel('足迹月份').fill('2026-09');
-  await expect(region.getByText('此月份与分类下没有运动记录',{exact:true})).toBeVisible();
-  await expect(region.getByLabel('足迹月份')).toBeVisible();
-  await region.getByLabel('足迹月份').fill('2026-10');
-  await expect(region.getByRole('heading',{name:'运动 1',exact:true})).toBeVisible();
+  await region.locator('.maplibregl-canvas').evaluate(el=>el.setAttribute('data-original-map','yes'));
+  const metrics=await region.getByTestId('explorer-metrics').textContent();
+  let release!:()=>void;const held=new Promise<void>(resolve=>release=resolve);
+  let entered!:()=>void;const started=new Promise<void>(resolve=>entered=resolve);
+  await page.route(/\/api\/v1\/activities\?.*category=/,async route=>{entered();await held;await route.fallback();});
+  await region.getByLabel('足迹分类').selectOption('比赛&恢复');await started;
+  try {
+    await expect(region.getByRole('heading',{name:'运动 1',exact:true})).toBeVisible();
+    expect(await region.getByTestId('explorer-metrics').textContent()).toBe(metrics);
+    await expect(region.locator('.history-card')).toHaveCount(20);
+    await expect(region.locator('[data-original-map=yes]')).toHaveCount(1);
+  } finally { release(); }
+  await expect(region.getByRole('heading',{name:'运动 23',exact:true})).toBeVisible();
+  await expect(region.locator('.history-card')).toHaveCount(1);
+  await expect(region.locator('[data-original-map=yes]')).toHaveCount(1);
 });
 
 test('record details fade in without replacing the map and respect reduced motion',async({page})=>{
@@ -294,8 +308,13 @@ test('record details fade in without replacing the map and respect reduced motio
   await page.evaluate(()=>{
     const original=Element.prototype.animate;
     (window as unknown as {detailFades:number}).detailFades=0;
+    (window as unknown as {valueFades:number; redrawHints:number}).valueFades=0;
+    (window as unknown as {redrawHints:number}).redrawHints=0;
+    const region=document.querySelector('.activity-explorer')!;
+    new MutationObserver(()=>{if(region.querySelector('.map-status .feedback'))(window as unknown as {redrawHints:number}).redrawHints++;}).observe(region,{childList:true,subtree:true});
     Element.prototype.animate=function(...args:Parameters<Element['animate']>){
       if(this.matches('.selected-heading,.explorer-metrics')) (window as unknown as {detailFades:number}).detailFades++;
+      if(this.matches('.explorer-metrics dd')) (window as unknown as {valueFades:number}).valueFades++;
       return original.apply(this,args);
     };
   });
@@ -303,6 +322,8 @@ test('record details fade in without replacing the map and respect reduced motio
   await expect(region.getByRole('heading',{name:'运动 3',exact:true})).toBeVisible();
   await expect.poll(()=>page.evaluate(()=>(window as unknown as {detailFades:number}).detailFades)).toBeGreaterThan(0);
   await expect(region.getByTestId('route-map-ready')).toBeVisible();
+  expect(await page.evaluate(()=>(window as unknown as {valueFades:number}).valueFades)).toBeGreaterThan(0);
+  expect(await page.evaluate(()=>(window as unknown as {redrawHints:number}).redrawHints)).toBe(0);
   const fades=await page.evaluate(()=>(window as unknown as {detailFades:number}).detailFades);
   await page.emulateMedia({reducedMotion:'reduce'});
   await region.getByRole('button',{name:'选择运动 运动 1',exact:true}).click();

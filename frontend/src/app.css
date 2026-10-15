@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./lib/styles/liquid-glass.css";
+@import "./lib/styles/liquid-glass-controls.css";
 
 @theme inline {
   --color-background: var(--background);
@@ -41,12 +42,15 @@
   --warning-soft: #fff8e9;
   --warning-border: #ead7b3;
   --control-hover-border: #91aca0;
-  --calendar-0: #e7ecea;
-  --calendar-1: #c8e6d8;
-  --calendar-2: #83c6a5;
-  --calendar-3: #399769;
-  --calendar-4: #176344;
+  --calendar-0: #edf0ed;
+  --calendar-1: #8dcc9c;
+  --calendar-2: #4ca76a;
+  --calendar-3: #227b49;
+  --calendar-4: #105332;
   --calendar-ring: #183f30;
+  --calendar-label: #10231c;
+  --calendar-active-label: #10231c;
+  --calendar-strong-label: #ffffff;
   --route-thumbnail: #e9f3de;
   --province-unvisited: #d8ded4;
   --province-sea: #a8b3a2;
@@ -132,8 +136,16 @@
   .mobile-bar { display: none; }
   .content-column { min-width: 0; display: flex; flex-direction: column; min-height: 100dvh; }
   .app-shell .content-column { margin-left: var(--sidebar-width); }
+  .navigation-progress { position: fixed; inset: 0 0 auto; z-index: 40; height: var(--space-1); overflow: hidden; background: var(--primary-soft); pointer-events: none; }
+  .app-shell .navigation-progress { left: var(--sidebar-width); }
+  .navigation-progress::after { content: ''; display: block; width: 35%; height: 100%; background: var(--primary); animation: navigation-loading 1s ease-in-out infinite; }
+  @keyframes navigation-loading { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+  @media (prefers-reduced-motion: reduce) { .navigation-progress::after { animation: none; width: 100%; } }
   .page-content { width: 100%; max-width: var(--content-width); padding: var(--space-12) clamp(1rem, 3vw, 3rem); margin-inline: auto; flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .page-content h1 { font-size: var(--text-title); }
+  .page-reveal, .content-reveal { animation: page-reveal 180ms ease-out both; }
+  @keyframes page-reveal { from { opacity: 0; } to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .page-reveal, .content-reveal { animation: none; } }
   .page-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-4); }
   .page-description { margin-top: var(--space-3); max-width: 48rem; color: var(--muted-foreground); }
   .page-actions { flex-shrink: 0; }
@@ -158,9 +170,14 @@
     .mobile-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) var(--space-4); background: var(--surface); border-bottom: 1px solid var(--border); }
     .app-sidebar { display: none; position: static; width: 100%; padding: var(--space-4); border-right: 0; border-bottom: 1px solid var(--border); }
     .app-sidebar.nav-open { display: flex; }
+    .app-sidebar { opacity: 0; transform: translateY(calc(-1 * var(--space-3))) scale(.96); transform-origin: top right; transition: opacity 180ms ease, transform 320ms cubic-bezier(.16,1.25,.35,1), display 320ms allow-discrete; }
+    .app-sidebar.nav-open { opacity: 1; transform: none; }
+    @starting-style { .app-sidebar.nav-open { opacity: 0; transform: translateY(calc(-1 * var(--space-3))) scale(.96); } }
+    @media (prefers-reduced-motion: reduce) { .app-sidebar { transition: none; transform: none; } }
     .desktop-brand, .nav-caption { display: none; }
     .nav-account { margin-top: var(--space-4); padding-top: var(--space-4); }
     .app-shell .content-column { margin-left: 0; min-height: calc(100dvh - 69px); }
+    .app-shell .navigation-progress { left: 0; }
     .page-content { padding-block: var(--space-8); }
   }
   @media (max-width: 639px) {
@@ -170,6 +187,7 @@
     .auth-content { padding-block: var(--space-8); }
     .page-content form > label { min-width: 0; max-width: 100%; }
   }
+  @media (max-width: 359px) { .mobile-bar .nav-toggle { width: 2.75rem; padding: var(--space-2); } .mobile-bar .nav-toggle span { display: none; } }
 }
 
 /* State rules must outrank Tailwind background/border utilities. */
@@ -229,7 +247,7 @@
   .sport-theme .nav-link:hover { background: var(--sport-nav-hover); }
   .sport-theme .nav-link[aria-current="page"] { color: var(--sport-nav-active-ink); background: var(--sport-nav-active); box-shadow: none; font-weight: 700; }
   .sport-theme .nav-account { border-color: #ffffff40; }
-  .sport-theme .nav-account .running-goal { margin: 0 0 1rem; }
+  .sport-theme .nav-account .running-goal { margin: 0 0 var(--space-2); }
   .sport-theme .runner-identity { display: flex; align-items: center; gap: .75rem; }
   .sport-theme .runner-identity-text { flex: 1; min-width: 0; }
   .sport-theme .runner-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -248,6 +266,16 @@
   .sport-theme .nav-toggle { background: transparent; color: white; border: 0; }
   .sport-theme .nav-toggle:hover { background: var(--sport-nav-hover); color: white; }
   .sport-theme .mobile-bar :focus-visible { outline-color: white; }
+  @media (min-width: 1024px) and (max-height: 900px) {
+    .sport-theme .app-sidebar { padding-block: var(--space-3); }
+    .sport-theme .desktop-brand { margin-bottom: var(--space-2); }
+    .sport-theme .nav-caption { display: none; }
+    .sport-theme .app-sidebar nav { gap: var(--space-1); }
+    .sport-theme .nav-link { min-height: 2.75rem; padding-block: var(--space-2); font-size: 1rem; }
+    .sport-theme .nav-account { padding-top: var(--space-2); }
+    .sport-theme .runner-avatar { width: 2.25rem; height: 2.25rem; font-size: 1.25rem; }
+    .sport-theme .account-email { margin-top: var(--space-1); }
+  }
 }
 
 @layer components {
@@ -272,70 +300,71 @@
 /* Keep shared control shapes consistent when pages use Tailwind utilities. */
 .sport-theme :where(button.bg-primary, button.border, input:not([type="checkbox"]):not([type="radio"]), select, textarea) { border-radius: var(--radius-control); }
 
-/* CSS applies the device preference before hydration and on every live change.
+/* app.html resolves the saved/system preference before the first paint.
    Include the sports shell because it owns its own light palette. */
-@media (prefers-color-scheme: dark) {
-  :root, .sport-theme {
-    color-scheme: dark;
-    --background: #101a16;
-    --surface: #1b2922;
-    --foreground: #e4eee7;
-    --primary: #77d4ac;
-    --primary-hover: #9ce4c3;
-    --primary-soft: #233e30;
-    --primary-foreground: #10251b;
-    --muted: #26362d;
-    --muted-foreground: #b1c3b6;
-    --border: #405348;
-    --ring: #9ce4c3;
-    --error: #ffadb1;
-    --error-soft: #40252a;
-    --error-border: #91525c;
-    --success: #9fe1b6;
-    --success-soft: #203d2c;
-    --success-border: #4c8362;
-    --warning: #f5d391;
-    --warning-soft: #3a3020;
-    --warning-border: #806b41;
-    --control-hover-border: #8da996;
-    --sport-sidebar: #173c2b;
-    --sport-nav-hover: #ffffff12;
-    --sport-nav-active: #2a5138;
-    --sport-nav-active-ink: #daf3c8;
-    --sport-yellow: #58471e;
-    --sport-heading-ink: #ffe9a5;
-    --sport-detail-ink: #ffe9a5;
-    --sport-heading-border: #9c884f;
-    --calendar-0: #2c3d32;
-    --calendar-1: #365d47;
-    --calendar-2: #488362;
-    --calendar-3: #69ae86;
-    --calendar-4: #9ed7b4;
-    --calendar-ring: #e4eee7;
-    --route-thumbnail: #273d2b;
-    --province-unvisited: #354a3d;
-    --province-sea: #749781;
-    --comparison-down: #ffadb1;
-    --chart-series: #77d4ac;
-    --glass-surface: #263e3266;
-    --glass-surface-hover: #35544099;
-    --glass-edge: #ffffff40;
-    --glass-sheen: #ffffff2e;
-    --glass-reflection: #ffffff05;
-    --glass-rim: #00000038;
-    --glass-shadow: #00000047;
-    --glass-tint-sheen: #ffffff14;
-    --glass-danger-foreground: #301318;
-    --glass-fill-base: #263e32;
-    --glass-action-tint-factor: .65;
-    --glass-action-foreground: #e4eee7;
-    --glass-danger-ink: #ffebed;
-    --glass-preview-a: #203f55;
-    --glass-preview-b: #5c4326;
-    --glass-preview-c: #204d3d;
-  }
-  .sport-theme .maplibregl-ctrl-group { background: var(--surface); box-shadow: 0 0 0 2px var(--border); }
-  .sport-theme .maplibregl-ctrl-group button + button { border-top-color: var(--border); }
-  .sport-theme .maplibregl-ctrl-group button:hover { background-color: var(--muted); }
-  .sport-theme .maplibregl-ctrl-icon { filter: invert(1); }
+:root[data-theme="dark"], :root[data-theme="dark"] .sport-theme {
+  color-scheme: dark;
+  --background: #101a16;
+  --surface: #1b2922;
+  --foreground: #e4eee7;
+  --primary: #77d4ac;
+  --primary-hover: #9ce4c3;
+  --primary-soft: #233e30;
+  --primary-foreground: #10251b;
+  --muted: #26362d;
+  --muted-foreground: #b1c3b6;
+  --border: #405348;
+  --ring: #9ce4c3;
+  --error: #ffadb1;
+  --error-soft: #40252a;
+  --error-border: #91525c;
+  --success: #9fe1b6;
+  --success-soft: #203d2c;
+  --success-border: #4c8362;
+  --warning: #f5d391;
+  --warning-soft: #3a3020;
+  --warning-border: #806b41;
+  --control-hover-border: #8da996;
+  --sport-sidebar: #173c2b;
+  --sport-nav-hover: #ffffff12;
+  --sport-nav-active: #2a5138;
+  --sport-nav-active-ink: #daf3c8;
+  --sport-yellow: #58471e;
+  --sport-heading-ink: #ffe9a5;
+  --sport-detail-ink: #ffe9a5;
+  --sport-heading-border: #9c884f;
+  --calendar-0: #26342c;
+  --calendar-1: #347247;
+  --calendar-2: #60aa72;
+  --calendar-3: #90cc96;
+  --calendar-4: #c7edb5;
+  --calendar-ring: #e4eee7;
+  --calendar-label: #e4eee7;
+  --calendar-active-label: #10231c;
+  --calendar-strong-label: #10231c;
+  --route-thumbnail: #273d2b;
+  --province-unvisited: #354a3d;
+  --province-sea: #749781;
+  --comparison-down: #ffadb1;
+  --chart-series: #77d4ac;
+  --glass-surface: #263e3266;
+  --glass-surface-hover: #35544099;
+  --glass-edge: #ffffff40;
+  --glass-sheen: #ffffff2e;
+  --glass-reflection: #ffffff05;
+  --glass-rim: #00000038;
+  --glass-shadow: #00000047;
+  --glass-tint-sheen: #ffffff14;
+  --glass-danger-foreground: #301318;
+  --glass-fill-base: #263e32;
+  --glass-action-tint-factor: .65;
+  --glass-action-foreground: #e4eee7;
+  --glass-danger-ink: #ffebed;
+  --glass-preview-a: #203f55;
+  --glass-preview-b: #5c4326;
+  --glass-preview-c: #204d3d;
 }
+:root[data-theme="dark"] .sport-theme .maplibregl-ctrl-group { background: var(--surface); box-shadow: 0 0 0 2px var(--border); }
+:root[data-theme="dark"] .sport-theme .maplibregl-ctrl-group button + button { border-top-color: var(--border); }
+:root[data-theme="dark"] .sport-theme .maplibregl-ctrl-group button:hover { background-color: var(--muted); }
+:root[data-theme="dark"] .sport-theme .maplibregl-ctrl-icon { filter: invert(1); }

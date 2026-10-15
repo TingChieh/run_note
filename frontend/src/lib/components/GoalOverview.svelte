@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import type { User } from '#lib/api/auth.ts';
   import { ActivityError } from '#lib/api/activities.ts';
   import { comparisonWindow, goalTotals, readRange, readStreaks, type Streaks } from '#lib/api/milestones.ts';
   import { validGoal, readGoals, saveGoal, type GoalPeriod } from '#lib/api/running-goal.ts';
   import type { Summary } from '#lib/api/statistics.ts';
+  import { goalInputPop } from '#lib/styles/goal-input-transition.ts';
   import FeedbackState from './FeedbackState.svelte';
   let { user }: { user: User } = $props();
   type Card = { period: GoalPeriod; title: string; icon: string; current: Summary | null; previous: Summary | null; target: number | null; input: string; editing: boolean; loading: boolean; error: string; feedback: string; token: number; saving?: boolean };
@@ -36,8 +37,17 @@
     } catch (cause) { if (active && token === goalToken) goalError = failed(cause); }
     finally { if (active && token === goalToken) goalLoading = false; }
   }
+  async function edit(card: Card, editing: boolean) {
+    if (card.saving) return;
+    card.editing = editing; card.input = card.target?.toString() ?? ''; card.feedback = '';
+    await tick();
+    if (!active || card.editing !== editing) return;
+    const control = document.getElementById(editing ? `overview-${card.period}` : `overview-edit-${card.period}`);
+    control?.focus();
+    if (control instanceof HTMLInputElement) control.select();
+  }
   async function save(card: Card, event: SubmitEvent) {
-    event.preventDefault(); const target = validGoal(card.input);
+    event.preventDefault(); if (!card.editing) return; const target = validGoal(card.input);
     if (target === null) {card.feedback = '请输入大于 0、最多 1 位小数的公里数（上限 100000）';return;}
     if (card.saving) return;
     card.saving = true; card.feedback = ''; ++goalToken;
@@ -80,16 +90,30 @@
     {@const totals = card.current ? goalTotals(card.current,card.target) : null}
     {@const delta = card.current && card.previous ? (Number(card.current.distance_m)-Number(card.previous.distance_m))/1000 : null}
     <article class="goal-card" aria-busy={card.loading || goalLoading || !!card.saving}>
-      <div class="goal-heading"><h2><span aria-hidden="true">{card.icon}</span>{card.title}</h2><button class="goal-edit" type="button" disabled={goalLoading || !!goalError || card.saving} aria-label={`${card.editing?'取消':card.target===null?'设置':'调整'}${card.title}`} aria-expanded={card.editing} onclick={()=>{card.editing=!card.editing;card.input=card.target?.toString()??'';card.feedback='';}}>{card.editing?'取消':card.target===null?'设置':'调整'}</button></div>
-      {#if card.editing}<form onsubmit={(event)=>save(card,event)} class="goal-form"><label for={`overview-${card.period}`}>{card.title}距离（km）</label><div><input id={`overview-${card.period}`} inputmode="decimal" bind:value={card.input} disabled={card.saving} aria-describedby={card.feedback?`overview-feedback-${card.period}`:undefined} /><button type="submit" class="button-secondary" disabled={card.saving} aria-label={`保存${card.title}`}>{card.saving?'保存中…':'保存'}</button></div></form>{/if}
+      <form onsubmit={(event)=>save(card,event)}>
+      <div class="goal-heading"><h2><span aria-hidden="true">{card.icon}</span>{card.title}</h2><div class="goal-actions rn-goal-actions">
+        <div class="goal-save-reveal" class:is-open={card.editing} inert={!card.editing} aria-hidden={!card.editing}>
+          <div class="goal-save-clip"><button type="submit" class="button-secondary goal-edit" disabled={!card.editing || card.saving} aria-label={`保存${card.title}`}>{card.saving?'…':'保存'}</button></div>
+        </div>
+        <button id={`overview-edit-${card.period}`} class="button-secondary goal-edit" type="button" disabled={goalLoading || !!goalError || card.saving} aria-label={`${card.editing?'取消':card.target===null?'设置':'调整'}${card.title}`} aria-expanded={card.editing} onclick={()=>void edit(card,!card.editing)}>{card.editing?'取消':card.target===null?'设置':'调整'}</button>
+      </div></div>
+      {#snippet targetValue()}
+        {#if card.editing}
+          <span class="goal-target">/<label class="sr-only" for={`overview-${card.period}`}>{card.title}距离（km）</label><input transition:goalInputPop id={`overview-${card.period}`} inputmode="decimal" bind:value={card.input} disabled={card.saving} aria-describedby={`overview-confirmed-${card.period}${card.feedback?` overview-feedback-${card.period}`:''}`} onkeydown={(event)=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();void edit(card,false);}}} /> km</span>
+          <span class="sr-only" id={`overview-confirmed-${card.period}`}>已保存目标：/ {card.target===null?'未设置':`${number(card.target)} km`}</span>
+        {:else}<span class="goal-readonly">/ {card.target===null?'未设置':`${number(card.target)} km`}</span>{/if}
+      {/snippet}
+      {#if card.editing || (!card.loading && card.current && totals)}
+        <p class="goal-value"><strong data-testid={`${card.period}-km`}>{totals?number(totals.km):'—'}</strong>{@render targetValue()}</p>
+      {/if}
       {#if card.loading}<FeedbackState kind="loading" title="正在读取目标进度…" />{:else if card.current && totals}
-        <p class="goal-value"><strong data-testid={`${card.period}-km`}>{number(totals.km)}</strong><span>/ {card.target===null?'未设置':`${number(card.target)} km`}</span></p>
         <progress value={totals.percent??0} max="100" aria-label={`${card.title}进度`}>{totals.percent===null?'未设置':`${Math.round(totals.percent)}%`}</progress>
         <div class="goal-facts"><span><span aria-hidden="true">ϟ</span> {totals.count} 次活动</span><span>{totals.hours===null?'耗时未知':`${number(totals.hours)}h`}{card.current.missing_duration_count>0 && totals.hours!==null?' 已知':''}</span></div>
         {#if delta!==null}<p class="goal-comparison" class:down={delta<0}><span aria-hidden="true">{delta<0?'↘':delta>0?'↗':'→'}</span> {number(Math.abs(delta))} km <span>vs {comparisons[card.period]}</span></p>{/if}
       {/if}
-      {#if card.error}<FeedbackState kind="error" title={card.error}><button class="button-secondary" onclick={()=>void load(card)} aria-label={`重试${card.title}`}>重试</button></FeedbackState>{/if}
+      {#if card.error}<FeedbackState kind="error" title={card.error}><button type="button" class="button-secondary" disabled={card.saving} onclick={()=>void load(card)} aria-label={`重试${card.title}`}>重试</button></FeedbackState>{/if}
       {#if card.feedback}<p class="goal-feedback" id={`overview-feedback-${card.period}`} role="alert">{card.feedback}</p>{/if}
+      </form>
     </article>
   {/each}
   <section class="goal-card streak-card" aria-label="连续记录" aria-busy={streakLoading}>
@@ -104,20 +128,25 @@
 
 <style>
   .goal-overview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--dashboard-card-gap,1rem);min-width:0;}
-  .goal-card{min-width:0;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);padding:1.5rem;}
+  .goal-card{min-width:0;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);padding:var(--space-4);}
   .goal-heading{display:flex;align-items:center;justify-content:space-between;gap:.5rem;}
   h2{display:flex;align-items:center;gap:.6rem;color:var(--muted-foreground);font-size:1rem;font-weight:600;}
   h2>span{font-size:1.35rem;color:var(--primary);}
-  .goal-edit{min-height:44px;color:var(--primary);font-size:.8rem;font-weight:650;padding:.35rem .65rem;border-radius:var(--radius-control);}
+  .goal-edit{min-height:44px;color:var(--primary);font-size:.8rem;font-weight:650;padding:.35rem .65rem;border-radius:var(--radius-pill);}
   .goal-edit:hover{background:var(--primary-soft);}
-  .goal-value{display:flex;align-items:baseline;flex-wrap:wrap;gap:.5rem;margin:.8rem 0 1rem;font-variant-numeric:tabular-nums;}
+  .goal-value{display:flex;align-items:baseline;flex-wrap:nowrap;gap:.5rem;margin:.8rem 0 1rem;font-variant-numeric:tabular-nums;}
   .goal-value strong{font-size:clamp(2.2rem,4vw,3rem);font-weight:750;line-height:1.15;letter-spacing:-.04em;}
   .goal-value>span{font-size:1rem;color:var(--muted-foreground);}
   progress{appearance:none;display:block;width:100%;height:.55rem;border:0;border-radius:99px;overflow:hidden;background:var(--muted);color:var(--sport-green);}
   progress::-webkit-progress-bar{background:var(--muted);border-radius:99px;}progress::-webkit-progress-value{background:var(--sport-green);border-radius:99px;}progress::-moz-progress-bar{background:var(--sport-green);border-radius:99px;}
   .goal-facts{display:flex;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-top:1rem;color:var(--muted-foreground);font-size:.875rem;}.goal-facts span[aria-hidden]{color:var(--primary);font-size:1.25rem;}
   .goal-comparison{margin-top:.5rem;color:var(--primary);font-size:.875rem;}.goal-comparison.down{color:var(--comparison-down);}
-  .goal-form{margin:.5rem 0;}.goal-form label{font-size:.875rem;}.goal-form>div{display:flex;gap:.5rem;margin-top:.35rem;}.goal-form input{min-width:0;width:100%;}.goal-feedback{font-size:.8rem;margin-top:.5rem;color:var(--primary);}
+  form{margin:0;min-width:0;}.goal-actions{display:flex;align-items:center;gap:0;flex-shrink:0;}
+  .goal-save-clip .goal-edit{min-width:3rem;white-space:nowrap;}
+  .goal-value>.goal-target{display:flex;align-items:baseline;gap:.35rem;min-width:0;white-space:nowrap;}
+  .goal-target input{width:7ch;min-width:0;min-height:0;height:1.65rem;padding:.1rem .35rem;font:inherit;line-height:1.3;border:1px solid var(--control-hover-border);border-radius:var(--radius-control);background:color-mix(in srgb,var(--primary-soft) 55%,var(--surface));color:var(--foreground);}
+  .goal-target input:focus-visible{border-color:var(--ring);background:var(--primary-soft);}
+  .goal-feedback{font-size:.8rem;margin-top:.5rem;color:var(--primary);}
   .week-strip{display:flex;gap:.5rem;align-items:center;margin:1rem 0;}.week-strip ol{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:.2rem;flex:1;min-width:0;}.week-strip li{display:grid;grid-template-columns:minmax(0,1fr);justify-items:center;gap:.35rem;min-width:0;font-size:.75rem;color:var(--muted-foreground);}
   .week-day{display:grid;place-items:center;width:100%;max-width:2rem;aspect-ratio:1;border-radius:50%;font-variant-numeric:tabular-nums;}.week-day.active{background:var(--sport-green);color:var(--sport-ink);font-weight:700;}.week-day.today{outline:2px solid var(--primary);outline-offset:2px;}
   .week-flame{display:grid;justify-items:center;color:var(--muted-foreground);font-size:.75rem;min-width:1.5rem;}.week-flame>span:first-child{color:#f68721;font-size:1.6rem;}.week-flame strong{color:var(--foreground);}

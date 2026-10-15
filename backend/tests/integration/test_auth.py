@@ -13,6 +13,7 @@ from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
+from app.db.schema import get_expected_revision
 from app.main import create_app
 from app.modules.auth.model import AuthRateBucket, AuthSession
 from app.modules.users.model import User
@@ -37,7 +38,7 @@ def auth_database():
             with engine.connect() as connection:
                 assert connection.execute(
                     text("SELECT version_num FROM alembic_version")
-                ).scalars().all() == ["0008_activity_labels"], (
+                ).scalars().all() == [get_expected_revision()], (
                     "Existing isolated test schema must already be current"
                 )
         finally:

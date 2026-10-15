@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
 from app.core.config import Settings
+from app.db.schema import get_expected_revision
 from app.main import create_app
 
 pytestmark = pytest.mark.integration
@@ -41,7 +42,7 @@ def test_migration_enables_postgis_and_spatial_functions(database_url):
         with engine.connect() as connection:
             assert (
                 connection.scalar(text("SELECT version_num FROM alembic_version"))
-                == "0008_activity_labels"
+                == get_expected_revision()
             )
             distance = connection.scalar(
                 text(

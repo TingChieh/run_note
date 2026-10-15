@@ -10,6 +10,9 @@ export type GlassOptions = {
   refraction?: number;
   bezel?: number;
   curvature?: number;
+  ior?: number;
+  lightAngle?: number;
+  hidden?: boolean;
   chroma?: number;
   blur?: number;
   specular?: number;

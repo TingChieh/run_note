@@ -31,7 +31,7 @@ test('GPX upload works while forged Origin, missing CSRF and cross-user writes s
     expect(sessionCookie?.sameSite).toBe('Lax');
 
     await ownerPage.goto('/activities');
-    await ownerPage.locator('input[type="file"]').setInputFiles(
+    await ownerPage.locator('input[type="file"][name="file"]').setInputFiles(
       resolve(process.cwd(), '../backend/tests/fixtures/gpx/equator-six.gpx')
     );
     await ownerPage.getByRole('button', { name: '导入 GPX', exact: true }).click();

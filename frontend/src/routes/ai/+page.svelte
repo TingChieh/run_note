@@ -5,7 +5,9 @@
   import { AIError, confirmedRequestOutcome, readContext, readReports, readReport, generateReport, deleteReport, type Context, type Report, type ReportList, type Create } from '#lib/api/ai.ts';
   import PageHeader from '#lib/components/PageHeader.svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
+  import PageSkeleton from '#lib/components/PageSkeleton.svelte';
   import AnalysisFacts from '#lib/components/AnalysisFacts.svelte';
+  import DatePicker from '#lib/components/DatePicker.svelte';
   let context = $state<Context | null>(null), history = $state<ReportList | null>(null), selected = $state<Report | null>(null);
   let from = $state(''), to = $state(''), consent = $state(false), loading = $state(true), busy = $state(false), historyLoading = $state(false), detailLoading = $state(false);
   let message = $state(''), historyError = $state(''), notice = $state('');
@@ -95,23 +97,27 @@
 <section class="aux-panel my-6" aria-label="分析设置" aria-busy={busy || loading}>
   <h2 class="mb-5 text-xl font-semibold">生成运动分析</h2>
   <form onsubmit={preview} method="POST" class="aux-date-form">
-    <label class="grid gap-2">开始日期（周一）<input aria-label="开始日期（周一）" type="date" bind:value={from} disabled={busy || !!pending} required class="rounded border p-2" /></label>
-    <label class="grid gap-2">结束日期（周一，不含）<input aria-label="结束日期（周一，不含）" type="date" bind:value={to} disabled={busy || !!pending} required class="rounded border p-2" /></label>
+    <DatePicker label="开始日期（周一）" bind:value={from} timezone={page.data.user?.timezone ?? 'UTC'} disabled={busy || !!pending} required />
+    <DatePicker label="结束日期（周一，不含）" bind:value={to} timezone={page.data.user?.timezone ?? 'UTC'} disabled={busy || !!pending} required />
     <button type="submit" disabled={loading || busy || !!pending} class="rounded border px-4 py-2 disabled:opacity-50">读取统计依据</button>
   </form>
   <p class="mt-3 text-sm text-muted-foreground">默认最近四个已结束自然周。修改日期后先读取统计依据。刷新页面和查询历史不会生成分析。</p>
   {#if !context && !loading}<button onclick={() => void retryContext()} class="button-secondary mt-4">重试读取统计依据</button>{/if}
   {#if context}
-    <p class="mt-4 text-sm">模型：{context.model ?? '未配置'} · 今日剩余额度：{context.remaining_today}/{context.daily_limit}（UTC日期；失败调用也计入额度）</p>
+    <div class="content-reveal"><p class="mt-4 text-sm">模型：{context.model ?? '未配置'} · 今日剩余额度：{context.remaining_today}/{context.daily_limit}（UTC日期；失败调用也计入额度）</p>
     {#if !context.configured}<p role="note" class="mt-3 text-warning">AI服务尚未配置，请联系服务端维护者；运动记录和统计仍可使用。</p>{/if}
     {#if context.stats_snapshot.summary.activity_count === 0}<p role="note" class="mt-3 text-warning">该范围没有运动记录，无法分析；不会调用AI或扣减额度。</p><a href="/activities" class="button-secondary mt-3">导入 GPX / TCX</a>{/if}
     <label class="mt-5 flex items-start gap-3 rounded-lg border border-border bg-muted p-4 text-sm leading-6"><input type="checkbox" bind:checked={consent} disabled={busy} class="mt-1" /><span>我同意向已配置的AI服务发送所选日期范围的最小统计摘要（周跑量、频率、配速、汇总心率、热量、步数、各指标覆盖率和质量数量）；不包含原始GPX / TCX文件、GPS坐标、邮箱、用户名、标题或备注。</span></label>
     {#if pending}<p class="mt-3 text-sm text-warning">上次请求结果尚未确认。先读取历史，或按原标识重试；不会因网络中断自动另发新请求。</p>{/if}
-    <button onclick={() => generate(!!pending)} disabled={busy || loading || !consent || !context.configured || from !== context.date_from || to !== context.date_to || context.stats_snapshot.summary.activity_count === 0 || !pending && context.remaining_today === 0} class="mt-4 rounded bg-primary px-5 py-3 text-primary-foreground disabled:opacity-50">{busy ? '正在生成分析…' : pending ? '按原请求标识重试（防重复）' : '生成近期总结与下周建议'}</button>
+    <button onclick={() => generate(!!pending)} disabled={busy || loading || !consent || !context.configured || from !== context.date_from || to !== context.date_to || context.stats_snapshot.summary.activity_count === 0 || !pending && context.remaining_today === 0} class="mt-4 rounded bg-primary px-5 py-3 text-primary-foreground disabled:opacity-50">{busy ? '正在生成分析…' : pending ? '按原请求标识重试（防重复）' : '生成近期总结与下周建议'}</button></div>
   {/if}
-  {#if loading}<div class="mt-4"><FeedbackState kind="loading" title="正在读取统计依据…" /></div>{/if}
+  {#if loading}<div class="mt-4"><PageSkeleton title="正在读取统计依据…" /></div>{/if}
   {#if busy}<div class="mt-4"><FeedbackState kind="loading" title="正在处理请求，请勿重复提交。生成后会保存报告。" /></div>{/if}
 </section>
+<style>
+  .aux-date-form :global(.date-field) { flex: 1 1 12rem; }
+  .aux-date-form :global(.date-control) { width: 100%; }
+</style>
 {#if selected}
   <section aria-label="当前报告" class="aux-panel mb-6">
     <div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-xl font-semibold">分析报告 · {label(selected)}</h2><button onclick={remove} disabled={busy || selected.status === 'pending'} class="text-destructive underline disabled:opacity-50">删除报告</button></div>

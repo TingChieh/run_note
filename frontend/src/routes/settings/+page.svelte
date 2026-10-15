@@ -29,5 +29,5 @@
     {#if message}<FeedbackState kind="success" title={message} />{/if}{#if error}<FeedbackState kind="error" title={error} />{/if}
   </form>
   <p class="mt-5">主页地址：<a href={publicProfilePath(page.data.user.username)} data-sveltekit-reload class="text-primary underline">{publicProfilePath(page.data.user.username)}</a></p>
-  <p class="mt-3"><a href="/activities" data-sveltekit-reload class="text-primary underline">管理记录与分享 →</a></p>
+  <p class="mt-3"><a href="/activities" class="text-primary underline">管理记录与分享 →</a></p>
 {/if}

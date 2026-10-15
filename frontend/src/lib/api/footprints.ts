@@ -4,6 +4,9 @@ type Feature = Collection extends { features: (infer F)[] } ? F : never;
 type Geometry = Feature['geometry'];
 export interface Selection { year: number; from: string; to: string; mode: 'tracks' | 'heatmap'; filter: 'year' | 'range' }
 export interface Footprints { type: 'FeatureCollection'; features: Feature[]; mode: Selection['mode']; date_from: string; date_to: string; activity_count: number; visible_activity_count: number; unsupported_segment_count: number; grid_size_m: number; grid_crs: string; count_basis: string; max_count: number }
+export type FootprintsAll = Omit<Footprints, 'date_from' | 'date_to'> & { scope: 'all' };
+export type FootprintCollection = Footprints | FootprintsAll;
+export interface FootprintSnapshot { status: 'pending' | 'ready' | 'failed'; generated_at: string | null; refreshing: boolean; refresh_failed: boolean; result: FootprintsAll | null }
 export class FootprintError extends Error { constructor(message: string, public status = 422) { super(message); } }
 const validDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(v)) && new Date(v).toISOString().slice(0,10) === v;
 export function footprintRange(s: Selection) {
@@ -34,9 +37,9 @@ function geometry(v: unknown): boolean {
   if (v.type==='Polygon') return Array.isArray(v.coordinates) && v.coordinates.length>0 && v.coordinates.every(ring);
   return false;
 }
-export function parseFootprints(v: unknown): Footprints {
+function parseCollection(v: unknown, all: boolean): FootprintCollection {
   const invalid: () => never = () => { throw new FootprintError('足迹服务返回了无效响应，请重试',502); };
-  if (!object(v) || v.type!=='FeatureCollection' || !Array.isArray(v.features) || !['tracks','heatmap'].includes(String(v.mode)) || v.grid_size_m!==100 || v.grid_crs!=='EPSG:3857' || v.count_basis!=='distinct_activity_per_cell' || !validDate(String(v.date_from)) || !validDate(String(v.date_to))) invalid();
+  if (!object(v) || v.type!=='FeatureCollection' || !Array.isArray(v.features) || !['tracks','heatmap'].includes(String(v.mode)) || v.grid_size_m!==100 || v.grid_crs!=='EPSG:3857' || v.count_basis!=='distinct_activity_per_cell' || (all ? v.scope!=='all' : !validDate(String(v.date_from)) || !validDate(String(v.date_to)))) invalid();
   for (const key of ['activity_count','visible_activity_count','unsupported_segment_count','max_count']) if (!Number.isInteger(v[key]) || (v[key] as number)<0) invalid();
   if ((v.visible_activity_count as number)>(v.activity_count as number)) invalid();
   for (const f of v.features as unknown[]) {
@@ -45,7 +48,31 @@ export function parseFootprints(v: unknown): Footprints {
     if (v.mode==='heatmap') { if (!object(f.geometry) || f.geometry.type!=='Polygon' || !Number.isInteger(p.count) || (p.count as number)<1 || (p.count as number)>(v.max_count as number) || !Number.isInteger(p.i) || !Number.isInteger(p.j)) invalid(); }
     else if (typeof p.activity_id!=='string' || !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(p.activity_id) || typeof p.title!=='string' || !validDate(String(p.activity_date)) || !Number.isInteger(p.segment_index) || (p.segment_index as number)<0) invalid();
   }
-  return v as unknown as Footprints;
+  return v as unknown as FootprintCollection;
+}
+export function parseFootprints(v: unknown): Footprints { return parseCollection(v, false) as Footprints; }
+export function parseFootprintSnapshot(v: unknown): FootprintSnapshot {
+  const invalid: () => never = () => { throw new FootprintError('足迹服务返回了无效响应，请重试',502); };
+  if (!object(v) || !['pending','ready','failed'].includes(String(v.status)) || typeof v.refreshing!=='boolean' || (v.refresh_failed!==undefined && typeof v.refresh_failed!=='boolean')) invalid();
+  const generated = v.generated_at;
+  if (generated!==null && (typeof generated!=='string' || !/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(generated) || !Number.isFinite(Date.parse(generated)))) invalid();
+  if (v.status==='ready') {
+    if (generated===null || v.result===null) invalid();
+    return {status:'ready',generated_at:generated as string,refreshing:v.refreshing as boolean,refresh_failed:v.refresh_failed===true,result:parseCollection(v.result,true) as FootprintsAll};
+  }
+  if (v.result!==null) invalid();
+  return {status:v.status as 'pending'|'failed',generated_at:generated as string|null,refreshing:v.refreshing as boolean,refresh_failed:v.refresh_failed===true,result:null};
+}
+export async function readAllFootprints(mode: Selection['mode'], signal: AbortSignal, fetcher: typeof fetch=fetch): Promise<FootprintSnapshot> {
+  const response=await fetcher(`/api/v1/footprints/all?${new URLSearchParams({mode})}`,{cache:'no-store',credentials:'same-origin',signal});
+  if (response.status===401) throw new FootprintError('登录已过期',401);
+  let body: unknown;
+  try { body=await response.json(); } catch { throw new FootprintError('无法读取足迹，请稍后重试',response.ok?502:response.status); }
+  if (!object(body)) throw new FootprintError('足迹服务返回了无效响应，请重试',502);
+  if (!response.ok || body.error) throw new FootprintError(object(body.error) && typeof body.error.message==='string'?body.error.message:'无法读取足迹，请稍后重试',response.status);
+  const snapshot=parseFootprintSnapshot(body.data);
+  if (snapshot.result && snapshot.result.mode!==mode) throw new FootprintError('足迹服务返回了无效响应，请重试',502);
+  return snapshot;
 }
 export async function readFootprints(s: Selection, signal: AbortSignal, fetcher: typeof fetch=fetch): Promise<Footprints> {
   const q=new URLSearchParams({...footprintRange(s),mode:s.mode});
@@ -82,7 +109,7 @@ export function geometryBounds(geometries: Geometry[]): [[number,number],[number
 // Only display coordinates change. Server grid keys/counts retain their fixed CRS.
 // Move whole pieces to the world copy nearest the first piece. Reuse geometry
 // when its offset is zero; shifted pieces always get new coordinate arrays.
-export function displayFootprints(data: Footprints): Footprints {
+export function displayFootprints<T extends FootprintCollection>(data: T): T {
   const first=(value: unknown): number | undefined => Array.isArray(value)
     ? typeof value[0]==='number' ? value[0] : first(value[0]) : undefined;
   const firstLongitude=(g: Geometry): number | undefined => g.type==='GeometryCollection'

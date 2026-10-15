@@ -1,15 +1,33 @@
-export type GlassSettings = { transparency: number; refraction: number; blur: number; highlight: number };
+export type GlassSettings = {
+  transparency: number; refraction: number; bezel: number; curvature: number; ior: number;
+  chroma: number; blur: number; highlight: number; specularWidth: number; lightAngle: number;
+};
 export const DEFAULT_GLASS_SETTINGS: Readonly<GlassSettings> = Object.freeze({
-  transparency: 86, refraction: 14, blur: 0, highlight: .6
+  transparency: 86, refraction: 14, bezel: .8, curvature: 3, ior: 1.5, chroma: .12,
+  blur: 0, highlight: .6, specularWidth: 1.5, lightAngle: -120
 });
 export const GLASS_RANGES = {
   transparency: { min: 45, max: 95, step: 1 },
-  refraction: { min: 0, max: 32, step: 1 },
+  refraction: { min: 0, max: 60, step: 1 },
+  bezel: { min: .1, max: 1, step: .05 },
+  curvature: { min: 2, max: 6, step: .1 },
+  ior: { min: 1.3, max: 2, step: .01 },
+  chroma: { min: 0, max: .3, step: .01 },
   blur: { min: 0, max: 8, step: .1 },
-  highlight: { min: 0, max: 1, step: .05 }
+  highlight: { min: 0, max: 1, step: .05 },
+  specularWidth: { min: 1, max: 4, step: .1 },
+  lightAngle: { min: -180, max: 180, step: 1 }
 } as const;
 const STORAGE_KEY = 'runnote:dev-liquid-glass:v1';
 const CHANGE_EVENT = 'runnote:dev-liquid-glass-changed';
+
+/** The same optics reach each lens; small controls keep gentler displacement. */
+export function glassOptics(settings: GlassSettings, scale = 1) {
+  return { refraction: settings.refraction * scale, bezel: settings.bezel,
+    curvature: settings.curvature, ior: settings.ior, chroma: settings.chroma,
+    blur: settings.blur, specular: settings.highlight, specularWidth: settings.specularWidth,
+    lightAngle: settings.lightAngle };
+}
 
 export function normalizeGlassSettings(value: unknown): GlassSettings {
   const result = { ...DEFAULT_GLASS_SETTINGS };

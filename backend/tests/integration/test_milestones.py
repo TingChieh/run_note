@@ -88,6 +88,19 @@ def test_milestones_use_owner_history_and_never_return_raw_coordinates(clients):
         == 510000
     )
     assert a.get("/api/v1/footprints/provinces?year=2200").status_code == 422
+    cumulative = a.get("/api/v1/footprints/provinces")
+    assert cumulative.status_code == 200
+    data = cumulative.json()["data"]
+    assert data["year"] is None
+    assert data["activity_count"] == 5
+    assert data["located_activity_count"] == 3
+    assert {p["code"] for p in data["provinces"]} == {310000, 110000, 510000}
+    assert "coordinates" not in cumulative.text
+    assert "activity_id" not in cumulative.text
+    assert {
+        p["code"] for p in b.get("/api/v1/footprints/provinces").json()["data"]["provinces"]
+    } == {510000}
     a.cookies.clear()
     assert a.get("/api/v1/statistics/streaks").status_code == 401
     assert a.get("/api/v1/footprints/provinces?year=2026").status_code == 401
+    assert a.get("/api/v1/footprints/provinces").status_code == 401

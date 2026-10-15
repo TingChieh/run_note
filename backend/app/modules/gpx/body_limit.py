@@ -16,11 +16,12 @@ class GpxBodyLimit:
     async def __call__(self, scope, receive, send):
         if (
             scope["type"] != "http"
-            or scope.get("path") not in {"/api/v1/gpx-imports", "/api/v1/tcx-imports"}
+            or scope.get("path")
+            not in {"/api/v1/gpx-imports", "/api/v1/tcx-imports", "/api/v1/mifitness-imports"}
             or scope.get("method") != "POST"
         ):
             return await self.app(scope, receive, send)
-        code = "TCX_TOO_LARGE" if scope["path"].endswith("tcx-imports") else "GPX_TOO_LARGE"
+        code = scope["path"].rsplit("/", 1)[-1].removesuffix("-imports").upper() + "_TOO_LARGE"
         scope.setdefault("state", {}).setdefault("request_id", uuid4().hex)
         headers = dict(scope.get("headers", []))
         length = headers.get(b"content-length")

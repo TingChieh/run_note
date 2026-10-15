@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { installActivities, loginRunner, sampleActivity, incompleteActivity } from '../fixtures/activities';
 
 async function installMilestones(page: import('@playwright/test').Page) {
-  const state = { provinceFailures: 0, streakFailures: 0, year: 2026 };
+  const state = { provinceFailures: 0, streakFailures: 0, year: null as number | null };
   await installActivities(page);
   await page.clock.setFixedTime(new Date('2026-10-14T06:00:00Z'));
   await page.route('**/api/v1/statistics/summary**', route => {
@@ -14,11 +14,162 @@ async function installMilestones(page: import('@playwright/test').Page) {
     return route.fulfill({ json:{ data:{ activity_count:count, distance_m:futureIncluded?'20246.912':distance, duration_sum_seconds:1800, known_duration_count:1, missing_duration_count:count-1, activity_days:count, pace_eligible_count:1, pace_eligible_distance_m:'5123.456', avg_pace_seconds_per_km:'351.3', quality_warning_count:1, date_assignment:'activity_local_date' }, error:null } });
   });
   await page.route('**/api/v1/statistics/streaks', route => state.streakFailures-- > 0 ? route.fulfill({status:503,json:{error:{message:'连续记录读取失败'}}}) : route.fulfill({json:{data:{today:'2026-10-14',current_days:2,longest_days:5,current_weeks:2,longest_weeks:7,week:Array.from({length:7},(_,i)=>({date:`2026-10-${12+i}`,active:i<2}))},error:null}}));
-  await page.route('**/api/v1/footprints/provinces?**', route => {
-    state.year = Number(new URL(route.request().url()).searchParams.get('year'));
-    return state.provinceFailures-- > 0 ? route.fulfill({status:503,json:{error:{message:'省份足迹读取失败'}}}) : route.fulfill({json:{data:{year:state.year,total:34,activity_count:state.year===2026?2:0,located_activity_count:state.year===2026?1:0,provinces:state.year===2026?[{code:310000,name:'上海市',activity_count:1}]:[]},error:null}});
+  await page.route('**/api/v1/footprints/provinces**', route => {
+    const year = new URL(route.request().url()).searchParams.get('year');
+    state.year = year === null ? null : Number(year);
+    return state.provinceFailures-- > 0 ? route.fulfill({status:503,json:{error:{message:'省份足迹读取失败'}}}) : route.fulfill({json:{data:{year:state.year,total:34,activity_count:state.year===null?3:state.year===2026?2:0,located_activity_count:state.year===null?2:state.year===2026?1:0,provinces:state.year===null?[{code:310000,name:'上海市',activity_count:1},{code:510000,name:'四川省',activity_count:1}]:state.year===2026?[{code:310000,name:'上海市',activity_count:1}]:[]},error:null}});
   });
   return state;
+}
+
+test('goal save actions pop from the edit button and fold back with reduced-motion support', async ({page}) => {
+  await installMilestones(page); await loginRunner(page); await page.goto('/dashboard');
+  await expect(page.getByTestId('year-km')).toHaveText('10.2');
+  for (const overview of [true, false]) {
+    const widget = page.getByRole('region', {name:overview?'运动目标':'跑量目标'});
+    const actions = overview ? widget.locator('.goal-card').first().locator('.goal-actions') : widget.locator('.goal-actions');
+    const reveal = actions.locator('.goal-save-reveal');
+    await expect(reveal).toHaveCount(1);
+    // Restoring motion preferences also transitions hidden controls; let that reset finish.
+    await expect.poll(() => reveal.evaluate(el => new DOMMatrix(getComputedStyle(el).transform).a)).toBeCloseTo(.08, 3);
+    const record = () => reveal.evaluate(el => {
+      const samples: number[] = [];
+      const scales: number[] = [];
+      (el as HTMLElement & {opacitySamples: number[]; scaleSamples: number[]}).opacitySamples = samples;
+      (el as HTMLElement & {scaleSamples: number[]}).scaleSamples = scales;
+      const observed = new Set<string>();
+      const recordTransition = (event: Event) => {
+        const property = (event as TransitionEvent).propertyName;
+        if (property !== 'opacity' && property !== 'transform') return;
+        const animation = el.getAnimations().find(item => item instanceof CSSTransition && item.transitionProperty === property);
+        if (!animation?.effect) return;
+        // Inspect an actual interpolated frame without depending on the renderer's frame rate.
+        animation.pause();
+        const duration = Number(animation.effect.getComputedTiming().duration);
+        if (property === 'opacity') {
+          animation.currentTime = duration / 2;
+          samples.push(Number(getComputedStyle(el).opacity));
+        } else {
+          animation.currentTime = 0;
+          scales.push(new DOMMatrix(getComputedStyle(el).transform).a);
+          animation.currentTime = duration * .7;
+          scales.push(new DOMMatrix(getComputedStyle(el).transform).a);
+        }
+        observed.add(property);
+        if (observed.size === 2) el.removeEventListener('transitionrun',recordTransition);
+        requestAnimationFrame(() => animation.play());
+      };
+      el.addEventListener('transitionrun',recordTransition);
+    });
+    const hasIntermediateFrame = () => reveal.evaluate(el => (el as HTMLElement & {opacitySamples: number[]}).opacitySamples.some(value => value > .02 && value < .98));
+    await record();
+    await actions.getByRole('button', {name:overview?'设置年度目标':'设置',exact:true}).click();
+    await expect(reveal).toHaveCSS('opacity','1');
+    expect(await hasIntermediateFrame()).toBe(true);
+    const scales = await reveal.evaluate(el => (el as HTMLElement & {scaleSamples:number[]}).scaleSamples);
+    expect(scales[0]).toBeLessThan(.2);
+    expect(scales[1]).toBeGreaterThan(1);
+    const input = widget.getByLabel(overview?'年度目标距离（km）':'目标距离（km）',{exact:true});
+    await expect(input).toBeFocused();
+    await record();
+    await actions.getByRole('button', {name:overview?'取消年度目标':'取消',exact:true}).click();
+    await expect(reveal).toHaveCSS('opacity','0');
+    expect(await hasIntermediateFrame()).toBe(true);
+    await expect(reveal).toHaveAttribute('inert','');
+    await expect(input).toHaveCount(0);
+    await page.emulateMedia({reducedMotion:'reduce'});
+    await actions.getByRole('button', {name:overview?'设置年度目标':'设置',exact:true}).click();
+    await expect(reveal).toHaveCSS('transition-duration','0s');
+    await expect(reveal).toHaveCSS('opacity','1');
+    await input.press('Escape');
+    await expect(reveal).toHaveCSS('opacity','0');
+    await page.emulateMedia({reducedMotion:'no-preference'});
+  }
+});
+
+test('goal editors replace the target in place without growing cards and Escape cancels drafts', async ({ page }) => {
+  await installMilestones(page); await loginRunner(page); await page.goto('/dashboard');
+  const goals = page.getByRole('region', { name: '运动目标' });
+  await expect(goals.getByTestId('year-km')).toHaveText('10.2');
+  const writes: string[] = [];
+  page.on('request', request => { if (request.method() === 'PUT' && request.url().includes('/running-goals/')) writes.push(request.url()); });
+  for (const width of [1440, 768, 390, 320]) {
+    await page.setViewportSize({ width, height: 1000 });
+    for (const [period, title] of [['year', '年度目标'], ['month', '月度目标'], ['week', '周目标']]) {
+      const card = goals.locator('.goal-card').filter({ has: page.getByRole('heading', { name: title, exact: true }) });
+      const before = (await card.boundingBox())!;
+      const valueBefore = (await card.locator('.goal-value').boundingBox())!;
+      await card.getByRole('button', { name: `设置${title}`, exact: true }).click();
+      const input = card.getByLabel(`${title}距离（km）`, { exact: true });
+      await expect(input).toBeFocused(); await input.fill('100000');
+      expect((await card.boundingBox())!.height).toBeCloseTo(before.height, 0);
+      // Sample both rectangles in one frame; focus/scroll anchoring can move the viewport.
+      const { inputBox, valueNow } = await input.evaluate(element => ({
+        inputBox: element.getBoundingClientRect().toJSON(),
+        valueNow: element.closest('.goal-value')!.getBoundingClientRect().toJSON()
+      }));
+      expect(inputBox.y).toBeGreaterThanOrEqual(valueNow.y - 1);
+      expect(inputBox.y + inputBox.height).toBeLessThanOrEqual(valueNow.y + valueNow.height + 1);
+      expect(valueNow.height).toBeCloseTo(valueBefore.height, 0);
+      if (width === 1440 || width === 390) {
+        await input.press('Tab');
+        await card.screenshot({path:`test-results/inline-${period}-${width}.png`});
+        if (period === 'year') {
+          await page.emulateMedia({colorScheme:'dark'});
+          await card.screenshot({path:`test-results/inline-year-blurred-dark-${width}.png`});
+          await page.emulateMedia({colorScheme:'light'});
+        }
+        await input.focus();
+      }
+      await input.press('Escape'); await expect(input).toHaveCount(0);
+      await expect(card.getByRole('button', { name: `设置${title}`, exact: true })).toBeFocused();
+      await expect(goals.getByTestId(`${period}-km`)).toHaveText('10.2');
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  expect(writes).toHaveLength(0);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const sidebar = page.getByRole('region', { name: '跑量目标' });
+  await expect(sidebar.locator('.goal-distance')).toBeVisible();
+  const before = (await sidebar.boundingBox())!;
+  await sidebar.getByRole('button', { name: '设置', exact: true }).click();
+  const input = sidebar.getByLabel('目标距离（km）', { exact: true });
+  await expect(input).toBeFocused(); await input.fill('35');
+  expect((await sidebar.boundingBox())!.height).toBeCloseTo(before.height, 0);
+  await input.press('Tab');
+  await sidebar.screenshot({path:'test-results/inline-sidebar.png'});
+  await page.emulateMedia({colorScheme:'dark'});
+  await sidebar.screenshot({path:'test-results/inline-sidebar-blurred-dark.png'});
+  await page.emulateMedia({colorScheme:'light'});
+  await input.focus();
+  await input.press('Enter'); await expect(input).toHaveCount(0);
+  await expect(sidebar).toContainText('/ 35 km'); await expect(goals).toContainText('/ 35 km');
+  await sidebar.getByRole('button', { name: '调整', exact: true }).click();
+  await input.fill('55'); await input.press('Escape');
+  await expect(sidebar).toContainText('/ 35 km'); expect(writes).toHaveLength(1);
+});
+
+for (const area of ['overview', 'sidebar'] as const) {
+  test(`${area} goal editor keeps focus and draft when pending statistics arrive`, async ({page}) => {
+    await installMilestones(page);
+    let finish!: () => void;
+    const pending = new Promise<void>(resolve => {finish = resolve;});
+    await page.route('**/api/v1/statistics/summary**', async route => {await pending; await route.fallback();});
+    try {
+      await loginRunner(page); await page.goto('/dashboard');
+      const overview = area === 'overview';
+      const widget = page.getByRole('region', {name:overview?'运动目标':'跑量目标'});
+      await widget.getByRole('button', {name:overview?'设置年度目标':'设置',exact:true}).click();
+      const input = widget.getByLabel(overview?'年度目标距离（km）':'目标距离（km）', {exact:true});
+      await expect(input).toBeFocused(); await input.fill('22');
+      finish();
+      if (overview) await expect(widget.getByTestId('year-km')).toHaveText('10.2');
+      else await expect(widget.locator('.goal-distance strong')).toHaveText('10.2 km');
+      await expect(input).toBeFocused(); await expect(input).toHaveValue('22');
+      await input.press('Enter'); await expect(input).toHaveCount(0);
+      await expect(widget).toContainText('/ 22 km');
+    } finally {finish();}
+  });
 }
 
 test('home has real period goals, streaks, province lighting and a private wall preview', async ({page}) => {
@@ -32,9 +183,11 @@ test('home has real period goals, streaks, province lighting and a private wall 
   await expect(goals.getByRole('progressbar',{name:'年度目标进度'})).toHaveAttribute('value',/^51\.2/);
   await expect(page.getByRole('region',{name:'连续记录'})).toContainText('最长 5 天 / 7 周');
   const map = page.getByRole('region',{name:'足迹地图'});
-  await expect(map.getByTestId('province-count')).toHaveText('1 / 34');
-  await map.getByRole('button',{name:'上海市，已点亮，1 次活动'}).click();
-  await expect(map.getByRole('status')).toContainText('上海市');
+  await expect(map.getByTestId('province-count')).toHaveText('2 / 34');
+  const provinces = map.getByRole('list',{name:'已点亮省级区域'});
+  await expect(provinces).toContainText('上海');
+  await expect(provinces.getByRole('button')).toHaveCount(0);
+  await expect(map.getByRole('status')).toHaveCount(0);
   await expect(page.getByRole('region',{name:'运动足迹',exact:true}).getByRole('button',{name:'选择运动 河畔晨跑',exact:true})).toBeVisible();
   await expect(page.getByRole('button',{name:/导入/})).toHaveCount(0);
   for (const width of [320,390,768,1440]) {
@@ -52,14 +205,17 @@ test('home has real period goals, streaks, province lighting and a private wall 
   }
   await page.reload(); await expect(goals).toContainText('/ 20 km');
   await page.getByRole('button',{name:'上一年',exact:true}).click();
-  await expect(map.getByTestId('province-count')).toHaveText('0 / 34');
+  await expect(map.getByTestId('province-count')).toHaveText('2 / 34');
+  await expect(map).toContainText('四川');
+  await expect(map).toContainText('全部时间');
+  await expect(map.getByRole('link',{name:'探索详细路线'})).toHaveAttribute('href','/footprints');
 });
 
 test('goals sync with sidebar and province/streak failures can retry independently', async ({page}) => {
   const state=await installMilestones(page); state.provinceFailures=1;state.streakFailures=1;
   await loginRunner(page);await page.goto('/dashboard');
   await page.getByRole('button',{name:'重试足迹地图'}).click();
-  await expect(page.getByTestId('province-count')).toHaveText('1 / 34');
+  await expect(page.getByTestId('province-count')).toHaveText('2 / 34');
   await page.getByRole('button',{name:'重试连续记录'}).click();
   await expect(page.getByRole('region',{name:'连续记录'})).toContainText('最长 5 天 / 7 周');
   const sidebar=page.getByRole('region',{name:'跑量目标'});

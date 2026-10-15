@@ -58,6 +58,38 @@ async function dimmedTiles(page: Page, map: Locator) {
   }).toBe(true);
 }
 
+test('manual theme switches override the system, persist, and can return to automatic', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
+  await page.goto('/login');
+  await page.getByLabel('邮箱', { exact: true }).fill('draft@example.com');
+  await page.getByRole('button', { name: '切换到深色模式', exact: true }).click({ timeout: 5000 });
+  await dark(page);
+  await expect(page.getByLabel('邮箱', { exact: true })).toHaveValue('draft@example.com');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.getByRole('button', { name: '切换到浅色模式', exact: true }).click();
+  await expect.poll(async () => (await appearance(page.locator('.sport-theme'))).background).toBeGreaterThan(.8);
+  await page.reload();
+  await expect.poll(async () => (await appearance(page.locator('.sport-theme'))).background).toBeGreaterThan(.8);
+  await page.getByRole('button', { name: '跟随系统外观', exact: true }).click();
+  await dark(page);
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect.poll(async () => (await appearance(page.locator('.sport-theme'))).background).toBeGreaterThan(.8);
+  await loginRunner(page); await page.goto('/dashboard');
+  const toggle = page.locator('.app-sidebar .theme-toggle');
+  await expect(toggle).toHaveText('日间模式');
+  await expect(toggle).toHaveAttribute('title', '当前为日间模式，点击切换到夜间模式');
+  await toggle.click(); await dark(page);
+  await expect(toggle).toHaveText('夜间模式');
+  await expect(toggle).toHaveAttribute('title', '当前为夜间模式，点击切换到日间模式');
+  await toggle.click();
+  await expect(toggle).toHaveText('日间模式');
+  for (const width of [320, 390, 1440]) {
+    await page.setViewportSize({width, height:900});
+    await expect(page.getByRole('button', { name: '切换到深色模式', exact: true })).toBeVisible();
+    await fits(page);
+  }
+});
+
 test('device theme applies to the first page and switches live without losing a form draft', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
   await page.goto('/login'); await dark(page);
@@ -142,7 +174,7 @@ test('route map updates its fallback background without replacing the canvas or 
   await expect.poll(background).toBeLessThan(60);
   const start = page.getByLabel('路线起点'), before = await start.boundingBox();
   await page.emulateMedia({ colorScheme: 'light' }); await expect.poll(background).toBeGreaterThan(200);
-  await page.emulateMedia({ colorScheme: 'dark' }); await expect.poll(background).toBeLessThan(60);
+  await page.getByRole('button', { name: '切换到深色模式', exact: true }).click(); await expect.poll(background).toBeLessThan(60);
   expect(await original!.evaluate(el => el === document.querySelector('.maplibregl-canvas'))).toBe(true);
   const after = await start.boundingBox(); expect(after!.x).toBeCloseTo(before!.x, 1); expect(after!.y).toBeCloseTo(before!.y, 1);
   await expect(page.getByRole('button', { name: '关闭底图', exact: true })).toHaveAttribute('aria-pressed', 'true');
@@ -163,13 +195,13 @@ test('loaded raster tiles dim with the theme and the basemap toggle stays off ac
   await dimmedTiles(page, map);
 });
 
-test('footprint map preserves selected records and range while adapting dark tiles and date controls', async ({ page }) => {
+test('all-record footprint map preserves selection while adapting to theme changes', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
   await installActivities(page); await installNeutralTiles(page);
-  await page.route('**/api/v1/footprints?**', route => {
+  await page.route('**/api/v1/footprints/all?**', route => {
     const url = new URL(route.request().url()), mode = url.searchParams.get('mode');
     const geometry = mode === 'heatmap' ? { type: 'Polygon', coordinates: [[[121.484, 31.233], [121.485, 31.233], [121.485, 31.234], [121.484, 31.234], [121.484, 31.233]]] } : { type: 'LineString', coordinates: [[121.48, 31.23], [121.485, 31.2335], [121.49, 31.237]] };
-    return route.fulfill({ json: { data: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry, properties: { activity_id: sampleActivity.id, title: sampleActivity.title, activity_date: sampleActivity.activity_date, segment_index: 0, i: 135236, j: 36621, count: 2 } }], mode, date_from: url.searchParams.get('date_from'), date_to: url.searchParams.get('date_to'), activity_count: 1, visible_activity_count: 1, unsupported_segment_count: 0, grid_size_m: 100, grid_crs: 'EPSG:3857', count_basis: 'distinct_activity_per_cell', max_count: mode === 'heatmap' ? 2 : 0 }, error: null } });
+    return route.fulfill({ json: { data: {status:'ready',generated_at:'2026-10-15T00:00:00Z',refreshing:false,result:{scope:'all', type: 'FeatureCollection', features: [{ type: 'Feature', geometry, properties: { activity_id: sampleActivity.id, title: sampleActivity.title, activity_date: sampleActivity.activity_date, segment_index: 0, i: 135236, j: 36621, count: 2 } }], mode, activity_count: 1, visible_activity_count: 1, unsupported_segment_count: 0, grid_size_m: 100, grid_crs: 'EPSG:3857', count_basis: 'distinct_activity_per_cell', max_count: mode === 'heatmap' ? 2 : 0 }}, error: null } });
   });
   await loginRunner(page); await page.goto('/footprints?filter=range&from=2026-10-01&to=2026-10-15');
   await expect(page.getByTestId('footprint-map-ready')).toBeVisible(); await dark(page);
@@ -181,15 +213,11 @@ test('footprint map preserves selected records and range while adapting dark til
   await page.emulateMedia({ colorScheme: 'dark' }); await expect.poll(() => mapCorner(page, map)).toBeLessThan(150);
   expect(await original!.evaluate(el => el === document.querySelector('.maplibregl-canvas'))).toBe(true);
   await expect(page.getByRole('button', { name: '定位 河畔晨跑', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByLabel('开始日期', { exact: true })).toHaveValue('2026-10-01');
+  await expect(page).toHaveURL(/\/footprints\?mode=tracks$/);
   await page.getByRole('button', { name: '运动热力图', exact: true }).click();
   await expect(page.getByTestId('footprint-map-ready')).toBeVisible();
   await expect(page.getByTestId('heat-legend')).toContainText('2–3 次');
-  await page.getByRole('button', { name: '选择开始日期', exact: true }).click();
-  const picker = page.getByRole('dialog', { name: '选择开始日期', exact: true });
-  await expect(picker).toBeVisible(); expect((await appearance(picker)).contrast).toBeGreaterThanOrEqual(4.5);
   await page.screenshot({ path: 'test-results/theme-footprints-desktop.png' });
-  await page.keyboard.press('Escape');
   for (const width of [320, 390]) { await page.setViewportSize({ width, height: 900 }); await fits(page); }
   await page.screenshot({ path: 'test-results/theme-footprints-mobile.png' });
 });

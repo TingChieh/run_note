@@ -8,6 +8,7 @@ from functools import partial
 from app.core.errors import ApiError
 from app.modules.gpx.parser import MAX_BYTES, parse_gpx
 from app.modules.gpx.schema import ParsedGPX
+from app.modules.mifitness.parser import parse_mifitness_gpx
 from app.modules.tcx.parser import parse_tcx
 
 _SLOT = threading.Semaphore(1)
@@ -15,7 +16,12 @@ _SLOT = threading.Semaphore(1)
 
 def _parse_target(raw, pipe, format="gpx", timezone="UTC", time_mode="absolute"):
     try:
-        parsed = parse_tcx(raw, timezone, time_mode) if format == "tcx" else parse_gpx(raw)
+        if format == "mifitness":
+            parsed = parse_mifitness_gpx(raw)
+        elif format == "tcx":
+            parsed = parse_tcx(raw, timezone, time_mode)
+        else:
+            parsed = parse_gpx(raw)
         pipe.send(("ok", parsed))
     except ApiError as error:
         pipe.send(("error", (error.status_code, error.code, error.message)))

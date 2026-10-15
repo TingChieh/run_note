@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+  import { goto } from '$app/navigation';
   import { ActivityError, deleteActivity, type Activity } from '#lib/api/activities.ts';
   import FeedbackState from './FeedbackState.svelte';
   import ActivityEditor from './ActivityEditor.svelte';
@@ -26,6 +27,7 @@
     await tick(); editButton?.focus();
   }
   async function updated(value: Activity) {
+    window.dispatchEvent(new CustomEvent('runnote-activities-changed'));
     onupdated(value); editing = false;
     await tick(); editButton?.focus();
   }
@@ -38,7 +40,8 @@
     deleting = true; deleteError = '';
     try {
       await deleteActivity(activity.id);
-      if (!disposed) window.location.assign('/activities');
+      window.dispatchEvent(new CustomEvent('runnote-activities-changed'));
+      if (!disposed) await goto('/activities');
     } catch (cause) {
       if (!disposed) { deleteError = fail(cause); deleting = false; }
     }

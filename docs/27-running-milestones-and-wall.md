@@ -37,3 +37,9 @@
 四项边界修复：侧栏也采用截至今天的目标统计；省份计算逐边处理日期变更线；详情足迹卡片共享现有路线加载结果；超范围足迹墙 URL 自动回到最后有效页。一条活动记录自动对应一张卡片，无需新表或另存副本。导入入口仍仅在跑步记录页，首页不出现 GPX 导入文案。
 
 截图复核后补齐南海附图海域轮廓（不计入 34 区域分母），6 项 milestones Chrome 回归、类型检查和生产构建再次通过。临时 PostgreSQL 实例已停止，原开发服务未改变。
+
+## 2026-10-15 移除省份选择提示
+
+按用户标注删除地图下方“省份名 · 活动次数”提示条及其选中状态。已点亮省份保留为静态标签，不再作为仅触发提示的按钮。地图点亮、年度数量、错误重试与“探索详细路线”入口继续沿用现有行为；未修改后端、接口或数据。
+
+验证：`pnpm exec playwright test -c playwright.ui.config.ts milestones.spec.ts -g 'home has real period|province/streak failures' --reporter=dot` 为 2 passed（7.4s），使用合成 API；`pnpm check` 为 0 errors / 0 warnings，`git diff --check` 通过。检查 390px 省份地图截图，提示条不再出现。此次未运行完整构建、全套回归或真实后端测试。

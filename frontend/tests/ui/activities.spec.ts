@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { installActivities, loginRunner, sampleActivity, incompleteActivity } from '../fixtures/activities';
 const file = { name: 'morning.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from('<gpx version="1.1" creator="synthetic"></gpx>') };
-async function noOverflow(page: Page) { expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); }
+async function noOverflow(page: Page) { await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); }
 async function capture(page: Page, path: string) {
   await page.evaluate(async () => { (document.activeElement as HTMLElement)?.blur(); window.scrollTo(0, 0); await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame); });
   await page.screenshot({ path, fullPage: false });
@@ -24,12 +24,12 @@ test('scan-friendly records expose pace and visibility, with compact optional up
 test('upload preserves optional payload and file on failure; retry, busy, success and warnings work', async ({ page }) => {
   const state = await installActivities(page); await loginRunner(page); await page.goto('/activities');
   await page.getByText('补充导入信息', { exact: true }).click();
-  await page.getByLabel('标题（可选）').fill('晨跑输入'); await page.getByLabel('时区（可选）').fill('Asia/Shanghai'); await page.getByLabel('补录日期（可选）').fill('2026-10-12');
-  await page.locator('input[type=file]').setInputFiles(file); state.uploadMode = 'error';
+  await page.getByLabel('标题（可选）').fill('晨跑输入'); await page.getByLabel('时区（可选）', {exact:true}).fill('Asia/Shanghai'); await page.getByLabel('补录日期（可选）').fill('2026-10-12');
+  await page.locator('input[type=file][name=file]').setInputFiles(file); state.uploadMode = 'error';
   await page.getByRole('button', { name: '导入 GPX', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('上传暂时失败');
   await expect(page.getByLabel('标题（可选）')).toHaveValue('晨跑输入');
-  expect(await page.locator('input[type=file]').evaluate((el: HTMLInputElement) => el.files?.length)).toBe(1);
+  expect(await page.locator('input[type=file][name=file]').evaluate((el: HTMLInputElement) => el.files?.length)).toBe(1);
   state.uploadMode = 'success'; let release!: () => void; state.holdUpload = new Promise(resolve => { release = resolve; });
   await page.getByRole('button', { name: '导入 GPX', exact: true }).click();
   await expect(page.getByRole('button', { name: '正在解析与保存…' })).toBeDisabled();
@@ -42,10 +42,10 @@ test('upload preserves optional payload and file on failure; retry, busy, succes
 });
 test('duplicate entry and local file limit preserve upload behavior', async ({ page }) => {
   const state = await installActivities(page); await loginRunner(page); await page.goto('/activities');
-  await page.locator('input[type=file]').setInputFiles({ ...file, buffer: Buffer.alloc(10 * 1024 * 1024 + 1) });
+  await page.locator('input[type=file][name=file]').setInputFiles({ ...file, buffer: Buffer.alloc(10 * 1024 * 1024 + 1) });
   await page.getByRole('button', { name: '导入 GPX', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('不能超过 10 MiB'); expect(state.uploadCount).toBe(0);
-  await page.locator('input[type=file]').setInputFiles(file); state.uploadMode = 'duplicate';
+  await page.locator('input[type=file][name=file]').setInputFiles(file); state.uploadMode = 'duplicate';
   await page.getByRole('button', { name: '导入 GPX', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('已经导入');
   await expect(page.getByRole('link', { name: '查看已有活动' })).toHaveAttribute('href', `/activities/${sampleActivity.id}`);
@@ -91,7 +91,7 @@ test('detail retry and sharing operations preserve existing API payloads and pri
 test('successful import followed by list outage reports separate outcomes and retries only the list', async ({ page }) => {
   const state = await installActivities(page); await loginRunner(page); await page.goto('/activities');
   await expect(page.getByRole('heading', { name: '河畔晨跑' })).toBeVisible();
-  state.listFailures = 1; await page.locator('input[type=file]').setInputFiles(file);
+  state.listFailures = 1; await page.locator('input[type=file][name=file]').setInputFiles(file);
   await page.getByRole('button', { name: '导入 GPX', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: '导入成功' })).toBeVisible();
   await expect(page.getByRole('region', { name: '我的活动', exact: true }).getByRole('alert')).toContainText('暂时无法读取');
@@ -134,18 +134,41 @@ test('file picker focus and successful session checks preserve selected GPX and 
   await expect(page.getByRole('heading',{name:'河畔晨跑'})).toBeVisible();
   await page.getByText('补充导入信息',{exact:true}).click();
   await page.getByLabel('标题（可选）').fill('保留选中文件');
-  await page.locator('input[type=file]').setInputFiles(file);
+  await page.locator('input[type=file][name=file]').setInputFiles(file);
   let release!: () => void;
   const held = new Promise<void>(resolve => { release = resolve; });
   let entered!: () => void;
   const started = new Promise<void>(resolve => { entered = resolve; });
   await page.route('**/api/v1/auth/session', async route => { entered(); await held; await route.fallback(); });
   await page.evaluate(() => window.dispatchEvent(new Event('focus'))); await started;
-  await expect(page.getByRole('heading',{name:'跑步记录',exact:true})).toBeHidden();
+  await expect(page.getByRole('heading',{name:'跑步记录',exact:true})).toBeVisible();
   release(); await expect(page.getByRole('heading',{name:'跑步记录',exact:true})).toBeVisible();
-  expect(await page.locator('input[type=file]').evaluate((el: HTMLInputElement) => el.files?.[0]?.name)).toBe('morning.gpx');
+  expect(await page.locator('input[type=file][name=file]').evaluate((el: HTMLInputElement) => el.files?.[0]?.name)).toBe('morning.gpx');
   await expect(page.getByLabel('标题（可选）')).toHaveValue('保留选中文件');
   await page.getByRole('button',{name:'导入 GPX',exact:true}).click();
   await expect(page.getByRole('status').filter({hasText:'导入成功。'})).toBeVisible();
   expect(state.uploadCount).toBe(1);
+});
+
+test('successful imports update the persistent sidebar distance while keeping a goal draft', async ({ page }) => {
+  const state = await installActivities(page);
+  let summaryReads = 0;
+  await page.route('**/api/v1/statistics/summary?**', route => {
+    summaryReads++;
+    return route.fulfill({ json: { data: { distance_m: state.uploadCount ? '8000' : '5000' }, error: null } });
+  });
+  await loginRunner(page);
+  const goal = page.getByRole('region', { name: '跑量目标' });
+  await expect(goal.locator('.goal-distance strong')).toHaveText('5 km');
+  await goal.getByRole('button', { name: '设置', exact: true }).click();
+  await goal.getByLabel('目标距离（km）', { exact: true }).fill('42');
+  await page.getByRole('navigation').getByRole('link', { name: '跑步记录', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '跑步记录', exact: true })).toBeVisible();
+  expect(summaryReads).toBe(1);
+  await page.locator('input[type=file][name=file]').setInputFiles(file);
+  await page.getByRole('button', { name: '导入 GPX', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: '导入成功。' })).toBeVisible();
+  await expect(goal.locator('.goal-distance strong')).toHaveText('8 km');
+  await expect(goal.getByLabel('目标距离（km）', { exact: true })).toHaveValue('42');
+  expect(summaryReads).toBe(2);
 });

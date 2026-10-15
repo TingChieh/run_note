@@ -14,16 +14,16 @@ test('TCX selection exposes explicit time repair, retains failed draft, then sho
   });
   await loginRunner(page); await page.goto('/activities');
   await expect(page.getByRole('button',{name:'导入 GPX',exact:true})).toBeEnabled();
-  await page.locator('input[type=file]').setInputFiles(file);
+  await page.locator('input[type=file][name=file]').setInputFiles(file);
   await expect(page.getByLabel('文件格式',{exact:true})).toHaveValue('tcx');
   await expect(page.getByLabel('时间解释',{exact:true})).toHaveValue('absolute');
   await page.getByLabel('时间解释',{exact:true}).selectOption('local');
   await page.getByText('补充导入信息',{exact:true}).click();
-  await page.getByLabel('时区（可选）').fill('Asia/Shanghai');
+  await page.getByLabel('时区（可选）', {exact:true}).fill('Asia/Shanghai');
   await page.getByLabel('标题（可选）').fill('TCX 下午跑步');
   await page.getByRole('button',{name:'导入 TCX',exact:true}).click();
   await expect(page.getByRole('alert')).toContainText('保存暂时失败');
-  expect(await page.locator('input[type=file]').evaluate((el:HTMLInputElement)=>el.files?.[0]?.name)).toBe(file.name);
+  expect(await page.locator('input[type=file][name=file]').evaluate((el:HTMLInputElement)=>el.files?.[0]?.name)).toBe(file.name);
   await expect(page.getByLabel('时间解释',{exact:true})).toHaveValue('local');
   await expect(page.getByLabel('标题（可选）')).toHaveValue('TCX 下午跑步');
   expect(body).toContain('name="time_mode"\r\n\r\nlocal');
@@ -32,7 +32,7 @@ test('TCX selection exposes explicit time repair, retains failed draft, then sho
   await expect(page.getByRole('status').filter({hasText:'导入成功'})).toBeVisible();
   await expect(page.getByText('已按所选时区的当地时间解释文件时间',{exact:true})).toBeVisible();
   // Each new file must explicitly opt in; repair cannot leak to a later upload.
-  await page.locator('input[type=file]').setInputFiles(file);
+  await page.locator('input[type=file][name=file]').setInputFiles(file);
   await expect(page.getByLabel('时间解释',{exact:true})).toHaveValue('absolute');
   await page.goto(`/activities/${activity.id}`);
   await expect(page.getByText('156 bpm',{exact:true})).toBeVisible();
@@ -46,7 +46,7 @@ test('TCX selection exposes explicit time repair, retains failed draft, then sho
   await page.screenshot({path:'test-results/tcx-desktop.png',fullPage:true});
   for (const width of [390,320]) {
     await page.setViewportSize({width,height:844});
-    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     await expect(page.getByText('156 bpm',{exact:true})).toBeVisible();
   }
   await page.screenshot({path:'test-results/tcx-mobile.png',fullPage:true});
@@ -66,7 +66,7 @@ test('TCX keyboard controls and mobile upload have no overflow, and GPX remains 
   await expect(page.getByLabel('时间解释',{exact:true})).toBeFocused();
   for (const width of [390,320]) {
     await page.setViewportSize({width,height:844});
-    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   }
   await page.screenshot({path:'test-results/tcx-mobile-upload.png',fullPage:true});
 });

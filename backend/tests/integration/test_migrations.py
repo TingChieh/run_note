@@ -1,12 +1,15 @@
 "Explicitly allowed isolated databases; upgrades only, no downgrade or cleanup DDL."
 
 import os
+import runpy
 import subprocess
 from datetime import UTC
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
@@ -15,10 +18,20 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_session
 from app.core.config import IntegrationSettings, Settings
+from app.db.schema import get_expected_revision
 from app.main import create_app
 
 pytestmark = pytest.mark.integration
 BACKEND = Path(__file__).resolve().parents[2]
+
+
+def assert_downgrade_guard(engine, revision, message):
+    """Check an older guard directly; newer revisions may also contain protected data."""
+    migration = runpy.run_path(str(BACKEND / "migrations" / "versions" / f"{revision}.py"))
+    with engine.begin() as connection:
+        with Operations.context(MigrationContext.configure(connection)):
+            with pytest.raises(RuntimeError, match=message):
+                migration["downgrade"]()
 
 
 def migrate(url, *args):
@@ -92,7 +105,7 @@ def test_upgrade_paths_preserve_baseline_and_are_idempotent(variable):
                 if "alembic_version" in before
                 else []
             )
-        if revisions != ["0008_activity_labels"]:
+        if revisions != [get_expected_revision()]:
             with TestClient(
                 create_app(Settings(database_url=url, app_env="test", _env_file=None))
             ) as client:
@@ -101,7 +114,7 @@ def test_upgrade_paths_preserve_baseline_and_are_idempotent(variable):
         migrate(url, "upgrade", "head")
         with engine.connect() as c:
             assert c.scalars(text("SELECT version_num FROM alembic_version")).all() == [
-                "0008_activity_labels"
+                get_expected_revision()
             ]
             assert set(inspect(c).get_table_names()) - before <= {
                 "alembic_version",
@@ -112,11 +125,14 @@ def test_upgrade_paths_preserve_baseline_and_are_idempotent(variable):
                 "activities",
                 "gpx_imports",
                 "tcx_imports",
+                "mifitness_imports",
                 "activity_segments",
                 "activity_points",
                 "activity_share_links",
                 "ai_reports",
                 "running_goals",
+                "footprint_activity_caches",
+                "footprint_snapshots",
             }
             if spatial:
                 assert spatial_hash(c) == spatial
@@ -313,7 +329,7 @@ def test_zero_length_line_single_point_and_microseconds_roundtrip(db):
 
 @pytest.mark.parametrize(
     "rows",
-    [["0001_postgis"], ["0002_auth"], ["unknown"], [], ["0008_activity_labels", "unexpected"]],
+    [["0001_postgis"], ["0002_auth"], ["unknown"], [], [get_expected_revision(), "unexpected"]],
 )
 def test_ready_requires_exact_release_revision_and_live_stays_available(db, rows):
     db.execute(

@@ -4,6 +4,7 @@
   import { replaceState } from '$app/navigation';
   import { ActivityError, readActivities, type ActivityList } from '#lib/api/activities.ts';
   import FeedbackState from './FeedbackState.svelte';
+  import PageSkeleton from '#lib/components/PageSkeleton.svelte';
   import WallCard from './WallCard.svelte';
   let { preview = false }: { preview?: boolean } = $props();
   let records = $state<ActivityList | null>(null), loading = $state(true), error = $state('');
@@ -23,10 +24,10 @@
   onMount(()=>{active=true;const raw=page.url.searchParams.get('offset')??'';const offset=!preview && /^\d+$/.test(raw) && Number.isSafeInteger(Number(raw))?Math.floor(Number(raw)/20)*20:0;void load(offset);return()=>{active=false;++token;};});
 </script>
 <section class:wall-preview={preview} aria-label={preview?'近期足迹墙':'我的足迹墙'} aria-busy={loading}>
-  {#if preview}<div class="wall-heading"><div><p class="wall-eyebrow">每次出发，留下一张足迹</p><h2>足迹墙</h2></div><a href="/activities/wall" data-sveltekit-reload class="button-secondary">查看全部足迹</a></div>{/if}
-  {#if loading}<FeedbackState kind="loading" title="正在读取足迹墙…" />{:else if error}<FeedbackState kind="error" title={error}><button class="button-secondary" onclick={()=>void load()}>重试足迹墙</button></FeedbackState>{:else if records}
-    {#if records.items.length}<ul class="wall-grid">{#each (preview?records.items.slice(0,6):records.items) as activity (activity.id)}<li><WallCard {activity} /></li>{/each}</ul>
-    {:else}<FeedbackState title="足迹墙还没有记录"><p>每一条新的跑步记录都会自动成为一张足迹卡片。</p><a href="/activities" data-sveltekit-reload class="button-secondary">查看跑步记录</a></FeedbackState>{/if}
+  {#if preview}<div class="wall-heading"><div><p class="wall-eyebrow">每次出发，留下一张足迹</p><h2>足迹墙</h2></div><a href="/activities/wall" class="button-secondary">查看全部足迹</a></div>{/if}
+  {#if loading}<PageSkeleton title="正在读取足迹墙…" />{:else if error}<FeedbackState kind="error" title={error}><button class="button-secondary" onclick={()=>void load()}>重试足迹墙</button></FeedbackState>{:else if records}
+    {#if records.items.length}<ul class="wall-grid content-reveal">{#each (preview?records.items.slice(0,6):records.items) as activity (activity.id)}<li><WallCard {activity} /></li>{/each}</ul>
+    {:else}<FeedbackState title="足迹墙还没有记录"><p>每一条新的跑步记录都会自动成为一张足迹卡片。</p><a href="/activities" class="button-secondary">查看跑步记录</a></FeedbackState>{/if}
     {#if !preview && records.total>20}<div class="wall-pagination"><button class="button-secondary" disabled={records.offset===0} onclick={()=>void load(Math.max(0,records!.offset-20))}>上一页</button><span>第 {Math.floor(records.offset/20)+1} / {Math.ceil(records.total/20)} 页 · {records.total} 次跑步</span><button class="button-secondary" disabled={records.offset+records.items.length>=records.total} onclick={()=>void load(records!.offset+20)}>下一页</button></div>{/if}
   {/if}
 </section>

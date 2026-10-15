@@ -2,8 +2,17 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
+    <link rel="icon" type="image/x-icon" href="%sveltekit.assets%/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
+    <script>
+      (() => {
+        let preference = 'system';
+        try { const saved = localStorage.getItem('runnote-theme'); if (saved === 'light' || saved === 'dark') preference = saved; } catch {}
+        document.documentElement.dataset.themePreference = preference;
+        document.documentElement.dataset.theme = preference === 'system' ? matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light' : preference;
+      })();
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

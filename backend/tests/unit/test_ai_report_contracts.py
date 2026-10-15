@@ -29,6 +29,8 @@ def test_complete_weeks_and_zero_baseline():
         "每周训练叁回",
         "跑量增加Ⅲ倍",
         "完成③组",
+        "若身体感觉良好，可尝试增加一次轻松跑",
+        "当前数据仅覆盖一个周区间",
     ],
 )
 def test_output_rejects_invented_quantities(text):

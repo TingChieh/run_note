@@ -70,7 +70,7 @@ test('home opens data summary, preserves filters and exposes all feature entranc
   }
   await features.getByRole('link', { name: /个人足迹/ }).focus();
   await page.keyboard.press('Enter');
-  await expect(page).toHaveURL(/\/footprints$/);
+  await expect(page).toHaveURL(/\/footprints\?mode=tracks$/);
   await page.getByRole('link', { name: 'RunNote 数据汇总', exact: true }).click();
   await expect(page.getByRole('heading', { level: 1, name: '数据汇总', exact: true })).toBeVisible();
   await expect(page.getByTestId('annual-distance')).toHaveText('10.2 km');

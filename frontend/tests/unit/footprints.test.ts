@@ -70,3 +70,26 @@ it('keeps frozen mixed geometries intact across world shifting and repeated fram
   expect(JSON.stringify(source)).toBe(original);
   expect(geometryBounds(source.features.map(f=>f.geometry))).toEqual([[-180,0],[180,2]]);
 });
+
+const allCollection = {scope:'all',type:'FeatureCollection',features:[],mode:'tracks',activity_count:0,visible_activity_count:0,unsupported_segment_count:0,grid_size_m:100,grid_crs:'EPSG:3857',count_basis:'distinct_activity_per_cell',max_count:0};
+it('parses ready all-record snapshots without requiring dates and rejects contradictory states', async () => {
+  const { parseFootprintSnapshot } = await import('../../src/lib/api/footprints');
+  const ready={status:'ready',generated_at:'2026-10-15T00:00:00Z',refreshing:false,result:allCollection};
+  expect(parseFootprintSnapshot(ready).result?.scope).toBe('all');
+  expect(parseFootprintSnapshot(ready).refresh_failed).toBe(false);
+  expect(parseFootprintSnapshot({...ready,refresh_failed:true}).refresh_failed).toBe(true);
+  expect(parseFootprintSnapshot({...ready,status:'pending',generated_at:null,result:null}).status).toBe('pending');
+  expect(parseFootprintSnapshot({...ready,status:'failed',generated_at:null,result:null}).status).toBe('failed');
+  for(const invalid of [{...ready,generated_at:null},{...ready,result:null},{...ready,status:'pending'},{...ready,generated_at:'not-a-time'},{...ready,refreshing:'true'},{...ready,refresh_failed:'true'},{...ready,result:{...allCollection,scope:'year'}},{...ready,result:{...allCollection,visible_activity_count:1}},{...ready,result:{...allCollection,grid_size_m:50}}])expect(()=>parseFootprintSnapshot(invalid)).toThrow();
+});
+it('reads the all-record endpoint using only mode and maps expired sessions to a private-state-safe message', async () => {
+  const { readAllFootprints } = await import('../../src/lib/api/footprints');
+  const signal=new AbortController().signal;
+  const fetcher: typeof fetch = async (input,init) => {
+    expect(input).toBe('/api/v1/footprints/all?mode=heatmap');
+    expect(init).toMatchObject({signal,cache:'no-store',credentials:'same-origin'});
+    return new Response(JSON.stringify({data:{status:'pending',generated_at:null,refreshing:false,result:null},error:null}));
+  };
+  expect((await readAllFootprints('heatmap',signal,fetcher)).status).toBe('pending');
+  await expect(readAllFootprints('tracks',signal,async()=>new Response('not-json',{status:401}))).rejects.toMatchObject({status:401,message:'登录已过期'});
+});

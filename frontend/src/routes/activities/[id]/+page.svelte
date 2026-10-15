@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import MetricSummary from '#lib/components/MetricSummary.svelte';
+  import DeviceMetrics from '#lib/components/DeviceMetrics.svelte';
   import { page } from '$app/state';
   import SharePanel from '#lib/components/SharePanel.svelte';
   import RouteMap from '#lib/components/RouteMap.svelte';
@@ -31,7 +32,7 @@
   onMount(() => { void loadActivity(); return () => { disposed = true; }; });
 </script>
 <svelte:head><title>{activity?.title || '活动详情'} · Run Note</title></svelte:head>
-<a href="/activities" data-sveltekit-reload class="text-sm font-medium text-primary underline">← 返回跑步记录</a>
+<a href="/activities" class="text-sm font-medium text-primary underline">← 返回跑步记录</a>
 {#if message}<div class="mt-6"><FeedbackState kind="error" title={message}><button onclick={() => void loadActivity()} class="button-secondary">重新读取活动详情</button></FeedbackState></div>
 {:else if activity}
   <section class="sport-hero" data-testid="sport-hero" aria-labelledby="activity-title">
@@ -57,13 +58,14 @@
       {#if route}<RouteMap {route} spacious />{:else if routeLoading}<div class="route-placeholder"><FeedbackState kind="loading" title="正在读取路线…" /></div>{:else if routeError}<div class="route-placeholder"><FeedbackState kind="error" title={routeError}><button onclick={() => void loadRoute(activity!.id)} class="button-secondary">重新读取路线</button></FeedbackState></div>{:else}<div class="route-placeholder"><FeedbackState kind="empty" title="此活动没有路线。"><p>运动指标仍可查看，路线仅在记录包含轨迹时显示。</p></FeedbackState></div>{/if}
     </section>
   </div>
+  <DeviceMetrics metrics={activity} />
   <details class="quality-details">
     <summary>数据质量与指标说明</summary>
     <div class="mt-4"><p>{qualityLabel(activity.temporal_quality)}</p><p class="mt-2 text-sm text-muted-foreground">“—”表示缺失或无法可靠计算。指标版本：{activity.metrics_version}</p>
       {#if Object.keys(activity.quality_summary).length}<dl class="mt-4 grid gap-3 sm:grid-cols-2">{#each qualityEntries(activity.quality_summary) as [key, value]}<div class="min-w-0"><dt class="text-sm font-medium">{key}</dt><dd class="mt-1 break-all text-sm text-muted-foreground">{value}</dd></div>{/each}</dl>{:else}<p class="mt-3 text-sm text-muted-foreground">没有额外质量提示。</p>{/if}
     </div>
   </details>
-  <section class="activity-wall-card" aria-label="本次足迹卡片"><div><h2>本次足迹卡片</h2><p>每次跑步，留下属于你的路线记忆。</p><a href="/activities/wall" data-sveltekit-reload class="button-secondary">查看全部足迹</a></div><div class="wall-card-preview"><WallCard {activity} {route} managedRoute {routeLoading} {routeError} /></div></section>
+  <section class="activity-wall-card" aria-label="本次足迹卡片"><div><h2>本次足迹卡片</h2><p>每次跑步，留下属于你的路线记忆。</p><a href="/activities/wall" class="button-secondary">查看全部足迹</a></div><div class="wall-card-preview"><WallCard {activity} {route} managedRoute {routeLoading} {routeError} /></div></section>
   <SharePanel {activity} />
 {:else if loading}<div class="mt-6"><FeedbackState kind="loading" title="正在读取活动…" /></div>{/if}
 <style>

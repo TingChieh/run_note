@@ -4,7 +4,7 @@ import { parseSummary, type Summary } from './statistics';
 
 export interface DateRange { from: string; to: string }
 export interface Streaks { today: string; current_days: number; longest_days: number; current_weeks: number; longest_weeks: number; week: { date: string; active: boolean }[] }
-export interface Provinces { year: number; total: number; provinces: { code: number; name: string; activity_count: number }[]; activity_count: number; located_activity_count: number }
+export interface Provinces { year: number | null; total: number; provinces: { code: number; name: string; activity_count: number }[]; activity_count: number; located_activity_count: number }
 const iso = (date: Date) => date.toISOString().slice(0, 10);
 const shift = (date: string, days: number) => iso(new Date(Date.parse(date) + days * 86400000));
 const date = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(v)) && iso(new Date(v)) === v;
@@ -41,10 +41,10 @@ export function parseStreaks(v: unknown): Streaks {
   return v as unknown as Streaks;
 }
 export async function readStreaks(): Promise<Streaks> { return parseStreaks(await request('/api/v1/statistics/streaks', {}, fetch)); }
-export function parseProvinces(v: unknown, year: number): Provinces {
+export function parseProvinces(v: unknown, year: number | null = null): Provinces {
   if (!object(v) || v.year !== year || v.total !== 34 || !count(v.activity_count) || !count(v.located_activity_count) || v.located_activity_count > v.activity_count || !Array.isArray(v.provinces) || v.provinces.length > 34) invalid();
   const seen = new Set<number>();
   for (const p of v.provinces) { if (!object(p) || !count(p.code) || p.code < 110000 || p.code > 820000 || p.code % 10000 !== 0 || seen.has(p.code) || typeof p.name !== 'string' || !count(p.activity_count) || p.activity_count < 1 || p.activity_count > v.located_activity_count) invalid(); seen.add(p.code); }
   return v as unknown as Provinces;
 }
-export async function readProvinces(year: number): Promise<Provinces> { return parseProvinces(await request(`/api/v1/footprints/provinces?year=${year}`, {}, fetch), year); }
+export async function readProvinces(year: number | null = null): Promise<Provinces> { return parseProvinces(await request(`/api/v1/footprints/provinces${year === null ? '' : `?year=${year}`}`, {}, fetch), year); }

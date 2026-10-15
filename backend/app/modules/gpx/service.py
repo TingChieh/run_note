@@ -21,6 +21,7 @@ from app.modules.gpx.model import ActivityPoint, ActivitySegment, GpxImport
 from app.modules.gpx.normalization import derive, prepare_segments
 from app.modules.gpx.queries import edge_distances, line_wkt, route_distance
 from app.modules.gpx.worker import bounded_parse
+from app.modules.mifitness.model import MifitnessImport
 from app.modules.tcx.model import TcxImport
 
 
@@ -55,7 +56,7 @@ def import_lock(engine, owner):
 
 def duplicate(db, owner, raw_hash, canonical=None, format="gpx"):
     # All source formats share the per-owner lock. No other owner's IDs are disclosed.
-    for model in (GpxImport, TcxImport):
+    for model in (GpxImport, TcxImport, MifitnessImport):
         row = db.execute(
             select(model.activity_id).where(model.user_id == owner, model.raw_sha256 == raw_hash)
         ).first()
@@ -81,6 +82,41 @@ def duplicate(db, owner, raw_hash, canonical=None, format="gpx"):
 def insert_points(db, rows):
     for start in range(0, len(rows), 1000):
         db.execute(insert(ActivityPoint), rows[start : start + 1000])
+
+
+def persist_segments(db, activity_id, derived_segments):
+    segments, points = [], []
+    for index, segment in enumerate(derived_segments):
+        sid = uuid4()
+        first = segment.points[0]
+        line = line_wkt(segment)
+        segments.append(
+            {
+                "id": sid,
+                "activity_id": activity_id,
+                "segment_index": index,
+                "source_track_index": first.track_index,
+                "source_segment_index": first.segment_index,
+                "break_reason": segment.break_reason,
+                "point_count": len(segment.points),
+                "geom": f"SRID=4326;{line}" if line else None,
+            }
+        )
+        for pi, p in enumerate(segment.points):
+            points.append(
+                {
+                    "segment_id": sid,
+                    "point_index": pi,
+                    "source_point_index": p.source_index,
+                    "position": f"SRID=4326;POINT({p.lon} {p.lat})",
+                    "recorded_at": p.time,
+                    "elevation_m": p.elevation,
+                }
+            )
+    for start in range(0, len(segments), 1000):
+        db.execute(insert(ActivitySegment), segments[start : start + 1000])
+    insert_points(db, points)
+    return len(points), len(segments)
 
 
 def safe_filename(name, format="gpx"):
@@ -228,45 +264,15 @@ def import_track(
                 )
                 db.add(imported)
                 db.flush()
-                segments, points = [], []
-                for index, segment in enumerate(derived.segments):
-                    sid = uuid4()
-                    first = segment.points[0]
-                    line = line_wkt(segment)
-                    segments.append(
-                        {
-                            "id": sid,
-                            "activity_id": activity.id,
-                            "segment_index": index,
-                            "source_track_index": first.track_index,
-                            "source_segment_index": first.segment_index,
-                            "break_reason": segment.break_reason,
-                            "point_count": len(segment.points),
-                            "geom": f"SRID=4326;{line}" if line else None,
-                        }
-                    )
-                    for pi, p in enumerate(segment.points):
-                        points.append(
-                            {
-                                "segment_id": sid,
-                                "point_index": pi,
-                                "source_point_index": p.source_index,
-                                "position": f"SRID=4326;POINT({p.lon} {p.lat})",
-                                "recorded_at": p.time,
-                                "elevation_m": p.elevation,
-                            }
-                        )
-                for start in range(0, len(segments), 1000):
-                    db.execute(insert(ActivitySegment), segments[start : start + 1000])
-                insert_points(db, points)
+                point_count, segment_count = persist_segments(db, activity.id, derived.segments)
                 user.activity_data_version += 1
                 db.flush()
                 response = ImportView(
                     activity=view(activity),
                     import_id=imported.id,
                     warnings=warnings,
-                    point_count=len(points),
-                    segment_count=len(segments),
+                    point_count=point_count,
+                    segment_count=segment_count,
                     metrics_version=version,
                 )
             return response

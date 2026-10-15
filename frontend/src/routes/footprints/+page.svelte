@@ -1,53 +1,55 @@
 <script lang="ts">
   import PageHeader from '#lib/components/PageHeader.svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
-  import DatePicker from '#lib/components/DatePicker.svelte';
+  import PageSkeleton from '#lib/components/PageSkeleton.svelte';
   import { onMount } from 'svelte';
   import { page } from '$app/state';
+  import { goto } from '$app/navigation';
   import FootprintMap from '#lib/components/FootprintMap.svelte';
-  import { footprintSelection,footprintQuery,readFootprints,FootprintError } from '#lib/api/footprints.ts';
-  import type { Selection,Footprints } from '#lib/api/footprints.ts';
-  let selection=$state<Selection>({year:2026,from:'2026-01-01',to:'2026-12-31',mode:'tracks',filter:'year'});
-  let data=$state<Footprints|null>(null), loading=$state(false), message=$state(''), requestId=0, mounted=$state(false);
-  let controller:AbortController|undefined;
-  let filtersOpen=$state(true), mapVersion=$state(0);
-  let shownRange=$derived(data ? `${data.date_from} — ${new Date(new Date(data.date_to).getTime()-86400000).toISOString().slice(0,10)}` : '');
-  function changeMode(mode: Selection['mode']) { if(selection.mode===mode)return; selection.mode=mode; void load(); }
-  async function load(save=true) {
+  import { readAllFootprints,FootprintError } from '#lib/api/footprints.ts';
+  import type { Selection,FootprintsAll,FootprintSnapshot } from '#lib/api/footprints.ts';
+  let mode=$state<Selection['mode']>('tracks');
+  let data=$state<FootprintsAll|null>(null), loading=$state(false), message=$state(''), requestId=0, mounted=$state(false);
+  let status=$state<FootprintSnapshot['status']|null>(null), generatedAt=$state<string|null>(null), refreshing=$state(false), refreshFailed=$state(false);
+  let controller:AbortController|undefined, timer:ReturnType<typeof setTimeout>|undefined, disposed=false;
+  let mapVersion=$state(0);
+  const generatedLabel=$derived(generatedAt ? new Intl.DateTimeFormat('zh-CN',{timeZone:page.data.user?.timezone??'UTC',dateStyle:'medium',timeStyle:'short'}).format(new Date(generatedAt)) : '');
+  function changeMode(next: Selection['mode']) { if(mode===next)return; mode=next; void load(); }
+  async function load() {
+    clearTimeout(timer);timer=undefined;
     const id=++requestId;controller?.abort();controller=new AbortController();const signal=controller.signal;
-    loading=true;data=null;message='';
+    loading=true;data=null;message='';status=null;generatedAt=null;refreshing=false;refreshFailed=false;
     try {
-      if(save)window.history.replaceState(window.history.state,'',`/footprints?${footprintQuery(selection)}`);
-      const result=await readFootprints({...selection},signal);
-      if(id===requestId){data=result;if(window.matchMedia('(max-width:767px)').matches)filtersOpen=false;}
-    }catch(cause){if(id!==requestId || signal.aborted)return;if(cause instanceof FootprintError && cause.status===401){window.location.replace('/login?reason=changed');return;}message=cause instanceof Error?cause.message:'无法读取足迹，请重试';}
-    finally{if(id===requestId)loading=false;}
+      await goto(`/footprints?${new URLSearchParams({mode})}`,{state:page.state,shallow:true,replace:true});
+      if(disposed || id!==requestId)return;
+      const result=await readAllFootprints(mode,signal);
+      if(disposed || id!==requestId)return;
+      status=result.status;data=result.result;generatedAt=result.generated_at;refreshing=result.refreshing;refreshFailed=result.refresh_failed;
+      if(result.status==='failed')message='足迹生成暂未完成，请稍后重新读取';
+      if(result.status==='pending')timer=setTimeout(()=>{void load();},5000);
+    }catch(cause){
+      if(disposed || id!==requestId || signal.aborted)return;
+      if(cause instanceof FootprintError && cause.status===401){data=null;status=null;generatedAt=null;refreshing=false;refreshFailed=false;window.location.replace('/login?reason=changed');return;}
+      message=cause instanceof Error?cause.message:'无法读取足迹，请重试';
+    }finally{if(!disposed && id===requestId)loading=false;}
   }
   onMount(()=>{
-    const year=Number(new Intl.DateTimeFormat('en',{timeZone:page.data.user?.timezone??'UTC',year:'numeric'}).format(new Date()));
-    filtersOpen=window.matchMedia('(min-width:768px)').matches;selection=footprintSelection(new URLSearchParams(window.location.search),year);mounted=true;void load(false);
-    return()=>{++requestId;controller?.abort();};
+    disposed=false;mode=new URLSearchParams(window.location.search).get('mode')==='heatmap'?'heatmap':'tracks';mounted=true;void load();
+    return()=>{disposed=true;++requestId;clearTimeout(timer);controller?.abort();};
   });
 </script>
 <svelte:head><title>个人足迹 · Run Note</title></svelte:head>
 <PageHeader title="个人足迹" description="沿着跑过的路，看看你的运动版图。" />
 <div class="footprints-page">
-  <div class="mode-row"><div class="mode-switch" role="group" aria-label="地图模式"><button type="button" aria-pressed={selection.mode==='tracks'} disabled={!mounted} onclick={()=>changeMode('tracks')}>轨迹叠加</button><button type="button" aria-pressed={selection.mode==='heatmap'} disabled={!mounted} onclick={()=>changeMode('heatmap')}>运动热力图</button></div><p>{selection.mode==='tracks'?'看每次跑步的路线':'看不同记录经过的区域'}</p></div>
-  <details class="filter-panel" bind:open={filtersOpen}>
-    <summary>时间筛选 <span>{selection.filter==='year'?`${selection.year} 年`:`${selection.from} — ${selection.to}`}</span></summary>
-    <form onsubmit={e=>{e.preventDefault();void load();}} class="filter-controls">
-      <label>时间筛选<select aria-label="时间筛选" bind:value={selection.filter}><option value="year">按年份</option><option value="range">日期范围</option></select></label>
-      {#if selection.filter==='year'}<label>年份<input aria-label="年份" type="number" min="1900" max="2100" step="1" bind:value={selection.year} required /></label>
-      {:else}<DatePicker label="开始日期" bind:value={selection.from} timezone={page.data.user?.timezone ?? 'UTC'} required /><DatePicker label="结束日期（含当天）" bind:value={selection.to} min={selection.from || '1900-01-01'} timezone={page.data.user?.timezone ?? 'UTC'} required />{/if}
-      <button disabled={!mounted} class="apply-button">应用筛选</button>
-    </form>
-  </details>
-  {#if loading}<FeedbackState kind="loading" title="正在读取个人足迹…" />{/if}
-  {#if message}<FeedbackState kind="error" title={message}><button onclick={()=>{void load();}} class="button-secondary">重新读取足迹</button><p class="mt-2">如果记录较多，可以缩小日期范围后重试。</p></FeedbackState>{/if}
+  <div class="mode-row"><div class="mode-switch" role="group" aria-label="地图模式"><button type="button" aria-pressed={mode==='tracks'} disabled={!mounted} onclick={()=>changeMode('tracks')}>轨迹叠加</button><button type="button" aria-pressed={mode==='heatmap'} disabled={!mounted} onclick={()=>changeMode('heatmap')}>运动热力图</button></div><p>{mode==='tracks'?'看每次跑步的路线':'看不同记录经过的区域'}</p></div>
+  {#if loading}<PageSkeleton title="正在读取个人足迹…" />{/if}
+  {#if status==='pending'}<FeedbackState kind="loading" title="正在生成全部足迹…"><p>导入后会自动更新，完成后即可查看全部记录。页面会自动检查进度。</p><button onclick={()=>{void load();}} class="button-secondary mt-3">重新读取足迹</button></FeedbackState>{/if}
+  {#if message}<FeedbackState kind="error" title={message}><button onclick={()=>{void load();}} class="button-secondary">重新读取足迹</button></FeedbackState>{/if}
   {#if data}
-    <div class="result-summary" aria-live="polite"><p data-testid="footprint-summary">筛选范围内 <strong>{data.activity_count}</strong> 条运动记录，地图显示 <strong>{data.visible_activity_count}</strong> 条。</p><p class="range-label">{shownRange}</p></div>
+    {#if refreshFailed}<div data-testid="footprint-refresh-failed"><FeedbackState title="自动更新暂未完成，当前显示上次生成的足迹。"><p>后台会继续尝试更新，也可稍后重新读取。</p></FeedbackState></div>{/if}
+    <div class="result-summary" aria-live="polite"><p data-testid="footprint-summary">全部 <strong>{data.activity_count}</strong> 条运动记录，地图显示 <strong>{data.visible_activity_count}</strong> 条。</p><div class="snapshot-status"><p class="generated-label" data-testid="footprint-generated">更新于 {generatedLabel}{refreshing?' · 后台更新中':''}</p><button class="button-secondary" onclick={()=>{void load();}}>重新读取足迹</button></div></div>
     {#if data.unsupported_segment_count}<FeedbackState title="部分轨迹超出地图支持范围">{data.unsupported_segment_count} 个轨迹段包含超出 ±85.051129° 的极区部分，地图仅显示支持范围。</FeedbackState>{/if}
-    {#if data.features.length===0}<FeedbackState title="此范围没有可显示的足迹"><p>可以调整时间筛选，或导入带路线的运动记录。</p><a href="/activities" data-sveltekit-reload class="button-secondary mt-3">导入 GPX 或查看运动记录</a></FeedbackState>
+    {#if data.features.length===0}<FeedbackState title="还没有可显示的足迹"><p>导入带路线的运动记录后，足迹会自动生成。</p><a href="/activities" class="button-secondary mt-3">导入 GPX 或查看运动记录</a></FeedbackState>
     {:else}
       {#key data}{#key mapVersion}<FootprintMap {data} onretry={()=>{mapVersion++;}} />{/key}{/key}
       {#if data.mode==='heatmap'}<section class="heat-legend" data-testid="heat-legend" aria-label="热度图例"><div class="legend-heading"><h2>每格经过的不同运动记录数</h2><span>当前最高 {data.max_count} 次</span></div><div class="legend-levels">{#each [{color:'#c0dfac',label:'1 次'},{color:'#72b78a',label:'2–3 次'},{color:'#2d9474',label:'4–7 次'},{color:'#e69338',label:'8–15 次'},{color:'#bd432c',label:'16 次及以上'}] as level}<span><i style:background={level.color} aria-hidden="true"></i>{level.label}</span>{/each}</div><p>热度按不同运动记录计数，不按 GPS 点数量。同一记录在同一格内只计一次。</p></section>{/if}
@@ -63,17 +65,10 @@
   .mode-switch button { min-height:2.75rem; padding:.5rem 1rem; font-weight:600; border-radius:.45rem; color:var(--muted-foreground); }
   .mode-switch button[aria-pressed='true'] { color:var(--primary-foreground); background:var(--primary); }
   .mode-switch button:not([aria-pressed='true']):hover { color:var(--primary); background:var(--surface); }
-  .filter-panel { border-block:1px solid var(--border); padding-block:.75rem; }
   summary { cursor:pointer; font-weight:550; }
-  .filter-panel summary span { margin-left:.5rem; color:var(--muted-foreground); font-size:.8125rem; font-weight:400; }
-  .filter-controls { display:flex; align-items:end; flex-wrap:wrap; gap:1rem; padding-top:1rem; }
-  .filter-controls label { display:grid; gap:.35rem; font-size:.875rem; }
-  input,select { border-radius:var(--radius-control); background:var(--surface); border:1px solid var(--border); padding:.5rem .75rem; width:100%; }
-  input[type=number] { width:7rem; }
-  .apply-button { min-height:2.75rem; background:var(--primary); color:var(--primary-foreground); padding:.5rem 1rem; border-radius:var(--radius-control); font-weight:600; }
-  .apply-button:hover { background:var(--primary-hover); }
+  .snapshot-status { display:flex; align-items:center; flex-wrap:wrap; gap:.5rem; }
   .result-summary { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:.5rem; font-size:.875rem; }
-  .range-label { color:var(--muted-foreground); font-size:.8125rem; }
+  .generated-label { color:var(--muted-foreground); font-size:.8125rem; }
   .heat-legend { padding:.25rem .25rem .75rem; }
   .legend-heading { display:flex; flex-wrap:wrap; justify-content:space-between; gap:.5rem; font-size:.875rem; }
   .legend-heading h2 { font-weight:600; }
@@ -85,6 +80,6 @@
   .map-notes { border-top:1px solid var(--border); padding-top:1rem; font-size:.875rem; }
   .map-notes summary { color:var(--primary); }
   .notes-content { display:grid; gap:.75rem; color:var(--muted-foreground); margin-top:.75rem; line-height:1.8; }
-  @media(max-width:767px) { .mode-row p { display:none; } .filter-controls { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem; } .filter-controls label { min-width:0; } .filter-controls input[type=number] { width:100%; } .apply-button { align-self:end; } .result-summary { display:grid; gap:.15rem; } }
-  @media(max-width:359px) { .filter-controls { grid-template-columns:1fr; } .mode-switch button { padding:.5rem .75rem; } }
+  @media(max-width:767px) { .mode-row p { display:none; } .result-summary { display:grid; gap:.5rem; } }
+  @media(max-width:359px) { .mode-switch button { padding:.5rem .75rem; } }
 </style>

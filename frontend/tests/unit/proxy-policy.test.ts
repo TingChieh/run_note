@@ -1,5 +1,11 @@
 import { expect, it } from 'vitest';
 import { readProxyBody, upstreamTimeout } from '../../src/lib/server/proxy-policy';
+it('protects exact Mi Fitness previews and saves with the existing upload bounds', async () => {
+  const { isGpxUpload } = await import('../../src/lib/server/proxy-policy');
+  expect(isGpxUpload('/api/v1/mifitness-imports?preview=true','POST')).toBe(true);
+  expect(upstreamTimeout('/api/v1/mifitness-imports','POST')).toBe(45000);
+  expect(isGpxUpload('/api/v1/mifitness-imports/other','POST')).toBe(false);
+});
 it('reserves the AI generation deadline only for explicit report creation', () => {
   expect(upstreamTimeout('/api/v1/ai-reports', 'POST')).toBe(40000);
   expect(upstreamTimeout('/api/v1/ai-reports', 'GET')).toBe(8000);

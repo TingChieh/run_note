@@ -5,6 +5,9 @@ export interface Activity {
   notes?: string; category?: string; tags?: string[];
   started_at: string | null; ended_at: string | null; distance_m: Metric; elapsed_seconds: Metric;
   timer_seconds?: Metric; calories_kcal?: number | null; steps?: number | null; avg_heart_rate_bpm?: number | null;
+  max_heart_rate_bpm?: number | null; min_heart_rate_bpm?: number | null;
+  avg_cadence_spm?: Metric; max_cadence_spm?: Metric; vo2_max_ml_kg_min?: Metric;
+  training_load?: Metric; aerobic_training_effect?: Metric; anaerobic_training_effect?: Metric;
   avg_pace_seconds_per_km: Metric; temporal_quality: 'complete' | 'incomplete' | 'invalid' | 'manual';
   visibility: 'private' | 'unlisted' | 'public'; allow_shared_route: boolean;
   quality_summary: Record<string, unknown>; metrics_version: string; has_route: boolean; created_at: string;
@@ -16,7 +19,7 @@ export interface Route { type: 'FeatureCollection'; features: RouteFeature[]; st
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 export class ActivityError extends Error {
-  constructor(message: string, public status: number, public code = 'REQUEST_FAILED', public existingActivityId: string | null = null) { super(message); }
+  constructor(message: string, public status: number, public code = 'REQUEST_FAILED', public existingActivityId: string | null = null, public duplicateKind: string | null = null) { super(message); }
 }
 function invalid(): never { throw new ActivityError('活动服务返回了无效响应，请刷新重试', 502, 'INVALID_RESPONSE'); }
 const calendarDate = (value: unknown): value is string => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
@@ -24,7 +27,20 @@ function number(value: Metric): number | null {
   if (value === null || (typeof value === 'string' && !/^\d+(\.\d+)?$/.test(value))) return null;
   const parsed = Number(value); return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
-function parseActivity(value: unknown): Activity {
+export function validateDeviceMetrics(value: Record<string, unknown>): void {
+  for (const field of ['max_heart_rate_bpm', 'min_heart_rate_bpm']) {
+    const metric = value[field];
+    if (metric !== undefined && metric !== null && (typeof metric !== 'number' || !Number.isInteger(metric) || metric < 1 || metric > 300)) invalid();
+  }
+  for (const [field, maximum, positive] of [['avg_cadence_spm', 400, true], ['max_cadence_spm', 400, true], ['vo2_max_ml_kg_min', 150, true], ['training_load', 1e9, false], ['aerobic_training_effect', 5, false], ['anaerobic_training_effect', 5, false]] as const) {
+    const metric = value[field];
+    if (metric === undefined || metric === null) continue;
+    if (typeof metric !== 'number' && typeof metric !== 'string') invalid();
+    const parsed = number(metric);
+    if (parsed === null || (positive && parsed <= 0) || parsed > maximum || (field === 'training_load' && parsed === maximum)) invalid();
+  }
+}
+export function parseActivity(value: unknown): Activity {
   if (!object(value) || typeof value.id !== 'string' || !uuid.test(value.id) || typeof value.title !== 'string' || !calendarDate(value.activity_date) || typeof value.timezone !== 'string' || typeof value.has_route !== 'boolean' || typeof value.metrics_version !== 'string' || !object(value.quality_summary) || !['complete', 'incomplete', 'invalid', 'manual'].includes(String(value.temporal_quality))) invalid();
   if (value.notes !== undefined && typeof value.notes !== 'string') invalid();
   if (value.category !== undefined && (typeof value.category !== 'string' || [...value.category].length > 30)) invalid();
@@ -44,6 +60,7 @@ function parseActivity(value: unknown): Activity {
     const metric = value[field];
     if (metric !== undefined && metric !== null && (typeof metric !== 'number' || !Number.isInteger(metric) || metric < (field === 'avg_heart_rate_bpm' ? 1 : 0) || metric > (field === 'avg_heart_rate_bpm' ? 300 : 999999999))) invalid();
   }
+  validateDeviceMetrics(value);
   return value as unknown as Activity;
 }
 export async function request(path: string, init: RequestInit, fetcher: typeof fetch, timeout = 8000): Promise<unknown> {
@@ -60,8 +77,10 @@ export async function request(path: string, init: RequestInit, fetcher: typeof f
     const retry = response.headers.get('Retry-After');
     if (response.status === 429 && retry && /^\d+$/.test(retry)) message += `，请在 ${retry} 秒后重试`;
     const details = Array.isArray(error.details) && error.details.length === 1 && object(error.details[0]) ? error.details[0] : {};
-    const id = response.status === 409 && ['raw', 'canonical'].includes(String(details.duplicate_kind)) && typeof details.existing_activity_id === 'string' && uuid.test(details.existing_activity_id) ? details.existing_activity_id : null;
-    throw new ActivityError(message, response.status, typeof error.code === 'string' ? error.code : 'REQUEST_FAILED', id);
+    const kind = String(details.duplicate_kind);
+    const miConflict = path.split('?')[0] === '/api/v1/mifitness-imports' && (kind === 'record' || error.code === 'MIFITNESS_SIMILAR');
+    const id = response.status === 409 && (['raw', 'canonical'].includes(kind) || miConflict) && typeof details.existing_activity_id === 'string' && uuid.test(details.existing_activity_id) ? details.existing_activity_id : null;
+    throw new ActivityError(message, response.status, typeof error.code === 'string' ? error.code : 'REQUEST_FAILED', id, id ? kind : null);
   }
   return body.data;
 }
@@ -155,6 +174,14 @@ export function unwrapRoute(value: unknown): Route {
 }
 
 const warningLabels: Record<string, string> = {
+  MIFITNESS_CALORIES_INVALID:'设备热量异常，已留空', MIFITNESS_STEPS_INVALID:'设备步数异常，已留空',
+  MIFITNESS_AVG_HRM_INVALID:'平均心率异常，已留空', MIFITNESS_MAX_HRM_INVALID:'最高心率异常，已留空', MIFITNESS_MIN_HRM_INVALID:'最低心率异常，已留空',
+  MIFITNESS_AVG_CADENCE_INVALID:'平均步频异常，已留空', MIFITNESS_MAX_CADENCE_INVALID:'最大步频异常，已留空',
+  MIFITNESS_VO2_MAX_INVALID:'设备估计最大摄氧量异常，已留空', MIFITNESS_TRAIN_LOAD_INVALID:'小米训练负荷异常，已留空',
+  MIFITNESS_TRAIN_EFFECT_INVALID:'小米有氧训练效果异常，已留空', MIFITNESS_ANAEROBIC_TRAIN_EFFECT_INVALID:'小米无氧训练效果异常，已留空',
+  MIFITNESS_HEART_RATE_INCONSISTENT:'心率指标相互矛盾，已留空', MIFITNESS_CADENCE_INCONSISTENT:'步频指标相互矛盾，已留空',
+  MIFITNESS_TIMER_EXCEEDS_ELAPSED:'设备用时超过经过时间，请核对来源',
+  MIFITNESS_AVG_STRIDE_UNIT_UNVERIFIED:'设备步幅单位尚未核实', MIFITNESS_RECOVER_TIME_UNIT_UNVERIFIED:'设备恢复时间单位尚未核实',
   TRACK_TIME_INVALID: '轨迹时间顺序无效，设备汇总已单独保留', TRACK_TIME_INCOMPLETE: '轨迹时间不完整，设备汇总已单独保留',
   LOCAL_TIME_INTERPRETED: '已按所选时区的当地时间解释文件时间', DEVICE_TIMER_EXCEEDS_ELAPSED: '设备用时超过轨迹经过时间，请核对原记录',
   INVALID_COORDINATE: '已跳过无效坐标，并保留断点', SPEED_CHECK_UNAVAILABLE: '部分点缺少时间，无法完整检查速度',

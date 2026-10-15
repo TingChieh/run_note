@@ -84,14 +84,10 @@
   .year-month { min-width: 0; }
   .year-month h3 { margin-bottom: .5rem; font-size: .875rem; font-weight: 600; }
   .month-days { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 3px; }
-  .month-days button { min-width: 0; min-height: 20px; aspect-ratio: 1; width: 100%; border-radius: 3px; font-size: .625rem; color: #10231c; }
-  .month-days .day-level-4 { color: white; }
+  .month-days button { min-width: 0; min-height: 20px; aspect-ratio: 1; width: 100%; border-radius: 3px; font-size: .625rem; color: var(--calendar-label); }
+  .month-days .day-level-2 { color: var(--calendar-active-label); }
+  .month-days :is(.day-level-3, .day-level-4) { color: var(--calendar-strong-label); }
   .month-days button:hover, .month-days button:focus-visible, .month-days button.selected { outline: 2px solid var(--calendar-ring); outline-offset: 1px; }
   .month-weekday { text-align: center; font-size: .625rem; color: var(--muted-foreground); }
   .scroll-hint { font-size: .75rem; color: var(--muted-foreground); margin-top: .75rem; }
-  @media(prefers-color-scheme:dark) {
-    .month-days button { color: white; }
-    .month-days .day-level-2 { color: black; }
-    .month-days .day-level-3, .month-days .day-level-4 { color: #10231c; }
-  }
 </style>

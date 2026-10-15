@@ -28,17 +28,20 @@ def atlas():
     )
 
 
-def province_summary(db, owner, year):
-    params = {"owner": owner, "start": date(year, 1, 1), "end": date(year + 1, 1, 1)}
+def province_summary(db, owner, year=None):
+    params = {"owner": owner}
+    date_filter = ""
+    if year is not None:
+        params.update(start=date(year, 1, 1), end=date(year + 1, 1, 1))
+        date_filter = " AND a.activity_date>=:start AND a.activity_date<:end"
     db.execute(text("SET LOCAL statement_timeout = '5000ms'"))
     try:
         counts = db.execute(
-            text("""SELECT
-            (SELECT count(*) FROM activities WHERE user_id=:owner
-                AND activity_date>=:start AND activity_date<:end) AS activities,
+            text(f"""SELECT
+            (SELECT count(*) FROM activities a WHERE a.user_id=:owner{date_filter}) AS activities,
             count(s.id) AS segments, COALESCE(sum(s.point_count),0) AS points
             FROM activities a JOIN activity_segments s ON s.activity_id=a.id
-            WHERE a.user_id=:owner AND a.activity_date>=:start AND a.activity_date<:end
+            WHERE a.user_id=:owner{date_filter}
         """),
             params,
         ).one()
@@ -46,7 +49,7 @@ def province_summary(db, owner, year):
             raise limit_error()
         rows = (
             db.execute(
-                text("""WITH regions AS MATERIALIZED (
+                text(f"""WITH regions AS MATERIALIZED (
             SELECT (r->>'code')::int AS code,r->>'name' AS name,
                 ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON(r->'geometry'),4326)) AS geom
             FROM jsonb_array_elements(CAST(:atlas AS jsonb)) r
@@ -55,13 +58,17 @@ def province_summary(db, owner, year):
             FROM activities a JOIN activity_segments s ON s.activity_id=a.id
             LEFT JOIN activity_points p ON p.segment_id=s.id
                 AND s.point_count=1 AND p.point_index=0
-            WHERE a.user_id=:owner AND a.activity_date>=:start AND a.activity_date<:end
+            WHERE a.user_id=:owner{date_filter}
         ), edges AS (
             SELECT s.activity_id,e.geom FROM selected s
-                CROSS JOIN LATERAL ST_DumpSegments(s.geom) e WHERE s.point_count>1
-            UNION ALL
-            SELECT activity_id,geom FROM selected WHERE point_count=1
+                CROSS JOIN LATERAL ST_DumpSegments(s.geom) e
+                WHERE s.point_count>1 AND ST_XMax(Box3D(s.geom))-ST_XMin(Box3D(s.geom))>180
         ), routes AS MATERIALIZED (
+            -- Ordinary stored segments retain every edge and gap without expanding
+            -- cumulative history into hundreds of thousands of spatial comparisons.
+            SELECT activity_id,geom FROM selected
+                WHERE ST_XMax(Box3D(geom))-ST_XMin(Box3D(geom))<=180
+            UNION ALL
             -- Shift individual crossing edges; shifting a whole segment can create
             -- a false 359-to-1 edge through China. The atlas is east of Greenwich.
             SELECT activity_id,CASE WHEN ST_XMax(Box3D(geom))-ST_XMin(Box3D(geom))>180

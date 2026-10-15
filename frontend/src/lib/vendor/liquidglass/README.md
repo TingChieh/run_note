@@ -17,5 +17,8 @@
 上层 Svelte action 客户端动态导入，SSR 不执行浏览器代码。
 普通控件模式为 `backdrop`：Chrome 支持真实背景折射，其他引擎使用官方磨砂回退。
 开发预览明确标记的 CSS 底纹采用本地背景副本模式，可在各引擎折射；不复制私人 DOM、地图或轨迹。
+`liquid-glass-indicator.ts` / `liquid-glass-slider.ts` 使用已知标签/轨道副本模式，
+`liquid-glass-select.ts` 渐进增强已有原生 select，`liquid-glass-select-toggle.ts` 提供主题箭头。
+背景副本仅在明确标记的开发调节区按压时作局部形变；普通控件不复制页面内容。
 源码审查：只创建本地 canvas PNG / SVG 滤镜，没有 fetch 或额外网络请求。
 运行时无 CDN 依赖，不向第三方发送运动数据。

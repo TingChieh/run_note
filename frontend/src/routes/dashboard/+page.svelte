@@ -1,5 +1,6 @@
 <script lang="ts">
   import FeedbackState from '#lib/components/FeedbackState.svelte';
+  import PageSkeleton from '#lib/components/PageSkeleton.svelte';
   import { dashboardDistance } from '#lib/api/dashboard-format.ts';
   import PageHeader from '#lib/components/PageHeader.svelte';
   import { onMount } from 'svelte';
@@ -67,7 +68,7 @@
   {#if cumulativeMessage}<FeedbackState kind="error" title={cumulativeMessage}><button class="button-secondary" onclick={() => { void loadCumulative(); }}>重试累计统计</button></FeedbackState>{/if}
   {#if message}<FeedbackState kind="error" title={message}><button class="button-secondary" onclick={() => { void loadYear(selectedDate); }}>重新读取统计</button></FeedbackState>{/if}
   {#if annual}
-    <dl class="annual-metrics" aria-label={`${year} 年运动摘要`}>
+    <dl class="annual-metrics content-reveal" aria-label={`${year} 年运动摘要`}>
       {#each [{label:'年度距离',value:dashboardDistance(annual.distance_m),id:'annual-distance'},{label:'运动次数',value:`${annual.activity_count.toLocaleString('zh-CN')} 次`,id:'annual-count'},{label:'活动天数',value:`${annual.activity_days.toLocaleString('zh-CN')} 天`,id:'annual-days'},{label:'可靠平均配速',value:formatPace(annual.avg_pace_seconds_per_km),id:'annual-pace'}] as card}
         <div><dt><span class="annual-icon" aria-hidden="true">{card.id === 'annual-distance' ? '↗' : card.id === 'annual-count' ? '#' : card.id === 'annual-days' ? '▦' : '◷'}</span>{card.label}</dt><dd data-testid={card.id}>{card.value}{#if card.value === '—'}<span class="sr-only">（缺失或无法可靠计算）</span>{/if}</dd></div>
       {/each}
@@ -76,7 +77,7 @@
   <div class="milestone-section">
     <div class="milestone-layout">
       {#if page.data.user}{#key page.data.user.id}<GoalOverview user={page.data.user} />{/key}{/if}
-      <ProvinceMap {year} />
+      <ProvinceMap />
     </div>
     <p class="goal-explanation">当前周期截至今天，同期按相同日历进度比较；连续记录按活动当地日期计算，今日/本周尚未结束时保留昨日/上周延续。</p>
   </div>
@@ -88,7 +89,7 @@
       { href: '/ai', title: 'AI 分析', description: '回顾运动数据，查看与生成分析', icon: '✦' },
       { href: '/settings', title: '设置', description: '管理账号资料与公开个人主页', icon: '⚙' }
     ] as feature}
-      <a href={feature.href} data-sveltekit-reload class="feature-entrance">
+      <a href={feature.href} class="feature-entrance">
         <span class="feature-icon" aria-hidden="true">{feature.icon}</span>
         <span class="min-w-0"><strong>{feature.title}</strong><span class="feature-description">{feature.description}</span></span>
         <span class="feature-arrow" aria-hidden="true">→</span>
@@ -106,16 +107,16 @@
     </div>
     {#if yearMessage}<p id="year-error" role="alert" class="mt-3 text-destructive">{yearMessage}</p>{/if}
     <div class="calendar-toolbar"><label>日历维度 <select aria-label="日历维度" bind:value={calendarMetric} onchange={saveSelection}><option value="distance">距离</option><option value="count">次数</option></select></label><p>选择日期查看记录<span class="keyboard-hint"> · 方向键移动</span></p></div>
-    {#if loading}<FeedbackState kind="loading" title={`正在读取 ${year} 年统计…`} />{:else if calendar}
-      <CalendarGrid {calendar} metric={calendarMetric} selected={selectedDate} enhanced onselect={(date) => { void selectDay(date); }} />
-      {#if calendar.activity_count === 0}<div class="mt-4"><FeedbackState title="这一年还没有运动记录"><a href="/activities" data-sveltekit-reload class="text-primary underline">查看跑步记录</a>，也可以切换年份查看历史。</FeedbackState></div>{/if}
+    {#if loading}<PageSkeleton title={`正在读取 ${year} 年统计…`} />{:else if calendar}
+      <div class="content-reveal"><CalendarGrid {calendar} metric={calendarMetric} selected={selectedDate} enhanced onselect={(date) => { void selectDay(date); }} /></div>
+      {#if calendar.activity_count === 0}<div class="mt-4"><FeedbackState title="这一年还没有运动记录"><a href="/activities" class="text-primary underline">查看跑步记录</a>，也可以切换年份查看历史。</FeedbackState></div>{/if}
     {:else}<p class="mt-4 text-muted-foreground">日历未能加载，请重新读取统计。</p>{/if}
   </section>
   {#if selectedDate}<section class="dashboard-card" aria-labelledby="day-title" aria-busy={dayLoading}>
     <div class="card-heading"><h2 id="day-title">{selectedDate} 的活动{records ? `（${records.total}）` : ''}</h2><button class="button-secondary" onclick={() => { ++dayRequest; selectedDate = null; records = null; dayLoading = false; dayMessage = ''; saveSelection(); }}>收起当天记录</button></div>
     <div class="mt-4">{#if dayLoading}<FeedbackState kind="loading" title="正在读取当天活动…" />{:else if dayMessage}<FeedbackState kind="error" title={dayMessage}><button onclick={() => { void selectDay(selectedDate!); }} class="button-secondary">重试当天活动</button></FeedbackState>{:else if records}
-      {#if records.items.length === 0}<FeedbackState title="当天没有活动记录">选择其他日期，或<a href="/activities" data-sveltekit-reload class="text-primary underline">查看跑步记录</a>。</FeedbackState>{:else}
-        <ul class="space-y-3">{#each records.items as activity (activity.id)}<li><a href={`/activities/${activity.id}`} data-sveltekit-reload class="day-activity"><div class="flex flex-wrap justify-between gap-2"><h3 class="font-semibold">{activity.title || '未命名活动'}</h3><strong>{dashboardDistance(activity.distance_m)}</strong></div><p class="mt-2 text-sm text-muted-foreground">用时 {formatDuration(activityDuration(activity))} · 配速 {formatPace(activity.avg_pace_seconds_per_km)} · {qualityLabel(activity.temporal_quality)}</p></a></li>{/each}</ul>
+      {#if records.items.length === 0}<FeedbackState title="当天没有活动记录">选择其他日期，或<a href="/activities" class="text-primary underline">查看跑步记录</a>。</FeedbackState>{:else}
+        <ul class="space-y-3">{#each records.items as activity (activity.id)}<li><a href={`/activities/${activity.id}`} class="day-activity"><div class="flex flex-wrap justify-between gap-2"><h3 class="font-semibold">{activity.title || '未命名活动'}</h3><strong>{dashboardDistance(activity.distance_m)}</strong></div><p class="mt-2 text-sm text-muted-foreground">用时 {formatDuration(activityDuration(activity))} · 配速 {formatPace(activity.avg_pace_seconds_per_km)} · {qualityLabel(activity.temporal_quality)}</p></a></li>{/each}</ul>
       {/if}
       {#if records.total > 20}<div class="mt-4 flex flex-wrap items-center gap-3"><button disabled={records.offset === 0} onclick={() => { void selectDay(selectedDate!, Math.max(0, records!.offset - 20)); }} class="button-secondary">上一页</button><span class="text-sm">第 {Math.floor(records.offset / 20) + 1} 页</span><button disabled={records.offset + records.items.length >= records.total} onclick={() => { void selectDay(selectedDate!, records!.offset + 20); }} class="button-secondary">下一页</button></div>{/if}
     {/if}</div>
@@ -123,7 +124,7 @@
   <section class="dashboard-card" aria-labelledby="trend-title" aria-busy={trendLoading}>
     <div class="card-heading"><h2 id="trend-title">运动趋势</h2><div class="trend-controls"><label>周期 <select aria-label="趋势周期" bind:value={period} onchange={() => { saveSelection(); void loadTrend(); }}><option value="week">周</option><option value="month">月</option></select></label><label>指标 <select aria-label="趋势指标" bind:value={trendMetric}><option value="distance">距离</option><option value="count">次数</option><option value="duration">已知耗时</option><option value="pace">可靠配速</option></select></label></div></div>
     <div class="mt-4">{#if trendLoading}<FeedbackState kind="loading" title="正在读取趋势…" />{:else if trendMessage}<FeedbackState kind="error" title={trendMessage}><button onclick={() => { void loadTrend(); }} class="button-secondary">重新读取趋势</button></FeedbackState>{:else if trends}
-      {#if hasTrendActivities}<TrendChart {trends} metric={trendMetric} enhanced />{:else}<div data-testid="trend-empty"><FeedbackState title="记录一次跑步，让趋势开始生长"><a href="/activities" data-sveltekit-reload class="button-primary">查看跑步记录</a></FeedbackState></div>{/if}
+      {#if hasTrendActivities}<TrendChart {trends} metric={trendMetric} enhanced />{:else}<div data-testid="trend-empty"><FeedbackState title="记录一次跑步，让趋势开始生长"><a href="/activities" class="button-primary">查看跑步记录</a></FeedbackState></div>{/if}
     {/if}</div>
   </section>
   <details class="statistics-notes"><summary>统计口径与数据质量</summary><div class="notes-content">

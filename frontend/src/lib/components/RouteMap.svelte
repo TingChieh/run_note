@@ -9,7 +9,7 @@
   let { route, spacious = false, embedded = false }: { route: Route; spacious?: boolean; embedded?: boolean } = $props();
   let container: HTMLDivElement;
   let map: MapLibreMap | undefined, markers: Marker[] = [], disposed = false;
-  let loaded = $state(false), error = $state(''), routeReady = $state(false);
+  let loaded = $state(false), error = $state(''), routeReady = $state(false), hasRendered = $state(false);
   let updateRoute: ((value: Route) => void) | undefined;
   let renderedRoute: Route | undefined;
   $effect(() => { const value = route; if (routeReady) updateRoute?.(value); });
@@ -66,7 +66,7 @@
         map.on('render', () => {
           if (!disposed && !error && map && routeInitialized && fittedWidth > 0 && fittedHeight > 0
             && container.clientWidth === fittedWidth && container.clientHeight === fittedHeight
-            && !map.isMoving() && map.isSourceLoaded('route')) loaded = true;
+            && !map.isMoving() && map.isSourceLoaded('route')) { loaded = true; hasRendered = true; }
         });
         map.on('error', (event) => {
           if (disposed) return;
@@ -116,7 +116,7 @@
   {#if basemapEnabled}<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" class="absolute bottom-0 right-0 bg-card/95 px-2 py-1 text-xs underline">© OpenStreetMap contributors</a>{/if}
   {#if embedded}
     {#if error}<div class="map-status"><FeedbackState kind="error" title={error} /></div>
-    {:else if !loaded}<div class="map-status"><FeedbackState kind="loading" title="正在绘制路线…" /></div>{/if}
+    {:else if !loaded && !hasRendered}<div class="map-status"><FeedbackState kind="loading" title="正在绘制路线…" /></div>{/if}
     {#if basemapStatus === 'failed'}<div class="map-status map-basemap"><span>底图暂不可用，轨迹仍可查看。</span><button type="button" onclick={loadBasemap} class="font-medium text-primary underline">重试底图</button></div>
     {:else if basemapStatus === 'loading'}<p role="status" class="map-status map-basemap">正在加载底图…</p>{/if}
   {/if}
@@ -131,9 +131,9 @@
   .embedded { margin-top: 1rem; }
   .map-status { position: absolute; inset: 3.5rem 1rem auto; background: var(--surface); border-radius: .5rem; }
   .map-basemap { inset: auto 1rem 2rem; width: fit-content; padding: .375rem .5rem; font-size: .75rem; }
-  .route-map { height: clamp(18rem, 50svh, 32rem); }
+  .route-map { height: var(--route-map-height, clamp(18rem, 50svh, 32rem)); }
   .basemap-feedback { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-3); margin-top: var(--space-3); color: var(--muted-foreground); font-size: .875rem; }
   .spacious .route-map { height: 32.5rem; }
   @media (max-width: 1199px) { .spacious .route-map { height: clamp(22.5rem, 55svh, 32.5rem); } }
-  @media (max-width: 639px) { .route-map { height: clamp(17rem, 40svh, 22rem); } }
+  @media (max-width: 639px) { .route-map { height: var(--route-map-height, clamp(17rem, 40svh, 22rem)); } }
 </style>

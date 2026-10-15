@@ -15,7 +15,7 @@ test('real library persists labels and routes, shows distance achievement and ba
   for (const format of ['gpx', 'tcx']) {
     await expect(page.getByRole('button', { name: /导入 (GPX|TCX)$/, exact: false })).toBeEnabled();
     const tcx = `<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"><Activities><Activity Sport="Running"><Lap><TotalTimeSeconds>3000</TotalTimeSeconds><DistanceMeters>10000</DistanceMeters><Track><Trackpoint><Time>2026-10-04T00:00:00Z</Time><Position><LatitudeDegrees>0</LatitudeDegrees><LongitudeDegrees>0</LongitudeDegrees></Position></Trackpoint><Trackpoint><Time>2026-10-04T00:50:00Z</Time><Position><LatitudeDegrees>0</LatitudeDegrees><LongitudeDegrees>0.001</LongitudeDegrees></Position></Trackpoint></Track></Lap></Activity></Activities></TrainingCenterDatabase>`;
-    await page.locator('input[type=file]').setInputFiles({ name: `library.${format}`, mimeType: 'application/xml', buffer: format === 'gpx' ? readFileSync('../backend/tests/fixtures/gpx/equator-six.gpx') : Buffer.from(tcx) });
+    await page.locator('input[type=file][name=file]').setInputFiles({ name: `library.${format}`, mimeType: 'application/xml', buffer: format === 'gpx' ? readFileSync('../backend/tests/fixtures/gpx/equator-six.gpx') : Buffer.from(tcx) });
     await page.getByRole('button', { name: `导入 ${format.toUpperCase()}`, exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: '导入成功' })).toBeVisible({ timeout: 20000 });
     await expect(page.locator('.activity-card')).toHaveCount(format === 'gpx' ? 1 : 2);

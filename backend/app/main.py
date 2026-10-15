@@ -1,3 +1,4 @@
+from asyncio import to_thread
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -14,9 +15,11 @@ from app.modules.ai_reports.provider import OpenAIProvider
 from app.modules.ai_reports.router import router as ai_router
 from app.modules.auth.router import router as auth_router
 from app.modules.footprints.router import router as footprints_router
+from app.modules.footprints.worker import FootprintWorker
 from app.modules.gpx.body_limit import GpxBodyLimit
 from app.modules.gpx.router import router as gpx_router
 from app.modules.health.router import router
+from app.modules.mifitness.router import router as mifitness_router
 from app.modules.running_goals.router import router as running_goals_router
 from app.modules.sharing.router import router as sharing_router
 from app.modules.statistics.router import router as statistics_router
@@ -32,9 +35,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        worker = FootprintWorker(session_factory, lambda: app.state.clock(), expected_revision)
+        app.state.footprint_worker = worker
+        worker.start()
         try:
             yield
         finally:
+            await to_thread(worker.stop)
             engine.dispose()
 
     app = FastAPI(title="Run Note API", version="0.1.0", lifespan=lifespan)
@@ -49,6 +56,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(router)
     app.include_router(gpx_router)
     app.include_router(tcx_router)
+    app.include_router(mifitness_router)
     app.include_router(activities_router)
     app.include_router(statistics_router)
     app.include_router(footprints_router)

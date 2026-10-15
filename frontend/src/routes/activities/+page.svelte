@@ -1,9 +1,11 @@
 <script lang="ts">
   import PageHeader from '#lib/components/PageHeader.svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
+  import PageSkeleton from '#lib/components/PageSkeleton.svelte';
   import ActivityCard from '#lib/components/ActivityCard.svelte';
   import { onMount, tick } from 'svelte';
   import ActivityEditor from '#lib/components/ActivityEditor.svelte';
+  import MifitnessImport from '#lib/components/MifitnessImport.svelte';
   import { ActivityError, deleteActivities, readActivities, uploadGpx, uploadTcx, warningLabel, type Activity, type ActivityList } from '#lib/api/activities.ts';
   let records = $state<ActivityList | null>(null), loading = $state(true), busy = $state(false), mounted = $state(false), disposed = false;
   let message = $state(''), listMessage = $state(''), duplicateId = $state<string | null>(null), successId = $state<string | null>(null), warnings = $state<string[]>([]);
@@ -15,7 +17,8 @@
   let editDialog: HTMLDialogElement, deleteDialog: HTMLDialogElement, recordsHeading: HTMLHeadingElement;
   let returnFocus: HTMLElement | null = null;
   const managing = $derived(saving || deleting);
-  const controlsBusy = $derived(busy || managing);
+  let mifitnessBusy = $state(false);
+  const controlsBusy = $derived(busy || managing || mifitnessBusy);
   const allSelected = $derived(!!records?.items.length && selected.length === records.items.length);
   function toggleEditMode() {
     if (controlsBusy || loading) return;
@@ -41,6 +44,7 @@
     editDialog.close(); editActivity = null; void restoreFocus();
   }
   function updated(value: Activity) {
+    window.dispatchEvent(new CustomEvent('runnote-activities-changed'));
     if (records) records = { ...records, items: records.items.map(item => item.id === value.id ? value : item) };
     saving = false; cancelEdit();
   }
@@ -57,6 +61,7 @@
     deleting = true; deleteError = '';
     try {
       await deleteActivities(deleteIds);
+      window.dispatchEvent(new CustomEvent('runnote-activities-changed'));
       if (disposed) return;
     } catch (cause) {
       if (!disposed) {
@@ -102,7 +107,9 @@
     if (importFormat === 'tcx') form.append('time_mode', timeMode);
     busy = true;
     try {
-      const result = await (importFormat === 'tcx' ? uploadTcx(form) : uploadGpx(form)); if (disposed) return;
+      const result = await (importFormat === 'tcx' ? uploadTcx(form) : uploadGpx(form));
+      window.dispatchEvent(new CustomEvent('runnote-activities-changed'));
+      if (disposed) return;
       successId = result.activity.id; warnings = result.warnings; fileInput.value = ''; title = ''; activityDate = ''; timeMode = 'absolute';
       await load();
     } catch (cause) { if (!disposed) fail(cause); }
@@ -111,11 +118,11 @@
   onMount(() => { mounted = true; void load(); return () => { disposed = true; }; });
 </script>
 <svelte:head><title>跑步记录 · Run Note</title></svelte:head>
-<PageHeader title="跑步记录" description="每一次跑步，都值得留下。导入 GPX 或 TCX，回顾你的轨迹与运动表现。">{#snippet actions()}<a href="/activities/wall" data-sveltekit-reload class="button-secondary">查看足迹墙</a>{/snippet}</PageHeader>
+<PageHeader title="跑步记录" description="每一次跑步，都值得留下。导入 GPX 或 TCX，回顾你的轨迹与运动表现。">{#snippet actions()}<a href="/activities/wall" class="button-secondary">查看足迹墙</a>{/snippet}</PageHeader>
 <section class="import-card" aria-labelledby="import-title">
   <div class="flex flex-wrap items-baseline justify-between gap-2"><h2 id="import-title" class="text-xl font-semibold">导入 GPX / TCX</h2><span class="text-sm text-muted-foreground">新记录默认仅自己可见</span></div>
   <form method="POST" enctype="multipart/form-data" onsubmit={submit} class="mt-5" aria-busy={busy}>
-    <label class="mb-4 block text-sm font-medium">文件格式<select aria-label="文件格式" bind:value={importFormat} onchange={() => { timeMode = 'absolute'; }} disabled={controlsBusy || !mounted} class="mt-2 rounded border border-border bg-background p-2"><option value="gpx">GPX</option><option value="tcx">TCX</option></select></label>
+    <label class="import-format mb-4 text-sm font-medium">文件格式<select aria-label="文件格式" bind:value={importFormat} onchange={() => { timeMode = 'absolute'; }} disabled={controlsBusy || !mounted} class="rounded border border-border bg-background p-2"><option value="gpx">GPX</option><option value="tcx">TCX</option></select></label>
     <div class="upload-primary">
       <label class="min-w-0 font-medium">轨迹文件 <span class="text-sm font-normal text-muted-foreground">（单个，最大 10 MiB）</span><input bind:this={fileInput} type="file" name="file" onchange={() => { const extension = fileInput.files?.[0]?.name.split('.').at(-1)?.toLowerCase(); if (extension === 'tcx' || extension === 'gpx') importFormat = extension; timeMode = 'absolute'; }} accept=".gpx,.tcx,application/gpx+xml,application/xml,text/xml" required disabled={controlsBusy || !mounted} aria-describedby="gpx-help" class="mt-2 block w-full rounded border border-border p-2" /></label>
       <button disabled={controlsBusy || !mounted} class="rounded bg-primary px-5 py-3 font-semibold text-primary-foreground disabled:opacity-50">{busy ? '正在解析与保存…' : `导入 ${importFormat.toUpperCase()}`}</button>
@@ -136,14 +143,16 @@
     </details>
   </form>
   {#if busy}<div class="mt-4"><FeedbackState kind="loading" title="正在上传、解析并保存"><p>较大文件可能需要数十秒，请勿重复提交。</p></FeedbackState></div>{/if}
-  {#if message}<div class="mt-4"><FeedbackState kind="error" title={message}>{#if duplicateId}<a href={`/activities/${duplicateId}`} data-sveltekit-reload class="text-primary underline">查看已有活动</a>{:else}<p>可以重试当前文件；若格式有误，请选择修正后的 GPX 或 TCX。</p>{/if}</FeedbackState></div>{/if}
-  {#if successId}<div class="mt-4"><FeedbackState kind="success" title="导入成功。"><a href={`/activities/${successId}`} data-sveltekit-reload class="text-primary underline">查看活动与路线</a><span aria-hidden="true"> · </span><a href="/activities/wall" data-sveltekit-reload class="text-primary underline">足迹卡片已生成，查看足迹墙</a></FeedbackState></div>{/if}
+  {#if message}<div class="mt-4"><FeedbackState kind="error" title={message}>{#if duplicateId}<a href={`/activities/${duplicateId}`} class="text-primary underline">查看已有活动</a>{:else}<p>可以重试当前文件；若格式有误，请选择修正后的 GPX 或 TCX。</p>{/if}</FeedbackState></div>{/if}
+  {#if successId}<div class="mt-4"><FeedbackState kind="success" title="导入成功。"><a href={`/activities/${successId}`} class="text-primary underline">查看活动与路线</a><span aria-hidden="true"> · </span><a href="/activities/wall" class="text-primary underline">足迹卡片已生成，查看足迹墙</a></FeedbackState></div>{/if}
   {#if warnings.length}<div class="import-warnings"><p class="font-medium">导入完成，部分数据需要留意</p><ul class="mt-2 list-inside list-disc text-sm">{#each warnings as warning}<li>{warningLabel(warning)}</li>{/each}</ul></div>{/if}
 </section>
+<MifitnessImport disabled={busy || managing} onbusy={value => { mifitnessBusy = value; }} onimported={() => { window.dispatchEvent(new CustomEvent('runnote-activities-changed')); void load(); }} onauthrequired={cause => fail(cause)} />
 <section class="mt-8" aria-labelledby="records-title">
   <div class="flex flex-wrap items-baseline justify-between gap-3"><h2 bind:this={recordsHeading} tabindex="-1" id="records-title" class="text-xl font-semibold">我的活动{records ? `（${records.total}）` : ''}</h2><div class="records-heading-actions"><p class="text-sm text-muted-foreground">距离 · 用时 · 配速</p><button class="button-secondary" aria-pressed={editMode} disabled={controlsBusy || loading || !records?.items.length} onclick={toggleEditMode}>{editMode ? '完成' : '编辑'}</button></div></div>
-  {#if loading}<div class="mt-4"><FeedbackState kind="loading" title="正在读取活动…" /></div>
+  {#if loading}<div class="mt-4"><PageSkeleton title="正在读取活动…" /></div>
   {:else if records}
+    <div class="content-reveal">
     {#if !records.items.length}<div class="mt-4"><FeedbackState kind="empty" title="还没有活动，先导入一个 GPX 或 TCX 文件吧。"><p>选择上方文件并导入，开始积累你的跑步记录。</p></FeedbackState></div>
     {:else}
       {#if editMode}<div class="selection-toolbar" aria-label="批量管理记录">
@@ -155,6 +164,7 @@
       <ul class="activity-list">{#each records.items as activity (activity.id)}<li class="min-w-0"><ActivityCard {activity} selectable={editMode} selected={selected.includes(activity.id)} disabled={controlsBusy} onselect={checked => select(activity.id, checked)} onedit={editMode ? () => void edit(activity) : undefined} ondelete={editMode ? () => confirmDelete([activity.id]) : undefined} /></li>{/each}</ul>
     {/if}
     {#if records.total > 0}<div class="pagination"><button disabled={records.offset === 0 || controlsBusy} onclick={() => { void load(Math.max(0, records!.offset - 20)); }} class="rounded border border-border px-3 py-2 disabled:opacity-40">上一页</button><span class="text-sm text-muted-foreground">第 {Math.floor(records.offset / 20) + 1} 页 / {Math.ceil(records.total / 20)} 页</span><button disabled={records.offset + records.items.length >= records.total || controlsBusy} onclick={() => { void load(records!.offset + 20); }} class="rounded border border-border px-3 py-2 disabled:opacity-40">下一页</button></div>{/if}
+    </div>
   {:else if listMessage}<div class="mt-4"><FeedbackState kind="error" title={listMessage}><button onclick={() => void load(lastOffset)} class="button-secondary">重新读取活动</button></FeedbackState></div>{/if}
 </section>
 <dialog bind:this={editDialog} aria-labelledby="edit-record-title" oncancel={event => { event.preventDefault(); cancelEdit(); }}>
@@ -182,6 +192,7 @@
   .dialog-buttons { display: flex; flex-wrap: wrap; gap: .75rem; justify-content: flex-end; margin-top: 1.5rem; }
   .import-card { margin-top: var(--space-8); padding: var(--space-6); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
   .upload-primary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--space-4); }
+  .import-format { display: flex; width: fit-content; max-width: 100%; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
   .import-options { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--border); }
   summary { width: fit-content; color: var(--primary); font-size: .875rem; font-weight: 550; }
   .import-warnings { margin-top: var(--space-4); padding: var(--space-4); background: var(--warning-soft); color: var(--warning); border: 1px solid var(--warning-border); border-radius: var(--radius-control); }

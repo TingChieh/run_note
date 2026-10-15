@@ -18,10 +18,10 @@ test('real authenticated TCX upload persists corrected device metrics through sa
   await page.goto('/activities');
   await expect(page.getByRole('button',{name:'导入 GPX',exact:true})).toBeEnabled();
   const file={name:'synthetic.tcx',mimeType:'application/xml',buffer:Buffer.from(raw)};
-  await page.locator('input[type=file]').setInputFiles(file);
+  await page.locator('input[type=file][name=file]').setInputFiles(file);
   await page.getByLabel('时间解释',{exact:true}).selectOption('local');
   await page.getByText('补充导入信息',{exact:true}).click();
-  await page.getByLabel('时区（可选）').fill('Asia/Shanghai');
+  await page.getByLabel('时区（可选）', {exact:true}).fill('Asia/Shanghai');
   await page.getByRole('button',{name:'导入 TCX',exact:true}).click();
   await expect(page.getByRole('status').filter({hasText:'导入成功'})).toBeVisible({timeout:20000});
   await page.getByRole('link',{name:'查看活动与路线',exact:true}).click();

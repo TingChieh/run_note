@@ -16,7 +16,7 @@ for (const format of ['gpx', 'tcx'] as const) {
     await expect(page).toHaveURL(/\/dashboard$/);
     await page.goto('/activities');
     await expect(page.getByRole('button', { name: '导入 GPX', exact: true })).toBeEnabled();
-    await page.locator('input[type=file]').setInputFiles({ name: `synthetic.${format}`, mimeType: 'application/xml', buffer: format === 'gpx' ? readFileSync('../backend/tests/fixtures/gpx/equator-six.gpx') : Buffer.from(tcx) });
+    await page.locator('input[type=file][name=file]').setInputFiles({ name: `synthetic.${format}`, mimeType: 'application/xml', buffer: format === 'gpx' ? readFileSync('../backend/tests/fixtures/gpx/equator-six.gpx') : Buffer.from(tcx) });
     await page.getByRole('button', { name: `导入 ${format.toUpperCase()}`, exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: '导入成功' })).toBeVisible({ timeout: 20000 });
     await page.getByRole('link', { name: '查看活动与路线', exact: true }).click();

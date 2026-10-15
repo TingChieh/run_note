@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 async function login(page: Page) {
   await page.goto('/login?next=%2Fsettings');
+  await expect(page.locator('header')).toHaveAttribute('data-auth-ready', 'true');
   await page.getByLabel('邮箱', { exact: true }).fill('runner@example.com');
   await page.getByLabel('密码', { exact: true }).fill('Synthetic-ui-password-2026');
   await page.getByRole('button', { name: '登录', exact: true }).click();
@@ -65,6 +66,7 @@ test('mobile menu supports keyboard, Escape and navigation without overflow', as
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: '打开导航' }).click();
+  await expect(page.locator('.app-sidebar')).toHaveCSS('opacity', '1');
   await page.screenshot({ path: 'test-results/ui-mobile-menu.png', fullPage: true });
   await page.getByRole('navigation').getByRole('link', { name: '跑步记录', exact: true }).click();
   await expect(page.getByRole('heading', { name: '跑步记录', exact: true })).toBeVisible();
@@ -127,6 +129,8 @@ test('session verification failure hides private content and a later successful 
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(page.getByRole('alert')).toContainText('无法确认登录状态');
   await expect(page.getByRole('heading', { name: '设置', exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('current-user')).toHaveText('正在确认身份…');
+  await expect(page.locator('.runner-name')).not.toHaveAttribute('title');
   await page.unroute('**/api/v1/auth/session');
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(page.getByRole('heading', { name: '设置', exact: true })).toBeVisible();
@@ -169,4 +173,119 @@ test('unified sports shell spans every private route and keeps account widgets o
     await page.goto(route); await expect(page.locator('.app-sidebar')).toHaveCount(0);
     await expect(page.getByRole('region',{name:'跑量目标'})).toHaveCount(0); await noOverflow(page);
   }
+});
+
+test('private navigation preserves sidebar drafts, loads only the right side and skips repeated menu clicks', async ({ page }) => {
+  await login(page);
+  const sidebar = page.locator('.app-sidebar');
+  const original = await sidebar.elementHandle();
+  const goal = page.getByRole('region', { name: '跑量目标' });
+  await goal.getByRole('button', { name: '设置', exact: true }).click();
+  await goal.getByLabel('目标距离（km）', { exact: true }).fill('42');
+  let release!: () => void;
+  const waiting = new Promise<void>(resolve => { release = resolve; });
+  await page.route(url => url.pathname === '/src/routes/activities/+page.svelte', async route => { await waiting; await route.continue(); });
+  const documents: string[] = [], activities: string[] = [];
+  page.on('request', request => {
+    if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documents.push(request.url());
+    if (new URL(request.url()).pathname === '/api/v1/activities') activities.push(request.url());
+  });
+  const nav = page.getByRole('navigation', { name: '主要导航' });
+  try {
+    const clicked = nav.getByRole('link', { name: '跑步记录', exact: true }).click();
+    await expect(page.getByTestId('navigation-progress')).toBeVisible();
+    await expect(page.getByTestId('navigation-skeleton')).toBeVisible();
+    await page.screenshot({path:'test-results/menu-navigation-skeleton.png',animations:'disabled'});
+    await expect(page.getByRole('heading', { name: '设置', exact: true })).toBeHidden();
+    await expect(nav.getByRole('link', { name: '数据汇总', exact: true })).toBeEnabled();
+    expect(await original!.evaluate(el => el.isConnected)).toBe(true);
+    release(); await clicked;
+    await expect(page.getByRole('heading', { name: '跑步记录', exact: true })).toBeVisible();
+    await expect(page.getByTestId('navigation-progress')).toHaveCount(0);
+    await expect(page.getByTestId('navigation-skeleton')).toHaveCount(0);
+    expect(await page.locator('.page-reveal').evaluate(el => getComputedStyle(el).animationName)).toBe('page-reveal');
+    await expect(goal.getByLabel('目标距离（km）', { exact: true })).toHaveValue('42');
+    expect(await original!.evaluate(el => el === document.querySelector('.app-sidebar'))).toBe(true);
+    await expect(page.getByRole('region', { name: '我的活动' }).getByRole('status')).toContainText('还没有活动');
+    const loadedCount = activities.length;
+    await nav.getByRole('link', { name: '跑步记录', exact: true }).click();
+    expect(activities).toHaveLength(loadedCount);
+    await nav.getByRole('link', { name: '设置', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '设置', exact: true })).toBeVisible();
+    await page.goBack();
+    await expect(page.getByRole('heading', { name: '跑步记录', exact: true })).toBeVisible();
+    await page.goForward();
+    await expect(page.getByRole('heading', { name: '设置', exact: true })).toBeVisible();
+    await expect(goal.getByLabel('目标距离（km）', { exact: true })).toHaveValue('42');
+    expect(documents).toEqual([]);
+  } finally { release(); }
+});
+
+test('successful background session checks keep loaded content and drafts visible', async ({ page }) => {
+  await login(page);
+  await page.getByLabel('昵称', { exact: true }).fill('Unsubmitted synthetic draft');
+  const original = await page.getByRole('heading', { name: '设置', exact: true }).elementHandle();
+  let release!: () => void;
+  const waiting = new Promise<void>(resolve => { release = resolve; });
+  let started!: () => void;
+  const checked = new Promise<void>(resolve => { started = resolve; });
+  await page.route('**/api/v1/auth/session', async route => { started(); await waiting; await route.continue(); });
+  try {
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await checked;
+    await expect(page.getByRole('heading', { name: '设置', exact: true })).toBeVisible();
+    await expect(page.getByLabel('昵称', { exact: true })).toHaveValue('Unsubmitted synthetic draft');
+    release();
+    await expect(page.getByRole('status').filter({ hasText: '正在确认登录' })).toHaveCount(0);
+    expect(await original!.evaluate(el => el.isConnected)).toBe(true);
+  } finally { release(); }
+});
+
+test('compact goal and complete desktop navigation fit common laptop heights', async ({ page }) => {
+  await page.route('**/api/v1/me/running-goals', route => route.fulfill({ json: { data: { week: 5, month: null, year: null }, error: null } }));
+  await login(page);
+  const goal = page.getByRole('region', { name: '跑量目标' });
+  await expect(goal.locator('.goal-distance')).toBeVisible();
+  for (const [width, height] of [[1366, 768], [1440, 900], [1280, 720]]) {
+    await page.setViewportSize({ width, height });
+    const size = await page.locator('.app-sidebar').evaluate(el => ({ client: el.clientHeight, scroll: el.scrollHeight }));
+    expect(size.scroll, `${width}×${height} sidebar`).toBeLessThanOrEqual(size.client);
+    expect((await goal.boundingBox())!.height).toBeLessThanOrEqual(190);
+    await expect(page.getByRole('button', { name: '退出登录', exact: true })).toBeInViewport();
+    await page.screenshot({ path: test.info().outputPath(`compact-sidebar-${width}-${height}.png`) });
+  }
+});
+
+test('mobile navigation pops open and closes without losing its instance or keyboard focus', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page);
+  const sidebar = page.locator('.app-sidebar');
+  const original = await sidebar.elementHandle();
+  await sidebar.evaluate(el => {
+    el.addEventListener('transitionrun', event => {
+      if ((event as TransitionEvent).propertyName !== 'opacity' || event.target !== el) return;
+      const animation = el.getAnimations().find(item => item instanceof CSSTransition && item.transitionProperty === 'opacity');
+      if (!animation?.effect) return;
+      animation.pause(); animation.currentTime = Number(animation.effect.getComputedTiming().duration) / 2;
+      el.setAttribute('data-mid-opacity', getComputedStyle(el).opacity);
+      animation.play();
+    });
+  });
+  const toggle = page.getByRole('button', { name: '打开导航' });
+  await toggle.click();
+  await expect(sidebar).toBeVisible();
+  await expect.poll(() => sidebar.getAttribute('data-mid-opacity')).not.toBeNull();
+  const opacity = Number(await sidebar.getAttribute('data-mid-opacity'));
+  expect(opacity).toBeGreaterThan(0); expect(opacity).toBeLessThan(1);
+  await page.getByRole('navigation').getByRole('link', { name: '设置', exact: true }).press('Enter');
+  await expect(sidebar).toBeHidden();
+  await expect(toggle).toBeFocused();
+  await toggle.click(); await page.keyboard.press('Escape');
+  await expect(sidebar).toBeHidden(); await expect(toggle).toBeFocused();
+  expect(await original!.evaluate(el => el.isConnected)).toBe(true);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await toggle.click();
+  await expect(sidebar).toBeVisible();
+  expect(await sidebar.evaluate(el => getComputedStyle(el).transitionDuration)).toBe('0s');
+  await page.keyboard.press('Escape'); await expect(sidebar).toBeHidden();
 });

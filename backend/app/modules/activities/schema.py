@@ -24,6 +24,14 @@ class ActivityView(BaseModel):
     calories_kcal: int | None = None
     steps: int | None = None
     avg_heart_rate_bpm: int | None = None
+    max_heart_rate_bpm: int | None = None
+    min_heart_rate_bpm: int | None = None
+    avg_cadence_spm: Decimal | None = None
+    max_cadence_spm: Decimal | None = None
+    vo2_max_ml_kg_min: Decimal | None = None
+    training_load: Decimal | None = None
+    aerobic_training_effect: Decimal | None = None
+    anaerobic_training_effect: Decimal | None = None
     avg_pace_seconds_per_km: Decimal | None
     temporal_quality: str
     quality_summary: dict[str, Any]

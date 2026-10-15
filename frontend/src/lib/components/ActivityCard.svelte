@@ -22,7 +22,7 @@
       </div>{/if}
     </div>
   {/if}
-  <a href={`/activities/${activity.id}`} data-sveltekit-reload class="card-link">
+  <a href={`/activities/${activity.id}`} class="card-link">
   <div class="record-heading">
     <div class="record-identity">
       <div class="record-meta"><time datetime={activity.activity_date}>{formatDate(activity.activity_date)}</time><span class="visibility">{visibility}</span></div>

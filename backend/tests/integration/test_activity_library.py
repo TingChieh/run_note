@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
+from app.db.schema import get_expected_revision
 from tests.integration.test_activity_management import version
 from tests.integration.test_gpx_import import clients, headers, register, upload  # noqa: F401
 from tests.integration.test_tcx_import import upload_tcx
@@ -181,9 +182,7 @@ def test_concurrent_batches_delete_only_once_and_increment_once(clients):
 
 
 def test_label_migration_refuses_silent_metadata_loss(clients):
-    import subprocess
-
-    from tests.integration.test_migrations import migrate
+    from tests.integration.test_migrations import assert_downgrade_guard
 
     a, _, engine, _ = clients
     register(a)
@@ -198,14 +197,13 @@ def test_label_migration_refuses_silent_metadata_loss(clients):
         == 200
     )
     try:
-        with pytest.raises(subprocess.CalledProcessError) as error:
-            migrate(
-                engine.url.render_as_string(hide_password=False), "downgrade", "0007_tcx_imports"
-            )
-        assert "Cannot downgrade while activity labels exist" in error.value.stderr
+        assert_downgrade_guard(
+            engine, "0008_activity_labels", "Cannot downgrade while activity labels exist"
+        )
         with engine.connect() as db:
             assert (
-                db.scalar(text("SELECT version_num FROM alembic_version")) == "0008_activity_labels"
+                db.scalar(text("SELECT version_num FROM alembic_version"))
+                == get_expected_revision()
             )
         assert a.get(path).json()["data"]["category"] == "字" * 30
     finally:

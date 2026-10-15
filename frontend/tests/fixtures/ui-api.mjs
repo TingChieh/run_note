@@ -29,7 +29,8 @@ createServer(async (req, res) => {
   }
   if (url.pathname === '/api/v1/activities/categories') return send([]);
   if (url.pathname === '/api/v1/activities') return send({ items: [], total: 0, limit: 20, offset: 0 });
-  if (url.pathname === '/api/v1/footprints/provinces') return send({ year:Number(url.searchParams.get('year')),total:34,provinces:[],activity_count:0,located_activity_count:0 });
+  if (url.pathname === '/api/v1/footprints/all') return send({status:'ready',generated_at:'2026-10-15T00:00:00Z',refreshing:false,result:{scope:'all',type:'FeatureCollection',features:[],mode:url.searchParams.get('mode')??'tracks',activity_count:0,visible_activity_count:0,unsupported_segment_count:0,grid_size_m:100,grid_crs:'EPSG:3857',count_basis:'distinct_activity_per_cell',max_count:0}});
+  if (url.pathname === '/api/v1/footprints/provinces') return send({ year:url.searchParams.has('year')?Number(url.searchParams.get('year')):null,total:34,provinces:[],activity_count:0,located_activity_count:0 });
   if (url.pathname.endsWith('/statistics/streaks')) {
     const today = new Intl.DateTimeFormat('sv-SE',{timeZone:user.timezone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
     const monday = new Date(`${today}T00:00:00Z`); monday.setUTCDate(monday.getUTCDate()-(monday.getUTCDay()+6)%7);
@@ -46,4 +47,4 @@ createServer(async (req, res) => {
     return send({ period: url.searchParams.get('period'), date_from: from, date_to: to, week_start: 'monday', date_assignment: 'activity_local_date', buckets: [{ ...summary, bucket_start: from, bucket_end: to, is_partial: true }] });
   }
   return send(null, 404, '合成测试数据为空');
-}).listen(8191, '127.0.0.1');
+}).listen(Number(process.env.UI_API_PORT ?? 8191), '127.0.0.1');
