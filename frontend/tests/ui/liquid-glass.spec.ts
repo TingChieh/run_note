@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { installActivities, loginRunner } from '../fixtures/activities';
+import { installActivities, loginRunner, sampleActivity } from '../fixtures/activities';
 
 test('file format select ignores empty space to the right of its label', async ({ page }) => {
   await installActivities(page); await loginRunner(page); await page.goto('/activities');
@@ -260,8 +260,48 @@ test('dynamic edit buttons get glass and removed dialogs release their lenses', 
   await page.goto('/dashboard?year=2026');
   await expect(page.locator('button[data-date]').first()).toBeAttached();
   expect(await page.locator('button[data-date]').first().evaluate(el => getComputedStyle(el).backdropFilter)).toBe('none');
+  await installActivities(page); await loginRunner(page); await page.goto(`/activities/${sampleActivity.id}`);
+  await expect(page.getByTestId('route-map-ready')).toBeVisible();
   const zoom = page.locator('.maplibregl-ctrl-zoom-in');
   await expect(zoom).toBeVisible();
+  const zoomOut = page.locator('.maplibregl-ctrl-zoom-out');
+  await expect(zoomOut).toBeVisible();
+  const zoomGroup = zoom.locator('..');
+  await expect(zoomGroup.locator(':scope > button')).toHaveCount(2);
+  expect(await zoomGroup.evaluate(el => getComputedStyle(el).display)).toBe('flex');
+  expect(await zoomGroup.evaluate(el => getComputedStyle(el).flexDirection)).toBe('column');
+  expect(await zoomGroup.evaluate(el => getComputedStyle(el).borderRadius)).toBe('9999px');
+  expect((await zoomGroup.boundingBox())!.height).toBeGreaterThanOrEqual(64);
+  expect(await zoomGroup.evaluate(el => getComputedStyle(el).backdropFilter)).toContain('blur(14px)');
+  expect(await zoom.locator('.maplibregl-ctrl-icon').evaluate(el => getComputedStyle(el).backgroundImage)).toContain('data:image/svg+xml');
+  await expect(zoomGroup).toHaveClass(/rn-glass-control/);
+  await expect(zoom).not.toHaveClass(/rn-glass-control/);
+  await expect.poll(() => zoomGroup.locator('.rn-glass-layer').evaluate(el => getComputedStyle(el).backdropFilter)).toMatch(/url\("?#lg/);
+  expect(await zoomGroup.locator('.rn-glass-tint').evaluate(el => getComputedStyle(el).backgroundImage)).toContain('linear-gradient');
+  expect(await zoomGroup.locator('.rn-glass-shadow').evaluate(el => getComputedStyle(el).boxShadow)).toContain('inset');
+  const zoomSize = await zoom.boundingBox();
+  const zoomOutSize = await zoomOut.boundingBox();
+  expect(zoomSize).not.toBeNull(); expect(zoomOutSize).not.toBeNull();
+  expect(zoomSize!.width).toBe(32);
+  expect(zoomSize!.height).toBe(32);
+  expect(zoomSize!.height).toBe(zoomOutSize!.height);
+  expect(zoomSize!.width).toBe(zoomOutSize!.width);
+  const zoomSurface = zoomGroup.locator('.rn-glass-shadow');
+  const restingSurfaceWidth = await zoomSurface.evaluate(el => el.getBoundingClientRect().width);
+  const zoomBox = await zoom.boundingBox();
+  await page.mouse.move(zoomBox!.x + zoomBox!.width / 2, zoomBox!.y + zoomBox!.height / 2);
+  await page.mouse.down();
+  await expect.poll(() => zoomSurface.evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(restingSurfaceWidth);
+  expect(await zoomSurface.evaluate(el => el.getBoundingClientRect().width) - restingSurfaceWidth).toBeLessThanOrEqual(4);
+  await page.mouse.up();
+  await expect.poll(() => zoomSurface.evaluate(el => el.getBoundingClientRect().width)).toBeCloseTo(restingSurfaceWidth, 0);
+  await page.screenshot({ path: 'test-results/map-zoom-liquid-glass-desktop.png' });
+  await page.setViewportSize({ width: 390, height: 900 });
+  await expect.poll(async () => {
+    const box = await zoom.boundingBox(); return { width: box?.width, height: box?.height };
+  }).toEqual({ width: zoomSize!.width, height: zoomSize!.height });
+  await zoom.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'test-results/map-zoom-liquid-glass-mobile.png' });
   await page.keyboard.press('Tab'); await zoom.focus();
   expect(await zoom.evaluate(el => getComputedStyle(el).outlineStyle)).toBe('solid');
   expect(await zoom.evaluate(el => parseFloat(getComputedStyle(el).outlineWidth))).toBeGreaterThanOrEqual(2);

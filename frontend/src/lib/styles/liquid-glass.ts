@@ -8,7 +8,7 @@ export function liquidGlass(root: HTMLElement) {
   void Promise.all([import('../vendor/liquidglass/liquid-glass.js'), import('./liquid-glass-indicator.ts'),
     import('./liquid-glass-slider.ts'), import('./liquid-glass-select.ts')]).then(([{ createGlass, createSpring, engine }, { enhanceNavigation }, { enhanceSlider }, { enhanceSelect }]) => {
     if (disposed) return;
-    const selector = 'button:not([data-date]):not(.history-card):not(.rn-menu-option):not(.rn-select-toggle), a.button-primary, a.button-secondary';
+    const selector = 'button:not(.maplibregl-ctrl-zoom-in):not(.maplibregl-ctrl-zoom-out):not([data-date]):not(.history-card):not(.rn-menu-option):not(.rn-select-toggle), a.button-primary, a.button-secondary, .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in)';
     const preferences = [matchMedia('(prefers-reduced-transparency: reduce)'), matchMedia('(forced-colors: active)')];
     const motion = matchMedia('(prefers-reduced-motion: reduce)');
     const controls = new Map<HTMLElement, { update(): void; render(): void; release(): void; surface: HTMLElement; destroy(): void }>();
@@ -39,6 +39,7 @@ export function liquidGlass(root: HTMLElement) {
     let alignFrame = 0;
     function align() { if (!alignFrame) alignFrame = requestAnimationFrame(() => { alignFrame = 0; aligners.forEach(fn => fn()); }); }
     function enhance(element: HTMLElement) {
+      const pressScale = element.matches('.maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in)') ? .35 : 1;
       const surface = span('rn-glass-surface'); surface.setAttribute('aria-hidden', 'true');
       const body = span('rn-glass-body');
       const shadow = span('rn-glass-shadow'), layer = span('rn-glass-layer'), tint = span('rn-glass-tint');
@@ -73,8 +74,8 @@ export function liquidGlass(root: HTMLElement) {
         // Bleed is visual only; controls resting on a viewport edge must not widen the page.
         const bounds = element.getBoundingClientRect();
         surface.style.overflowClipMargin = `${Math.max(0, Math.min(bleed, bounds.left, document.documentElement.clientWidth - bounds.right))}px`;
-        const x = bleed - 5 * press, y = bleed + 2 * press;
-        const width = W + 10 * press, height = Math.max(1, H - 4 * press);
+        const x = bleed - 5 * press * pressScale, y = bleed + 2 * press * pressScale;
+        const width = W + 10 * press * pressScale, height = Math.max(1, H - 4 * press * pressScale);
         const cssRadius = getComputedStyle(element).borderTopLeftRadius;
         const radius = Math.min(parseFloat(cssRadius) || 0, width / 2, height / 2);
         const key = `${x}|${y}|${width}|${height}|${radius}`;
@@ -83,7 +84,7 @@ export function liquidGlass(root: HTMLElement) {
           place(shadow, x, y, width, height, radius); place(tint, x, y, width, height, radius);
           const base = optics(element);
           glass.update({ x, y, width, height, radius, ...base,
-            refraction: base.refraction * (1 + .6 * press), specular: base.specular * (1 + .2 * press),
+            refraction: base.refraction * (1 + .6 * press * pressScale), specular: base.specular * (1 + .2 * press * pressScale),
             chroma: copied ? settings.chroma : 0 });
           if (!copied && engine !== 'blink') place(layer, x, y, width, height, radius);
         }
