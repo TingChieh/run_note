@@ -5,7 +5,7 @@ import type { FootprintCollection } from '../../src/lib/api/footprints.ts';
 async function fixture(page: Page) {
   const state={multipleCities:false,heatCells:1,status:'ready' as 'ready'|'pending'|'failed',refreshing:false,refreshFailed:false,scenario:'multi' as 'multi'|'single'|'point'|'empty',failures:0,expired:false,requests:[] as URL[]};
   await installActivities(page);
-  await page.route('**/api/v1/footprints/all?**',route=>{
+  await page.route('**/api/v1/showcase/footprints/all?**',route=>{
     const url=new URL(route.request().url());state.requests.push(url);
     if(state.expired)return route.fulfill({status:401,json:{error:{message:'会话已过期'}}});
     if(state.failures-->0)return route.fulfill({status:503,json:{error:{message:'足迹暂不可用，请重试'}}});
@@ -23,7 +23,7 @@ async function ready(page:Page){await expect(page.getByTestId('footprint-map-rea
 test('page loading skeleton follows the real request and respects reduced motion',async({page})=>{
   await fixture(page);await loginRunner(page);await page.emulateMedia({reducedMotion:'reduce'});
   let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;});
-  await page.route('**/api/v1/footprints/all?**',async route=>{await held;await route.fallback();});
+  await page.route('**/api/v1/showcase/footprints/all?**',async route=>{await held;await route.fallback();});
   try {
     await page.goto('/footprints');
     const skeleton=page.getByTestId('page-skeleton');await expect(skeleton).toBeVisible();
@@ -122,7 +122,7 @@ test('city lookup failure retries without reloading footprints and uncovered are
   await expect(group.getByRole('button',{name:'上海市',exact:true})).toBeVisible();
   expect(state.requests).toHaveLength(requests);
   expect(await canvas!.evaluate(el=>el===document.querySelector('.maplibregl-canvas'))).toBe(true);
-  await page.route('**/api/v1/footprints/all?**',route=>route.fulfill({json:{data:{status:'ready',generated_at:'2026-10-15T00:00:00Z',refreshing:false,result:{scope:'all',type:'FeatureCollection',features:[{type:'Feature',geometry:{type:'Point',coordinates:[-74,40.7]},properties:{activity_id:sampleActivity.id,title:'合成范围外记录',activity_date:'2026-10-13',segment_index:0}}],mode:'tracks',activity_count:1,visible_activity_count:1,unsupported_segment_count:0,grid_size_m:100,grid_crs:'EPSG:3857',count_basis:'distinct_activity_per_cell',max_count:0}},error:null}}));
+  await page.route('**/api/v1/showcase/footprints/all?**',route=>route.fulfill({json:{data:{status:'ready',generated_at:'2026-10-15T00:00:00Z',refreshing:false,result:{scope:'all',type:'FeatureCollection',features:[{type:'Feature',geometry:{type:'Point',coordinates:[-74,40.7]},properties:{activity_id:sampleActivity.id,title:'合成范围外记录',activity_date:'2026-10-13',segment_index:0}}],mode:'tracks',activity_count:1,visible_activity_count:1,unsupported_segment_count:0,grid_size_m:100,grid_crs:'EPSG:3857',count_basis:'distinct_activity_per_cell',max_count:0}},error:null}}));
   await page.getByRole('button',{name:'重新读取足迹',exact:true}).click();await ready(page);
   await expect(group.getByRole('button')).toHaveCount(1);
   await group.getByRole('button',{name:'未识别区域',exact:true}).click();
@@ -178,7 +178,7 @@ test('single line and point render; empty filters, data and tile failures offer 
   state.scenario='empty';await page.getByRole('button',{name:'重新读取足迹'}).click();await expect(page.getByRole('status').filter({hasText:'还没有可显示的足迹'})).toBeVisible();
   await expect(page.locator('.maplibregl-canvas')).toHaveCount(0);await capture(page,'desktop-empty');
   await page.setViewportSize({width:390,height:844});await capture(page,'mobile-empty');
-  state.expired=true;await page.getByRole('button',{name:'运动热力图',exact:true}).click();await expect(page).toHaveURL(/login\?reason=changed/);
+  state.expired=true;await page.getByRole('button',{name:'运动热力图',exact:true}).click();await expect(page).toHaveURL(/admin\?reason=changed/);
 });
 
 test('WebGL initialisation failure retries the same data; successful tiles and map controls work',async({page})=>{
@@ -208,7 +208,7 @@ test('WebGL initialisation failure retries the same data; successful tiles and m
 test('late mode responses cannot replace the current map',async({page})=>{
   await fixture(page);await loginRunner(page);await page.goto('/footprints');await ready(page);
   let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;});let entered!:()=>void;const started=new Promise<void>(resolve=>{entered=resolve;});
-  await page.route('**/api/v1/footprints/all?mode=heatmap',async route=>{entered();await held;try{await route.fallback();}catch{/* superseded by the current mode */}});
+  await page.route('**/api/v1/showcase/footprints/all?mode=heatmap',async route=>{entered();await held;try{await route.fallback();}catch{/* superseded by the current mode */}});
   await page.getByRole('button',{name:'运动热力图',exact:true}).click();await started;
   await expect(page.getByRole('status').filter({hasText:'正在读取个人足迹'})).toBeVisible();
   await page.getByRole('button',{name:'轨迹叠加',exact:true}).click();await ready(page);release();
@@ -233,7 +233,7 @@ test('pending polling stops after leaving the page and expired polling clears pr
   await expect(page.getByRole('status').filter({hasText:'正在生成全部足迹'})).toBeVisible();
   await page.getByRole('link',{name:'设置',exact:true}).click();await expect(page).toHaveURL(/\/settings$/);const count=state.requests.length;await page.clock.fastForward(15000);expect(state.requests).toHaveLength(count);
   await page.getByRole('link',{name:'个人足迹',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'正在生成全部足迹'})).toBeVisible();
-  state.expired=true;await page.clock.fastForward(5100);await expect(page).toHaveURL(/login\?reason=changed/);
+  state.expired=true;await page.clock.fastForward(5100);await expect(page).toHaveURL(/admin\?reason=changed/);
   await expect(page.getByTestId('footprint-summary')).toHaveCount(0);
 });
 
@@ -377,7 +377,7 @@ test('generation taking more than five minutes still completes automatically',as
 });
 test('route-less manual records remain counted in the all-record summary',async({page})=>{
   await fixture(page);await loginRunner(page);
-  await page.route('**/api/v1/footprints/all?**',route=>route.fulfill({json:{data:{status:'ready',generated_at:'2026-10-15T00:00:00Z',refreshing:false,result:{scope:'all',type:'FeatureCollection',features:[],mode:'tracks',activity_count:3,visible_activity_count:0,unsupported_segment_count:0,grid_size_m:100,grid_crs:'EPSG:3857',count_basis:'distinct_activity_per_cell',max_count:0}},error:null}}));
+  await page.route('**/api/v1/showcase/footprints/all?**',route=>route.fulfill({json:{data:{status:'ready',generated_at:'2026-10-15T00:00:00Z',refreshing:false,result:{scope:'all',type:'FeatureCollection',features:[],mode:'tracks',activity_count:3,visible_activity_count:0,unsupported_segment_count:0,grid_size_m:100,grid_crs:'EPSG:3857',count_basis:'distinct_activity_per_cell',max_count:0}},error:null}}));
   await page.goto('/footprints');
   await expect(page.getByTestId('footprint-summary')).toContainText('全部 3 条运动记录，地图显示 0 条');
   await expect(page.getByRole('status').filter({hasText:'还没有可显示的足迹'})).toContainText('带路线的运动记录');

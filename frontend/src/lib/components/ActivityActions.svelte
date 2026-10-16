@@ -1,7 +1,12 @@
 <script lang="ts">
+  import { useViewContext } from "#lib/view-context.ts";
+  const view = useViewContext();
+  const fetch = view.fetch;
+  const deleteActivity = view.bind(scoped_deleteActivity, 1);
+
   import { onMount, tick } from 'svelte';
   import { goto } from '$app/navigation';
-  import { ActivityError, deleteActivity, type Activity } from '#lib/api/activities.ts';
+  import { ActivityError, deleteActivity as scoped_deleteActivity, type Activity } from '#lib/api/activities.ts';
   import FeedbackState from './FeedbackState.svelte';
   import ActivityEditor from './ActivityEditor.svelte';
 
@@ -15,7 +20,7 @@
   onMount(() => () => { disposed = true; });
 
   function fail(cause: unknown): string {
-    if (cause instanceof ActivityError && cause.status === 401) window.location.replace('/login?reason=expired');
+    if (cause instanceof ActivityError && cause.status === 401) window.location.replace('/admin?reason=expired');
     return cause instanceof Error ? cause.message : '操作失败，请重试';
   }
   function edit() {
@@ -41,7 +46,7 @@
     try {
       await deleteActivity(activity.id);
       window.dispatchEvent(new CustomEvent('runnote-activities-changed'));
-      if (!disposed) await goto('/activities');
+      if (!disposed) await goto(view.href('/activities'));
     } catch (cause) {
       if (!disposed) { deleteError = fail(cause); deleting = false; }
     }

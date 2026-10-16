@@ -25,6 +25,8 @@ class UserView(BaseModel):
     timezone: str
     bio: str
     profile_is_public: bool
+    is_admin: bool
+    showcase_enabled: bool
     created_at: datetime
 
 

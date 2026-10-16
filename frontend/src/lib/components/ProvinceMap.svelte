@@ -1,6 +1,11 @@
 <script lang="ts">
+  import { useViewContext } from "#lib/view-context.ts";
+  const view = useViewContext();
+  const fetch = view.fetch;
+  const readProvinces = view.bind(scoped_readProvinces, 1);
+
   import { ActivityError } from '#lib/api/activities.ts';
-  import { readProvinces, type Provinces } from '#lib/api/milestones.ts';
+  import { readProvinces as scoped_readProvinces, type Provinces } from '#lib/api/milestones.ts';
   import shapes from '#lib/data/china-provinces.json';
   import FeedbackState from './FeedbackState.svelte';
   let data = $state<Provinces | null>(null), loading = $state(true), error = $state(''), refresh = $state(0);
@@ -10,7 +15,7 @@
     loading=true;data=null;error='';
     void readProvinces().then(result=>{if(active)data=result;}).catch(cause=>{
       if(!active)return;
-      if(cause instanceof ActivityError && cause.status===401){data=null;window.location.replace('/login?reason=expired&next=%2Fdashboard');return;}
+      if(cause instanceof ActivityError && cause.status===401){data=null;window.location.replace('/admin?reason=expired&next=%2Fdashboard');return;}
       error=cause instanceof Error?cause.message:'暂时无法读取足迹地图';
     }).finally(()=>{if(active)loading=false;});
     return()=>{active=false;};
@@ -29,7 +34,7 @@
     {#if data.provinces.length}<ul class="visited-provinces" aria-label="已点亮省级区域">{#each data.provinces as province}<li><span class="province-badge" title={label(province.code,province.name)}>{province.name.replace(/省$|市$|壮族自治区$|回族自治区$|维吾尔自治区$|自治区$|特别行政区$/,'')}<span class="sr-only">，已点亮，{province.activity_count} 次活动</span></span></li>{/each}</ul>{:else}<p class="empty-map">还没有点亮省份，新的跑步路线会留下你的足迹。</p>{/if}
     <p class="map-note">根据本人全部历史轨迹与地图边界估算，近边界可能存在误差。无路线与境外记录不会点亮省份。</p>
   {/if}
-  <a href="/footprints" class="map-link">探索详细路线 <span aria-hidden="true">→</span></a>
+  <a href={view.href("/footprints")}  class="map-link">探索详细路线 <span aria-hidden="true">→</span></a>
 </section>
 <style>
   .province-map-card{min-width:0;border:1px solid var(--border);border-radius:var(--radius-card);padding:var(--space-4);background:var(--surface);}

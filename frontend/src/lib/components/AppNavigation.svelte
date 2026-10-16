@@ -1,10 +1,17 @@
 <script lang="ts">
+  import { useViewContext } from "#lib/view-context.ts";
+  import { viewContext } from '#lib/api/view-context.ts';
+  const view = useViewContext();
+  const fetch = view.fetch;
+
   import { afterNavigate } from '$app/navigation';
   import { onMount } from 'svelte';
+  import type { ShowcaseProfile } from '#lib/api/showcase.ts';
   import type { User } from '#lib/api/auth.ts';
   import RunningGoal from './RunningGoal.svelte';
   import ThemeToggle from './ThemeToggle.svelte';
-  let { pathname, user, checking, busy, mounted, onlogout, sports = false, identityBlocked = false }: { pathname: string; user: User; checking: boolean; busy: boolean; mounted: boolean; onlogout: () => void; sports?: boolean; identityBlocked?: boolean } = $props();
+  let { pathname, user, profile = null, checking, busy, mounted, onlogout, sports = false, identityBlocked = false }: { pathname: string; user: User | null; profile?: ShowcaseProfile | null; checking: boolean; busy: boolean; mounted: boolean; onlogout: () => void; sports?: boolean; identityBlocked?: boolean } = $props();
+  const context = $derived(viewContext(pathname, user?.is_admin === true));
   let open = $state(false);
   let mobile = $state(false);
   let toggle: HTMLButtonElement;
@@ -14,21 +21,22 @@
     update(); media.addEventListener('change', update);
     return () => media.removeEventListener('change', update);
   });
-  const navigation = [
+  const navigation = $derived([
     { href: '/dashboard', label: '数据汇总', path: 'M3 10 12 3l9 7v10H3z M9 20v-7h6v7' },
     { href: '/activities', label: '跑步记录', path: 'M4 5h16v15H4z M8 2v6 M16 2v6 M4 10h16 M8 14h3 M8 17h7' },
     { href: '/activities/wall', label: '足迹墙', path: 'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z' },
     { href: '/footprints', label: '个人足迹', path: 'm3 5 6-2 6 2 6-2v16l-6 2-6-2-6 2z M9 3v16 M15 5v16' },
     { href: '/ai', label: 'AI 分析', path: 'm12 3 3 6 6 3-6 3-3 6-3-6-6-3 6-3z' },
     { href: '/settings', label: '设置', path: 'M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6' }
-  ];
-  const active = (href: string) => href === '/activities' && pathname.startsWith('/activities/wall') ? false : pathname === href || pathname.startsWith(`${href}/`);
+    ,...(user ? [{ href: '/workspace/dashboard', label: '本人工作区', path: 'M3 10 12 3l9 7v10H3z' }] : [])
+  ].filter(item => item.href !== '/settings' || view.manage));
+  const active = (href: string) => href.endsWith('/activities') && pathname.startsWith(`${href}/wall`) ? false : pathname === href || pathname.startsWith(`${href}/`);
   afterNavigate(() => { open = false; });
   function close(event: KeyboardEvent) { if (event.key === 'Escape' && open) { open = false; toggle?.focus(); } }
 </script>
 <svelte:window onkeydown={close} />
 <div class="mobile-bar">
-  <a href="/" class="brand" aria-label="RunNote 数据汇总"><span class="brand-mark" aria-hidden="true">R</span>RunNote</a>
+  <a href={view.href("/dashboard")} class="brand" aria-label="RunNote 数据汇总"><span class="brand-mark" aria-hidden="true">R</span>RunNote</a>
   <div class="mobile-actions"><ThemeToggle compact />
   <button bind:this={toggle} type="button" class="nav-toggle" aria-expanded={open} aria-controls="app-navigation" aria-label={open ? '关闭导航' : '打开导航'} onclick={() => { open = !open; }}>
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d={open ? 'm6 6 12 12 M6 18 18 6' : 'M4 6h16 M4 12h16 M4 18h16'} /></svg><span>导航</span>
@@ -36,13 +44,13 @@
   </div>
 </div>
 <aside id="app-navigation" class="app-sidebar" class:nav-open={open} inert={mobile && !open}>
-  <a href="/" class="brand desktop-brand" aria-label="RunNote 数据汇总"><span class="brand-mark" aria-hidden="true">R</span>RunNote</a>
-  <p class="nav-caption">你的跑步空间</p>
+  <a href={view.href("/dashboard")} class="brand desktop-brand" aria-label="RunNote 数据汇总"><span class="brand-mark" aria-hidden="true">R</span>RunNote</a>
+  <p class="nav-caption">跑步与足迹</p>
   <nav aria-label="主要导航">
     {#each navigation as item}
-      <a href={item.href} aria-current={active(item.href) ? 'page' : undefined} class="nav-link" onclick={(event) => {
+      <a href={view.href(item.href)} aria-current={active(view.href(item.href)) ? 'page' : undefined} class="nav-link" onclick={(event) => {
         open = false;
-        if (pathname === item.href && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+        if (pathname === view.href(item.href) && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
           event.preventDefault();
           if (mobile) toggle?.focus({ preventScroll: true });
         }
@@ -54,15 +62,15 @@
   </nav>
   <div class="nav-account">
     <div class="appearance-row"><ThemeToggle /></div>
-    {#if sports && mounted && !identityBlocked}<div class="goal-container" hidden={checking} inert={checking}>{#key user.id}<RunningGoal {user} />{/key}</div>{/if}
+    {#if sports && mounted && profile && !identityBlocked}<div class="goal-container" hidden={checking && !!user} inert={checking && !!user}>{#key context.prefix}<RunningGoal user={profile} readonly={!view.manage} />{/key}</div>{/if}
     <div class="runner-identity">
-      {#if sports}<div class="runner-avatar" aria-hidden="true">{checking ? '…' : Array.from(user.display_name || user.username)[0]}</div>{/if}
+      {#if sports}<div class="runner-avatar" aria-hidden="true">{checking ? '…' : Array.from(profile?.display_name || '跑者')[0]}</div>{/if}
       <div class="runner-identity-text">
-        <p class="text-sm font-semibold runner-name" title={checking ? undefined : user.display_name || user.username}>{checking ? '正在确认身份…' : user.display_name || user.username}</p>
-        <p class="account-email" title={checking ? undefined : user.email} data-testid="current-user">{checking ? '正在确认身份…' : `已登录：${user.email}`}</p>
+        <p class="text-sm font-semibold runner-name" title={checking ? undefined : profile?.display_name || '跑步记录'}>{checking ? '正在确认身份…' : profile?.display_name || '跑步记录'}</p>
+        <p class="account-email" data-testid="current-user">{checking ? '正在确认身份…' : context.kind === 'workspace' ? '本人工作区' : context.manage ? '管理员模式' : '个人跑步展示'}</p>
       </div>
     </div>
-    {#if !checking}<button type="button" onclick={onlogout} disabled={busy || !mounted} class="button-secondary mt-3 w-full">{busy ? '退出中…' : '退出登录'}</button>{/if}
+    {#if user && !checking}<button type="button" onclick={onlogout} disabled={busy || !mounted} class="button-secondary mt-3 w-full">{busy ? '退出中…' : '退出登录'}</button>{/if}
   </div>
 </aside>
 <style>

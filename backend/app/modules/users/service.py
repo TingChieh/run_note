@@ -6,9 +6,20 @@ from app.modules.auth.model import AuthSession
 from app.modules.users.schema import UserView
 
 
-def view(user):
+def is_admin(user, settings):
+    return user.email_normalized == settings.site_owner_email
+
+
+def is_enabled(user, settings):
+    return is_admin(user, settings) or bool(user.is_active)
+
+
+def view(user, settings):
     return UserView(
         id=user.id,
+        is_admin=is_admin(user, settings),
+        showcase_enabled=is_admin(user, settings)
+        or (bool(user.is_active) and bool(user.showcase_enabled)),
         email=user.email_normalized,
         username=user.username,
         display_name=user.display_name,
@@ -19,10 +30,10 @@ def view(user):
     )
 
 
-def update_profile(user, payload):
+def update_profile(user, payload, settings):
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(user, key, value)
-    return view(user)
+    return view(user, settings)
 
 
 def change_password(db, user, payload, now):

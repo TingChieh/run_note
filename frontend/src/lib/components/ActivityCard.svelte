@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { useViewContext } from "#lib/view-context.ts";
+  const view = useViewContext();
+  const fetch = view.fetch;
+
   import MetricSummary from './MetricSummary.svelte';
   import RouteThumbnail from './RouteThumbnail.svelte';
   import { activityAchievement } from '#lib/api/activity-labels.ts';
@@ -7,7 +11,6 @@
     activity: Activity; selectable?: boolean; selected?: boolean; disabled?: boolean;
     onselect?: (selected: boolean) => void; onedit?: () => void; ondelete?: () => void;
   } = $props();
-  const visibility = $derived(({ private: '私人', unlisted: '仅链接可见', public: '公开' })[activity.visibility] ?? '未标明');
   const achievement = $derived(activityAchievement(activity.distance_m));
 </script>
 <article class="activity-card" class:selected>
@@ -22,10 +25,10 @@
       </div>{/if}
     </div>
   {/if}
-  <a href={`/activities/${activity.id}`} class="card-link">
+  <a href={view.href(`/activities/${activity.id}`)} class="card-link">
   <div class="record-heading">
     <div class="record-identity">
-      <div class="record-meta"><time datetime={activity.activity_date}>{formatDate(activity.activity_date)}</time><span class="visibility">{visibility}</span></div>
+      <div class="record-meta"><time datetime={activity.activity_date}>{formatDate(activity.activity_date)}</time><span class="visibility">公开展示</span></div>
       <h3>{activity.title || '未命名活动'}</h3>
       {#if activity.category || activity.tags?.length || achievement}
         <div class="record-labels">

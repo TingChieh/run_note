@@ -24,7 +24,7 @@ function invalidGoalResponse(): never { throw new ActivityError('目标服务返
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const targetValue = (value: unknown): value is number => typeof value === 'number' && validGoal(String(value)) !== null;
 export async function readGoals(fetcher: typeof fetch = fetch): Promise<RunningGoals> {
-  const data = await request('/api/v1/me/running-goals', {}, fetcher);
+  const data = await request('/api/v1/showcase/running-goals', {}, fetcher);
   if (!object(data)) invalidGoalResponse();
   for (const period of ['week', 'month', 'year']) if (data[period] !== null && !targetValue(data[period])) invalidGoalResponse();
   return { week: data.week as number | null, month: data.month as number | null, year: data.year as number | null };

@@ -79,7 +79,7 @@ test('browsing across pages leaves detail and map intact until the central card 
   const reads: URL[] = [], details: string[] = [];
   page.on('request', request => {
     const url = new URL(request.url());
-    if (url.pathname === '/api/v1/activities') reads.push(url);
+    if (url.pathname === '/api/v1/showcase/activities') reads.push(url);
     if (/\/api\/v1\/activities\/[^/]+$/.test(url.pathname)) details.push(url.pathname);
   });
   await recordButtons(page).filter({ hasText: '足迹 9' }).focus();
@@ -114,7 +114,7 @@ test('continuous browsing waits for a slow next page and retains the latest brow
   let release!: () => void;
   const hold = new Promise<void>(resolve => { release = resolve; });
   const offsets: number[] = [];
-  await page.route('**/api/v1/activities?**', async route => {
+  await page.route('**/api/v1/showcase/activities?**', async route => {
     const offset = Number(new URL(route.request().url()).searchParams.get('offset'));
     offsets.push(offset);
     if (offset === 20) await hold;
@@ -161,7 +161,7 @@ test('a failed browse retries browsing without selecting, and clicking the selec
 test('long browsing bounds list pages, reuses nearby pages and reloads evicted history', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const reads: URL[] = [];
-  page.on('request', request => { const url = new URL(request.url()); if (url.pathname === '/api/v1/activities') reads.push(url); });
+  page.on('request', request => { const url = new URL(request.url()); if (url.pathname === '/api/v1/showcase/activities') reads.push(url); });
   const { deck } = await setup(page, 240, 8);
   expect(reads).toHaveLength(1);
   async function browseTo(target: number) {
@@ -245,7 +245,7 @@ test('wide decks show nine route previews while selected detail routes load inde
   let release!: () => void;
   const hold = new Promise<void>(resolve => { release = resolve; });
   const target = state.records[9];
-  await page.route('**/api/v1/activities/*/route', async route => {
+  await page.route('**/api/v1/showcase/activities/*/route', async route => {
     const id = new URL(route.request().url()).pathname.split('/').at(-2)!;
     routeReads.push(id);
     await route.fallback();
@@ -262,7 +262,7 @@ test('wide decks show nine route previews while selected detail routes load inde
   expect(new Set(routeReads).size).toBeLessThanOrEqual(11);
   await page.addStyleTag({ content: '.glass-tuner { display:none!important }' });
   await deck.screenshot({ path: info.outputPath('nine-route-previews.png') });
-  await page.route(`**/api/v1/activities/${target.id}/route`, async route => { await hold; await route.fallback(); });
+  await page.route(`**/api/v1/showcase/activities/${target.id}/route`, async route => { await hold; await route.fallback(); });
   const next = recordButtons(page).filter({ hasText: '足迹 10' });
   try {
     await next.click();
@@ -345,7 +345,7 @@ test('another record can be selected while its predecessor route is still loadin
   state.records[9].has_route = true;
   let release!: () => void;
   const hold = new Promise<void>(resolve => { release = resolve; });
-  const url = `**/api/v1/activities/${state.records[9].id}/route`;
+  const url = `**/api/v1/showcase/activities/${state.records[9].id}/route`;
   await page.route(url, async route => { await hold; await route.fallback(); });
   try {
     await deck.getByRole('button', { name: '较旧一条' }).click();
@@ -562,7 +562,7 @@ test('side arrows switch the whole record, keep it centered and stop at both bou
 
 test('cross-page record switches retain list cache and animate card movement', async ({ page }) => {
   const reads: string[] = [];
-  page.on('request', req => { const url = new URL(req.url()); if (url.pathname === '/api/v1/activities') reads.push(url.search); });
+  page.on('request', req => { const url = new URL(req.url()); if (url.pathname === '/api/v1/showcase/activities') reads.push(url.search); });
   const { deck } = await setup(page, 85, 39);
   const cards = recordButtons(page);
   await expect(cards.filter({ hasText: '足迹 40' })).toHaveAttribute('aria-pressed', 'true');
@@ -671,9 +671,9 @@ test('list errors retain current record and offer retry; singleton disables both
 
 test('list 401 clears detail and redirects to login', async ({ page }) => {
   await installActivities(page);
-  await page.route('**/api/v1/activities?*', route => route.fulfill({ status: 401, json: { error: { message: '登录已过期' } } }));
+  await page.route('**/api/v1/showcase/activities?*', route => route.fulfill({ status: 401, json: { error: { message: '登录已过期' } } }));
   await loginRunner(page); await page.goto(`/activities/${sampleActivity.id}`);
-  await expect(page).toHaveURL(/\/login\?reason=expired$/);
+  await expect(page).toHaveURL(/\/admin\?reason=expired$/);
   await expect(page.getByRole('heading', { name: sampleActivity.title, exact: true })).toHaveCount(0);
 });
 
@@ -683,7 +683,7 @@ test('pending page reads disable switching and failed switch keeps the whole old
   await expect(recordButtons(page).filter({ hasText: '足迹 15' })).toHaveAttribute('aria-pressed', 'true');
   let release!: () => void;
   const hold = new Promise<void>(resolve => { release = resolve; });
-  await page.route('**/api/v1/activities?limit=20&offset=20', async route => {
+  await page.route('**/api/v1/showcase/activities?limit=20&offset=20', async route => {
     await hold; await route.fulfill({ status: 503, json: { error: { message: '足迹暂时不可用' } } });
   });
   await deck.getByRole('button', { name: '较旧一条' }).click();
@@ -699,14 +699,14 @@ test('switching while the previous route is pending cannot overwrite the new det
   const state = await installActivities(page);
   let release!: () => void;
   const hold = new Promise<void>(resolve => { release = resolve; });
-  await page.route(`**/api/v1/activities/${sampleActivity.id}/route`, async route => { await hold; await route.fallback(); });
+  await page.route(`**/api/v1/showcase/activities/${sampleActivity.id}/route`, async route => { await hold; await route.fallback(); });
   await loginRunner(page); await page.goto(`/activities/${sampleActivity.id}`);
   const deck = page.getByRole('region', { name: '本次足迹卡片' });
   await deck.scrollIntoViewIfNeeded();
   await expect(deck.getByRole('button', { name: '较旧一条' })).toBeEnabled();
   await deck.getByRole('button', { name: '较旧一条' }).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(state.records[1].title);
-  const response = page.waitForResponse(`**/api/v1/activities/${sampleActivity.id}/route`);
+  const response = page.waitForResponse(`**/api/v1/showcase/activities/${sampleActivity.id}/route`);
   release(); await response;
   await expect(page.getByTestId('route-map-ready')).toHaveCount(0);
   await expect(page.getByText('此活动没有路线。', { exact: true })).toBeVisible();

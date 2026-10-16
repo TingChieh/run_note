@@ -1,7 +1,12 @@
 <script lang="ts">
+  import { useViewContext } from "#lib/view-context.ts";
+  const view = useViewContext();
+  const fetch = view.fetch;
+  const readActivities = view.bind(scoped_readActivities, 0);
+
   import { onMount, tick } from 'svelte';
   import { coverflow, coverflowGeometry, coverflowNavigation } from '#lib/styles/coverflow.ts';
-  import { ActivityError, readActivities, type Activity, type ActivityList, type Route } from '#lib/api/activities.ts';
+  import { ActivityError, readActivities as scoped_readActivities, type Activity, type ActivityList, type Route } from '#lib/api/activities.ts';
   import WallCard from './WallCard.svelte';
 
   let { activity, route, routeLoading, routeError, onauthrequired, onswitch }: {
@@ -207,7 +212,7 @@
     <div class="preview-copy">
       <h2>本次足迹卡片</h2>
       <p>每次跑步，留下属于你的路线记忆。</p>
-      <a href="/activities/wall" class="button-secondary">查看全部足迹</a>
+      <a href={view.href("/activities/wall")}  class="button-secondary">查看全部足迹</a>
     </div>
     <div class="preview-browser" aria-busy={pending} use:coverflowNavigation={{ onbrowse: stepBrowse }}>
       <button type="button" class="button-secondary deck-arrow" aria-label="较新一条" disabled={pending || browseIndex <= 0} onclick={() => void select(browseIndex - 1)}><span aria-hidden="true">←</span></button>

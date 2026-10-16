@@ -29,3 +29,19 @@ def require_write(request: Request, identity: Annotated[tuple, Depends(get_ident
 
     check_csrf(request.headers, request.app.state.settings.site_origin, identity[0])
     return identity
+
+
+def require_admin(request: Request, identity: Annotated[tuple, Depends(get_identity)]):
+    from app.core.errors import ApiError
+    from app.modules.users.service import is_admin
+
+    if not is_admin(identity[1], request.app.state.settings):
+        raise ApiError(403, "ADMIN_REQUIRED", "仅站主可管理账号")
+    return identity
+
+
+def require_admin_write(request: Request, identity: Annotated[tuple, Depends(require_admin)]):
+    from app.core.security import check_csrf
+
+    check_csrf(request.headers, request.app.state.settings.site_origin, identity[0])
+    return identity

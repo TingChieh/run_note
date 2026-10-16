@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 async function login(page: Page) {
-  await page.goto('/login?next=%2Fsettings');
+  await page.goto('/admin?next=%2Fsettings');
   await expect(page.locator('header')).toHaveAttribute('data-auth-ready', 'true');
   await page.getByLabel('邮箱', { exact: true }).fill('runner@example.com');
   await page.getByLabel('密码', { exact: true }).fill('Synthetic-ui-password-2026');
@@ -29,7 +29,7 @@ test('desktop sidebar highlights route, keyboard skip works, session survives na
   await expect(page.getByRole('button', {name:'退出登录',exact:true})).toBeEnabled();
   await page.screenshot({ path: 'test-results/ui-desktop-dashboard.png', fullPage: true });
   await page.reload();
-  await expect(page.getByTestId('current-user')).toContainText('runner.with.a.long');
+  await expect(page.getByTestId('current-user')).toContainText('管理员模式');
   await page.keyboard.press('Tab');
   await expect(page.getByRole('link', { name: '跳转到主要内容' })).toBeFocused();
   await page.keyboard.press('Enter');
@@ -40,14 +40,14 @@ test('desktop sidebar highlights route, keyboard skip works, session survives na
   expect(await activitiesLink.evaluate(el => getComputedStyle(el).outlineStyle)).toBe('solid');
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/\/activities$/);
-  await expect(page.getByRole('region', { name: '我的活动' }).getByRole('status')).toContainText('还没有活动');
+  await expect(page.getByRole('region', { name: '我的活动' }).getByRole('status')).toContainText('暂无跑步记录');
   await page.route('**/api/v1/auth/logout', route => route.fulfill({ status: 503, json: { error: { message: '退出失败，请重试' } } }));
   await page.getByRole('button', { name: '退出登录', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('退出失败');
   await expect(page.getByRole('button', { name: '退出登录', exact: true })).toBeEnabled();
   await page.unroute('**/api/v1/auth/logout');
   await page.getByRole('button', { name: '退出登录', exact: true }).click();
-  await expect(page).toHaveURL(/\/login\?reason=logout$/);
+  await expect(page).toHaveURL(/\/admin\?reason=logout$/);
   await expect(page.getByTestId('current-user')).toContainText('未登录');
 });
 test('mobile menu supports keyboard, Escape and navigation without overflow', async ({ page }) => {
@@ -83,15 +83,16 @@ test('mobile menu supports keyboard, Escape and navigation without overflow', as
   await page.screenshot({ path: 'test-results/ui-mobile-dashboard.png', fullPage: true });
 });
 test('anonymous auth/public layout, protected SSR and cross-tab identity change remain intact', async ({ page, context, request }) => {
-  for (const path of ['/activities', '/dashboard', '/footprints', '/ai', '/settings']) {
-    const response = await request.get(path, { maxRedirects: 0 }); expect(response.status()).toBe(303);
+  for (const path of ['/activities', '/dashboard', '/footprints', '/ai']) {
+    const response = await request.get(path, { maxRedirects: 0 }); expect(response.status()).toBe(200);
   }
+  expect((await request.get('/settings', { maxRedirects: 0 })).status()).toBe(303);
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const path of ['/login', '/register', '/', '/u/runner', '/shared/example']) {
+  for (const path of ['/admin', '/register', '/u/runner', '/shared/example']) {
     await page.goto(path); await noOverflow(page);
     await expect(page.locator('.app-sidebar')).toHaveCount(0);
   }
-  await page.goto('/login');
+  await page.goto('/admin');
   await page.screenshot({ path: 'test-results/ui-mobile-login.png', fullPage: true });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.screenshot({ path: 'test-results/ui-desktop-login.png', fullPage: true });
@@ -99,7 +100,7 @@ test('anonymous auth/public layout, protected SSR and cross-tab identity change 
   const second = await context.newPage(); await second.goto('/settings');
   await expect(second.locator('header')).toHaveAttribute('data-auth-ready', 'true');
   await page.getByRole('button', { name: '退出登录', exact: true }).click();
-  await expect(second).toHaveURL(/\/login\?reason=changed/);
+  await expect(second).toHaveURL(/\/admin\?reason=changed/);
   await expect(second.getByTestId('current-user')).toContainText('未登录');
 });
 
@@ -169,7 +170,7 @@ test('unified sports shell spans every private route and keeps account widgets o
   }
   await page.setViewportSize({width:390,height:900}); await page.goto('/');
   await page.screenshot({path:'test-results/unified-overview-mobile.png',fullPage:true});
-  for (const route of ['/login','/register','/u/runner','/shared/example']) {
+  for (const route of ['/admin','/register','/u/runner','/shared/example']) {
     await page.goto(route); await expect(page.locator('.app-sidebar')).toHaveCount(0);
     await expect(page.getByRole('region',{name:'跑量目标'})).toHaveCount(0); await noOverflow(page);
   }
@@ -188,7 +189,7 @@ test('private navigation preserves sidebar drafts, loads only the right side and
   const documents: string[] = [], activities: string[] = [];
   page.on('request', request => {
     if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documents.push(request.url());
-    if (new URL(request.url()).pathname === '/api/v1/activities') activities.push(request.url());
+    if (new URL(request.url()).pathname === '/api/v1/showcase/activities') activities.push(request.url());
   });
   const nav = page.getByRole('navigation', { name: '主要导航' });
   try {
@@ -206,7 +207,7 @@ test('private navigation preserves sidebar drafts, loads only the right side and
     expect(await page.locator('.page-reveal').evaluate(el => getComputedStyle(el).animationName)).toBe('page-reveal');
     await expect(goal.getByLabel('目标距离（km）', { exact: true })).toHaveValue('42');
     expect(await original!.evaluate(el => el === document.querySelector('.app-sidebar'))).toBe(true);
-    await expect(page.getByRole('region', { name: '我的活动' }).getByRole('status')).toContainText('还没有活动');
+    await expect(page.getByRole('region', { name: '我的活动' }).getByRole('status')).toContainText('暂无跑步记录');
     const loadedCount = activities.length;
     await nav.getByRole('link', { name: '跑步记录', exact: true }).click();
     expect(activities).toHaveLength(loadedCount);

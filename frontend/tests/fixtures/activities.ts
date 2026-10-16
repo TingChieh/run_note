@@ -9,7 +9,7 @@ export const sampleActivity: Activity = {
 };
 export const incompleteActivity: Activity = { ...sampleActivity, id: '22222222-2222-4222-8222-222222222222', title: '缺少时间的长标题记录，用于检查手机布局和质量提示', activity_date: '2026-10-12', elapsed_seconds: null, avg_pace_seconds_per_km: null, temporal_quality: 'incomplete', visibility: 'unlisted', has_route: false, quality_summary: { missing_time_count: 2, warnings: ['TIME_INCOMPLETE'] } };
 export async function loginRunner(page: Page) {
-  await page.goto('/login?next=%2Fsettings');
+  await page.goto('/admin?next=%2Fsettings');
   await expect(page.getByRole('button', { name: '登录', exact: true })).toBeEnabled();
   await page.getByLabel('邮箱', { exact: true }).fill('runner@example.com');
   await page.getByLabel('密码', { exact: true }).fill('Synthetic-ui-password-2026');
@@ -22,8 +22,8 @@ export async function installActivities(page: Page) {
     listFailures: 0, detailFailures: 0, uploadMode: 'success' as 'success' | 'error' | 'duplicate', uploadCount: 0,
     uploadBody: '', holdUpload: null as Promise<void> | null, writes: [] as { method: string; path: string; data: unknown }[]
   };
-  await page.route(/\/api\/v1\/activities(?:\?|\/|$)/, async route => {
-    const req = route.request(), url = new URL(req.url()), path = url.pathname;
+  await page.route(/\/api\/v1\/(?:showcase\/)?activities(?:\?|\/|$)/, async route => {
+    const req = route.request(), url = new URL(req.url()), path = url.pathname.replace('/api/v1/showcase/', '/api/v1/');
     const send = (data: unknown, status = 200) => route.fulfill({ status, json: { data, error: status >= 400 ? { message: '暂时无法读取，请重试' } : null } });
     if (path === '/api/v1/activities') {
       if (state.listFailures-- > 0) return send(null, 503);
@@ -67,5 +67,6 @@ export async function installActivities(page: Page) {
   });
   // Deterministic basemap outage: local GeoJSON should still render, with no external data calls.
   await page.route('**/*tile.openstreetmap.org/**', route => route.abort());
+  await page.route('https://tiles.openfreemap.org/**', route => route.abort());
   return state;
 }

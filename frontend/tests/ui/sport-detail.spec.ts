@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { installActivities, loginRunner, sampleActivity, incompleteActivity } from '../fixtures/activities';
 test.beforeEach(async ({page}) => {
-  await page.route('**/api/v1/statistics/summary?**', route => route.fulfill({json:{data:{distance_m:12500},error:null}}));
+  await page.route('**/api/v1/showcase/statistics/summary?**', route => route.fulfill({json:{data:{distance_m:12500},error:null}}));
 });
 async function ready(page: Page) { await page.evaluate(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);}); await expect(page.getByTestId('route-map-ready')).toBeVisible({timeout:20000}); }
 async function capture(page: Page, name: string, scrollTo?: string) {
@@ -75,14 +75,14 @@ test('long titles, missing values, empty route and errors stay usable in the sam
   await expect(page.getByRole('heading',{level:1})).toHaveText(state.records[1].title);await expect(page.getByRole('status').filter({hasText:'此活动没有路线。'})).toBeVisible();await expect(page.getByRole('region',{name:'运动指标'})).toContainText('—');await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await capture(page,'mobile-missing');
   await page.getByText('数据质量与指标说明',{exact:true}).click();await expect(page.getByText('缺失时间点',{exact:true})).toBeVisible();
   state.detailFailures=1;await page.goto(`/activities/${sampleActivity.id}`);await expect(page.getByRole('alert')).toContainText('暂时无法读取');await page.getByRole('button',{name:'重新读取活动详情'}).click();await ready(page);
-  await page.route(`**/api/v1/activities/${sampleActivity.id}`,route=>route.fulfill({status:401,json:{error:{message:'登录已过期'}}}));await page.reload();await expect(page).toHaveURL(/login\?reason=expired/);await expect(page.getByTestId('sport-hero')).toHaveCount(0);await expect(page.locator('.app-sidebar')).toHaveCount(0); await expect(page.getByRole('region',{name:'跑量目标'})).toHaveCount(0);
+  await page.route(`**/api/v1/activities/${sampleActivity.id}`,route=>route.fulfill({status:401,json:{error:{message:'登录已过期'}}}));await page.reload();await expect(page).toHaveURL(/admin\?reason=expired/);await expect(page.getByTestId('sport-hero')).toHaveCount(0);await expect(page.locator('.app-sidebar')).toHaveCount(0); await expect(page.getByRole('region',{name:'跑量目标'})).toHaveCount(0);
 });
 
-test('capture sample with standard OSM basemap or its visible fallback',async({page})=>{
-  await installActivities(page);await page.unroute('**/*tile.openstreetmap.org/**');
+test('capture sample with OpenFreeMap basemap or its visible fallback',async({page})=>{
+  await installActivities(page);await page.unroute('**/*tile.openstreetmap.org/**');await page.unroute('https://tiles.openfreemap.org/**');
   // Synthetic exercise route only; the normal map tile mechanism remains unchanged.
   const points=[ [121.548,31.216],[121.550,31.217],[121.553,31.2175],[121.556,31.218],[121.559,31.2175],[121.562,31.2155],[121.564,31.213],[121.565,31.210],[121.564,31.207],[121.561,31.205],[121.557,31.2045],[121.553,31.205],[121.550,31.207],[121.548,31.210],[121.547,31.213],[121.548,31.216] ];
-  await page.route(`**/api/v1/activities/${sampleActivity.id}/route`,route=>route.fulfill({json:{data:{type:'FeatureCollection',start:points[0],end:points[points.length-1],features:[{type:'Feature',geometry:{type:'LineString',coordinates:points},properties:{segment_index:0,point_count:points.length}}]},error:null}}));
+  await page.route(`**/api/v1/showcase/activities/${sampleActivity.id}/route`,route=>route.fulfill({json:{data:{type:'FeatureCollection',start:points[0],end:points[points.length-1],features:[{type:'Feature',geometry:{type:'LineString',coordinates:points},properties:{segment_index:0,point_count:points.length}}]},error:null}}));
   await loginRunner(page);await page.goto(`/activities/${sampleActivity.id}`);await ready(page);
   await page.evaluate(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);});
   await expect(page.getByRole('status').filter({hasText:'正在加载底图'})).toHaveCount(0,{timeout:15000});
@@ -114,10 +114,10 @@ test('sidebar goals save separate periods, survive reload, reject invalid input 
   await widget.getByText('今年 · 统计范围').click(); await expect(widget).toContainText('2026-01-01 至 2026-10-15');
   await page.reload(); await ready(page); await expect(widget).toContainText('已完成 25%');
   await widget.getByLabel('目标周期').selectOption('month'); await expect(widget).toContainText('已完成 13%');
-  await page.route('**/api/v1/statistics/summary?**',route=>route.fulfill({status:503,json:{error:{message:'统计失败'}}}));
+  await page.route('**/api/v1/showcase/statistics/summary?**',route=>route.fulfill({status:503,json:{error:{message:'统计失败'}}}));
   await widget.getByLabel('目标周期').selectOption('year'); await expect(widget.getByRole('alert')).toContainText('暂时无法读取');
-  await page.unroute('**/api/v1/statistics/summary?**');
-  await page.route('**/api/v1/statistics/summary?**',route=>route.fulfill({json:{data:{distance_m:0},error:null}}));
+  await page.unroute('**/api/v1/showcase/statistics/summary?**');
+  await page.route('**/api/v1/showcase/statistics/summary?**',route=>route.fulfill({json:{data:{distance_m:0},error:null}}));
   await widget.getByRole('button',{name:'重试跑量'}).click(); await expect(widget).toContainText('0 km');
   await page.setViewportSize({width:390,height:900}); await page.getByRole('button',{name:'打开导航'}).click();
   await widget.scrollIntoViewIfNeeded(); await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);

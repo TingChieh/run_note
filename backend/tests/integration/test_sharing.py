@@ -203,6 +203,7 @@ def test_concurrent_private_transition_cannot_leave_live_share(clients):  # noqa
     patch(a, identifier, "unlisted")
     h = headers(a)
     # Both requests are genuinely authenticated as the same owner.
+    b.app.state.settings.site_owner_email = a.app.state.settings.site_owner_email
     b.cookies.update(a.cookies)
     with ThreadPoolExecutor(max_workers=2) as pool:
         created = pool.submit(b.post, f"/api/v1/activities/{identifier}/shares", headers=h, json={})

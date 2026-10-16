@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { useViewContext } from "#lib/view-context.ts";
+  const view = useViewContext();
+  const fetch = view.fetch;
+
   import {onMount} from 'svelte';
   import {ActivityError,formatDate,formatDistance,formatDuration,formatStartTime} from '#lib/api/activities.ts';
   import {matchTrackFiles,readPreparedFile,previewMifitness,saveMifitness,mifitnessWarningLabel,type PreparedRecord,type MifitnessPreview} from '#lib/api/mifitness.ts';
@@ -15,7 +19,7 @@
   function handleError(cause:unknown,entry?:Entry){
     if(cause instanceof ActivityError&&cause.status===401){
       reset();if(summaryInput)summaryInput.value='';if(tracksInput)tracksInput.value='';timezone='';
-      if(onauthrequired)onauthrequired(cause);else window.location.replace('/login?reason=expired&next=%2Factivities');return;
+      if(onauthrequired)onauthrequired(cause);else window.location.replace('/admin?reason=expired&next=%2Factivities');return;
     }
     const text=cause instanceof Error?cause.message:'导入失败，请重试';
     if(!entry){message=text;return;}
@@ -65,7 +69,7 @@
 </script>
 <section class="mifitness-import" aria-labelledby="mifitness-title" aria-busy={busy}>
   <h2 id="mifitness-title">Mi Fitness 跑步导入</h2>
-  <p class="intro">选择本机整理的跑步汇总与 GPX，预览后再导入。新记录仅自己可见。</p>
+  <p class="intro">选择本机整理的跑步汇总与 GPX，预览后再导入。导入后的记录与完整轨迹会公开展示；私人备注和源文件不公开。</p>
   <div class="file-fields">
     <label>跑步汇总 JSON<input bind:this={summaryInput} type="file" accept=".json,application/json" disabled={busy||disabled||!mounted} onchange={reset}/><span>running_summaries.json，最大 2 MiB、1000 条</span></label>
     <label>匹配的 GPX 文件<input bind:this={tracksInput} type="file" accept=".gpx,application/gpx+xml" multiple disabled={busy||disabled||!mounted} onchange={reset}/><span>每个最大 10 MiB；按 running_来源时间.gpx 精确匹配</span></label>
@@ -87,7 +91,7 @@
         {/if}
         {#if entry.message}<p class:error={entry.status==='failed'}>{entry.message}</p>{/if}
         <div class="actions">
-          {#if entry.existingId}<a href={`/activities/${entry.existingId}`} class="text-primary underline">{entry.status==='success'?'查看已导入活动':'查看已有活动'}</a>{/if}
+          {#if entry.existingId}<a href={view.href(`/activities/${entry.existingId}`)} class="text-primary underline">{entry.status==='success'?'查看已导入活动':'查看已有活动'}</a>{/if}
           {#if entry.status==='duplicate'&&entry.existingId}<button class="button-secondary" disabled={busy||disabled} onclick={()=>void saveSingle(entry,true)}>仅补充已有记录缺失指标</button>{/if}
           {#if entry.status==='similar'}<button class="button-secondary" disabled={busy||disabled} onclick={()=>void saveSingle(entry)}>仍要导入此条记录</button>{/if}
         </div>

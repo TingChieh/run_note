@@ -16,7 +16,7 @@ describe('activity display and privacy boundary', () => {
   });
   it('supports wall page sizes while rejecting mismatched pagination responses', async () => {
     const fetcher: typeof fetch = async input => {
-      expect(input).toBe('/api/v1/activities?limit=24&offset=24');
+      expect(input).toBe('/api/v1/showcase/activities?limit=24&offset=24');
       return envelope({ items: [activity], total: 25, limit: 24, offset: 24 });
     };
     await expect(readActivities(fetcher, 24, undefined, undefined, undefined, 24)).resolves.toMatchObject({ limit: 24, offset: 24 });

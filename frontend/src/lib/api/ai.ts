@@ -1,5 +1,6 @@
 import { ActivityError, type Metric } from './activities';
 import type { Summary } from './statistics';
+import { parseSummary } from './statistics.ts';
 export interface DeviceMetrics {
   heart_rate_record_count: number; heart_rate_weighted_count: number;
   heart_rate_weighted_duration_seconds: Metric; avg_heart_rate_bpm: Metric;
@@ -68,6 +69,30 @@ export function parseReport(value: unknown): Report {
   if (value.status === 'succeeded' && !value.analysis || value.status !== 'succeeded' && value.analysis !== null) invalid();
   return value as unknown as Report;
 }
+const publicSummaryKeys = ['activity_count', 'distance_m', 'duration_sum_seconds', 'known_duration_count', 'missing_duration_count', 'activity_days', 'pace_eligible_count', 'pace_eligible_distance_m', 'avg_pace_seconds_per_km', 'quality_warning_count', 'date_assignment'];
+const publicDeviceKeys = ['heart_rate_record_count', 'heart_rate_weighted_count', 'heart_rate_weighted_duration_seconds', 'avg_heart_rate_bpm', 'calories_record_count', 'calories_kcal', 'steps_record_count', 'steps'];
+const pick = (v: Record<string, unknown>, keys: string[]) => Object.fromEntries(keys.filter(k => k in v).map(k => [k, v[k]]));
+export function parseShowcaseReport(value: unknown): Report {
+  if (!object(value) || !object(value.stats_snapshot) || !object(value.analysis)) invalid();
+  const date = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v;
+  if (!date(value.date_from) || !date(value.date_to) || value.date_from >= value.date_to || typeof value.created_at !== 'string' || !Number.isFinite(Date.parse(value.created_at)) || value.finished_at !== null && (typeof value.finished_at !== 'string' || !Number.isFinite(Date.parse(value.finished_at)))) invalid();
+  const raw = snapshot(value.stats_snapshot);
+  const summary = (v: Summary) => parseSummary(pick(v as unknown as Record<string, unknown>, publicSummaryKeys));
+  const device = (v: DeviceMetrics | undefined) => v ? pick(v as unknown as Record<string, unknown>, publicDeviceKeys) : undefined;
+  const facts = {
+    schema_version: raw.schema_version, date_from: raw.date_from, date_to: raw.date_to,
+    summary: summary(raw.summary), device_metrics: device(raw.device_metrics),
+    weeks: raw.weeks.map(w => ({ ...summary(w), ...pick(w as unknown as Record<string, unknown>, ['bucket_start', 'bucket_end', 'is_partial', 'distance_change_pct']), device_metrics: device(w.device_metrics) })),
+    average_runs_per_week: raw.average_runs_per_week, evidence_limited: raw.evidence_limited,
+    limitations: raw.limitations,
+  };
+  return parseReport({
+    id: value.id, date_from: value.date_from, date_to: value.date_to, status: 'succeeded',
+    stats_snapshot: facts, analysis: pick(value.analysis, ['trend_summary', 'recommendations', 'limitations']),
+    created_at: value.created_at, finished_at: value.finished_at, is_stale: value.is_stale,
+    model: '', prompt_version: '', error_code: null,
+  });
+}
 async function request(path: string, init: RequestInit = {}, fetcher: typeof fetch = fetch, timeout = 8000): Promise<unknown> {
   let r: Response;
   try { r = await fetcher(path,{ ...init,credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(timeout) }); }
@@ -89,19 +114,19 @@ async function csrf(fetcher: typeof fetch) {
   if (!object(c) || typeof c.csrf_token !== 'string' || !c.csrf_token) invalid();
   return c.csrf_token;
 }
-export async function readContext(from?: string, to?: string): Promise<Context> {
-  const v = await request('/api/v1/ai-reports/context' + (from && to ? `?date_from=${encodeURIComponent(from)}&date_to=${encodeURIComponent(to)}` : ''));
+export async function readContext(from?: string, to?: string, fetcher: typeof fetch = fetch): Promise<Context> {
+  const v = await request('/api/v1/ai-reports/context' + (from && to ? `?date_from=${encodeURIComponent(from)}&date_to=${encodeURIComponent(to)}` : ''), {}, fetcher);
   if (!object(v) || typeof v.configured !== 'boolean' || !Number.isInteger(v.remaining_today) || typeof v.date_from !== 'string' || typeof v.date_to !== 'string') invalid();
   snapshot(v.stats_snapshot); return v as unknown as Context;
 }
-export async function readReports(offset = 0): Promise<ReportList> {
-  const v = await request(`/api/v1/ai-reports?limit=10&offset=${offset}`);
+export async function readReports(offset = 0, owner = false, fetcher: typeof fetch = fetch): Promise<ReportList> {
+  const v = await request(`/api/v1/${owner ? '' : 'showcase/'}ai-reports?limit=10&offset=${offset}`, {}, fetcher);
   if (!object(v) || !Array.isArray(v.items) || !Number.isInteger(v.total)) invalid();
-  return {items:v.items.map(parseReport),total:Number(v.total),limit:10,offset};
+  return {items:v.items.map(owner ? parseReport : parseShowcaseReport),total:Number(v.total),limit:10,offset};
 }
-export const readReport = async (id: string) => { if (!uuid.test(id)) invalid(); return parseReport(await request('/api/v1/ai-reports/'+id)); };
+export const readReport = async (id: string, owner = false, fetcher: typeof fetch = fetch) => { if (!uuid.test(id)) invalid(); return (owner ? parseReport : parseShowcaseReport)(await request(`/api/v1/${owner ? '' : 'showcase/'}ai-reports/`+id, {}, fetcher)); };
 export async function generateReport(payload: Create, key: string, fetcher: typeof fetch = fetch): Promise<Report> {
   if (!uuid.test(key)) invalid();
   return parseReport(await request('/api/v1/ai-reports',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf(fetcher),'Idempotency-Key':key},body:JSON.stringify(payload)},fetcher,45000));
 }
-export async function deleteReport(id: string) { if (!uuid.test(id)) invalid(); await request('/api/v1/ai-reports/'+id,{method:'DELETE',headers:{'X-CSRF-Token':await csrf(fetch)}}); }
+export async function deleteReport(id: string, fetcher: typeof fetch = fetch) { if (!uuid.test(id)) invalid(); await request('/api/v1/ai-reports/'+id,{method:'DELETE',headers:{'X-CSRF-Token':await csrf(fetcher)}},fetcher); }

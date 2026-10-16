@@ -1,20 +1,86 @@
 // Browser UI contract fixture: no database, no production auth bypass.
 import { createServer } from 'node:http';
-const user = { id: 'ui-runner', email: 'runner.with.a.long.email.address@example.com', username: 'runner', display_name: '晨跑者', timezone: 'Asia/Shanghai', created_at: '2026-01-01T00:00:00Z', bio: '', profile_is_public: false };
+import { randomUUID } from 'node:crypto';
+const user = { id: '00000000-0000-4000-8000-000000000001', email: 'runner.with.a.long.email.address@example.com', username: 'runner', display_name: '晨跑者', timezone: 'Asia/Shanghai', created_at: '2026-01-01T00:00:00Z', bio: '', profile_is_public: false, is_admin: true, is_active: true, showcase_enabled: true };
+const accounts = [{ ...user, password: 'Synthetic-ui-password-2026' }];
+const sessions = new Map([['ui-runner', user.id]]);
+/** @param {Record<string, unknown>} account */
+const clean = account => Object.fromEntries(Object.entries(account).filter(([key]) => key !== 'password'));
 const summary = { activity_count: 0, distance_m: 0, duration_sum_seconds: null, known_duration_count: 0, missing_duration_count: 0, activity_days: 0, pace_eligible_count: 0, pace_eligible_distance_m: 0, avg_pace_seconds_per_km: null, quality_warning_count: 0, date_assignment: 'activity_local_date' };
 /** @type {Record<string, number | null>} */
 const goals = {week:null,month:null,year:null};
 createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1');
-  const signedIn = req.headers.cookie?.includes('run_session=ui-runner');
+  const named = url.pathname.match(/^\/api\/v1\/showcase\/users\/([a-z0-9_]+)(\/.*)$/);
+  const subject = named ? accounts.find(item => item.username === named[1]) : accounts[0];
+  const showcase = url.pathname.startsWith('/api/v1/showcase/');
+  if (named) url.pathname = '/api/v1/showcase' + named[2];
+  if (showcase && url.pathname !== '/api/v1/showcase/profile') url.pathname = url.pathname.replace('/api/v1/showcase/', '/api/v1/').replace('/api/v1/running-goals', '/api/v1/me/running-goals');
+  const token = req.headers.cookie?.split(';').map(item => item.trim()).find(item => item.startsWith('run_session='))?.slice(12) ?? '';
+  const current = accounts.find(item => item.id === sessions.get(token));
+  const signedIn = current?.is_active === true;
   /** @param {unknown} data */
   const send = (data, status = 200, message = '会话已过期') => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ data, error: status >= 400 ? { code: 'UI_FIXTURE', message } : null })); };
+  if (showcase && req.method !== 'GET') return send(null,405,'展示页面仅支持读取');
+  if (named && (!subject?.is_active || !subject.showcase_enabled)) return send(null,404,'展示页面不存在');
+  if (url.pathname === '/api/v1/showcase/profile') return send({display_name:named ? subject?.display_name : user.display_name,timezone:named ? subject?.timezone : user.timezone});
+  if (url.pathname.endsWith('/auth/register')) return send(null,403,'本站不开放注册');
   if (url.pathname === '/api/health') return send({ status: 'ok' });
   if (url.pathname.endsWith('/auth/csrf')) return send({ csrf_token: 'ui-csrf' });
-  if ((url.pathname.endsWith('/auth/login') || url.pathname.endsWith('/auth/register'))) { Object.assign(user, {display_name:'晨跑者',bio:'',profile_is_public:false}); Object.assign(goals,{week:null,month:null,year:null}); res.setHeader('Set-Cookie', 'run_session=ui-runner; Path=/; HttpOnly; SameSite=Lax'); return send({ user }); }
-  if (url.pathname.endsWith('/auth/logout')) { res.setHeader('Set-Cookie', 'run_session=; Path=/; Max-Age=0'); return send({ logged_out: true }); }
-  if (url.pathname.endsWith('/auth/session')) return signedIn ? send({ user }) : send(null, 401);
-  if (!signedIn) return send(null, 401);
+  if (url.pathname.endsWith('/auth/login')) {
+    let body = ''; for await (const chunk of req) body += chunk;
+    const payload = JSON.parse(body);
+    const found = accounts.find(item => item.email === payload.email || item.is_admin && payload.email === 'runner@example.com');
+    if (!found?.is_active || !found.is_admin && found.password !== payload.password) return send(null,401,'邮箱或密码不正确');
+    if (found.is_admin) { Object.assign(user, {display_name:'晨跑者',bio:'',profile_is_public:false}); Object.assign(found,user); Object.assign(goals,{week:null,month:null,year:null}); }
+    const session = found.is_admin ? 'ui-runner' : randomUUID(); sessions.set(session, found.id);
+    res.setHeader('Set-Cookie', `run_session=${session}; Path=/; HttpOnly; SameSite=Lax`); return send({ user: clean(found) });
+  }
+  if (url.pathname.endsWith('/auth/logout')) { sessions.delete(token); res.setHeader('Set-Cookie', 'run_session=; Path=/; Max-Age=0'); return send({ logged_out: true }); }
+  if (url.pathname.endsWith('/auth/session')) return signedIn ? send({ user: current.is_admin ? user : clean(current) }) : send(null, 401);
+  if (url.pathname.startsWith('/api/v1/admin/users')) {
+    if (!signedIn) return send(null,401);
+    if (!current.is_admin) return send(null,403,'仅站主可管理用户');
+    if (req.method === 'GET') {
+      const search = (url.searchParams.get('search') ?? '').toLowerCase();
+      const active = url.searchParams.get('is_active');
+      const rows = accounts.filter(item => (!search || item.email.includes(search) || item.username.includes(search)) && (active === null || item.is_active === (active === 'true')));
+      const limit = Number(url.searchParams.get('limit') ?? 20), offset = Number(url.searchParams.get('offset') ?? 0);
+      return send({items:rows.slice(offset,offset+limit).map(clean),total:rows.length,limit,offset});
+    }
+    if (req.headers['x-csrf-token'] !== 'ui-csrf') return send(null,403,'请求校验失败');
+    let body = ''; for await (const chunk of req) body += chunk;
+    const payload = JSON.parse(body);
+    if (req.method === 'POST' && url.pathname === '/api/v1/admin/users') {
+      if (accounts.some(item => item.email === payload.email || item.username === payload.username)) return send(null,409,'邮箱或用户名已存在');
+      const account = {...payload,id:randomUUID(),email:payload.email.toLowerCase(),bio:'',profile_is_public:false,is_admin:false,created_at:'2026-10-16T00:00:00Z'};
+      accounts.push(account); return send(clean(account),201);
+    }
+    const account = accounts.find(item => item.id === url.pathname.split('/')[5]);
+    if (!account) return send(null,404,'用户不存在');
+    if (account.is_admin && ('is_active' in payload || 'showcase_enabled' in payload || 'email' in payload || url.pathname.endsWith('/reset-password'))) return send(null,409,'站主账号受保护');
+    const revoke = () => { for (const [key,id] of sessions) if (id === account.id) sessions.delete(key); };
+    if (req.method === 'POST' && url.pathname.endsWith('/reset-password')) { account.password = payload.new_password; revoke(); return send({password_reset:true}); }
+    if (req.method === 'PATCH') {
+      if (payload.email && account.email !== payload.email) revoke();
+      Object.assign(account,payload);
+      if (!account.is_active) { account.showcase_enabled=false; revoke(); }
+      if (account.is_admin) Object.assign(user,clean(account));
+      return send(clean(account));
+    }
+    return send(null,405,'不支持的请求');
+  }
+  if (!signedIn && !showcase) return send(null, 401);
+  if (url.pathname === '/api/v1/me' && req.method === 'GET') return send(current?.is_admin ? user : clean(current ?? user));
+  if (url.pathname === '/api/v1/me/password' && req.method === 'PATCH') {
+    if (req.headers['x-csrf-token'] !== 'ui-csrf') return send(null,403,'请求校验失败');
+    let body = ''; for await (const chunk of req) body += chunk;
+    const payload = JSON.parse(body);
+    if (!current || payload.current_password !== current.password) return send(null,400,'当前密码不正确');
+    current.password = payload.new_password;
+    for (const [key,id] of sessions) if (id === current.id) sessions.delete(key);
+    return send({password_changed:true});
+  }
   if (url.pathname === '/api/v1/me/running-goals') return send(goals);
   if (url.pathname.startsWith('/api/v1/me/running-goals/') && req.method === 'PUT') {
     const period = url.pathname.split('/').at(-1);
@@ -25,8 +91,11 @@ createServer(async (req, res) => {
   }
   if (url.pathname === '/api/v1/me' && req.method === 'PATCH') {
     let body = ''; for await (const chunk of req) body += chunk;
-    const value = JSON.parse(body); Object.assign(user, { display_name: value.display_name, bio: value.bio, profile_is_public: value.profile_is_public }); return send(user);
+    const value = JSON.parse(body); Object.assign(current ?? user, value);
+    if (current?.is_admin) Object.assign(user,clean(current));
+    return send(clean(current ?? user));
   }
+  if (url.pathname === '/api/v1/ai-reports') return send({items:[],total:0,limit:Number(url.searchParams.get('limit')??10),offset:Number(url.searchParams.get('offset')??0)});
   if (url.pathname === '/api/v1/activities/categories') return send([]);
   if (url.pathname === '/api/v1/activities') return send({ items: [], total: 0, limit: Number(url.searchParams.get('limit') ?? 20), offset: Number(url.searchParams.get('offset') ?? 0) });
   if (url.pathname === '/api/v1/footprints/all') return send({status:'ready',generated_at:'2026-10-15T00:00:00Z',refreshing:false,result:{scope:'all',type:'FeatureCollection',features:[],mode:url.searchParams.get('mode')??'tracks',activity_count:0,visible_activity_count:0,unsupported_segment_count:0,grid_size_m:100,grid_crs:'EPSG:3857',count_basis:'distinct_activity_per_cell',max_count:0}});

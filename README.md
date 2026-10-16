@@ -2,7 +2,7 @@
 
 软件工程本科毕业设计：**基于 Web 的跑步数据管理与可视化分析系统的设计与实现**。
 
-当前已实现第一阶段骨架及第二阶段 S2-01–S2-06 的本地业务：存储模型/迁移、后端认证、会话安全、限流、资料接口及 GPX 解析/指标/原子导入。已接入前端注册、登录、退出、当前用户展示及私人页面保护。现已交付 GPX 安全解析/原子导入、本人活动列表/详情与 MapLibre 分段路线及起终点；刷新可重读。现已接入可降级的 OpenStreetMap 道路底图、年度运动日历与后端聚合基础统计（ECharts周/月趋势）；公开主页及摘要分享已实现；私人 AI 分析已完成模拟供应商与隔离数据库验收，真实供应商尚未配置/验证。现已交付个人足迹地图、多轨迹叠加与固定网格经过记录数热力图；最新结果见[足迹与热力图验收](docs/13-footprints-heatmap-acceptance.md)。实际验收和未验证事项见[第二阶段进度](docs/09-phase-two-progress.md)。
+当前采用固定站主展示与受管账号模式：访客无需登录即可浏览站主内容，管理员还可为其他用户开启 `/p/{username}` 完整个人展示。所有启用账号通过 `/admin` 登录本人工作区，只有配置站主能管理账号；注册关闭。现有 PostgreSQL/PostGIS 存储、GPX/TCX/小米运动健康导入、指标计算、地图图表与 AI 汇总保持原有实现。使用与本次验证见[用户管理与个人展示](docs/56-admin-users-personal-showcase.md)，原生部署模板见[部署基础](docs/55-single-owner-showcase.md)。历史阶段文档仅描述当时状态。
 
 ## 文档导航
 
@@ -116,7 +116,7 @@ cd frontend
 INTERNAL_API_BASE_URL=http://127.0.0.1:8001 pnpm dev --port 5183
 ```
 
-注册受每IP每小时10次的真实限制。此前认证及本轮GPX浏览器验收均使用正常注册，未重置计数；配额用尽后等待窗口结束。反复浏览器测试应使用已有且版本正确的独立测试库，不清理开发库。
+当前不开放注册。开发和部署都复用已有站主账号；空库需在受控终端离线初始化，见下方部署说明。测试只在允许的独立 `_test` 库离线创建合成账号，不清理开发库。
 
 构建产物在本机通过 HTTP 使用时，adapter-node 必须显式使用与浏览器一致的来源；否则其生产 CSRF 校验会按默认 HTTPS 推断请求来源并拒绝 multipart 写入。只在本地回环地址运行构建产物可用：
 
@@ -138,7 +138,15 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-打开 <http://127.0.0.1:5173>，首页进入数据汇总（`/dashboard`），集中展示累计/年度摘要、年度/月度/周目标、连续记录、省份点亮地图、近期足迹墙、运动日历与趋势，并提供记录、足迹、AI 分析和设置入口；首页不展示 GPX 导入操作；未登录时先进入登录页，登录/注册默认返回数据汇总。SvelteKit 服务端把同源 `/api` 转发给服务端环境中的 `INTERNAL_API_BASE_URL`（进程环境优先于 `.env`），数据库 URL 和密码不进入浏览器配置。`/login`、`/register` 可直接使用；`/settings` 编辑昵称、简介和公开主页开关；`/activities` 可上传并查询本人跑步记录，`/activities/{id}` 展示指标、路线与本次足迹卡片，`/activities/wall` 按记录自动生成私人足迹墙并支持全部历史分页；`/dashboard` 展示年度日历、运动统计与周/月趋势，`/footprints` 支持个人路线叠加、年份/日期范围筛选和运动热力图，私人页面均需登录。公开主页 `/u/{username}`、单条公开记录 `/public/activities/{id}`、令牌摘要分享 `/shared/{token}` 可匿名浏览；在记录详情管理 private/unlisted/public 和创建/撤销分享。本轮分享完全不公开坐标与精确起终点，公开主页仅统计 public 记录。关闭主页不会撤销独立分享或单条公开记录，须单独撤销链接/设为私人。认证 Cookie 为 HttpOnly、SameSite=Lax；不在 localStorage 存凭证或用户资料。
+打开 <http://127.0.0.1:5173>，首页进入 `/dashboard`。访客可直接浏览累计与年度统计、目标、日历、趋势、`/activities` 列表与详情、`/activities/wall` 足迹墙、`/footprints` 全部轨迹/热力图及 `/ai` 已完成报告，所有数据固定来自 `SITE_OWNER_EMAIL`（默认 `tingchieh77@outlook.com`）。**包括原 private/unlisted 记录和完整轨迹、精确起终点**；邮箱、用户名、私人备注和源文件不公开。
+
+只有 `/admin` 提供登录，旧 `/login`、`/register` 返回 404，注册 API 关闭。配置站主可在 `/admin/users` 新建、编辑、启用/禁用账号、重置密码和开启个人展示。普通启用用户登录后进入 `/workspace/dashboard`，只能管理本人记录、目标、报告与设置。历史普通账号默认停用且不公开，须管理员显式启用；不会删除账号、转移记录或自动重置密码。页面不展示登录/注册入口，直接输入 `/admin`。
+
+个人展示入口 `/p/{username}` 自动进入数据汇总，其余页面与站主一致：`activities`、`activities/{id}`、`activities/wall`、`footprints`、`ai`。启用完整展示会公开该用户的全部记录（包括 private/unlisted）、完整轨迹与精确起终点；所有个人展示页始终只读。禁用账号会撤销全部会话并关闭展示；重新启用不会恢复展示或会话。
+
+SvelteKit 同源 `/api` 代理固定到服务端 `INTERNAL_API_BASE_URL`，数据库凭据不进入浏览器。生产 Caddy 可以直接代理 `/api/*`，权限仍由 FastAPI 执行。认证使用 HttpOnly/SameSite Cookie 与 CSRF/Origin 校验。
+
+旧版 `/u/{username}`、`/public/activities/{id}`、`/shared/{token}` 摘要功能保留原规则，不返回坐标。旧版摘要可见性/主页开关/撤销链接只控制这些入口，**不会关闭完整公开展示**。普通账号的完整展示由管理员开关控制，停用账号也会阻断旧摘要与分享链接。
 
 健康接口及 API 文档：
 
@@ -198,11 +206,11 @@ pnpm test:e2e
 
 E2E 要求后端已启动且数据库 ready；测试自动启动前端。使用已安装 Chrome 时可替换为 `PLAYWRIGHT_CHANNEL=chrome pnpm test:e2e`，无需下载 Chromium。
 
-E2E 会注册合成账号和导入记录，后端必须连接隔离测试库，不能使用开发业务库。会话过期用例另需向 Playwright 进程传入同一隔离库的 `TEST_DATABASE_URL` 和 `TEST_DATABASE_ALLOWED_TARGETS`；缺失、非 `_test` 库、与开发库同名或未列入允许目标时拒绝执行过期 SQL，不再从 `.env` 的业务库选择写入目标。构建版验收结果及本轮复跑命令见 [V1.2 稳定化验收](docs/25-v1.2-stabilization-acceptance.md)。
+历史多用户 E2E 依赖注册流程，当前模式不可直接使用；当前验收使用 `playwright.showcase.config.ts`、`playwright.admin-users.config.ts` 合成 UI 与 `backend/tests/integration/test_showcase.py`、`test_admin_users.py` 独立库权限测试。历史 E2E 尚需改为离线预置站主及受管合成账号再运行，后端必须连接隔离测试库，不能使用开发业务库。会话过期用例另需向 Playwright 进程传入同一隔离库的 `TEST_DATABASE_URL` 和 `TEST_DATABASE_ALLOWED_TARGETS`；缺失、非 `_test` 库、与开发库同名或未列入允许目标时拒绝执行过期 SQL，不再从 `.env` 的业务库选择写入目标。构建版验收结果及本轮复跑命令见 [V1.2 稳定化验收](docs/25-v1.2-stabilization-acceptance.md)。
 
 ## 结构与实现边界
 
-- `frontend/`：认证页面、请求级SSR身份、同源API代理与私人页面保护；SvelteKit 3 / Svelte 5 / TypeScript，Tailwind 4；`src/lib/components/ui` 与 `components.json` 仅预留 shadcn-svelte 结构。
+- `frontend/`：公开展示、`/admin`、请求级 SSR 身份、同源 API 代理与管理页面保护；SvelteKit 3 / Svelte 5 / TypeScript，Tailwind 4；`src/lib/components/ui` 与 `components.json` 仅预留 shadcn-svelte 结构。
 - `backend/app/core`：环境、响应、错误与日志；`api`：依赖；`db`：会话和 Base；`models`：模型层预留；`modules/health`：Router、Service、Schema。
 - `backend/migrations`：Alembic；`backend/tests`：单元和真实 PostGIS 集成测试。
 - `.github/workflows/ci.yml`：原生 Homebrew 临时测试集群与前端检查流程。
@@ -214,7 +222,9 @@ SvelteKit 3 的实际配置位于 `vite.config.ts`，TS 继承 `$app/tsconfig`�
 
 Linux 主机原生安装 PostgreSQL/PostGIS、Python、Node.js 与 Caddy。应用以专用低权限用户运行；后端使用独立 `.venv`，前端使用 pnpm 锁文件构建后的 `frontend/build`。systemd 分别管理 Uvicorn 和 SvelteKit Node 服务，Caddy 负责 HTTPS 与同源路由：`/api/*` 保留路径转发至 API，其他请求转发至 Node。
 
-数据库、API 和 Node 端口仅内部可达，只有 Caddy 对公网开放。部署时先核对版本、备份数据库，在受控单次步骤执行 Alembic，再启动/切换应用；不让各 worker 自行迁移。密钥通过受控环境文件提供，不写入 unit 或仓库。systemd/Caddy 配置、HTTPS、备份恢复与版本回滚在阶段八实施和实测，目前仅为计划。
+数据库、API 和 Node 端口仅内部可达，只有 Caddy 对公网开放。部署时先核对版本、备份数据库，在受控单次步骤执行 Alembic，再启动/切换应用；不让各 worker 自行迁移。密钥通过受控环境文件提供，不写入 unit 或仓库。本项目提供 `infra/native/` 的 systemd/Caddy 模板和配置说明，模板尚未在 Linux/公网 HTTPS 部署实测；恢复与版本回滚须在目标环境验收。
+
+部署前需显式设置 `SITE_OWNER_EMAIL`，恢复包含该账号的数据库，并用 `backend/.venv/bin/python scripts/site-owner.py status` 核对。缺少账号时不会开放注册或选取第一条用户；空库初始化、前后端环境分配及 HTTPS 上线验收见[部署说明](docs/55-single-owner-showcase.md#原生部署)。本次新增 `users.is_active`、`users.showcase_enabled`，须在备份和恢复演练后由操作者受控执行一次 `alembic upgrade head`。历史普通账号默认停用/不公开，配置站主不受状态字段锁出。部署顺序、升级影响和验收见[部署补充](docs/56-admin-users-personal-showcase.md#部署与迁移)。
 
 ## 停止本地服务
 

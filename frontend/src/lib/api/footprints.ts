@@ -64,7 +64,7 @@ export function parseFootprintSnapshot(v: unknown): FootprintSnapshot {
   return {status:v.status as 'pending'|'failed',generated_at:generated as string|null,refreshing:v.refreshing as boolean,refresh_failed:v.refresh_failed===true,result:null};
 }
 export async function readAllFootprints(mode: Selection['mode'], signal: AbortSignal, fetcher: typeof fetch=fetch): Promise<FootprintSnapshot> {
-  const response=await fetcher(`/api/v1/footprints/all?${new URLSearchParams({mode})}`,{cache:'no-store',credentials:'same-origin',signal});
+  const response=await fetcher(`/api/v1/showcase/footprints/all?${new URLSearchParams({mode})}`,{cache:'no-store',credentials:'same-origin',signal});
   if (response.status===401) throw new FootprintError('登录已过期',401);
   let body: unknown;
   try { body=await response.json(); } catch { throw new FootprintError('无法读取足迹，请稍后重试',response.ok?502:response.status); }
@@ -76,7 +76,7 @@ export async function readAllFootprints(mode: Selection['mode'], signal: AbortSi
 }
 export async function readFootprints(s: Selection, signal: AbortSignal, fetcher: typeof fetch=fetch): Promise<Footprints> {
   const q=new URLSearchParams({...footprintRange(s),mode:s.mode});
-  const response=await fetcher(`/api/v1/footprints?${q}`,{cache:'no-store',credentials:'same-origin',signal});
+  const response=await fetcher(`/api/v1/showcase/footprints?${q}`,{cache:'no-store',credentials:'same-origin',signal});
   const body=await response.json();
   if (!response.ok || body.error) throw new FootprintError(body.error?.message??'无法读取足迹，请稍后重试',response.status);
   return parseFootprints(body.data);

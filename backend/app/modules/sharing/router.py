@@ -58,7 +58,7 @@ def revoke(identifier: UUID, link_id: UUID, request: Request, identity: Write, d
 
 @router.get("/public/users/{username}", response_model=ApiResponse[PublicProfile])
 def profile(username: str, request: Request, db: DB):
-    data = service.profile(db, username)
+    data = service.profile(db, username, request.app.state.settings)
     db.commit()
     return envelope(request, data)
 
@@ -75,7 +75,7 @@ def calendar(
         from app.core.errors import ApiError
 
         raise ApiError(422, "VALIDATION_ERROR", "请选择距离或次数")
-    user = service.profile_user(db, username)
+    user = service.profile_user(db, username, request.app.state.settings)
     data = statistics.calendar(db, user.id, year, metric, public_only=True)
     db.commit()
     return envelope(request, data)
@@ -90,20 +90,22 @@ def activities(
     offset: Annotated[int, Query(ge=0, le=1000000)] = 0,
     activity_date: date | None = None,
 ):
-    data = service.public_listing(db, username, limit, offset, activity_date)
+    data = service.public_listing(
+        db, username, limit, offset, activity_date, request.app.state.settings
+    )
     db.commit()
     return envelope(request, data)
 
 
 @router.get("/public/activities/{identifier}", response_model=ApiResponse[PublicActivity])
 def activity(identifier: UUID, request: Request, db: DB):
-    data = service.public_activity(db, identifier)
+    data = service.public_activity(db, identifier, request.app.state.settings)
     db.commit()
     return envelope(request, data)
 
 
 @router.get("/shared/{token}", response_model=ApiResponse[PublicActivity])
 def shared(token: str, request: Request, db: DB):
-    data = service.shared(db, token, request.app.state.clock())
+    data = service.shared(db, token, request.app.state.clock(), request.app.state.settings)
     db.commit()
     return envelope(request, data)

@@ -20,6 +20,7 @@ pytestmark = pytest.mark.integration
 def test_dense_cumulative_route_and_parallel_statistics_fit_query_budget(clients, monkeypatch):  # noqa: F811
     a, b, _, app = clients
     owner = register(a)
+    b.app.state.settings.site_owner_email = a.app.state.settings.site_owner_email
     b.cookies.update(a.cookies)
     with app.state.session_factory.begin() as db:
         activity = Activity(

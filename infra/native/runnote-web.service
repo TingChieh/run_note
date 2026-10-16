@@ -1,0 +1,23 @@
+[Unit]
+Description=RunNote web
+After=network.target runnote-api.service
+
+[Service]
+Type=simple
+User=runnote
+Group=runnote
+WorkingDirectory=/opt/run-note/frontend
+EnvironmentFile=/etc/run-note/frontend.env
+Environment=HOST=127.0.0.1
+Environment=PORT=3000
+Environment=PROTOCOL_HEADER=x-forwarded-proto
+Environment=BODY_SIZE_LIMIT=11M
+ExecStart=/usr/bin/node build/index.js
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

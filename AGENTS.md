@@ -57,12 +57,12 @@ docs/            设计与验收记录（中文）
 - 列表响应统一 `{items, total, limit, offset}`，查询参数是 **`limit`/`offset`**（不是 `page`/`page_size`；`docs/04-rest-api.md` 的该处说法已过时）。通用取值：`limit` 默认 20、上限 100，`offset` 默认 0、上限 1000000；`ai_reports` 列表为例外（默认 10、上限 50）。年份类查询统一 `ge=1900, le=2100`。
 - PATCH 语义：字段全部可选，用 `model_dump(exclude_unset=True)` 应用，**不要用 `exclude_none`**，并校验至少提交一个字段。
 - 模型：UUID 主键用 `default=uuid4`；每张用户数据表都有 `user_id = ForeignKey("users.id", ondelete="CASCADE")`；时间列一律 `DateTime(timezone=True)` + `server_default=func.now()`；枚举用 `String(n)` + 具名 `CheckConstraint`；几何用 GeoAlchemy2 WKT。**项目不使用 `relationship()`**，关联在查询中显式 join。
-- 新增模型必须注册到 `app/models/__init__.py`，否则元数据不完整；**新增模块的 router 必须 `include_router` 注册到 `app/main.py`（现有 11 处），否则路由静默不存在。** 模块 `__init__.py` 保持空文件，不做自动注册。
+- 新增模型必须注册到 `app/models/__init__.py`，否则元数据不完整；**新增模块的 router 必须 `include_router` 注册到 `app/main.py`，否则路由静默不存在。** 模块 `__init__.py` 保持空文件，不做自动注册。
 - 模块 router 沿用既有外形：多数为 `APIRouter(prefix="/api/v1/<name>", tags=["<name>"])`（`sharing` 因路径跨资源使用 `prefix="/api/v1"`），每个端点声明 `response_model=ApiResponse[X]`。
 - **修改导入（GPX/TCX）逻辑前先读现有并发控制**：每用户同时仅一个导入，用 `pg_try_advisory_lock` 在专用自动提交连接上取得，冲突返回 429 `IMPORT_BUSY`（`gpx/service.py`）。不要新增另一套导入互斥机制。
 - 服务写操作前调用 `lock_owner(db, owner)` 锁定本人 users 行并递增 `activity_data_version`（用于把旧 AI 报告标记为过时）。
 - 归属校验在 service 层用 `owner` 过滤完成。按 ID 取本人资源时走 `owned_*` helper，**不存在与他人资源统一返回 404，绝不返回 403**，以免泄露存在性。
-- 公开接口使用**独立的字段白名单序列化**，不复用本人视图；公开查询必须在 SQL 中强制 `visibility == "public"`。当前设计完全不公开坐标与精确起终点。
+- 公开接口使用**独立的字段白名单序列化**，不复用本人视图；旧版摘要分享查询必须在 SQL 中强制 `visibility == "public"`。**已授权的完整展示例外**：根 `/api/v1/showcase/*` 固定查询 `SITE_OWNER_EMAIL` 对应站主；具名 `/api/v1/showcase/users/{username}/*` 仅允许配置站主或同时 `is_active AND showcase_enabled` 的用户。两者展示全部记录（包括 private/unlisted），允许完整轨迹与精确起终点；必须使用独立字段白名单并在 SQL 约束 subject ID，不能接受客户端传入 owner ID。旧版摘要分享仍不公开坐标。
 
 ### 前端
 
@@ -78,6 +78,13 @@ docs/            设计与验收记录（中文）
 - 公共数据走**白名单重建**（如 `parsePublicActivity`），不要把后端响应整体展开。
 - 地图/图表以本地数据优先：底图或瓦片失败不得阻断轨迹渲染；主题切换只改 paint 属性，不重建实例。
 - 地图与图表组件沿用既有可访问性模式：容器加 `role="img"`/`role="region"` 与中文 `aria-label`，用 `data-testid` 暴露就绪/加载状态（如 `route-map-ready`），图表下方提供 `<details>` 完整数据表兜底，缺失值渲染 `—` 并附 `sr-only` 说明。
+
+## 站主展示与受管账号模式
+
+- 唯一站主由后端 `SITE_OWNER_EMAIL` 指定（默认 `tingchieh77@outlook.com`），账号缺失时展示接口返回 503，不回退到任意用户。历史普通账号默认停用且不公开；显式启用后可登录本人工作区。唯一管理员由配置邮箱计算，不依赖可编辑角色字段。
+- 匿名展示页面为 `/dashboard`、`/activities`（含详情和 wall）、`/footprints`、`/ai`；只在 `/admin` 提供管理员登录，旧 `/login` 与 `/register` 返回 404，注册 API 禁用。写操作仍由认证依赖与 CSRF/Origin 双重保护。
+- `/admin/users` 仅站主管理账号；普通启用用户在 `/workspace/*` 管理本人，公开 `/p/{username}/*` 始终只读。禁用账号撤销会话并关闭展示，启用不恢复旧状态；邮箱修改/重置密码撤销全部会话。站主邮箱/启用/展示状态受保护。
+- 匿名 AI 仅查看已成功报告，不调用管理 context、recover、cleanup 或供应商。空库初始化用离线 `scripts/site-owner.py`，不可重开注册或自动重置密码。部署模板见 `docs/55-single-owner-showcase.md`，当前权限/迁移/个人展示边界见 `docs/56-admin-users-personal-showcase.md`。
 
 ## 常用命令
 
@@ -129,7 +136,7 @@ pnpm test:e2e      # Playwright，需后端已启动且数据库 ready
 
 - `frontend/tests/unit` — Vitest，纯逻辑，`environment: 'node'`。
 - `frontend/tests/ui` — Playwright `tests/ui`，由 `playwright.ui.config.ts` 驱动：`node tests/fixtures/ui-api.mjs` 起**合成 API**（8191）+ vite dev（5191）+ 真实 Chrome。**不连真实后端、不碰数据库。**
-- `frontend/tests/e2e` — `playwright.config.ts`，需要**真实后端与 ready 的数据库**，会注册合成账号并导入记录。
+- `frontend/tests/e2e` — `playwright.config.ts`，需要**真实后端与 ready 的独立测试数据库**。历史多用户用例仍依赖注册，当前模式运行前需改为离线预置站主与受管合成账号，不得重开注册。单账号展示另有 `playwright.showcase-build.config.ts` 合成构建验收与后端独立库权限测试。
 - `backend/tests/unit` 不访问数据库；`backend/tests/integration` 需要独立 PostGIS 测试库。
 
 **数据库保护**（后端集成测试与 `playwright.*-e2e.config.ts` 适用同一规则）：只允许名字以 `_test` 结尾、且显式列入 `TEST_DATABASE_ALLOWED_TARGETS` 的库；`backend/tests/conftest.py` 会以只读连接核对实际库名与端口，不匹配直接拒绝。优先复用既有的测试库；确需新建时按 `README.md` 的步骤创建，库名必须以 `_test` 结尾并加入允许目标，绝不能改用开发库。
@@ -155,7 +162,7 @@ pnpm test:e2e      # Playwright，需后端已启动且数据库 ready
 - 绝不读取、输出或提交 `.env`、`.env.auth-rate.key` 等密钥文件内容，不把密钥写入代码、命令行参数、日志或文档。
 - 不把真实 GPX/TCX 原文、坐标、轨迹或真实用户数据写入仓库、测试夹具或数据库；使用合成样本。
 - **SSR 代理是安全边界**（`src/lib/server/backend.ts`）：目标源固定为 `INTERNAL_API_BASE_URL`，转发路径必须同源且以 `/api/` 开头，请求头只放行固定的 7 个（`cookie`、`origin`、`referer`、`x-csrf-token`、`content-type`、`accept`、`idempotency-key`）。**不要扩大该白名单，不要接受客户端传入的绝对地址，不要伪造 `Origin` 或信任 `X-Forwarded-*`。** 上传请求体上限 11 MiB，由 `Content-Length` 与流式计数双重校验。
-- 私人数据边界：坐标、精确起终点、邮箱、用户名、备注、文件名、原始轨迹**不得**出现在公开接口、分享响应、外部地图 URL 或 AI 供应商请求中。地图只向底图服务请求视口瓦片，轨迹 GeoJSON 始终留在浏览器内。
+- 私人数据边界：邮箱、账户用户名字段、备注、文件名、原始 GPX/TCX **不得**出现在公开响应（具名展示 URL 的 username 是公开标识）、分享响应、外部地图 URL 或 AI 供应商请求中。坐标与精确起终点仅允许在已授权的站主及显式启用完整展示的具名用户 `/api/v1/showcase/*` 接口公开；不得扩展到旧版摘要分享、外部地图 URL 或 AI 请求。地图只向底图服务请求视口瓦片，轨迹 GeoJSON 始终留在浏览器内。
 - AI 供应商密钥只在服务端进程环境；不要放进 `PUBLIC_*` 或前端。默认无配置时功能应显示不可用，不要提供 Mock 开关绕过。
 - 提交前若被授权提交，显式选择文件，不要使用 `git add -A`；排除密钥、数据库归档、合成账号密码与临时浏览器证据。
 

@@ -1,4 +1,9 @@
 <script lang="ts">
+  import { useViewContext } from "#lib/view-context.ts";
+  const view = useViewContext();
+  const fetch = view.fetch;
+  const readAllFootprints = view.bind(scoped_readAllFootprints, 2);
+
   import PageHeader from '#lib/components/PageHeader.svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import PageSkeleton from '#lib/components/PageSkeleton.svelte';
@@ -6,21 +11,21 @@
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import FootprintMap from '#lib/components/FootprintMap.svelte';
-  import { readAllFootprints,FootprintError } from '#lib/api/footprints.ts';
+  import { readAllFootprints as scoped_readAllFootprints,FootprintError } from '#lib/api/footprints.ts';
   import type { Selection,FootprintsAll,FootprintSnapshot } from '#lib/api/footprints.ts';
   let mode=$state<Selection['mode']>('tracks');
   let data=$state<FootprintsAll|null>(null), loading=$state(false), message=$state(''), requestId=0, mounted=$state(false);
   let status=$state<FootprintSnapshot['status']|null>(null), generatedAt=$state<string|null>(null), refreshing=$state(false), refreshFailed=$state(false);
   let controller:AbortController|undefined, timer:ReturnType<typeof setTimeout>|undefined, disposed=false;
   let mapVersion=$state(0);
-  const generatedLabel=$derived(generatedAt ? new Intl.DateTimeFormat('zh-CN',{timeZone:page.data.user?.timezone??'UTC',dateStyle:'medium',timeStyle:'short'}).format(new Date(generatedAt)) : '');
+  const generatedLabel=$derived(generatedAt ? new Intl.DateTimeFormat('zh-CN',{timeZone:page.data.showcase?.timezone??'UTC',dateStyle:'medium',timeStyle:'short'}).format(new Date(generatedAt)) : '');
   function changeMode(next: Selection['mode']) { if(mode===next)return; mode=next; void load(); }
   async function load() {
     clearTimeout(timer);timer=undefined;
     const id=++requestId;controller?.abort();controller=new AbortController();const signal=controller.signal;
     loading=true;data=null;message='';status=null;generatedAt=null;refreshing=false;refreshFailed=false;
     try {
-      await goto(`/footprints?${new URLSearchParams({mode})}`,{state:page.state,shallow:true,replace:true});
+      await goto(view.href(`/footprints?${new URLSearchParams({mode})}`),{state:page.state,shallow:true,replace:true});
       if(disposed || id!==requestId)return;
       const result=await readAllFootprints(mode,signal);
       if(disposed || id!==requestId)return;
@@ -29,7 +34,7 @@
       if(result.status==='pending')timer=setTimeout(()=>{void load();},5000);
     }catch(cause){
       if(disposed || id!==requestId || signal.aborted)return;
-      if(cause instanceof FootprintError && cause.status===401){data=null;status=null;generatedAt=null;refreshing=false;refreshFailed=false;window.location.replace('/login?reason=changed');return;}
+      if(cause instanceof FootprintError && cause.status===401){data=null;status=null;generatedAt=null;refreshing=false;refreshFailed=false;window.location.replace('/admin?reason=changed');return;}
       message=cause instanceof Error?cause.message:'无法读取足迹，请重试';
     }finally{if(!disposed && id===requestId)loading=false;}
   }
@@ -49,7 +54,7 @@
     {#if refreshFailed}<div data-testid="footprint-refresh-failed"><FeedbackState title="自动更新暂未完成，当前显示上次生成的足迹。"><p>后台会继续尝试更新，也可稍后重新读取。</p></FeedbackState></div>{/if}
     <div class="result-summary" aria-live="polite"><p data-testid="footprint-summary">全部 <strong>{data.activity_count}</strong> 条运动记录，地图显示 <strong>{data.visible_activity_count}</strong> 条。</p><div class="snapshot-status"><p class="generated-label" data-testid="footprint-generated">更新于 {generatedLabel}{refreshing?' · 后台更新中':''}</p><button class="button-secondary" onclick={()=>{void load();}}>重新读取足迹</button></div></div>
     {#if data.unsupported_segment_count}<FeedbackState title="部分轨迹超出地图支持范围">{data.unsupported_segment_count} 个轨迹段包含超出 ±85.051129° 的极区部分，地图仅显示支持范围。</FeedbackState>{/if}
-    {#if data.features.length===0}<FeedbackState title="还没有可显示的足迹"><p>导入带路线的运动记录后，足迹会自动生成。</p><a href="/activities" class="button-secondary mt-3">导入 GPX 或查看运动记录</a></FeedbackState>
+    {#if data.features.length===0}<FeedbackState title="还没有可显示的足迹"><p>导入带路线的运动记录后，足迹会自动生成。</p><a href={view.href("/activities")}  class="button-secondary mt-3">导入 GPX 或查看运动记录</a></FeedbackState>
     {:else}
       {#key data}{#key mapVersion}<FootprintMap {data} onretry={()=>{mapVersion++;}} />{/key}{/key}
       {#if data.mode==='heatmap'}<section class="heat-legend" data-testid="heat-legend" aria-label="热度图例"><div class="legend-heading"><h2>每格经过的不同运动记录数</h2><span>当前最高 {data.max_count} 次</span></div><div class="legend-levels">{#each [{color:'#c0dfac',label:'1 次'},{color:'#72b78a',label:'2–3 次'},{color:'#2d9474',label:'4–7 次'},{color:'#e69338',label:'8–15 次'},{color:'#bd432c',label:'16 次及以上'}] as level}<span><i style:background={level.color} aria-hidden="true"></i>{level.label}</span>{/each}</div><p>热度按不同运动记录计数，不按 GPS 点数量。同一记录在同一格内只计一次。</p></section>{/if}

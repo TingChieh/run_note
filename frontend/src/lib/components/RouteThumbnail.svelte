@@ -1,6 +1,11 @@
 <script lang="ts">
+  import { useViewContext } from "#lib/view-context.ts";
+  const view = useViewContext();
+  const fetch = view.fetch;
+  const readRoute = view.bind(scoped_readRoute, 1);
+
   import { onMount } from 'svelte';
-  import { ActivityError, readRoute, type Activity, type Route } from '#lib/api/activities.ts';
+  import { ActivityError, readRoute as scoped_readRoute, type Activity, type Route } from '#lib/api/activities.ts';
   import { routeDrawing } from '#lib/api/route-drawing.ts';
   let { activity, initialRoute = null, managedRoute = false, routeLoading = false, routeError = '', compact = false, onauthrequired }: { activity: Activity; initialRoute?: Route | null; managedRoute?: boolean; routeLoading?: boolean; routeError?: string; compact?: boolean; onauthrequired?: (cause: ActivityError) => void } = $props();
   let route = $state<Route | null>(null), loading = $state(true), error = $state('');
@@ -13,7 +18,7 @@
   async function load() {
     loading=true;error='';
     try { const data=await readRoute(activity.id);if(active && !initialRoute)route=data; }
-    catch(cause) { if(active){if(cause instanceof ActivityError && cause.status===401){route=null;if(onauthrequired)onauthrequired(cause);else window.location.replace('/login?reason=expired');return;}error='路线暂不可用';} }
+    catch(cause) { if(active){if(cause instanceof ActivityError && cause.status===401){route=null;if(onauthrequired)onauthrequired(cause);else window.location.replace('/admin?reason=expired');return;}error='路线暂不可用';} }
     finally {if(active)loading=false;}
   }
   onMount(()=>{

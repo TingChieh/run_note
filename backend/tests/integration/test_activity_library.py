@@ -166,6 +166,7 @@ def test_concurrent_batches_delete_only_once_and_increment_once(clients):
     owner = register(a)
     identifier = upload(a).json()["data"]["activity"]["id"]
     h = headers(a)
+    b.app.state.settings.site_owner_email = a.app.state.settings.site_owner_email
     b.cookies.update(a.cookies)
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = [

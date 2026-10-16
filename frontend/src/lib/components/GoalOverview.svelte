@@ -1,13 +1,21 @@
 <script lang="ts">
+  import { useViewContext } from "#lib/view-context.ts";
+  const view = useViewContext();
+  const fetch = view.fetch;
+  const readRange = view.bind(scoped_readRange, 1);
+  const readStreaks = view.bind(scoped_readStreaks, 0);
+  const readGoals = view.bind(scoped_readGoals, 0);
+  const saveGoal = view.bind(scoped_saveGoal, 2);
+
   import { onMount, tick } from 'svelte';
-  import type { User } from '#lib/api/auth.ts';
+  import type { ShowcaseProfile } from '#lib/api/showcase.ts';
   import { ActivityError } from '#lib/api/activities.ts';
-  import { comparisonWindow, goalTotals, readRange, readStreaks, type Streaks } from '#lib/api/milestones.ts';
-  import { validGoal, readGoals, saveGoal, type GoalPeriod } from '#lib/api/running-goal.ts';
+  import { comparisonWindow, goalTotals, readRange as scoped_readRange, readStreaks as scoped_readStreaks, type Streaks } from '#lib/api/milestones.ts';
+  import { validGoal, readGoals as scoped_readGoals, saveGoal as scoped_saveGoal, type GoalPeriod } from '#lib/api/running-goal.ts';
   import type { Summary } from '#lib/api/statistics.ts';
   import { goalInputPop } from '#lib/styles/goal-input-transition.ts';
   import FeedbackState from './FeedbackState.svelte';
-  let { user }: { user: User } = $props();
+  let { user, readonly = false }: { user: ShowcaseProfile; readonly?: boolean } = $props();
   type Card = { period: GoalPeriod; title: string; icon: string; current: Summary | null; previous: Summary | null; target: number | null; input: string; editing: boolean; loading: boolean; error: string; feedback: string; token: number; saving?: boolean };
   let cards = $state<Card[]>([
     {period:'year',title:'年度目标',icon:'↗',current:null,previous:null,target:null,input:'',editing:false,loading:true,error:'',feedback:'',token:0},
@@ -23,7 +31,7 @@
   function failed(cause: unknown) {
     if (cause instanceof ActivityError && cause.status === 401) {
       active = false; streaks = null; cards.forEach(card => {card.current = null; card.previous = null;});
-      window.location.replace('/login?reason=expired&next=%2Fdashboard'); return '';
+      window.location.replace('/admin?reason=expired&next=%2Fdashboard'); return '';
     }
     return cause instanceof Error ? cause.message : '暂时无法读取运动数据';
   }
@@ -38,7 +46,7 @@
     finally { if (active && token === goalToken) goalLoading = false; }
   }
   async function edit(card: Card, editing: boolean) {
-    if (card.saving) return;
+    if (readonly || card.saving) return;
     card.editing = editing; card.input = card.target?.toString() ?? ''; card.feedback = '';
     await tick();
     if (!active || card.editing !== editing) return;
@@ -47,7 +55,7 @@
     if (control instanceof HTMLInputElement) control.select();
   }
   async function save(card: Card, event: SubmitEvent) {
-    event.preventDefault(); if (!card.editing) return; const target = validGoal(card.input);
+    event.preventDefault(); if (readonly || !card.editing) return; const target = validGoal(card.input);
     if (target === null) {card.feedback = '请输入大于 0、最多 1 位小数的公里数（上限 100000）';return;}
     if (card.saving) return;
     card.saving = true; card.feedback = ''; ++goalToken;
@@ -91,12 +99,12 @@
     {@const delta = card.current && card.previous ? (Number(card.current.distance_m)-Number(card.previous.distance_m))/1000 : null}
     <article class="goal-card" aria-busy={card.loading || goalLoading || !!card.saving}>
       <form onsubmit={(event)=>save(card,event)}>
-      <div class="goal-heading"><h2><span aria-hidden="true">{card.icon}</span>{card.title}</h2><div class="goal-actions rn-goal-actions">
+      <div class="goal-heading"><h2><span aria-hidden="true">{card.icon}</span>{card.title}</h2>{#if !readonly}<div class="goal-actions rn-goal-actions">
         <div class="goal-save-reveal" class:is-open={card.editing} inert={!card.editing} aria-hidden={!card.editing}>
           <div class="goal-save-clip"><button type="submit" class="button-secondary goal-edit" disabled={!card.editing || card.saving} aria-label={`保存${card.title}`}>{card.saving?'…':'保存'}</button></div>
         </div>
         <button id={`overview-edit-${card.period}`} class="button-secondary goal-edit" type="button" disabled={goalLoading || !!goalError || card.saving} aria-label={`${card.editing?'取消':card.target===null?'设置':'调整'}${card.title}`} aria-expanded={card.editing} onclick={()=>void edit(card,!card.editing)}>{card.editing?'取消':card.target===null?'设置':'调整'}</button>
-      </div></div>
+      </div>{/if}</div>
       {#snippet targetValue()}
         {#if card.editing}
           <span class="goal-target">/<label class="sr-only" for={`overview-${card.period}`}>{card.title}距离（km）</label><input transition:goalInputPop id={`overview-${card.period}`} inputmode="decimal" bind:value={card.input} disabled={card.saving} aria-describedby={`overview-confirmed-${card.period}${card.feedback?` overview-feedback-${card.period}`:''}`} onkeydown={(event)=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();void edit(card,false);}}} /> km</span>

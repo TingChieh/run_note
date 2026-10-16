@@ -13,7 +13,7 @@ test('activity cards show private labels and only the highest real-distance achi
   const card = page.locator('.activity-card').filter({ has: page.getByRole('heading', { name: sampleActivity.title, exact: true }) });
   await expect(card.getByRole('img', { name: `${sampleActivity.title}的路线轮廓` })).toBeVisible();
   const link = card.getByRole('link');
-  await expect(link).toContainText('私人'); await expect(link).toContainText('配速');
+  await expect(link).toContainText('公开展示'); await expect(link).toContainText('配速');
   for (const label of ['轻松跑', '#河畔', '#清晨', '5 km 达成']) await expect(link.getByText(label, { exact: true })).toBeVisible();
   await expect(card.getByText('10 km 达成', { exact: true })).toHaveCount(0);
   const short = page.locator('.activity-card').filter({ has: page.getByRole('heading', { name: '尚未达成', exact: true }) });
@@ -51,7 +51,7 @@ test('activity cards show private labels and only the highest real-distance achi
 
 test('failed private route previews keep the card labels and activity navigation usable', async ({ page }) => {
   await installActivities(page);
-  await page.route(`**/api/v1/activities/${sampleActivity.id}/route`, route => route.fulfill({ status: 503, json: { error: { message: '暂时不可用' } } }));
+  await page.route(`**/api/v1/showcase/activities/${sampleActivity.id}/route`, route => route.fulfill({ status: 503, json: { error: { message: '暂时不可用' } } }));
   await loginRunner(page); await page.goto('/activities');
   const card = page.locator('.activity-card').filter({ has: page.getByRole('heading', { name: sampleActivity.title, exact: true }) });
   await expect(card.getByText('路线暂不可用', { exact: true })).toBeVisible();
@@ -64,7 +64,7 @@ test('activity route previews load only when their cards approach the viewport',
   state.records = Array.from({ length: 20 }, (_, index) => ({ ...sampleActivity, id: `${String(index).padStart(8, '0')}-1111-4111-8111-111111111111`, title: `路线 ${index + 1}` }));
   const distant = state.records[19];
   let distantLoads = 0;
-  await page.route(`**/api/v1/activities/${distant.id}/route`, async route => { distantLoads++; await route.fallback(); });
+  await page.route(`**/api/v1/showcase/activities/${distant.id}/route`, async route => { distantLoads++; await route.fallback(); });
   await page.setViewportSize({ width: 390, height: 844 });
   await loginRunner(page); await page.goto('/activities');
   await page.locator('.activity-card').first().scrollIntoViewIfNeeded();

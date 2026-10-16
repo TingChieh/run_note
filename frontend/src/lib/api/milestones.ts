@@ -31,8 +31,8 @@ export function goalTotals(summary: { distance_m: Metric; duration_sum_seconds: 
   const km = Number(summary.distance_m) / 1000;
   return { km, hours: summary.duration_sum_seconds === null ? null : Number(summary.duration_sum_seconds) / 3600, count: summary.activity_count, percent: target === null ? null : Math.min(100, km / target * 100) };
 }
-export async function readRange(range: DateRange): Promise<Summary> {
-  return parseSummary(await request(`/api/v1/statistics/summary?date_from=${range.from}&date_to=${range.to}`, {}, fetch));
+export async function readRange(range: DateRange, fetcher: typeof fetch = fetch): Promise<Summary> {
+  return parseSummary(await request(`/api/v1/showcase/statistics/summary?date_from=${range.from}&date_to=${range.to}`, {}, fetcher));
 }
 export function parseStreaks(v: unknown): Streaks {
   if (!object(v) || !date(v.today) || !['current_days','longest_days','current_weeks','longest_weeks'].every(k => count(v[k])) || Number(v.current_days) > Number(v.longest_days) || Number(v.current_weeks) > Number(v.longest_weeks) || !Array.isArray(v.week) || v.week.length !== 7) invalid();
@@ -40,11 +40,11 @@ export function parseStreaks(v: unknown): Streaks {
   if (!v.week.every((d, i) => object(d) && d.date === shift(monday, i) && typeof d.active === 'boolean' && !(d.active && String(d.date) > String(v.today)))) invalid();
   return v as unknown as Streaks;
 }
-export async function readStreaks(): Promise<Streaks> { return parseStreaks(await request('/api/v1/statistics/streaks', {}, fetch)); }
+export async function readStreaks(fetcher: typeof fetch = fetch): Promise<Streaks> { return parseStreaks(await request('/api/v1/showcase/statistics/streaks', {}, fetcher)); }
 export function parseProvinces(v: unknown, year: number | null = null): Provinces {
   if (!object(v) || v.year !== year || v.total !== 34 || !count(v.activity_count) || !count(v.located_activity_count) || v.located_activity_count > v.activity_count || !Array.isArray(v.provinces) || v.provinces.length > 34) invalid();
   const seen = new Set<number>();
   for (const p of v.provinces) { if (!object(p) || !count(p.code) || p.code < 110000 || p.code > 820000 || p.code % 10000 !== 0 || seen.has(p.code) || typeof p.name !== 'string' || !count(p.activity_count) || p.activity_count < 1 || p.activity_count > v.located_activity_count) invalid(); seen.add(p.code); }
   return v as unknown as Provinces;
 }
-export async function readProvinces(year: number | null = null): Promise<Provinces> { return parseProvinces(await request(`/api/v1/footprints/provinces${year === null ? '' : `?year=${year}`}`, {}, fetch), year); }
+export async function readProvinces(year: number | null = null, fetcher: typeof fetch = fetch): Promise<Provinces> { return parseProvinces(await request(`/api/v1/showcase/footprints/provinces${year === null ? '' : `?year=${year}`}`, {}, fetcher), year); }

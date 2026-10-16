@@ -43,7 +43,7 @@ test('similar records need individual confirmation and only failed records are r
  await box.getByRole('button',{name:'仍要导入此条记录'}).click();await expect(box.getByText('暂时无法保存')).toBeVisible();await box.getByRole('button',{name:'仅重试失败记录'}).click();await expect(box.getByText('成功 · 仅汇总')).toBeVisible();expect(previews).toBe(1);expect(saves).toBe(2);
 });
 test('401 clears selected private summaries and returns to login',async({page})=>{
- await page.route('**/api/v1/mifitness-imports**',route=>route.fulfill({status:401,json:{error:{message:'expired'}}}));await setup(page);const box=region(page);await box.getByLabel('跑步汇总 JSON').setInputFiles(jsonFile([source()]));await box.getByRole('button',{name:'预览所选记录'}).click();await expect(page).toHaveURL(/\/login\?reason=expired/);await expect(page.getByText('1791763200')).toHaveCount(0);
+ await page.route('**/api/v1/mifitness-imports**',route=>route.fulfill({status:401,json:{error:{message:'expired'}}}));await setup(page);const box=region(page);await box.getByLabel('跑步汇总 JSON').setInputFiles(jsonFile([source()]));await box.getByRole('button',{name:'预览所选记录'}).click();await expect(page).toHaveURL(/\/admin\?reason=expired/);await expect(page.getByText('1791763200')).toHaveCount(0);
 });
 test('exact track uploads retain the filename; failed enrichment retry keeps its explicit target',async({page})=>{
  const bodies:string[]=[];

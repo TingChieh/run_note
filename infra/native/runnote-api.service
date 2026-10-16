@@ -1,0 +1,19 @@
+[Unit]
+Description=RunNote API
+After=network.target
+
+[Service]
+Type=simple
+User=runnote
+Group=runnote
+WorkingDirectory=/opt/run-note/backend
+EnvironmentFile=/etc/run-note/backend.env
+ExecStart=/opt/run-note/backend/.venv/bin/uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 --no-proxy-headers
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

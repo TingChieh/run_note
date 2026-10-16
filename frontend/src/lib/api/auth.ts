@@ -1,4 +1,6 @@
 export interface User {
+  is_admin: boolean;
+  showcase_enabled: boolean;
   id: string;
   email: string;
   username: string;
@@ -29,20 +31,35 @@ async function request<T>(path: string, init: RequestInit, fetcher: typeof fetch
   return body.data as T;
 }
 export async function readSession(fetcher: typeof fetch = fetch): Promise<User | null> {
-  try { return (await request<{ user: User }>('/api/v1/auth/session', {}, fetcher)).user; }
+  try { return parseUser((await request<{ user: unknown }>('/api/v1/auth/session', {}, fetcher)).user); }
   catch (cause) { if (cause instanceof AuthError && cause.status === 401) return null; throw cause; }
 }
 export async function authWrite(action: 'login' | 'register' | 'logout', data: unknown, fetcher: typeof fetch = fetch) {
   // Fresh token for the current Cookie; no global cache, no write retries on CSRF errors.
   const { csrf_token } = await request<{ csrf_token: string }>('/api/v1/auth/csrf', {}, fetcher);
-  return request<{ user?: User; csrf_token?: string; logged_out?: boolean }>(`/api/v1/auth/${action}`, {
+  const result = await request<{ user?: User; csrf_token?: string; logged_out?: boolean }>(`/api/v1/auth/${action}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf_token }, body: JSON.stringify(data)
   }, fetcher);
+  if (action !== 'logout') result.user = parseUser(result.user);
+  return result;
 }
 export function safeNext(value: string | null): string {
   if (!value || !value.startsWith('/') || value.startsWith('//') || /[\\\s%]/.test(value)) return '/dashboard';
   const path = value.split(/[?#]/)[0];
-  if (/^\/(login|register|api)(\/|$)/.test(path)) return '/dashboard';
+  if (/^\/(login|register|api|admin)(\/|$)/.test(path)) return '/dashboard';
   return value;
 }
-export function isProtected(path: string): boolean { return /^\/(activities|dashboard|footprints|settings|ai)(\/|$)/.test(path); }
+export function isProtected(path: string): boolean { return /^\/(settings|workspace|admin\/users)(\/|$)/.test(path); }
+
+export function parseUser(value: unknown): User {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new AuthError('认证身份无效',502,'INVALID_RESPONSE');
+  const v = value as Record<string, unknown>;
+  if (['id','email','username','display_name','timezone','created_at','bio'].some(k => typeof v[k] !== 'string') || ['is_admin','showcase_enabled','profile_is_public'].some(k => typeof v[k] !== 'boolean')) throw new AuthError('认证身份无效',502,'INVALID_RESPONSE');
+  return v as unknown as User;
+}
+export async function changePassword(current_password: string, new_password: string, fetcher: typeof fetch = fetch): Promise<void> {
+  const { csrf_token } = await request<{csrf_token: string}>('/api/v1/auth/csrf', {}, fetcher);
+  if (typeof csrf_token !== 'string' || !csrf_token) throw new AuthError('认证令牌无效', 502, 'INVALID_RESPONSE');
+  const result = await request<{password_changed: boolean}>('/api/v1/me/password', { method: 'PATCH', headers: {'Content-Type':'application/json', 'X-CSRF-Token':csrf_token}, body: JSON.stringify({current_password,new_password}) }, fetcher);
+  if (result.password_changed !== true) throw new AuthError('密码修改响应无效', 502, 'INVALID_RESPONSE');
+}

@@ -17,23 +17,24 @@ from app.modules.sharing.schema import (
 )
 from app.modules.statistics import service as statistics
 from app.modules.users.model import User
+from app.modules.users.service import is_enabled
 
 
 def missing():
     raise ApiError(404, "RESOURCE_NOT_FOUND", "页面不存在或已停止分享")
 
 
-def profile_user(db, username):
+def profile_user(db, username, settings):
     user = db.scalar(
         select(User).where(User.username == username, User.profile_is_public.is_(True))
     )
-    if user is None:
+    if user is None or not is_enabled(user, settings):
         missing()
     return user
 
 
-def profile(db, username):
-    user = profile_user(db, username)
+def profile(db, username, settings):
+    user = profile_user(db, username, settings)
     return PublicProfile(
         username=user.username,
         display_name=user.display_name,
@@ -42,8 +43,10 @@ def profile(db, username):
     )
 
 
-def public_view(db, activity):
+def public_view(db, activity, settings):
     user = db.get(User, activity.user_id)
+    if user is None or not is_enabled(user, settings):
+        missing()
     return PublicActivity(
         **{
             key: getattr(activity, key)
@@ -65,17 +68,17 @@ def public_view(db, activity):
     )
 
 
-def public_activity(db, identifier):
+def public_activity(db, identifier, settings):
     activity = db.scalar(
         select(Activity).where(Activity.id == identifier, Activity.visibility == "public")
     )
     if activity is None:
         missing()
-    return public_view(db, activity)
+    return public_view(db, activity, settings)
 
 
-def public_listing(db, username, limit, offset, day):
-    user = profile_user(db, username)
+def public_listing(db, username, limit, offset, day, settings):
+    user = profile_user(db, username, settings)
     filters = [Activity.user_id == user.id, Activity.visibility == "public"]
     if day is not None:
         filters.append(Activity.activity_date == day)
@@ -87,7 +90,7 @@ def public_listing(db, username, limit, offset, day):
         .offset(offset)
     ).all()
     return PublicActivityList(
-        items=[public_view(db, a) for a in rows],
+        items=[public_view(db, a, settings) for a in rows],
         total=db.scalar(select(func.count()).select_from(Activity).where(*filters)),
         limit=limit,
         offset=offset,
@@ -160,7 +163,7 @@ def revoke(db, owner, identifier, link_id, now):
     return {"revoked": True}
 
 
-def shared(db, token, now):
+def shared(db, token, now, settings):
     if not re.fullmatch(r"[A-Za-z0-9_-]{43}", token):
         missing()
     activity = db.scalar(
@@ -175,4 +178,4 @@ def shared(db, token, now):
     )
     if activity is None:
         missing()
-    return public_view(db, activity)
+    return public_view(db, activity, settings)

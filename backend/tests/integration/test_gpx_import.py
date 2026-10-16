@@ -34,7 +34,7 @@ def clients():
     settings = Settings(
         database_url=url, site_origin=ORIGIN, auth_rate_hash_key=uuid4().hex, _env_file=None
     )
-    a, b = create_app(settings), create_app(settings)
+    a, b = create_app(settings.model_copy()), create_app(settings.model_copy())
     with TestClient(a, base_url=ORIGIN) as ca, TestClient(b, base_url=ORIGIN) as cb:
         yield ca, cb, engine, a
     engine.dispose()
@@ -47,18 +47,37 @@ def headers(client):
 
 
 def register(client):
+    """Provision a synthetic owner offline; the public registration API is closed.
+
+    Each client represents a separate site configuration for ownership regression tests.
+    No production dependency or permission bypass is installed.
+    """
+    from app.core.security import hash_password
+    from app.modules.users.model import User
+
     unique = uuid4().hex[:20]
-    r = client.post(
-        "/api/v1/auth/register",
+    email = f"{unique}@example.com"
+    password = "Synthetic-password-2026"
+    client.app.state.settings.site_owner_email = email
+    with client.app.state.session_factory() as db:
+        user = User(
+            email_normalized=email,
+            username=f"u_{unique}",
+            display_name="Synthetic runner",
+            password_hash=hash_password(password),
+            is_active=True,
+            timezone="Asia/Shanghai",
+        )
+        db.add(user)
+        db.commit()
+        owner = str(user.id)
+    response = client.post(
+        "/api/v1/auth/login",
         headers=headers(client),
-        json={
-            "email": f"{unique}@example.com",
-            "username": f"u_{unique}",
-            "password": "Synthetic-password-2026",
-        },
+        json={"email": email, "password": password},
     )
-    assert r.status_code == 201
-    return r.json()["data"]["user"]["id"]
+    assert response.status_code == 200, response.text
+    return owner
 
 
 def upload(client, file="equator-six.gpx", fields=None, raw=None, extra_headers=None):
@@ -308,6 +327,7 @@ def test_atomic_point_failure_rolls_back_and_lock_releases(clients, monkeypatch)
 def test_same_user_parallel_workers_commit_at_most_once(clients):
     a, b, engine, app = clients
     owner = register(a)
+    b.app.state.settings.site_owner_email = a.app.state.settings.site_owner_email
     b.cookies.update(a.cookies)
     ha, hb = headers(a), headers(b)
     file = (FIXTURES / "equator-six.gpx").read_bytes()

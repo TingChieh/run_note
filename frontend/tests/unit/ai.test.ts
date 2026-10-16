@@ -3,9 +3,9 @@ import { AIError, confirmedRequestOutcome, generateReport, parseReport } from '.
 import { isProtected } from '../../src/lib/api/auth';
 const key = '00000000-0000-4000-8000-000000000001';
 const payload = { date_from: '2024-01-01', date_to: '2024-01-29', consent_to_send_summary: true as const };
-it('protects AI pages and rejects malformed reports', () => {
-  expect(isProtected('/ai')).toBe(true);
-  expect(isProtected('/ai/nested')).toBe(true);
+it('allows public AI pages and rejects malformed reports', () => {
+  expect(isProtected('/ai')).toBe(false);
+  expect(isProtected('/ai/nested')).toBe(false);
   expect(isProtected('/air')).toBe(false);
   expect(() => parseReport({})).toThrow('无效');
 });

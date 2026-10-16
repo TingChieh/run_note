@@ -11,6 +11,7 @@ from app.core.security import utc_now
 from app.db.schema import get_expected_revision
 from app.db.session import create_session_factory
 from app.modules.activities.router import router as activities_router
+from app.modules.admin_users.router import router as admin_users_router
 from app.modules.ai_reports.provider import OpenAIProvider
 from app.modules.ai_reports.router import router as ai_router
 from app.modules.auth.router import router as auth_router
@@ -22,6 +23,8 @@ from app.modules.health.router import router
 from app.modules.mifitness.router import router as mifitness_router
 from app.modules.running_goals.router import router as running_goals_router
 from app.modules.sharing.router import router as sharing_router
+from app.modules.showcase.router import named_router as named_showcase_router
+from app.modules.showcase.router import router as showcase_router
 from app.modules.statistics.router import router as statistics_router
 from app.modules.tcx.router import router as tcx_router
 from app.modules.users.router import router as users_router
@@ -65,4 +68,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(running_goals_router)
     app.include_router(sharing_router)
     app.include_router(ai_router)
+    app.include_router(showcase_router)
+    app.include_router(named_showcase_router)
+    app.include_router(admin_users_router)
     return app

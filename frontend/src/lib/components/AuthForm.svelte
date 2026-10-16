@@ -14,16 +14,16 @@
     event.preventDefault(); if (busy) return;
     busy = true; message = '';
     try {
-      await authWrite(mode, { email, password, ...(mode === 'register' ? { username, timezone: 'Asia/Shanghai' } : {}) });
+      const result = await authWrite(mode, { email, password, ...(mode === 'register' ? { username, timezone: 'Asia/Shanghai' } : {}) });
       password = '';
-      window.location.assign(safeNext(page.url.searchParams.get('next')));
+      window.location.assign(safeNext(page.url.searchParams.get('next') ?? (result.user?.is_admin ? '/dashboard' : '/workspace/dashboard')));
     } catch (cause) { password = ''; message = cause instanceof Error ? cause.message : '认证失败，请重试'; busy = false; await tick(); errorElement?.focus(); }
   }
 </script>
 <svelte:head><title>{label} · Run Note</title></svelte:head>
 <section class="auth-card">
   <div class="auth-intro"><p class="auth-eyebrow">RUNNOTE · 每一步都有意义</p><h1 class="text-3xl font-semibold">{label}</h1>
-  <p class="mt-3 text-sm text-muted-foreground">{mode === 'register' ? '创建私人账号。注册成功后自动登录。' : '使用你的邮箱和密码登录。'}</p></div>
+  <p class="mt-3 text-sm text-muted-foreground">{mode === 'register' ? '创建私人账号。注册成功后自动登录。' : '使用已启用账号的邮箱和密码登录。'}</p></div>
   {#if page.url.searchParams.has('next') || page.url.searchParams.get('reason') === 'changed'}
     <div class="mt-4"><FeedbackState kind="empty" title="请登录后继续。会话可能已过期或身份已发生变化。" /></div>
   {:else if page.url.searchParams.get('reason') === 'logout'}
@@ -43,5 +43,5 @@
     {#if message}<div id="auth-error" tabindex="-1" bind:this={errorElement}><FeedbackState kind="error" title={message} /></div>{/if}
     <button type="submit" disabled={busy || !ready} class="rounded-lg bg-primary px-4 py-3 text-primary-foreground disabled:opacity-50">{busy ? '处理中…' : label}</button>
   </form>
-  <p class="mt-5 text-sm"><a class="text-primary underline" href={`${mode === 'register' ? '/login' : '/register'}?next=${encodeURIComponent(safeNext(page.url.searchParams.get('next')))}`}>{mode === 'register' ? '已有账号？去登录' : '没有账号？去注册'}</a></p>
+  <p class="mt-5 text-sm"><a class="text-primary underline" href="/dashboard">返回展示页面</a></p>
 </section>

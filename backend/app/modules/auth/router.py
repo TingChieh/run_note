@@ -62,11 +62,9 @@ def register(
     response: Response,
     db: Annotated[Session, Depends(get_session)],
 ):
-    old, now = preauth(request, db, [("register-ip", client_ip(request))])
-    user, row, token = service.register(db, old, payload, now)
-    db.commit()
-    service.set_cookie(response, request.app.state.settings, token)
-    return envelope(request, AuthView(user=view(user), csrf_token=row.csrf_token))
+    from app.core.errors import ApiError
+
+    raise ApiError(403, "REGISTRATION_DISABLED", "本站不开放注册")
 
 
 @router.post("/login", response_model=ApiResponse[AuthView])
@@ -79,10 +77,14 @@ def login(
     old, now = preauth(
         request, db, [("login-account", payload.email), ("login-ip", client_ip(request))]
     )
-    user, row, token = service.login(db, old, payload, now)
+    user, row, token = service.login(
+        db, old, payload, now, request.app.state.settings.site_owner_email
+    )
     db.commit()
     service.set_cookie(response, request.app.state.settings, token)
-    return envelope(request, AuthView(user=view(user), csrf_token=row.csrf_token))
+    return envelope(
+        request, AuthView(user=view(user, request.app.state.settings), csrf_token=row.csrf_token)
+    )
 
 
 @router.get("/session", response_model=ApiResponse[SessionView])
@@ -91,7 +93,7 @@ def session_info(
     identity: Annotated[tuple, Depends(get_identity)],
     db: Annotated[Session, Depends(get_session)],
 ):
-    data = SessionView(user=view(identity[1]))
+    data = SessionView(user=view(identity[1], request.app.state.settings))
     db.commit()
     return envelope(request, data)
 

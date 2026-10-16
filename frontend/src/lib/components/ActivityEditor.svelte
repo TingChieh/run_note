@@ -1,6 +1,11 @@
 <script lang="ts">
+  import { useViewContext } from "#lib/view-context.ts";
+  const view = useViewContext();
+  const fetch = view.fetch;
+  const updateActivity = view.bind(scoped_updateActivity, 2);
+
   import { onMount } from 'svelte';
-  import { ActivityError, updateActivity, type Activity } from '#lib/api/activities.ts';
+  import { ActivityError, updateActivity as scoped_updateActivity, type Activity } from '#lib/api/activities.ts';
   import FeedbackState from './FeedbackState.svelte';
   let { activity, onupdated, oncancel, onbusychange }: {
     activity: Activity; onupdated: (value: Activity) => void; oncancel: () => void; onbusychange?: (busy: boolean) => void;
@@ -31,7 +36,7 @@
       saving = false; onbusychange?.(false); onupdated(result);
     } catch (cause) {
       if (!disposed) {
-        if (cause instanceof ActivityError && cause.status === 401) window.location.replace('/login?reason=expired');
+        if (cause instanceof ActivityError && cause.status === 401) window.location.replace('/admin?reason=expired');
         error = cause instanceof Error ? cause.message : '保存失败，请重试';
       }
     } finally { if (!disposed) { saving = false; onbusychange?.(false); } }
@@ -42,7 +47,7 @@
   <label>分类<input bind:value={category} name="category" maxlength="30" list={`${id}-categories`} placeholder="例如：轻松跑" disabled={saving} /></label>
   <datalist id={`${id}-categories`}>{#each ['轻松跑', '节奏跑', '间歇跑', '长距离', '比赛'] as item}<option value={item}></option>{/each}</datalist>
   <label>标签<input bind:value={tagText} name="tags" disabled={saving} aria-describedby={`${id}-tags-hint`} placeholder="例如：清晨, 公园" /></label>
-  <p id={`${id}-tags-hint`} class="hint">用逗号分隔，最多 10 个，每个 30 字。分类和标签仅自己可见。</p>
+  <p id={`${id}-tags-hint`} class="hint">用逗号分隔，最多 10 个，每个 30 字。标题、分类和标签会公开展示。</p>
   <label>备注<textarea bind:value={notes} name="notes" maxlength="5000" rows="4" disabled={saving} aria-describedby={`${id}-notes-hint`}></textarea></label>
   <p id={`${id}-notes-hint`} class="hint">备注仅自己可见，最多 5000 字。</p>
   {#if error}<FeedbackState kind="error" title={error} />{/if}

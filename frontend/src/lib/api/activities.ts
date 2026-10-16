@@ -1,3 +1,4 @@
+import { parseShowcaseActivity, showcasePath } from './showcase.ts';
 import { dashboardDistance } from './dashboard-format';
 export type Metric = number | string | null;
 export interface Activity {
@@ -85,7 +86,7 @@ export async function request(path: string, init: RequestInit, fetcher: typeof f
   return body.data;
 }
 export async function readActivityCategories(fetcher: typeof fetch = fetch): Promise<string[]> {
-  const value = await request('/api/v1/activities/categories', {}, fetcher);
+  const value = await request(showcasePath('/api/v1/activities/categories'), {}, fetcher);
   if (!Array.isArray(value) || value.some(item => typeof item !== 'string' || [...item].length > 30) || new Set(value).size !== value.length) invalid();
   return value as string[];
 }
@@ -93,13 +94,13 @@ export async function readActivities(fetcher: typeof fetch = fetch, offset = 0, 
   if (activityDate !== undefined && !calendarDate(activityDate)) invalid();
   if (activityMonth !== undefined && !/^(?!0000)[0-9]{4}-(0[1-9]|1[0-2])$/.test(activityMonth)) invalid();
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) invalid();
-  const value = await request(`/api/v1/activities?limit=${limit}&offset=${offset}${activityDate ? `&activity_date=${activityDate}` : ''}${category === undefined ? '' : `&category=${encodeURIComponent(category)}`}${activityMonth ? `&activity_month=${activityMonth}` : ''}`, {}, fetcher);
+  const value = await request(showcasePath(`/api/v1/activities?limit=${limit}&offset=${offset}${activityDate ? `&activity_date=${activityDate}` : ''}${category === undefined ? '' : `&category=${encodeURIComponent(category)}`}${activityMonth ? `&activity_month=${activityMonth}` : ''}`), {}, fetcher);
   if (!object(value) || !Array.isArray(value.items) || !Number.isInteger(value.total) || (value.total as number) < 0 || value.limit !== limit || value.offset !== offset) invalid();
-  return { items: value.items.map(parseActivity), total: value.total as number, limit, offset };
+  return { items: value.items.map(parseShowcaseActivity), total: value.total as number, limit, offset };
 }
-export async function readActivity(id: string, fetcher: typeof fetch = fetch): Promise<Activity> {
+export async function readActivity(id: string, fetcher: typeof fetch = fetch, owner = false): Promise<Activity> {
   if (!uuid.test(id)) throw new ActivityError('找不到这条活动', 404);
-  const value = parseActivity(await request(`/api/v1/activities/${id}`, {}, fetcher));
+  const value = (owner ? parseActivity : parseShowcaseActivity)(await request(owner ? `/api/v1/activities/${id}` : showcasePath(`/api/v1/activities/${id}`), {}, fetcher));
   if (value.id !== id) invalid(); return value;
 }
 async function mutateActivity(id: string, method: 'PATCH' | 'DELETE', body: unknown, fetcher: typeof fetch): Promise<unknown> {
@@ -131,7 +132,7 @@ export async function deleteActivities(ids: string[], fetcher: typeof fetch = fe
 }
 export async function readRoute(id: string, fetcher: typeof fetch = fetch): Promise<Route> {
   if (!uuid.test(id)) throw new ActivityError('找不到这条活动', 404);
-  return unwrapRoute(await request(`/api/v1/activities/${id}/route`, {}, fetcher));
+  return unwrapRoute(await request(showcasePath(`/api/v1/activities/${id}/route`), {}, fetcher));
 }
 export const uploadGpx = (form: FormData, fetcher: typeof fetch = fetch) => uploadTrack(form, 'gpx', fetcher);
 export const uploadTcx = (form: FormData, fetcher: typeof fetch = fetch) => uploadTrack(form, 'tcx', fetcher);

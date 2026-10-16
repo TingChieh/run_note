@@ -50,7 +50,13 @@ def require_identity(db, request, now):
     # session after acquiring the user lock so a concurrent revocation cannot be missed.
     user = db.scalar(select(User).where(User.id == row.user_id).with_for_update())
     db.refresh(row)
-    if user is None or not session_valid(row, now):
+    if (
+        user is None
+        or not session_valid(row, now)
+        or not (
+            user.email_normalized == request.app.state.settings.site_owner_email or user.is_active
+        )
+    ):
         raise ApiError(401, "AUTH_REQUIRED", "请先登录")
     if now >= row.last_seen_at + timedelta(minutes=5):
         row.last_seen_at = now
@@ -106,9 +112,11 @@ def register(db, old, payload, now):
     return user, row, token
 
 
-def login(db, old, payload, now):
+def login(db, old, payload, now, owner_email=None):
     user = db.scalar(select(User).where(User.email_normalized == payload.email).with_for_update())
     if not verify_password(user.password_hash if user else None, payload.password):
+        raise ApiError(401, "INVALID_CREDENTIALS", "邮箱或密码不正确")
+    if not (user.email_normalized == owner_email or user.is_active):
         raise ApiError(401, "INVALID_CREDENTIALS", "邮箱或密码不正确")
     if PASSWORD_HASHER.check_needs_rehash(user.password_hash):
         user.password_hash = hash_password(payload.password)

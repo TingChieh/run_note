@@ -185,6 +185,7 @@ def test_concurrent_metadata_changes_preserve_both_fields_and_version_increments
     activity = upload(a).json()["data"]["activity"]
     path = f"/api/v1/activities/{activity['id']}"
     h = headers(a)
+    b.app.state.settings.site_owner_email = a.app.state.settings.site_owner_email
     b.cookies.update(a.cookies)
     with ThreadPoolExecutor(max_workers=2) as pool:
         title = pool.submit(a.patch, path, headers=h, json={"title": "并发标题"})

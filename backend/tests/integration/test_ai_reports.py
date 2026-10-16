@@ -59,12 +59,15 @@ def ai_clients():
         ai_api_key="test-only",
         _env_file=None,
     )
-    app = create_app(settings)
+    app = create_app(settings.model_copy())
+    other_app = create_app(settings.model_copy())
+    other_app.state.clock = lambda: app.state.clock()
     provider = MockProvider()
     app.state.ai_provider = provider
+    other_app.state.ai_provider = provider
     with (
         TestClient(app, base_url=settings.site_origin) as a,
-        TestClient(app, base_url=settings.site_origin) as b,
+        TestClient(other_app, base_url=settings.site_origin) as b,
     ):
         yield a, b, app, provider
 
@@ -373,6 +376,7 @@ def test_pending_concurrency_expiry_and_late_response(ai_clients):
     owner = register(a)
     seed(app, owner)
     # Same authenticated session, independent HTTP worker/DB sessions.
+    b.app.state.settings.site_owner_email = a.app.state.settings.site_owner_email
     b.cookies.update(a.cookies)
     provider.release = threading.Event()
     key = uuid4()
@@ -473,6 +477,7 @@ def test_independent_app_workers_share_pending_guard(ai_clients):
     worker = create_app(app.state.settings)
     worker.state.ai_provider = provider
     with TestClient(worker, base_url=app.state.settings.site_origin) as b:
+        b.app.state.settings.site_owner_email = a.app.state.settings.site_owner_email
         b.cookies.update(a.cookies)
         with ThreadPoolExecutor(1) as pool:
             pending = pool.submit(post, a)

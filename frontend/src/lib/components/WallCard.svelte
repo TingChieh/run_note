@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { useViewContext } from "#lib/view-context.ts";
+  const view = useViewContext();
+  const fetch = view.fetch;
+
   import { formatDistance, formatDuration, activityDuration, formatPace, type Activity, type Route, type ActivityError } from '#lib/api/activities.ts';
   import { cardTilt } from '#lib/styles/card-tilt.ts';
   import RouteThumbnail from './RouteThumbnail.svelte';
@@ -15,7 +19,7 @@
     {@render content()}
   </button>
 {:else}
-  <a class="wall-card" class:compact href={`/activities/${activity.id}`}>{@render content()}</a>
+  <a class="wall-card" class:compact href={view.href(`/activities/${activity.id}`)}>{@render content()}</a>
 {/if}
 <style>
   .wall-card{display:block;min-width:0;height:100%;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);padding:.7rem;transition:border-color .15s ease;}.wall-card:hover{border-color:var(--primary);}.wall-card-copy{padding:.7rem .4rem .3rem;}.wall-date{display:flex;justify-content:space-between;color:var(--muted-foreground);font-size:.75rem;font-variant-numeric:tabular-nums;}h3{font-size:1rem;font-weight:650;margin-top:.4rem;overflow-wrap:anywhere;}.wall-distance{display:block;font-size:1.8rem;font-weight:750;letter-spacing:-.035em;margin-top:.6rem;color:var(--primary);font-variant-numeric:tabular-nums;}.wall-facts{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.3rem;margin:.4rem 0;color:var(--muted-foreground);font-size:.75rem;font-variant-numeric:tabular-nums;}

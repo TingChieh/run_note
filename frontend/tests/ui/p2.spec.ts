@@ -9,25 +9,24 @@ async function responsive(page: Page, name: string) {
       if(name==='ai-report' || name==='share') await page.getByRole('region',{name:name==='ai-report'?'当前报告':'公开与分享'}).screenshot({path:`test-results/p2-${name}-panel-${width}.png`}); }
   }
 }
-test('register native validation, password visibility, busy and failure retry, safe redirect',async({page})=>{
-  await page.goto('/register?next=https://example.com');
-  await page.getByRole('button',{name:'注册',exact:true}).click();
+test('admin login native validation, password visibility, busy and failure retry, safe redirect',async({page})=>{
+  await page.goto('/admin?next=https://example.com');
+  await page.getByRole('button',{name:'登录',exact:true}).click();
   expect(await page.locator('input[name=email]').evaluate(el=>(el as HTMLInputElement).validity.valueMissing)).toBe(true);
   await page.getByLabel('邮箱',{exact:true}).fill('runner@example.com');
-  await page.getByLabel('用户名',{exact:true}).fill('new_runner');
   await page.getByLabel('密码',{exact:true}).fill('Synthetic-ui-password-2026');
   await page.getByRole('button',{name:'显示密码',exact:true}).click();
   await expect(page.getByLabel('密码',{exact:true})).toHaveAttribute('type','text');
-  await responsive(page,'register');
+  await responsive(page,'admin');
   let release!:()=>void;const hold=new Promise<void>(r=>release=r);
-  await page.route('**/api/v1/auth/register',async route=>{await hold;await route.fulfill({status:503,json:{error:{message:'注册失败，请重试'}}});});
-  await page.getByRole('button',{name:'注册',exact:true}).click();
+  await page.route('**/api/v1/auth/login',async route=>{await hold;await route.fulfill({status:503,json:{error:{message:'登录失败，请重试'}}});});
+  await page.getByRole('button',{name:'登录',exact:true}).click();
   await expect(page.getByLabel('邮箱',{exact:true})).toBeDisabled();release();
-  await expect(page.getByRole('alert')).toContainText('注册失败');
+  await expect(page.getByRole('alert')).toContainText('登录失败');
   await expect(page.getByLabel('密码',{exact:true})).toHaveValue('');
-  await page.unroute('**/api/v1/auth/register');
+  await page.unroute('**/api/v1/auth/login');
   await page.getByLabel('密码',{exact:true}).fill('Synthetic-ui-password-2026');
-  await page.getByRole('button',{name:'注册',exact:true}).click();await expect(page).toHaveURL(/\/dashboard$/);
+  await page.getByRole('button',{name:'登录',exact:true}).click();await expect(page).toHaveURL(/\/dashboard$/);
 });
 test('settings separates draft from saved public state and saves with retry',async({page})=>{
   await loginRunner(page);await responsive(page,'settings');
@@ -84,7 +83,7 @@ test('sharing keeps saved permissions, copies and revokes links',async({page,con
   await responsive(page,'share');await panel.getByRole('button',{name:'撤销链接'}).click();await expect(panel.getByText(/已撤销/).first()).toBeVisible();
 });
 test('login error receives keyboard focus and supports retry on mobile',async({page})=>{
-  await page.goto('/login');await responsive(page,'login');
+  await page.goto('/admin');await responsive(page,'login');
   await page.getByLabel('邮箱',{exact:true}).fill('runner@example.com');await page.getByLabel('密码',{exact:true}).fill('Synthetic-ui-password-2026');
   await page.route('**/api/v1/auth/login',route=>route.fulfill({status:401,json:{error:{message:'邮箱或密码不正确'}}}));
   await page.getByRole('button',{name:'登录',exact:true}).click();await expect(page.locator('#auth-error')).toBeFocused();await expect(page.getByRole('alert')).toContainText('邮箱或密码不正确');

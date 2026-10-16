@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     app_env: Literal["development", "test", "production"] = "development"
     database_url: str
+    site_owner_email: str = "tingchieh77@outlook.com"
     site_origin: str = "http://localhost:5173"
     auth_rate_hash_key: SecretStr | None = None
     auth_trusted_proxies: tuple[str, ...] = ()
@@ -24,6 +25,17 @@ class Settings(BaseSettings):
     ai_api_key: SecretStr | None = None
     ai_daily_limit: int = Field(default=5, ge=1, le=100)
     ai_total_timeout_seconds: float = Field(default=30, ge=1, le=30)
+
+    @field_validator("site_owner_email")
+    @classmethod
+    def validate_site_owner(cls, value):
+        value = value.strip().lower()
+        if len(value) > 254 or value.count("@") != 1 or any(c.isspace() for c in value):
+            raise ValueError("SITE_OWNER_EMAIL must identify the existing owner account")
+        local, domain = value.split("@")
+        if not local or not domain or "." not in domain:
+            raise ValueError("SITE_OWNER_EMAIL must be a valid email address")
+        return value
 
     @property
     def ai_configured(self) -> bool:

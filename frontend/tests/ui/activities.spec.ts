@@ -11,7 +11,7 @@ test('scan-friendly records expose pace and visibility, with compact optional up
   await installActivities(page); await loginRunner(page); await page.goto('/activities');
   await expect(page.getByRole('heading', { name: '河畔晨跑' })).toBeVisible();
   const record = page.getByRole('link').filter({ has: page.getByRole('heading', { name: '河畔晨跑' }) });
-  await expect(record).toContainText('配速'); await expect(record).toContainText('私人');
+  await expect(record).toContainText('配速'); await expect(record).toContainText('公开展示');
   await expect(page.getByLabel('标题（可选）')).toBeHidden();
   const options = page.getByText('补充导入信息', { exact: true }); await options.focus(); await page.keyboard.press('Enter');
   await expect(page.getByLabel('标题（可选）')).toBeVisible();
@@ -58,7 +58,7 @@ test('list error retry, empty guidance and pagination remain usable', async ({ p
   await page.reload(); await page.getByRole('button', { name: '下一页' }).click();
   await expect(page.getByRole('heading', { name: '第 21 条跑步' })).toBeVisible(); await expect(page.getByRole('button', { name: '下一页' })).toBeDisabled();
   await page.getByRole('button', { name: '上一页' }).click(); await expect(page.getByRole('heading', { name: '第 1 条跑步', exact: true })).toBeVisible();
-  state.records = []; await page.reload(); await expect(page.getByRole('region', { name: /^我的活动/ }).getByRole('status')).toContainText('还没有活动'); await noOverflow(page);
+  state.records = []; await page.reload(); await expect(page.getByRole('region', { name: /^我的活动/ }).getByRole('status')).toContainText('暂无跑步记录'); await noOverflow(page);
 });
 test('detail puts route before sharing and keeps quality available through keyboard disclosure', async ({ page }) => {
   await installActivities(page); await loginRunner(page); await page.goto(`/activities/${sampleActivity.id}`);
@@ -85,7 +85,7 @@ test('detail retry and sharing operations preserve existing API payloads and pri
   expect(state.writes[0].data).toEqual({ visibility: 'unlisted' }); expect(state.writes[1].data).toEqual({ expires_at: null });
   await page.getByRole('button', { name: '撤销链接' }).click(); await expect(page.getByRole('status').filter({ hasText: '分享已撤销' })).toBeVisible();
   await page.getByLabel('记录可见性').selectOption('private'); await page.getByRole('button', { name: '保存可见性' }).click();
-  await expect(page.getByRole('button', { name: '创建分享链接' })).toBeDisabled(); await expect(page.getByRole('status').filter({ hasText: '已设为私人' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '创建分享链接' })).toBeDisabled(); await expect(page.getByRole('status').filter({ hasText: '已关闭旧版摘要' })).toBeVisible();
 });
 
 test('successful import followed by list outage reports separate outcomes and retries only the list', async ({ page }) => {
@@ -106,7 +106,7 @@ test('sharing errors keep private restriction until save succeeds; copy and rout
     if (route.request().method() === 'PATCH' && !patchFailed) { patchFailed = true; return route.fulfill({ status: 503, json: { error: { message: '保存失败，请重试' } } }); }
     await route.fallback();
   });
-  await page.route(`**/api/v1/activities/${sampleActivity.id}/route`, async route => {
+  await page.route(`**/api/v1/showcase/activities/${sampleActivity.id}/route`, async route => {
     if (!routeFailed) { routeFailed = true; return route.fulfill({ status: 503, json: { error: { message: '路线读取失败' } } }); }
     await route.fallback();
   });
@@ -125,7 +125,7 @@ test('expired activity response redirects without retaining private content', as
   await installActivities(page); await loginRunner(page);
   await page.route(`**/api/v1/activities/${sampleActivity.id}`, route => route.fulfill({ status: 401, json: { error: { message: '登录已过期' } } }));
   await page.goto(`/activities/${sampleActivity.id}`);
-  await expect(page).toHaveURL(/\/login\?reason=expired$/);
+  await expect(page).toHaveURL(/\/admin\?reason=expired$/);
   await expect(page.getByRole('heading', { name: '河畔晨跑' })).toHaveCount(0);
 });
 
@@ -153,7 +153,7 @@ test('file picker focus and successful session checks preserve selected GPX and 
 test('successful imports update the persistent sidebar distance while keeping a goal draft', async ({ page }) => {
   const state = await installActivities(page);
   let summaryReads = 0;
-  await page.route('**/api/v1/statistics/summary?**', route => {
+  await page.route('**/api/v1/showcase/statistics/summary?**', route => {
     summaryReads++;
     return route.fulfill({ json: { data: { distance_m: state.uploadCount ? '8000' : '5000' }, error: null } });
   });

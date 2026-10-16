@@ -84,7 +84,7 @@ test('themed arrow buttons toggle the native select and animate with its expande
 });
 
 test('pressing a glass preview button deforms its sampled backdrop and restores it on release', async ({ page }) => {
-  await page.goto('/login'); await page.getByRole('button', { name: '玻璃调节', exact: true }).click();
+  await page.goto('/admin'); await page.getByRole('button', { name: '玻璃调节', exact: true }).click();
   for (const [index, name] of ['普通按钮', '主要操作', '浅色按钮'].entries()) {
     const preview = page.getByRole('button', { name, exact: true });
     const previewCopy = preview.locator('.rn-glass-copy');
@@ -184,7 +184,7 @@ test('liquid select preserves native values, keyboard selection and Escape focus
 });
 
 test('liquid slider squishes its thumb while retaining native range geometry and advanced optics', async ({ page }) => {
-  await page.goto('/login');
+  await page.goto('/admin');
   await page.getByRole('button', { name: '玻璃调节', exact: true }).click();
   const slider = page.getByRole('slider', { name: '透明度', exact: true });
   const thumb = slider.locator('..').locator('.rn-slider-thumb');
@@ -212,7 +212,7 @@ test('non-Blink fallback remains frosted with zero optical blur', async ({ page 
     Object.defineProperty(navigator, 'userAgentData', { value: undefined, configurable: true });
     Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 Firefox/150.0', configurable: true });
   });
-  await page.goto('/login');
+  await page.goto('/admin');
   const layer = page.getByRole('button', { name: '登录', exact: true }).locator('.rn-glass-layer');
   await expect(layer).toHaveCSS('backdrop-filter', 'blur(16px) saturate(1.6)');
   await expect(page.locator('body > svg defs filter')).toHaveCount(0);
@@ -222,7 +222,7 @@ test('non-Blink fallback remains frosted with zero optical blur', async ({ page 
 });
 
 test('official button surface squishes independently of its native hit area', async ({ page }) => {
-  await page.goto('/login');
+  await page.goto('/admin');
   const submit = page.getByRole('button', { name: '登录', exact: true });
   const surface = submit.locator(':scope > .rn-glass-surface');
   await expect(surface).toHaveAttribute('aria-hidden', 'true');
@@ -247,7 +247,7 @@ test('official button surface squishes independently of its native hit area', as
 });
 
 test('native buttons refract their backdrop and retain keyboard form behaviour', async ({ page }) => {
-  await page.goto('/login');
+  await page.goto('/admin');
   const submit = page.getByRole('button', { name: '登录', exact: true });
   await expect.poll(() => submit.locator('.rn-glass-layer').evaluate(el => getComputedStyle(el).backdropFilter)).toMatch(/url\("?#lg/);
   await expect(page.locator('body > svg defs feDisplacementMap').first()).toBeAttached();
@@ -359,7 +359,7 @@ test('dynamic edit buttons get glass and removed dialogs release their lenses', 
 });
 
 test('development tuner previews live optics, remembers choices and restores defaults', async ({ page }) => {
-  await page.goto('/login');
+  await page.goto('/admin');
   const trigger = page.getByRole('button', { name: '玻璃调节', exact: true });
   await trigger.click();
   const panel = page.getByRole('region', { name: 'Liquid Glass 调节' });
@@ -408,7 +408,7 @@ test('development preview handles corrupt or blocked storage and respects reduce
     localStorage.setItem('runnote:dev-liquid-glass:v1', '{broken');
     Storage.prototype.setItem = () => { throw new DOMException('Storage disabled', 'SecurityError'); };
   });
-  await page.goto('/login');
+  await page.goto('/admin');
   await page.getByRole('button', { name: '玻璃调节', exact: true }).click();
   const panel = page.getByRole('region', { name: 'Liquid Glass 调节' });
   await expect(panel.getByRole('slider', { name: '透明度', exact: true })).toHaveValue('86');

@@ -1,12 +1,18 @@
 <script lang="ts">
+  import { useViewContext } from "#lib/view-context.ts";
+  const view = useViewContext();
+  const fetch = view.fetch;
+  const readGoals = view.bind(scoped_readGoals, 0);
+  const saveGoal = view.bind(scoped_saveGoal, 2);
+
   import { onMount, tick } from 'svelte';
   import { request, ActivityError } from '#lib/api/activities.ts';
   import { dashboardDistance } from '#lib/api/dashboard-format.ts';
-  import { validGoal, readGoals, saveGoal, type GoalPeriod, type RunningGoals } from '#lib/api/running-goal.ts';
+  import { validGoal, readGoals as scoped_readGoals, saveGoal as scoped_saveGoal, type GoalPeriod, type RunningGoals } from '#lib/api/running-goal.ts';
   import { comparisonWindow } from '#lib/api/milestones.ts';
-  import type { User } from '#lib/api/auth.ts';
+  import type { ShowcaseProfile } from '#lib/api/showcase.ts';
   import { goalInputPop } from '#lib/styles/goal-input-transition.ts';
-  let { user }: { user: User } = $props();
+  let { user, readonly = false }: { user: ShowcaseProfile; readonly?: boolean } = $props();
   let period = $state<GoalPeriod>('week'), input = $state('');
   let goals = $state<RunningGoals>({week:null,month:null,year:null});
   let target = $derived(goals[period]);
@@ -30,7 +36,7 @@
     if (!retain) loading = true;
     error = '';
     try {
-      const data = await request(`/api/v1/statistics/summary?date_from=${requested.from}&date_to=${requested.to}`, {}, fetch);
+      const data = await request(`/api/v1/showcase/statistics/summary?date_from=${requested.from}&date_to=${requested.to}`, {}, fetch);
       if (disposed || token !== distanceToken) return;
       const amount = (data as { distance_m?: unknown })?.distance_m;
       if ((typeof amount !== 'number' && typeof amount !== 'string') || amount === '' || !Number.isFinite(Number(amount)) || Number(amount) < 0) throw new Error('跑量数据无效');
@@ -39,14 +45,14 @@
       if (disposed) return;
       if (cause instanceof ActivityError && cause.status === 401) {
         distance = null; goals = {week:null,month:null,year:null}; input = ''; editing = false;
-        window.location.replace('/login?reason=expired'); return;
+        window.location.replace('/admin?reason=expired'); return;
       }
       if (token !== distanceToken) return;
       error = '暂时无法读取跑量';
     } finally { if (!disposed && token === distanceToken) loading = false; }
   }
   function failure(cause: unknown) {
-    if (cause instanceof ActivityError && cause.status === 401) { active = false; goals = {week:null,month:null,year:null}; window.location.replace('/login?reason=expired'); return ''; }
+    if (cause instanceof ActivityError && cause.status === 401) { active = false; goals = {week:null,month:null,year:null}; window.location.replace('/admin?reason=expired'); return ''; }
     return cause instanceof Error ? cause.message : '暂时无法保存目标，请重试';
   }
   async function loadGoals() {
@@ -56,7 +62,7 @@
     finally { if (active && token === goalToken) goalLoading = false; }
   }
   async function edit(next: boolean) {
-    if (saving) return;
+    if (readonly || saving) return;
     editing = next; input = target?.toString() ?? ''; feedback = '';
     await tick();
     if (!active || editing !== next) return;
@@ -65,7 +71,7 @@
     if (control instanceof HTMLInputElement) control.select();
   }
   async function save(event: SubmitEvent) {
-    event.preventDefault(); if (!editing) return; const parsed = validGoal(input);
+    event.preventDefault(); if (readonly || !editing) return; const parsed = validGoal(input);
     if (parsed === null) { feedback = '请输入大于0、最多1位小数的公里数（上限100000）'; return; }
     if (saving) return;
     const selected = period; saving = true; feedback = ''; ++goalToken;
@@ -88,12 +94,12 @@
 </script>
 <section class="running-goal" aria-label="跑量目标" aria-busy={loading || goalLoading || saving}>
   <form onsubmit={save}>
-  <div class="goal-heading"><strong>跑量目标</strong><div class="goal-actions rn-goal-actions">
+  <div class="goal-heading"><strong>跑量目标</strong>{#if !readonly}<div class="goal-actions rn-goal-actions">
     <div class="goal-save-reveal" class:is-open={editing} inert={!editing} aria-hidden={!editing}>
       <div class="goal-save-clip"><button class="button-secondary" type="submit" disabled={!editing || saving} aria-label={saving ? '保存中…' : '保存'}>{saving ? '…' : '保存'}</button></div>
     </div>
     <button id="goal-edit" class="button-secondary" type="button" disabled={goalLoading || !!goalError || saving} onclick={() => void edit(!editing)} aria-expanded={editing}>{editing ? '取消' : target ? '调整' : '设置'}</button>
-  </div></div>
+  </div>{/if}</div>
   <label class="sr-only" for="goal-period">目标周期</label>
   <select id="goal-period" aria-label="目标周期" bind:value={period} disabled={saving}><option value="week">每周</option><option value="month">每月</option><option value="year">年度</option></select>
   {#snippet distanceValue()}

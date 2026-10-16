@@ -55,7 +55,10 @@ def auth_database():
 
 
 @pytest.fixture
-def workers(auth_database):
+def workers(auth_database, monkeypatch):
+    # Authentication pool/concurrency tests isolate HTTP work from footprint scans.
+    # The worker lifecycle has its own integration coverage.
+    monkeypatch.setattr("app.main.FootprintWorker.start", lambda self: None)
     url = auth_database
     settings = Settings(
         database_url=url,
@@ -64,7 +67,7 @@ def workers(auth_database):
         auth_rate_hash_key=uuid4().hex + uuid4().hex,
         _env_file=None,
     )
-    a, b = create_app(settings), create_app(settings)
+    a, b = create_app(settings.model_copy()), create_app(settings.model_copy())
     engine = create_engine(url, hide_parameters=True)
     try:
         with TestClient(a, base_url=ORIGIN) as ca, TestClient(b, base_url=ORIGIN) as cb:
@@ -87,11 +90,34 @@ def register(client, headers=None, **overrides):
         "password": PASSWORD,
         **overrides,
     }
-    r = client.post("/api/v1/auth/register", json=body, headers=headers or csrf(client))
+    # Historical helper name: create synthetic owner offline, then exercise real login.
+    from app.core.security import hash_password
+    from app.modules.auth.schema import RegisterInput
+
+    payload = RegisterInput(**body)
+    client.app.state.settings.site_owner_email = payload.email
+    with client.app.state.session_factory() as db:
+        db.add(
+            User(
+                email_normalized=payload.email,
+                username=payload.username,
+                display_name=payload.username,
+                timezone=payload.timezone,
+                password_hash=hash_password(payload.password),
+                is_active=True,
+            )
+        )
+        db.commit()
+    r = client.post(
+        "/api/v1/auth/login",
+        json={"email": payload.email, "password": payload.password},
+        headers=headers or csrf(client),
+    )
     return r, body
 
 
 def login(client, body):
+    client.app.state.settings.site_owner_email = body["email"].strip().lower()
     return client.post(
         "/api/v1/auth/login", headers=csrf(client), json={k: body[k] for k in ["email", "password"]}
     )
@@ -102,7 +128,7 @@ def test_register_rotation_storage_and_identity_isolation(workers):
     old = csrf(a)
     old_cookie = a.cookies.get("run_session")
     r, body = register(a, old, email=" " + uuid4().hex + "@EXAMPLE.COM ")
-    assert r.status_code == 201
+    assert r.status_code == 200
     assert r.json()["data"]["user"]["email"] == body["email"].strip().lower()
     assert r.json()["data"]["csrf_token"] != old["X-CSRF-Token"]
     assert a.cookies.get("run_session") != old_cookie
@@ -111,7 +137,7 @@ def test_register_rotation_storage_and_identity_isolation(workers):
     assert a.get("/api/v1/auth/session").json()["data"]["authenticated"] is True
     assert b.get("/api/v1/me").status_code == 401
     rb, _ = register(b)
-    assert rb.status_code == 201
+    assert rb.status_code == 200
     assert a.get("/api/v1/me").json()["data"]["id"] != b.get("/api/v1/me").json()["data"]["id"]
     assert a.patch("/api/v1/me", json={"display_name": "bad"}, headers=old).status_code == 403
     with Session(engine) as s:
@@ -139,6 +165,8 @@ def test_register_rotation_storage_and_identity_isolation(workers):
         "created_at",
         "bio",
         "profile_is_public",
+        "is_admin",
+        "showcase_enabled",
     }
     engine.dispose()
 
@@ -146,7 +174,7 @@ def test_register_rotation_storage_and_identity_isolation(workers):
 def test_profile_password_revokes_all_workers_and_logout(workers):
     a, b, engine = workers
     r, body = register(a)
-    assert r.status_code == 201
+    assert r.status_code == 200
     assert login(b, body).status_code == 200
     h = csrf(a)
     assert (
@@ -220,14 +248,13 @@ def test_referer_preauth_unknown_fields_credentials_and_conflicts(workers):
     h.pop("Origin")
     h["Referer"] = ORIGIN + "/register"
     r, body = register(a, headers=h)
-    assert r.status_code == 201
-    conflict, _ = register(b, email=body["email"])
-    assert conflict.status_code == 409 and conflict.json()["error"]["code"] == "EMAIL_EXISTS"
-    conflict, _ = register(b, username=body["username"])
-    assert conflict.status_code == 409 and conflict.json()["error"]["code"] == "USERNAME_EXISTS"
-    bad, _ = register(b, user_id=uuid4().hex)
-    assert bad.status_code == 422
-    bad, _ = register(b, timezone="invalid")
+    assert r.status_code == 200
+    assert a.post("/api/v1/auth/register", json=body, headers=csrf(a)).status_code == 403
+    bad = b.post(
+        "/api/v1/auth/login",
+        json={"email": body["email"], "password": PASSWORD, "user_id": uuid4().hex},
+        headers=csrf(b),
+    )
     assert bad.status_code == 422
     wrong = login(b, {**body, "password": "wrong password"})
     unknown = login(b, {"email": uuid4().hex + "@example.com", "password": "wrong password"})
@@ -244,7 +271,7 @@ def test_real_expiry_and_last_seen_throttle(workers, expiry):
     if expiry == "anonymous":
         csrf(a)
     else:
-        assert register(a)[0].status_code == 201
+        assert register(a)[0].status_code == 200
     hashed = token_hash(a.cookies.get("run_session"))
     now = datetime.now(UTC)
     with Session(engine) as s:
@@ -285,7 +312,7 @@ def test_real_expiry_and_last_seen_throttle(workers, expiry):
 
 def test_shared_account_rate_limit_and_untrusted_forwarded_ip(workers):
     a, b, engine = workers
-    assert register(a)[0].status_code == 201
+    assert register(a)[0].status_code == 200
     headers = [csrf(a), csrf(b)]
     email = uuid4().hex + "@example.com"
     for i in range(10):
@@ -346,9 +373,9 @@ def test_concurrent_registration_unique_constraint(workers):
                 [(a, ha), (b, hb)],
             )
         )
-    assert sorted(r.status_code for r in results) == [201, 409]
+    assert sorted(r.status_code for r in results) == [403, 403]
     with Session(engine) as s:
-        assert len(s.scalars(select(User).where(User.email_normalized == body["email"])).all()) == 1
+        assert len(s.scalars(select(User).where(User.email_normalized == body["email"])).all()) == 0
     engine.dispose()
 
 
@@ -373,15 +400,26 @@ def test_other_rate_limits_and_window_boundary(workers, scope, limit, seconds):
 
 def test_concurrent_preauth_token_only_consumed_once(workers):
     a, b, engine = workers
+    _, body = register(a)
+    a.cookies.clear()
     h = csrf(a)
+    b.app.state.settings.site_owner_email = body["email"]
     b.cookies.set("run_session", a.cookies.get("run_session"), domain="localhost.local", path="/")
 
     def attempt(pair):
-        return register(pair[0], headers=pair[1])[0].status_code
+        return (
+            pair[0]
+            .post(
+                "/api/v1/auth/login",
+                headers=pair[1],
+                json={"email": body["email"], "password": PASSWORD},
+            )
+            .status_code
+        )
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(attempt, [(a, h), (b, h)]))
-    assert sorted(results) == [201, 403]
+    assert sorted(results) == [200, 403]
     engine.dispose()
 
 
@@ -433,7 +471,7 @@ def test_sensitive_values_absent_from_responses_and_logs(workers, caplog):
 
 def test_logout_rejects_unknown_body_fields(workers):
     a, _, engine = workers
-    assert register(a)[0].status_code == 201
+    assert register(a)[0].status_code == 200
     r = a.post("/api/v1/auth/logout", headers=csrf(a), json={"user_id": str(uuid4())})
     assert r.status_code == 422
     assert a.get("/api/v1/me").status_code == 200
@@ -484,7 +522,12 @@ def test_five_parallel_cookie_requests_do_not_starve_pool(workers, monkeypatch):
 def _process_login_and_verify(url, key, body, output, check_revoked):
     """Separate OS worker, engine and Cookie jar; no inherited Session or pool."""
     settings = Settings(
-        database_url=url, app_env="test", site_origin=ORIGIN, auth_rate_hash_key=key, _env_file=None
+        database_url=url,
+        app_env="test",
+        site_origin=ORIGIN,
+        site_owner_email=body["email"],
+        auth_rate_hash_key=key,
+        _env_file=None,
     )
     with TestClient(create_app(settings), base_url=ORIGIN) as client:
         result = login(client, body)
@@ -499,7 +542,7 @@ def test_two_os_workers_observe_password_revocation(workers):
 
     a, _, engine = workers
     r, body = register(a)
-    assert r.status_code == 201
+    assert r.status_code == 200
     user_id = r.json()["data"]["user"]["id"]
     context = multiprocessing.get_context("spawn")
     output = context.Queue()

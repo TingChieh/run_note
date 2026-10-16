@@ -1,4 +1,12 @@
 <script lang="ts">
+  import { useViewContext } from "#lib/view-context.ts";
+  const view = useViewContext();
+  const fetch = view.fetch;
+  const readActivities = view.bind(scoped_readActivities, 0);
+  const readSummary = view.bind(scoped_readSummary, 1);
+  const readCalendar = view.bind(scoped_readCalendar, 2);
+  const readTrends = view.bind(scoped_readTrends, 2);
+
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import PageSkeleton from '#lib/components/PageSkeleton.svelte';
   import { dashboardDistance } from '#lib/api/dashboard-format.ts';
@@ -7,8 +15,8 @@
   import { page } from '$app/state';
   import { replaceState } from '$app/navigation';
   import { dashboardQuery, dashboardSelection } from '#lib/api/dashboard-query.ts';
-  import { ActivityError, readActivities, formatDuration, activityDuration, formatPace, qualityLabel, type ActivityList } from '#lib/api/activities.ts';
-  import { currentYear, readSummary, readCalendar, readTrends, type Summary, type Calendar, type Trends, type CalendarMetric } from '#lib/api/statistics.ts';
+  import { ActivityError, readActivities as scoped_readActivities, formatDuration, activityDuration, formatPace, qualityLabel, type ActivityList } from '#lib/api/activities.ts';
+  import { currentYear, readSummary as scoped_readSummary, readCalendar as scoped_readCalendar, readTrends as scoped_readTrends, type Summary, type Calendar, type Trends, type CalendarMetric } from '#lib/api/statistics.ts';
   import CalendarGrid from '#lib/components/CalendarGrid.svelte';
   import TrendChart from '#lib/components/TrendChart.svelte';
   import GoalOverview from '#lib/components/GoalOverview.svelte';
@@ -19,7 +27,7 @@
   let selectedDate = $state<string | null>(null), loading = $state(true), dayLoading = $state(false), trendLoading = $state(false), message = $state(''), cumulativeMessage = $state(''), yearMessage = $state(''), dayMessage = $state(''), trendMessage = $state('');
   let disposed = false, yearRequest = 0, dayRequest = 0, trendRequest = 0;
   function fail(cause: unknown): string {
-    if (cause instanceof ActivityError && cause.status === 401) { disposed = true; annual = null; cumulative = null; calendar = null; trends = null; records = null; selectedDate = null; yearRequest++; dayRequest++; trendRequest++; window.location.replace('/login?reason=expired&next=%2Fdashboard'); return ''; }
+    if (cause instanceof ActivityError && cause.status === 401) { disposed = true; annual = null; cumulative = null; calendar = null; trends = null; records = null; selectedDate = null; yearRequest++; dayRequest++; trendRequest++; window.location.replace('/admin?reason=expired&next=%2Fdashboard'); return ''; }
     return cause instanceof Error ? cause.message : '读取失败，请稍后重试';
   }
   function saveSelection() {
@@ -59,7 +67,7 @@
   }
   function changeYear(value: string) { yearInput = value; const next = Number(value); if (!/^\d{4}$/.test(value) || next < 1900 || next > 2100) { yearMessage = '请输入 1900–2100 年'; return; } yearMessage = ''; if (next !== year) setYear(next); }
   let hasTrendActivities = $derived(trends?.buckets.some(bucket => bucket.activity_count > 0) ?? false);
-  onMount(() => { const selection = dashboardSelection(new URL(window.location.href).searchParams, currentYear(page.data.user?.timezone ?? 'UTC')); year = selection.year; calendarMetric = selection.metric; period = selection.period; yearInput = String(year); selectedDate = selection.day; saveSelection(); void loadYear(selection.day); void loadCumulative(); return () => { disposed = true; yearRequest++; dayRequest++; trendRequest++; annual = null; cumulative = null; calendar = null; trends = null; records = null; }; });
+  onMount(() => { const selection = dashboardSelection(new URL(window.location.href).searchParams, currentYear(page.data.showcase?.timezone ?? 'UTC')); year = selection.year; calendarMetric = selection.metric; period = selection.period; yearInput = String(year); selectedDate = selection.day; saveSelection(); void loadYear(selection.day); void loadCumulative(); return () => { disposed = true; yearRequest++; dayRequest++; trendRequest++; annual = null; cumulative = null; calendar = null; trends = null; records = null; }; });
 </script>
 <svelte:head><title>数据汇总 · Run Note</title><meta name="description" content="汇总你的跑步数据、活动日历与运动趋势，从这里探索记录、足迹和 AI 分析。" /></svelte:head>
 <PageHeader title="数据汇总" description="查看你的跑步数据，探索记录、足迹与运动分析。" />
@@ -76,20 +84,20 @@
   {/if}
   <div class="milestone-section">
     <div class="milestone-layout">
-      {#if page.data.user}{#key page.data.user.id}<GoalOverview user={page.data.user} />{/key}{/if}
+      {#if page.data.showcase}<GoalOverview user={page.data.showcase} readonly={!view.manage} />{/if}
       <ProvinceMap />
     </div>
     <p class="goal-explanation">当前周期截至今天，同期按相同日历进度比较；连续记录按活动当地日期计算，今日/本周尚未结束时保留昨日/上周延续。</p>
   </div>
   <nav class="feature-entrances" aria-label="功能入口">
     {#each [
-      { href: '/activities', title: '跑步记录', description: '查看跑步活动、路线与管理分享', icon: '↗' },
+      { href: '/activities', title: '跑步记录', description: '查看跑步活动与完整路线', icon: '↗' },
       { href: '/footprints', title: '个人足迹', description: '探索跑过的路线与运动热力图', icon: '◎' },
       { href: '/activities/wall', title: '足迹墙', description: '每次跑步一张卡片，回顾全部足迹', icon: '▧' },
-      { href: '/ai', title: 'AI 分析', description: '回顾运动数据，查看与生成分析', icon: '✦' },
+      { href: '/ai', title: 'AI 分析', description: '回顾运动数据，查看已有分析', icon: '✦' },
       { href: '/settings', title: '设置', description: '管理账号资料与公开个人主页', icon: '⚙' }
-    ] as feature}
-      <a href={feature.href} class="feature-entrance">
+    ].filter(feature => feature.href !== '/settings' || view.manage) as feature}
+      <a href={view.href(feature.href)} class="feature-entrance">
         <span class="feature-icon" aria-hidden="true">{feature.icon}</span>
         <span class="min-w-0"><strong>{feature.title}</strong><span class="feature-description">{feature.description}</span></span>
         <span class="feature-arrow" aria-hidden="true">→</span>
@@ -109,14 +117,14 @@
     <div class="calendar-toolbar"><label>日历维度 <select aria-label="日历维度" bind:value={calendarMetric} onchange={saveSelection}><option value="distance">距离</option><option value="count">次数</option></select></label><p>选择日期查看记录<span class="keyboard-hint"> · 方向键移动</span></p></div>
     {#if loading}<PageSkeleton title={`正在读取 ${year} 年统计…`} />{:else if calendar}
       <div class="content-reveal"><CalendarGrid {calendar} metric={calendarMetric} selected={selectedDate} enhanced onselect={(date) => { void selectDay(date); }} /></div>
-      {#if calendar.activity_count === 0}<div class="mt-4"><FeedbackState title="这一年还没有运动记录"><a href="/activities" class="text-primary underline">查看跑步记录</a>，也可以切换年份查看历史。</FeedbackState></div>{/if}
+      {#if calendar.activity_count === 0}<div class="mt-4"><FeedbackState title="这一年还没有运动记录"><a href={view.href("/activities")}  class="text-primary underline">查看跑步记录</a>，也可以切换年份查看历史。</FeedbackState></div>{/if}
     {:else}<p class="mt-4 text-muted-foreground">日历未能加载，请重新读取统计。</p>{/if}
   </section>
   {#if selectedDate}<section class="dashboard-card" aria-labelledby="day-title" aria-busy={dayLoading}>
     <div class="card-heading"><h2 id="day-title">{selectedDate} 的活动{records ? `（${records.total}）` : ''}</h2><button class="button-secondary" onclick={() => { ++dayRequest; selectedDate = null; records = null; dayLoading = false; dayMessage = ''; saveSelection(); }}>收起当天记录</button></div>
     <div class="mt-4">{#if dayLoading}<FeedbackState kind="loading" title="正在读取当天活动…" />{:else if dayMessage}<FeedbackState kind="error" title={dayMessage}><button onclick={() => { void selectDay(selectedDate!); }} class="button-secondary">重试当天活动</button></FeedbackState>{:else if records}
-      {#if records.items.length === 0}<FeedbackState title="当天没有活动记录">选择其他日期，或<a href="/activities" class="text-primary underline">查看跑步记录</a>。</FeedbackState>{:else}
-        <ul class="space-y-3">{#each records.items as activity (activity.id)}<li><a href={`/activities/${activity.id}`} class="day-activity"><div class="flex flex-wrap justify-between gap-2"><h3 class="font-semibold">{activity.title || '未命名活动'}</h3><strong>{dashboardDistance(activity.distance_m)}</strong></div><p class="mt-2 text-sm text-muted-foreground">用时 {formatDuration(activityDuration(activity))} · 配速 {formatPace(activity.avg_pace_seconds_per_km)} · {qualityLabel(activity.temporal_quality)}</p></a></li>{/each}</ul>
+      {#if records.items.length === 0}<FeedbackState title="当天没有活动记录">选择其他日期，或<a href={view.href("/activities")}  class="text-primary underline">查看跑步记录</a>。</FeedbackState>{:else}
+        <ul class="space-y-3">{#each records.items as activity (activity.id)}<li><a href={view.href(`/activities/${activity.id}`)} class="day-activity"><div class="flex flex-wrap justify-between gap-2"><h3 class="font-semibold">{activity.title || '未命名活动'}</h3><strong>{dashboardDistance(activity.distance_m)}</strong></div><p class="mt-2 text-sm text-muted-foreground">用时 {formatDuration(activityDuration(activity))} · 配速 {formatPace(activity.avg_pace_seconds_per_km)} · {qualityLabel(activity.temporal_quality)}</p></a></li>{/each}</ul>
       {/if}
       {#if records.total > 20}<div class="mt-4 flex flex-wrap items-center gap-3"><button disabled={records.offset === 0} onclick={() => { void selectDay(selectedDate!, Math.max(0, records!.offset - 20)); }} class="button-secondary">上一页</button><span class="text-sm">第 {Math.floor(records.offset / 20) + 1} 页</span><button disabled={records.offset + records.items.length >= records.total} onclick={() => { void selectDay(selectedDate!, records!.offset + 20); }} class="button-secondary">下一页</button></div>{/if}
     {/if}</div>
@@ -124,7 +132,7 @@
   <section class="dashboard-card" aria-labelledby="trend-title" aria-busy={trendLoading}>
     <div class="card-heading"><h2 id="trend-title">运动趋势</h2><div class="trend-controls"><label>周期 <select aria-label="趋势周期" bind:value={period} onchange={() => { saveSelection(); void loadTrend(); }}><option value="week">周</option><option value="month">月</option></select></label><label>指标 <select aria-label="趋势指标" bind:value={trendMetric}><option value="distance">距离</option><option value="count">次数</option><option value="duration">已知耗时</option><option value="pace">可靠配速</option></select></label></div></div>
     <div class="mt-4">{#if trendLoading}<FeedbackState kind="loading" title="正在读取趋势…" />{:else if trendMessage}<FeedbackState kind="error" title={trendMessage}><button onclick={() => { void loadTrend(); }} class="button-secondary">重新读取趋势</button></FeedbackState>{:else if trends}
-      {#if hasTrendActivities}<TrendChart {trends} metric={trendMetric} enhanced />{:else}<div data-testid="trend-empty"><FeedbackState title="记录一次跑步，让趋势开始生长"><a href="/activities" class="button-primary">查看跑步记录</a></FeedbackState></div>{/if}
+      {#if hasTrendActivities}<TrendChart {trends} metric={trendMetric} enhanced />{:else}<div data-testid="trend-empty"><FeedbackState title="记录一次跑步，让趋势开始生长"><a href={view.href("/activities")}  class="button-primary">查看跑步记录</a></FeedbackState></div>{/if}
     {/if}</div>
   </section>
   <details class="statistics-notes"><summary>统计口径与数据质量</summary><div class="notes-content">

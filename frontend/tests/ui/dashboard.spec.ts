@@ -5,7 +5,7 @@ const populated = { ...empty, activity_count: 2, distance_m: '10246.912', durati
 async function fixture(page: Page) {
   await installActivities(page);
   const state = { cumulativeFailures: 0, summaryFailures: 0, calendarFailures: 0, trendFailures: 0, dayFailures: 0, expired: false };
-  await page.route('**/api/v1/statistics/**', async route => {
+  await page.route('**/api/v1/showcase/statistics/**', async route => {
     const url = new URL(route.request().url()); if (url.pathname.endsWith('/streaks')) return route.fallback(); const year = Number(url.searchParams.get('year') ?? url.searchParams.get('date_from')?.slice(0,4) ?? '2026');
     const summary = year === 2026 ? populated : empty;
     const send = (data: unknown, status = 200) => route.fulfill({ status, json: { data, error: status >= 400 ? { message: '统计暂时不可用' } : null } });
@@ -34,7 +34,7 @@ async function fixture(page: Page) {
     }
     return send({ period, date_from:from, date_to:to, week_start:'monday', date_assignment:'activity_local_date', buckets });
   });
-  await page.route(/\/api\/v1\/activities\?/, route => {
+  await page.route(/\/api\/v1\/showcase\/activities\?/, route => {
     if (new URL(route.request().url()).searchParams.has('activity_date') && state.dayFailures-- > 0) return route.fulfill({status:503,json:{error:{message:'当天读取失败'}}});
     return route.fulfill({json:{data:{items:[sampleActivity],total:1,limit:20,offset:0},error:null}});
   });
@@ -49,9 +49,9 @@ test('home opens data summary, preserves filters and exposes all feature entranc
   expect(redirect.status()).toBe(303);
   expect(redirect.headers().location).toBe('/dashboard?year=2026&metric=count');
   await page.goto('/');
-  await expect(page).toHaveURL(/\/login\?next=%2Fdashboard/);
+  await expect(page).toHaveURL(/\/dashboard$/);
   await fixture(page);
-  await page.goto('/login');
+  await page.goto('/admin');
   await page.getByLabel('邮箱', { exact: true }).fill('runner@example.com');
   await page.getByLabel('密码', { exact: true }).fill('Synthetic-ui-password-2026');
   await page.getByRole('button', { name: '登录', exact: true }).click();
@@ -109,13 +109,13 @@ test('populated dashboard: hierarchy, disclosure, calendar keyboard, date and ch
   await page.getByRole('button',{name:'收起当天记录'}).click();
   await page.setViewportSize({width:1440,height:1380}); await capture(page,'desktop-data');
   const email = page.getByTestId('current-user');
-  await expect(email).toHaveAttribute('title','runner.with.a.long.email.address@example.com');
+  await expect(email).toHaveText('管理员模式');
   expect(await email.evaluate(el => getComputedStyle(el).whiteSpace)).toBe('nowrap');
   for(const width of [320,390,768,1024,1440]) {
     await page.setViewportSize({width,height:900});
     // ECharts resizes its canvas in ResizeObserver after the viewport changes.
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), { message: `Dashboard fits ${width}px after chart resize` }).toBe(true);
-    expect(await day.evaluate(el=>el.getBoundingClientRect().width)).toBeGreaterThan(4);
+    await expect.poll(() => day.evaluate(el=>el.getBoundingClientRect().width)).toBeGreaterThan(4);
   }
   await page.setViewportSize({width:390,height:1100}); await capture(page,'mobile-data');
   await page.getByRole('heading',{name:'运动趋势',exact:true}).scrollIntoViewIfNeeded();
@@ -149,7 +149,7 @@ test('statistics and date errors have independent retries; session expiry redire
   await page.getByRole('button',{name:'重试当天活动'}).click(); await expect(page.locator('.day-activity').filter({hasText:'河畔晨跑'})).toBeVisible();
   state.trendFailures=1; await page.getByLabel('趋势周期').selectOption('week');
   await page.getByRole('button',{name:'重新读取趋势'}).click(); await expect(page.getByRole('region',{name:'运动趋势',exact:true}).locator('canvas')).toBeVisible();
-  state.expired=true; await page.getByRole('button',{name:'上一年',exact:true}).click(); await expect(page).toHaveURL(/login\?reason=expired/);
+  state.expired=true; await page.getByRole('button',{name:'上一年',exact:true}).click(); await expect(page).toHaveURL(/admin\?reason=expired/);
 });
 
 test('year input, boundaries, URL date restore and slow previous-year response', async ({page}) => {
@@ -166,7 +166,7 @@ test('year input, boundaries, URL date restore and slow previous-year response',
   await expect(page.getByRole('button',{name:'下一年',exact:true})).toBeDisabled();
   let release!: () => void; const held = new Promise<void>(resolve => { release = resolve; });
   let entered!: () => void; const started = new Promise<void>(resolve => { entered = resolve; });
-  await page.route('**/api/v1/statistics/calendar?year=2025&metric=count', async route => { entered(); await held; await route.fallback(); });
+  await page.route('**/api/v1/showcase/statistics/calendar?year=2025&metric=count', async route => { entered(); await held; await route.fallback(); });
   await page.getByLabel('年份',{exact:true}).fill('2025');
   await started; await expect(page.getByRole('status').filter({hasText:'正在读取 2025'})).toBeVisible();
   await page.getByRole('button',{name:'下一年',exact:true}).click();

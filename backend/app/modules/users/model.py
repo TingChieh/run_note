@@ -21,6 +21,8 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(80))
     timezone: Mapped[str] = mapped_column(String(64), server_default="Asia/Shanghai")
     profile_is_public: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    is_active: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    showcase_enabled: Mapped[bool] = mapped_column(Boolean, server_default="false")
     bio: Mapped[str] = mapped_column(String(500), server_default="")
     activity_data_version: Mapped[int] = mapped_column(BigInteger, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

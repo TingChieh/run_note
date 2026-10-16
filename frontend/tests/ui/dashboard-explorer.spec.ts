@@ -114,7 +114,7 @@ test('late activity and route responses cannot overwrite newer selection; errors
   await expect(region.getByTestId('route-map-ready')).toBeVisible();
   let release!:()=>void;const held=new Promise<void>(resolve=>release=resolve);
   let entered!:()=>void;const started=new Promise<void>(resolve=>entered=resolve);
-  await page.route(`**/api/v1/activities/${state.records[2].id}/route`,async route=>{entered();await held;await route.fallback();});
+  await page.route(`**/api/v1/showcase/activities/${state.records[2].id}/route`,async route=>{entered();await held;await route.fallback();});
   await region.getByRole('button',{name:'选择运动 运动 3',exact:true}).click();await started;
   await region.getByRole('button',{name:'选择运动 运动 2',exact:true}).click();
   await expect(region.getByText('此活动没有路线。',{exact:true})).toBeVisible();release();
@@ -124,9 +124,9 @@ test('late activity and route responses cannot overwrite newer selection; errors
   await region.getByRole('button',{name:'选择运动 运动 1',exact:true}).click();
   await region.getByRole('button',{name:'重试运动详情',exact:true}).click();
   await expect(region.getByRole('heading',{name:'运动 1',exact:true})).toBeVisible();
-  await page.route(`**/api/v1/activities/${state.records[2].id}`,route=>route.fulfill({status:401,body:'expired'}));
+  await page.route(`**/api/v1/showcase/activities/${state.records[2].id}`,route=>route.fulfill({status:401,body:'expired'}));
   await region.getByRole('button',{name:'选择运动 运动 3',exact:true}).click();
-  await expect(page).toHaveURL(/login\?reason=expired/);
+  await expect(page).toHaveURL(/admin\?reason=expired/);
 });
 
 test('wall has its own active navigation entry',async({page})=>{
@@ -140,8 +140,8 @@ test('classification and route failures retry independently and a stale category
   const state=await installActivities(page);
   state.records[0].category='轻松跑';state.records[1].category='比赛';
   let categoryFailed=true, routeFailed=true;
-  await page.route('**/api/v1/activities/categories',route=>categoryFailed ? route.fulfill({status:503,json:{error:{message:'分类读取失败'}}}) : route.fallback());
-  await page.route(`**/api/v1/activities/${sampleActivity.id}/route`,route=>routeFailed ? route.fulfill({status:503,json:{error:{message:'路线读取失败'}}}) : route.fallback());
+  await page.route('**/api/v1/showcase/activities/categories',route=>categoryFailed ? route.fulfill({status:503,json:{error:{message:'分类读取失败'}}}) : route.fallback());
+  await page.route(`**/api/v1/showcase/activities/${sampleActivity.id}/route`,route=>routeFailed ? route.fulfill({status:503,json:{error:{message:'路线读取失败'}}}) : route.fallback());
   state.listFailures=1;
   await loginRunner(page);await page.goto('/dashboard');
   const region=page.getByRole('region',{name:'运动足迹',exact:true});
@@ -153,7 +153,7 @@ test('classification and route failures retry independently and a stale category
   await expect(region.getByTestId('route-map-ready')).toBeVisible();
   let release!:()=>void;const held=new Promise<void>(resolve=>release=resolve);
   let entered!:()=>void;const started=new Promise<void>(resolve=>entered=resolve);
-  await page.route(/\/api\/v1\/activities\?.*category=/,async route=>{
+  await page.route(/\/api\/v1\/showcase\/activities\?.*category=/,async route=>{
     if(new URL(route.request().url()).searchParams.get('category')==='轻松跑'){entered();await held;}
     await route.fallback();
   });
@@ -170,7 +170,7 @@ test('late detail results cannot restore a previous record',async({page})=>{
   await expect(region.getByRole('heading',{name:'运动 1',exact:true})).toBeVisible();
   let release!:()=>void;const held=new Promise<void>(resolve=>release=resolve);
   let entered!:()=>void;const started=new Promise<void>(resolve=>entered=resolve);
-  await page.route('**/api/v1/activities/11111111-1111-4111-8111-000000000003',async route=>{entered();await held;await route.fallback();});
+  await page.route('**/api/v1/showcase/activities/11111111-1111-4111-8111-000000000003',async route=>{entered();await held;await route.fallback();});
   await region.getByRole('button',{name:'选择运动 运动 3',exact:true}).click();await started;
   await region.getByRole('button',{name:'选择运动 运动 2',exact:true}).click();
   await expect(region.getByRole('heading',{name:'运动 2',exact:true})).toBeVisible();release();
@@ -187,21 +187,21 @@ test('thumbnail expiry clears the selected private map and metrics before login 
   await expect(region.getByTestId('route-map-ready')).toBeVisible();
   let release!:()=>void;const held=new Promise<void>(resolve=>release=resolve);
   let entered!:()=>void;const started=new Promise<void>(resolve=>entered=resolve);
-  await page.route('**/login?reason=expired*',async route=>{entered();await held;await route.continue();});
-  await page.route(`**/api/v1/activities/${state.records[9].id}/route`,route=>route.fulfill({status:401,body:'expired'}));
+  await page.route('**/admin?reason=expired*',async route=>{entered();await held;await route.continue();});
+  await page.route(`**/api/v1/showcase/activities/${state.records[9].id}/route`,route=>route.fulfill({status:401,body:'expired'}));
   exiting=undefined;
   await region.getByRole('button',{name:'选择运动 运动 10',exact:true}).scrollIntoViewIfNeeded();
   await started;
   try {
     await expect.poll(() => exiting).toEqual({metrics:0,map:0,cards:0});
   } finally { release(); }
-  await expect(page).toHaveURL(/login\?reason=expired/);
+  await expect(page).toHaveURL(/admin\?reason=expired/);
 });
 
 test('monthly calendar dates remain readable at every heat level in light and dark themes',async({page})=>{
   await page.emulateMedia({reducedMotion:'reduce'});
   await page.setViewportSize({width:390,height:1000});
-  await page.route('**/api/v1/statistics/calendar?**',async route=>{
+  await page.route('**/api/v1/showcase/statistics/calendar?**',async route=>{
     const response=await route.fetch(), body=await response.json();
     for(const [index,distance] of [[1,0],[2,2],[3,3],[4,4]]) Object.assign(body.data.days[index],{activity_count:1,distance_m:distance,missing_duration_count:1});
     body.data.activity_count=4;body.data.distance_m=9;
@@ -232,11 +232,11 @@ for (const width of [390,1440]) test(`switching a record keeps the map, metrics 
   const before=await geometry();
   const marker=region.getByLabel('路线起点',{exact:true});
   const markerBefore=await marker.getAttribute('style');
-  await page.route('**/api/v1/activities/11111111-1111-4111-8111-000000000003/route',route=>route.fulfill({json:{data:{type:'FeatureCollection',start:[121.48,31.23],end:[121.48,31.237],features:[{type:'Feature',geometry:{type:'LineString',coordinates:[[121.48,31.23],[121.48,31.237]]},properties:{segment_index:0,point_count:2}}]},error:null}}));
+  await page.route('**/api/v1/showcase/activities/11111111-1111-4111-8111-000000000003/route',route=>route.fulfill({json:{data:{type:'FeatureCollection',start:[121.48,31.23],end:[121.48,31.237],features:[{type:'Feature',geometry:{type:'LineString',coordinates:[[121.48,31.23],[121.48,31.237]]},properties:{segment_index:0,point_count:2}}]},error:null}}));
   await region.locator('.maplibregl-canvas').evaluate(el=>el.setAttribute('data-original-map','yes'));
   let release!:()=>void;const held=new Promise<void>(resolve=>release=resolve);
   let entered!:()=>void;const started=new Promise<void>(resolve=>entered=resolve);
-  await page.route('**/api/v1/activities/11111111-1111-4111-8111-000000000003',async route=>{entered();await held;await route.fallback();});
+  await page.route('**/api/v1/showcase/activities/11111111-1111-4111-8111-000000000003',async route=>{entered();await held;await route.fallback();});
   await region.locator('[data-id="11111111-1111-4111-8111-000000000003"]').click();await started;
   expect(await geometry()).toEqual(before);
   await expect(region.locator('[data-original-map=yes]')).toHaveCount(1);
@@ -257,7 +257,7 @@ test('recent records span months, stop at twenty and retain record dates with ca
     title:`跨月记录 ${i+1}`,category:i===24?'比赛':'轻松跑',
     activity_date:`2026-${String(10-Math.floor(i/10)).padStart(2,'0')}-${String(24-i%10).padStart(2,'0')}`}));
   const queries:URLSearchParams[]=[];
-  page.on('request',request=>{const url=new URL(request.url());if(url.pathname==='/api/v1/activities')queries.push(url.searchParams);});
+  page.on('request',request=>{const url=new URL(request.url());if(url.pathname==='/api/v1/showcase/activities')queries.push(url.searchParams);});
   await loginRunner(page);await page.goto('/dashboard');
   const region=page.getByRole('region',{name:'运动足迹',exact:true});
   await expect(region.getByRole('heading',{name:'跨月记录 1',exact:true})).toBeVisible();
@@ -288,7 +288,7 @@ test('slow category reads retain the previous map, metrics and cards until data 
   const metrics=await region.getByTestId('explorer-metrics').textContent();
   let release!:()=>void;const held=new Promise<void>(resolve=>release=resolve);
   let entered!:()=>void;const started=new Promise<void>(resolve=>entered=resolve);
-  await page.route(/\/api\/v1\/activities\?.*category=/,async route=>{entered();await held;await route.fallback();});
+  await page.route(/\/api\/v1\/showcase\/activities\?.*category=/,async route=>{entered();await held;await route.fallback();});
   await region.getByLabel('足迹分类').selectOption('比赛&恢复');await started;
   try {
     await expect(region.getByRole('heading',{name:'运动 1',exact:true})).toBeVisible();

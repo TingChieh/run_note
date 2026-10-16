@@ -14,7 +14,7 @@ describe('personal running goal', () => {
   });
   it('reads all account targets from the backend and preserves unset periods', async () => {
     const fetcher = (async (path: string) => {
-      expect(path).toBe('/api/v1/me/running-goals');
+      expect(path).toBe('/api/v1/showcase/running-goals');
       return Response.json({data:{week:5.5,month:null,year:500}});
     }) as typeof fetch;
     expect(await readGoals(fetcher)).toEqual({week:5.5,month:null,year:500});

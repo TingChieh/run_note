@@ -1,6 +1,14 @@
 <script lang="ts">
+  import { useViewContext } from "#lib/view-context.ts";
+  const view = useViewContext();
+  const fetch = view.fetch;
+  const readActivities = view.bind(scoped_readActivities, 0);
+  const readActivityCategories = view.bind(scoped_readActivityCategories, 0);
+  const readActivity = view.bind(scoped_readActivity, 1);
+  const readRoute = view.bind(scoped_readRoute, 1);
+
   import { flushSync, onMount, tick } from 'svelte';
-  import { ActivityError, readActivities, readActivityCategories, readActivity, readRoute, formatDate, formatDistance, formatDuration, formatPace, formatStartTime, type Activity, type Route } from '#lib/api/activities.ts';
+  import { ActivityError, readActivities as scoped_readActivities, readActivityCategories as scoped_readActivityCategories, readActivity as scoped_readActivity, readRoute as scoped_readRoute, formatDate, formatDistance, formatDuration, formatPace, formatStartTime, type Activity, type Route } from '#lib/api/activities.ts';
   import FeedbackState from './FeedbackState.svelte';
   import RouteMap from './RouteMap.svelte';
   import RouteThumbnail from './RouteThumbnail.svelte';
@@ -29,7 +37,7 @@
       active = false; ++listRequest; ++selectionRequest; ++categoriesRequest;
       stopDetailAnimations();
       flushSync(() => { categories = []; items = []; activity = null; route = null; selectedId = ''; detailLoading = false; listLoading = false; detailError = ''; });
-      window.location.replace('/login?reason=expired&next=%2Fdashboard'); return '';
+      window.location.replace('/admin?reason=expired&next=%2Fdashboard'); return '';
     }
     return cause instanceof Error ? cause.message : '暂时无法读取运动记录';
   }
@@ -119,7 +127,7 @@
   {#if categoryError}<FeedbackState kind="error" title={categoryError}><button class="button-secondary" onclick={() => void loadCategories()}>重试足迹分类</button></FeedbackState>{/if}
   {#if activity || detailLoading || listLoading || detailError}
     <div class="selection-panel" bind:this={panel} aria-busy={detailLoading || listLoading}>
-      <div class="selected-heading" aria-live="polite"><div><h3>{activity?.title || (detailLoading || listLoading ? '正在读取运动记录…' : '运动记录')}</h3><p>{activity ? `${formatDate(activity.activity_date)} · ${formatStartTime(activity.started_at, activity.timezone)} · ${activity.timezone}` : '—'}</p></div>{#if activity}<a href={`/activities/${activity.id}`} aria-disabled={detailLoading || listLoading || !!detailError || !!listError} tabindex={detailLoading || listLoading || detailError || listError ? -1 : undefined} class="button-secondary" class:inactive={detailLoading || listLoading || !!detailError || !!listError}>活动详情 ↗</a>{/if}</div>
+      <div class="selected-heading" aria-live="polite"><div><h3>{activity?.title || (detailLoading || listLoading ? '正在读取运动记录…' : '运动记录')}</h3><p>{activity ? `${formatDate(activity.activity_date)} · ${formatStartTime(activity.started_at, activity.timezone)} · ${activity.timezone}` : '—'}</p></div>{#if activity}<a href={view.href(`/activities/${activity.id}`)} aria-disabled={detailLoading || listLoading || !!detailError || !!listError} tabindex={detailLoading || listLoading || detailError || listError ? -1 : undefined} class="button-secondary" class:inactive={detailLoading || listLoading || !!detailError || !!listError}>活动详情 ↗</a>{/if}</div>
       <div class="explorer-workspace">
         <button type="button" class="button-secondary record-arrow record-previous" aria-label="上一条运动记录" title="上一条运动记录" disabled={listLoading || selectedIndex <= 0} onclick={() => void shiftRecord(-1)}>{@render arrowIcon('left')}</button>
         <button type="button" class="button-secondary record-arrow record-next" aria-label="下一条运动记录" title="下一条运动记录" disabled={listLoading || selectedIndex < 0 || selectedIndex >= items.length - 1} onclick={() => void shiftRecord(1)}>{@render arrowIcon('right')}</button>
@@ -151,7 +159,7 @@
     <ul class="activity-strip" bind:this={strip} aria-label="按时间浏览运动记录">
       {#each items as item (item.id)}<li><button class="history-card" class:selected={item.id === selectedId} data-id={item.id} aria-label={`选择运动 ${item.title}`} aria-pressed={item.id === selectedId} onclick={() => void choose(item)}><div class="history-copy"><time datetime={item.activity_date}>{formatDate(item.activity_date)}</time><strong>{item.title || '未命名活动'}</strong><span>{formatDistance(item.distance_m)} · {item.category || '未分类'}</span></div><RouteThumbnail activity={item} compact onauthrequired={cause => { fail(cause); }} /></button></li>{/each}
     </ul>
-  {:else if !listLoading && !listError}<FeedbackState kind="empty" title="此分类下没有运动记录"><a href="/activities" class="button-secondary">查看跑步记录</a></FeedbackState>{/if}
+  {:else if !listLoading && !listError}<FeedbackState kind="empty" title="此分类下没有运动记录"><a href={view.href("/activities")}  class="button-secondary">查看跑步记录</a></FeedbackState>{/if}
   {#if listLoading && !items.length}<FeedbackState kind="loading" title="正在读取足迹记录…" />{/if}
 </section>
 

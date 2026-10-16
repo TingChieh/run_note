@@ -5,7 +5,7 @@ async function installMilestones(page: import('@playwright/test').Page) {
   const state = { provinceFailures: 0, streakFailures: 0, year: null as number | null };
   await installActivities(page);
   await page.clock.setFixedTime(new Date('2026-10-14T06:00:00Z'));
-  await page.route('**/api/v1/statistics/summary**', route => {
+  await page.route('**/api/v1/showcase/statistics/summary**', route => {
     const from = new URL(route.request().url()).searchParams.get('date_from') ?? '';
     const to = new URL(route.request().url()).searchParams.get('date_to') ?? '';
     const futureIncluded = to > '2026-10-15';
@@ -13,8 +13,8 @@ async function installMilestones(page: import('@playwright/test').Page) {
     const count = current ? 2 : 1, distance = current ? '10246.912' : '5000';
     return route.fulfill({ json:{ data:{ activity_count:count, distance_m:futureIncluded?'20246.912':distance, duration_sum_seconds:1800, known_duration_count:1, missing_duration_count:count-1, activity_days:count, pace_eligible_count:1, pace_eligible_distance_m:'5123.456', avg_pace_seconds_per_km:'351.3', quality_warning_count:1, date_assignment:'activity_local_date' }, error:null } });
   });
-  await page.route('**/api/v1/statistics/streaks', route => state.streakFailures-- > 0 ? route.fulfill({status:503,json:{error:{message:'连续记录读取失败'}}}) : route.fulfill({json:{data:{today:'2026-10-14',current_days:2,longest_days:5,current_weeks:2,longest_weeks:7,week:Array.from({length:7},(_,i)=>({date:`2026-10-${12+i}`,active:i<2}))},error:null}}));
-  await page.route('**/api/v1/footprints/provinces**', route => {
+  await page.route('**/api/v1/showcase/statistics/streaks', route => state.streakFailures-- > 0 ? route.fulfill({status:503,json:{error:{message:'连续记录读取失败'}}}) : route.fulfill({json:{data:{today:'2026-10-14',current_days:2,longest_days:5,current_weeks:2,longest_weeks:7,week:Array.from({length:7},(_,i)=>({date:`2026-10-${12+i}`,active:i<2}))},error:null}}));
+  await page.route('**/api/v1/showcase/footprints/provinces**', route => {
     const year = new URL(route.request().url()).searchParams.get('year');
     state.year = year === null ? null : Number(year);
     return state.provinceFailures-- > 0 ? route.fulfill({status:503,json:{error:{message:'省份足迹读取失败'}}}) : route.fulfill({json:{data:{year:state.year,total:34,activity_count:state.year===null?3:state.year===2026?2:0,located_activity_count:state.year===null?2:state.year===2026?1:0,provinces:state.year===null?[{code:310000,name:'上海市',activity_count:1},{code:510000,name:'四川省',activity_count:1}]:state.year===2026?[{code:310000,name:'上海市',activity_count:1}]:[]},error:null}});
@@ -154,7 +154,7 @@ for (const area of ['overview', 'sidebar'] as const) {
     await installMilestones(page);
     let finish!: () => void;
     const pending = new Promise<void>(resolve => {finish = resolve;});
-    await page.route('**/api/v1/statistics/summary**', async route => {await pending; await route.fallback();});
+    await page.route('**/api/v1/showcase/statistics/summary**', async route => {await pending; await route.fallback();});
     try {
       await loginRunner(page); await page.goto('/dashboard');
       const overview = area === 'overview';
@@ -266,7 +266,7 @@ test('failed goal saves preserve the confirmed target and input until a successf
 
 test('statistics retry cannot discard a goal draft while saving', async ({page}) => {
   await installMilestones(page);
-  await page.route('**/api/v1/statistics/summary**',route=>route.fulfill({status:503,json:{error:{message:'统计暂不可用'}}}));
+  await page.route('**/api/v1/showcase/statistics/summary**',route=>route.fulfill({status:503,json:{error:{message:'统计暂不可用'}}}));
   let finish!:()=>void;
   const pending=new Promise<void>(resolve=>{finish=resolve;});
   await page.route('**/api/v1/me/running-goals/week',async route=>{
@@ -287,11 +287,11 @@ test('statistics retry cannot discard a goal draft while saving', async ({page})
 });
 
 test('wall fills every row, keeps missing routes honest and paginates all history', async ({page,request},testInfo) => {
-  const redirected=await request.get('/activities/wall',{maxRedirects:0});expect(redirected.status()).toBe(303);
+  const redirected=await request.get('/activities/wall',{maxRedirects:0});expect(redirected.status()).toBe(200);
   const records=Array.from({length:50},(_,i)=>({...sampleActivity,id:`11111111-1111-4111-8111-${String(i).padStart(12,'0')}`,title:`晨跑 ${i+1}`}));
   records[0]={...incompleteActivity,id:records[0].id,title:'没有路线的跑步'};
   await installMilestones(page);
-  await page.route(/\/api\/v1\/activities\?/,route=>{const params=new URL(route.request().url()).searchParams;const offset=Number(params.get('offset')??0),limit=Number(params.get('limit')??20);return route.fulfill({json:{data:{items:records.slice(offset,offset+limit),total:records.length,limit,offset},error:null}});});
+  await page.route(/\/api\/v1\/showcase\/activities\?/,route=>{const params=new URL(route.request().url()).searchParams;const offset=Number(params.get('offset')??0),limit=Number(params.get('limit')??20);return route.fulfill({json:{data:{items:records.slice(offset,offset+limit),total:records.length,limit,offset},error:null}});});
   await loginRunner(page);await page.goto('/activities/wall');
   await expect(page.getByRole('heading',{name:'足迹墙',exact:true})).toBeVisible();
   await expect(page.locator('.wall-card')).toHaveCount(24);
@@ -328,8 +328,8 @@ test('wall fills every row, keeps missing routes honest and paginates all histor
   await expect(page.getByRole('button',{name:'下一页',exact:true})).toBeDisabled();
   await page.getByRole('button',{name:'上一页',exact:true}).click();await expect(page.locator('.wall-card')).toHaveCount(24);
   await page.getByRole('button',{name:'退出登录',exact:true}).click();
-  await expect(page).toHaveURL(/\/login\?reason=logout$/);
-  await page.goto('/activities/wall');await expect(page).toHaveURL(/\/login\?next=/);
+  await expect(page).toHaveURL(/\/admin\?reason=logout$/);
+  await page.goto('/activities/wall');await expect(page).toHaveURL(/\/activities\/wall$/);await expect(page.getByRole('button',{name:'退出登录',exact:true})).toHaveCount(0);
 });
 
 
@@ -345,7 +345,7 @@ test('sidebar and home goals exclude future records consistently', async ({page}
 
 test('detail route retry also refreshes the footprint card without duplicate reads', async ({page}) => {
   await installMilestones(page);let reads=0;
-  await page.route('**/api/v1/activities/*/route', async route=>{
+  await page.route('**/api/v1/showcase/activities/*/route', async route=>{
     reads++;
     if(reads<=2)return route.fulfill({status:503,json:{error:{message:'路线暂不可用'}}});
     return route.fallback();

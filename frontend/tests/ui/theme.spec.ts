@@ -60,7 +60,7 @@ async function dimmedTiles(page: Page, map: Locator) {
 
 test('manual theme switches override the system, persist, and can return to automatic', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
-  await page.goto('/login');
+  await page.goto('/admin');
   await page.getByLabel('邮箱', { exact: true }).fill('draft@example.com');
   await page.getByRole('button', { name: '切换到深色模式', exact: true }).click({ timeout: 5000 });
   await dark(page);
@@ -92,7 +92,7 @@ test('manual theme switches override the system, persist, and can return to auto
 
 test('device theme applies to the first page and switches live without losing a form draft', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
-  await page.goto('/login'); await dark(page);
+  await page.goto('/admin'); await dark(page);
   await expect(page.getByRole('button', { name: '登录', exact: true })).toBeEnabled();
   expect((await appearance(page.locator('.auth-card'))).background).toBeLessThan(.1);
   expect((await appearance(page.locator('.auth-card'))).contrast).toBeGreaterThanOrEqual(4.5);

@@ -6,7 +6,7 @@ it('restores year and heatmap, validates inclusive range and leap dates', () => 
   expect(footprintRange({year:2024,from:'2024-02-29',to:'2024-02-29',mode:'tracks',filter:'range'})).toEqual({date_from:'2024-02-29',date_to:'2024-03-01'});
   expect(()=>footprintRange({year:2024,from:'2024-02-30',to:'2024-03-01',mode:'tracks',filter:'range'})).toThrow();
   expect(footprintSelection(new URLSearchParams('year=9999&mode=bad'),2026).year).toBe(2026);
-  expect(isProtected('/footprints')).toBe(true);
+  expect(isProtected('/footprints')).toBe(false);
 });
 it('saves range and restores after refresh without retaining private data', () => {
   const selection={year:2024,from:'2024-01-03',to:'2024-02-29',mode:'heatmap' as const,filter:'range' as const};
@@ -86,7 +86,7 @@ it('reads the all-record endpoint using only mode and maps expired sessions to a
   const { readAllFootprints } = await import('../../src/lib/api/footprints');
   const signal=new AbortController().signal;
   const fetcher: typeof fetch = async (input,init) => {
-    expect(input).toBe('/api/v1/footprints/all?mode=heatmap');
+    expect(input).toBe('/api/v1/showcase/footprints/all?mode=heatmap');
     expect(init).toMatchObject({signal,cache:'no-store',credentials:'same-origin'});
     return new Response(JSON.stringify({data:{status:'pending',generated_at:null,refreshing:false,result:null},error:null}));
   };

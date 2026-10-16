@@ -1,0 +1,16 @@
+# Replace the hostname before use. Only Caddy is publicly reachable.
+running.example.com {
+    @api path /api/*
+    handle @api {
+        reverse_proxy 127.0.0.1:8000 {
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto https
+        }
+    }
+    handle {
+        reverse_proxy 127.0.0.1:3000 {
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto https
+        }
+    }
+}

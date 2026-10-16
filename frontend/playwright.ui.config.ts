@@ -4,6 +4,6 @@ export default defineConfig({
   use: { baseURL: 'http://127.0.0.1:5191', channel: 'chrome', viewport: { width: 1440, height: 1000 } },
   webServer: [
     { command: 'node tests/fixtures/ui-api.mjs', url: 'http://127.0.0.1:8191/api/health', reuseExistingServer: false },
-    { command: 'node node_modules/vite/bin/vite.js dev --host 127.0.0.1 --port 5191', url: 'http://127.0.0.1:5191/login', env: { INTERNAL_API_BASE_URL: 'http://127.0.0.1:8191' }, reuseExistingServer: false }
+    { command: 'node node_modules/vite/bin/vite.js dev --host 127.0.0.1 --port 5191', url: 'http://127.0.0.1:5191/admin', env: { INTERNAL_API_BASE_URL: 'http://127.0.0.1:8191' }, reuseExistingServer: false }
   ]
 });

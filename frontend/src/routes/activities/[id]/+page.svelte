@@ -1,4 +1,10 @@
 <script lang="ts">
+  import { useViewContext } from "#lib/view-context.ts";
+  const view = useViewContext();
+  const fetch = view.fetch;
+  const readActivity = view.bind(scoped_readActivity, 1);
+  const readRoute = view.bind(scoped_readRoute, 1);
+
   import { onMount, untrack } from 'svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import MetricSummary from '#lib/components/MetricSummary.svelte';
@@ -9,7 +15,7 @@
   import RouteMap from '#lib/components/RouteMap.svelte';
   import ActivityWallPreview from '#lib/components/ActivityWallPreview.svelte';
   import ActivityActions from '#lib/components/ActivityActions.svelte';
-  import { ActivityError, readActivity, readRoute, formatDate, formatDistance, formatDuration, activityDuration, formatStartTime, formatPace, qualityLabel, qualityEntries, type Activity, type Route } from '#lib/api/activities.ts';
+  import { ActivityError, readActivity as scoped_readActivity, readRoute as scoped_readRoute, formatDate, formatDistance, formatDuration, activityDuration, formatStartTime, formatPace, qualityLabel, qualityEntries, type Activity, type Route } from '#lib/api/activities.ts';
   let activity = $state<Activity | null>(null), route = $state<Route | null>(null), loading = $state(true), routeLoading = $state(false), message = $state(''), routeError = $state(''), disposed = false;
   let switching = $state(false);
   let mounted = $state(false), activityToken = 0, routeToken = 0;
@@ -22,11 +28,11 @@
   });
   function goBack() {
     if (page.state.activityBackAvailable === true) window.history.back();
-    else void goto('/activities', { replace: true });
+    else void goto(view.href('/activities'), { replace: true });
   }
   function expired(cause: unknown): boolean {
     if (!(cause instanceof ActivityError) || cause.status !== 401) return false;
-    activityToken++; routeToken++; activity = null; route = null; message = ''; routeError = ''; window.location.replace('/login?reason=expired'); return true;
+    activityToken++; routeToken++; activity = null; route = null; message = ''; routeError = ''; window.location.replace('/admin?reason=expired'); return true;
   }
   async function loadRoute(id: string) {
     const token = ++routeToken;
@@ -40,7 +46,7 @@
     const token = ++activityToken; routeToken++;
     loading = true; message = ''; activity = null; route = null; routeLoading = false; routeError = '';
     try {
-      const result = await readActivity(id); if (disposed || token !== activityToken) return;
+      const result = await readActivity(id, fetch, view.manage); if (disposed || token !== activityToken) return;
       activity = result; if (result.has_route) await loadRoute(result.id);
     } catch (cause) { if (!disposed && token === activityToken && !expired(cause)) message = cause instanceof Error ? cause.message : '无法读取活动'; }
     finally { if (!disposed && token === activityToken) loading = false; }
@@ -51,10 +57,10 @@
     const token = ++activityToken;
     switching = true;
     try {
-      const next = await readActivity(id);
+      const next = await readActivity(id, fetch, view.manage);
       if (disposed || token !== activityToken) return false;
       // Replace this detail entry so Back still reaches the original list or wall page.
-      await goto(`/activities/${id}`, { shallow: true, replace: true, persistState: true,
+      await goto(view.href(`/activities/${id}`), { shallow: true, replace: true, persistState: true,
         reset: false, state: page.state });
       if (disposed || token !== activityToken) return false;
       routeToken++;
@@ -79,7 +85,7 @@
     <div class="hero-copy"><p class="hero-kicker"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5 19 5-5 4 3 4-7 M3 8h4 M3 12h2" /><circle cx="15" cy="5" r="2" /></svg>跑步详情</p><h1 id="activity-title">{activity.title || '未命名活动'}</h1><p class="hero-date">{formatDate(activity.activity_date)} <span>· {activity.timezone}</span></p></div>
     <div class="hero-distance" aria-hidden="true"><span>本次距离</span><strong>{formatDistance(activity.distance_m)}</strong></div>
   </section>
-  <ActivityActions {activity} onupdated={(value) => { activity = value; }} />
+  {#if view.manage}<ActivityActions {activity} onupdated={(value) => { activity = value; }} />{/if}
   <div class="detail-workspace">
     <section class="metric-panel" aria-label="运动指标"><div class="panel-heading"><h2>每一步，都算数</h2><p class="section-caption">本次运动概览</p></div>
       <div class="metric-cards"><MetricSummary stacked appearance="sport" items={[
@@ -107,7 +113,7 @@
   </details>
   {/key}
   <ActivityWallPreview {activity} {route} {routeLoading} {routeError} onauthrequired={expired} onswitch={switchActivity} />
-  {#key activity.id}<SharePanel {activity} />{/key}
+  {#if view.manage}<p class="mt-6 text-sm text-muted-foreground">个人展示站公开全部记录和完整轨迹；以下分享设置仅控制旧版摘要链接。</p>{#key activity.id}<SharePanel {activity} />{/key}{/if}
 {:else if loading}<div class="mt-6"><FeedbackState kind="loading" title="正在读取活动…" /></div>{/if}
 <style>
   .sport-hero { display: flex; justify-content: space-between; align-items: center; gap: 2rem; background: var(--sport-yellow); border-radius: var(--radius-card); padding: clamp(1.5rem, 3vw, 2rem); margin-top: 1.5rem; color: var(--sport-detail-ink); }
