@@ -4,7 +4,7 @@
 
 **Goal:** Style MapLibre zoom controls as a vertical pill group that matches the current Liquid Glass material.
 
-**Architecture:** Keep MapLibre `NavigationControl` and its existing zoom behavior. Scope global CSS to the zoom control group and use the project's existing glass tokens, accessibility focus styles, and transparency fallbacks. Use 32px zoom buttons, visible tint highlights and one Liquid Glass refraction surface attached to the whole group. Reduce only its press deformation while retaining the shared spring timing.
+**Architecture:** Keep MapLibre `NavigationControl` and its existing zoom behavior. Scope global CSS to the zoom control group and use the project's existing glass tokens, accessibility focus styles, and transparency fallbacks. Use 32px zoom buttons, visible tint highlights and one Liquid Glass refraction surface attached to the whole group. Disable the group's duplicate backdrop blur while Liquid Glass is active. Reduce only its press deformation while retaining the shared spring timing.
 
 **Tech Stack:** SvelteKit 3, MapLibre GL, CSS, Playwright UI tests.
 
@@ -44,7 +44,7 @@ Expected: the new geometry assertion fails against the current MapLibre control 
 
 - [x] **Step 3: Add the minimum CSS**
 
-In `liquid-glass.css`, scope styles to `.maplibregl-ctrl-group` containing `.maplibregl-ctrl-zoom-in`. Give the group a vertical pill outline, make both zoom buttons 32px squares, keep their separator subtle, and apply shared hover, focus, reduced-transparency, and forced-color behavior. Put the gradient highlight on the actual tint layer. In `liquid-glass.ts`, enhance the group as one refractive surface, exclude its two child buttons from individual glass enhancement, and preserve shared spring stiffness and damping with reduced press deformation. Leave attribution styling untouched.
+In `liquid-glass.css`, scope styles to `.maplibregl-ctrl-group` containing `.maplibregl-ctrl-zoom-in`. Give the group a vertical pill outline, make both zoom buttons 32px squares, keep their separator subtle, and apply shared hover, focus, reduced-transparency, and forced-color behavior. Put the gradient highlight on the actual tint layer and prevent the enhanced group from adding a second backdrop blur. In `liquid-glass.ts`, enhance the group as one refractive surface, exclude its two child buttons from individual glass enhancement, and preserve shared spring stiffness and damping with reduced press deformation. Leave attribution styling untouched.
 
 - [x] **Step 4: Run focused checks**
 

@@ -272,7 +272,7 @@ test('dynamic edit buttons get glass and removed dialogs release their lenses', 
   expect(await zoomGroup.evaluate(el => getComputedStyle(el).flexDirection)).toBe('column');
   expect(await zoomGroup.evaluate(el => getComputedStyle(el).borderRadius)).toBe('9999px');
   expect((await zoomGroup.boundingBox())!.height).toBeGreaterThanOrEqual(64);
-  expect(await zoomGroup.evaluate(el => getComputedStyle(el).backdropFilter)).toContain('blur(14px)');
+  expect(await zoomGroup.evaluate(el => getComputedStyle(el).backdropFilter)).toBe('none');
   expect(await zoom.locator('.maplibregl-ctrl-icon').evaluate(el => getComputedStyle(el).backgroundImage)).toContain('data:image/svg+xml');
   await expect(zoomGroup).toHaveClass(/rn-glass-control/);
   await expect(zoom).not.toHaveClass(/rn-glass-control/);
