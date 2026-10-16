@@ -85,6 +85,23 @@ test('themed arrow buttons toggle the native select and animate with its expande
 
 test('pressing a glass preview button deforms its sampled backdrop and restores it on release', async ({ page }) => {
   await page.goto('/login'); await page.getByRole('button', { name: '玻璃调节', exact: true }).click();
+  for (const [index, name] of ['普通按钮', '主要操作', '浅色按钮'].entries()) {
+    const preview = page.getByRole('button', { name, exact: true });
+    const previewCopy = preview.locator('.rn-glass-copy');
+    const previewScale = () => previewCopy.evaluate(el => new DOMMatrix(getComputedStyle(el).transform).a);
+    await expect(previewCopy).toBeAttached();
+    const restingScale = await previewScale();
+    await preview.hover();
+    await expect(preview).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    await page.mouse.down();
+    await expect.poll(previewScale).toBeGreaterThan(restingScale + .03);
+    await expect(preview).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    await expect(preview).toHaveCSS('background-image', 'none');
+    await expect(preview).toHaveCSS('box-shadow', 'none');
+    await page.locator('.preview-stage').screenshot({ path: `test-results/glass-backdrop-pressed-${index}.png` });
+    await page.mouse.up();
+    await expect.poll(previewScale).toBeCloseTo(restingScale, 2);
+  }
   const button = page.getByRole('button', { name: '普通按钮', exact: true });
   const copy = button.locator('.rn-glass-copy');
   const scale = () => copy.evaluate(el => new DOMMatrix(getComputedStyle(el).transform).a);
@@ -277,8 +294,15 @@ test('dynamic edit buttons get glass and removed dialogs release their lenses', 
   await expect(zoomGroup).toHaveClass(/rn-glass-control/);
   await expect(zoom).not.toHaveClass(/rn-glass-control/);
   await expect.poll(() => zoomGroup.locator('.rn-glass-layer').evaluate(el => getComputedStyle(el).backdropFilter)).toMatch(/url\("?#lg/);
+  await expect.poll(() => zoomGroup.locator('.rn-glass-layer').evaluate(el => getComputedStyle(el).clipPath)).toMatch(/round 16px/);
   expect(await zoomGroup.locator('.rn-glass-tint').evaluate(el => getComputedStyle(el).backgroundImage)).toContain('linear-gradient');
   expect(await zoomGroup.locator('.rn-glass-shadow').evaluate(el => getComputedStyle(el).boxShadow)).toContain('inset');
+  for (const button of [zoom, zoomOut]) {
+    await expect(button).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    await expect(button).toHaveCSS('background-image', 'none');
+    await expect(button).toHaveCSS('backdrop-filter', 'none');
+    await expect(button).toHaveCSS('box-shadow', 'none');
+  }
   const zoomSize = await zoom.boundingBox();
   const zoomOutSize = await zoomOut.boundingBox();
   expect(zoomSize).not.toBeNull(); expect(zoomOutSize).not.toBeNull();
@@ -288,13 +312,35 @@ test('dynamic edit buttons get glass and removed dialogs release their lenses', 
   expect(zoomSize!.width).toBe(zoomOutSize!.width);
   const zoomSurface = zoomGroup.locator('.rn-glass-shadow');
   const restingSurfaceWidth = await zoomSurface.evaluate(el => el.getBoundingClientRect().width);
+  const buttonScale = (button: typeof zoom) => button.evaluate(el => new DOMMatrix(getComputedStyle(el).transform).a);
+  const buttonLayout = (button: typeof zoom) => button.evaluate(el => {
+    const button = el as HTMLElement; return { width: button.offsetWidth, height: button.offsetHeight };
+  });
   const zoomBox = await zoom.boundingBox();
+  const groupBox = await zoomGroup.boundingBox();
+  const zoomLayout = await buttonLayout(zoom);
   await page.mouse.move(zoomBox!.x + zoomBox!.width / 2, zoomBox!.y + zoomBox!.height / 2);
   await page.mouse.down();
-  await expect.poll(() => zoomSurface.evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(restingSurfaceWidth);
-  expect(await zoomSurface.evaluate(el => el.getBoundingClientRect().width) - restingSurfaceWidth).toBeLessThanOrEqual(4);
+  await expect.poll(() => buttonScale(zoom)).toBeLessThan(1);
+  expect(await buttonScale(zoomOut)).toBe(1);
+  expect(await zoomSurface.evaluate(el => el.getBoundingClientRect().width)).toBe(restingSurfaceWidth);
+  expect(await buttonLayout(zoom)).toEqual(zoomLayout);
+  expect(await zoom.boundingBox()).not.toEqual(zoomBox);
+  expect(await zoomGroup.boundingBox()).toEqual(groupBox);
+  await zoomGroup.screenshot({ path: 'test-results/map-zoom-liquid-glass-pressed.png' });
   await page.mouse.up();
-  await expect.poll(() => zoomSurface.evaluate(el => el.getBoundingClientRect().width)).toBeCloseTo(restingSurfaceWidth, 0);
+  await expect.poll(() => buttonScale(zoom)).toBe(1);
+  await expect.poll(() => zoom.boundingBox()).toEqual(zoomBox);
+  const zoomOutBox = await zoomOut.boundingBox();
+  await page.mouse.move(zoomOutBox!.x + zoomOutBox!.width / 2, zoomOutBox!.y + zoomOutBox!.height / 2);
+  await page.mouse.down();
+  await expect.poll(() => buttonScale(zoomOut)).toBeLessThan(1);
+  expect(await buttonScale(zoom)).toBe(1);
+  expect(await zoomSurface.evaluate(el => el.getBoundingClientRect().width)).toBe(restingSurfaceWidth);
+  expect(await zoomOut.boundingBox()).not.toEqual(zoomOutBox);
+  await page.mouse.up();
+  await expect.poll(() => buttonScale(zoomOut)).toBe(1);
+  await expect.poll(() => zoomOut.boundingBox()).toEqual(zoomOutBox);
   await page.screenshot({ path: 'test-results/map-zoom-liquid-glass-desktop.png' });
   await page.setViewportSize({ width: 390, height: 900 });
   await expect.poll(async () => {
@@ -305,6 +351,11 @@ test('dynamic edit buttons get glass and removed dialogs release their lenses', 
   await page.keyboard.press('Tab'); await zoom.focus();
   expect(await zoom.evaluate(el => getComputedStyle(el).outlineStyle)).toBe('solid');
   expect(await zoom.evaluate(el => parseFloat(getComputedStyle(el).outlineWidth))).toBeGreaterThanOrEqual(2);
+  await page.keyboard.down('Space');
+  await expect.poll(() => buttonScale(zoom)).toBeLessThan(1);
+  expect(await buttonScale(zoomOut)).toBe(1);
+  await page.keyboard.up('Space');
+  await expect.poll(() => buttonScale(zoom)).toBe(1);
 });
 
 test('development tuner previews live optics, remembers choices and restores defaults', async ({ page }) => {

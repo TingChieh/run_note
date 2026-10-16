@@ -67,7 +67,7 @@
 }
 
 /* Attribution buttons use a background image for their icon. */
-.sport-theme :is(button:not(.rn-menu-option):not(.rn-select-toggle):not(.maplibregl-ctrl-attrib-button):not([data-date]), a.button-primary, a.button-secondary) {
+.sport-theme :is(button:not(.rn-menu-option):not(.rn-select-toggle):not(.maplibregl-ctrl-attrib-button):not([data-date]), a.button-primary, a.button-secondary):where(:not(.rn-glass-control)) {
   background-image: linear-gradient(145deg, var(--button-glass-sheen), transparent 48%, var(--glass-reflection)) !important;
 }
 
@@ -99,6 +99,7 @@
 .sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-in,
 .sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-out {
   box-sizing: border-box;
+  position: relative;
   flex: 0 0 2rem;
   width: 100%;
   height: 2rem;
@@ -108,7 +109,30 @@
   box-shadow: none !important;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
-  transition: background-color var(--transition-control);
+  transform: scale(1);
+  transform-origin: center;
+  transition: background-color var(--transition-control), transform 180ms cubic-bezier(.2, .8, .2, 1);
+}
+.sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-in::before,
+.sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-out::before {
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--glass-surface-hover);
+  content: '';
+  opacity: 0;
+  transform: scale(.82);
+  transition: opacity 120ms ease, transform 180ms cubic-bezier(.2, .8, .2, 1);
+  pointer-events: none;
+}
+.sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-in:active,
+.sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-out:active {
+  transform: scale(.94, .9);
+}
+.sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-in:active::before,
+.sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-out:active::before {
+  opacity: 1;
+  transform: scale(1);
 }
 .sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-out {
   border-top: 1px solid color-mix(in srgb, var(--glass-edge) 72%, transparent);
@@ -145,12 +169,23 @@
     -webkit-backdrop-filter: blur(14px) saturate(1.5);
     backdrop-filter: blur(14px) saturate(1.5);
   }
-  .sport-theme :is(button:not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary):not(:disabled):not([aria-disabled="true"]):hover {
+  /* Enhanced controls paint hover colour on the deforming tint layer only. */
+  .sport-theme :is(button:not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary):where(:not(.rn-glass-control)):not(:disabled):not([aria-disabled="true"]):hover {
     background-color: var(--button-glass-hover) !important;
   }
   .sport-theme .maplibregl-ctrl-group {
     background-color: var(--glass-surface) !important;
   }
+}
+
+/* The shared button material must not paint square fills over the map's capsule glass. */
+.sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in).rn-glass-control > button.maplibregl-ctrl-zoom-in,
+.sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in).rn-glass-control > button.maplibregl-ctrl-zoom-out {
+  background-color: transparent !important;
+  background-image: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  box-shadow: none !important;
 }
 
 .sport-theme input::file-selector-button {
