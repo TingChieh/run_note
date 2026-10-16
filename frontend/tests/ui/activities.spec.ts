@@ -172,3 +172,47 @@ test('successful imports update the persistent sidebar distance while keeping a 
   await expect(goal.getByLabel('目标距离（km）', { exact: true })).toHaveValue('42');
   expect(summaryReads).toBe(2);
 });
+
+for (const source of ['list', 'wall'] as const) {
+  for (const reload of [false, true]) {
+    test(`detail back returns to ${source} on the same page${reload ? ' after reload' : ''}`, async ({page}, testInfo) => {
+      const state = await installActivities(page);
+      state.records = Array.from({length:50}, (_,i) => ({...incompleteActivity,
+        id:`${String(i).padStart(8,'0')}-1111-4111-8111-111111111111`, title:`返回测试 ${i+1}`}));
+      if(reload)await page.setViewportSize({width:390,height:844});
+      await loginRunner(page);
+      const sourcePath = source === 'wall' ? '/activities/wall?offset=24' : '/activities';
+      await page.goto(source === 'wall' ? '/activities/wall' : sourcePath);
+      await page.getByRole('button',{name:'下一页',exact:true}).click();
+      const title = source === 'wall' ? '返回测试 25' : '返回测试 21';
+      await page.getByRole('link').filter({has:page.getByRole('heading',{name:title,exact:true})}).click();
+      await expect(page.getByRole('heading',{name:title,level:1})).toBeVisible();
+      if(reload){await page.reload();await expect(page.getByRole('heading',{name:title,level:1})).toBeVisible();}
+      const back = page.getByRole('button',{name:'返回',exact:true});
+      await expect(back).toBeVisible();
+      await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+      if(source === 'wall' && !reload)await page.screenshot({path:testInfo.outputPath('detail-back-desktop.png')});
+      if(source === 'wall' && reload)await page.screenshot({path:testInfo.outputPath('detail-back-mobile.png')});
+      await back.focus();await page.keyboard.press('Enter');
+      await expect(page).toHaveURL(sourcePath);
+      await expect(page.getByRole('heading',{name:title,level:3})).toBeVisible();
+      if(source === 'list')await expect(page.locator('.pagination')).toContainText('第 2 页');
+      else await expect(page.locator('.wall-pagination')).toContainText('第 2 / 3 页');
+      // Traversing forward must keep the same return target, without creating a loop.
+      await page.goForward();
+      await expect(page.getByRole('heading',{name:title,level:1})).toBeVisible();
+      await page.getByRole('button',{name:'返回',exact:true}).click();
+      await expect(page).toHaveURL(sourcePath);
+      await expect(page.getByRole('heading',{name:title,level:3})).toBeVisible();
+    });
+  }
+}
+
+test('direct detail entry falls back to records without trusting a return URL', async ({page}) => {
+  await installActivities(page);await loginRunner(page);
+  await page.goto(`/activities/${incompleteActivity.id}?returnTo=https://example.com`);
+  await expect(page.getByRole('heading',{name:incompleteActivity.title,level:1})).toBeVisible();
+  await page.getByRole('button',{name:'返回',exact:true}).click();
+  await expect(page).toHaveURL('/activities');
+  await expect(page.getByRole('heading',{name:'跑步记录',level:1})).toBeVisible();
+});

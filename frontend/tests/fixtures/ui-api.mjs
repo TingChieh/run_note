@@ -28,7 +28,7 @@ createServer(async (req, res) => {
     const value = JSON.parse(body); Object.assign(user, { display_name: value.display_name, bio: value.bio, profile_is_public: value.profile_is_public }); return send(user);
   }
   if (url.pathname === '/api/v1/activities/categories') return send([]);
-  if (url.pathname === '/api/v1/activities') return send({ items: [], total: 0, limit: 20, offset: 0 });
+  if (url.pathname === '/api/v1/activities') return send({ items: [], total: 0, limit: Number(url.searchParams.get('limit') ?? 20), offset: Number(url.searchParams.get('offset') ?? 0) });
   if (url.pathname === '/api/v1/footprints/all') return send({status:'ready',generated_at:'2026-10-15T00:00:00Z',refreshing:false,result:{scope:'all',type:'FeatureCollection',features:[],mode:url.searchParams.get('mode')??'tracks',activity_count:0,visible_activity_count:0,unsupported_segment_count:0,grid_size_m:100,grid_crs:'EPSG:3857',count_basis:'distinct_activity_per_cell',max_count:0}});
   if (url.pathname === '/api/v1/footprints/provinces') return send({ year:url.searchParams.has('year')?Number(url.searchParams.get('year')):null,total:34,provinces:[],activity_count:0,located_activity_count:0 });
   if (url.pathname.endsWith('/statistics/streaks')) {

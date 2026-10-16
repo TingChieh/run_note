@@ -24,7 +24,7 @@
   });
   const appLayout = $derived(!!page.data.user && (isProtected(page.url.pathname) || page.url.pathname === '/'));
   const authPage = $derived(/^\/(login|register)\/?$/.test(page.url.pathname));
-  const routeLoading = $derived(!!navigating.to && !navigating.willUnload && navigating.to.url.pathname !== page.url.pathname);
+  const routeLoading = $derived(!!navigating.to && !navigating.shallow && !navigating.willUnload && navigating.to.url.pathname !== page.url.pathname);
   async function logout() {
     if (busy) return; busy = true; message = '';
     try {

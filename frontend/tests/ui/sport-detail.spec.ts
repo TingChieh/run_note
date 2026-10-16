@@ -14,7 +14,7 @@ test('detail keeps a compact overview beside a spacious route and stays consiste
   await expect(page.getByTestId('sport-hero')).toContainText('河畔晨跑');await expect(page.getByTestId('sport-hero')).toContainText('2026-10-13');
   await expect(page.getByTestId('activity-distance')).toHaveText('5.1 km');
   const metrics=await page.getByRole('region',{name:'运动指标'}).boundingBox(),map=await page.getByRole('region',{name:'路线',exact:true}).boundingBox();
-  expect(map!.x).toBeGreaterThan(metrics!.x+metrics!.width);expect(Math.abs(map!.y-metrics!.y)).toBeLessThan(2);expect(metrics!.width).toBeLessThanOrEqual(320);expect(map!.width).toBeGreaterThan(metrics!.width*2);expect(Math.abs(metrics!.height-map!.height)).toBeLessThan(150);
+  expect(map!.x).toBeGreaterThan(metrics!.x+metrics!.width);expect(Math.abs(map!.y-metrics!.y)).toBeLessThan(2);expect(metrics!.width).toBeLessThanOrEqual(320);expect(map!.width).toBeGreaterThan(metrics!.width*2);expect(metrics!.height).toBeLessThanOrEqual(map!.height);
   const cards = page.locator('.metric-panel .metrics'), routeCanvas = page.locator('.route-map');
   const cardBounds = await cards.boundingBox(), canvasBounds = await routeCanvas.boundingBox();
   expect(Math.abs(cardBounds!.y-canvasBounds!.y)).toBeLessThan(2);expect(cardBounds!.height).toBeLessThanOrEqual(canvasBounds!.height);
@@ -28,12 +28,47 @@ test('sports detail fits phones with usable map, navigation and existing privacy
   await installActivities(page);await loginRunner(page);await page.goto(`/activities/${sampleActivity.id}`);await ready(page);
   for(const width of [320,390,768,1024]) {
     await page.setViewportSize({width,height:900});await ready(page);await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-    const map=await page.locator('.route-map').boundingBox();expect(map!.height).toBeGreaterThanOrEqual(360);
+    const map=await page.locator('.route-map').boundingBox();expect(map!.height).toBeGreaterThanOrEqual(280);expect(map!.height).toBeLessThanOrEqual(352);
   }
   await page.setViewportSize({width:390,height:900});await ready(page);await capture(page,'mobile');await capture(page,'mobile-map','.route-panel');
   await page.getByRole('button',{name:'打开导航'}).focus();await page.keyboard.press('Enter');await expect(page.getByRole('button',{name:'关闭导航'})).toHaveAttribute('aria-expanded','true');await page.keyboard.press('Escape');await expect(page.getByRole('button',{name:'打开导航'})).toBeFocused();
   const canvas=page.locator('.maplibregl-canvas');await canvas.focus();await page.keyboard.press('ArrowRight');await page.keyboard.press('+');
   await expect(page.getByRole('button',{name:'创建分享链接'})).toBeDisabled();await page.getByLabel('记录可见性').selectOption('unlisted');await page.getByRole('button',{name:'保存可见性'}).click();await expect(page.getByRole('button',{name:'创建分享链接'})).toBeEnabled();await capture(page,'mobile-sharing','.share-card');
+});
+test('full device metrics and route stay compact on short desktops and narrow phones', async ({ page }, testInfo) => {
+  const state = await installActivities(page);
+  Object.assign(state.records[0], { timer_seconds: '1740', avg_heart_rate_bpm: 178, calories_kcal: 320, steps: 5734 });
+  await loginRunner(page);
+  await page.goto(`/activities/${sampleActivity.id}`);
+  await ready(page);
+  const metrics = page.locator('.metric-panel .metrics');
+  await expect(metrics.locator(':scope > div')).toHaveCount(7);
+  await expect(metrics).toContainText('178 bpm');
+  for (const height of [900, 720]) {
+    await page.setViewportSize({ width: 1440, height });
+    await expect(page.getByRole('status').filter({ hasText: '正在加载底图' })).toHaveCount(0);
+    await ready(page);
+    await expect.poll(async () => (await page.locator('.detail-workspace').boundingBox())!.height).toBeLessThanOrEqual(560);
+    const map = await page.locator('.route-map').boundingBox();
+    const cards = await metrics.boundingBox();
+    expect(map!.height).toBeGreaterThanOrEqual(320);
+    expect(map!.height).toBeLessThanOrEqual(384);
+    expect(cards!.height).toBeLessThanOrEqual(map!.height + 32);
+  }
+  await page.locator('.detail-workspace').scrollIntoViewIfNeeded();
+  await page.locator('.detail-workspace').screenshot({ path: testInfo.outputPath('compact-detail-desktop.png'), animations: 'disabled' });
+  for (const width of [320, 390, 768, 1024]) {
+    await page.setViewportSize({ width, height: 900 });
+    const first = await metrics.locator(':scope > div').nth(0).boundingBox();
+    const second = await metrics.locator(':scope > div').nth(1).boundingBox();
+    expect(Math.abs(first!.y - second!.y)).toBeLessThan(2);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await ready(page);
+  await page.locator('.detail-workspace').screenshot({ path: testInfo.outputPath('compact-detail-mobile-dark.png'), animations: 'disabled' });
 });
 test('long titles, missing values, empty route and errors stay usable in the sample',async({page})=>{
   const state=await installActivities(page);state.records[1].title='清晨出发沿着河岸的一次轻松跑步，长标题完整展示，不隐藏个人记录名称';await loginRunner(page);await page.setViewportSize({width:320,height:900});await page.goto(`/activities/${incompleteActivity.id}`);

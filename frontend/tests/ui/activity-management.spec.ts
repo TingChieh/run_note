@@ -28,7 +28,7 @@ test('metadata edits preserve drafts on failure and update details/list after sa
   await page.getByLabel('标题', { exact: true }).fill('未保存');
   await page.getByRole('button', { name: '取消编辑' }).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('周末晨跑');
-  await page.getByRole('link', { name: '← 返回跑步记录' }).click();
+  await page.getByRole('button', { name: '返回', exact: true }).click();
   await expect(page.getByRole('heading', { name: '周末晨跑', exact: true })).toBeVisible();
 });
 
@@ -73,7 +73,7 @@ test('mobile editor and deletion dialog fit narrow viewports; pending writes can
   await page.getByLabel('标题', { exact: true }).fill('窄屏跑步记录');
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
   await page.screenshot({ path: '.cache/activity-management/mobile-edit.png', fullPage: true });
   await page.getByRole('button', { name: '保存修改', exact: true }).click();

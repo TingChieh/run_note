@@ -4,6 +4,7 @@
   import PageSkeleton from '#lib/components/PageSkeleton.svelte';
   import ActivityCard from '#lib/components/ActivityCard.svelte';
   import { onMount, tick } from 'svelte';
+  import { snapshot } from '$app/navigation';
   import ActivityEditor from '#lib/components/ActivityEditor.svelte';
   import MifitnessImport from '#lib/components/MifitnessImport.svelte';
   import { ActivityError, deleteActivities, readActivities, uploadGpx, uploadTcx, warningLabel, type Activity, type ActivityList } from '#lib/api/activities.ts';
@@ -16,6 +17,14 @@
   let saving = $state(false), deleting = $state(false), deleteError = $state(''), lastOffset = $state(0);
   let editDialog: HTMLDialogElement, deleteDialog: HTMLDialogElement, recordsHeading: HTMLHeadingElement;
   let returnFocus: HTMLElement | null = null;
+  let listRequest = 0;
+  snapshot({
+    capture: () => lastOffset,
+    restore: offset => {
+      lastOffset = offset;
+      if (mounted && !disposed) void load(offset);
+    }
+  });
   const managing = $derived(saving || deleting);
   let mifitnessBusy = $state(false);
   const controlsBusy = $derived(busy || managing || mifitnessBusy);
@@ -85,16 +94,18 @@
     else { message = text; duplicateId = cause instanceof ActivityError ? cause.existingActivityId : null; }
   }
   async function load(offset = 0) {
+    const request = ++listRequest;
     lastOffset = offset; selected = []; loading = true; records = null; listMessage = '';
     try {
       let result = await readActivities(fetch, offset);
+      if (disposed || request !== listRequest) return;
       if (!result.items.length && offset > 0) {
         const clamped = Math.max(0, Math.floor((result.total - 1) / 20) * 20);
         lastOffset = clamped; result = await readActivities(fetch, clamped);
       }
-      if (!disposed) { records = result; if (!result.items.length) editMode = false; }
-    } catch (cause) { if (!disposed) fail(cause, 'list'); }
-    finally { if (!disposed) loading = false; }
+      if (!disposed && request === listRequest) { records = result; if (!result.items.length) editMode = false; }
+    } catch (cause) { if (!disposed && request === listRequest) fail(cause, 'list'); }
+    finally { if (!disposed && request === listRequest) loading = false; }
   }
   async function submit(event: SubmitEvent) {
     event.preventDefault(); if (controlsBusy || !mounted) return;
@@ -115,7 +126,7 @@
     } catch (cause) { if (!disposed) fail(cause); }
     finally { if (!disposed) busy = false; }
   }
-  onMount(() => { mounted = true; void load(); return () => { disposed = true; }; });
+  onMount(() => { mounted = true; void load(lastOffset); return () => { disposed = true; ++listRequest; }; });
 </script>
 <svelte:head><title>跑步记录 · Run Note</title></svelte:head>
 <PageHeader title="跑步记录" description="每一次跑步，都值得留下。导入 GPX 或 TCX，回顾你的轨迹与运动表现。">{#snippet actions()}<a href="/activities/wall" class="button-secondary">查看足迹墙</a>{/snippet}</PageHeader>

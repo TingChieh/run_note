@@ -286,21 +286,47 @@ test('statistics retry cannot discard a goal draft while saving', async ({page})
   await expect(retry).toBeEnabled();
 });
 
-test('wall automatically covers records, keeps missing routes honest and paginates all history', async ({page,request}) => {
+test('wall fills every row, keeps missing routes honest and paginates all history', async ({page,request},testInfo) => {
   const redirected=await request.get('/activities/wall',{maxRedirects:0});expect(redirected.status()).toBe(303);
-  const records=Array.from({length:21},(_,i)=>({...sampleActivity,id:`11111111-1111-4111-8111-${String(i).padStart(12,'0')}`,title:`晨跑 ${i+1}`}));
+  const records=Array.from({length:50},(_,i)=>({...sampleActivity,id:`11111111-1111-4111-8111-${String(i).padStart(12,'0')}`,title:`晨跑 ${i+1}`}));
   records[0]={...incompleteActivity,id:records[0].id,title:'没有路线的跑步'};
   await installMilestones(page);
-  await page.route(/\/api\/v1\/activities\?/,route=>{const offset=Number(new URL(route.request().url()).searchParams.get('offset')??0);return route.fulfill({json:{data:{items:records.slice(offset,offset+20),total:21,limit:20,offset},error:null}});});
+  await page.route(/\/api\/v1\/activities\?/,route=>{const params=new URL(route.request().url()).searchParams;const offset=Number(params.get('offset')??0),limit=Number(params.get('limit')??20);return route.fulfill({json:{data:{items:records.slice(offset,offset+limit),total:records.length,limit,offset},error:null}});});
   await loginRunner(page);await page.goto('/activities/wall');
   await expect(page.getByRole('heading',{name:'足迹墙',exact:true})).toBeVisible();
-  await expect(page.locator('.wall-card')).toHaveCount(20);
+  await expect(page.locator('.wall-card')).toHaveCount(24);
   await expect(page.getByText('没有路线',{exact:true})).toBeVisible();
-  for(const width of [320,390,768,1440]) {await page.setViewportSize({width,height:1000});await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
+  for(const [width,columns] of [[320,1],[390,1],[480,2],[640,3],[768,3],[1024,3],[1440,4],[1920,6]]) {
+    await page.setViewportSize({width,height:1000});
+    await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    const lastRow=await page.locator('.wall-grid > li').evaluateAll(items=>{
+      const bottom=items.at(-1)!.getBoundingClientRect().top;
+      return items.filter(item=>Math.abs(item.getBoundingClientRect().top-bottom)<1).length;
+    });
+    expect(lastRow).toBe(columns);
+    if(width>=1440){
+      await page.evaluate(()=>window.scrollTo(0,0));
+      const visibleCards=await page.locator('.wall-card').evaluateAll(cards=>cards.filter(card=>{
+        const rect=card.getBoundingClientRect();return rect.top>=0 && rect.bottom<=innerHeight;
+      }).length);
+      expect(visibleCards).toBeGreaterThanOrEqual(width===1440?8:12);
+      expect(await page.locator('.wall-card').first().evaluate(card=>card.getBoundingClientRect().height)).toBeLessThan(300);
+      await page.screenshot({path:testInfo.outputPath(`wall-compact-${width}.png`)});
+    }
+    if(width===390){await expect(page.locator('#app-navigation')).toBeHidden();await page.screenshot({path:testInfo.outputPath('wall-compact-mobile.png')});}
+  }
+  await expect(page.locator('.wall-pagination')).toContainText('第 1 / 3 页 · 50 次跑步');
   await page.getByRole('button',{name:'下一页',exact:true}).click();
-  await expect(page.locator('.wall-card')).toHaveCount(1);await expect(page.getByRole('link',{name:/晨跑 21/})).toBeVisible();
-  await page.reload();await expect(page.locator('.wall-card')).toHaveCount(1);
-  await page.getByRole('button',{name:'上一页',exact:true}).click();await expect(page.locator('.wall-card')).toHaveCount(20);
+  await expect(page.locator('.wall-card')).toHaveCount(24);await expect(page.getByRole('link',{name:/晨跑 25 /})).toBeVisible();
+  await expect(page).toHaveURL(/offset=24$/);
+  await expect(page.locator('.wall-pagination')).toContainText('第 2 / 3 页');
+  await page.reload();await expect(page.locator('.wall-card')).toHaveCount(24);
+  await page.getByRole('button',{name:'下一页',exact:true}).click();
+  await expect(page.locator('.wall-card')).toHaveCount(2);
+  await expect(page.getByRole('link',{name:/晨跑 49 /})).toBeVisible();
+  await expect(page.getByRole('link',{name:/晨跑 50 /})).toBeVisible();
+  await expect(page.getByRole('button',{name:'下一页',exact:true})).toBeDisabled();
+  await page.getByRole('button',{name:'上一页',exact:true}).click();await expect(page.locator('.wall-card')).toHaveCount(24);
   await page.getByRole('button',{name:'退出登录',exact:true}).click();
   await expect(page).toHaveURL(/\/login\?reason=logout$/);
   await page.goto('/activities/wall');await expect(page).toHaveURL(/\/login\?next=/);
@@ -336,7 +362,7 @@ test('detail route retry also refreshes the footprint card without duplicate rea
 });
 
 test('an offset beyond the wall history restores a valid page', async ({page}) => {
-  await installMilestones(page);await loginRunner(page);await page.goto('/activities/wall?offset=20');
+  await installMilestones(page);await loginRunner(page);await page.goto('/activities/wall?offset=240');
   await expect(page.locator('.wall-card')).toHaveCount(2);
   await expect(page).toHaveURL(/\/activities\/wall$/);
 });

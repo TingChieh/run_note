@@ -27,9 +27,9 @@ export async function installActivities(page: Page) {
     const send = (data: unknown, status = 200) => route.fulfill({ status, json: { data, error: status >= 400 ? { message: '暂时无法读取，请重试' } : null } });
     if (path === '/api/v1/activities') {
       if (state.listFailures-- > 0) return send(null, 503);
-      const offset = Number(url.searchParams.get('offset') ?? 0);
+      const offset = Number(url.searchParams.get('offset') ?? 0), limit = Number(url.searchParams.get('limit') ?? 20);
       const records = state.records.filter(item => (!url.searchParams.has('category') || (item.category ?? '') === url.searchParams.get('category')) && (!url.searchParams.has('activity_month') || item.activity_date.startsWith(url.searchParams.get('activity_month')!)));
-      return send({ items: records.slice(offset, offset + 20), total: records.length, limit: 20, offset });
+      return send({ items: records.slice(offset, offset + limit), total: records.length, limit, offset });
     }
     if (path === '/api/v1/activities/categories') return send([...new Set(state.records.map(item => item.category ?? ''))].sort());
     if (req.method() !== 'GET') state.writes.push({ method: req.method(), path, data: req.postData() ? req.postDataJSON() : null });

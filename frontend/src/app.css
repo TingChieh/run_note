@@ -73,6 +73,7 @@
   --text-small: .8125rem;
   --text-title: clamp(1.75rem, 2.5vw, 2.25rem);
   --transition-control: 150ms ease;
+  --motion-reveal: 180ms ease-out;
   --glass-surface: #ffffff70;
   --glass-surface-hover: #ffffffa3;
   --glass-edge: #ffffffc2;

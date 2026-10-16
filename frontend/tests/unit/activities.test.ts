@@ -14,6 +14,14 @@ describe('activity display and privacy boundary', () => {
     for (const data of [{ ...activity, distance_m: '' }, { ...activity, activity_date: '2026-02-30' }, { ...activity, id: 'other' }]) await expect(readActivity(activity.id, async () => envelope(data))).rejects.toThrow('无效响应');
     await expect(readActivities(async () => envelope({ items: [{ ...activity, has_route: 'yes' }], total: 1 }))).rejects.toThrow('无效响应');
   });
+  it('supports wall page sizes while rejecting mismatched pagination responses', async () => {
+    const fetcher: typeof fetch = async input => {
+      expect(input).toBe('/api/v1/activities?limit=24&offset=24');
+      return envelope({ items: [activity], total: 25, limit: 24, offset: 24 });
+    };
+    await expect(readActivities(fetcher, 24, undefined, undefined, undefined, 24)).resolves.toMatchObject({ limit: 24, offset: 24 });
+    await expect(readActivities(async () => envelope({ items: [], total: 50, limit: 20, offset: 24 }), 24, undefined, undefined, undefined, 24)).rejects.toThrow('无效响应');
+  });
   it('fetches a fresh CSRF token for every upload with cookies and browser multipart boundary', async () => {
     let tokens = 0, writes = 0; const form = new FormData(); form.append('file', new Blob(['<gpx/>']), 'run.gpx');
     const fetcher: typeof fetch = async (input, init) => {

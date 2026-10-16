@@ -89,12 +89,13 @@ export async function readActivityCategories(fetcher: typeof fetch = fetch): Pro
   if (!Array.isArray(value) || value.some(item => typeof item !== 'string' || [...item].length > 30) || new Set(value).size !== value.length) invalid();
   return value as string[];
 }
-export async function readActivities(fetcher: typeof fetch = fetch, offset = 0, activityDate?: string, category?: string, activityMonth?: string): Promise<ActivityList> {
+export async function readActivities(fetcher: typeof fetch = fetch, offset = 0, activityDate?: string, category?: string, activityMonth?: string, limit = 20): Promise<ActivityList> {
   if (activityDate !== undefined && !calendarDate(activityDate)) invalid();
   if (activityMonth !== undefined && !/^(?!0000)[0-9]{4}-(0[1-9]|1[0-2])$/.test(activityMonth)) invalid();
-  const value = await request(`/api/v1/activities?limit=20&offset=${offset}${activityDate ? `&activity_date=${activityDate}` : ''}${category === undefined ? '' : `&category=${encodeURIComponent(category)}`}${activityMonth ? `&activity_month=${activityMonth}` : ''}`, {}, fetcher);
-  if (!object(value) || !Array.isArray(value.items) || !Number.isInteger(value.total) || (value.total as number) < 0 || value.limit !== 20 || value.offset !== offset) invalid();
-  return { items: value.items.map(parseActivity), total: value.total as number, limit: 20, offset };
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) invalid();
+  const value = await request(`/api/v1/activities?limit=${limit}&offset=${offset}${activityDate ? `&activity_date=${activityDate}` : ''}${category === undefined ? '' : `&category=${encodeURIComponent(category)}`}${activityMonth ? `&activity_month=${activityMonth}` : ''}`, {}, fetcher);
+  if (!object(value) || !Array.isArray(value.items) || !Number.isInteger(value.total) || (value.total as number) < 0 || value.limit !== limit || value.offset !== offset) invalid();
+  return { items: value.items.map(parseActivity), total: value.total as number, limit, offset };
 }
 export async function readActivity(id: string, fetcher: typeof fetch = fetch): Promise<Activity> {
   if (!uuid.test(id)) throw new ActivityError('找不到这条活动', 404);
