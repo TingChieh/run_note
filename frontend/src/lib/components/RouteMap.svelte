@@ -69,7 +69,8 @@
           }
           updateRoute = (value: Route) => {
             if (!map || disposed) return;
-            const animate = embedded && renderedRoute !== undefined && renderedRoute !== value && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            // Swapping routes on a live map glides to the new framing instead of jumping.
+            const animate = renderedRoute !== undefined && renderedRoute !== value && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
             renderedRoute = value;
             map.stop();
             (map.getSource('route') as import('maplibre-gl').GeoJSONSource).setData({ type: 'FeatureCollection', features: value.features });
@@ -102,7 +103,7 @@
   {/if}
 </div>
 {#if !embedded}
-{#if error}<div class="mt-3"><FeedbackState kind="error" title={error} /></div>{:else if !loaded}<div class="mt-3"><FeedbackState kind="loading" title="正在绘制路线…" /></div>{/if}
+{#if error}<div class="mt-3"><FeedbackState kind="error" title={error} /></div>{:else if !loaded && !hasRendered}<div class="mt-3"><FeedbackState kind="loading" title="正在绘制路线…" /></div>{/if}
 {#if basemapStatus === 'failed'}<div class="basemap-feedback" role="status"><span>底图暂不可用，轨迹仍可查看。</span><button type="button" onclick={loadBasemap} class="font-medium text-primary underline">重试底图</button></div>
 {:else if basemapStatus === 'loading'}<p role="status" class="mt-3 text-sm">正在加载底图…</p>{/if}
 {/if}

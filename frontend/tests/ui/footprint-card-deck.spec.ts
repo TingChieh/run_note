@@ -207,7 +207,9 @@ test('rapid side jumps keep the intermediate cards along the spring travel path'
   }
   await page.clock.runFor(80);
   const nearest = await deck.locator('.stack-slot').evaluateAll(slots => Math.min(...slots.map(slot => Math.abs(new DOMMatrix(getComputedStyle(slot).transform).m41))));
-  expect(nearest).toBeLessThan(50);
+  // Within about half a step (at most .72 card widths) of the center: no hole in the path.
+  const cardWidth = await deck.locator('.stack-slot').first().evaluate(slot => (slot as HTMLElement).offsetWidth);
+  expect(nearest).toBeLessThan(cardWidth * .4);
   await page.clock.runFor(1500);
   await expect(deck.locator('.card-stack')).toHaveAttribute('data-moving', 'false');
   expect(await deck.locator('.stack-slot').count()).toBeLessThanOrEqual(11);
@@ -228,7 +230,7 @@ test('horizontal browsing stops at both ends without requesting detail or loopin
   expect(details).toHaveLength(0);
 });
 
-test('wide decks show nine route previews while selected detail routes load independently', async ({ page }, info) => {
+test('wide decks show seven route previews while selected detail routes load independently', async ({ page }, info) => {
   await page.setViewportSize({ width: 1920, height: 1000 });
   const state = await installActivities(page);
   state.records = Array.from({ length: 30 }, (_, index) => ({
@@ -255,7 +257,7 @@ test('wide decks show nine route previews while selected detail routes load inde
   const deck = page.getByRole('region', { name: '本次足迹卡片' });
   await deck.scrollIntoViewIfNeeded();
   await expect(deck.locator('.preview-browser')).toHaveAttribute('aria-busy', 'false');
-  await expect(recordButtons(page)).toHaveCount(9);
+  await expect(recordButtons(page)).toHaveCount(7);
   for (const card of await recordButtons(page).all()) await expect(card.locator('svg[role="img"]')).toBeVisible();
   await expect(deck.getByText('选择后加载路线')).toHaveCount(0);
   expect(detailReads).toEqual([state.records[8].id]);
@@ -277,7 +279,38 @@ test('wide decks show nine route previews while selected detail routes load inde
   await expect(page.getByTestId('route-map-ready')).toBeVisible();
 });
 
-test('cards have equal projected sizes and keep the current record centered', async ({ page }) => {
+test('switching records keeps the hero and map mounted and dims the old route until the new one arrives', async ({ page }) => {
+  const state = await installActivities(page);
+  state.records = Array.from({ length: 20 }, (_, index) => ({
+    ...sampleActivity,
+    id: `${(20 - index).toString(16).padStart(8, '0')}-1111-4111-8111-111111111111`,
+    title: `足迹 ${index + 1}`, activity_date: '2026-10-13', has_route: true
+  }));
+  await loginRunner(page);
+  await page.goto(`/activities/${state.records[8].id}`);
+  await expect(page.getByTestId('route-map-ready')).toBeVisible();
+  const deck = page.getByRole('region', { name: '本次足迹卡片' });
+  await expect(deck.locator('.preview-browser')).toHaveAttribute('aria-busy', 'false');
+  const hero = await page.getByTestId('sport-hero').elementHandle();
+  const canvas = await page.locator('.maplibregl-canvas').elementHandle();
+  let release!: () => void;
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  await page.route(`**/api/v1/showcase/activities/${state.records[9].id}/route`, async route => { await hold; await route.fallback(); });
+  try {
+    await recordButtons(page).filter({ hasText: '足迹 10' }).click();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('足迹 10');
+    await expect(page.locator('.route-stage.stale')).toBeVisible();
+    await expect(page.locator('.route-swap-status')).toHaveText('正在读取路线…');
+  } finally { release(); }
+  await expect(page.locator('.route-stage.stale')).toHaveCount(0);
+  await expect(page.locator('.route-swap-status')).toHaveCount(0);
+  await expect(page.getByTestId('route-map-ready')).toBeVisible();
+  expect(await hero!.evaluate(el => el.isConnected)).toBe(true);
+  expect(await canvas!.evaluate(el => el.isConnected)).toBe(true);
+  await expect(page.locator('.maplibregl-canvas')).toHaveCount(1);
+});
+
+test('cards share one layout size, side cards recede, and the current record stays centered', async ({ page }) => {
   const { deck } = await setup(page, 20, 8);
   const selected = recordButtons(page).filter({ hasText: '足迹 9' });
   await expect(selected).toHaveAttribute('aria-pressed', 'true');
@@ -285,11 +318,15 @@ test('cards have equal projected sizes and keep the current record centered', as
   const viewport = (await deck.locator('.stack-viewport').boundingBox())!;
   expect(Math.abs(center.x + center.width / 2 - viewport.x - viewport.width / 2)).toBeLessThan(2);
   const boxes = await recordButtons(page).evaluateAll(elements => elements.map(el => {
-    const box = el.getBoundingClientRect(); return { width: box.width, height: box.height };
+    const slot = el.parentElement!.getBoundingClientRect();
+    return { width: (el as HTMLElement).offsetWidth, height: (el as HTMLElement).offsetHeight, centerY: slot.y + slot.height / 2, pressed: el.getAttribute('aria-pressed') === 'true' };
   }));
+  const main = boxes.find(box => box.pressed)!;
   for (const box of boxes) {
-    expect(Math.abs(box.width - center.width)).toBeLessThan(1);
-    expect(Math.abs(box.height - center.height)).toBeLessThan(1);
+    expect(Math.abs(box.width - main.width)).toBeLessThan(1);
+    expect(Math.abs(box.height - main.height)).toBeLessThan(1);
+    // The fanned hand: the drawn card sits highest; neighbours sink below it.
+    if (!box.pressed) expect(box.centerY).toBeGreaterThan(main.centerY + 4);
   }
 });
 
@@ -309,33 +346,34 @@ test('mixed missing and complete metrics keep card heights and fact rows aligned
   await page.goto(`/activities/${state.records[8].id}`);
   const deck = page.getByRole('region', { name: '本次足迹卡片' });
   await expect(deck.locator('.preview-browser')).toHaveAttribute('aria-busy', 'false');
-  await expect(deck.locator('.chosen .wall-facts')).toHaveText('用时 —配速 —');
+  await expect(deck.locator('.chosen .wall-facts')).toHaveText('用时 —·配速 —');
   for (const width of [1920, 1100, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     await deck.scrollIntoViewIfNeeded();
     await expect(deck.locator('.preview-browser')).toHaveAttribute('aria-busy', 'false');
     await expect.poll(() => deck.locator('.stack-slot').evaluateAll(slots => {
-      const boxes = slots.map(slot => slot.querySelector('.wall-card')!.getBoundingClientRect());
-      return Math.max(...boxes.map(box => box.height)) - Math.min(...boxes.map(box => box.height));
+      const heights = slots.map(slot => (slot.querySelector('.wall-card') as HTMLElement).offsetHeight);
+      return Math.max(...heights) - Math.min(...heights);
     })).toBeLessThan(1);
+    // Duration and pace share one non-wrapping row at the same offset in every card.
     const rows = await deck.locator('.stack-slot .wall-card').evaluateAll(cards => cards.map(card => {
-      const box = card.getBoundingClientRect();
-      return [...card.querySelectorAll('.wall-facts span')].map(fact => {
-        const row = fact.getBoundingClientRect();
-        return { top: row.top - box.top, bottom: row.bottom - box.top, height: box.height };
-      });
+      const facts = card.querySelector('.wall-facts') as HTMLElement;
+      const top = facts.offsetTop, bottom = top + facts.offsetHeight;
+      return { top, bottom, height: (card as HTMLElement).offsetHeight,
+        line: parseFloat(getComputedStyle(facts).lineHeight), overflow: facts.scrollWidth - facts.clientWidth };
     }));
     for (const facts of rows) {
-      expect(facts[1].top).toBeGreaterThanOrEqual(facts[0].bottom);
-      expect(facts[1].bottom).toBeLessThan(facts[1].height);
-      expect(Math.abs(facts[1].top - rows[0][1].top)).toBeLessThan(1);
+      expect(facts.bottom - facts.top).toBeLessThan(facts.line * 1.5);
+      expect(facts.overflow).toBeLessThanOrEqual(0);
+      expect(facts.bottom).toBeLessThan(facts.height);
+      expect(Math.abs(facts.top - rows[0].top)).toBeLessThan(1);
     }
     if (width !== 1100) await deck.screenshot({ path: info.outputPath(`equal-mixed-metrics-${width}.png`) });
   }
   await deck.getByRole('button', { name: '较旧一条' }).click();
   await expect(deck.locator('.chosen .wall-facts')).toContainText('100:00:00');
   await expect.poll(() => deck.locator('.stack-slot .wall-card').evaluateAll(cards => {
-    const heights = cards.map(card => card.getBoundingClientRect().height);
+    const heights = cards.map(card => (card as HTMLElement).offsetHeight);
     return Math.max(...heights) - Math.min(...heights);
   })).toBeLessThan(1);
 });
@@ -361,7 +399,7 @@ test('another record can be selected while its predecessor route is still loadin
   } finally { release(); }
 });
 
-test('central pointer feedback has restrained highlight, parallax and a spring return', async ({ page }) => {
+test('central pointer feedback has a visible highlight, parallax and a spring return', async ({ page }) => {
   await setup(page, 20, 8);
   const card = recordButtons(page).filter({ hasText: '足迹 9' });
   await card.hover({ position: { x: 25, y: 25 } });
@@ -372,10 +410,37 @@ test('central pointer feedback has restrained highlight, parallax and a spring r
   expect(shifts[0]).toBeGreaterThan(.2);
   expect(shifts[1]).toBeGreaterThan(0);
   expect(shifts[0]).toBeGreaterThan(shifts[1]);
-  expect(shifts[0]).toBeLessThan(3);
+  expect(shifts[0]).toBeLessThan(8);
   await page.mouse.move(5, 5);
   await expect.poll(() => card.evaluate(el => Math.abs(new DOMMatrix(getComputedStyle(el).transform).m13))).toBeLessThan(.001);
   await expect.poll(() => card.evaluate(el => Number(getComputedStyle(el, '::after').opacity))).toBe(0);
+});
+
+test('pointer near the card corner keeps a stable tilt instead of flickering out', async ({ page }) => {
+  await setup(page, 20, 8);
+  const card = recordButtons(page).filter({ hasText: '足迹 9' });
+  const box = (await card.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.move(box.x + box.width * .92, box.y + box.height * .1, { steps: 10 });
+  await expect.poll(() => card.evaluate(el => parseFloat(el.style.getPropertyValue('--card-rotate-y')))).toBeGreaterThan(8);
+  await expect.poll(() => card.evaluate(el => Number(el.style.getPropertyValue('--card-highlight')))).toBeGreaterThan(.9);
+});
+
+test('a browsed-to center card switches when clicked anywhere while tilted', async ({ page }) => {
+  const { deck } = await setup(page, 20, 8);
+  const center = deck.locator('.stack-slot.centered .wall-card');
+  for (const [step, [px, py]] of [[.5, .5], [.88, .12], [.15, .88]].entries()) {
+    await center.focus(); await page.keyboard.press('ArrowRight');
+    await expect(deck.locator('.stack-slot.centered')).toHaveAttribute('data-index', String(9 + step));
+    await expect(deck.locator('.card-stack')).toHaveAttribute('data-moving', 'false');
+    const box = (await center.boundingBox())!;
+    await page.mouse.move(box.x + box.width * px, box.y + box.height * py, { steps: 5 });
+    // The tilted card must stay the hit target rather than its 3D slot.
+    expect(await page.evaluate(([x, y]) => !!document.elementFromPoint(x, y)?.closest('.wall-card'), [box.x + box.width * px, box.y + box.height * py])).toBe(true);
+    await page.mouse.down(); await page.mouse.up();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(`足迹 ${10 + step}`);
+    await expect(deck.locator('.preview-browser')).toHaveAttribute('aria-busy', 'false');
+  }
 });
 
 test('direction keys browse with focus and Enter or Space explicitly selects', async ({ page }) => {
@@ -532,7 +597,7 @@ test('side arrows switch the whole record, keep it centered and stop at both bou
   }
   const main = (await cards.first().boundingBox())!;
   const viewport = (await deck.locator('.stack-viewport').boundingBox())!;
-  expect(main.width).toBeLessThanOrEqual(150); expect(main.height).toBeLessThan(260);
+  expect(main.width).toBeLessThanOrEqual(200); expect(main.height).toBeLessThan(340);
   expect(Math.abs(main.x + main.width / 2 - viewport.x - viewport.width / 2)).toBeLessThan(2);
   await expect(deck.getByRole('link', { name: '查看该记录' })).toHaveCount(0);
   await expect(deck.locator('.preview-controls')).toHaveCount(0);
@@ -679,8 +744,8 @@ test('list 401 clears detail and redirects to login', async ({ page }) => {
 
 test('pending page reads disable switching and failed switch keeps the whole old record', async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1000 });
-  const { deck } = await setup(page, 45, 14);
-  await expect(recordButtons(page).filter({ hasText: '足迹 15' })).toHaveAttribute('aria-pressed', 'true');
+  const { deck } = await setup(page, 45, 15);
+  await expect(recordButtons(page).filter({ hasText: '足迹 16' })).toHaveAttribute('aria-pressed', 'true');
   let release!: () => void;
   const hold = new Promise<void>(resolve => { release = resolve; });
   await page.route('**/api/v1/showcase/activities?limit=20&offset=20', async route => {
@@ -689,10 +754,10 @@ test('pending page reads disable switching and failed switch keeps the whole old
   await deck.getByRole('button', { name: '较旧一条' }).click();
   await expect(deck.getByRole('button', { name: '较旧一条' })).toBeDisabled();
   await expect(deck.getByRole('button', { name: '较新一条' })).toBeDisabled();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('足迹 15');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('足迹 16');
   release();
   await expect(deck.getByRole('alert')).toContainText('足迹暂时不可用');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('足迹 15');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('足迹 16');
 });
 
 test('switching while the previous route is pending cannot overwrite the new detail', async ({ page }) => {

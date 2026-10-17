@@ -1,19 +1,26 @@
 import { createSpring } from '../vendor/liquidglass/liquid-glass.js';
 
 export function coverflowGeometry(viewportWidth: number, cardWidth: number) {
-  const radius = Math.max(0, Math.min(4, Math.floor((viewportWidth - cardWidth - 16) / (cardWidth * 1.05))));
+  // Side cards fan out like a hand: reserve room for their roll and keep every
+  // side card's center (past the raised, hover-scaled main card) clickable.
+  const available = viewportWidth - cardWidth * 1.35 - 16;
+  const radius = Math.max(0, Math.min(3, Math.floor(available / (cardWidth * 1.12))));
   const compact = viewportWidth < 480, perspective = compact ? 1300 : 900;
-  // Equal-size cards fit within the viewport. A single-card mobile window still
-  // needs horizontal travel so adjacent buffers can slide into view.
-  const step = radius ? Math.min(cardWidth * .9, (viewportWidth - cardWidth - 16) / (radius * 2)) : cardWidth + 16;
-  return { radius, compact, perspective, step: Math.max(0, step) };
+  // A single-card mobile window still needs horizontal travel so adjacent
+  // buffers can slide into view.
+  const step = radius ? Math.min(cardWidth * .72, available / (radius * 2)) : cardWidth + 16;
+  return { radius, compact, perspective, step: Math.max(0, step), cardWidth };
 }
 type Geometry = ReturnType<typeof coverflowGeometry>;
 
+/** The center card is drawn up out of the hand; neighbours sink, shrink and roll outwards. */
 export function coverflowPosition(offset: number, geometry: Geometry) {
-  const distance = Math.abs(offset);
+  const distance = Math.abs(offset), depth = Math.min(distance, geometry.radius + 1);
+  const side = Math.sign(offset) * depth;
   return {
-    x: offset * geometry.step, z: 0, scale: 1, rotation: 0,
+    x: offset * geometry.step,
+    y: geometry.cardWidth * (.06 * depth + .02 * depth * depth),
+    z: 0, scale: 1 - .04 * depth, rotation: 0, roll: side * 3.5,
     opacity: Math.max(0, Math.min(1, geometry.radius + 1 - distance))
   };
 }
@@ -30,7 +37,7 @@ export function coverflow(node: HTMLElement, initial: Options) {
     for (const slot of slots) {
       const offset = Number(slot.dataset.index) - value;
       const position = coverflowPosition(offset, options.geometry);
-      slot.style.transform = `translateX(${position.x}px) translateZ(${position.z}px) rotateY(${position.rotation}deg) scale(${position.scale})`;
+      slot.style.transform = `translate3d(${position.x}px, ${position.y}px, ${position.z}px) rotateY(${position.rotation}deg) rotate(${position.roll}deg) scale(${position.scale})`;
       slot.style.opacity = String(position.opacity);
       slot.style.zIndex = String(100 - Math.round(Math.abs(offset) * 10));
     }

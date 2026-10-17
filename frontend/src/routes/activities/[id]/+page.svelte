@@ -17,7 +17,10 @@
   import ActivityActions from '#lib/components/ActivityActions.svelte';
   import { ActivityError, readActivity as scoped_readActivity, readRoute as scoped_readRoute, formatDate, formatDistance, formatDuration, activityDuration, formatStartTime, formatPace, qualityLabel, qualityEntries, type Activity, type Route } from '#lib/api/activities.ts';
   let activity = $state<Activity | null>(null), route = $state<Route | null>(null), loading = $state(true), routeLoading = $state(false), message = $state(''), routeError = $state(''), disposed = false;
-  let switching = $state(false);
+  let switching = $state(false), swapped = $state(false);
+  // The map keeps showing the previous route while a switched record's route loads,
+  // so the MapLibre instance is updated in place rather than torn down.
+  let mapRoute = $state.raw<Route | null>(null);
   let mounted = $state(false), activityToken = 0, routeToken = 0;
   afterNavigate(({from, type, shallow}) => {
     if (shallow || type === 'enter' || type === 'popstate' || !from?.route.id
@@ -37,14 +40,14 @@
   async function loadRoute(id: string) {
     const token = ++routeToken;
     routeLoading = true; route = null; routeError = '';
-    try { const result = await readRoute(id); if (!disposed && token === routeToken) route = result; }
-    catch (cause) { if (!disposed && token === routeToken && !expired(cause)) routeError = cause instanceof Error ? cause.message : '无法读取路线'; }
+    try { const result = await readRoute(id); if (!disposed && token === routeToken) { route = result; mapRoute = result; } }
+    catch (cause) { if (!disposed && token === routeToken && !expired(cause)) { mapRoute = null; routeError = cause instanceof Error ? cause.message : '无法读取路线'; } }
     finally { if (!disposed && token === routeToken) routeLoading = false; }
   }
   async function loadActivity(id = page.shallow?.params?.id ?? page.params.id ?? '') {
     if (disposed) return;
     const token = ++activityToken; routeToken++;
-    loading = true; message = ''; activity = null; route = null; routeLoading = false; routeError = '';
+    loading = true; message = ''; activity = null; route = null; mapRoute = null; routeLoading = false; routeError = ''; swapped = false;
     try {
       const result = await readActivity(id, fetch, view.manage); if (disposed || token !== activityToken) return;
       activity = result; if (result.has_route) await loadRoute(result.id);
@@ -64,7 +67,8 @@
         reset: false, state: page.state });
       if (disposed || token !== activityToken) return false;
       routeToken++;
-      activity = next; route = null; routeError = ''; routeLoading = false; loading = false;
+      activity = next; route = null; routeError = ''; routeLoading = false; loading = false; swapped = true;
+      if (!next.has_route) mapRoute = null;
       // Commit the record first; its heavier route loads independently on demand.
       if (next.has_route) void loadRoute(next.id);
       return true;
@@ -80,14 +84,16 @@
 <button type="button" class="button-secondary" onclick={goBack}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 5-7 7 7 7M5 12h14" /></svg>返回</button>
 {#if message}<div class="mt-6"><FeedbackState kind="error" title={message}><button onclick={() => void loadActivity()} class="button-secondary">重新读取活动详情</button></FeedbackState></div>
 {:else if activity}
-  {#key activity.id}
-  <section class="sport-hero" data-testid="sport-hero" aria-labelledby="activity-title">
-    <div class="hero-copy"><p class="hero-kicker"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5 19 5-5 4 3 4-7 M3 8h4 M3 12h2" /><circle cx="15" cy="5" r="2" /></svg>跑步详情</p><h1 id="activity-title">{activity.title || '未命名活动'}</h1><p class="hero-date">{formatDate(activity.activity_date)} <span>· {activity.timezone}</span></p></div>
-    <div class="hero-distance" aria-hidden="true"><span>本次距离</span><strong>{formatDistance(activity.distance_m)}</strong></div>
+  <section class="sport-hero" class:switching data-testid="sport-hero" aria-labelledby="activity-title" aria-busy={switching}>
+    {#key activity.id}
+    <div class="hero-copy" class:detail-swap={swapped}><p class="hero-kicker"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5 19 5-5 4 3 4-7 M3 8h4 M3 12h2" /><circle cx="15" cy="5" r="2" /></svg>跑步详情</p><h1 id="activity-title">{activity.title || '未命名活动'}</h1><p class="hero-date">{formatDate(activity.activity_date)} <span>· {activity.timezone}</span></p></div>
+    <div class="hero-distance" class:detail-swap={swapped} aria-hidden="true"><span>本次距离</span><strong>{formatDistance(activity.distance_m)}</strong></div>
+    {/key}
   </section>
-  {#if view.manage}<ActivityActions {activity} onupdated={(value) => { activity = value; }} />{/if}
-  <div class="detail-workspace">
+  {#key activity.id}{#if view.manage}<ActivityActions {activity} onupdated={(value) => { activity = value; }} />{/if}{/key}
+  <div class="detail-workspace" class:switching aria-busy={switching}>
     <section class="metric-panel" aria-label="运动指标"><div class="panel-heading"><h2>每一步，都算数</h2><p class="section-caption">本次运动概览</p></div>
+      {#key activity.id}<div class="metric-swap" class:detail-swap={swapped}>
       <div class="metric-cards"><MetricSummary stacked appearance="sport" items={[
         { label: '距离', value: formatDistance(activity.distance_m), testId: 'activity-distance', icon: 'distance' },
         { label: activity.timer_seconds != null ? '设备用时' : '经过时间', value: formatDuration(activityDuration(activity)), icon: 'duration' },
@@ -99,9 +105,10 @@
       ]} /></div>
       <dl class="start-time"><div><dt>开始时间</dt><dd>{formatStartTime(activity.started_at, activity.timezone)} · {activity.timezone}</dd></div></dl>
       {#if activity.temporal_quality !== 'complete'}<p class="metric-note">{qualityLabel(activity.temporal_quality)} · 缺失或无法可靠计算的指标以“—”显示，详情见数据质量说明。</p>{/if}
+      </div>{/key}
     </section>
     <section class="route-panel" aria-labelledby="route-title"><div class="panel-heading"><div class="route-heading"><h2 id="route-title">路线</h2><span class="route-tag">{activity.has_route ? '个人轨迹' : '运动记录'}</span></div><p class="section-caption">本次运动轨迹</p></div>
-      {#if route}<RouteMap {route} spacious />{:else if routeLoading}<div class="route-placeholder"><FeedbackState kind="loading" title="正在读取路线…" /></div>{:else if routeError}<div class="route-placeholder"><FeedbackState kind="error" title={routeError}><button onclick={() => void loadRoute(activity!.id)} class="button-secondary">重新读取路线</button></FeedbackState></div>{:else}<div class="route-placeholder"><FeedbackState kind="empty" title="此活动没有路线。"><p>运动指标仍可查看，路线仅在记录包含轨迹时显示。</p></FeedbackState></div>{/if}
+      {#if mapRoute}<div class="route-stage" class:stale={!route}><RouteMap route={mapRoute} spacious />{#if !route && routeLoading}<p class="route-swap-status" role="status">正在读取路线…</p>{/if}</div>{:else if routeLoading}<div class="route-placeholder"><FeedbackState kind="loading" title="正在读取路线…" /></div>{:else if routeError}<div class="route-placeholder"><FeedbackState kind="error" title={routeError}><button onclick={() => void loadRoute(activity!.id)} class="button-secondary">重新读取路线</button></FeedbackState></div>{:else}<div class="route-placeholder"><FeedbackState kind="empty" title="此活动没有路线。"><p>运动指标仍可查看，路线仅在记录包含轨迹时显示。</p></FeedbackState></div>{/if}
     </section>
   </div>
   <DeviceMetrics metrics={activity} />
@@ -111,7 +118,6 @@
       {#if Object.keys(activity.quality_summary).length}<dl class="mt-4 grid gap-3 sm:grid-cols-2">{#each qualityEntries(activity.quality_summary) as [key, value]}<div class="min-w-0"><dt class="text-sm font-medium">{key}</dt><dd class="mt-1 break-all text-sm text-muted-foreground">{value}</dd></div>{/each}</dl>{:else}<p class="mt-3 text-sm text-muted-foreground">没有额外质量提示。</p>{/if}
     </div>
   </details>
-  {/key}
   <ActivityWallPreview {activity} {route} {routeLoading} {routeError} onauthrequired={expired} onswitch={switchActivity} />
   {#if view.manage}<p class="mt-6 text-sm text-muted-foreground">个人展示站公开全部记录和完整轨迹；以下分享设置仅控制旧版摘要链接。</p>{#key activity.id}<SharePanel {activity} />{/key}{/if}
 {:else if loading}<div class="mt-6"><FeedbackState kind="loading" title="正在读取活动…" /></div>{/if}
@@ -127,6 +133,16 @@
   .hero-distance strong { font-size: clamp(2rem, 3vw, 2.75rem); line-height: 1.2; letter-spacing: -.04em; }
   .detail-workspace { --detail-content-height: clamp(20rem, 44svh, 24rem); display: grid; grid-template-columns: 15rem minmax(0, 1fr); gap: var(--space-6); margin-top: var(--space-6); align-items: start; padding: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
   .metric-panel, .route-panel { min-width: 0; }
+  /* Switching records keeps every surface in place: dim while reading, then lift the new values in. */
+  .sport-hero > div, .detail-workspace { transition: opacity var(--motion-reveal); }
+  .sport-hero.switching > div, .detail-workspace.switching { opacity: .6; }
+  .detail-swap { animation: detail-swap var(--motion-reveal) both; }
+  .hero-distance.detail-swap, .metric-swap.detail-swap { animation-delay: 40ms; }
+  @keyframes detail-swap { from { opacity: 0; transform: translate3d(0, .375rem, 0); } to { opacity: 1; transform: none; } }
+  .route-stage { position: relative; }
+  .route-stage :global(.route-map) { transition: opacity var(--motion-reveal); }
+  .route-stage.stale :global(.route-map) { opacity: .45; }
+  .route-swap-status { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: var(--space-2) var(--space-4); border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--muted-foreground); font-size: .875rem; box-shadow: 0 var(--space-2) var(--space-6) var(--glass-shadow); pointer-events: none; }
   .route-panel { padding-left: 1.5rem; border-left: 1px solid var(--border); }
   .metric-panel h2, .route-panel h2 { font-size: 1.25rem; font-weight: 700; }
   .panel-heading { min-height: 3.5rem; }
