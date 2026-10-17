@@ -55,7 +55,7 @@
 </div>
 
 <style>
-  .glass-tuner { position: fixed; z-index: 50; right: var(--space-4); bottom: var(--space-4); }
+  .glass-tuner { position: fixed; z-index: var(--z-dev-tools); right: var(--space-4); bottom: var(--space-4); }
   .tuner-trigger { display: flex; align-items: center; gap: var(--space-2); min-height: 2.75rem; }
   .tuner-trigger svg { flex-shrink: 0; }
   .dev-label { font-size: .625rem; font-weight: 700; letter-spacing: .06em; color: var(--muted-foreground); }

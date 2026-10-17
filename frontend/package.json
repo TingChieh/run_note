@@ -8,6 +8,7 @@
   "imports": { "#lib/*": "./src/lib/*" },
   "scripts": {
     "dev": "vite dev --host 127.0.0.1",
+    "showcase": "vite --config vite.showcase.config.ts --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
     "start:local": "node scripts/start-node-local.mjs",

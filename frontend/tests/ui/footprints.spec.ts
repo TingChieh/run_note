@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { loginRunner, installActivities, sampleActivity, incompleteActivity } from '../fixtures/activities';
 import { installAI } from '../fixtures/p2';
+import { installBasemaps } from '../fixtures/basemaps';
 import type { FootprintCollection } from '../../src/lib/api/footprints.ts';
 async function fixture(page: Page) {
   const state={multipleCities:false,heatCells:1,status:'ready' as 'ready'|'pending'|'failed',refreshing:false,refreshFailed:false,scenario:'multi' as 'multi'|'single'|'point'|'empty',failures:0,expired:false,requests:[] as URL[]};
@@ -20,6 +21,22 @@ async function fixture(page: Page) {
   return state;
 }
 async function ready(page:Page){await expect(page.getByTestId('footprint-map-ready')).toBeVisible();}
+test('keeps main-thread tasks bounded with a maximum-size synthetic track',async({page})=>{
+  await fixture(page);await loginRunner(page);
+  await page.addInitScript(()=>{
+    const state=window as Window & {__footprintLongTasks?:{start:number;duration:number}[]};
+    state.__footprintLongTasks=[];
+    if(PerformanceObserver.supportedEntryTypes?.includes('longtask'))new PerformanceObserver(list=>{
+      state.__footprintLongTasks?.push(...list.getEntries().map(entry=>({start:entry.startTime,duration:entry.duration})));
+    }).observe({type:'longtask',buffered:true});
+  });
+  const coordinates=Array.from({length:250_000},(_,index)=>[121.48+(index%500)*0.000001,31.23+(index%500)*0.000001]);
+  await page.route('**/api/v1/showcase/footprints/all?**',route=>route.fulfill({json:{data:{status:'ready',generated_at:'2026-10-15T00:00:00Z',refreshing:false,result:{scope:'all',type:'FeatureCollection',features:[{type:'Feature',geometry:{type:'LineString',coordinates},properties:{activity_id:sampleActivity.id,title:'合成性能路线',activity_date:'2026-10-15',segment_index:0}}],mode:'tracks',activity_count:1,visible_activity_count:1,unsupported_segment_count:0,grid_size_m:100,grid_crs:'EPSG:3857',count_basis:'distinct_activity_per_cell',max_count:0}},error:null}}));
+  await page.goto('/footprints');await ready(page);
+  await page.waitForTimeout(100);
+  const longTasks=await page.evaluate(()=>((window as Window & {__footprintLongTasks?:{start:number;duration:number}[]}).__footprintLongTasks??[]).map(entry=>entry.duration));
+  expect(Math.max(0,...longTasks)).toBeLessThan(500);
+});
 test('page loading skeleton follows the real request and respects reduced motion',async({page})=>{
   await fixture(page);await loginRunner(page);await page.emulateMedia({reducedMotion:'reduce'});
   let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;});
@@ -62,8 +79,7 @@ for(const mode of ['tracks','heatmap'])test(`city locator moves and restores the
   await page.keyboard.press('Enter');await page.keyboard.press('Home');await page.keyboard.press('Enter');
   await expect(select).toHaveValue('110000');
   await page.getByRole('button',{name:'定位城市',exact:true}).focus();await page.keyboard.press('Enter');
-  await expect(page.getByRole('status').filter({hasText:'已定位北京'})).toBeVisible();
-  expect((await mapScreenshot('beijing')).equals(before)).toBe(false);
+  await expect.poll(async()=>(await mapScreenshot('beijing')).equals(before)).toBe(false);
   expect(await original!.evaluate(el=>el===document.querySelector('.maplibregl-canvas'))).toBe(true);
   await expect(page.getByTestId('footprint-summary')).toContainText('全部 2 条运动记录，地图显示 2 条');
   if(mode==='tracks'){
@@ -77,7 +93,7 @@ for(const mode of ['tracks','heatmap'])test(`city locator moves and restores the
   }
   expect(state.requests).toHaveLength(requestCount);
   await page.getByRole('button',{name:'回到全部足迹',exact:true}).click();
-  await expect(page.getByRole('status').filter({hasText:'已定位北京'})).toHaveCount(0);
+  await expect(page.getByRole('status').filter({hasText:'已定位'})).toHaveCount(0);
   // Closing panels restores the same canvas size and viewport before comparing the camera.
   if(mode==='tracks')await page.getByText('全部可显示记录',{exact:false}).click();
   else await page.getByText('查看热区数据',{exact:false}).click();
@@ -91,10 +107,10 @@ for(const mode of ['tracks','heatmap'])test(`city locator moves and restores the
     if(width>=1024){
       await expect(page.getByRole('button',{name:'城市',exact:true})).toBeHidden();
       await expect(cityButtons.getByRole('button')).toHaveCount(2);
-      await cityButtons.getByRole('button',{name:'北京市',exact:true}).click();
-      await expect(page.getByRole('status').filter({hasText:'已定位北京市'})).toBeVisible();
-      await cityButtons.getByRole('button',{name:'上海市',exact:true}).click();
-      await expect(page.getByRole('status').filter({hasText:'已定位上海市'})).toBeVisible();
+      const beijing=cityButtons.getByRole('button',{name:'北京市',exact:true});
+      await beijing.click();await expect(beijing).toHaveAttribute('aria-pressed','true');
+      const shanghai=cityButtons.getByRole('button',{name:'上海市',exact:true});
+      await shanghai.click();await expect(shanghai).toHaveAttribute('aria-pressed','true');
       await expect(cityButtons.getByRole('button',{name:'广州市',exact:true})).toHaveCount(0);
     }else{
       await expect(cityButtons).toBeHidden();
@@ -125,8 +141,8 @@ test('city lookup failure retries without reloading footprints and uncovered are
   await page.route('**/api/v1/showcase/footprints/all?**',route=>route.fulfill({json:{data:{status:'ready',generated_at:'2026-10-15T00:00:00Z',refreshing:false,result:{scope:'all',type:'FeatureCollection',features:[{type:'Feature',geometry:{type:'Point',coordinates:[-74,40.7]},properties:{activity_id:sampleActivity.id,title:'合成范围外记录',activity_date:'2026-10-13',segment_index:0}}],mode:'tracks',activity_count:1,visible_activity_count:1,unsupported_segment_count:0,grid_size_m:100,grid_crs:'EPSG:3857',count_basis:'distinct_activity_per_cell',max_count:0}},error:null}}));
   await page.getByRole('button',{name:'重新读取足迹',exact:true}).click();await ready(page);
   await expect(group.getByRole('button')).toHaveCount(1);
-  await group.getByRole('button',{name:'未识别区域',exact:true}).click();
-  await expect(page.getByRole('status').filter({hasText:'已定位未识别区域'})).toBeVisible();
+  const unlocated=group.getByRole('button',{name:'未识别区域',exact:true});
+  await unlocated.click();await expect(unlocated).toHaveAttribute('aria-pressed','true');
   await expect(page.getByTestId('footprint-summary')).toContainText('地图显示 1 条');
 });
 test('all records ignore old date URLs and both modes preserve map, legend and keyboard access',async({page})=>{
@@ -195,7 +211,7 @@ test('WebGL initialisation failure retries the same data; successful tiles and m
   await page.getByText('全部可显示记录',{exact:false}).click();
   await expect(page.locator('.record-list').getByRole('link')).toHaveCount(2);
   await page.evaluate(()=>{(window as unknown as {blockFootprintGL:boolean}).blockFootprintGL=false;});
-  await page.route('**/*tile.openstreetmap.org/**',route=>route.fulfill({contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=','base64')}));
+  await installBasemaps(page);
   await page.getByRole('button',{name:'重新绘制地图'}).click();await ready(page);
   await expect(page.getByRole('status').filter({hasText:'正在加载底图'})).toHaveCount(0);
   await expect(page.getByRole('button',{name:'重试底图'})).toHaveCount(0);

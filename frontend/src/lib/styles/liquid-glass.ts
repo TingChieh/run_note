@@ -40,6 +40,7 @@ export function liquidGlass(root: HTMLElement) {
     function align() { if (!alignFrame) alignFrame = requestAnimationFrame(() => { alignFrame = 0; aligners.forEach(fn => fn()); }); }
     function enhance(element: HTMLElement) {
       const isZoomGroup = element.matches('.maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in)');
+      const stableBackdrop = !!element.closest('[data-glass-stable]');
       const surface = span('rn-glass-surface'); surface.setAttribute('aria-hidden', 'true');
       const body = span('rn-glass-body');
       const shadow = span('rn-glass-shadow'), layer = span('rn-glass-layer'), tint = span('rn-glass-tint');
@@ -74,8 +75,13 @@ export function liquidGlass(root: HTMLElement) {
         // Bleed is visual only; controls resting on a viewport edge must not widen the page.
         const bounds = element.getBoundingClientRect();
         surface.style.overflowClipMargin = `${Math.max(0, Math.min(bleed, bounds.left, document.documentElement.clientWidth - bounds.right))}px`;
-        const x = bleed - 5 * press, y = bleed + 2 * press;
-        const width = W + 10 * press, height = Math.max(1, H - 4 * press);
+        // Updating an SVG backdrop URL every spring frame invalidates the
+        // optical surface over a live WebGL map. Keep its atlas/clip stable and
+        // composite the same pressure deformation on the existing surface.
+        const lensPress = stableBackdrop ? 0 : press;
+        if (stableBackdrop) surface.style.transform = `scale(${1 + 10 * press / W}, ${Math.max(1, H - 4 * press) / H})`;
+        const x = bleed - 5 * lensPress, y = bleed + 2 * lensPress;
+        const width = W + 10 * lensPress, height = Math.max(1, H - 4 * lensPress);
         const cssRadius = getComputedStyle(element).borderTopLeftRadius;
         const radius = Math.min(parseFloat(cssRadius) || 0, width / 2, height / 2);
         const key = `${x}|${y}|${width}|${height}|${radius}`;
@@ -84,7 +90,7 @@ export function liquidGlass(root: HTMLElement) {
           place(shadow, x, y, width, height, radius); place(tint, x, y, width, height, radius);
           const base = optics(element);
           glass.update({ x, y, width, height, radius, ...base,
-            refraction: base.refraction * (1 + .6 * press), specular: base.specular * (1 + .2 * press),
+            refraction: base.refraction * (1 + .6 * lensPress), specular: base.specular * (1 + .2 * lensPress),
             chroma: copied ? settings.chroma : 0 });
           if (!copied && engine !== 'blink') place(layer, x, y, width, height, radius);
         }

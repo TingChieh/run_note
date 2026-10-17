@@ -3,7 +3,9 @@
   import FeedbackState from './FeedbackState.svelte';
   import type { Map as MapLibreMap, Marker, LngLatBounds } from 'maplibre-gl';
   import type { Route, Coordinate } from '#lib/api/activities.ts';
-  import { BASEMAP_SOURCE, BASEMAP_LAYER, BASEMAP_TIMEOUT_MS, createRouteMapStyle, createBasemapSource, isBasemapError, applyMapTheme } from '#lib/api/map-style.ts';
+  import { createRouteMapStyle, applyMapTheme, type BasemapPreference, type BasemapStyle } from '#lib/api/map-style.ts';
+  import BasemapPicker from './BasemapPicker.svelte';
+  import { createBasemapController } from '#lib/map/basemap-controller.ts';
   import { watchSystemTheme } from './system-theme';
   import 'maplibre-gl/dist/maplibre-gl.css';
   let { route, spacious = false, embedded = false }: { route: Route; spacious?: boolean; embedded?: boolean } = $props();
@@ -14,34 +16,13 @@
   let renderedRoute: Route | undefined;
   $effect(() => { const value = route; if (routeReady) updateRoute?.(value); });
   let basemapEnabled = $state(true), basemapStatus = $state<'loading' | 'ready' | 'failed' | 'off'>('loading');
-  let basemapTimer: ReturnType<typeof setTimeout> | undefined, routeInitialized = false;
+  let basemapPreference = $state<BasemapPreference>('auto'), basemapStyle = $state<BasemapStyle>('positron');
+  let basemapController: ReturnType<typeof createBasemapController> | undefined, routeInitialized = false;
   let observer: ResizeObserver | undefined, resizeFrame = 0, bounds: LngLatBounds | undefined;
   let fittedWidth = 0, fittedHeight = 0;
   let dark = false, stopTheme: (() => void) | undefined;
-  function removeBasemap() {
-    clearTimeout(basemapTimer); basemapTimer = undefined;
-    if (map?.getLayer(BASEMAP_LAYER)) map.removeLayer(BASEMAP_LAYER);
-    if (map?.getSource(BASEMAP_SOURCE)) map.removeSource(BASEMAP_SOURCE);
-  }
-  function failBasemap() {
-    if (disposed || !basemapEnabled) return;
-    basemapStatus = 'failed'; removeBasemap();
-  }
-  function loadBasemap() {
-    if (!map || disposed || !routeInitialized || !basemapEnabled) return;
-    removeBasemap(); basemapStatus = 'loading';
-    // Standard browser tile requests retain normal cache and Referer behavior.
-    // Only viewport tile coordinates leave the browser; the route stays local.
-    map.addSource(BASEMAP_SOURCE, createBasemapSource());
-    map.addLayer({ id: BASEMAP_LAYER, type: 'raster', source: BASEMAP_SOURCE }, 'route-lines');
-    applyMapTheme(map, dark);
-    basemapTimer = setTimeout(failBasemap, BASEMAP_TIMEOUT_MS);
-  }
-  function toggleBasemap() {
-    basemapEnabled = !basemapEnabled;
-    if (basemapEnabled) loadBasemap();
-    else { removeBasemap(); basemapStatus = 'off'; }
-  }
+  function loadBasemap() { basemapController?.retry(); }
+  function toggleBasemap() { basemapController?.toggle(); }
   function scheduleFit(duration = 0) {
     if (resizeFrame || disposed) return;
     resizeFrame = requestAnimationFrame(() => {
@@ -51,32 +32,29 @@
       if (!width || !height || (width === fittedWidth && height === fittedHeight)) return;
       fittedWidth = width; fittedHeight = height; loaded = false;
       map.resize();
-      map.fitBounds(bounds, { padding: Math.min(55, width / 4, height / 4), maxZoom: 15, duration, easing: value => 1 - Math.pow(1 - value, 3) });
+      map.fitBounds(bounds, { padding: Math.min(55, width / 4, height / 4), maxZoom: map.getMaxZoom(), duration, easing: value => 1 - Math.pow(1 - value, 3) });
     });
   }
   onMount(() => {
-    stopTheme = watchSystemTheme(value => { dark = value; if (map && !disposed) applyMapTheme(map, dark); });
+    stopTheme = watchSystemTheme(value => { dark = value; if (map && !disposed && !basemapController) applyMapTheme(map, dark); });
     void (async () => {
       try {
         const lib = await import('maplibre-gl'); if (disposed) return;
         map = new lib.Map({ container, style: createRouteMapStyle(dark), center: route.start, zoom: 13, attributionControl: false, renderWorldCopies: true, maxZoom: 19 });
         observer = new ResizeObserver(() => scheduleFit()); observer.observe(container);
+        map.addControl(new lib.AttributionControl({ compact: true }), 'bottom-right');
         map.addControl(new lib.NavigationControl({ showCompass: false }), 'top-right');
-        // Wait for the local GeoJSON source to render, independently of raster tiles.
+        // Wait for the local GeoJSON source to render, independently of external basemap resources.
         map.on('render', () => {
           if (!disposed && !error && map && routeInitialized && fittedWidth > 0 && fittedHeight > 0
             && container.clientWidth === fittedWidth && container.clientHeight === fittedHeight
             && !map.isMoving() && map.isSourceLoaded('route')) { loaded = true; hasRendered = true; }
         });
+        map.on('webglcontextlost', () => { basemapController?.destroy(); error = '地图绘图上下文已丢失，请刷新重试。活动指标不受影响。'; });
         map.on('error', (event) => {
           if (disposed) return;
-          if (isBasemapError(event)) { failBasemap(); return; }
+          if (!('sourceId' in event) || event.sourceId !== 'route') return;
           error = '地图绘制失败。可刷新重试，活动指标不受影响。';
-        });
-        map.on('sourcedata', (event) => {
-          if (!disposed && event.sourceId === BASEMAP_SOURCE && event.sourceDataType !== 'metadata' && event.isSourceLoaded && basemapStatus === 'loading') {
-            clearTimeout(basemapTimer); basemapTimer = undefined; basemapStatus = 'ready';
-          }
         });
         map.on('load', () => {
           if (!map || disposed) return;
@@ -102,18 +80,20 @@
             scheduleFit(animate ? 280 : 0);
           };
           routeInitialized = true; updateRoute(route); routeReady = true;
-          // Add raster tiles after fitting the route to avoid requesting the initial unrelated viewport.
-          requestAnimationFrame(() => { if (!disposed) loadBasemap(); });
+          // Fit locally before scheduling external viewport tile requests.
+          requestAnimationFrame(() => { if (!disposed && map) basemapController = createBasemapController(map, 'route-lines', state => {
+            basemapStatus = state.status; basemapEnabled = state.status !== 'off'; basemapPreference = state.preference; basemapStyle = state.style;
+          }); });
         });
       } catch { if (!disposed) error = '此浏览器无法初始化地图，请使用支持 WebGL 的浏览器。'; }
     })();
   });
-  onDestroy(() => { disposed = true; stopTheme?.(); clearTimeout(basemapTimer); observer?.disconnect(); if (resizeFrame) cancelAnimationFrame(resizeFrame); for (const marker of markers) marker.remove(); map?.remove(); map = undefined; });
+  onDestroy(() => { disposed = true; stopTheme?.(); basemapController?.destroy(); observer?.disconnect(); if (resizeFrame) cancelAnimationFrame(resizeFrame); for (const marker of markers) marker.remove(); map?.remove(); map = undefined; });
 </script>
-<div class="relative mt-4 overflow-hidden rounded-xl border border-border" class:spacious class:embedded>
+<div class="relative mt-4 overflow-hidden rounded-xl border border-border" data-glass-stable class:spacious class:embedded>
   <div bind:this={container} class="route-map w-full" role="img" aria-label="活动路线地图，绿色为路线，起与终标记起终点" data-testid={loaded ? 'route-map-ready' : 'route-map-loading'}></div>
-  <div class="absolute left-3 top-3"><button type="button" onclick={toggleBasemap} aria-pressed={basemapEnabled} class="rounded border border-border bg-card px-3 py-2 text-sm">{basemapEnabled ? '关闭底图' : '开启底图'}</button></div>
-  {#if basemapEnabled}<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" class="absolute bottom-0 right-0 bg-card/95 px-2 py-1 text-xs underline">© OpenStreetMap contributors</a>{/if}
+  <div class="absolute left-3 top-3"><button type="button" onclick={toggleBasemap} disabled={!routeReady || !!error} aria-pressed={basemapEnabled} class="button-secondary">{basemapEnabled ? '关闭底图' : '开启底图'}</button></div>
+  <BasemapPicker preference={basemapPreference} style={basemapStyle} status={basemapStatus} />
   {#if embedded}
     {#if error}<div class="map-status"><FeedbackState kind="error" title={error} /></div>
     {:else if !loaded && !hasRendered}<div class="map-status"><FeedbackState kind="loading" title="正在绘制路线…" /></div>{/if}
@@ -126,7 +106,7 @@
 {#if basemapStatus === 'failed'}<div class="basemap-feedback" role="status"><span>底图暂不可用，轨迹仍可查看。</span><button type="button" onclick={loadBasemap} class="font-medium text-primary underline">重试底图</button></div>
 {:else if basemapStatus === 'loading'}<p role="status" class="mt-3 text-sm">正在加载底图…</p>{/if}
 {/if}
-<details class="mt-3 text-sm text-muted-foreground"><summary class="w-fit font-medium">地图与隐私说明</summary><p class="mt-2 leading-6">底图会向 OpenStreetMap 请求当前地图区域的瓦片；完整 GPX 与轨迹点不会发送给底图服务，路径在本地绘制。关闭底图可停止后续瓦片请求。不同轨迹段不会连线，起终点重合时两个标记分别显示。公共底图为尽力服务，可能暂不可用。</p></details>
+<details class="mt-3 text-sm text-muted-foreground"><summary class="w-fit font-medium">地图与隐私说明</summary><p class="mt-2 leading-6">底图由 OpenFreeMap 提供，使用 OpenMapTiles 与 OpenStreetMap 数据；会请求样式、字体、图标和当前视口瓦片；完整 GPX 与轨迹点不会发送给底图服务，路径在本地绘制。关闭底图可停止后续瓦片请求。不同轨迹段不会连线，起终点重合时两个标记分别显示。公共底图为尽力服务，可能暂不可用。</p></details>
 <style>
   .embedded { margin-top: 1rem; }
   .map-status { position: absolute; inset: 3.5rem 1rem auto; background: var(--surface); border-radius: .5rem; }

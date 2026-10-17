@@ -1,0 +1,125 @@
+# Design Tokens
+
+唯一来源：[app.css](../../frontend/src/app.css)。材质几何在 [liquid-glass.css](../../frontend/src/lib/styles/liquid-glass.css) 与 [controls](../../frontend/src/lib/styles/liquid-glass-controls.css)，引擎参数在 [settings](../../frontend/src/lib/styles/liquid-glass-settings.ts)。不建立 `--ds-*` 平行色板。
+
+## 主题与层叠
+
+读取顺序：`:root` 基础 → `.sport-theme` 运动壳层 → `:root[data-theme="dark"]` 同时覆盖根与运动壳层。颜色应在实际元素上解析，不能只读根元素。Tailwind 通过 `@theme inline` 映射：`bg-background`、`bg-surface`、`bg-card`、`text-foreground`、`text-muted-foreground`、`bg-primary`、`text-primary-foreground`、`border-border`、`ring-ring`、`text-destructive`、`text-warning`、`bg-warning-soft`。
+
+`--color-surface: var(--surface)` 为本批新增兼容映射；`--color-card` 保留，两个名称同源。其余颜色值和主题选择器不改。不要重排 layer、删掉材质 `!important` 或只改类名而丢失增强 selector。
+
+## Colors
+
+下表是实际运动壳层的 light/dark；没有覆盖时继承 root。完整原始值仍以源文件为准。
+
+| Token | light | dark | 用途 |
+| --- | --- | --- | --- |
+| `--background` | #f6f7f4 | #101a16 | 页面底色 |
+| `--surface` | #ffffff | #1b2922 | 卡片、字段、浮层基础 |
+| `--foreground` | #202d23 | #e4eee7 | 正文 |
+| `--muted-foreground` | #5c695e | #b1c3b6 | 次级文字 |
+| `--muted` | #eff2e9 | #26362d | 次级区域 |
+| `--border` | #e0e6da | #405348 | 分界与边框 |
+| `--primary` | #17745c | #77d4ac | 主操作、选择 |
+| `--primary-hover` | #105d49 | #9ce4c3 | hover |
+| `--primary-soft` | #e8f6df | #233e30 | 轻选择表面 |
+| `--primary-foreground` | #ffffff | #10251b | 主操作文字 |
+| `--ring` | #17745c | #9ce4c3 | 可见焦点 |
+| `--control-hover-border` | #91aca0 | #8da996 | 字段 hover |
+| `--sport-sidebar` | #218538 | #173c2b | 导航 |
+| `--sport-nav-hover` | #0000000a | #ffffff12 | 导航 hover |
+| `--sport-nav-active` | #e8f6df | #2a5138 | 当前导航 |
+| `--sport-nav-active-ink` | #18592a | #daf3c8 | 当前导航文字 |
+| `--sport-yellow` | #f5c519 | #58471e | 页头表面 |
+| `--sport-heading-ink` | #20332b | #ffe9a5 | 页头文字 |
+| `--sport-detail-ink` | #263120 | #ffe9a5 | 详情文字 |
+| `--sport-heading-border` | #b5a43d | #9c884f | 业务标题边界 |
+
+非运动根元素的正文 #1e302b、次级文字 #596b63、muted #eef2f0、border #dbe4df、primary-soft #e7f3ed；不要把根值误写为所有页面现值。
+
+| 状态组（foreground / soft / border） | light | dark |
+| --- | --- | --- |
+| `--error / --error-soft / --error-border` | #a52b32 / #fff1f1 / #efc9cc | #ffadb1 / #40252a / #91525c |
+| `--success / --success-soft / --success-border` | #176448 / #ecf7ef / #bcdcca | #9fe1b6 / #203d2c / #4c8362 |
+| `--warning / --warning-soft / --warning-border` | #805412 / #fff8e9 / #ead7b3 | #f5d391 / #3a3020 / #806b41 |
+
+装饰色 `--sport-green` #86a912、`--sport-blue` #4bb6df、`--sport-coral` #f06373、`--sport-yellow-accent` #f5c519、`--sport-ink` #20332b 保持稳定；不是状态色，也不是深色页头色。
+
+数据颜色：`--calendar-0..4`（浅 #edf0ed/#8dcc9c/#4ca76a/#227b49/#105332，深 #26342c/#347247/#60aa72/#90cc96/#c7edb5）、`--calendar-ring/label/active-label/strong-label`、`--chart-series`（#27815c/#77d4ac）、`--route-thumbnail`、`--province-unvisited/sea`、`--comparison-down`。计数色阶、轨迹区分色、未知区域颜色各有含义，不能统一替换为主色；当前地图专项色板见 `src/lib/map/footprint-colors.ts`。
+
+## Typography
+
+既有：`--font-body` 为 system-ui/Apple/Segoe UI/PingFang SC/Microsoft YaHei/sans-serif；`--text-body:1rem`、`--text-small:.8125rem`、`--text-title:clamp(1.75rem,2.5vw,2.25rem)`。
+
+本批新增角色并在全局原位等值使用：
+
+| Token | 现值与来源 |
+| --- | --- |
+| `--line-height-body` | 1.65，body |
+| `--line-height-title` | 1.25，h1 |
+| `--line-height-heading` | 1.4，h2/h3 |
+| `--tracking-title` | -.035em，h1 |
+| `--tracking-heading` | -.015em，h2/h3 |
+| `--weight-title` | 650，基础 h1 |
+| `--text-sport-title` | clamp(1.75rem,3vw,2.5rem)，运动页头 |
+| `--weight-sport-title` | 750，运动页头 |
+
+局部 caption .75rem、label .875rem、metric fluid 字号及 550/600/700 等仍在原组件，不假称已经迁移。详情 hero 不套通用 h1 尺寸。指标延续 tabular-nums，缺失为 `—`，0 是有效值。
+
+## Spacing、Radius 与布局
+
+| 既有 Token | 值 | 典型用途 |
+| --- | --- | --- |
+| `--space-1/2/3/4/6/8/12` | .25/.5/.75/1/1.5/2/3rem | 内边距、字段、模块与页面留白 |
+| `--radius-control` | .75rem | 字段和基础控件 |
+| `--radius-card` | 1.5rem | 内容卡片、页头 |
+| `--radius-pill` | 9999px | 胶囊与材质控件 |
+| `--radius-glass-control/panel` | 引用 pill/card | 材质 CSS 中的最终几何 |
+| `--sidebar-width` | 15rem | 桌面导航 |
+| `--content-width` | 86rem | 内容最大宽度 |
+
+常用控件最小高度 2.75rem（44px）；页面水平 padding 为 clamp(1rem,3vw,3rem)。`.aux-panel` 的 padding 为 clamp(1rem,3vw,1.5rem)。不为 .7rem、1.4rem 等业务光学值自动取整。
+
+## Surfaces 与 Shadows
+
+普通表面：surface + border + radius-card；浮层在此基础上加阴影。`--surface-backdrop: rgb(0 0 0 / .5)` 与 `--shadow-popover: 0 12px 40px var(--shadow-popover-color)` 为本批语义角色；颜色 `--shadow-popover-color:#1e302b26` 保留 DatePicker 原值，本批不更改深色阴影强度。既有 dialog 尚未迁移至 backdrop 角色。
+
+玻璃：`--glass-surface/hover`、`--glass-edge/sheen/reflection/rim/shadow`、`--glass-fill-base`、`--glass-action-tint-factor/foreground`、`--glass-danger-foreground/ink` 均已有浅深色定义。运动壳层还通过 color-mix 组合实际材质，不能只看 root 的半透明静态值。完整阴影几何保持在材质 CSS，不为“一致”合并不同层。
+
+`--glass-opacity` 默认 .14；其余折射/弹簧参数继续由 `DEFAULT_GLASS_SETTINGS` 管理。普通卡片不使用折射；reduced-transparency/forced-colors 回退沿用现有 CSS/action。
+
+## Motion
+
+| Token / 实现 | 值 | 状态 |
+| --- | --- | --- |
+| `--transition-control` | 150ms ease | 已有，控件颜色/边框 |
+| `--motion-reveal` | 180ms ease-out | 新增，原淡入等值引用 |
+| `--motion-page-enter` | 420ms cubic-bezier(.22,.61,.36,1) | 新增，原页面进入等值引用 |
+| `--motion-popover-enter-duration/ease` | 380ms / cubic-bezier(.2,1.22,.32,1) | 菜单、日期从触发控件展开，轻微回弹 |
+| `--motion-popover-exit-duration/ease` | 220ms / cubic-bezier(.4,0,.7,1) | 收回触发控件，保留原生 top layer 退场 |
+| 其他 Svelte transition | 按源码 easing | 保留，不强制并轨 |
+| 引擎 spring | JS 物理参数 | 保留，不复制为 CSS duration |
+
+全局 `prefers-reduced-motion: reduce` 禁用动画、过渡与平滑滚动；JS 动效也须遵循。不得为了快照取消生产中的偏好处理。
+
+## Breakpoints 与 Z-index
+
+断点是源码常量，不用 `var()` 写普通媒体查询：
+
+| 边界 | 现有用途 |
+| --- | --- |
+| 360px | 极窄导航文案收起 |
+| 480px | 骨架与局部密度 |
+| 640px | 表单/页头动作换行、指标纵排、公开导航收敛 |
+| 768px | DatePicker 全宽及局部布局 |
+| 1024px | 私人侧栏/手机展开导航切换 |
+| 1200px | 指标图标横排恢复 |
+| 桌面高度 ≤900px | 侧栏密度降低以保留账户区域 |
+
+足迹墙采用自己的容器查询；不以 viewport 断点替代。验证边界两侧，不只验证一台手机。
+
+本批全局角色：`--z-navigation-progress:40`、`--z-dev-tools:50`、`--z-skip-link:100`，与原值相同。前两种导航/跳转层已在 app.css 等值使用；dev-tools 用于既有 tuner。玻璃内部 -1/1/2/3/4/5 是局部层叠，不参加全局排序。原生 dialog/popover 属 top layer，不能通过增大 z-index 修复其焦点或覆盖问题。
+
+## 可访问性与变更规则
+
+保留 2px 可见焦点和 3px offset；侧栏、密集日历和地图有专用焦点规则。新文字与表面组合目标 ≥4.5:1，关键图形/焦点按适用标准核对；玻璃需检查实际背景合成，不能只计算主色值。审计记录的部分不透明色对通过不代表全站认证。没有授权不更改现有品牌颜色来“修复”未定位的问题。

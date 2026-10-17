@@ -12,6 +12,7 @@
   --color-border: var(--border);
   --color-ring: var(--ring);
   --color-card: var(--surface);
+  --color-surface: var(--surface);
   --color-destructive: var(--error);
   --color-warning: var(--warning);
   --color-warning-soft: var(--warning-soft);
@@ -19,7 +20,8 @@
   --radius-xl: var(--radius-card);
 }
 
-:root {
+/* [data-poster-theme] lets share images resolve a fixed appearance without changing the page. */
+:root, [data-poster-theme="light"] {
   color-scheme: light;
   --background: #f6f7f4;
   --surface: #ffffff;
@@ -72,9 +74,28 @@
   --text-body: 1rem;
   --text-small: .8125rem;
   --text-title: clamp(1.75rem, 2.5vw, 2.25rem);
+  /* Semantic roles extracted at their existing values; preserve the palette and cascade. */
+  --line-height-body: 1.65;
+  --line-height-title: 1.25;
+  --line-height-heading: 1.4;
+  --tracking-title: -.035em;
+  --tracking-heading: -.015em;
+  --weight-title: 650;
+  --text-sport-title: clamp(1.75rem, 3vw, 2.5rem);
+  --weight-sport-title: 750;
   --surface-backdrop: rgb(0 0 0 / .5);
+  --shadow-popover-color: #1e302b26;
+  --shadow-popover: 0 12px 40px var(--shadow-popover-color);
   --transition-control: 150ms ease;
   --motion-reveal: 180ms ease-out;
+  --motion-popover-enter-duration: 380ms;
+  --motion-popover-enter-ease: cubic-bezier(.2, 1.22, .32, 1);
+  --motion-popover-exit-duration: 220ms;
+  --motion-popover-exit-ease: cubic-bezier(.4, 0, .7, 1);
+  --motion-page-enter: 420ms cubic-bezier(.22,.61,.36,1);
+  --z-navigation-progress: 40;
+  --z-dev-tools: 50;
+  --z-skip-link: 100;
   --glass-surface: #ffffff70;
   --glass-surface-hover: #ffffffa3;
   --glass-edge: #ffffffc2;
@@ -97,9 +118,9 @@
 }
 
 @layer base {
-  body { margin: 0; min-width: 0; background: var(--background); color: var(--foreground); font-family: var(--font-body); font-size: var(--text-body); line-height: 1.65; -webkit-font-smoothing: antialiased; }
-  h1 { font-size: var(--text-title); line-height: 1.25; letter-spacing: -.035em; font-weight: 650; overflow-wrap: anywhere; }
-  h2, h3 { line-height: 1.4; letter-spacing: -.015em; }
+  body { margin: 0; min-width: 0; background: var(--background); color: var(--foreground); font-family: var(--font-body); font-size: var(--text-body); line-height: var(--line-height-body); -webkit-font-smoothing: antialiased; }
+  h1 { font-size: var(--text-title); line-height: var(--line-height-title); letter-spacing: var(--tracking-title); font-weight: var(--weight-title); overflow-wrap: anywhere; }
+  h2, h3 { line-height: var(--line-height-heading); letter-spacing: var(--tracking-heading); }
   a, button, input, select, textarea, summary, [tabindex] { -webkit-tap-highlight-color: transparent; }
   :focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
   a, button, input, select, textarea { transition: color var(--transition-control), background-color var(--transition-control), border-color var(--transition-control); }
@@ -119,7 +140,7 @@
 }
 
 @layer components {
-  .skip-link { position: fixed; top: -6rem; left: var(--space-4); z-index: 100; border-radius: var(--radius-control); background: var(--primary); color: var(--primary-foreground); padding: var(--space-3) var(--space-4); }
+  .skip-link { position: fixed; top: -6rem; left: var(--space-4); z-index: var(--z-skip-link); border-radius: var(--radius-control); background: var(--primary); color: var(--primary-foreground); padding: var(--space-3) var(--space-4); }
   .skip-link:focus { top: var(--space-4); color: var(--primary-foreground); }
   .brand { display: inline-flex; align-items: center; gap: .625rem; width: fit-content; color: var(--foreground); font-size: 1.25rem; line-height: 1; font-weight: 750; letter-spacing: -.04em; }
   .brand-mark { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .625rem; background: var(--primary); color: white; font-size: 1.25rem; font-style: italic; }
@@ -138,15 +159,19 @@
   .mobile-bar { display: none; }
   .content-column { min-width: 0; display: flex; flex-direction: column; min-height: 100dvh; }
   .app-shell .content-column { margin-left: var(--sidebar-width); }
-  .navigation-progress { position: fixed; inset: 0 0 auto; z-index: 40; height: var(--space-1); overflow: hidden; background: var(--primary-soft); pointer-events: none; }
+  .navigation-progress { position: fixed; inset: 0 0 auto; z-index: var(--z-navigation-progress); height: var(--space-1); overflow: hidden; background: var(--primary-soft); pointer-events: none; }
   .app-shell .navigation-progress { left: var(--sidebar-width); }
   .navigation-progress::after { content: ''; display: block; width: 35%; height: 100%; background: var(--primary); animation: navigation-loading 1s ease-in-out infinite; }
   @keyframes navigation-loading { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
   @media (prefers-reduced-motion: reduce) { .navigation-progress::after { animation: none; width: 100%; } }
   .page-content { width: 100%; max-width: var(--content-width); padding: var(--space-12) clamp(1rem, 3vw, 3rem); margin-inline: auto; flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .page-content h1 { font-size: var(--text-title); }
-  .page-reveal, .content-reveal { animation: page-reveal 180ms ease-out both; }
+  .page-reveal, .content-reveal { animation: page-reveal var(--motion-reveal) both; }
+  .page-reveal.page-enter-up { animation: page-enter-up var(--motion-page-enter) both; }
+  .page-reveal.page-enter-down { animation: page-enter-down var(--motion-page-enter) both; }
   @keyframes page-reveal { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes page-enter-up { from { transform: translate3d(0, 1.5rem, 0); } to { transform: translate3d(0, 0, 0); } }
+  @keyframes page-enter-down { from { transform: translate3d(0, -1.5rem, 0); } to { transform: translate3d(0, 0, 0); } }
   @media (prefers-reduced-motion: reduce) { .page-reveal, .content-reveal { animation: none; } }
   .page-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-4); }
   .page-description { margin-top: var(--space-3); max-width: 48rem; color: var(--muted-foreground); }
@@ -271,18 +296,17 @@
   @media (min-width: 1024px) and (max-height: 900px) {
     .sport-theme .app-sidebar { padding-block: var(--space-3); }
     .sport-theme .desktop-brand { margin-bottom: var(--space-2); }
-    .sport-theme .nav-caption { display: none; }
-    .sport-theme .app-sidebar nav { gap: var(--space-1); }
-    .sport-theme .nav-link { min-height: 2.75rem; padding-block: var(--space-2); font-size: 1rem; }
-    .sport-theme .nav-account { padding-top: var(--space-2); }
-    .sport-theme .runner-avatar { width: 2.25rem; height: 2.25rem; font-size: 1.25rem; }
+    .sport-theme .nav-caption { margin-bottom: var(--space-2); }
+    .sport-theme .app-sidebar nav { flex: 0 0 auto; gap: var(--space-1); }
+    .sport-theme .app-sidebar .nav-link { min-height: calc(var(--space-12) - var(--space-1)); padding-block: var(--space-2); }
+    .sport-theme .nav-account { flex-shrink: 0; padding-top: var(--space-2); }
     .sport-theme .account-email { margin-top: var(--space-1); }
   }
 }
 
 @layer components {
   .sport-theme .page-header { padding: clamp(1.25rem, 3vw, 2rem); background: var(--sport-yellow); border-radius: var(--radius-card); color: var(--sport-heading-ink); align-items: center; }
-  .sport-theme .page-header h1 { font-size: clamp(1.75rem, 3vw, 2.5rem); font-weight: 750; }
+  .sport-theme .page-header h1 { font-size: var(--text-sport-title); font-weight: var(--weight-sport-title); }
   .sport-theme .page-description { color: var(--sport-heading-ink); max-width: 48rem; }
   .sport-theme .public-header { background: var(--surface); }
   .sport-theme .public-header .brand-mark { background: var(--sport-sidebar); }
@@ -304,7 +328,8 @@
 
 /* app.html resolves the saved/system preference before the first paint.
    Include the sports shell because it owns its own light palette. */
-:root[data-theme="dark"], :root[data-theme="dark"] .sport-theme {
+:root[data-theme="dark"], :root[data-theme="dark"] .sport-theme:not([data-poster-theme="light"] .sport-theme),
+[data-poster-theme="dark"], [data-poster-theme="dark"] .sport-theme {
   color-scheme: dark;
   --background: #101a16;
   --surface: #1b2922;

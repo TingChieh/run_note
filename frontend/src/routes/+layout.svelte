@@ -5,6 +5,7 @@
   import '../app.css';
   import type { Component, Snippet } from 'svelte';
   import { onMount } from 'svelte';
+  import { beforeNavigate } from '$app/navigation';
   import { navigating, page } from '$app/state';
   import AppNavigation from '#lib/components/AppNavigation.svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
@@ -17,7 +18,12 @@
   let { children }: { children: Snippet } = $props();
   let checking = $state(false), busy = $state(false), mounted = $state(false), message = $state('');
   let identityBlocked = $state(false);
+  let pageDirection = $state<1 | -1 | 0>(0), menuNavigationPending = false;
   let GlassTuner = $state<Component | null>(null);
+  beforeNavigate(() => {
+    if (!menuNavigationPending) pageDirection = 0;
+    menuNavigationPending = false;
+  });
   onMount(initializeTheme);
   onMount(() => {
     if (!import.meta.env.DEV) return;
@@ -88,7 +94,7 @@
 <div use:liquidGlass class:app-shell={appLayout} class:public-shell={!appLayout} class="sport-theme">
   <header data-auth-ready={mounted}>
     {#if appLayout}
-      <AppNavigation pathname={page.url.pathname} user={page.data.user} profile={page.data.showcase} {checking} {busy} {mounted} {identityBlocked} sports onlogout={logout} />
+      <AppNavigation pathname={page.url.pathname} user={page.data.user} profile={page.data.showcase} {checking} {busy} {mounted} {identityBlocked} sports onlogout={logout} onnav={(direction) => { menuNavigationPending = true; pageDirection = direction; }} />
     {:else}
       <div class="public-header">
         <a href="/" class="brand"><span class="brand-mark" aria-hidden="true">R</span>RunNote</a>
@@ -111,7 +117,7 @@
       {#if !(identityBlocked && privateView)}
         {#if routeLoading}<div data-testid="navigation-skeleton"><PageSkeleton /></div>{/if}
         <!-- Preserve file inputs and drafts across successful focus/session checks. -->
-        {#key page.url.pathname}<div class="page-reveal" hidden={routeLoading || checking && privateView} inert={routeLoading || checking && privateView}>{@render children()}</div>{/key}
+        {#key page.url.pathname}<div class="page-reveal" class:page-enter-up={pageDirection === 1} class:page-enter-down={pageDirection === -1} hidden={routeLoading || checking && privateView} inert={routeLoading || checking && privateView}>{@render children()}</div>{/key}
       {/if}
     </main>
     <footer class="app-footer"><span>RunNote</span><span>记录每一步，看见你的进步。</span></footer>

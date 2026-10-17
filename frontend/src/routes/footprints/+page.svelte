@@ -11,6 +11,7 @@
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import FootprintMap from '#lib/components/FootprintMap.svelte';
+  import { footprintDisplayData } from '#lib/map/footprint-display.ts';
   import { readAllFootprints as scoped_readAllFootprints,FootprintError } from '#lib/api/footprints.ts';
   import type { Selection,FootprintsAll,FootprintSnapshot } from '#lib/api/footprints.ts';
   let mode=$state<Selection['mode']>('tracks');
@@ -29,7 +30,7 @@
       if(disposed || id!==requestId)return;
       const result=await readAllFootprints(mode,signal);
       if(disposed || id!==requestId)return;
-      status=result.status;data=result.result;generatedAt=result.generated_at;refreshing=result.refreshing;refreshFailed=result.refresh_failed;
+      status=result.status;data=result.result?footprintDisplayData(result.result):null;generatedAt=result.generated_at;refreshing=result.refreshing;refreshFailed=result.refresh_failed;
       if(result.status==='failed')message='足迹生成暂未完成，请稍后重新读取';
       if(result.status==='pending')timer=setTimeout(()=>{void load();},5000);
     }catch(cause){
@@ -60,7 +61,7 @@
       {#if data.mode==='heatmap'}<section class="heat-legend" data-testid="heat-legend" aria-label="热度图例"><div class="legend-heading"><h2>每格经过的不同运动记录数</h2><span>当前最高 {data.max_count} 次</span></div><div class="legend-levels">{#each [{color:'#c0dfac',label:'1 次'},{color:'#72b78a',label:'2–3 次'},{color:'#2d9474',label:'4–7 次'},{color:'#e69338',label:'8–15 次'},{color:'#bd432c',label:'16 次及以上'}] as level}<span><i style:background={level.color} aria-hidden="true"></i>{level.label}</span>{/each}</div><p>热度按不同运动记录计数，不按 GPS 点数量。同一记录在同一格内只计一次。</p></section>{/if}
     {/if}
   {/if}
-  <details class="map-notes"><summary>地图说明与统计口径</summary><div class="notes-content"><p>拖动地图探索，使用缩放按钮或键盘方向键移动；聚焦地图后按 + / − 缩放。轨迹模式可点击重叠路线选择记录，也可从下方记录列表定位并进入详情；热图可点击热区，或展开热区数据查看计数。</p><p>热图使用固定 100 × 100 投影米网格（EPSG:3857）；实际地面尺度随纬度变化。同次运动的采样、绕圈和多个段只计一次，不同记录再次经过才增加热度。网格及色阶不随地图缩放或年份变化。</p><p>历史日期按活动保存时的当地日期归属。不同 GPX 轨迹段保持独立，不跨断点连线。底图向 OpenStreetMap 请求当前视口瓦片，完整 GPX 不发送给底图服务。底图不可用时仍可查看足迹；关闭底图可停止后续瓦片请求。</p></div></details>
+  <details class="map-notes"><summary>地图说明与统计口径</summary><div class="notes-content"><p>拖动地图探索，使用缩放按钮或键盘方向键移动；聚焦地图后按 + / − 缩放。轨迹模式可点击重叠路线选择记录，也可从下方记录列表定位并进入详情；热图可点击热区，或展开热区数据查看计数。</p><p>热图使用固定 100 × 100 投影米网格（EPSG:3857）；实际地面尺度随纬度变化。同次运动的采样、绕圈和多个段只计一次，不同记录再次经过才增加热度。网格及色阶不随地图缩放或年份变化。</p><p>历史日期按活动保存时的当地日期归属。不同 GPX 轨迹段保持独立，不跨断点连线。底图由 OpenFreeMap 提供，使用 OpenMapTiles 与 OpenStreetMap 数据；请求样式、字体、图标和当前视口瓦片，完整 GPX 不发送给底图服务。底图不可用时仍可查看足迹；关闭底图可停止后续瓦片请求。</p></div></details>
 </div>
 <style>
   .footprints-page { display: grid; gap: var(--space-4); margin-top: var(--space-6); min-width: 0; }

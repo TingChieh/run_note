@@ -1,0 +1,4 @@
+@import "../../../src/app.css";
+/* Vite's fixture root is narrower than the SvelteKit app. Scan reused components too. */
+@source "../../../src";
+@source "./";

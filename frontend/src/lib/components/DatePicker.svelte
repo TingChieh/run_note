@@ -1,8 +1,13 @@
 <script lang="ts">
   import { tick } from 'svelte';
+  import { preparePopoverMotion, positionPopoverMotion } from '#lib/styles/popover-motion.ts';
 
-  let { label, value = $bindable(''), min = '1900-01-01', max = '2100-12-31', timezone = 'UTC', required = false, disabled = false }:
-    { label: string; value?: string; min?: string; max?: string; timezone?: string; required?: boolean; disabled?: boolean } = $props();
+  let { label, value = $bindable(''), min = '1900-01-01', max = '2100-12-31', timezone = 'UTC', required = false, disabled = false, granularity = 'date', onselect }:
+    { label: string; value?: string; min?: string; max?: string; timezone?: string; required?: boolean; disabled?: boolean;
+      granularity?: 'date' | 'month'; onselect?: (value: string) => void } = $props();
+  // Month mode uses YYYY-MM values; min/max may be either YYYY-MM or YYYY-MM-DD.
+  const monthly = $derived(granularity === 'month');
+  const minMonth = $derived(min.slice(0, 7)), maxMonth = $derived(max.slice(0, 7));
   const id = $props.id();
   let field: HTMLDivElement, trigger: HTMLButtonElement, panel: HTMLDivElement;
   let opened = $state(false), month = $state('2026-01'), focused = $state('');
@@ -18,10 +23,26 @@
     const first = new Date(Date.UTC(year, monthIndex, 1));
     return Array.from({ length: 42 }, (_, i) => new Date(Date.UTC(year, monthIndex, 1 - first.getUTCDay() + i)).toISOString().slice(0, 10));
   });
+  const months = $derived(Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`));
+  const tabMonth = $derived(focused.slice(0, 4) === month.slice(0, 4) && monthAllowed(focused) ? focused : months.find(monthAllowed));
   const tabDate = $derived(focused.slice(0, 7) === month && days.includes(focused) && allowed(focused) ? focused : days.find(date => date.slice(0, 7) === month && allowed(date)));
   function today() { return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); }
   function allowed(date: string) { return date >= min && date <= max; }
   function bounded(date: string) { return date < min ? min : date > max ? max : date; }
+  function monthAllowed(value: string) { return value >= minMonth && value <= maxMonth; }
+  function boundedMonth(value: string) { return value < minMonth ? minMonth : value > maxMonth ? maxMonth : value; }
+  function monthLabel(value: string) { return `${value.slice(0, 4)}年${Number(value.slice(5))}月`; }
+  function addMonths(value: string, offset: number) { return new Date(Date.UTC(Number(value.slice(0, 4)), Number(value.slice(5)) - 1 + offset, 1)).toISOString().slice(0, 7); }
+  async function focusMonth(value: string) {
+    focused = boundedMonth(value); month = focused;
+    await tick(); panel.querySelector<HTMLButtonElement>(`[data-date="${focused}"]`)?.focus();
+  }
+  function navigateMonth(event: KeyboardEvent, value: string) {
+    const column = (Number(value.slice(5)) - 1) % 3;
+    const offsets: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -3, ArrowDown: 3, Home: -column, End: 2 - column, PageUp: -12, PageDown: 12 };
+    if (!(event.key in offsets)) return;
+    event.preventDefault(); void focusMonth(addMonths(value, offsets[event.key]));
+  }
   function dateLabel(date: string) { const [y, m, d] = date.split('-').map(Number); return `${y}年${m}月${d}日`; }
   function position() {
     if (!opened) return;
@@ -30,6 +51,7 @@
     const below = rect.bottom + 8;
     const belowSpace = window.innerHeight - below - 12, aboveSpace = rect.top - 20;
     top = Math.max(12, Math.min(belowSpace >= size.height || belowSpace >= aboveSpace ? below : rect.top - size.height - 8, window.innerHeight - size.height - 12));
+    positionPopoverMotion(panel, trigger.getBoundingClientRect(), { left, top });
   }
   async function focusDate(date: string) {
     focused = bounded(date); month = focused.slice(0, 7);
@@ -38,11 +60,14 @@
   async function open() {
     if (disabled) return;
     if (opened) { close(); return; }
-    focused = bounded(value || today()); month = focused.slice(0, 7); opened = true;
-    await tick(); if (disabled) { opened = false; return; } panel.showPopover(); position(); await focusDate(focused);
+    if (monthly) { focused = boundedMonth(value || today().slice(0, 7)); month = focused; }
+    else { focused = bounded(value || today()); month = focused.slice(0, 7); }
+    opened = true;
+    await tick(); if (disabled) { opened = false; return; } preparePopoverMotion(panel); panel.showPopover(); position();
+    if (monthly) await focusMonth(focused); else await focusDate(focused);
   }
   function close() { panel.hidePopover(); opened = false; trigger.focus(); }
-  function choose(date: string) { if (disabled) return; value = date; close(); }
+  function choose(date: string) { if (disabled) return; value = date; onselect?.(date); close(); }
   function shiftMonth(offset: number) {
     const next = new Date(Date.UTC(year, monthIndex + offset, 1)).toISOString().slice(0, 7);
     return next < min.slice(0, 7) ? min.slice(0, 7) : next > max.slice(0, 7) ? max.slice(0, 7) : next;
@@ -60,18 +85,45 @@
   }
 </script>
 
-<svelte:window onresize={position} onscroll={position} onkeydown={event => { if (opened && event.key === 'Escape') { event.preventDefault(); close(); } }} />
+<svelte:window onresize={position} onscrollcapture={position} onkeydown={event => { if (opened && event.key === 'Escape') { event.preventDefault(); close(); } }} />
 <div class="date-field">
   <label for={id}>{label}</label>
   <div class="date-control" bind:this={field}>
-    <input {id} aria-label={label} type="date" bind:value {min} {max} {required} {disabled}
-      onkeydown={event => { if (event.key === ' ' || (event.altKey && event.key === 'ArrowDown')) { event.preventDefault(); void open(); } }} />
+    {#if monthly}
+      <input {id} aria-label={label} type="month" bind:value min={minMonth} max={maxMonth} {required} {disabled} oninput={event => onselect?.(event.currentTarget.value)}
+        onkeydown={event => { if (event.key === ' ' || (event.altKey && event.key === 'ArrowDown')) { event.preventDefault(); void open(); } }} />
+    {:else}
+      <input {id} aria-label={label} type="date" bind:value {min} {max} {required} {disabled} oninput={event => onselect?.(event.currentTarget.value)}
+        onkeydown={event => { if (event.key === ' ' || (event.altKey && event.key === 'ArrowDown')) { event.preventDefault(); void open(); } }} />
+    {/if}
     <button class="calendar-trigger" type="button" {disabled} bind:this={trigger} aria-label={`选择${label}`} aria-haspopup="dialog" aria-expanded={opened} aria-controls={`${id}-calendar`} onclick={() => void open()}>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>
     </button>
   </div>
   <div id={`${id}-calendar`} class="date-popover" bind:this={panel} popover="auto" role="dialog" aria-label={`选择${label}`} aria-describedby={`${id}-help`}
     style:left={`${left}px`} style:top={`${top}px`} ontoggle={event => { opened = event.newState === 'open'; }}>
+    {#if monthly}
+    <div class="calendar-header">
+      <div class="month-selectors">
+        <select aria-label="年份" value={year} onchange={event => { month = boundedMonth(`${event.currentTarget.value}-${month.slice(5)}`); }}>
+          {#each years as y}<option value={y}>{y}年</option>{/each}
+        </select>
+      </div>
+      <button class="month-step" type="button" aria-label="上一年" disabled={year <= Number(minMonth.slice(0, 4))} onclick={() => { month = boundedMonth(addMonths(month, -12)); }}>‹</button>
+      <button class="month-step" type="button" aria-label="下一年" disabled={year >= Number(maxMonth.slice(0, 4))} onclick={() => { month = boundedMonth(addMonths(month, 12)); }}>›</button>
+    </div>
+    <div class="month-announcement" aria-live="polite">{year}年</div>
+    <div class="calendar-months" role="group" aria-label="月份">
+      {#each months as item}
+        <!-- data-date (YYYY-MM here) marks calendar cells so liquid glass leaves their selected colours intact. -->
+        <button type="button" data-date={item} aria-label={monthLabel(item)} aria-pressed={item === value} aria-current={item === today().slice(0, 7) ? 'date' : undefined}
+          class:today={item === today().slice(0, 7)} disabled={!monthAllowed(item)} tabindex={item === tabMonth ? 0 : -1}
+          onfocus={() => { focused = item; }} onkeydown={event => navigateMonth(event, item)} onclick={() => choose(item)}>{Number(item.slice(5))}月</button>
+      {/each}
+    </div>
+    <div class="calendar-footer"><button type="button" onclick={() => choose('')}>清除</button><button type="button" disabled={!monthAllowed(today().slice(0, 7))} onclick={() => choose(today().slice(0, 7))}>本月</button></div>
+    <p id={`${id}-help`} class="calendar-help">方向键选择月份，Esc 关闭</p>
+    {:else}
     <div class="calendar-header">
       <div class="month-selectors">
         <select aria-label="年份" value={year} onchange={event => { month = bounded(`${event.currentTarget.value}-${month.slice(5)}-01`).slice(0, 7); }}>
@@ -95,6 +147,7 @@
     </div>
     <div class="calendar-footer"><button type="button" onclick={() => choose('')}>清除</button><button type="button" disabled={!allowed(today())} onclick={() => choose(today())}>今天</button></div>
     <p id={`${id}-help`} class="calendar-help">方向键选择日期，Esc 关闭</p>
+    {/if}
   </div>
 </div>
 
@@ -106,7 +159,7 @@
   input::-webkit-calendar-picker-indicator { display: none; }
   .calendar-trigger { display: grid; place-items: center; flex-shrink: 0; width: 2.75rem; height: 2.75rem; border-radius: .65rem; color: var(--primary); }
   .calendar-trigger:hover, .calendar-trigger[aria-expanded='true'] { background: var(--primary-soft); }
-  .date-popover { position: fixed; inset: auto; margin: 0; width: 20rem; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); color: var(--foreground); box-shadow: 0 12px 40px #1e302b26; }
+  .date-popover { position: fixed; inset: auto; margin: 0; width: 20rem; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); color: var(--foreground); box-shadow: var(--shadow-popover); }
   .calendar-header { display: flex; align-items: center; gap: .25rem; margin-bottom: .75rem; }
   .month-selectors { display: flex; flex: 1; min-width: 0; gap: var(--space-2); }
   select { min-width: 0; min-height: 2.5rem; border: 0; background: var(--surface); color: var(--foreground); padding: .25rem; font-size: .9375rem; font-weight: 650; }
@@ -114,6 +167,12 @@
   .month-step:hover:not(:disabled) { background: var(--primary-soft); }
   .weekdays, .calendar-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .25rem; text-align: center; }
   .weekdays { color: var(--muted-foreground); font-size: .75rem; margin-bottom: .5rem; }
+  .calendar-months { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .375rem; }
+  .calendar-months button { min-height: 2.75rem; border-radius: .65rem; font-size: .9375rem; }
+  .calendar-months button:hover:not(:disabled) { background: var(--primary-soft); color: var(--primary); }
+  .calendar-months .today { box-shadow: inset 0 0 0 1px var(--primary); }
+  .calendar-months button[aria-pressed='true'], .calendar-months button[aria-pressed='true']:hover { background: var(--primary); color: var(--primary-foreground); font-weight: 700; }
+  .calendar-months button:focus-visible { outline-offset: 1px; }
   .calendar-days button { min-height: 2.25rem; border-radius: .65rem; font-size: .875rem; }
   .calendar-days button:hover:not(:disabled) { background: var(--primary-soft); color: var(--primary); }
   .calendar-days .outside { color: var(--muted-foreground); }

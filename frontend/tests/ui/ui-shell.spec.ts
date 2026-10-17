@@ -50,6 +50,37 @@ test('desktop sidebar highlights route, keyboard skip works, session survives na
   await expect(page).toHaveURL(/\/admin\?reason=logout$/);
   await expect(page.getByTestId('current-user')).toContainText('未登录');
 });
+test('menu navigation slides pages in the order of the menu', async ({ page }) => {
+  await login(page);
+  const nav = page.getByRole('navigation', { name: '主要导航' });
+  await page.evaluate(() => {
+    const target = window as typeof window & { pageAnimations: { name: string; opacity: string; duration: string }[] };
+    target.pageAnimations = [];
+    document.addEventListener('animationstart', event => {
+      if (event.target instanceof HTMLElement && event.target.classList.contains('page-reveal')) {
+        const style = getComputedStyle(event.target);
+        target.pageAnimations.push({ name: event.animationName, opacity: style.opacity, duration: style.animationDuration });
+      }
+    }, true);
+  });
+
+  await nav.getByRole('link', { name: '数据汇总', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '数据汇总', exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { pageAnimations: { name: string }[] }).pageAnimations.map(animation => animation.name))).toContain('page-enter-down');
+  const downAnimation = await page.evaluate(() => (window as typeof window & { pageAnimations: { name: string; opacity: string; duration: string }[] }).pageAnimations.find(animation => animation.name === 'page-enter-down'));
+  expect(downAnimation?.opacity).toBe('1');
+  expect(downAnimation?.duration).toBe('0.42s');
+
+  await nav.getByRole('link', { name: '跑步记录', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '跑步记录', exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { pageAnimations: { name: string }[] }).pageAnimations.map(animation => animation.name))).toContain('page-enter-up');
+
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const animationCount = await page.evaluate(() => (window as typeof window & { pageAnimations: { name: string }[] }).pageAnimations.length);
+  await nav.getByRole('link', { name: '设置', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '设置', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => (window as typeof window & { pageAnimations: { name: string }[] }).pageAnimations.length)).toBe(animationCount);
+});
 test('mobile menu supports keyboard, Escape and navigation without overflow', async ({ page }) => {
   await login(page);
   for (const width of [320, 390, 768]) {
@@ -204,7 +235,7 @@ test('private navigation preserves sidebar drafts, loads only the right side and
     await expect(page.getByRole('heading', { name: '跑步记录', exact: true })).toBeVisible();
     await expect(page.getByTestId('navigation-progress')).toHaveCount(0);
     await expect(page.getByTestId('navigation-skeleton')).toHaveCount(0);
-    expect(await page.locator('.page-reveal').evaluate(el => getComputedStyle(el).animationName)).toBe('page-reveal');
+    expect(await page.locator('.page-reveal').evaluate(el => getComputedStyle(el).animationName)).toBe('page-enter-down');
     await expect(goal.getByLabel('目标距离（km）', { exact: true })).toHaveValue('42');
     expect(await original!.evaluate(el => el === document.querySelector('.app-sidebar'))).toBe(true);
     await expect(page.getByRole('region', { name: '我的活动' }).getByRole('status')).toContainText('暂无跑步记录');

@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { installActivities, loginRunner, sampleActivity } from '../fixtures/activities';
+import { installBasemaps } from '../fixtures/basemaps';
 import { installAI, installPublic, summary } from '../fixtures/p2';
 
 async function appearance(locator: Locator) {
@@ -43,14 +44,7 @@ async function mapCorner(page: Page, map: Locator) {
     const p = context.getImageData(40, 80, 1, 1).data; return (p[0] + p[1] + p[2]) / 3;
   }, png.toString('base64'));
 }
-async function installNeutralTiles(page: Page) {
-  const png = await page.evaluate(() => {
-    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 32;
-    const context = canvas.getContext('2d')!; context.fillStyle = '#ffffff'; context.fillRect(0, 0, 32, 32);
-    return canvas.toDataURL('image/png').split(',')[1];
-  });
-  await page.route('**/*tile.openstreetmap.org/**', route => route.fulfill({ contentType: 'image/png', body: Buffer.from(png, 'base64') }));
-}
+async function installNeutralTiles(page: Page) { await installBasemaps(page); }
 async function dimmedTiles(page: Page, map: Locator) {
   await expect.poll(async () => {
     const brightness = await mapCorner(page, map);
@@ -138,7 +132,7 @@ test('private and public pages have readable surfaces, warnings and keyboard foc
 
 test('trend axes redraw for the device theme and preserve the selected metric', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
-  await page.route('**/api/v1/statistics/trends?**', route => {
+  await page.route('**/api/v1/showcase/statistics/trends?**', route => {
     const url = new URL(route.request().url());
     return route.fulfill({ json: { data: { period: url.searchParams.get('period'), date_from: '2026-01-01', date_to: '2027-01-01', week_start: 'monday', date_assignment: 'activity_local_date', buckets: [{ ...summary, bucket_start: '2026-01-01', bucket_end: '2027-01-01', is_partial: true }] }, error: null } });
   });
@@ -181,7 +175,7 @@ test('route map updates its fallback background without replacing the canvas or 
   await page.screenshot({ path: 'test-results/theme-detail-dark.png' });
 });
 
-test('loaded raster tiles dim with the theme and the basemap toggle stays off across changes', async ({ page }) => {
+test('loaded vector styles follow the theme and the basemap toggle stays off across changes', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
   await installActivities(page); await installNeutralTiles(page); await loginRunner(page); await page.goto(`/activities/${sampleActivity.id}`);
   await expect(page.getByTestId('route-map-ready')).toBeVisible();
@@ -198,7 +192,7 @@ test('loaded raster tiles dim with the theme and the basemap toggle stays off ac
 test('all-record footprint map preserves selection while adapting to theme changes', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
   await installActivities(page); await installNeutralTiles(page);
-  await page.route('**/api/v1/footprints/all?**', route => {
+  await page.route('**/api/v1/showcase/footprints/all?**', route => {
     const url = new URL(route.request().url()), mode = url.searchParams.get('mode');
     const geometry = mode === 'heatmap' ? { type: 'Polygon', coordinates: [[[121.484, 31.233], [121.485, 31.233], [121.485, 31.234], [121.484, 31.234], [121.484, 31.233]]] } : { type: 'LineString', coordinates: [[121.48, 31.23], [121.485, 31.2335], [121.49, 31.237]] };
     return route.fulfill({ json: { data: {status:'ready',generated_at:'2026-10-15T00:00:00Z',refreshing:false,result:{scope:'all', type: 'FeatureCollection', features: [{ type: 'Feature', geometry, properties: { activity_id: sampleActivity.id, title: sampleActivity.title, activity_date: sampleActivity.activity_date, segment_index: 0, i: 135236, j: 36621, count: 2 } }], mode, activity_count: 1, visible_activity_count: 1, unsupported_segment_count: 0, grid_size_m: 100, grid_crs: 'EPSG:3857', count_basis: 'distinct_activity_per_cell', max_count: mode === 'heatmap' ? 2 : 0 }}, error: null } });

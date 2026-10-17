@@ -10,7 +10,7 @@
   import type { User } from '#lib/api/auth.ts';
   import RunningGoal from './RunningGoal.svelte';
   import ThemeToggle from './ThemeToggle.svelte';
-  let { pathname, user, profile = null, checking, busy, mounted, onlogout, sports = false, identityBlocked = false }: { pathname: string; user: User | null; profile?: ShowcaseProfile | null; checking: boolean; busy: boolean; mounted: boolean; onlogout: () => void; sports?: boolean; identityBlocked?: boolean } = $props();
+  let { pathname, user, profile = null, checking, busy, mounted, onlogout, onnav, sports = false, identityBlocked = false }: { pathname: string; user: User | null; profile?: ShowcaseProfile | null; checking: boolean; busy: boolean; mounted: boolean; onlogout: () => void; onnav: (direction: 1 | -1) => void; sports?: boolean; identityBlocked?: boolean } = $props();
   const context = $derived(viewContext(pathname, user?.is_admin === true));
   let open = $state(false);
   let mobile = $state(false);
@@ -47,8 +47,12 @@
   <a href={view.href("/dashboard")} class="brand desktop-brand" aria-label="RunNote 数据汇总"><span class="brand-mark" aria-hidden="true">R</span>RunNote</a>
   <p class="nav-caption">跑步与足迹</p>
   <nav aria-label="主要导航">
-    {#each navigation as item}
+    {#each navigation as item, index}
       <a href={view.href(item.href)} aria-current={active(view.href(item.href)) ? 'page' : undefined} class="nav-link" onclick={(event) => {
+        if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+          const currentIndex = navigation.findIndex(entry => active(view.href(entry.href)));
+          if (currentIndex !== index) onnav(index > currentIndex ? 1 : -1);
+        }
         open = false;
         if (pathname === view.href(item.href) && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
           event.preventDefault();

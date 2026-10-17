@@ -2,6 +2,7 @@ import { createGlass } from '../vendor/liquidglass/liquid-glass.js';
 import { createIndicator } from './liquid-glass-indicator.ts';
 import { glassOptics, type GlassSettings } from './liquid-glass-settings.ts';
 import { createSelectToggle } from './liquid-glass-select-toggle.ts';
+import { preparePopoverMotion, positionPopoverMotion } from './popover-motion.ts';
 
 let nextId = 0;
 
@@ -44,8 +45,8 @@ export function enhanceSelect(select: HTMLSelectElement, root: HTMLElement, init
     panel.style.left = `${Math.max(margin, Math.min(rect.left, innerWidth - width - margin))}px`;
     const height = panel.offsetHeight;
     const desired = rect.bottom + gap + height <= innerHeight - margin ? rect.bottom + gap : rect.top - gap - height;
-    panel.style.transformOrigin = desired < rect.top ? 'bottom center' : 'top center';
     panel.style.top = `${Math.max(margin, Math.min(desired, innerHeight - height - margin))}px`;
+    positionPopoverMotion(panel, rect, { left: parseFloat(panel.style.left), top: parseFloat(panel.style.top) });
   }
   function close() { if (isOpen()) panel.hidePopover(); }
   function highlight(index: number, immediate = false) {
@@ -85,7 +86,7 @@ export function enhanceSelect(select: HTMLSelectElement, root: HTMLElement, init
       return button;
     });
     panel.replaceChildren(...buttons);
-    panel.showPopover(); position();
+    preparePopoverMotion(panel); panel.showPopover(); position();
     select.setAttribute('aria-expanded', 'true');
     arrow.expanded(true);
     glass = createGlass(panel, { mode: 'backdrop', fit: true, radius: 24, ...glassOptics(settings, .7), chroma: 0, fallback: `blur(${16 + settings.blur}px) saturate(1.6)` });

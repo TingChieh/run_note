@@ -26,6 +26,19 @@ export function posterStats(distance: number) {
   return { kilometers: (distance / 1000).toFixed(1), halfMarathons: (distance / 21097.5).toFixed(1) };
 }
 
+/** Totals only (one request), enough for the route-free poster styles. */
+export async function loadPosterSummary({ month, fetcher = fetch, cancelled = () => false }: {
+  month?: string; fetcher?: typeof fetch; cancelled?: () => boolean;
+}): Promise<PosterData> {
+  const range = month === undefined ? undefined : posterMonthRange(month);
+  if (cancelled()) throw new DOMException('已取消读取', 'AbortError');
+  const summary = await (range ? readRange(range, fetcher) : readSummary(undefined, fetcher));
+  if (cancelled()) throw new DOMException('已取消读取', 'AbortError');
+  if (!summary.activity_count) throw new ActivityError('这个范围没有跑步记录，请选择其他范围', 422, 'POSTER_EMPTY');
+  return { month, routeCount: 0, activityCount: summary.activity_count, activityDays: summary.activity_days,
+    ...posterStats(Number(summary.distance_m)), cells: [] };
+}
+
 const changed = () => new ActivityError('记录已变化，请重新生成分享图', 409, 'POSTER_DATA_CHANGED');
 
 export async function loadPoster({ month, fetcher = fetch, random = Math.random,
