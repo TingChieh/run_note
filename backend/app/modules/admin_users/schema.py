@@ -1,3 +1,6 @@
+from typing import Annotated
+from uuid import UUID
+
 from pydantic import Field, field_validator, model_validator
 
 from app.modules.auth.schema import LoginInput, RegisterInput
@@ -45,3 +48,19 @@ class PasswordReset(StrictInput):
 
 class PasswordResetResult(StrictInput):
     password_reset: bool = True
+
+
+class UserBatchDelete(StrictInput):
+    ids: list[Annotated[UUID, Field(strict=False)]] = Field(min_length=1, max_length=100)
+
+    @field_validator("ids")
+    @classmethod
+    def unique_ids(cls, value):
+        if len(set(value)) != len(value):
+            raise ValueError("User ids must be unique")
+        return value
+
+
+class UserBatchDeleteResult(StrictInput):
+    deleted: bool = True
+    deleted_count: int

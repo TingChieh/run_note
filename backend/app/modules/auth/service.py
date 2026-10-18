@@ -49,6 +49,8 @@ def require_identity(db, request, now):
     # Serialize user mutations with login/password changes across workers. Refresh the
     # session after acquiring the user lock so a concurrent revocation cannot be missed.
     user = db.scalar(select(User).where(User.id == row.user_id).with_for_update())
+    if user is None:
+        raise ApiError(401, "AUTH_REQUIRED", "请先登录")
     db.refresh(row)
     if (
         user is None

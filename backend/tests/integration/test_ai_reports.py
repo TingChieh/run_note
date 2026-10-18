@@ -7,12 +7,13 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 
 from app.core.config import Settings
 from app.core.errors import ApiError
 from app.main import create_app
 from app.modules.activities.model import Activity
+from app.modules.ai_reports.model import AIReport
 from app.modules.users.model import User
 from tests.integration.test_gpx_import import headers, register
 
@@ -535,3 +536,25 @@ def test_snapshot_and_version_remain_consistent_during_concurrent_write(ai_clien
         assert sum(float(w["distance_m"]) for w in snapshot["weeks"]) == 7000
     finally:
         pool.shutdown()
+
+
+def test_report_finishing_after_account_deletion_fails_safely(ai_clients):
+    a, _, app, provider = ai_clients
+    owner = register(a)
+    seed(app, owner)
+    provider.release = threading.Event()
+    with ThreadPoolExecutor(1) as pool:
+        pending = pool.submit(post, a)
+        assert provider.entered.wait(5)
+        # Same cascade the admin batch delete performs, while the provider call is in flight.
+        with app.state.session_factory.begin() as db:
+            db.execute(delete(User).where(User.id == UUID(owner)))
+        provider.release.set()
+        response = pending.result()
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "AI_TIMEOUT"
+    with app.state.session_factory() as db:
+        remaining = db.scalar(
+            select(func.count()).select_from(AIReport).where(AIReport.user_id == UUID(owner))
+        )
+        assert remaining == 0

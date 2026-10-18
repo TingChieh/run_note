@@ -93,12 +93,15 @@ async function provision(page: Page, username: string, published: boolean) {
 test('client navigation refreshes the displayed subject and sidebar goals', async ({ page }) => {
   await loginRunner(page);
   await provision(page, 'ui_client_subject', true);
-  await page.route(/\/api\/v1\/(?:showcase\/users\/ui_client_subject|me)\/running-goals$/, route => route.fulfill({ json: { data: { week: route.request().url().includes('/showcase/') ? 37 : 89, month: null, year: null }, error: null } }));
+  await page.route(/\/api\/v1\/(?:showcase\/users\/ui_client_subject|showcase)\/running-goals$/, route => route.fulfill({ json: { data: { week: route.request().url().includes('/showcase/users/') ? 37 : 89, month: null, year: null }, error: null } }));
   await page.goto('/p/ui_client_subject/dashboard');
   await expect(page.locator('.runner-name')).toContainText('跑者 ui_client_subject');
   await expect(page.locator('.app-sidebar .goal-readonly')).toContainText('37 km');
-  await page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: '本人工作区', exact: true }).click();
-  await expect.poll(() => new URL(page.url()).pathname).toBe('/workspace/dashboard');
+  const navigation = page.getByRole('navigation', { name: '主要导航' });
+  await expect(navigation.getByRole('link', { name: '本人工作区', exact: true })).toHaveCount(0);
+  await navigation.getByRole('link', { name: '用户管理', exact: true }).click();
+  await expect.poll(() => new URL(page.url()).pathname).toBe('/admin/users');
+  await expect(navigation.getByRole('link', { name: '用户管理', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect.soft(page.locator('.runner-name')).toContainText('晨跑者');
   await expect.soft(page.locator('.app-sidebar .goal-readonly')).toContainText('89 km');
 });
@@ -187,6 +190,9 @@ test('ordinary workspace stays private, cannot manage accounts, and disabled ses
     await expect.poll(() => new URL(own.url()).pathname).toBe('/workspace/dashboard');
     await own.goto('/workspace/activities');
     await expect(own.getByRole('button', { name: '导入 GPX', exact: true })).toBeVisible();
+    const ownNavigation = own.getByRole('navigation', { name: '主要导航' });
+    await expect(ownNavigation.getByRole('link', { name: '本人工作区', exact: true })).toHaveAttribute('href', '/workspace/dashboard');
+    await expect(ownNavigation.getByRole('link', { name: '用户管理', exact: true })).toHaveCount(0);
     await expect(own.getByRole('link', { name: sampleActivity.title, exact: false }).first()).toHaveAttribute('href', `/workspace/activities/${sampleActivity.id}`);
     const forbidden = await own.goto('/admin/users');
     expect(forbidden?.status()).toBe(403);
@@ -198,4 +204,50 @@ test('ordinary workspace stays private, cannot manage accounts, and disabled ses
     await own.goto('/workspace/dashboard');
     await expect(own).toHaveURL(/\/admin\?next=/);
   } finally { await privateContext.close(); }
+});
+
+test('owner selects accounts on the current page and permanently deletes them', async ({ page }) => {
+  await loginRunner(page); await page.goto('/admin/users');
+  await expect(page.getByRole('rowheader', { name: /· 站主/ })).toBeVisible();
+  await expect(page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: /· 站主/ }) }).getByRole('checkbox')).toHaveCount(0);
+  const first = await create(page, 'ui_bulk_one');
+  const second = await create(page, 'ui_bulk_two');
+  await page.getByLabel('邮箱或用户名', { exact: true }).fill('ui_bulk_');
+  await page.getByRole('button', { name: '筛选', exact: true }).click();
+  await expect(page.getByRole('row')).toHaveCount(3);
+
+  const header = page.getByRole('checkbox', { name: '全选本页', exact: true });
+  const toolbar = page.getByRole('region', { name: '批量管理用户' });
+  await expect(toolbar).toHaveCount(0);
+  await first.getByRole('checkbox').check();
+  await expect(toolbar).toContainText('已选 1 个');
+  expect(await header.evaluate(element => (element as HTMLInputElement).indeterminate)).toBe(true);
+  await header.check();
+  await expect(second.getByRole('checkbox')).toBeChecked();
+  await expect(toolbar).toContainText('已选 2 个');
+
+  await page.getByRole('button', { name: '筛选', exact: true }).click();
+  await expect(toolbar).toHaveCount(0);
+  await header.check();
+
+  const remove = toolbar.getByRole('button', { name: '删除所选', exact: true });
+  await remove.click();
+  const dialog = page.getByRole('dialog', { name: '永久删除 2 个用户？', exact: true });
+  await expect(dialog).toContainText('@ui_bulk_one');
+  await expect(dialog).toContainText('@ui_bulk_two');
+  const confirm = dialog.getByRole('button', { name: '永久删除', exact: true });
+  await expect(confirm).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(dialog).not.toBeVisible();
+  await expect(remove).toBeFocused();
+
+  await remove.click();
+  await dialog.getByLabel('输入“删除”以确认').fill('删');
+  await expect(confirm).toBeDisabled();
+  await dialog.getByLabel('输入“删除”以确认').fill('删除');
+  await confirm.click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByText('已删除 2 个用户。', { exact: true })).toBeVisible();
+  await expect(page.getByText('没有符合条件的用户。', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '新增用户', exact: true })).toBeFocused();
 });

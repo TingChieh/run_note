@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { readAdminUsers, createAdminUser, updateAdminUser, resetAdminUserPassword } from '../../src/lib/api/admin-users.ts';
+import { readAdminUsers, createAdminUser, updateAdminUser, resetAdminUserPassword, deleteAdminUsers } from '../../src/lib/api/admin-users.ts';
 
 const user = {
   id: '00000000-0000-4000-8000-000000000123', email: 'synthetic@example.com', username: 'synthetic',
@@ -54,6 +54,26 @@ describe('admin user contracts', () => {
     await expect(readAdminUsers({}, forbidden)).rejects.toMatchObject({ status: 403, code: 'ADMIN_REQUIRED' });
     const fetcher = vi.fn();
     await expect(updateAdminUser('../other', { is_active: false }, fetcher)).rejects.toThrow();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('deletes a validated batch with fresh CSRF and checks the acknowledgement', async () => {
+    const other = '00000000-0000-4000-8000-000000000456';
+    const fetcher = vi.fn().mockResolvedValueOnce(response({ csrf_token: 'bulk-csrf' })).mockResolvedValueOnce(response({ deleted: true, deleted_count: 2 }));
+    expect(await deleteAdminUsers([user.id, other], fetcher)).toBe(2);
+    const [url, init] = fetcher.mock.calls[1];
+    expect(url).toBe('/api/v1/admin/users/batch-delete');
+    expect(init.method).toBe('POST');
+    expect(init.headers['X-CSRF-Token']).toBe('bulk-csrf');
+    expect(JSON.parse(init.body)).toEqual({ ids: [user.id, other] });
+    for (const body of [{ deleted: false, deleted_count: 2 }, { deleted: true, deleted_count: 3 }, { deleted: true, deleted_count: -1 }, { deleted: true }]) {
+      const malformed = vi.fn().mockResolvedValueOnce(response({ csrf_token: 'x' })).mockResolvedValueOnce(response(body));
+      await expect(deleteAdminUsers([user.id, other], malformed)).rejects.toThrow('用户管理服务返回了无效响应');
+    }
+  });
+  it('rejects empty, oversized, duplicate or malformed batches before any request', async () => {
+    const fetcher = vi.fn();
+    const many = Array.from({ length: 101 }, (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`);
+    for (const ids of [[], many, [user.id, user.id], ['../other']]) await expect(deleteAdminUsers(ids, fetcher)).rejects.toMatchObject({ status: 422 });
     expect(fetcher).not.toHaveBeenCalled();
   });
 });

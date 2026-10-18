@@ -3,7 +3,7 @@
   import { page } from '$app/state';
   import PageHeader from '#lib/components/PageHeader.svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
-  import { AdminUserError, createAdminUser, readAdminUsers, resetAdminUserPassword, updateAdminUser, type AdminUser, type AdminUserList } from '#lib/api/admin-users.ts';
+  import { AdminUserError, createAdminUser, deleteAdminUsers, readAdminUsers, resetAdminUserPassword, updateAdminUser, type AdminUser, type AdminUserList } from '#lib/api/admin-users.ts';
 
   const administrator = $derived(!!page.data.user && 'is_admin' in page.data.user && page.data.user.is_admin === true);
   let users = $state<AdminUserList | null>(null), loading = $state(true), busy = $state(false);
@@ -13,7 +13,10 @@
   let email = $state(''), username = $state(''), displayName = $state(''), timezone = $state('Asia/Shanghai'), bio = $state('');
   let password = $state(''), repeatedPassword = $state(''), active = $state(true), published = $state(false);
   let action = $state<'active' | 'showcase' | 'password'>('active');
-  let editor: HTMLDialogElement, confirmation: HTMLDialogElement;
+  let editor: HTMLDialogElement, confirmation: HTMLDialogElement, deletion: HTMLDialogElement;
+  let chosen = $state<string[]>([]), removing = $state<AdminUser[]>([]), removal = $state('');
+  const selectable = $derived(users?.items.filter(user => !user.is_admin) ?? []);
+  const allChosen = $derived(selectable.length > 0 && selectable.every(user => chosen.includes(user.id)));
   let returnFocus: HTMLElement | null = null, disposed = false, requestToken = 0;
   const publicWarning = '公开后，所有历史及未来记录、完整轨迹和精确起终点均可被访客浏览。邮箱、私人备注和源文件仍不公开。';
 
@@ -26,7 +29,7 @@
   }
   async function load(offset = 0) {
     const token = ++requestToken;
-    loading = true; error = '';
+    loading = true; error = ''; chosen = [];
     try {
       const result = await readAdminUsers({ search: appliedSearch, ...(appliedState === 'all' ? {} : { is_active: appliedState === 'active' }), offset });
       if (disposed || token !== requestToken) return;
@@ -38,7 +41,7 @@
   onMount(() => { if (administrator) void load(); else loading = false; return () => { disposed = true; requestToken++; password = ''; repeatedPassword = ''; }; });
   function filter(event: SubmitEvent) { event.preventDefault(); if (busy) return; appliedSearch = search.trim(); appliedState = filterState; void load(); }
   function rememberFocus() { returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null; }
-  function restoreFocus() { password = ''; repeatedPassword = ''; dialogError = ''; selected = null; if (returnFocus?.isConnected) returnFocus.focus(); }
+  function restoreFocus() { password = ''; repeatedPassword = ''; dialogError = ''; selected = null; removal = ''; removing = []; if (returnFocus?.isConnected) returnFocus.focus(); }
   async function edit(user: AdminUser | null) {
     if (busy) return;
     rememberFocus(); selected = user; mode = user ? 'edit' : 'create'; dialogError = '';
@@ -76,6 +79,27 @@
     } catch (cause) { if (!disposed) dialogError = failed(cause); }
     finally { if (!disposed) busy = false; }
   }
+  function choose(id: string, checked: boolean) { chosen = checked ? [...new Set([...chosen, id])] : chosen.filter(value => value !== id); }
+  async function confirmDeletion() {
+    if (busy || !chosen.length) return;
+    rememberFocus(); removing = selectable.filter(user => chosen.includes(user.id)); removal = ''; dialogError = '';
+    await tick(); if (!disposed) deletion.showModal();
+  }
+  async function removeChosen(event: SubmitEvent) {
+    event.preventDefault(); if (busy || removal !== '删除' || !removing.length) return;
+    busy = true; dialogError = ''; notice = '';
+    let done = false;
+    try {
+      const count = await deleteAdminUsers(removing.map(user => user.id));
+      if (disposed) return;
+      notice = `已删除 ${count} 个用户。`;
+      returnFocus = null; deletion.close();
+      await load(users?.offset ?? 0); done = true;
+    } catch (cause) { if (!disposed) dialogError = failed(cause); }
+    finally { if (!disposed) busy = false; }
+    // Focus only after busy clears; the trigger button disappeared with the selection.
+    if (done && !disposed) { await tick(); (document.getElementById('select-page') ?? document.getElementById('create-user'))?.focus(); }
+  }
   async function copy(user: AdminUser) {
     error = ''; notice = '';
     try {
@@ -87,7 +111,7 @@
 
 <svelte:head><title>用户管理 · RunNote</title></svelte:head>
 <PageHeader title="用户管理" description="管理账号、登录权限和独立个人展示链接。">
-  {#snippet actions()}{#if administrator}<button type="button" class="button-secondary" disabled={busy} onclick={() => edit(null)}>新增用户</button>{/if}{/snippet}
+  {#snippet actions()}{#if administrator}<button id="create-user" type="button" class="button-secondary" disabled={busy} onclick={() => edit(null)}>新增用户</button>{/if}{/snippet}
 </PageHeader>
 {#if !administrator}
   <div class="mt-6"><FeedbackState kind="error" title="仅站主可管理用户。" /></div>
@@ -106,9 +130,15 @@
     {#if loading}<FeedbackState kind="loading" title="正在读取用户…" />{/if}
     {#if users && !users.items.length && !loading}<FeedbackState kind="empty" title="没有符合条件的用户。" />{:else if users}
       <section class="aux-panel" aria-label="用户列表" aria-busy={loading}>
+        {#if chosen.length}<div class="selection-toolbar" role="region" aria-label="批量管理用户">
+          <span class="selected-count">已选 {chosen.length} 个</span>
+          <button type="button" class="button-secondary" disabled={busy} onclick={() => chosen = []}>清除选择</button>
+          <button type="button" class="delete-button" disabled={busy || loading} onclick={confirmDeletion}>删除所选</button>
+        </div>{/if}
         <div class="table-scroll" role="region" aria-label="用户表格，可横向滚动">
-          <table><caption class="sr-only">账号资料、登录状态和公开展示状态</caption><thead><tr><th scope="col">用户</th><th scope="col">登录状态</th><th scope="col">个人展示</th><th scope="col">操作</th></tr></thead>
+          <table><caption class="sr-only">账号资料、登录状态和公开展示状态</caption><thead><tr><th scope="col" class="select-cell">{#if selectable.length}<input id="select-page" type="checkbox" aria-label="全选本页" checked={allChosen} indeterminate={chosen.length > 0 && !allChosen} disabled={busy || loading} onchange={event => chosen = event.currentTarget.checked ? selectable.map(user => user.id) : []} />{:else}<span class="sr-only">选择</span>{/if}</th><th scope="col">用户</th><th scope="col">登录状态</th><th scope="col">个人展示</th><th scope="col">操作</th></tr></thead>
             <tbody>{#each users.items as user (user.id)}<tr>
+              <td class="select-cell">{#if !user.is_admin}<input type="checkbox" aria-label={`选择 ${user.display_name} @${user.username}`} checked={chosen.includes(user.id)} disabled={busy || loading} onchange={event => choose(user.id, event.currentTarget.checked)} />{/if}</td>
               <th scope="row"><span class="block font-semibold">{user.display_name}{user.is_admin ? ' · 站主' : ''}</span><span class="block text-sm text-muted-foreground">@{user.username}</span><span class="block break-all text-sm text-muted-foreground">{user.email}</span></th>
               <td>{user.is_active ? '已启用' : '已禁用'}</td><td>{user.showcase_enabled ? '公开展示中' : '未公开'}</td>
               <td><div class="user-actions">
@@ -160,6 +190,16 @@
     <div class="flex flex-wrap gap-3"><button type="submit" class="delete-confirm rounded bg-primary px-4 py-2 text-primary-foreground" disabled={busy}>{busy ? '处理中…' : action === 'password' ? '确认重置密码' : '确认操作'}</button><button type="button" class="button-secondary" disabled={busy} onclick={() => confirmation.close()}>取消</button></div>
   </form>
 </dialog>
+<dialog bind:this={deletion} aria-labelledby="user-delete-title" aria-describedby="user-delete-hint" onclose={restoreFocus} oncancel={event => { if (busy) event.preventDefault(); }}>
+  <form onsubmit={removeChosen} class="user-form" aria-busy={busy}>
+    <h2 id="user-delete-title" class="text-xl font-semibold">永久删除 {removing.length} 个用户？</h2>
+    <p id="user-delete-hint">将永久删除这些账号及其全部运动记录、轨迹、原始文件、AI 报告和分享链接，无法恢复。</p>
+    <ul class="delete-list">{#each removing as user (user.id)}<li>{user.display_name}（@{user.username}）</li>{/each}</ul>
+    <label>输入“删除”以确认<input autocomplete="off" bind:value={removal} disabled={busy} /></label>
+    {#if dialogError}<FeedbackState kind="error" title={dialogError} />{/if}
+    <div class="flex flex-wrap gap-3"><button type="submit" class="delete-confirm delete-submit" disabled={busy || removal !== '删除'}>{busy ? '删除中…' : '永久删除'}</button><button type="button" class="button-secondary" disabled={busy} onclick={() => deletion.close()}>取消</button></div>
+  </form>
+</dialog>
 <style>
   .filter-form { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-4); }
   .filter-form > div:first-child { flex: 1 1 16rem; }
@@ -174,4 +214,11 @@
   .user-form label:not(.checkbox-field) { display: grid; gap: var(--space-2); }
   .user-form input:not([type='checkbox']), .user-form textarea { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-control); padding: var(--space-2) var(--space-3); }
   .checkbox-field { display: flex; align-items: center; gap: var(--space-3); }
+  .select-cell { width: 3rem; }
+  .select-cell input { width: 1.25rem; height: 1.25rem; }
+  .selection-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); margin-bottom: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
+  .selected-count { flex: 1; color: var(--muted-foreground); white-space: nowrap; font-size: .875rem; }
+  .delete-button, .delete-submit { padding: .625rem .875rem; border-radius: var(--radius-control); font-size: .875rem; font-weight: 600; color: var(--error); border: 1px solid var(--error-border); }
+  .delete-submit:disabled, .delete-button:disabled { opacity: .5; }
+  .delete-list { max-height: 12rem; overflow-y: auto; padding-left: var(--space-6); list-style: disc; }
 </style>

@@ -69,3 +69,10 @@ export async function resetAdminUserPassword(id: string, newPassword: string, fe
   const value = await write(`/api/v1/admin/users/${identifier(id)}/reset-password`, 'POST', { new_password: newPassword }, fetcher);
   if (!object(value) || value.password_reset !== true) invalid();
 }
+export async function deleteAdminUsers(ids: string[], fetcher: typeof fetch = fetch): Promise<number> {
+  if (!ids.length || ids.length > 100 || new Set(ids).size !== ids.length || ids.some(id => !uuid.test(id))) throw new AdminUserError('请选择 1–100 个不同的用户', 422, 'VALIDATION_ERROR');
+  const value = await write('/api/v1/admin/users/batch-delete', 'POST', { ids }, fetcher);
+  if (!object(value) || value.deleted !== true || !Number.isInteger(value.deleted_count) ||
+    Number(value.deleted_count) < 0 || Number(value.deleted_count) > ids.length) invalid();
+  return Number(value.deleted_count);
+}

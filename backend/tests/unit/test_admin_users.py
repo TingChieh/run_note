@@ -4,8 +4,11 @@ from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from app.core.errors import ApiError
+from app.modules.admin_users import service as admin_service
+from app.modules.admin_users.schema import UserBatchDelete
 from app.modules.auth import service as auth
 from app.modules.users.service import view
 
@@ -89,6 +92,26 @@ def test_disabled_session_rejected_after_locked_user_refresh(monkeypatch):
         auth.require_identity(db, request, now)
     assert error.value.status_code == 401
     db.refresh.assert_called_once_with(row)
+
+
+def test_session_of_deleted_user_gets_401_without_refreshing_cascaded_row(monkeypatch):
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    row = SimpleNamespace(
+        user_id=uuid4(), revoked_at=None, expires_at=now.replace(day=2), last_seen_at=now
+    )
+    db = Mock()
+    db.scalar.return_value = None
+    request = SimpleNamespace(
+        app=SimpleNamespace(
+            state=SimpleNamespace(settings=SimpleNamespace(site_owner_email="owner@example.com"))
+        )
+    )
+    monkeypatch.setattr(auth, "find_session", lambda *_: row)
+    with pytest.raises(ApiError) as error:
+        auth.require_identity(db, request, now)
+    assert error.value.status_code == 401
+    assert error.value.code == "AUTH_REQUIRED"
+    db.refresh.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -290,3 +313,47 @@ def test_migration_false_defaults_and_defensive_downgrade(monkeypatch):
     with pytest.raises(RuntimeError):
         migration.downgrade()
     op.drop_column.assert_not_called()
+
+
+DUPLICATE = str(uuid4())
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"ids": []},
+        {"ids": [DUPLICATE, DUPLICATE]},
+        {"ids": [str(uuid4()) for _ in range(101)]},
+        {"ids": ["not-a-uuid"]},
+        {"ids": [str(uuid4())], "confirm": "删除"},
+    ],
+)
+def test_batch_delete_rejects_invalid_payloads(payload):
+    with pytest.raises(ValidationError):
+        UserBatchDelete.model_validate(payload)
+
+
+def test_batch_delete_accepts_uuid_strings():
+    identifier = uuid4()
+    assert UserBatchDelete.model_validate({"ids": [str(identifier)]}).ids == [identifier]
+
+
+def test_delete_many_refuses_owner_without_deleting():
+    owner = user()
+    settings = SimpleNamespace(site_owner_email=owner.email_normalized)
+    db = Mock()
+    db.scalars.return_value.all.return_value = [owner]
+    with pytest.raises(ApiError) as error:
+        admin_service.delete_many(db, [owner.id], settings)
+    assert error.value.status_code == 409 and error.value.code == "OWNER_PROTECTED"
+    db.execute.assert_not_called()
+
+
+def test_delete_many_ignores_missing_and_counts_locked_rows():
+    person = user()
+    settings = SimpleNamespace(site_owner_email="owner@example.com")
+    db = Mock()
+    db.scalars.return_value.all.return_value = [person]
+    result = admin_service.delete_many(db, [person.id, uuid4()], settings)
+    assert result == {"deleted": True, "deleted_count": 1}
+    db.execute.assert_called_once()

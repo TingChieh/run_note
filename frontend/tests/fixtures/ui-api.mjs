@@ -56,6 +56,17 @@ createServer(async (req, res) => {
       const account = {...payload,id:randomUUID(),email:payload.email.toLowerCase(),bio:'',profile_is_public:false,is_admin:false,created_at:'2026-10-16T00:00:00Z'};
       accounts.push(account); return send(clean(account),201);
     }
+    if (req.method === 'POST' && url.pathname === '/api/v1/admin/users/batch-delete') {
+      const ids = Array.isArray(payload.ids) ? payload.ids : [];
+      if (!ids.length || ids.length > 100 || new Set(ids).size !== ids.length) return send(null,422,'请选择 1–100 个不同的用户');
+      const targets = accounts.filter(item => ids.includes(item.id));
+      if (targets.some(item => item.is_admin)) return send(null,409,'不能删除站主账号');
+      for (const target of targets) {
+        accounts.splice(accounts.indexOf(target), 1);
+        for (const [key,id] of sessions) if (id === target.id) sessions.delete(key);
+      }
+      return send({deleted:true,deleted_count:targets.length});
+    }
     const account = accounts.find(item => item.id === url.pathname.split('/')[5]);
     if (!account) return send(null,404,'用户不存在');
     if (account.is_admin && ('is_active' in payload || 'showcase_enabled' in payload || 'email' in payload || url.pathname.endsWith('/reset-password'))) return send(null,409,'站主账号受保护');

@@ -1,4 +1,4 @@
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.core.errors import ApiError
@@ -120,3 +120,17 @@ def reset_password(db, identifier, payload, settings, now):
     revoke_sessions(db, user, now)
     db.flush()
     return {"password_reset": True}
+
+
+def delete_many(db, identifiers, settings):
+    # Fixed lock order avoids deadlocks with concurrent imports and edits.
+    users = db.scalars(
+        select(User).where(User.id.in_(identifiers)).order_by(User.id).with_for_update()
+    ).all()
+    if any(is_admin(user, settings) for user in users):
+        raise ApiError(409, "OWNER_PROTECTED", "不能删除站主账号")
+    if users:
+        # Database ON DELETE CASCADE removes records, raw files, reports, goals and sessions.
+        db.execute(delete(User).where(User.id.in_([user.id for user in users])))
+    db.flush()
+    return {"deleted": True, "deleted_count": len(users)}

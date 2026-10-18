@@ -12,6 +12,8 @@ from app.modules.admin_users.schema import (
     AdminUserList,
     PasswordReset,
     PasswordResetResult,
+    UserBatchDelete,
+    UserBatchDeleteResult,
     UserCreate,
     UserPatch,
 )
@@ -41,6 +43,13 @@ def listing(
 @router.post("", status_code=201, response_model=ApiResponse[AdminUser])
 def create(payload: UserCreate, request: Request, db: DB, identity: Write):
     data = service.create(db, payload, request.app.state.settings)
+    db.commit()
+    return envelope(request, data)
+
+
+@router.post("/batch-delete", response_model=ApiResponse[UserBatchDeleteResult])
+def batch_delete(payload: UserBatchDelete, request: Request, db: DB, identity: Write):
+    data = service.delete_many(db, payload.ids, request.app.state.settings)
     db.commit()
     return envelope(request, data)
 
