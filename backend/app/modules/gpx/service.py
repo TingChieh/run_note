@@ -11,6 +11,7 @@ from sqlalchemy import insert, select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.core.errors import ApiError
+from app.modules.activities.classify import classify_distance
 from app.modules.activities.model import Activity
 from app.modules.activities.schema import ImportView
 from app.modules.activities.service import view
@@ -224,6 +225,7 @@ def import_track(
                     timezone=timezone,
                     started_at=derived.started_at,
                     ended_at=derived.ended_at,
+                    category=classify_distance(distance),
                     distance_m=distance,
                     elapsed_seconds=derived.elapsed_seconds,
                     timer_seconds=timer,

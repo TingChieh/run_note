@@ -157,7 +157,7 @@
   <div class="browse-controls"><p>左右滑动浏览最近记录 · 点击切换地图</p><span class="record-count" aria-live="polite">最近 {items.length} 条记录</span></div>
   {#if items.length}
     <ul class="activity-strip" bind:this={strip} aria-label="按时间浏览运动记录">
-      {#each items as item (item.id)}<li><button class="history-card" class:selected={item.id === selectedId} data-id={item.id} aria-label={`选择运动 ${item.title}`} aria-pressed={item.id === selectedId} onclick={() => void choose(item)}><div class="history-copy"><time datetime={item.activity_date}>{formatDate(item.activity_date)}</time><strong>{item.title || '未命名活动'}</strong><span>{formatDistance(item.distance_m)} · {item.category || '未分类'}</span></div><RouteThumbnail activity={item} compact onauthrequired={cause => { fail(cause); }} /></button></li>{/each}
+      {#each items as item (item.id)}<li><button class="history-card" class:selected={item.id === selectedId} data-id={item.id} aria-label={`选择运动 ${item.title}`} aria-pressed={item.id === selectedId} onclick={() => void choose(item)}><div class="history-copy"><time datetime={item.activity_date}>{formatDate(item.activity_date)}</time><strong>{item.title || '未命名活动'}</strong><span>{item.category || '未分类'}</span></div><RouteThumbnail activity={item} compact onauthrequired={cause => { fail(cause); }} /></button></li>{/each}
     </ul>
   {:else if !listLoading && !listError}<FeedbackState kind="empty" title="此分类下没有运动记录"><a href={view.href("/activities")}  class="button-secondary">查看跑步记录</a></FeedbackState>{/if}
   {#if listLoading && !items.length}<FeedbackState kind="loading" title="正在读取足迹记录…" />{/if}

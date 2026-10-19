@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.errors import ApiError
+from app.modules.activities.classify import classify_distance
 from app.modules.activities.model import Activity
 from app.modules.activities.schema import ImportView
 from app.modules.activities.service import detail, lock_owner, owned_activity
@@ -224,6 +225,7 @@ def import_record(
                     date_source="timestamp",
                     timezone=timezone,
                     **summary,
+                    category=classify_distance(summary["distance_m"]),
                     avg_pace_seconds_per_km=average,
                     temporal_quality="complete",
                     quality_summary=quality,
