@@ -37,7 +37,7 @@ export async function readSession(fetcher: typeof fetch = fetch): Promise<User |
   try { return parseUser((await request<{ user: unknown }>('/api/v1/auth/session', {}, fetcher)).user); }
   catch (cause) { if (cause instanceof AuthError && cause.status === 401) return null; throw cause; }
 }
-export async function authWrite(action: 'login' | 'register' | 'logout', data: unknown, fetcher: typeof fetch = fetch) {
+export async function authWrite(action: 'login' | 'logout', data: unknown, fetcher: typeof fetch = fetch) {
   // Fresh token for the current Cookie; no global cache, no write retries on CSRF errors.
   const { csrf_token } = await request<{ csrf_token: string }>('/api/v1/auth/csrf', {}, fetcher);
   const result = await request<{ user?: User; csrf_token?: string; logged_out?: boolean }>(`/api/v1/auth/${action}`, {

@@ -17,4 +17,4 @@
       {#if page.data.user.is_admin}<a class="button-secondary" href="/admin/users">用户管理</a>{/if}
     </nav>
   </section>
-{:else}<AuthForm mode="login" />{/if}
+{:else}<AuthForm />{/if}
