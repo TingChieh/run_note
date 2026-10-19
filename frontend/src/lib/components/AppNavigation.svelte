@@ -35,10 +35,9 @@
     { href: '/footprints', label: '个人足迹', path: 'm3 5 6-2 6 2 6-2v16l-6 2-6-2-6 2z M9 3v16 M15 5v16' },
     { href: '/ai', label: 'AI 分析', path: 'm12 3 3 6 6 3-6 3-3 6-3-6-6-3 6-3z' },
     { href: '/settings', label: '设置', path: 'M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6' }
-    ,...(user?.is_admin ? [{ href: '/admin/users', label: '用户管理', path: 'M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M22 20v-1a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75' }]
-      : user ? [{ href: '/workspace/dashboard', label: '本人工作区', path: 'M3 10 12 3l9 7v10H3z' }] : [])
+    ,...(user && !user.is_admin ? [{ href: '/workspace/dashboard', label: '本人工作区', path: 'M3 10 12 3l9 7v10H3z' }] : [])
   ].filter(item => item.href !== '/settings' || view.manage));
-  const active = (href: string) => href.endsWith('/activities') && pathname.startsWith(`${href}/wall`) ? false : pathname === href || pathname.startsWith(`${href}/`);
+  const active = (href: string) => href === '/settings' && pathname.startsWith('/admin/users') ? true : href.endsWith('/activities') && pathname.startsWith(`${href}/wall`) ? false : pathname === href || pathname.startsWith(`${href}/`);
   afterNavigate(() => { open = false; });
   function close(event: KeyboardEvent) { if (event.key === 'Escape' && open) { open = false; toggle?.focus(); } }
 </script>

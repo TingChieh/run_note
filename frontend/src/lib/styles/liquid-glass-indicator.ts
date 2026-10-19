@@ -53,11 +53,22 @@ export function createIndicator(host: HTMLElement, items: HTMLElement[], initial
 }
 
 export function enhanceNavigation(nav: HTMLElement, settings: GlassSettings) {
-  const links = [...nav.querySelectorAll<HTMLAnchorElement>(':scope > .nav-link')];
+  const read = () => [...nav.querySelectorAll<HTMLAnchorElement>(':scope > .nav-link')];
+  let current = settings, links = read(), stop = build(nav, links, settings);
+  // Links appear after the session resolves (e.g. the admin entry), so a stale link list must be rebuilt.
+  const sameLinks = () => { const next = read(); return next.length === links.length && next.every((link, i) => link === links[i]); };
+  return { update(next: GlassSettings) {
+    current = next;
+    if (sameLinks()) { stop.update(next); return; }
+    stop.destroy(); links = read(); stop = build(nav, links, current);
+  }, destroy() { stop.destroy(); } };
+}
+
+function build(nav: HTMLElement, links: HTMLAnchorElement[], settings: GlassSettings) {
   const indicator = createIndicator(nav, links, settings);
   nav.classList.add('rn-liquid-navigation');
-  const current = () => Math.max(0, links.findIndex(link => link.getAttribute('aria-current') === 'page'));
-  const restore = () => { indicator.press(0); indicator.move(current()); };
+  const currentIndex = () => Math.max(0, links.findIndex(link => link.getAttribute('aria-current') === 'page'));
+  const restore = () => { indicator.press(0); indicator.move(currentIndex()); };
   const handlers = links.map((link, index) => {
     const move = () => indicator.move(index);
     const down = () => indicator.press(1);
@@ -70,7 +81,7 @@ export function enhanceNavigation(nav: HTMLElement, settings: GlassSettings) {
   links.forEach(link => observer.observe(link, { attributes: true, attributeFilter: ['aria-current'] }));
   nav.addEventListener('pointerleave', restore); nav.addEventListener('focusout', focusOut);
   window.addEventListener('pointerup', release); window.addEventListener('pointercancel', release); window.addEventListener('blur', restore);
-  indicator.move(current(), true);
+  indicator.move(currentIndex(), true);
   return { update: indicator.update, destroy() {
     observer.disconnect(); handlers.forEach(remove => remove()); indicator.destroy(); nav.classList.remove('rn-liquid-navigation');
     nav.removeEventListener('pointerleave', restore); nav.removeEventListener('focusout', focusOut);

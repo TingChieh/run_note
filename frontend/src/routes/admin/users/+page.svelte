@@ -3,6 +3,7 @@
   import { onMount, tick } from 'svelte';
   import { page } from '$app/state';
   import PageHeader from '#lib/components/PageHeader.svelte';
+  import SettingsTabs from '#lib/components/SettingsTabs.svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import { AdminUserError, createAdminUser, deleteAdminUsers, readAdminUsers, resetAdminUserPassword, updateAdminUser, type AdminUser, type AdminUserList } from '#lib/api/admin-users.ts';
 
@@ -114,6 +115,7 @@
 <PageHeader title="用户管理" description="管理账号、登录权限和独立个人展示链接。">
   {#snippet actions()}{#if administrator}<button id="create-user" type="button" class="button-secondary" disabled={busy} onclick={() => edit(null)}>新增用户</button>{/if}{/snippet}
 </PageHeader>
+<SettingsTabs current="users" />
 {#if !administrator}
   <div class="mt-6"><FeedbackState kind="error" title="仅站主可管理用户。" /></div>
 {:else}

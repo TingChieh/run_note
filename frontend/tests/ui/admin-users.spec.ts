@@ -99,9 +99,12 @@ test('client navigation refreshes the displayed subject and sidebar goals', asyn
   await expect(page.locator('.app-sidebar .goal-readonly')).toContainText('37 km');
   const navigation = page.getByRole('navigation', { name: '主要导航' });
   await expect(navigation.getByRole('link', { name: '本人工作区', exact: true })).toHaveCount(0);
-  await navigation.getByRole('link', { name: '用户管理', exact: true }).click();
+  await expect(navigation.getByRole('link', { name: '用户管理', exact: true })).toHaveCount(0);
+  // User management now lives under settings; a showcase page has no settings link, so trigger a client-side navigation with an in-app anchor.
+  await page.evaluate(() => { const link = document.createElement('a'); link.href = '/admin/users'; link.id = 'ui-users-link'; link.textContent = 'users'; document.body.append(link); });
+  await page.locator('#ui-users-link').dispatchEvent('click');
   await expect.poll(() => new URL(page.url()).pathname).toBe('/admin/users');
-  await expect(navigation.getByRole('link', { name: '用户管理', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('navigation', { name: '设置分区' }).getByRole('link', { name: '用户管理', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect.soft(page.locator('.runner-name')).toContainText('晨跑者');
   await expect.soft(page.locator('.app-sidebar .goal-readonly')).toContainText('89 km');
 });

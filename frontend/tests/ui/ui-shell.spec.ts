@@ -121,7 +121,7 @@ test('anonymous auth/public layout, protected SSR and cross-tab identity change 
   }
   expect((await request.get('/settings', { maxRedirects: 0 })).status()).toBe(303);
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const path of ['/admin', '/register', '/u/runner', '/shared/example']) {
+  for (const path of ['/admin', '/u/runner', '/shared/example']) {
     await page.goto(path); await noOverflow(page);
     await expect(page.locator('.app-sidebar')).toHaveCount(0);
   }
@@ -203,7 +203,7 @@ test('unified sports shell spans every private route and keeps account widgets o
   }
   await page.setViewportSize({width:390,height:900}); await page.goto('/');
   await page.screenshot({path:'test-results/unified-overview-mobile.png',fullPage:true});
-  for (const route of ['/admin','/register','/u/runner','/shared/example']) {
+  for (const route of ['/admin','/u/runner','/shared/example']) {
     await page.goto(route); await expect(page.locator('.app-sidebar')).toHaveCount(0);
     await expect(page.getByRole('region',{name:'跑量目标'})).toHaveCount(0); await noOverflow(page);
   }
@@ -322,4 +322,14 @@ test('mobile navigation pops open and closes without losing its instance or keyb
   await expect(sidebar).toBeVisible();
   expect(await sidebar.evaluate(el => getComputedStyle(el).transitionDuration)).toBe('0s');
   await page.keyboard.press('Escape'); await expect(sidebar).toBeHidden();
+});
+
+test('unknown, retired and unpublished routes share one styled 404 page inside the app shell', async ({ page }) => {
+  for (const path of ['/no-such-page', '/login', '/register', '/p/ui_missing_subject/dashboard']) {
+    const response = await page.goto(path);
+    expect(response?.status()).toBe(404);
+    await expect(page.getByRole('heading', { level: 1, name: '页面不存在', exact: true })).toBeVisible();
+    await expect(page.getByTestId('error-page')).toBeVisible();
+    await expect(page.locator('.app-sidebar')).toHaveCount(1);
+  }
 });

@@ -18,7 +18,6 @@ export const handle: Handle = async ({ event, resolve }) => {
     const body = upstream.ok ? await upstream.json() : null;
     if (body?.data) event.locals.site = parseSite(body.data);
   } catch { /* Settings are cosmetic: fall back to built-in defaults. */ }
-  if (/^\/(login|register)(\/|$)/.test(event.url.pathname)) return new Response('页面不存在', { status: 404, headers: { 'Cache-Control': 'no-store' } });
   try {
     if (event.cookies.get('run_session') || event.cookies.get('__Host-run_session')) event.locals.user = await readSession(async () => backendRequest('/api/v1/auth/session', event.request));
   } catch (cause) { event.locals.authError = cause instanceof Error ? cause.message : '认证服务暂不可用'; }
@@ -31,9 +30,6 @@ export const handle: Handle = async ({ event, resolve }) => {
     if (event.locals.authError) return new Response('认证服务暂不可用，请稍后重试。', { status: 503, headers: { 'Cache-Control': 'no-store', 'Content-Type': 'text/plain; charset=utf-8' } });
     return new Response(null, { status: 303, headers: { Location: `/admin?next=${encodeURIComponent(event.url.pathname + event.url.search)}`, 'Cache-Control': 'no-store' } });
   }
-  if (context.kind === 'public' && !event.locals.showcase) return new Response('页面不存在', { status: 404, headers: { 'Cache-Control': 'no-store' } });
-  if (/^\/admin\/users(?:\/|$)/.test(event.url.pathname) && !event.locals.user?.is_admin) return new Response('无权访问', { status: 403, headers: { 'Cache-Control': 'no-store' } });
-  if (/^\/settings\/site(?:\/|$)/.test(event.url.pathname) && !event.locals.user?.is_admin) return new Response('无权访问', { status: 403, headers: { 'Cache-Control': 'no-store' } });
   const site = event.locals.site;
   const escape = (value: string) => value.replace(/[&<>"']/g, char => `&#${char.charCodeAt(0)};`);
   const response = await resolve(event, {

@@ -35,7 +35,7 @@
   const site = $derived(page.data.site ?? SITE_DEFAULTS);
   let logoFailed = $state(false);
   $effect(() => { void site.logo_url; logoFailed = false; });
-  const appLayout = $derived(/^\/(dashboard|activities|footprints|ai|settings|admin|p|workspace)(\/|$)/.test(page.url.pathname) && page.url.pathname !== '/admin' || page.url.pathname === '/');
+  const appLayout = $derived(/^\/(dashboard|activities|footprints|ai|settings|admin|p|workspace)(\/|$)/.test(page.url.pathname) && page.url.pathname !== '/admin' || page.url.pathname === '/' || page.status >= 400 && !/^\/admin\/?$/.test(page.url.pathname));
   const privateView = $derived(!!page.data.user || isProtected(page.url.pathname));
   setContext(VIEW_CONTEXT, () => viewContext(page.url.pathname, page.data.user?.is_admin === true));
   const authPage = $derived(/^\/admin\/?$/.test(page.url.pathname));
@@ -115,7 +115,7 @@
   <div class="content-column">
     {#if navigating.to && !navigating.willUnload}<div class="navigation-progress" role="status" data-testid="navigation-progress"><span class="sr-only">正在加载页面…</span></div>{/if}
     <main id="main" tabindex="-1" class="page-content" class:auth-content={authPage} aria-busy={!!navigating.to}>
-      {#if message || page.data.authError || page.data.showcaseError}<div class="mb-5"><FeedbackState kind="error" title={message || page.data.authError || page.data.showcaseError || ''} /></div>{/if}
+      {#if message || page.data.authError || page.data.showcaseError && page.status < 400}<div class="mb-5"><FeedbackState kind="error" title={message || page.data.authError || page.data.showcaseError || ''} /></div>{/if}
       {#if checking && privateView}
         <FeedbackState kind="loading" title="正在确认登录状态。若检查失败，请刷新重试。" />
       {/if}
