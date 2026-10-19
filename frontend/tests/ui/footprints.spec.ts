@@ -319,6 +319,8 @@ test('nested month and year menus stay anchored inside the open calendar', async
   for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.getByRole('button', { name: '选择开始日期（周一）', exact: true }).click();
+    // The popover expands from its trigger; measure only once the scale transform has settled.
+    await expect.poll(async () => Math.abs((await calendar.boundingBox())!.width - await calendar.evaluate(el => (el as HTMLElement).offsetWidth))).toBeLessThan(1);
     const monthSelect = calendar.getByLabel('月份', { exact: true });
     const yearSelect = calendar.getByLabel('年份', { exact: true });
     await monthSelect.focus();
