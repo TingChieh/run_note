@@ -230,6 +230,18 @@
   .aux-date-form { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-4); }
   .aux-date-form label { min-width: 0; flex: 1 1 12rem; }
   .aux-date-form input { width: 100%; min-width: 0; }
+  /* Compact file picker: a labelled drop target wrapping a visually hidden native file input. */
+  .file-pick { position: relative; display: flex; align-items: center; gap: var(--space-3); min-width: 0; min-height: 3rem; padding: .5rem .875rem; border: 1px dashed var(--border); border-radius: var(--radius-control); background: var(--background); cursor: pointer; transition: border-color var(--transition-control), background-color var(--transition-control); }
+  .file-pick:hover { border-color: var(--control-hover-border); }
+  .file-pick:has(input:focus-visible) { outline: 2px solid var(--ring); outline-offset: 3px; }
+  .file-pick[data-dragging="true"] { border-color: var(--primary); background: var(--primary-soft); }
+  .file-pick[data-filled="true"] { border-style: solid; border-color: var(--control-hover-border); background: var(--primary-soft); }
+  .file-pick:has(input:disabled) { opacity: .5; cursor: not-allowed; }
+  .file-pick > svg { flex: none; width: 1.25rem; height: 1.25rem; color: var(--primary); }
+  .file-pick-text { display: grid; min-width: 0; flex: 1; line-height: 1.35; }
+  .file-pick-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-small); font-weight: 600; }
+  .file-pick-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-size: .75rem; }
+  .file-pick-tag { flex: none; padding: .125rem .5rem; border-radius: var(--radius-pill); background: var(--surface); color: var(--primary); font-size: .75rem; font-weight: 650; }
   .public-records li { padding: var(--space-4); }
   .public-records a { font-weight: 650; color: var(--foreground); }
   .public-records a:hover { color: var(--primary); }

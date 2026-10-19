@@ -22,7 +22,7 @@
   let records = $state<ActivityList | null>(null), loading = $state(true), busy = $state(false), mounted = $state(false), disposed = false;
   let message = $state(''), listMessage = $state(''), duplicateId = $state<string | null>(null), successId = $state<string | null>(null), warnings = $state<string[]>([]);
   let importFormat = $state<'gpx' | 'tcx'>('gpx'), timeMode = $state('absolute');
-  let fileInput = $state<HTMLInputElement>(null!), title = $state(''), timezone = $state(''), activityDate = $state('');
+  let fileInput = $state<HTMLInputElement>(null!), picked = $state<File | null>(null), dragging = $state(false), title = $state(''), timezone = $state(''), activityDate = $state('');
   let selected = $state<string[]>([]), editActivity = $state<Activity | null>(null), deleteIds = $state<string[]>([]);
   let editMode = $state(false);
   let saving = $state(false), deleting = $state(false), deleteError = $state(''), lastOffset = $state(0);
@@ -47,6 +47,19 @@
   function select(id: string, checked: boolean) {
     if (controlsBusy || !editMode) return;
     selected = checked ? [...new Set([...selected, id])] : selected.filter(value => value !== id);
+  }
+  function formatSize(bytes: number) { return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MiB` : `${Math.max(1, Math.round(bytes / 1024))} KiB`; }
+  function pickChanged() {
+    picked = fileInput.files?.[0] ?? null;
+    const extension = picked?.name.split('.').at(-1)?.toLowerCase();
+    if (extension === 'tcx' || extension === 'gpx') importFormat = extension;
+    timeMode = 'absolute';
+  }
+  function dropFile(event: DragEvent) {
+    event.preventDefault(); dragging = false;
+    const files = event.dataTransfer?.files;
+    if (controlsBusy || !mounted || !files?.length) return;
+    fileInput.files = files; pickChanged();
   }
   function rememberFocus() { returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null; }
   async function restoreFocus() {
@@ -134,7 +147,7 @@
       const result = await (importFormat === 'tcx' ? uploadTcx(form) : uploadGpx(form));
       window.dispatchEvent(new CustomEvent('runnote-activities-changed'));
       if (disposed) return;
-      successId = result.activity.id; warnings = result.warnings; fileInput.value = ''; title = ''; activityDate = ''; timeMode = 'absolute';
+      successId = result.activity.id; warnings = result.warnings; fileInput.value = ''; picked = null; title = ''; activityDate = ''; timeMode = 'absolute';
       await load();
     } catch (cause) { if (!disposed) fail(cause); }
     finally { if (!disposed) busy = false; }
@@ -145,25 +158,34 @@
 <PageHeader title="跑步记录" description="每一次跑步，都值得留下。导入 GPX 或 TCX，回顾你的轨迹与运动表现。">{#snippet actions()}<a href={view.href("/activities/wall")}  class="button-secondary">查看足迹墙</a>{/snippet}</PageHeader>
 {#if view.manage}
 <section class="import-card" aria-labelledby="import-title">
-  <div class="flex flex-wrap items-baseline justify-between gap-2"><h2 id="import-title" class="text-xl font-semibold">导入 GPX / TCX</h2><span class="text-sm text-muted-foreground">全部记录与完整轨迹公开展示</span></div>
-  <form method="POST" enctype="multipart/form-data" onsubmit={submit} class="mt-5" aria-busy={busy}>
-    <label class="import-format mb-4 text-sm font-medium">文件格式<select aria-label="文件格式" bind:value={importFormat} onchange={() => { timeMode = 'absolute'; }} disabled={controlsBusy || !mounted} class="rounded border border-border bg-background p-2"><option value="gpx">GPX</option><option value="tcx">TCX</option></select></label>
+  <div class="import-head"><h2 id="import-title">导入 GPX / TCX</h2><span id="gpx-help" class="import-note">导入后记录与完整轨迹公开展示，私人备注和源文件不公开</span></div>
+  <form method="POST" enctype="multipart/form-data" onsubmit={submit} aria-busy={busy}>
     <div class="upload-primary">
-      <label class="min-w-0 font-medium">轨迹文件 <span class="text-sm font-normal text-muted-foreground">（单个，最大 10 MiB）</span><input bind:this={fileInput} type="file" name="file" onchange={() => { const extension = fileInput.files?.[0]?.name.split('.').at(-1)?.toLowerCase(); if (extension === 'tcx' || extension === 'gpx') importFormat = extension; timeMode = 'absolute'; }} accept=".gpx,.tcx,application/gpx+xml,application/xml,text/xml" required disabled={controlsBusy || !mounted} aria-describedby="gpx-help" class="mt-2 block w-full rounded border border-border p-2" /></label>
+      <label class="file-pick" data-filled={picked ? 'true' : 'false'} data-dragging={dragging} ondragover={event => { event.preventDefault(); if (!controlsBusy && mounted) dragging = true; }} ondragleave={() => { dragging = false; }} ondrop={dropFile}>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" /></svg>
+        <input bind:this={fileInput} class="sr-only" type="file" name="file" onchange={pickChanged} accept=".gpx,.tcx,application/gpx+xml,application/xml,text/xml" required disabled={controlsBusy || !mounted} aria-describedby="gpx-help" />
+        <span class="file-pick-text">
+          {#if picked}<span class="file-pick-title">{picked.name}</span><span class="file-pick-hint">{formatSize(picked.size)} · 点击或拖入可更换</span>
+          {:else}<span class="file-pick-title">选择或拖入轨迹文件</span><span class="file-pick-hint">GPX / TCX · 单个，最大 10 MiB</span>{/if}
+        </span>
+        {#if picked}<span class="file-pick-tag">{importFormat.toUpperCase()}</span>{/if}
+      </label>
       <button disabled={controlsBusy || !mounted} class="rounded bg-primary px-5 py-3 font-semibold text-primary-foreground disabled:opacity-50">{busy ? '正在解析与保存…' : `导入 ${importFormat.toUpperCase()}`}</button>
     </div>
-    {#if importFormat === 'tcx'}
-      <label class="mt-4 block text-sm font-medium">时间解释<select aria-label="时间解释" bind:value={timeMode} disabled={controlsBusy || !mounted} aria-describedby="tcx-time-help" class="mt-2 block w-full rounded border border-border bg-background p-2"><option value="absolute">遵守文件时区（默认）</option><option value="local">按当地时间解释（修正误标 UTC）</option></select></label>
-      <p id="tcx-time-help" class="mt-2 text-sm text-muted-foreground">如果导出时间错误标记为 UTC，可选择按账户时区或下方指定时区解释。例如文件写 16:15Z，但实际是北京时间下午 16:15。选择此项会修正整条轨迹的时间。</p>
-    {/if}
-    <p id="gpx-help" class="mt-3 text-sm text-muted-foreground">保存轨迹、距离和时间。导入后的记录与完整轨迹会在个人展示站公开；私人备注和源文件不公开。</p>
+    <div class="import-meta">
+      <label class="import-format text-sm font-medium">文件格式<select aria-label="文件格式" bind:value={importFormat} onchange={() => { timeMode = 'absolute'; }} disabled={controlsBusy || !mounted} class="rounded border border-border bg-background p-2"><option value="gpx">GPX</option><option value="tcx">TCX</option></select></label>
+      {#if importFormat === 'tcx'}
+        <label class="import-time text-sm font-medium">时间解释<select aria-label="时间解释" bind:value={timeMode} disabled={controlsBusy || !mounted} aria-describedby="tcx-time-help" class="rounded border border-border bg-background p-2"><option value="absolute">遵守文件时区（默认）</option><option value="local">按当地时间解释（修正误标 UTC）</option></select></label>
+      {/if}
+    </div>
+    {#if importFormat === 'tcx'}<p id="tcx-time-help" class="import-help">如果导出时间错误标记为 UTC，可选择按账户时区或下方指定时区解释。例如文件写 16:15Z，但实际是北京时间下午 16:15。选择此项会修正整条轨迹的时间。</p>{/if}
     <details class="import-options">
       <summary>补充导入信息</summary>
-      <div class="mt-4 grid gap-4 sm:grid-cols-2">
-        <label>标题（可选）<input bind:value={title} name="title" maxlength="120" disabled={controlsBusy || !mounted} class="mt-2 block w-full rounded border border-border p-2" placeholder="例如：周末晨跑" /></label>
-        <label>时区（可选）<input bind:value={timezone} name="timezone" disabled={controlsBusy || !mounted} class="mt-2 block w-full rounded border border-border p-2" placeholder="例如：Asia/Shanghai" /></label>
-        <label>补录日期（可选）<input bind:value={activityDate} name="activity_date" type="date" disabled={controlsBusy || !mounted} aria-describedby="import-date-help" class="mt-2 block w-full rounded border border-border p-2" /></label>
-        <p id="import-date-help" class="self-end text-sm leading-6 text-muted-foreground">未指定时区时使用账户时区。缺失时间的轨迹可补录日期；日期与轨迹时间冲突时会提示。</p>
+      <div class="mt-3 grid gap-3 sm:grid-cols-2">
+        <label class="text-sm">标题（可选）<input bind:value={title} name="title" maxlength="120" disabled={controlsBusy || !mounted} class="mt-1 block w-full rounded border border-border p-2" placeholder="例如：周末晨跑" /></label>
+        <label class="text-sm">时区（可选）<input bind:value={timezone} name="timezone" disabled={controlsBusy || !mounted} class="mt-1 block w-full rounded border border-border p-2" placeholder="例如：Asia/Shanghai" /></label>
+        <label class="text-sm">补录日期（可选）<input bind:value={activityDate} name="activity_date" type="date" disabled={controlsBusy || !mounted} aria-describedby="import-date-help" class="mt-1 block w-full rounded border border-border p-2" /></label>
+        <p id="import-date-help" class="import-help self-end">未指定时区时使用账户时区。缺失时间的轨迹可补录日期；日期与轨迹时间冲突时会提示。</p>
       </div>
     </details>
   </form>
@@ -218,13 +240,18 @@
   dialog::backdrop { background: rgb(0 0 0 / .5); }
   .dialog-hint { margin-top: 1rem; color: var(--muted-foreground); font-size: .875rem; line-height: 1.7; }
   .dialog-buttons { display: flex; flex-wrap: wrap; gap: .75rem; justify-content: flex-end; margin-top: 1.5rem; }
-  .import-card { margin-top: var(--space-8); padding: var(--space-6); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
-  .upload-primary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--space-4); }
-  .import-format { display: flex; width: fit-content; max-width: 100%; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
-  .import-options { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--border); }
-  summary { width: fit-content; color: var(--primary); font-size: .875rem; font-weight: 550; }
+  .import-card { margin-top: var(--space-6); padding: var(--space-4) var(--space-6); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
+  .import-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-1) var(--space-4); margin-bottom: var(--space-3); }
+  .import-head h2 { font-size: 1.0625rem; font-weight: 600; }
+  .import-note, .import-help { color: var(--muted-foreground); font-size: .8125rem; line-height: 1.6; }
+  .import-help { margin-top: var(--space-2); }
+  .upload-primary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: var(--space-3); }
+  .import-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-6); margin-top: var(--space-3); }
+  .import-format, .import-time { display: flex; width: fit-content; max-width: 100%; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  .import-options { margin-top: var(--space-3); }
+  summary { width: fit-content; color: var(--primary); font-size: .8125rem; font-weight: 550; cursor: pointer; }
   .import-warnings { margin-top: var(--space-4); padding: var(--space-4); background: var(--warning-soft); color: var(--warning); border: 1px solid var(--warning-border); border-radius: var(--radius-control); }
   .activity-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); margin-top: var(--space-4); }
   .pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-3); margin-top: var(--space-6); }
-  @media (max-width: 639px) { .import-card { padding: var(--space-4); } .upload-primary, .activity-list { grid-template-columns: 1fr; } .upload-primary button { width: 100%; } }
+  @media (max-width: 639px) { .import-card { padding: var(--space-3) var(--space-4); } .upload-primary, .activity-list { grid-template-columns: 1fr; } .upload-primary button { width: 100%; } }
 </style>

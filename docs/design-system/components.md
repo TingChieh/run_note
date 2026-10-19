@@ -43,6 +43,7 @@ MetricSummary 的 icon 枚举：`distance/duration/elapsed/pace/count/days/heart
 | --- | --- | --- |
 | Button / IconButton | 原生 button；主操作 `bg-primary text-primary-foreground`；次操作 `.button-secondary`；危险确认已有 `.delete-confirm` | 显式 type；导航用 a；异步禁用/aria-busy 由调用方管理；图标按钮有中文名称；不嵌套交互元素 |
 | Input / Textarea / Select | 原生元素 + base + border/padding 工具类 | label、help/error 的 ID 关联、required/min/max/disabled；失败保留输入；单选 select 可被 action 增强，保留原生值与 change |
+| File picker | `.file-pick`（`app.css`）：label 包裹视觉隐藏的原生 `input[type=file]`，子元素 `.file-pick-text/title/hint/tag`；`data-filled`、`data-dragging` 控制已选/拖入态 | 保留原生 input、label 名称与 `name`；选中后显示文件名、大小与识别出的格式；拖放由调用方处理（写入 `input.files` 后走同一 change 逻辑）；禁用时整体降为 50%；焦点环由 `:has(input:focus-visible)` 绘制。活动导入与 MifitnessImport 使用 |
 | Checkbox / Radio | 原生 input，primary accent | 可见 label；同组 radio 使用共同 name 与 fieldset/legend；布尔值不自动等价于 Switch |
 | Skeleton / Spinner | PageSkeleton / FeedbackState loading / 导航进度 | 避免重复同义组件；明确页面与区块加载范围 |
 | Card / Panel | `.aux-panel`、`.dashboard-card` 与业务专用卡片 | 不按名字合并布局；普通表面不自动玻璃化 |
