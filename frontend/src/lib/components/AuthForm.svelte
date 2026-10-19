@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { pageTitle } from '#lib/site.ts';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import { onMount, tick } from 'svelte';
   import { page } from '$app/state';
@@ -20,7 +21,7 @@
     } catch (cause) { password = ''; message = cause instanceof Error ? cause.message : '认证失败，请重试'; busy = false; await tick(); errorElement?.focus(); }
   }
 </script>
-<svelte:head><title>{label} · Run Note</title></svelte:head>
+<svelte:head><title>{pageTitle(label, page.data.site)}</title></svelte:head>
 <section class="auth-card">
   <div class="auth-intro"><p class="auth-eyebrow">RUNNOTE · 每一步都有意义</p><h1 class="text-3xl font-semibold">{label}</h1>
   <p class="mt-3 text-sm text-muted-foreground">{mode === 'register' ? '创建私人账号。注册成功后自动登录。' : '使用已启用账号的邮箱和密码登录。'}</p></div>

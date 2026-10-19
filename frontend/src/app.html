@@ -2,15 +2,20 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" type="image/x-icon" href="%sveltekit.assets%/favicon.ico" />
+    <link rel="icon" href="%runnote.favicon%" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
     <script>
       (() => {
+        const site = '%runnote.theme%';
+        const fallback = site === 'light' || site === 'dark' ? site : 'system';
         let preference = 'system';
         try { const saved = localStorage.getItem('runnote-theme'); if (saved === 'light' || saved === 'dark') preference = saved; } catch {}
-        document.documentElement.dataset.themePreference = preference;
-        document.documentElement.dataset.theme = preference === 'system' ? matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light' : preference;
+        const root = document.documentElement;
+        root.dataset.siteTheme = fallback;
+        root.dataset.themePreference = preference;
+        const effective = preference === 'system' ? fallback : preference;
+        root.dataset.theme = effective === 'system' ? matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light' : effective;
       })();
     </script>
     %sveltekit.head%

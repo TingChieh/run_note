@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { page } from '$app/state';
+  import { pageTitle } from '#lib/site.ts';
   import PageHeader from './PageHeader.svelte';
   import FeedbackState from './FeedbackState.svelte';
   import MetricSummary from './MetricSummary.svelte';
@@ -11,7 +13,7 @@
   async function load() { const n=++serial;activity=null;message='';loading=true;try { const result=await readPublicActivity(apiPath);if(!disposed && n===serial) activity=result; } catch(cause) { if(!disposed && n===serial) message=cause instanceof Error?cause.message:'分享暂不可用'; } finally { if(!disposed && n===serial) loading=false; } }
   onMount(()=>{void load();const visible=()=>{if(document.visibilityState==='visible') void load();else {++serial;activity=null;}};const focus=()=>void load();const restored=(e:PageTransitionEvent)=>{if(e.persisted) void load();};window.addEventListener('focus',focus);window.addEventListener('pageshow',restored);document.addEventListener('visibilitychange',visible);return()=>{disposed=true;++serial;window.removeEventListener('focus',focus);window.removeEventListener('pageshow',restored);document.removeEventListener('visibilitychange',visible);};});
 </script>
-<svelte:head><title>{activity?.title || '运动分享'} · Run Note</title><meta name="robots" content="noindex,nofollow" /><meta name="referrer" content="no-referrer" /></svelte:head>
+<svelte:head><title>{pageTitle(activity?.title || '运动分享', page.data.site)}</title><meta name="robots" content="noindex,nofollow" /><meta name="referrer" content="no-referrer" /></svelte:head>
 {#if loading}<FeedbackState kind="loading" title="正在读取公开运动摘要…" />
 {:else if message}<PageHeader title="分享不可用" /><div class="mt-6"><FeedbackState kind="error" title={message}><p>记录可能不存在、已设为私人、链接已到期或被撤销。</p></FeedbackState></div><button onclick={()=>void load()} class="button-secondary mt-4">重新读取分享</button>
 {:else if activity}

@@ -10,7 +10,10 @@ from app.modules.users.service import is_admin, is_enabled, view
 
 
 def admin_view(user, settings):
-    return AdminUser(**view(user, settings).model_dump(), is_active=is_enabled(user, settings))
+    return AdminUser(
+        **{**view(user, settings).model_dump(), "avatar_url": None},
+        is_active=is_enabled(user, settings),
+    )
 
 
 def listing(db, settings, search, is_active, limit, offset):

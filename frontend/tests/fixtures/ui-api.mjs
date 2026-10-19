@@ -1,7 +1,9 @@
 // Browser UI contract fixture: no database, no production auth bypass.
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
+/** @type {Record<string, any>} */
 const user = { id: '00000000-0000-4000-8000-000000000001', email: 'runner.with.a.long.email.address@example.com', username: 'runner', display_name: '晨跑者', timezone: 'Asia/Shanghai', created_at: '2026-01-01T00:00:00Z', bio: '', profile_is_public: false, is_admin: true, is_active: true, showcase_enabled: true };
+/** @type {Record<string, any>[]} */
 const accounts = [{ ...user, password: 'Synthetic-ui-password-2026' }];
 const sessions = new Map([['ui-runner', user.id]]);
 /** @param {Record<string, unknown>} account */
@@ -9,8 +11,18 @@ const clean = account => Object.fromEntries(Object.entries(account).filter(([key
 const summary = { activity_count: 0, distance_m: 0, duration_sum_seconds: null, known_duration_count: 0, missing_duration_count: 0, activity_days: 0, pace_eligible_count: 0, pace_eligible_distance_m: 0, avg_pace_seconds_per_km: null, quality_warning_count: 0, date_assignment: 'activity_local_date' };
 /** @type {Record<string, number | null>} */
 const goals = {week:null,month:null,year:null};
+/** @type {Record<string, any>} */
+const site = { title: 'RunNote', subtitle: '跑步与足迹', footer_tagline: '记录每一步，看见你的进步。', description: '汇总你的跑步数据、活动日历与运动趋势，从这里探索记录、足迹和 AI 分析。', default_theme: 'system', favicon_url: null, logo_url: null };
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+/** @type {Map<string, Buffer>} */
+const images = new Map();
+/** @type {Map<string, Buffer>} */
+const avatars = new Map();
+const version = () => randomUUID().replaceAll('-', '').slice(0, 16);
+const siteFields = ['title', 'subtitle', 'footer_tagline', 'description', 'default_theme'];
 createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+  const avatarRoute = url.pathname.match(/^\/api\/v1\/showcase(?:\/users\/([a-z0-9_]+))?\/avatar$/);
   const named = url.pathname.match(/^\/api\/v1\/showcase\/users\/([a-z0-9_]+)(\/.*)$/);
   const subject = named ? accounts.find(item => item.username === named[1]) : accounts[0];
   const showcase = url.pathname.startsWith('/api/v1/showcase/');
@@ -23,7 +35,12 @@ createServer(async (req, res) => {
   const send = (data, status = 200, message = '会话已过期') => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ data, error: status >= 400 ? { code: 'UI_FIXTURE', message } : null })); };
   if (showcase && req.method !== 'GET') return send(null,405,'展示页面仅支持读取');
   if (named && (!subject?.is_active || !subject.showcase_enabled)) return send(null,404,'展示页面不存在');
-  if (url.pathname === '/api/v1/showcase/profile') return send({display_name:named ? subject?.display_name : user.display_name,timezone:named ? subject?.timezone : user.timezone});
+  if (url.pathname === '/api/v1/showcase/profile') {
+    const owner = named ? subject : user;
+    const stamp = typeof owner?.avatar_url === 'string' ? owner.avatar_url.split('?v=')[1] : null;
+    const avatar_url = stamp ? `/api/v1/showcase${named ? `/users/${named[1]}` : ''}/avatar?v=${stamp}` : null;
+    return send({display_name:owner?.display_name,timezone:owner?.timezone,avatar_url});
+  }
   if (url.pathname.endsWith('/auth/register')) return send(null,403,'本站不开放注册');
   if (url.pathname === '/api/health') return send({ status: 'ok' });
   if (url.pathname.endsWith('/auth/csrf')) return send({ csrf_token: 'ui-csrf' });
@@ -38,6 +55,50 @@ createServer(async (req, res) => {
   }
   if (url.pathname.endsWith('/auth/logout')) { sessions.delete(token); res.setHeader('Set-Cookie', 'run_session=; Path=/; Max-Age=0'); return send({ logged_out: true }); }
   if (url.pathname.endsWith('/auth/session')) return signedIn ? send({ user: current.is_admin ? user : clean(current) }) : send(null, 401);
+  if (url.pathname === '/api/v1/site' && req.method === 'GET') return send(site);
+  if (url.pathname === '/api/v1/site' && req.method === 'PATCH') {
+    if (!signedIn) return send(null,401);
+    if (!current.is_admin) return send(null,403,'仅站主可修改站点设置');
+    if (req.headers['x-csrf-token'] !== 'ui-csrf') return send(null,403,'请求校验失败');
+    let body = ''; for await (const chunk of req) body += chunk;
+    const payload = JSON.parse(body);
+    for (const key of siteFields) if (key in payload) site[key] = payload[key];
+    return send(site);
+  }
+  const siteImage = url.pathname.match(/^\/api\/v1\/site\/images\/(favicon|logo)$/);
+  if (siteImage) {
+    const kind = siteImage[1];
+    if (req.method === 'GET') {
+      if (!images.has(kind)) return send(null,404,'图片不存在');
+      res.writeHead(200, {'Content-Type':'image/png','Cache-Control':'no-store'}); return res.end(images.get(kind));
+    }
+    if (!signedIn) return send(null,401);
+    if (!current.is_admin) return send(null,403,'仅站主可修改站点设置');
+    if (req.headers['x-csrf-token'] !== 'ui-csrf') return send(null,403,'请求校验失败');
+    for await (const chunk of req) void chunk;
+    if (req.method === 'PUT') { images.set(kind, png); site[`${kind}_url`] = `/api/v1/site/images/${kind}?v=${version()}`; return send(site); }
+    if (req.method === 'DELETE') { images.delete(kind); site[`${kind}_url`] = null; return send(site); }
+    return send(null,405,'不支持的请求');
+  }
+  if (avatarRoute && req.method === 'GET') {
+    const owner = avatarRoute[1] ? accounts.find(item => item.username === avatarRoute[1]) : accounts[0];
+    if (!owner || !avatars.has(owner.id) || (avatarRoute[1] && (!owner.is_active || !owner.showcase_enabled))) return send(null,404,'头像不存在');
+    res.writeHead(200, {'Content-Type':'image/png','Cache-Control':'no-store'}); return res.end(avatars.get(owner.id));
+  }
+  if (url.pathname === '/api/v1/me/avatar') {
+    if (!signedIn) return send(null,401);
+    if (req.method === 'GET') {
+      if (!avatars.has(current.id)) return send(null,404,'头像不存在');
+      res.writeHead(200, {'Content-Type':'image/png','Cache-Control':'no-store'}); return res.end(avatars.get(current.id));
+    }
+    if (req.headers['x-csrf-token'] !== 'ui-csrf') return send(null,403,'请求校验失败');
+    for await (const chunk of req) void chunk;
+    if (req.method === 'PUT') { avatars.set(current.id, png); current.avatar_url = `/api/v1/me/avatar?v=${version()}`; }
+    else if (req.method === 'DELETE') { avatars.delete(current.id); current.avatar_url = null; }
+    else return send(null,405,'不支持的请求');
+    if (current.is_admin) Object.assign(user, clean(current));
+    return send({avatar_url: current.avatar_url});
+  }
   if (url.pathname.startsWith('/api/v1/admin/users')) {
     if (!signedIn) return send(null,401);
     if (!current.is_admin) return send(null,403,'仅站主可管理用户');

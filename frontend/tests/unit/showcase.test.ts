@@ -17,7 +17,7 @@ describe('single-owner showcase contract', () => {
 
   it('rebuilds public profile and rejects unknown timezone', async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { display_name: '展示跑者', timezone: 'Asia/Shanghai', email: 'private@example.com', id: 'private-id' } })));
-    expect(await readShowcaseProfile(fetcher)).toEqual({ display_name: '展示跑者', timezone: 'Asia/Shanghai' });
+    expect(await readShowcaseProfile(fetcher)).toEqual({ display_name: '展示跑者', timezone: 'Asia/Shanghai', avatar_url: null });
     fetcher.mockResolvedValue(new Response(JSON.stringify({ data: { display_name: '展示跑者', timezone: 'Invalid/Zone' } })));
     await expect(readShowcaseProfile(fetcher)).rejects.toThrow();
   });

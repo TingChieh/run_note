@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { pageTitle } from '#lib/site.ts';
   import { useViewContext } from "#lib/view-context.ts";
   const view = useViewContext();
   const fetch = view.fetch;
@@ -69,7 +70,7 @@
   let hasTrendActivities = $derived(trends?.buckets.some(bucket => bucket.activity_count > 0) ?? false);
   onMount(() => { const selection = dashboardSelection(new URL(window.location.href).searchParams, currentYear(page.data.showcase?.timezone ?? 'UTC')); year = selection.year; calendarMetric = selection.metric; period = selection.period; yearInput = String(year); selectedDate = selection.day; saveSelection(); void loadYear(selection.day); void loadCumulative(); return () => { disposed = true; yearRequest++; dayRequest++; trendRequest++; annual = null; cumulative = null; calendar = null; trends = null; records = null; }; });
 </script>
-<svelte:head><title>数据汇总 · Run Note</title><meta name="description" content="汇总你的跑步数据、活动日历与运动趋势，从这里探索记录、足迹和 AI 分析。" /></svelte:head>
+<svelte:head><title>{pageTitle('数据汇总', page.data.site)}</title></svelte:head>
 <PageHeader title="数据汇总" description="查看你的跑步数据，探索记录、足迹与运动分析。" />
 <div class="dashboard">
   {#if cumulative}<p class="cumulative">累计 <strong>{dashboardDistance(cumulative.distance_m)}</strong><span>·</span>{cumulative.activity_count.toLocaleString('zh-CN')} 次活动<span>·</span>{cumulative.activity_days.toLocaleString('zh-CN')} 个活动日</p>{/if}

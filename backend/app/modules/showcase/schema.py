@@ -14,6 +14,7 @@ from app.modules.statistics.schema import Bucket, Summary
 class ShowcaseProfile(BaseModel):
     display_name: str
     timezone: str
+    avatar_url: str | None = None
 
 
 class ShowcaseActivity(BaseModel):

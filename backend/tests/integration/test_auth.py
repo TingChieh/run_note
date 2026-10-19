@@ -167,6 +167,7 @@ def test_register_rotation_storage_and_identity_isolation(workers):
         "profile_is_public",
         "is_admin",
         "showcase_enabled",
+        "avatar_url",
     }
     engine.dispose()
 

@@ -2,9 +2,10 @@
   import { onMount } from 'svelte';
   import { backOut, cubicInOut } from 'svelte/easing';
   import type { TransitionConfig } from 'svelte/transition';
-  import { setThemePreference, themePreference, watchSystemTheme } from './system-theme.ts';
+  import { setThemePreference, siteDefaultTheme, themePreference, watchSystemTheme } from './system-theme.ts';
   let { compact = false }: { compact?: boolean } = $props();
-  let dark = $state(false), automatic = $state(true), mounted = $state(false);
+  let dark = $state(false), automatic = $state(true), mounted = $state(false), siteSystem = $state(true);
+  const autoLabel = $derived(siteSystem ? '跟随系统外观' : '恢复站点默认外观');
   let toggle: HTMLButtonElement;
   function absorbAuto(node: HTMLElement): (options?: { direction: 'in' | 'out' }) => TransitionConfig {
     const width = node.getBoundingClientRect().width;
@@ -24,7 +25,7 @@
   }
   onMount(() => {
     mounted = true;
-    const stop = watchSystemTheme(value => { dark = value; automatic = themePreference() === 'system'; });
+    const stop = watchSystemTheme(value => { dark = value; automatic = themePreference() === 'system'; siteSystem = siteDefaultTheme() === 'system'; });
     return () => { mounted = false; stop(); };
   });
 </script>
@@ -36,7 +37,7 @@
     </svg>
     {#if !compact}<span>{dark ? '夜间模式' : '日间模式'}</span>{/if}
   </button>
-  {#if !automatic}<span class="theme-auto-slot" transition:absorbAuto inert={automatic}><button type="button" class="button-secondary theme-auto" aria-label="跟随系统外观" title="跟随系统外观" onclick={followSystem}><span aria-hidden="true">自动</span></button></span>{/if}
+  {#if !automatic}<span class="theme-auto-slot" transition:absorbAuto inert={automatic}><button type="button" class="button-secondary theme-auto" aria-label={autoLabel} title={autoLabel} onclick={followSystem}><span aria-hidden="true">自动</span></button></span>{/if}
 </div>
 <style>
   .theme-controls { display: flex; align-items: center; min-width: 0; }

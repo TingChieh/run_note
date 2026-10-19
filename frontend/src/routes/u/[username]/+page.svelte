@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { pageTitle } from '#lib/site.ts';
   import { onMount } from 'svelte';
   import { page } from '$app/state';
   import PageHeader from '#lib/components/PageHeader.svelte';
@@ -15,7 +16,7 @@
   function changeYear() { if (!Number.isInteger(year) || year < 1900 || year > 2100) return; selected=null;offset=0;void load(); }
   onMount(()=>{const y=Number(page.url.searchParams.get('year'));if(Number.isInteger(y)&&y>=1900&&y<=2100)year=y;void load();const focus=()=>void load();const visible=()=>{if(document.visibilityState==='visible')void load();else {++serial;profile=null;calendar=null;list=null;}};const restored=(e:PageTransitionEvent)=>{if(e.persisted) void load();};window.addEventListener('focus',focus);window.addEventListener('pageshow',restored);document.addEventListener('visibilitychange',visible);return()=>{disposed=true;++serial;window.removeEventListener('focus',focus);window.removeEventListener('pageshow',restored);document.removeEventListener('visibilitychange',visible);};});
 </script>
-<svelte:head><title>{profile?.display_name || '公开主页'} · Run Note</title><meta name="robots" content="noindex,nofollow" /><meta name="referrer" content="no-referrer" /></svelte:head>
+<svelte:head><title>{pageTitle(profile?.display_name || '公开主页', page.data.site)}</title><meta name="robots" content="noindex,nofollow" /><meta name="referrer" content="no-referrer" /></svelte:head>
 {#if loading}<FeedbackState kind="loading" title="正在读取公开主页…" />
 {:else if message}<PageHeader title="主页不可用" /><div class="mt-6"><FeedbackState kind="error" title={message}><p>主页可能未开启或已关闭。</p></FeedbackState></div><button onclick={()=>void load()} class="button-secondary mt-4">重新读取主页</button>
 {:else if profile && calendar && list}

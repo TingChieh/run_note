@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { pageTitle } from '#lib/site.ts';
   import { useViewContext } from "#lib/view-context.ts";
   const view = useViewContext();
   const fetch = view.fetch;
@@ -99,7 +100,7 @@
     return () => { disposed = true; historyToken++; detailToken++; selected = null; context = null; history = null; };
   });
 </script>
-<svelte:head><title>AI 跑步分析 · Run Note</title></svelte:head>
+<svelte:head><title>{pageTitle('AI 跑步分析', page.data.site)}</title></svelte:head>
 <PageHeader title="AI 跑步分析" description="从运动数据出发，了解近期趋势与下周训练建议。AI 仅解释统计摘要。" />
 <p class="mt-4 rounded-lg bg-warning-soft p-4 text-sm text-warning">AI训练建议仅供参考，不构成医疗建议。疼痛或明显不适时停止训练并寻求专业意见。</p>
 {#if message}<div class="mt-4"><FeedbackState kind="error" title={message} /></div>{/if}

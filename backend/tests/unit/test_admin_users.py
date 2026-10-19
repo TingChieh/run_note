@@ -26,6 +26,7 @@ def user():
         is_active=False,
         showcase_enabled=False,
         password_hash="hash",
+        avatar_version=None,
     )
 
 
@@ -255,7 +256,11 @@ def test_named_route_rechecks_switch_and_uses_same_whitelist():
     path = "/api/v1/showcase/users/person/profile"
     response = client.get(path)
     assert response.status_code == 200
-    assert response.json()["data"] == {"display_name": "Person", "timezone": "UTC"}
+    assert response.json()["data"] == {
+        "display_name": "Person",
+        "timezone": "UTC",
+        "avatar_url": None,
+    }
     person.showcase_enabled = False
     assert client.get(path).status_code == 404
     assert client.get(path + "?owner=someone").status_code == 422

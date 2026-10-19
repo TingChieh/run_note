@@ -25,6 +25,8 @@ from app.modules.running_goals.router import router as running_goals_router
 from app.modules.sharing.router import router as sharing_router
 from app.modules.showcase.router import named_router as named_showcase_router
 from app.modules.showcase.router import router as showcase_router
+from app.modules.site_settings.body_limit import ImageBodyLimit
+from app.modules.site_settings.router import router as site_router
 from app.modules.statistics.router import router as statistics_router
 from app.modules.tcx.router import router as tcx_router
 from app.modules.users.router import router as users_router
@@ -54,6 +56,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.session_factory = session_factory
     app.state.expected_revision = expected_revision
     app.add_middleware(GpxBodyLimit)
+    app.add_middleware(ImageBodyLimit)
     register_request_metadata(app)
     register_error_handlers(app)
     app.include_router(router)
@@ -71,4 +74,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(showcase_router)
     app.include_router(named_showcase_router)
     app.include_router(admin_users_router)
+    app.include_router(site_router)
     return app

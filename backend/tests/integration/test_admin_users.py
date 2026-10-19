@@ -94,7 +94,11 @@ def test_admin_accounts_sessions_named_isolation_and_legacy_revocation(site, mon
         assert visitor.get(f"{named}/activities/{owner_activity['id']}").status_code == 404
         data = visitor.get(resource).json()["data"]
         assert not ({"notes", "email", "source_filename", "user_id"} & set(data))
-        assert set(visitor.get(named + "/profile").json()["data"]) == {"display_name", "timezone"}
+        assert set(visitor.get(named + "/profile").json()["data"]) == {
+            "display_name",
+            "timezone",
+            "avatar_url",
+        }
         assert (
             admin.patch(
                 endpoint, json={"showcase_enabled": False}, headers=admin_headers

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { pageTitle } from '#lib/site.ts';
   import { useViewContext } from "#lib/view-context.ts";
   const view = useViewContext();
   const fetch = view.fetch;
@@ -44,7 +45,7 @@
     return()=>{disposed=true;++requestId;clearTimeout(timer);controller?.abort();};
   });
 </script>
-<svelte:head><title>个人足迹 · Run Note</title></svelte:head>
+<svelte:head><title>{pageTitle('个人足迹', page.data.site)}</title></svelte:head>
 <PageHeader title="个人足迹" description="沿着跑过的路，看看你的运动版图。" />
 <div class="footprints-page">
   <div class="mode-row"><div class="mode-switch" role="group" aria-label="地图模式"><button type="button" aria-pressed={mode==='tracks'} disabled={!mounted} onclick={()=>changeMode('tracks')}>轨迹叠加</button><button type="button" aria-pressed={mode==='heatmap'} disabled={!mounted} onclick={()=>changeMode('heatmap')}>运动热力图</button></div><p>{mode==='tracks'?'看每次跑步的路线':'看不同记录经过的区域'}</p></div>

@@ -13,6 +13,7 @@
   import { AuthError, authWrite, isProtected, readSession } from '#lib/api/auth.ts';
   import { liquidGlass } from '#lib/styles/liquid-glass.ts';
   import ThemeToggle from '#lib/components/ThemeToggle.svelte';
+  import { SITE_DEFAULTS, brandInitial } from '#lib/site.ts';
   import { initializeTheme } from '#lib/components/system-theme.ts';
 
   let { children }: { children: Snippet } = $props();
@@ -31,6 +32,9 @@
     void import('#lib/components/LiquidGlassTuner.svelte').then(module => { if (!disposed) GlassTuner = module.default; }).catch(() => { /* The optional dev panel must not block the page. */ });
     return () => { disposed = true; };
   });
+  const site = $derived(page.data.site ?? SITE_DEFAULTS);
+  let logoFailed = $state(false);
+  $effect(() => { void site.logo_url; logoFailed = false; });
   const appLayout = $derived(/^\/(dashboard|activities|footprints|ai|settings|admin|p|workspace)(\/|$)/.test(page.url.pathname) && page.url.pathname !== '/admin' || page.url.pathname === '/');
   const privateView = $derived(!!page.data.user || isProtected(page.url.pathname));
   setContext(VIEW_CONTEXT, () => viewContext(page.url.pathname, page.data.user?.is_admin === true));
@@ -90,6 +94,7 @@
     };
   });
 </script>
+<svelte:head><meta name="description" content={site.description} /></svelte:head>
 <a href="#main" class="skip-link">跳转到主要内容</a>
 <div use:liquidGlass class:app-shell={appLayout} class:public-shell={!appLayout} class="sport-theme">
   <header data-auth-ready={mounted}>
@@ -97,7 +102,7 @@
       <AppNavigation pathname={page.url.pathname} user={page.data.user} profile={page.data.showcase} {checking} {busy} {mounted} {identityBlocked} sports onlogout={logout} onnav={(direction) => { menuNavigationPending = true; pageDirection = direction; }} />
     {:else}
       <div class="public-header">
-        <a href="/" class="brand"><span class="brand-mark" aria-hidden="true">R</span>RunNote</a>
+        <a href="/" class="brand">{#if site.logo_url && !logoFailed}<img class="brand-mark brand-logo" src={site.logo_url} alt="" width="32" height="32" onerror={() => { logoFailed = true; }} />{:else}<span class="brand-mark" aria-hidden="true">{brandInitial(site.title)}</span>{/if}{site.title}</a>
         <nav aria-label="主要导航" class="public-navigation">
           <ThemeToggle compact />
           {#if page.data.user}<a href="/dashboard" data-sveltekit-reload class="button-secondary">我的运动统计</a>{#if !checking}<button type="button" onclick={logout} disabled={busy || !mounted} class="button-secondary">{busy ? '退出中…' : '退出登录'}</button>{/if}
@@ -120,7 +125,7 @@
         {#key page.url.pathname}<div class="page-reveal" class:page-enter-up={pageDirection === 1} class:page-enter-down={pageDirection === -1} hidden={routeLoading || checking && privateView} inert={routeLoading || checking && privateView}>{@render children()}</div>{/key}
       {/if}
     </main>
-    <footer class="app-footer"><span>RunNote</span><span>记录每一步，看见你的进步。</span></footer>
+    <footer class="app-footer"><span>{site.title}</span>{#if site.footer_tagline}<span>{site.footer_tagline}</span>{/if}</footer>
   </div>
   {#if GlassTuner}<GlassTuner />{/if}
 </div>

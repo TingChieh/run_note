@@ -1,3 +1,5 @@
+import { safeImagePath } from './site.ts';
+
 export interface User {
   is_admin: boolean;
   showcase_enabled: boolean;
@@ -9,6 +11,7 @@ export interface User {
   created_at: string;
   bio: string;
   profile_is_public: boolean;
+  avatar_url?: string | null;
 }
 export class AuthError extends Error {
   constructor(message: string, public status: number, public code: string) { super(message); }
@@ -55,7 +58,7 @@ export function parseUser(value: unknown): User {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new AuthError('认证身份无效',502,'INVALID_RESPONSE');
   const v = value as Record<string, unknown>;
   if (['id','email','username','display_name','timezone','created_at','bio'].some(k => typeof v[k] !== 'string') || ['is_admin','showcase_enabled','profile_is_public'].some(k => typeof v[k] !== 'boolean')) throw new AuthError('认证身份无效',502,'INVALID_RESPONSE');
-  return v as unknown as User;
+  return { ...(v as unknown as User), avatar_url: safeImagePath(v.avatar_url) };
 }
 export async function changePassword(current_password: string, new_password: string, fetcher: typeof fetch = fetch): Promise<void> {
   const { csrf_token } = await request<{csrf_token: string}>('/api/v1/auth/csrf', {}, fetcher);

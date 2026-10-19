@@ -4,6 +4,7 @@
   import PageSkeleton from '../../../src/lib/components/PageSkeleton.svelte';
   import MetricSummary from '../../../src/lib/components/MetricSummary.svelte';
   import DatePicker from '../../../src/lib/components/DatePicker.svelte';
+  import ImageUpload from '../../../src/lib/components/ImageUpload.svelte';
   import BasemapPicker from '../../../src/lib/components/BasemapPicker.svelte';
   import type { BasemapPreference } from '../../../src/lib/api/map-style.ts';
   import ThemeToggle from '../../../src/lib/components/ThemeToggle.svelte';
@@ -95,6 +96,7 @@
       <div class="pattern-grid">
         <section class="aux-panel" aria-labelledby="summary-title"><h3 id="summary-title">摘要与局部空状态</h3><MetricSummary items={metrics} compact /><FeedbackState kind="empty" title="当前范围无训练记录" /></section>
         <section class="aux-panel" aria-labelledby="settings-title"><h3 id="settings-title">设置分组</h3><p>字段、帮助文字、操作与结果保持在同一上下文。</p><label class="choice"><input type="checkbox" disabled /> 只读范围示例</label></section>
+        <section class="aux-panel" aria-labelledby="upload-title"><h3 id="upload-title">图片上传</h3><div class="aux-stack"><ImageUpload label="头像" shape="circle" src={null} fallback="晨" hint="支持 PNG、JPEG、WebP，不超过 5 MiB。" onselect={() => {}} onremove={() => {}} /><ImageUpload label="站内标志" src={null} fallback="R" error="图片格式不受支持，请选择 PNG、JPEG 或 WebP。" onselect={() => {}} onremove={() => {}} /></div></section>
       </div>
       <div data-testid="surface-mapping" class="bg-surface border border-border rounded-xl p-6">语义表面：bg-surface 与 bg-card 使用同一来源。</div>
     </section>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { pageTitle } from '#lib/site.ts';
   import { useViewContext } from "#lib/view-context.ts";
   const view = useViewContext();
   const fetch = view.fetch;
@@ -80,7 +81,7 @@
   onMount(() => { mounted = true; return () => { disposed = true; activityToken++; routeToken++; }; });
   $effect(() => { const id = page.shallow?.params?.id ?? page.params.id; if (mounted && !switching) untrack(() => { if (activity?.id !== id) void loadActivity(id); }); });
 </script>
-<svelte:head><title>{activity?.title || '活动详情'} · Run Note</title></svelte:head>
+<svelte:head><title>{pageTitle(activity?.title || '活动详情', page.data.site)}</title></svelte:head>
 <button type="button" class="button-secondary" onclick={goBack}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 5-7 7 7 7M5 12h14" /></svg>返回</button>
 {#if message}<div class="mt-6"><FeedbackState kind="error" title={message}><button onclick={() => void loadActivity()} class="button-secondary">重新读取活动详情</button></FeedbackState></div>
 {:else if activity}

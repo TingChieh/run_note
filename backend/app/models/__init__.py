@@ -9,8 +9,9 @@ from app.modules.gpx.model import ActivityPoint, ActivitySegment, GpxImport
 from app.modules.mifitness.model import MifitnessImport
 from app.modules.running_goals.model import RunningGoal
 from app.modules.sharing.model import ActivityShareLink
+from app.modules.site_settings.model import SiteImage, SiteSettings
 from app.modules.tcx.model import TcxImport
-from app.modules.users.model import User
+from app.modules.users.model import User, UserAvatar
 
 __all__ = [
     "Base",
@@ -18,6 +19,9 @@ __all__ = [
     "AIReport",
     "ActivityShareLink",
     "User",
+    "UserAvatar",
+    "SiteSettings",
+    "SiteImage",
     "AuthSession",
     "AuthRateBucket",
     "Activity",

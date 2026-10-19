@@ -7,7 +7,7 @@
   import { ActivityError } from '#lib/api/activities.ts';
   import { loadPoster, loadPosterSummary, type PosterData } from '#lib/share/route-poster-data.ts';
   import { posterSample } from '#lib/share/route-poster-sample.ts';
-  import { posterHasRoutes, posterPalette, posterPeriod, posterStyles, renderPoster, type PosterStyle } from '#lib/share/route-poster-render.ts';
+  import { posterHasRoutes, posterPalette, posterPeriod, posterStyles, loadPosterLogo, renderPoster, type PosterStyle } from '#lib/share/route-poster-render.ts';
 
   // Only a signed-in viewer looking at their own records may create a share image:
   // their workspace, the root showcase as site owner, or their own named showcase.
@@ -41,6 +41,18 @@
   const hasOwnData = $derived(!!(routed ? cache.routes : cache.summary ?? cache.routes));
   let controller: AbortController | null = null;
   let blob: Blob | null = null, disposed = false, loadToken = 0, renderToken = 0, appearance = 0;
+  // Site logo bitmap (browser only), loaded once per logo URL and closed on replacement/unmount.
+  let logo: ImageBitmap | null = null, logoFor: string | null | undefined, logoLoad: Promise<void> = Promise.resolve(), logoToken = 0;
+  function ensureLogo() {
+    const url = page.data.site?.logo_url ?? null;
+    if (url === logoFor) return logoLoad;
+    logoFor = url;
+    const token = ++logoToken;
+    return logoLoad = loadPosterLogo(url).then(bitmap => {
+      if (disposed || token !== logoToken) { bitmap?.close(); return; }
+      logo?.close(); logo = bitmap;
+    });
+  }
   const filename = () => `runnote-${shown?.month ?? 'all'}.png`;
   function release() {
     if (image) URL.revokeObjectURL(image);
@@ -104,7 +116,9 @@
     try {
       do {
         version = appearance;
-        output = await renderPoster(data, posterPalette(theme === 'auto' ? dialog : themeProbe), style);
+        await ensureLogo();
+        if (disposed || !visible || request !== renderToken) return;
+        output = await renderPoster(data, posterPalette(theme === 'auto' ? dialog : themeProbe), style, { title: page.data.site?.title || 'RunNote', logo });
         if (disposed || !visible || request !== renderToken) return;
       } while (version !== appearance);
     } catch { if (request === renderToken) error = '图片绘制失败，请重试'; return; }
@@ -135,7 +149,7 @@
     mounted = true;
     month = new Intl.DateTimeFormat('sv-SE', { timeZone: page.data.showcase?.timezone ?? page.data.user?.timezone ?? 'UTC', year: 'numeric', month: '2-digit' }).format(new Date());
     const unwatch = watchSystemTheme(() => { ++appearance; void render(); });
-    return () => { disposed = true; unwatch(); stop(); };
+    return () => { disposed = true; unwatch(); stop(); ++logoToken; logo?.close(); logo = null; };
   });
 </script>
 

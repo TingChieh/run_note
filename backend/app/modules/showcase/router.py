@@ -1,5 +1,6 @@
 from datetime import date
 from typing import Annotated, Literal
+from urllib.parse import quote
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -50,11 +51,32 @@ router = APIRouter(
 )
 
 
+def avatar_path(request: Request, owner: User) -> str | None:
+    if not owner.avatar_version:
+        return None
+    username = request.path_params.get("username")
+    base = "/api/v1/showcase" + (f"/users/{quote(username, safe='')}" if username else "")
+    return f"{base}/avatar?v={owner.avatar_version}"
+
+
 @router.get("/profile", response_model=ApiResponse[ShowcaseProfile])
 def profile(request: Request, owner: Owner):
     return envelope(
-        request, ShowcaseProfile(display_name=owner.display_name, timezone=owner.timezone)
+        request,
+        ShowcaseProfile(
+            display_name=owner.display_name,
+            timezone=owner.timezone,
+            avatar_url=avatar_path(request, owner),
+        ),
     )
+
+
+@router.get("/avatar")
+def avatar(owner: Owner, db: DB):
+    from app.modules.site_settings.router import png_response
+    from app.modules.users.service import avatar_bytes
+
+    return png_response(avatar_bytes(db, owner.id))
 
 
 @router.get("/activities", response_model=ApiResponse[ShowcaseActivityList])

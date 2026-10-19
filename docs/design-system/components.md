@@ -12,6 +12,9 @@
 | [MetricSummary](../../frontend/src/lib/components/MetricSummary.svelte) | `items:{label:string,value:string,testId?:string,icon?:…}[]`；`compact=false`；`appearance='sport'`（可选 default）；`stacked=false` | dl/dt/dd，value 已格式化；不计算指标。`—` 附缺失说明。compact 无卡片外框；stacked 作用于 sport。ActivityCard、详情、公开详情复用 |
 | [DatePicker](../../frontend/src/lib/components/DatePicker.svelte) | `label:string`；`value=$bindable('')`；`min='1900-01-01'`；`max='2100-12-31'`；`timezone='UTC'`；`required=false`；`disabled=false`；`granularity='date'|'month'`；`onselect?(value)` | 原生 date/month + Popover；month 模式值为 `YYYY-MM`，3×4 月份格、年份选择与上/下一年，方向键按月/行，Home/End 行首尾，PageUp/Down 按年，底部清除/本月，label/controls/expanded/dialog。方向键按日/周，Home/End 按周，PageUp/Down 按月，Enter 选择，Escape 回触发器。AI 日期范围、分享图统计月份使用；日期解释与验证仍由领域调用方负责 |
 | [ThemeToggle](../../frontend/src/lib/components/ThemeToggle.svelte) | `compact=false` | 挂载前禁用，手动浅深色与“自动”；恢复自动把焦点留在切换按钮。偏好仅本机；不接受服务器用户主题配置 |
+| [ImageUpload](../../frontend/src/lib/components/ImageUpload.svelte) | `label:string`；`src:string\|null`；`fallback:string`；`shape?:'circle'\|'square'`（默认 square）；`busy=false`；`error=''`；`hint=''`；`onselect(file)`；`onremove()` | 头像/站内标志/浏览器图标上传。原生 file input + label；accept 仅 png/jpeg/webp；预览失败回退字符；移除/恢复默认按钮；错误 role=alert；busy 禁用；挂载前禁用，隐藏 input 获得焦点时在 label 显示焦点环。设置页（账户、站点）消费，校验与裁剪由服务端负责 |
+
+`SettingsTabs`（`current:'account'|'site'`）用于账户设置与站点设置之间的分区切换，遵循“模式切换用链接组 + `aria-current`，不加 `role=tab`”；站点设置链接仅管理员可见，固定指向 `/settings/site`，账户链接随工作区上下文。
 
 MetricSummary 的 icon 枚举：`distance/duration/elapsed/pace/count/days/heart/calories/steps`。默认项图形为路线；compact 不绘图标。不要将未格式化秒数、米或 nullable 值直接传入 value。
 

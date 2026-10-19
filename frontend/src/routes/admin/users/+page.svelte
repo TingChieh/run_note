@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { pageTitle } from '#lib/site.ts';
   import { onMount, tick } from 'svelte';
   import { page } from '$app/state';
   import PageHeader from '#lib/components/PageHeader.svelte';
@@ -109,7 +110,7 @@
   }
 </script>
 
-<svelte:head><title>用户管理 · RunNote</title></svelte:head>
+<svelte:head><title>{pageTitle('用户管理', page.data.site)}</title></svelte:head>
 <PageHeader title="用户管理" description="管理账号、登录权限和独立个人展示链接。">
   {#snippet actions()}{#if administrator}<button id="create-user" type="button" class="button-secondary" disabled={busy} onclick={() => edit(null)}>新增用户</button>{/if}{/snippet}
 </PageHeader>

@@ -144,6 +144,8 @@
   .skip-link:focus { top: var(--space-4); color: var(--primary-foreground); }
   .brand { display: inline-flex; align-items: center; gap: .625rem; width: fit-content; color: var(--foreground); font-size: 1.25rem; line-height: 1; font-weight: 750; letter-spacing: -.04em; }
   .brand-mark { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .625rem; background: var(--primary); color: white; font-size: 1.25rem; font-style: italic; }
+  /* :root raises specificity above the themed sidebar/header .brand-mark backgrounds below. */
+  :root img.brand-logo.brand-mark { object-fit: cover; padding: 0; background: transparent; }
   .app-sidebar { position: fixed; inset: 0 auto 0 0; width: var(--sidebar-width); display: flex; flex-direction: column; padding: var(--space-8) var(--space-4) var(--space-6); background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; }
   .desktop-brand { margin: 0 var(--space-3) var(--space-8); }
   .nav-caption { margin: 0 var(--space-3) var(--space-3); color: var(--muted-foreground); font-size: .75rem; }

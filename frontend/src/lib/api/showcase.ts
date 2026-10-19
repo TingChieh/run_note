@@ -1,6 +1,7 @@
 import { ActivityError, parseActivity, request, type Activity } from './activities.ts';
+import { safeImagePath } from './site.ts';
 
-export interface ShowcaseProfile { display_name: string; timezone: string }
+export interface ShowcaseProfile { display_name: string; timezone: string; avatar_url?: string | null }
 export function showcasePath(path: string): string {
   if (path === '/api/v1/me/running-goals') return '/api/v1/showcase/running-goals';
   if (!/^\/api\/v1\/(activities|statistics|footprints|ai-reports)(\/|\?|$)/.test(path)) throw new Error('不支持的展示资源');
@@ -13,7 +14,7 @@ export async function readShowcaseProfile(fetcher: typeof fetch = fetch): Promis
   if (typeof v.display_name !== 'string' || !v.display_name.trim() || v.display_name.length > 80 || typeof v.timezone !== 'string') throw new ActivityError('展示资料无效', 502, 'INVALID_RESPONSE');
   try { new Intl.DateTimeFormat('zh-CN', { timeZone: v.timezone }); }
   catch { throw new ActivityError('展示时区无效', 502, 'INVALID_RESPONSE'); }
-  return { display_name: v.display_name, timezone: v.timezone };
+  return { display_name: v.display_name, timezone: v.timezone, avatar_url: safeImagePath(v.avatar_url) };
 }
 const publicActivityFields = [
   'id', 'title', 'activity_date', 'timezone', 'category', 'tags', 'started_at', 'ended_at',

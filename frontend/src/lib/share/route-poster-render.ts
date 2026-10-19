@@ -1,3 +1,4 @@
+import { brandInitial } from '../site.ts';
 import type { PosterData } from './route-poster-data.ts';
 
 export const posterStyles = [
@@ -40,8 +41,20 @@ export const posterPeriod = (month?: string) => month ? `${month.slice(0, 4)} �
 
 type Box = { x: number; y: number; width: number; height: number };
 
+export interface PosterBrand { title: string; logo: ImageBitmap | null }
+
+/** Browser-only: same-origin logo fetch with a short timeout; any failure falls back to the initial. */
+export async function loadPosterLogo(url: string | null): Promise<ImageBitmap | null> {
+  if (!url) return null;
+  try {
+    const response = await fetch(url, { credentials: 'same-origin', signal: AbortSignal.timeout(2000) });
+    if (!response.ok) return null;
+    return await createImageBitmap(await response.blob());
+  } catch { return null; }
+}
+
 /** Output is raster pixels only. No original track or user metadata enters the file. */
-export async function renderPoster(data: PosterData, palette: PosterPalette, style: PosterStyle = 'classic'): Promise<Blob> {
+export async function renderPoster(data: PosterData, palette: PosterPalette, style: PosterStyle = 'classic', brand: PosterBrand = { title: 'RunNote', logo: null }): Promise<Blob> {
   await document.fonts.ready;
   const canvas = document.createElement('canvas');
   canvas.width = 1080; canvas.height = 1920;
@@ -121,9 +134,14 @@ export async function renderPoster(data: PosterData, palette: PosterPalette, sty
       }
     };
 
-    panel(54, 42, 48, 48, palette.route, 14);
-    text('R', 65, 78, 34, palette.brandInk, 700);
-    text('RunNote', 118, 79, 35, palette.foreground, 650);
+    if (brand.logo) {
+      ctx.save(); ctx.beginPath(); ctx.roundRect(54, 42, 48, 48, 14); ctx.clip();
+      ctx.drawImage(brand.logo, 54, 42, 48, 48); ctx.restore();
+    } else {
+      panel(54, 42, 48, 48, palette.route, 14);
+      text(brandInitial(brand.title), 65, 78, 34, palette.brandInk, 700, 30);
+    }
+    text(brand.title, 118, 79, 35, palette.foreground, 650, 640);
     text('每一步，都算数', 794, 76, 25, palette.muted);
 
     switch (style) {

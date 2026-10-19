@@ -5,12 +5,19 @@
   const fetch = view.fetch;
 
   import { afterNavigate } from '$app/navigation';
+  import { page } from '$app/state';
+  import { SITE_DEFAULTS, brandInitial } from '#lib/site.ts';
   import { onMount } from 'svelte';
   import type { ShowcaseProfile } from '#lib/api/showcase.ts';
   import type { User } from '#lib/api/auth.ts';
   import RunningGoal from './RunningGoal.svelte';
   import ThemeToggle from './ThemeToggle.svelte';
   let { pathname, user, profile = null, checking, busy, mounted, onlogout, onnav, sports = false, identityBlocked = false }: { pathname: string; user: User | null; profile?: ShowcaseProfile | null; checking: boolean; busy: boolean; mounted: boolean; onlogout: () => void; onnav: (direction: 1 | -1) => void; sports?: boolean; identityBlocked?: boolean } = $props();
+  const site = $derived(page.data.site ?? SITE_DEFAULTS);
+  let logoFailed = $state(false);
+  $effect(() => { void site.logo_url; logoFailed = false; });
+  let avatarFailed = $state(false);
+  $effect(() => { void profile?.avatar_url; avatarFailed = false; });
   const context = $derived(viewContext(pathname, user?.is_admin === true));
   let open = $state(false);
   let mobile = $state(false);
@@ -37,7 +44,7 @@
 </script>
 <svelte:window onkeydown={close} />
 <div class="mobile-bar">
-  <a href={view.href("/dashboard")} class="brand" aria-label="RunNote 数据汇总"><span class="brand-mark" aria-hidden="true">R</span>RunNote</a>
+  <a href={view.href("/dashboard")} class="brand" aria-label={`${site.title} 数据汇总`}>{#if site.logo_url && !logoFailed}<img class="brand-mark brand-logo" src={site.logo_url} alt="" width="32" height="32" onerror={() => { logoFailed = true; }} />{:else}<span class="brand-mark" aria-hidden="true">{brandInitial(site.title)}</span>{/if}{site.title}</a>
   <div class="mobile-actions"><ThemeToggle compact />
   <button bind:this={toggle} type="button" class="nav-toggle" aria-expanded={open} aria-controls="app-navigation" aria-label={open ? '关闭导航' : '打开导航'} onclick={() => { open = !open; }}>
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d={open ? 'm6 6 12 12 M6 18 18 6' : 'M4 6h16 M4 12h16 M4 18h16'} /></svg><span>导航</span>
@@ -45,8 +52,8 @@
   </div>
 </div>
 <aside id="app-navigation" class="app-sidebar" class:nav-open={open} inert={mobile && !open}>
-  <a href={view.href("/dashboard")} class="brand desktop-brand" aria-label="RunNote 数据汇总"><span class="brand-mark" aria-hidden="true">R</span>RunNote</a>
-  <p class="nav-caption">跑步与足迹</p>
+  <a href={view.href("/dashboard")} class="brand desktop-brand" aria-label={`${site.title} 数据汇总`}>{#if site.logo_url && !logoFailed}<img class="brand-mark brand-logo" src={site.logo_url} alt="" width="32" height="32" onerror={() => { logoFailed = true; }} />{:else}<span class="brand-mark" aria-hidden="true">{brandInitial(site.title)}</span>{/if}{site.title}</a>
+  {#if site.subtitle}<p class="nav-caption">{site.subtitle}</p>{/if}
   <nav aria-label="主要导航">
     {#each navigation as item, index}
       <a href={view.href(item.href)} aria-current={active(view.href(item.href)) ? 'page' : undefined} class="nav-link" onclick={(event) => {
@@ -69,7 +76,7 @@
     <div class="appearance-row"><ThemeToggle /></div>
     {#if sports && mounted && profile && !identityBlocked}<div class="goal-container" hidden={checking && !!user} inert={checking && !!user}>{#key context.prefix}<RunningGoal user={profile} readonly={!view.manage} />{/key}</div>{/if}
     <div class="runner-identity">
-      {#if sports}<div class="runner-avatar" aria-hidden="true">{checking ? '…' : Array.from(profile?.display_name || '跑者')[0]}</div>{/if}
+      {#if sports}<div class="runner-avatar" aria-hidden={checking || !profile?.avatar_url || avatarFailed}>{#if checking}…{:else if profile?.avatar_url && !avatarFailed}<img src={profile.avatar_url} alt={`${profile.display_name}的头像`} onerror={() => { avatarFailed = true; }} />{:else}{Array.from(profile?.display_name || '跑者')[0]}{/if}</div>{/if}
       <div class="runner-identity-text">
         <p class="text-sm font-semibold runner-name" title={checking ? undefined : profile?.display_name || '跑步记录'}>{checking ? '正在确认身份…' : profile?.display_name || '跑步记录'}</p>
         <p class="account-email" data-testid="current-user">{checking ? '正在确认身份…' : context.kind === 'workspace' ? '本人工作区' : context.manage ? '管理员模式' : '个人跑步展示'}</p>
@@ -80,5 +87,6 @@
 </aside>
 <style>
   .mobile-actions { display: flex; align-items: center; gap: var(--space-2); }
+  .runner-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
   .appearance-row { margin-bottom: var(--space-2); }
 </style>

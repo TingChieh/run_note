@@ -28,6 +28,11 @@ class UserView(BaseModel):
     is_admin: bool
     showcase_enabled: bool
     created_at: datetime
+    avatar_url: str | None = None
+
+
+class AvatarView(BaseModel):
+    avatar_url: str | None
 
 
 class ProfileUpdate(StrictInput):

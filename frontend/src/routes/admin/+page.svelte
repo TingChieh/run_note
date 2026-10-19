@@ -1,9 +1,10 @@
 <script lang="ts">
+  import { pageTitle } from '#lib/site.ts';
   import { page } from '$app/state';
   import AuthForm from '#lib/components/AuthForm.svelte';
   import PageHeader from '#lib/components/PageHeader.svelte';
 </script>
-<svelte:head><title>{page.data.user ? '站点管理' : '管理员登录'} · RunNote</title></svelte:head>
+<svelte:head><title>{pageTitle(page.data.user ? '站点管理' : '管理员登录', page.data.site)}</title></svelte:head>
 {#if page.data.user}
   <PageHeader title={page.data.user.is_admin ? '站点管理' : '我的工作区'} description="管理本人记录、目标和分析报告。" />
   <section class="aux-panel mt-6">

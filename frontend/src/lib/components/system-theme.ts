@@ -1,3 +1,4 @@
+import type { SiteTheme } from '../site.ts';
 export type ThemePreference = 'system' | 'light' | 'dark';
 const key = 'runnote-theme';
 const changedEvent = 'runnote-theme-change';
@@ -14,11 +15,27 @@ export function themePreference(): ThemePreference {
   return value === 'light' || value === 'dark' ? value : 'system';
 }
 
+export function resolveTheme(preference: ThemePreference, siteDefault: SiteTheme, systemDark: boolean): 'light' | 'dark' {
+  const effective = preference === 'system' ? siteDefault : preference;
+  return effective === 'system' ? systemDark ? 'dark' : 'light' : effective;
+}
+
+export function siteDefaultTheme(): SiteTheme {
+  const value = document.documentElement.dataset.siteTheme;
+  return value === 'light' || value === 'dark' ? value : 'system';
+}
+
 function applyTheme(value: ThemePreference) {
   const root = document.documentElement;
   root.dataset.themePreference = value;
-  root.dataset.theme = value === 'system' ? window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light' : value;
+  root.dataset.theme = resolveTheme(value, siteDefaultTheme(), window.matchMedia('(prefers-color-scheme: dark)').matches);
   window.dispatchEvent(new Event(changedEvent));
+}
+
+// Called after the site default changes so the current page follows it without a reload; a local choice still wins.
+export function applySiteDefaultTheme(value: SiteTheme) {
+  document.documentElement.dataset.siteTheme = value;
+  applyTheme(themePreference());
 }
 
 export function setThemePreference(value: ThemePreference) {

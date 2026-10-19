@@ -76,11 +76,16 @@ def test_anonymous_profile_uses_display_whitelist_and_no_cookie(monkeypatch):
         display_name="展示跑者",
         timezone="Asia/Shanghai",
         password_hash="private-hash",
+        avatar_version=None,
     )
     monkeypatch.setattr(service, "site_owner", lambda *args: owner)
     response = TestClient(app).get("/api/v1/showcase/profile")
     assert response.status_code == 200
-    assert response.json()["data"] == {"display_name": "展示跑者", "timezone": "Asia/Shanghai"}
+    assert response.json()["data"] == {
+        "display_name": "展示跑者",
+        "timezone": "Asia/Shanghai",
+        "avatar_url": None,
+    }
     assert response.headers["cache-control"] == "no-store"
     assert "set-cookie" not in response.headers
 

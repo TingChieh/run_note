@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { pageTitle } from '#lib/site.ts';
   import { useViewContext } from "#lib/view-context.ts";
   const view = useViewContext();
   const fetch = view.fetch;
@@ -140,7 +141,7 @@
   }
   onMount(() => { mounted = true; void load(lastOffset); return () => { disposed = true; ++listRequest; }; });
 </script>
-<svelte:head><title>跑步记录 · Run Note</title></svelte:head>
+<svelte:head><title>{pageTitle('跑步记录', page.data.site)}</title></svelte:head>
 <PageHeader title="跑步记录" description="每一次跑步，都值得留下。导入 GPX 或 TCX，回顾你的轨迹与运动表现。">{#snippet actions()}<a href={view.href("/activities/wall")}  class="button-secondary">查看足迹墙</a>{/snippet}</PageHeader>
 {#if view.manage}
 <section class="import-card" aria-labelledby="import-title">
