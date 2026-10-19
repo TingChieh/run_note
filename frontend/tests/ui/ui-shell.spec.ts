@@ -47,8 +47,10 @@ test('desktop sidebar highlights route, keyboard skip works, session survives na
   await expect(page.getByRole('button', { name: '退出登录', exact: true })).toBeEnabled();
   await page.unroute('**/api/v1/auth/logout');
   await page.getByRole('button', { name: '退出登录', exact: true }).click();
-  await expect(page).toHaveURL(/\/admin\?reason=logout$/);
-  await expect(page.getByTestId('current-user')).toContainText('未登录');
+  // Logging out reloads the same showcase page as an anonymous visitor instead of redirecting to the admin login.
+  await expect(page.getByRole('button', { name: '退出登录', exact: true })).toHaveCount(0);
+  await expect(page).toHaveURL(/\/activities$/);
+  await expect(page.getByTestId('current-user')).toContainText('个人跑步展示');
 });
 test('menu navigation slides pages in the order of the menu', async ({ page }) => {
   await login(page);

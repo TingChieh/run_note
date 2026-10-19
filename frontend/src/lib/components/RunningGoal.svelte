@@ -5,7 +5,7 @@
   const readGoals = view.bind(scoped_readGoals, 0);
   const saveGoal = view.bind(scoped_saveGoal, 2);
 
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { request, ActivityError } from '#lib/api/activities.ts';
   import { dashboardDistance } from '#lib/api/dashboard-format.ts';
   import { validGoal, readGoals as scoped_readGoals, saveGoal as scoped_saveGoal, type GoalPeriod, type RunningGoals } from '#lib/api/running-goal.ts';
@@ -21,14 +21,18 @@
   let editing = $state(false), distance = $state<number | null>(null), loading = $state(true), error = $state(''), feedback = $state('');
   let range = $state({ from: '', to: '' });
   let refresh = $state(0);
+  const timezone = $derived(user.timezone); // value-deduped: a refreshed profile object with the same timezone must not refetch
   const labels = { week: '本周', month: '本月', year: '今年' };
   let progress = $derived(target && distance !== null ? Math.min(100, distance / 1000 / target * 100) : 0);
   $effect(() => {
-    const selected = period; refresh;
-    const requested = comparisonWindow(selected, user.timezone).current;
-    range = requested;
-    input = ''; distance = null; error = ''; feedback = ''; editing = false;
-    void loadDistance(requested);
+    const selected = period, zone = timezone; refresh;
+    // Only period, refresh and timezone may refetch; view.fetch reads the route reactively, so navigation must not be tracked.
+    untrack(() => {
+      const requested = comparisonWindow(selected, zone).current;
+      range = requested;
+      input = ''; distance = null; error = ''; feedback = ''; editing = false;
+      void loadDistance(requested);
+    });
     return () => { ++distanceToken; };
   });
   async function loadDistance(requested: { from: string; to: string }, retain = false) {

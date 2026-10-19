@@ -277,7 +277,7 @@ test('dynamic edit buttons get glass and removed dialogs release their lenses', 
   await page.goto('/dashboard?year=2026');
   await expect(page.locator('button[data-date]').first()).toBeAttached();
   expect(await page.locator('button[data-date]').first().evaluate(el => getComputedStyle(el).backdropFilter)).toBe('none');
-  await installActivities(page); await loginRunner(page); await page.goto(`/activities/${sampleActivity.id}`);
+  await page.goto(`/activities/${sampleActivity.id}`);
   await expect(page.getByTestId('route-map-ready')).toBeVisible();
   const zoom = page.locator('.maplibregl-ctrl-zoom-in');
   await expect(zoom).toBeVisible();

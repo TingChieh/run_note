@@ -328,7 +328,8 @@ test('wall fills every row, keeps missing routes honest and paginates all histor
   await expect(page.getByRole('button',{name:'下一页',exact:true})).toBeDisabled();
   await page.getByRole('button',{name:'上一页',exact:true}).click();await expect(page.locator('.wall-card')).toHaveCount(24);
   await page.getByRole('button',{name:'退出登录',exact:true}).click();
-  await expect(page).toHaveURL(/\/admin\?reason=logout$/);
+  await expect(page.getByRole('button',{name:'退出登录',exact:true})).toHaveCount(0);
+  await expect(page).toHaveURL(/\/activities\/wall$/);
   await page.goto('/activities/wall');await expect(page).toHaveURL(/\/activities\/wall$/);await expect(page.getByRole('button',{name:'退出登录',exact:true})).toHaveCount(0);
 });
 
