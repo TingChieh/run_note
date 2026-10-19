@@ -137,6 +137,7 @@
   /* Switching records keeps every surface in place: dim while reading, then lift the new values in. */
   .sport-hero > div, .detail-workspace { transition: opacity var(--motion-reveal); }
   .sport-hero.switching > div, .detail-workspace.switching { opacity: .6; }
+  .route-placeholder :global(.feedback), .route-stage :global(.feedback) { animation: none; }
   .detail-swap { animation: detail-swap var(--motion-reveal) both; }
   .hero-distance.detail-swap, .metric-swap.detail-swap { animation-delay: 40ms; }
   @keyframes detail-swap { from { opacity: 0; transform: translate3d(0, .375rem, 0); } to { opacity: 1; transform: none; } }

@@ -209,7 +209,7 @@
         <button class="button-secondary" disabled={!selected.length || controlsBusy} onclick={() => selected = []}>清除选择</button>
         <button class="delete-button" disabled={!selected.length || controlsBusy} onclick={() => confirmDelete(selected)}>删除所选</button>
       </div>{/if}
-      <ul class="activity-list">{#each records.items as activity (activity.id)}<li class="min-w-0"><ActivityCard {activity} selectable={editMode} selected={selected.includes(activity.id)} disabled={controlsBusy} onselect={checked => select(activity.id, checked)} onedit={editMode ? () => void edit(activity) : undefined} ondelete={editMode ? () => confirmDelete([activity.id]) : undefined} /></li>{/each}</ul>
+      <ul class="activity-list stagger">{#each records.items as activity (activity.id)}<li class="min-w-0"><ActivityCard {activity} selectable={editMode} selected={selected.includes(activity.id)} disabled={controlsBusy} onselect={checked => select(activity.id, checked)} onedit={editMode ? () => void edit(activity) : undefined} ondelete={editMode ? () => confirmDelete([activity.id]) : undefined} /></li>{/each}</ul>
     {/if}
     {#if records.total > 0}<div class="pagination"><button disabled={records.offset === 0 || controlsBusy} onclick={() => { void load(Math.max(0, records!.offset - 20)); }} class="rounded border border-border px-3 py-2 disabled:opacity-40">上一页</button><span class="text-sm text-muted-foreground">第 {Math.floor(records.offset / 20) + 1} 页 / {Math.ceil(records.total / 20)} 页</span><button disabled={records.offset + records.items.length >= records.total || controlsBusy} onclick={() => { void load(records!.offset + 20); }} class="rounded border border-border px-3 py-2 disabled:opacity-40">下一页</button></div>{/if}
     </div>

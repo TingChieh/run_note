@@ -283,7 +283,12 @@
 
 <style>
   dialog{margin:auto;width:min(58rem,calc(100% - 2rem));max-height:calc(100svh - 2rem);overflow-y:auto;padding:var(--space-6);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);color:var(--foreground);}
-  dialog::backdrop{background:var(--surface-backdrop);}
+  dialog{opacity:0;transform:translateY(1rem) scale(.97);transition:opacity 220ms ease,transform 320ms cubic-bezier(.22,.61,.36,1),overlay 320ms allow-discrete,display 320ms allow-discrete;}
+  dialog[open]{opacity:1;transform:none;}
+  dialog::backdrop{background:var(--surface-backdrop);opacity:0;transition:opacity 260ms ease,overlay 320ms allow-discrete,display 320ms allow-discrete;}
+  dialog[open]::backdrop{opacity:1;}
+  @starting-style{dialog[open]{opacity:0;transform:translateY(1rem) scale(.97);}dialog[open]::backdrop{opacity:0;}}
+  @media(prefers-reduced-motion:reduce){dialog,dialog::backdrop{transition:none;}}
   .poster-heading{display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);}.poster-heading h2{font-size:1.5rem;font-weight:650;}
   .poster-description{margin-top:var(--space-2);color:var(--muted-foreground);}
   .poster-workspace{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:var(--space-6);margin-top:var(--space-6);align-items:start;}

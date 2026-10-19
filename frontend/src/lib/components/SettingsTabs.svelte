@@ -11,5 +11,7 @@
 </nav>
 <style>
   .settings-tabs { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-4); }
-  .settings-tabs [aria-current='page'] { background: var(--sport-nav-active); color: var(--sport-nav-active-ink); }
+  .settings-tabs [aria-current='page'] { background: var(--sport-nav-active); color: var(--sport-nav-active-ink); animation: tab-active var(--motion-enter) both; }
+  @keyframes tab-active { from { background-color: transparent; transform: scale(.94); } to { transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .settings-tabs [aria-current='page'] { animation: none; } }
 </style>

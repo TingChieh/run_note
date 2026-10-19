@@ -13,6 +13,8 @@
   import { dashboardDistance } from '#lib/api/dashboard-format.ts';
   import PageHeader from '#lib/components/PageHeader.svelte';
   import { onMount } from 'svelte';
+  import { slide } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
   import { page } from '$app/state';
   import { replaceState } from '$app/navigation';
   import { dashboardQuery, dashboardSelection } from '#lib/api/dashboard-query.ts';
@@ -25,7 +27,15 @@
   import ActivityExplorer from '#lib/components/ActivityExplorer.svelte';
   let year = $state(2026), yearInput = $state('2026'), calendarMetric = $state<CalendarMetric>('distance'), period = $state<Trends['period']>('month'), trendMetric = $state<'distance' | 'count' | 'duration' | 'pace'>('distance');
   let annual = $state<Summary | null>(null), cumulative = $state<Summary | null>(null), calendar = $state<Calendar | null>(null), trends = $state<Trends | null>(null), records = $state<ActivityList | null>(null);
-  let selectedDate = $state<string | null>(null), loading = $state(true), dayLoading = $state(false), trendLoading = $state(false), message = $state(''), cumulativeMessage = $state(''), yearMessage = $state(''), dayMessage = $state(''), trendMessage = $state('');
+  let shownDate = $state<string | null>(null), selectedDate = $state<string | null>(null), loading = $state(true), dayLoading = $state(false), trendLoading = $state(false), message = $state(''), cumulativeMessage = $state(''), yearMessage = $state(''), dayMessage = $state(''), trendMessage = $state('');
+  const motionMs = (ms: number) => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : ms;
+  // Animate the card height when the day's content changes size (switching days, paging).
+  function smoothHeight(node: HTMLElement) {
+    const inner = node.firstElementChild as HTMLElement;
+    const observer = new ResizeObserver(() => { node.style.height = `${inner.offsetHeight}px`; });
+    observer.observe(inner);
+    return { destroy: () => observer.disconnect() };
+  }
   let disposed = false, yearRequest = 0, dayRequest = 0, trendRequest = 0;
   function fail(cause: unknown): string {
     if (cause instanceof ActivityError && cause.status === 401) { disposed = true; annual = null; cumulative = null; calendar = null; trends = null; records = null; selectedDate = null; yearRequest++; dayRequest++; trendRequest++; window.location.replace('/admin?reason=expired&next=%2Fdashboard'); return ''; }
@@ -57,9 +67,9 @@
     finally { if (!disposed && token === trendRequest) trendLoading = false; }
   }
   async function selectDay(date: string, offset = 0) {
-    const token = ++dayRequest; selectedDate = date; saveSelection(); records = null; dayLoading = true; dayMessage = '';
-    try { const result = await readActivities(fetch, offset, date); if (!disposed && token === dayRequest) records = result; }
-    catch (cause) { if (!disposed && (token === dayRequest || cause instanceof ActivityError && cause.status === 401)) dayMessage = fail(cause); }
+    const token = ++dayRequest; if (!selectedDate) { records = null; shownDate = null; } selectedDate = date; saveSelection(); dayLoading = true; dayMessage = '';
+    try { const result = await readActivities(fetch, offset, date); if (!disposed && token === dayRequest) { records = result; shownDate = date; } }
+    catch (cause) { if (!disposed && (token === dayRequest || cause instanceof ActivityError && cause.status === 401)) { dayMessage = fail(cause); records = null; } }
     finally { if (!disposed && token === dayRequest) dayLoading = false; }
   }
   function setYear(next: number) {
@@ -120,16 +130,16 @@
       <div class="content-reveal"><CalendarGrid {calendar} metric={calendarMetric} selected={selectedDate} enhanced onselect={(date) => { void selectDay(date); }} /></div>
       {#if calendar.activity_count === 0}<div class="mt-4"><FeedbackState title="这一年还没有运动记录"><a href={view.href("/activities")}  class="text-primary underline">查看跑步记录</a>，也可以切换年份查看历史。</FeedbackState></div>{/if}
     {:else}<p class="mt-4 text-muted-foreground">日历未能加载，请重新读取统计。</p>{/if}
-  </section>
-  {#if selectedDate}<section class="dashboard-card" aria-labelledby="day-title" aria-busy={dayLoading}>
-    <div class="card-heading"><h2 id="day-title">{selectedDate} 的活动{records ? `（${records.total}）` : ''}</h2><button class="button-secondary" onclick={() => { ++dayRequest; selectedDate = null; records = null; dayLoading = false; dayMessage = ''; saveSelection(); }}>收起当天记录</button></div>
-    <div class="mt-4">{#if dayLoading}<FeedbackState kind="loading" title="正在读取当天活动…" />{:else if dayMessage}<FeedbackState kind="error" title={dayMessage}><button onclick={() => { void selectDay(selectedDate!); }} class="button-secondary">重试当天活动</button></FeedbackState>{:else if records}
+  {#if selectedDate}<div class="day-drawer" transition:slide={{ duration: motionMs(320), easing: cubicOut }}><section class="day-panel" aria-labelledby="day-title" aria-busy={dayLoading}>
+    <div class="card-heading"><h2 id="day-title" class="day-title">{shownDate ?? selectedDate} 的活动{records ? `（${records.total}）` : ''}</h2><button class="button-secondary" onclick={() => { ++dayRequest; selectedDate = null; shownDate = null; records = null; dayLoading = false; dayMessage = ''; saveSelection(); }}>收起当天记录</button></div>
+    <div class="day-height" use:smoothHeight><div>{#if dayLoading && !records}<FeedbackState kind="loading" title="正在读取当天活动…" />{:else if dayMessage}<FeedbackState kind="error" title={dayMessage}><button onclick={() => { void selectDay(selectedDate!); }} class="button-secondary">重试当天活动</button></FeedbackState>{:else if records}{#key records}<div class="day-fade" class:stale={dayLoading}>
       {#if records.items.length === 0}<FeedbackState title="当天没有活动记录">选择其他日期，或<a href={view.href("/activities")}  class="text-primary underline">查看跑步记录</a>。</FeedbackState>{:else}
         <ul class="space-y-3">{#each records.items as activity (activity.id)}<li><a href={view.href(`/activities/${activity.id}`)} class="day-activity"><div class="flex flex-wrap justify-between gap-2"><h3 class="font-semibold">{activity.title || '未命名活动'}</h3><strong>{dashboardDistance(activity.distance_m)}</strong></div><p class="mt-2 text-sm text-muted-foreground">用时 {formatDuration(activityDuration(activity))} · 配速 {formatPace(activity.avg_pace_seconds_per_km)} · {qualityLabel(activity.temporal_quality)}</p></a></li>{/each}</ul>
       {/if}
       {#if records.total > 20}<div class="mt-4 flex flex-wrap items-center gap-3"><button disabled={records.offset === 0} onclick={() => { void selectDay(selectedDate!, Math.max(0, records!.offset - 20)); }} class="button-secondary">上一页</button><span class="text-sm">第 {Math.floor(records.offset / 20) + 1} 页</span><button disabled={records.offset + records.items.length >= records.total} onclick={() => { void selectDay(selectedDate!, records!.offset + 20); }} class="button-secondary">下一页</button></div>{/if}
-    {/if}</div>
-  </section>{/if}
+    </div>{/key}{/if}</div></div>
+  </section></div>{/if}
+  </section>
   <section class="dashboard-card" aria-labelledby="trend-title" aria-busy={trendLoading}>
     <div class="card-heading"><h2 id="trend-title">运动趋势</h2><div class="trend-controls"><label>周期 <select aria-label="趋势周期" bind:value={period} onchange={() => { saveSelection(); void loadTrend(); }}><option value="week">周</option><option value="month">月</option></select></label><label>指标 <select aria-label="趋势指标" bind:value={trendMetric}><option value="distance">距离</option><option value="count">次数</option><option value="duration">已知耗时</option><option value="pace">可靠配速</option></select></label></div></div>
     <div class="mt-4">{#if trendLoading}<FeedbackState kind="loading" title="正在读取趋势…" />{:else if trendMessage}<FeedbackState kind="error" title={trendMessage}><button onclick={() => { void loadTrend(); }} class="button-secondary">重新读取趋势</button></FeedbackState>{:else if trends}
@@ -189,8 +199,17 @@
   .statistics-notes { border-top: 1px solid var(--border); padding-top: var(--space-4); color: var(--muted-foreground); font-size: .875rem; }
   summary { cursor: pointer; color: var(--primary); font-weight: 500; }
   .notes-content { display: grid; gap: .75rem; margin-top: 1rem; line-height: 1.8; }
+  .day-drawer { overflow: hidden; }
+  .day-panel { margin-top: var(--space-6); padding-top: var(--space-6); border-top: 1px solid var(--border); }
+  .day-title { font-size: 1.125rem; font-weight: 650; }
   .day-activity { display: block; border: 1px solid var(--border); border-radius: var(--radius-control); padding: 1rem; }
-  .day-activity:hover { border-color: var(--primary); }
+  .day-activity { transition: border-color var(--transition-control), background-color var(--transition-control), transform var(--motion-hover); }
+  .day-activity:hover { border-color: var(--primary); background: var(--muted); transform: translateX(2px); }
+  .day-height { overflow: hidden; padding: 3px; margin: calc(var(--space-4) - 3px) -3px -3px; transition: height 280ms cubic-bezier(.22,.61,.36,1); }
+  .day-fade { animation: day-fade 240ms ease-out both; transition: opacity 160ms ease; }
+  .day-fade.stale { opacity: .55; }
+  @keyframes day-fade { from { opacity: 0; } to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .day-fade { animation: none; } }
   @media (max-width: 767px) { .dashboard { --dashboard-card-gap:.75rem; } .annual-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); } .annual-metrics > div { padding: 1rem; } .dashboard-card { padding: 1rem; } dd { font-size: 1.65rem; } .calendar-card h2 { font-size: 1.3rem; } .keyboard-hint { display: none; } }
   @media (max-width: 359px) { dd { font-size: 1.4rem; } }
 </style>

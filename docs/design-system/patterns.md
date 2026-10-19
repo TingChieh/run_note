@@ -79,3 +79,10 @@ error 为 alert，其他状态 polite；文本与图形共同表意。缺失 `�
 ```
 
 DashboardSection/SettingsGroup/FormSection/DetailPanel 是组合角色，目前不需要四个万能包装组件。只有多个消费者的结构和行为长期相同，才进入有限试点。新增页面验收同时记录主题、窄屏、键盘、状态和实际接口边界；不能以截图漂亮代替功能验收。
+
+## 进场与错峰动效
+
+- 条件渲染的反馈条（`FeedbackState`）、批量工具栏、认证卡使用 `motion-enter` 进场；只做进场，不用 `transition:|global`，避免拖慢路由卸载。
+- 列表、指标卡、表格行容器加 `.stagger`，子项按序号错峰淡入上移。
+- 原生 `<dialog>` 用 `@starting-style` 加 `allow-discrete`（`overlay`、`display`）实现进出场与遮罩渐变。
+- 所有动效在 `prefers-reduced-motion: reduce` 下关闭。

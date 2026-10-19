@@ -97,6 +97,9 @@
 | `--motion-page-enter` | 420ms cubic-bezier(.22,.61,.36,1) | 新增，原页面进入等值引用 |
 | `--motion-popover-enter-duration/ease` | 380ms / cubic-bezier(.2,1.22,.32,1) | 菜单、日期从触发控件展开，轻微回弹 |
 | `--motion-popover-exit-duration/ease` | 220ms / cubic-bezier(.4,0,.7,1) | 收回触发控件，保留原生 top layer 退场 |
+| `--motion-enter` | 320ms cubic-bezier(.22,.61,.36,1) | 反馈条、工具栏、认证卡、`.stagger` 子项进场（淡入加上移） |
+| `--motion-stagger` | 45ms | `.stagger` 子项错峰间隔，最多 12 档 |
+| `--motion-hover` | 200ms cubic-bezier(.22,.61,.36,1) | 卡片抬升、日期格等悬停过渡 |
 | 其他 Svelte transition | 按源码 easing | 保留，不强制并轨 |
 | 引擎 spring | JS 物理参数 | 保留，不复制为 CSS duration |
 

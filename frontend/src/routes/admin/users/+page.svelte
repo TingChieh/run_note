@@ -140,7 +140,7 @@
         </div>{/if}
         <div class="table-scroll" role="region" aria-label="用户表格，可横向滚动">
           <table><caption class="sr-only">账号资料、登录状态和公开展示状态</caption><thead><tr><th scope="col" class="select-cell">{#if selectable.length}<input id="select-page" type="checkbox" aria-label="全选本页" checked={allChosen} indeterminate={chosen.length > 0 && !allChosen} disabled={busy || loading} onchange={event => chosen = event.currentTarget.checked ? selectable.map(user => user.id) : []} />{:else}<span class="sr-only">选择</span>{/if}</th><th scope="col">用户</th><th scope="col">登录状态</th><th scope="col">个人展示</th><th scope="col">操作</th></tr></thead>
-            <tbody>{#each users.items as user (user.id)}<tr>
+            <tbody class="stagger">{#each users.items as user (user.id)}<tr>
               <td class="select-cell">{#if !user.is_admin}<input type="checkbox" aria-label={`选择 ${user.display_name} @${user.username}`} checked={chosen.includes(user.id)} disabled={busy || loading} onchange={event => choose(user.id, event.currentTarget.checked)} />{/if}</td>
               <th scope="row"><span class="block font-semibold">{user.display_name}{user.is_admin ? ' · 站主' : ''}</span><span class="block text-sm text-muted-foreground">@{user.username}</span><span class="block break-all text-sm text-muted-foreground">{user.email}</span></th>
               <td>{user.is_active ? '已启用' : '已禁用'}</td><td>{user.showcase_enabled ? '公开展示中' : '未公开'}</td>
@@ -219,7 +219,9 @@
   .checkbox-field { display: flex; align-items: center; gap: var(--space-3); }
   .select-cell { width: 3rem; }
   .select-cell input { width: 1.25rem; height: 1.25rem; }
-  .selection-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); margin-bottom: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
+  .selection-toolbar { animation: toolbar-enter var(--motion-enter) both; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); margin-bottom: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
+  @keyframes toolbar-enter { from { opacity: 0; transform: translate3d(0, -.5rem, 0); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .selection-toolbar { animation: none; } }
   .selected-count { flex: 1; color: var(--muted-foreground); white-space: nowrap; font-size: .875rem; }
   .delete-button, .delete-submit { padding: .625rem .875rem; border-radius: var(--radius-control); font-size: .875rem; font-weight: 600; color: var(--error); border: 1px solid var(--error-border); }
   .delete-submit:disabled, .delete-button:disabled { opacity: .5; }

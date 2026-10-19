@@ -16,7 +16,7 @@
     const color = (name: string) => style.getPropertyValue(name).trim();
     const foreground = color('--foreground'), muted = color('--muted-foreground'), border = color('--border');
     chart.setOption({
-      animation: false,
+      animation: !window.matchMedia('(prefers-reduced-motion: reduce)').matches, animationDuration: 400, animationDurationUpdate: 400,
       textStyle: { color: foreground },
       tooltip: { trigger: 'axis', renderMode: 'richText', backgroundColor: color('--surface'), borderColor: border, textStyle: { color: foreground }, valueFormatter: enhanced ? (value: number | null) => value === null ? '—' : metric === 'distance' && enhanced ? dashboardDistance(value * 1000) : metric === 'pace' ? formatPace(value * 60) : metric === 'count' ? `${value} 次` : `${value} 分钟` : undefined },
       grid: { left: enhanced ? 45 : 65, right: 20, top: 40, bottom: 60 },
