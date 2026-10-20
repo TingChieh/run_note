@@ -147,6 +147,9 @@ test('statistics and date errors have independent retries; session expiry redire
   await expect(page.getByRole('region',{name:'运动趋势',exact:true}).locator('canvas')).toBeVisible();
   state.dayFailures=1; await page.getByRole('button',{name:/2026-10-13，/}).click();
   await page.getByRole('button',{name:'重试当天活动'}).click(); await expect(page.locator('.day-activity').filter({hasText:'河畔晨跑'})).toBeVisible();
+  // The day card animates its height; it must settle on the full content height, not clip the last card.
+  await page.waitForTimeout(600); // let the height transition settle
+  expect(await page.locator('.day-height').evaluate(el => { const card = el.querySelector('.day-activity')!.getBoundingClientRect(); return card.bottom - el.getBoundingClientRect().bottom; })).toBeLessThanOrEqual(0);
   state.trendFailures=1; await page.getByLabel('趋势周期').selectOption('week');
   await page.getByRole('button',{name:'重新读取趋势'}).click(); await expect(page.getByRole('region',{name:'运动趋势',exact:true}).locator('canvas')).toBeVisible();
   state.expired=true; await page.getByRole('button',{name:'上一年',exact:true}).click(); await expect(page).toHaveURL(/admin\?reason=expired/);

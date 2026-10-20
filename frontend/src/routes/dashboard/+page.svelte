@@ -32,7 +32,13 @@
   // Animate the card height when the day's content changes size (switching days, paging).
   function smoothHeight(node: HTMLElement) {
     const inner = node.firstElementChild as HTMLElement;
-    const observer = new ResizeObserver(() => { node.style.height = `${inner.offsetHeight}px`; });
+    // border-box height must include the node's own padding, and use the fractional content height so the last card's border is never clipped.
+    const fit = () => {
+      const style = getComputedStyle(node);
+      const padding = style.boxSizing === 'border-box' ? parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) : 0;
+      node.style.height = `${inner.getBoundingClientRect().height + padding}px`;
+    };
+    const observer = new ResizeObserver(fit);
     observer.observe(inner);
     return { destroy: () => observer.disconnect() };
   }
