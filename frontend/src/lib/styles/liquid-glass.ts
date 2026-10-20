@@ -6,15 +6,15 @@ export function liquidGlass(root: HTMLElement) {
   let disposed = false;
   let cleanup: (() => void) | undefined;
   void Promise.all([import('../vendor/liquidglass/liquid-glass.js'), import('./liquid-glass-indicator.ts'),
-    import('./liquid-glass-slider.ts'), import('./liquid-glass-select.ts')]).then(([{ createGlass, createSpring, engine }, { enhanceNavigation }, { enhanceSlider }, { enhanceSelect }]) => {
+    import('./liquid-glass-slider.ts'), import('./liquid-glass-select.ts'), import('./liquid-glass-switch.ts')]).then(([{ createGlass, createSpring, engine }, { enhanceNavigation, enhanceSegmented }, { enhanceSlider }, { enhanceSelect }, { enhanceSwitch }]) => {
     if (disposed) return;
-    const selector = 'button:not(.maplibregl-ctrl-zoom-in):not(.maplibregl-ctrl-zoom-out):not([data-date]):not(.history-card):not(.wall-card):not(.rn-menu-option):not(.rn-select-toggle), a.button-primary, a.button-secondary, .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in)';
+    const selector = 'button:not(.rn-switch):not(.compact-switch > button):not(.maplibregl-ctrl-zoom-in):not(.maplibregl-ctrl-zoom-out):not([data-date]):not(.history-card):not(.wall-card):not(.rn-menu-option):not(.rn-select-toggle), a.button-primary, a.button-secondary, .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in)';
     const preferences = [matchMedia('(prefers-reduced-transparency: reduce)'), matchMedia('(forced-colors: active)')];
     const motion = matchMedia('(prefers-reduced-motion: reduce)');
     const controls = new Map<HTMLElement, { update(): void; render(): void; release(): void; surface: HTMLElement; destroy(): void }>();
     const backdrops = new Map<HTMLElement, number>();
     const enhancements = new Map<HTMLElement, { update(settings: GlassSettings): void; destroy(): void }>();
-    const enhancementSelector = '.app-sidebar nav, .rn-slider > input[type="range"], select:not([multiple])';
+    const enhancementSelector = '.app-sidebar nav, .settings-tabs, .compact-switch, .rn-slider > input[type="range"], .rn-switch-track, select:not([multiple])';
     let settings = readGlassSettings();
     const previousOpacity = root.style.getPropertyValue('--glass-opacity');
     let frame = 0;
@@ -156,14 +156,16 @@ export function liquidGlass(root: HTMLElement) {
         if (element instanceof HTMLSelectElement) {
           if ('showPopover' in HTMLElement.prototype && element.size <= 1 && !element.querySelector('optgroup')) enhancements.set(element, enhanceSelect(element, root, settings));
         } else if (element instanceof HTMLInputElement) enhancements.set(element, enhanceSlider(element, settings));
+        else if (element.classList.contains('rn-switch-track')) enhancements.set(element, enhanceSwitch(element, settings));
+        else if (element.matches('.settings-tabs, .compact-switch')) enhancements.set(element, enhanceSegmented(element, settings));
         else enhancements.set(element, enhanceNavigation(element, settings));
       }
     }
     const schedule = () => { if (!frame) frame = requestAnimationFrame(reconcile); };
     const unwatch = watchGlassSettings(value => { settings = value; schedule(); });
     const observer = new MutationObserver(records => {
-      if (records.some(record => !(record.target instanceof Element && record.target.closest('.rn-moving-copy, .rn-slider-decoration, .rn-glass-menu, .rn-select-toggle')) &&
-        (record.type === 'attributes' || [...record.addedNodes, ...record.removedNodes].some(node => !(node instanceof HTMLElement && node.matches('.rn-glass-surface, .rn-moving-copy, .rn-moving-outline, .rn-slider-decoration, .rn-glass-menu, .rn-select-toggle')))))) schedule();
+      if (records.some(record => !(record.target instanceof Element && record.target.closest('.rn-moving-copy, .rn-slider-decoration, .rn-switch-decoration, .rn-glass-menu, .rn-select-toggle')) &&
+        (record.type === 'attributes' || [...record.addedNodes, ...record.removedNodes].some(node => !(node instanceof HTMLElement && node.matches('.rn-glass-surface, .rn-moving-copy, .rn-moving-outline, .rn-slider-decoration, .rn-switch-decoration, .rn-glass-menu, .rn-select-toggle')))))) schedule();
     });
     observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'aria-disabled'] });
     const releaseAll = () => controls.forEach(control => control.release());

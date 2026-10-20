@@ -31,14 +31,14 @@ test('admin login native validation, password visibility, busy and failure retry
 test('settings separates draft from saved public state and saves with retry',async({page})=>{
   await loginRunner(page);await responsive(page,'settings');
   await page.getByLabel('昵称',{exact:true}).fill('新的跑者');
-  await page.getByLabel('开启公开个人主页',{exact:true}).check();
+  await page.getByRole('switch',{name:/公开个人主页/}).click();
   await expect(page.getByText('有未保存的更改',{exact:true})).toBeVisible();
   await page.route('**/api/v1/me',route=>route.fulfill({status:503,json:{error:{message:'保存暂时失败'}}}));
   await page.getByRole('button',{name:'保存公开设置',exact:true}).click();await expect(page.getByRole('alert')).toContainText('保存暂时失败');
   await page.unroute('**/api/v1/me');await page.getByRole('button',{name:'保存公开设置',exact:true}).click();
   await expect(page.getByRole('status').filter({hasText:'主页已开启'})).toBeVisible();
   await expect(page.getByText('有未保存的更改',{exact:true})).toHaveCount(0);
-  await page.getByLabel('开启公开个人主页',{exact:true}).uncheck();await page.getByRole('button',{name:'保存公开设置',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'独立记录分享仍需单独撤销'})).toBeVisible();
+  await page.getByRole('switch',{name:/公开个人主页/}).click();await page.getByRole('button',{name:'保存公开设置',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'独立记录分享仍需单独撤销'})).toBeVisible();
 });
 test('AI mock report needs explicit consent, aggregate-only payload, history and delete',async({page})=>{
   const state=await installAI(page);await loginRunner(page);await page.goto('/ai');

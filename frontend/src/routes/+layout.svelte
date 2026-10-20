@@ -8,6 +8,9 @@
   import { beforeNavigate } from '$app/navigation';
   import { navigating, page } from '$app/state';
   import AppNavigation from '#lib/components/AppNavigation.svelte';
+  import PageHeader from '#lib/components/PageHeader.svelte';
+  import SettingsTabs from '#lib/components/SettingsTabs.svelte';
+  import { provideSettingsHeader } from '#lib/settings-header.svelte.ts';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import PageSkeleton from '#lib/components/PageSkeleton.svelte';
   import { AuthError, authWrite, isProtected, readSession } from '#lib/api/auth.ts';
@@ -21,7 +24,17 @@
   let identityBlocked = $state(false);
   let pageDirection = $state<1 | -1 | 0>(0), menuNavigationPending = false;
   let GlassTuner = $state<Component | null>(null);
-  beforeNavigate(() => {
+  // Switching between the settings sections keeps the old page on screen and skips the skeleton and fade.
+  const settingsSection = (path?: string) => !!path && /^(\/workspace)?\/(settings(\/site)?|admin\/users)\/?$/.test(path);
+  let quietSwap = $state(false);
+  const settingsHeader = provideSettingsHeader();
+  const settingsKind = $derived.by(() => {
+    const path = page.url.pathname.replace(/^\/workspace/, '').replace(/\/$/, '');
+    return path === '/settings' ? 'account' : path === '/settings/site' ? 'site' : path === '/admin/users' ? 'users' : null;
+  });
+  const settingsMeta = { account: ['设置', '管理账户资料与公开主页。'], site: ['站点设置', '管理站点名称、标语、默认外观和图标。'], users: ['用户管理', '管理账号、登录权限和独立个人展示链接。'] } as const;
+  beforeNavigate(navigation => {
+    quietSwap = settingsSection(navigation.from?.url.pathname) && settingsSection(navigation.to?.url.pathname);
     if (!menuNavigationPending) pageDirection = 0;
     menuNavigationPending = false;
   });
@@ -39,7 +52,7 @@
   const privateView = $derived(!!page.data.user || isProtected(page.url.pathname));
   setContext(VIEW_CONTEXT, () => viewContext(page.url.pathname, page.data.user?.is_admin === true));
   const authPage = $derived(/^\/admin\/?$/.test(page.url.pathname));
-  const routeLoading = $derived(!!navigating.to && !navigating.shallow && !navigating.willUnload && navigating.to.url.pathname !== page.url.pathname);
+  const routeLoading = $derived(!!navigating.to && !navigating.shallow && !navigating.willUnload && navigating.to.url.pathname !== page.url.pathname && !(settingsSection(page.url.pathname) && settingsSection(navigating.to.url.pathname)));
   async function logout() {
     if (busy) return; busy = true; message = '';
     try {
@@ -121,8 +134,14 @@
       {/if}
       {#if !(identityBlocked && privateView)}
         {#if routeLoading}<div data-testid="navigation-skeleton"><PageSkeleton /></div>{/if}
+        {#if settingsKind}<div hidden={routeLoading || checking && privateView} inert={routeLoading || checking && privateView}>
+          <PageHeader title={settingsMeta[settingsKind][0]} description={settingsMeta[settingsKind][1]}>
+            {#snippet actions()}{#if settingsHeader.create}<button id="create-user" type="button" class="button-secondary" disabled={settingsHeader.createDisabled} onclick={settingsHeader.create}>新增用户</button>{/if}{/snippet}
+            {#snippet footer()}<SettingsTabs current={settingsKind} />{/snippet}
+          </PageHeader>
+        </div>{/if}
         <!-- Preserve file inputs and drafts across successful focus/session checks. -->
-        {#key page.url.pathname}<div class="page-reveal" class:page-enter-up={pageDirection === 1} class:page-enter-down={pageDirection === -1} hidden={routeLoading || checking && privateView} inert={routeLoading || checking && privateView}>{@render children()}</div>{/key}
+        {#key page.url.pathname}<div class="page-reveal" class:quiet-swap={quietSwap} class:page-enter-up={pageDirection === 1} class:page-enter-down={pageDirection === -1} hidden={routeLoading || checking && privateView} inert={routeLoading || checking && privateView}>{@render children()}</div>{/key}
       {/if}
     </main>
     <footer class="app-footer"><span>{site.title}</span>{#if site.footer_tagline}<span>{site.footer_tagline}</span>{/if}</footer>

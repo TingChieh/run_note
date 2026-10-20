@@ -23,6 +23,8 @@
 | `--primary` | #17745c | #77d4ac | 主操作、选择 |
 | `--primary-hover` | #105d49 | #9ce4c3 | hover |
 | `--primary-soft` | #e8f6df | #233e30 | 轻选择表面 |
+| `--swatch-light-bg` / `--swatch-light-fg` | #f6f7f4 / #202d23 | 同左（不随主题变化） | 站点设置“默认外观”卡片里的浅色迷你预览 |
+| `--swatch-dark-bg` / `--swatch-dark-fg` | #101a16 / #e4eee7 | 同左（不随主题变化） | 同上，深色迷你预览 |
 | `--primary-foreground` | #ffffff | #10251b | 主操作文字 |
 | `--ring` | #17745c | #9ce4c3 | 可见焦点 |
 | `--control-hover-border` | #91aca0 | #8da996 | 字段 hover |
@@ -72,6 +74,7 @@
 | --- | --- | --- |
 | `--space-1/2/3/4/6/8/12` | .25/.5/.75/1/1.5/2/3rem | 内边距、字段、模块与页面留白 |
 | `--radius-control` | .75rem | 字段和基础控件 |
+| `--radius-field` | .625rem | 紧凑文本框 `.text-field` |
 | `--radius-card` | 1.5rem | 内容卡片、页头 |
 | `--radius-pill` | 9999px | 胶囊与材质控件 |
 | `--radius-glass-control/panel` | 引用 pill/card | 材质 CSS 中的最终几何 |

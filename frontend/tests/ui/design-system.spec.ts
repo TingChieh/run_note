@@ -107,3 +107,23 @@ test('reduced transparency removes optical filters while controls retain native 
   await button.click();
   await expect(page.getByRole('status').filter({ hasText: '展示草稿已保存' })).toBeVisible();
 });
+
+test('switch, segmented control and save bar keep native semantics', async ({ page }) => {
+  await page.goto('/');
+  const section = page.locator('#switches');
+  const toggle = section.getByRole('switch', { name: '公开个人主页', exact: true });
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await expect(section.getByRole('region', { name: '保存设置' })).toHaveCount(0);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  const bar = section.getByRole('region', { name: '保存设置' });
+  await expect(bar).toContainText('有未保存的更改');
+  await bar.getByRole('button', { name: '放弃', exact: true }).click();
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await expect(bar).toHaveCount(0);
+  await expect(section.getByRole('switch', { name: /不可调节/ })).toBeDisabled();
+  const group = section.getByRole('group', { name: '示例筛选' });
+  await group.getByRole('button', { name: '已启用', exact: true }).click();
+  await expect(group.getByRole('button', { name: '已启用', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(group.getByRole('button', { name: '全部', exact: true })).toHaveAttribute('aria-pressed', 'false');
+});

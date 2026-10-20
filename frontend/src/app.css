@@ -66,6 +66,11 @@
   --space-8: 2rem;
   --space-12: 3rem;
   --radius-control: .75rem;
+  --radius-field: .625rem;
+  --swatch-light-bg: #f6f7f4;
+  --swatch-light-fg: #202d23;
+  --swatch-dark-bg: #101a16;
+  --swatch-dark-fg: #e4eee7;
   --radius-pill: 9999px;
   --radius-card: 1.5rem;
   --content-width: 86rem;
@@ -179,6 +184,7 @@
   @keyframes page-reveal { from { opacity: 0; } to { opacity: 1; } }
   @keyframes page-enter-up { from { transform: translate3d(0, 1.5rem, 0); } to { transform: translate3d(0, 0, 0); } }
   @keyframes page-enter-down { from { transform: translate3d(0, -1.5rem, 0); } to { transform: translate3d(0, 0, 0); } }
+  .page-reveal.quiet-swap, .page-reveal.quiet-swap.page-enter-up, .page-reveal.quiet-swap.page-enter-down { animation: none; }
   @media (prefers-reduced-motion: reduce) { .page-reveal, .content-reveal { animation: none; } }
   .page-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-4); }
   .page-description { margin-top: var(--space-3); max-width: 48rem; color: var(--muted-foreground); }
@@ -426,3 +432,105 @@
 :root[data-theme="dark"] .sport-theme .maplibregl-ctrl-group button + button { border-top-color: var(--border); }
 :root[data-theme="dark"] .sport-theme .maplibregl-ctrl-group button:hover { background-color: var(--muted); }
 :root[data-theme="dark"] .sport-theme .maplibregl-ctrl-icon { filter: invert(1); }
+
+/* Settings pages: identity card, block grid, floating save bar and header-integrated section tabs. */
+@layer components {
+  .page-header-footer { flex-basis: 100%; }
+  .settings-stack { display: grid; gap: var(--space-6); margin-top: var(--space-6); }
+  .settings-grid { display: grid; gap: var(--space-6); }
+  @media (min-width: 900px) { .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; } }
+  .settings-block { display: grid; align-content: start; gap: var(--space-3); }
+  .settings-block h2 { font-size: 1.125rem; font-weight: 650; }
+  .block-hint { font-size: .875rem; color: var(--muted-foreground); }
+  .block-title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+  .block-title-row > button { flex: none; white-space: nowrap; }
+  .block-title-row .block-hint { margin-top: var(--space-1); }
+  .block-field { display: grid; gap: var(--space-2); font-weight: 600; }
+  .block-field > :where(input, textarea) { width: 100%; font-weight: 400; }
+  .block-details { font-size: .875rem; color: var(--muted-foreground); }
+  .block-details summary { cursor: pointer; }
+  .block-details p { margin-top: var(--space-2); }
+  .status-badge { justify-self: start; padding: .125rem .75rem; border-radius: var(--radius-pill); background: var(--muted); font-size: .8125rem; color: var(--muted-foreground); }
+  .status-badge.on { background: var(--primary-soft); color: var(--primary); }
+  .password-form { display: grid; gap: var(--space-4); max-width: 28rem; padding-top: var(--space-4); }
+  .identity-card { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-6) var(--space-8); }
+  .identity-meta { display: grid; gap: var(--space-1); min-width: 0; flex: 1 1 20rem; }
+  .identity-name { font-size: 1.375rem; font-weight: 700; letter-spacing: -.02em; }
+  .identity-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-3) 0; }
+  .identity-chips li { display: inline-flex; gap: var(--space-2); max-width: 100%; padding: .25rem .875rem; border-radius: var(--radius-pill); background: var(--muted); font-size: .875rem; overflow-wrap: anywhere; }
+  .identity-chips li > span { flex: none; white-space: nowrap; color: var(--muted-foreground); }
+  .save-bar-slot { position: sticky; bottom: var(--space-4); z-index: 5; }
+  .save-bar { display: grid; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-card); background: color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter: blur(16px) saturate(1.4); box-shadow: 0 .5rem 1.5rem var(--glass-shadow); }
+  .save-bar-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+  .save-status { flex: 1 1 10rem; padding: 0; background: none; font-size: .875rem; color: var(--muted-foreground); }
+  .settings-tabs { display: inline-flex; flex-wrap: wrap; gap: .25rem; margin-top: var(--space-4); padding: .25rem; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--surface) 45%, transparent); }
+  .settings-tabs a { display: inline-flex; align-items: center; min-height: 2.5rem; padding: .375rem 1.125rem; border-radius: var(--radius-pill); font-size: var(--text-small); font-weight: 600; color: var(--sport-heading-ink); transition: background-color var(--transition-control), color var(--transition-control), box-shadow var(--transition-control); }
+  .settings-tabs a:hover { background: color-mix(in srgb, var(--surface) 70%, transparent); }
+  .settings-tabs a[aria-current='page'] { color: var(--primary-foreground); background: var(--primary); box-shadow: 0 .125rem .5rem var(--glass-shadow); }
+}
+
+/* Compact text field set: input, textarea and select share one height, radius and focus ring. */
+@layer components {
+  .text-field { width: 100%; min-height: 2.25rem; padding: .375rem .75rem; border: 1px solid var(--border); border-radius: var(--radius-field); background: var(--surface); color: var(--foreground); font-size: .9375rem; line-height: 1.5; transition: border-color var(--transition-control), box-shadow var(--transition-control), background-color var(--transition-control); }
+  textarea.text-field { min-height: 5.5rem; resize: vertical; }
+  .text-field::placeholder { color: var(--muted-foreground); opacity: .7; }
+  .text-field:not(:disabled):hover { border-color: var(--control-hover-border); }
+  .text-field:focus-visible { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent); }
+  .text-field:disabled { background: var(--muted); }
+  .text-field[aria-invalid='true'] { border-color: var(--error); box-shadow: 0 0 0 3px color-mix(in srgb, var(--error) 15%, transparent); }
+  label.block > .text-field { display: block; margin-top: var(--space-2); }
+  .block-field { font-size: .875rem; font-weight: 600; }
+}
+
+/* Site settings: form column, live identity preview and theme tiles. */
+@layer components {
+  .site-layout { display: grid; gap: var(--space-6); margin-top: var(--space-6); align-items: start; }
+  .site-layout > .site-save { grid-column: 1 / -1; }
+  @media (min-width: 1024px) { .site-layout { grid-template-columns: minmax(0, 1fr) 21rem; } .site-layout > aside { position: sticky; top: var(--space-6); } }
+  .site-layout > form, .site-layout > aside { margin-top: 0; }
+  .block-pair { display: grid; gap: var(--space-4); }
+  @media (min-width: 640px) { .block-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  fieldset.settings-block { min-width: 0; }
+  fieldset.settings-block > legend { margin-bottom: var(--space-3); padding: 0; font-size: 1.125rem; font-weight: 650; }
+  .theme-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
+  .theme-tile { position: relative; display: grid; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); text-align: center; cursor: pointer; transition: border-color var(--transition-control), box-shadow var(--transition-control); }
+  .theme-tile:hover { border-color: var(--control-hover-border); }
+  .theme-tile.selected { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent); }
+  .theme-tile > input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+  .theme-tile:has(input:focus-visible) { outline: 2px solid var(--ring); outline-offset: 2px; }
+  .theme-name { font-size: .875rem; font-weight: 600; }
+  .theme-swatch { display: grid; grid-template-columns: 1fr 1fr; height: 3rem; overflow: hidden; border-radius: .5rem; border: 1px solid var(--border); }
+  .theme-swatch i { display: block; }
+  .swatch-light i { background: var(--swatch-light-bg); }
+  .swatch-dark i { background: var(--swatch-dark-bg); }
+  .swatch-system i:first-child { background: var(--swatch-light-bg); }
+  .swatch-system i:last-child { background: var(--swatch-dark-bg); }
+  .site-preview { display: grid; gap: var(--space-3); padding: var(--space-4); border-radius: var(--radius-control); background: var(--muted); }
+  .preview-side { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-radius: var(--radius-control); background: var(--sport-sidebar); color: #fff; }
+  .preview-mark { display: grid; place-items: center; flex: none; width: 2.25rem; height: 2.25rem; overflow: hidden; border-radius: .625rem; background: #fff; color: var(--sport-sidebar); font-weight: 800; }
+  .preview-mark img { width: 100%; height: 100%; object-fit: cover; }
+  .preview-title { display: block; font-weight: 700; overflow-wrap: anywhere; }
+  .preview-sub { display: block; font-size: .75rem; opacity: .8; overflow-wrap: anywhere; }
+  .preview-foot { font-size: .75rem; color: var(--muted-foreground); overflow-wrap: anywhere; }
+}
+
+/* User management: one-line toolbar, compact buttons and the shared segmented switch. */
+@layer components {
+  .button-secondary.button-compact { min-height: 2rem; padding: .25rem .875rem; font-size: .8125rem; }
+  .user-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-4); }
+  .toolbar-search { display: flex; flex: 1 1 16rem; gap: var(--space-2); max-width: 28rem; }
+  .toolbar-search .text-field { flex: 1; min-width: 0; }
+  .toolbar-count { margin-left: auto; font-size: .875rem; color: var(--muted-foreground); }
+  .mode-switch.compact-switch { display: inline-flex; gap: .25rem; padding: .25rem; border-radius: var(--radius-pill); background: var(--muted); }
+  .mode-switch.compact-switch button { min-height: 2rem; padding: .25rem .875rem; border-radius: var(--radius-pill); font-size: .8125rem; font-weight: 600; color: var(--muted-foreground); }
+  .mode-switch.compact-switch button[aria-pressed='true'] { color: var(--primary-foreground); background: var(--primary); }
+  .mode-switch.compact-switch button:not([aria-pressed='true']):hover { color: var(--primary); background: var(--surface); }
+  .user-pager { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-4); font-size: .875rem; color: var(--muted-foreground); }
+  .user-note { margin-top: var(--space-3); }
+}
+
+/* Glass lens under the active tab or segment (see enhanceSegmented in lib/styles/liquid-glass-indicator.ts). */
+@layer components {
+  .settings-tabs, .mode-switch.compact-switch { position: relative; }
+  .settings-tabs.rn-liquid-navigation a[aria-current='page'], .mode-switch.compact-switch.rn-liquid-navigation button[aria-pressed='true'] { background: transparent !important; box-shadow: none !important; }
+}

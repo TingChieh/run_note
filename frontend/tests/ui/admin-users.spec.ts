@@ -19,25 +19,20 @@ test('owner creates, edits, publishes and disables accounts while protecting the
   await expect(page.getByRole('heading', { name: '用户管理', exact: true })).toBeVisible();
   await expect(page.getByText('受保护账号', { exact: true })).toBeVisible();
   const row = await create(page, 'ui_account_a');
-  await expect(row).toContainText('未公开');
+  await expect(row.getByRole('switch', { name: '公开展示 合成 ui_account_a', exact: true })).toHaveAttribute('aria-checked', 'false');
   await row.getByRole('button', { name: '编辑 合成 ui_account_a', exact: true }).click();
   const editor = page.getByRole('dialog', { name: '编辑用户', exact: true });
   await expect(editor.getByLabel('用户名', { exact: true })).toBeDisabled();
   await editor.getByLabel('昵称', { exact: true }).fill('合成修改用户');
   await editor.getByRole('button', { name: '保存资料', exact: true }).click();
   await expect(editor).not.toBeVisible();
-  await row.getByRole('button', { name: '开启展示 合成修改用户', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '开启个人展示', exact: true });
-  await expect(dialog).toContainText('完整轨迹和精确起终点');
-  await dialog.getByRole('button', { name: '确认操作', exact: true }).click();
+  await row.getByRole('switch', { name: '公开展示 合成修改用户', exact: true }).click();
   await expect(row.getByRole('link', { name: '查看展示 合成修改用户', exact: true })).toHaveAttribute('href', '/p/ui_account_a');
-  await row.getByRole('button', { name: '禁用 合成修改用户', exact: true }).click();
-  await page.getByRole('dialog', { name: '禁用用户', exact: true }).getByRole('button', { name: '确认操作', exact: true }).click();
-  await expect(row).toContainText('已禁用'); await expect(row).toContainText('未公开');
+  await row.getByRole('switch', { name: '允许登录 合成修改用户', exact: true }).click();
+  await expect(row.getByRole('switch', { name: '允许登录 合成修改用户', exact: true })).toHaveAttribute('aria-checked', 'false'); await expect(row.getByRole('switch', { name: '公开展示 合成修改用户', exact: true })).toHaveAttribute('aria-checked', 'false');
   await expect(row.getByRole('link', { name: /查看展示/ })).toHaveCount(0);
-  await row.getByRole('button', { name: '启用 合成修改用户', exact: true }).click();
-  await page.getByRole('dialog', { name: '启用用户', exact: true }).getByRole('button', { name: '确认操作', exact: true }).click();
-  await expect(row).toContainText('已启用'); await expect(row).toContainText('未公开');
+  await row.getByRole('switch', { name: '允许登录 合成修改用户', exact: true }).click();
+  await expect(row.getByRole('switch', { name: '允许登录 合成修改用户', exact: true })).toHaveAttribute('aria-checked', 'true'); await expect(row.getByRole('switch', { name: '公开展示 合成修改用户', exact: true })).toHaveAttribute('aria-checked', 'false');
 });
 
 test('reset verifies confirmation, clears sensitive inputs, and search preserves the active filter', async ({ page }) => {
@@ -55,8 +50,7 @@ test('reset verifies confirmation, clears sensitive inputs, and search preserves
   await expect(page.getByRole('status').filter({ hasText: '密码已重置' })).toBeVisible();
   await expect(page.locator('input[type=password]').first()).toHaveValue('');
   await page.getByLabel('邮箱或用户名').fill('ui_account_b');
-  await page.getByLabel('登录状态', { exact: true }).selectOption('active');
-  await page.getByRole('button', { name: '筛选', exact: true }).click();
+  await page.getByRole('group', { name: '登录状态' }).getByRole('button', { name: '已启用', exact: true }).click();
   await expect(page.getByRole('row')).toHaveCount(2);
   await expect(row).toContainText('ui_account_b@example.com');
 });
@@ -165,6 +159,7 @@ test('ordinary user changes own password and logs in again after all sessions ex
     await own.getByRole('button', { name: '登录', exact: true }).click();
     await expect.poll(() => new URL(own.url()).pathname).toBe('/workspace/dashboard');
     await own.goto('/workspace/settings');
+    await own.getByRole('button', { name: '修改密码', exact: true }).click();
     await own.getByLabel('当前密码', { exact: true }).fill('Synthetic-only-password');
     await own.getByLabel('新密码', { exact: true }).fill('Replacement-only-password');
     await own.getByRole('button', { name: '修改密码并重新登录', exact: true }).click();
@@ -216,7 +211,7 @@ test('owner selects accounts on the current page and permanently deletes them', 
   const first = await create(page, 'ui_bulk_one');
   const second = await create(page, 'ui_bulk_two');
   await page.getByLabel('邮箱或用户名', { exact: true }).fill('ui_bulk_');
-  await page.getByRole('button', { name: '筛选', exact: true }).click();
+  await page.getByRole('button', { name: '搜索', exact: true }).click();
   await expect(page.getByRole('row')).toHaveCount(3);
 
   const header = page.getByRole('checkbox', { name: '全选本页', exact: true });
@@ -229,7 +224,7 @@ test('owner selects accounts on the current page and permanently deletes them', 
   await expect(second.getByRole('checkbox')).toBeChecked();
   await expect(toolbar).toContainText('已选 2 个');
 
-  await page.getByRole('button', { name: '筛选', exact: true }).click();
+  await page.getByRole('button', { name: '搜索', exact: true }).click();
   await expect(toolbar).toHaveCount(0);
   await header.check();
 

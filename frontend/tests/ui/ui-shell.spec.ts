@@ -13,6 +13,7 @@ async function noOverflow(page: Page) {
 }
 test('desktop sidebar highlights route, keyboard skip works, session survives navigation and logout', async ({ page }) => {
   await login(page);
+  await page.getByLabel('昵称', { exact: true }).fill('悬停测试');
   const saveButton = page.getByRole('button', { name: '保存公开设置', exact: true });
   const normalColor = await saveButton.evaluate(el => getComputedStyle(el).backgroundColor);
   await saveButton.hover();

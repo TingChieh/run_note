@@ -8,6 +8,7 @@
   import BasemapPicker from '../../../src/lib/components/BasemapPicker.svelte';
   import type { BasemapPreference } from '../../../src/lib/api/map-style.ts';
   import ThemeToggle from '../../../src/lib/components/ThemeToggle.svelte';
+  import SaveBar from '../../../src/lib/components/SaveBar.svelte';
   import { liquidGlass } from '../../../src/lib/styles/liquid-glass.ts';
 
   let basemap = $state<BasemapPreference>('auto');
@@ -15,6 +16,8 @@
   let date = $state('2026-10-16');
   let recovered = $state(false);
   let saved = $state(false);
+  let publicProfile = $state(false), saved0 = $state(false), segment = $state('all'), draftTitle = $state('RunNote');
+  const barDirty = $derived(publicProfile !== saved0 || draftTitle !== 'RunNote');
   const metrics = [
     { label: '距离', value: '12.34 km', icon: 'distance' as const },
     { label: '计时用时', value: '01:08:30', icon: 'duration' as const },
@@ -70,6 +73,22 @@
       <h2 id="basemap-title">底图选择</h2><p class="description">菜单从图层按钮展开，选择、Esc 或点击外部时收回；日期与下拉选项复用相同动效。此处仅展示控件，不加载地图资源。</p>
       <div style="position:relative;height:5rem"><BasemapPicker preference={basemap} style={basemap === 'auto' ? 'positron' : basemap} status="ready" onselect={value => { basemap = value; }} /></div>
     </section>
+    <section id="switches" class="aux-panel" aria-labelledby="switches-title">
+      <h2 id="switches-title">开关、分段与紧凑文本框</h2>
+      <p class="description">开关是立即生效的布尔值（`.rn-switch`，折射滑块头由 enhanceSwitch 增强）；分段控件用 `.compact-switch` 与 aria-pressed，玻璃块跟随指针；文本框用 `.text-field`。保存条只在有草稿时出现。</p>
+      <div class="control-row">
+        <button type="button" role="switch" class="rn-switch" aria-checked={publicProfile} aria-label="公开个人主页" onclick={() => publicProfile = !publicProfile}><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span></button>
+        <button type="button" role="switch" class="rn-switch" aria-checked="true" aria-label="受保护项（不可调节）" disabled><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span></button>
+        <div class="mode-switch compact-switch" role="group" aria-label="示例筛选">
+          {#each [['all', '全部'], ['on', '已启用'], ['off', '已禁用']] as [value, label]}<button type="button" aria-pressed={segment === value} onclick={() => segment = value}>{label}</button>{/each}
+        </div>
+      </div>
+      <form id="draft-form" onsubmit={event => { event.preventDefault(); saved0 = publicProfile; draftTitle = 'RunNote'; }}>
+        <label for="draft-title">站点标题<input id="draft-title" class="text-field" bind:value={draftTitle} /></label>
+      </form>
+      <SaveBar form="draft-form" dirty={barDirty} busy={false} label="保存示例" ondiscard={() => { publicProfile = saved0; draftTitle = 'RunNote'; }} />
+    </section>
+
     <section class="aux-panel" aria-labelledby="states-title">
       <h2 id="states-title">反馈与加载</h2>
       <div class="example-stack">

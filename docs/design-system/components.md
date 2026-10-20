@@ -42,16 +42,33 @@ MetricSummary 的 icon 枚举：`distance/duration/elapsed/pace/count/days/heart
 | 审计范围 | 当前入口 | 必须保留的契约 |
 | --- | --- | --- |
 | Button / IconButton | 原生 button；主操作 `bg-primary text-primary-foreground`；次操作 `.button-secondary`；危险确认已有 `.delete-confirm` | 显式 type；导航用 a；异步禁用/aria-busy 由调用方管理；图标按钮有中文名称；不嵌套交互元素 |
-| Input / Textarea / Select | 原生元素 + base + border/padding 工具类 | label、help/error 的 ID 关联、required/min/max/disabled；失败保留输入；单选 select 可被 action 增强，保留原生值与 change |
+| Input / Textarea / Select | 原生元素 + `.text-field`（`app.css`，36px 高、`--radius-field`、主色聚焦环；设置页、站点设置、用户管理已采用，其余页面仍用 base + 工具类） | label、help/error 的 ID 关联、required/min/max/disabled；失败保留输入；单选 select 可被 action 增强，保留原生值与 change |
 | File picker | `.file-pick`（`app.css`）：label 包裹视觉隐藏的原生 `input[type=file]`，子元素 `.file-pick-text/title/hint/tag`；`data-filled`、`data-dragging` 控制已选/拖入态 | 保留原生 input、label 名称与 `name`；选中后显示文件名、大小与识别出的格式；拖放由调用方处理（写入 `input.files` 后走同一 change 逻辑）；禁用时整体降为 50%；焦点环由 `:has(input:focus-visible)` 绘制。活动导入与 MifitnessImport 使用 |
-| Checkbox / Radio | 原生 input，primary accent | 可见 label；同组 radio 使用共同 name 与 fieldset/legend；布尔值不自动等价于 Switch |
+| Checkbox / Radio | 原生 input，primary accent；单选组也可做成整卡可点的选项（站点设置“默认外观”：`.theme-tile`，原生 radio 透明铺满整卡） | 可见 label；同组 radio 使用共同 name 与 fieldset/legend；布尔值不自动等价于 Switch，见下文“开关” |
 | Skeleton / Spinner | PageSkeleton / FeedbackState loading / 导航进度 | 避免重复同义组件；明确页面与区块加载范围 |
-| Card / Panel | `.aux-panel`、`.dashboard-card` 与业务专用卡片 | 不按名字合并布局；普通表面不自动玻璃化 |
+| Card / Panel | `.aux-panel`、`.dashboard-card`、设置页的 `.settings-block` / `.identity-card` 与业务专用卡片 | 不按名字合并布局；普通表面不自动玻璃化 |
 | Stack / Grid / Container / Section / Divider | `.aux-stack`、`.page-content`、原生 section、grid/flex、border | 使用语义区域/标题与 min-width:0；无需一个类包装一个 Svelte 组件 |
 | Dialog / Popover / Dropdown | 原生 dialog；DatePicker Popover；select 增强 | dialog 标题/描述、Escape、取消、焦点恢复、失败留草稿；top layer 不靠 z-index；不要复制菜单引擎 |
-| Tabs | 当前模式切换使用按钮组 aria-pressed | 没有 tabpanel 与方向键协议时不能加 role=tab |
-| Pagination | 页面局部实现 | 保留 limit/offset/total、pending 和既有分页大小；页空后回退属于业务；不在通用控件内 fetch |
+| Tabs / 分段控件 | 设置分区用 `.settings-tabs`（链接，`aria-current="page"`）；列表筛选用 `.mode-switch.compact-switch`（按钮，`aria-pressed`）；两者共用玻璃指示器，见下文“玻璃分段” | 没有 tabpanel 与方向键协议时不能加 role=tab；当前项靠 aria-current / aria-pressed 表达，不靠颜色 |
+| Pagination | 页面局部实现（用户管理用 `.user-pager` + `.button-compact`） | 保留 limit/offset/total、pending 和既有分页大小；页空后回退属于业务；不在通用控件内 fetch |
 | DataTable | 原生 table + 局部 overflow；图表 details 数据兜底 | caption/列头/scope、缺失值；横向滚动只限容器 |
+
+## 设置页与开关相关组件
+
+以下为设置、站点与用户管理三页重复出现后沉淀的共享件，实现与验收见 [63-settings-ui-refresh](../63-settings-ui-refresh.md)。独立展示见 showcase 的“开关、分段与紧凑文本框”区块。
+
+| 名称 | 入口 | 契约 |
+| --- | --- | --- |
+| 开关 | `button.rn-switch[role="switch"]` + `.rn-switch-track` / `.rn-switch-static`（`liquid-glass-controls.css`）；`liquid-glass-switch.ts` 的 `enhanceSwitch` 由根 `liquidGlass` action 自动增强 | 必须有 `aria-checked` 与可读名称（`aria-label` 或 `aria-labelledby`）；锁定态用原生 `disabled` 并在名称里说明原因；几何为上游 LgSwitch：轨道 64×28、滑块 36×24，按下放大并带弹簧拉伸；玻璃配方独立为 `switchOptics`（折射 0.43 倍、色散不低于 0.12），不随意改全局配方；`prefers-reduced-transparency`/强制色下回退静态滑块；开关表示“立即生效”的布尔值，需要草稿加保存的设置不要用立即写入 |
+| 玻璃分段 | `.settings-tabs`、`.compact-switch` 容器内的直接子 `a` / `button`；`enhanceSegmented`（`liquid-glass-indicator.ts`，`createIndicator` 的水平模式）自动增强 | 当前项只用 `aria-current="page"` 或 `aria-pressed="true"` 表达；玻璃块跟随指针/焦点，离开后回到当前项，点击后留在被点项直到页面或状态更新；其内部不得再套 `.rn-glass-control`，因此 `.compact-switch > button` 已从按钮增强选择器中排除；样式必须写在未分层的 `liquid-glass-controls.css`（需要压过全局按钮的 `!important` 渐变），不要放进 `@layer components` |
+| 设置页头 | 根 `routes/+layout.svelte` 渲染一份 `PageHeader`（含 `footer` 插槽里的 `SettingsTabs`），覆盖 `/settings`、`/settings/site`、`/admin/users` 与 `/workspace/settings` | 页头与标签栏在这几页之间切换时不重建；各页面不再自带 `PageHeader`；页头动作由页面通过 `useSettingsHeader()`（`lib/settings-header.svelte.ts`）登记，离开时清理；设置分区之间切换不显示骨架屏、不淡入（`quiet-swap`） |
+| SaveBar | `lib/components/SaveBar.svelte`：`form`、`dirty`、`busy`、`message`、`error`、`label`、`busyLabel`、`ondiscard` | 悬浮保存条，仅在有未保存更改、保存中或有结果/错误时出现，用 `unfoldBar` 展开收起；提交按钮用 `type="submit"` 加 `form` 属性关联表单；`message` 由调用方 6 秒后清除；状态文字是 `role="status"`，错误是 `FeedbackState` 的 alert |
+| `.text-field` | `app.css`（components 层）；token `--radius-field` | 36px 高，聚焦为主色边框加 3px 光晕，`aria-invalid="true"` 变错误色；textarea 最小 5.5rem、仅纵向拉伸；设置页、站点设置、用户管理已采用 |
+| `.button-compact` | `.button-secondary.button-compact` | 32px 高、13px 字，用于表格行与分页，不替代主操作按钮 |
+| 展开动效 | `lib/styles/reveal-from-left.ts`：`revealFromLeft`、`unfoldBar` | `revealFromLeft` 让相邻按钮从左侧按钮后滑出（可传 `delay`，节点加 `data-reveal` 以便找到锚点）；`unfoldBar` 让条形区域连同高度、边距、透明度一起展开，避免下方内容跳动；均在“减少动态效果”时为 0 时长 |
+| ImageUpload `size` | `size="lg"` | 圆形头像预览放大到 6rem；默认 `md` 不变 |
+
+设置页布局类：`.settings-stack`、`.settings-grid`（桌面两列）、`.settings-block`（卡片内标题、`.block-hint`、`.block-field`、`.block-title-row`、`.block-details`、`.status-badge`）、`.identity-card`（身份卡）、站点设置的 `.site-layout`（左表单、右吸顶预览与图标）与 `.site-preview`、`.theme-tile`。用户管理工具栏类：`.user-toolbar`、`.toolbar-search`、`.toolbar-count`、`.user-pager`、`.user-cell` / `.user-avatar`。它们都只用语义令牌，不新增颜色。
 
 字段建议组合如下（原生能力，无新增 FormField 组件）：
 
@@ -93,7 +110,7 @@ MetricSummary 的 icon 枚举：`distance/duration/elapsed/pace/count/days/heart
 
 Button 入口、字段组、dialog 表面和分页为阶段 4 候选；先证明至少两个用途与行为一致，再决定用共享类还是最小组件。首批不搬迁现有组件、不改业务消费者。
 
-Badge 有可见性/标签等局部形式，暂不统一状态与装饰。`title` 不是可访问 Tooltip；真正出现复杂提示需求时先评估成熟无障碍基础设施。Switch、Toast、Drawer、通用 DataTable/ChartContainer、SearchToolbar 等无当前必需用例，不为齐名单实现。移动导航保持原文档流，不能擅自换成模态 Drawer。
+Badge 有可见性/标签等局部形式，暂不统一状态与装饰。`title` 不是可访问 Tooltip；真正出现复杂提示需求时先评估成熟无障碍基础设施。Toast、Drawer、通用 DataTable/ChartContainer、SearchToolbar 等无当前必需用例，不为齐名单实现。移动导航保持原文档流，不能擅自换成模态 Drawer。
 
 ## 展示与验证
 

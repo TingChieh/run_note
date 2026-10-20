@@ -66,3 +66,8 @@ export function watchGlassSettings(update: (settings: GlassSettings) => void): (
   window.addEventListener(CHANGE_EVENT, changed);
   return () => window.removeEventListener(CHANGE_EVENT, changed);
 }
+
+/** Switch recipe: gentle refraction like the slider lens, with the chromatic rim kept visible. */
+export function switchOptics(settings: GlassSettings) {
+  return { ...glassOptics(settings, .43), chroma: Math.max(settings.chroma, .12) };
+}
