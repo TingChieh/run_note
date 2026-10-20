@@ -86,7 +86,7 @@ backend/.venv/bin/python scripts/local-auth.py init
 backend/.venv/bin/python scripts/local-auth.py serve
 ```
 
-代码迁移 head 与本机开发库均为 `0005_ai_reports`。该库含17用户、14活动；本地升级备份、恢复和联调证据见 [V1.0集成验收](docs/17-v1-integration-acceptance.md)。其他环境应先确认数据库目标、备份并恢复验证，再按受控流程执行迁移。缺少必填数据库配置会拒绝启动。服务可启动不等于数据库已就绪。
+迁移 head 以 `alembic heads` 为准，目标库当前版本用 `alembic current` 核对，不在文档中固定 revision 号；本地升级备份、恢复和联调证据见 [V1.0集成验收](docs/17-v1-integration-acceptance.md)。其他环境应先确认数据库目标、备份并恢复验证，再按受控流程执行迁移。缺少必填数据库配置会拒绝启动。服务可启动不等于数据库已就绪。
 
 S2-03 认证还需在服务端进程环境安全配置 `AUTH_RATE_HASH_KEY`（至少32字节随机密钥，所有 worker 和重启使用同一值），`SITE_ORIGIN` 必须精确匹配浏览器来源。生产要求 HTTPS 来源与密钥，否则拒绝启动；development 缺密钥时健康检查可用，认证接口返回503。现有 `.env` 不自动修改；密钥轮换会使旧限流桶不再命中。默认不信任转发IP；明确的反向代理环境才配置 `AUTH_TRUSTED_PROXIES`（JSON数组，精确IP）。
 

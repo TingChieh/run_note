@@ -44,8 +44,8 @@ HTTP状态反映真实结果，错误不统一塞进200。删除返回200与`dat
 
 ### 1.2 分页、日期与单位
 
-- 列表默认`page=1,page_size=20`，最大100；初期offset分页足够。默认`activity_date DESC,id DESC`稳定排序，返回total；不支持客户端任意SQL字段排序。
-- 列表`data={items:[...]}`，`meta`附page/page_size/total；统计不伪造分页。
+- 列表查询参数为`limit`（默认20，最大100）与`offset`（默认0，最大1000000）；初期offset分页足够。默认`activity_date DESC,id DESC`稳定排序，返回total；不支持客户端任意SQL字段排序。
+- 列表`data={items,total,limit,offset}`；统计不伪造分页。
 - `date_from`含当天、`date_to`不含当天，均是已保存的activity_date；`date_from < date_to`。
 - 初期支持年份1900–2100；日历year同范围，闰年按真实历法。趋势范围最长5年，热力图最多366天，AI最多366天。
 - 单位：distance_m米、elapsed_seconds秒、avg_pace_seconds_per_km秒/公里。前端只格式化分钟/公里，不再计算配速。

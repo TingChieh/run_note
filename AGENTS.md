@@ -33,13 +33,14 @@ frontend/src/
   lib/map/         底图控制器、足迹显示与配色
   lib/share/       路线海报数据与渲染
   lib/styles/      液态玻璃、弹层/卡片动效等共享样式与运行时
+  settings-header.svelte.ts   设置页共享头部状态（与 SettingsTabs 配套）
   routes/          页面与 /api 代理端点
 frontend/tests/    unit / ui / e2e / fixtures
 scripts/           离线运维脚本（local-auth.py、site-owner.py）
 docs/              设计与验收记录（中文）；docs/design-system/ 为 UI 规范
 ```
 
-每个后端功能模块按自己的 `router/schema/service/model` 组织。**不要为每张表建立空壳 Repository/Manager/Factory**，简单查询直接写在模块 service 中；只有空间查询或确需复用的复杂查询才拆出 `queries.py`。
+后端功能模块以 `backend/app/modules/` 目录为准（现有 activities、admin_users、ai_reports、auth、footprints、gpx、health、mifitness、running_goals、sharing、showcase、site_settings、statistics、tcx、users）；新增模块须按第 4 节注册。每个模块按自己的 `router/schema/service/model` 组织。**不要为每张表建立空壳 Repository/Manager/Factory**，简单查询直接写在模块 service 中；只有空间查询或确需复用的复杂查询才拆出 `queries.py`。
 
 ## 3. 架构边界
 
@@ -72,6 +73,7 @@ docs/              设计与验收记录（中文）；docs/design-system/ 为 U
 - 归属校验在 service 层用 `owner` 过滤完成。按 ID 取本人资源时走 `owned_*` helper，**不存在与他人资源统一返回 404，绝不返回 403**，以免泄露存在性。
 - 服务写操作前调用 `lock_owner(db, owner)` 锁定本人 users 行并递增 `activity_data_version`（用于把旧 AI 报告标记为过时）。
 - **修改导入（GPX/TCX/小米运动健康）逻辑前先读现有并发控制**：每用户同时仅一个导入，用 `pg_try_advisory_lock` 在专用自动提交连接上取得，冲突返回 429 `IMPORT_BUSY`（`gpx/service.py`）。不要新增另一套导入互斥机制。
+- 头像与站点图标/Logo 上传（`/api/v1/me/avatar`、`/api/v1/site/images/*`，`site_settings/images.py`）统一解码、方向校正、方形裁剪并重新编码为无元数据 PNG（单图上限 5 MiB），`ImageBodyLimit` 中间件在 multipart 解析前按 6 MiB 拦截请求体。新增图片上传入口必须复用 `normalize_image` 并把路径加入 `body_limit.PATHS`。
 - 公开数据的接口规则见第 8 节。
 
 ## 5. 前端编码规范
@@ -150,7 +152,7 @@ pnpm test:e2e                                  # 默认 e2e，需后端已启动
 
 - 唯一站主由后端 `SITE_OWNER_EMAIL` 指定（默认 `tingchieh77@outlook.com`），账号缺失时展示接口返回 503，不回退到任意用户。唯一管理员由配置邮箱计算，不依赖可编辑角色字段。
 - 匿名展示页面为 `/dashboard`、`/activities`（含详情和 wall）、`/footprints`、`/ai`；只在 `/admin` 提供管理员登录，旧 `/login` 与 `/register` 返回 404，注册 API 禁用。写操作仍由认证依赖与 CSRF/Origin 双重保护。
-- `/admin/users` 仅站主可管理账号；普通启用用户在 `/workspace/*` 管理本人，公开 `/p/{username}/*` 始终只读。历史普通账号默认停用且不公开，显式启用后可登录本人工作区。
+- 用户管理页 `/admin/users` 在导航中归属"设置"（与 `/settings`、`/settings/site` 同组，使用 `settings-header.svelte.ts` 共享头部），仅站主可管理账号；普通启用用户在 `/workspace/*` 管理本人，公开 `/p/{username}/*` 始终只读。历史普通账号默认停用且不公开，显式启用后可登录本人工作区。
 - 禁用账号会撤销会话并关闭展示，重新启用不恢复旧状态；修改邮箱或重置密码撤销全部会话。站主的邮箱/启用/展示状态受保护。
 - 空库初始化用离线 `scripts/site-owner.py`，不可重开注册或自动重置密码。
 - 匿名 AI 仅查看已成功的报告，不调用管理 context、recover、cleanup 或供应商。
@@ -184,9 +186,9 @@ pnpm test:e2e                                  # 默认 e2e，需后端已启动
 
 ### Playwright 特性配置
 
-`frontend/` 下有多份 `playwright.*.config.ts`，均无对应 npm script，用 `pnpm exec playwright test --config <file>` 显式运行：
+`frontend/` 下有多份 `playwright.*.config.ts`（完整清单以 `ls frontend/playwright.*.ts` 为准），均无对应 npm script，用 `pnpm exec playwright test --config <file>` 显式运行：
 
-- 多数（如 `activity-*`、`tcx`、`basemaps`、`route-poster`）继承 `playwright.ui.config.ts`，仅收窄 `testMatch`，走合成 API。
+- 多数（如 `activity-*`、`tcx`、`basemaps`、`route-poster`、`site-settings`、`dashboard-explorer`、`popover-motion`、`ai-*`）继承 `playwright.ui.config.ts`，仅收窄 `testMatch`，走合成 API。
 - `*-e2e.config.ts` 需要真实后端与测试库，适用下方数据库保护规则。
 - `*-build.config.ts`（如 `showcase-build`、`admin-users-build`）是合成构建验收。
 - `design-system.config.ts` 独立启动 showcase（5193）做像素级截图对比。
@@ -230,7 +232,7 @@ pnpm test:e2e                                  # 默认 e2e，需后端已启动
 - 绝不清理、改写或删除开发库中的数据；任何测试写入都不得落在开发库。
 - 绝不读取、输出或提交 `.env`、`.env.auth-rate.key` 等密钥文件内容，不把密钥写入代码、命令行参数、日志或文档。
 - 不把真实 GPX/TCX 原文、坐标、轨迹或真实用户数据写入仓库、测试夹具或数据库；使用合成样本。
-- **SSR 代理是安全边界**（`src/lib/server/backend.ts`）：目标源固定为 `INTERNAL_API_BASE_URL`，转发路径必须同源且以 `/api/` 开头，请求头只放行固定的 7 个（`cookie`、`origin`、`referer`、`x-csrf-token`、`content-type`、`accept`、`idempotency-key`）。**不要扩大该白名单，不要接受客户端传入的绝对地址，不要伪造 `Origin` 或信任 `X-Forwarded-*`。** 上传请求体上限 11 MiB，由 `Content-Length` 与流式计数双重校验。
+- **SSR 代理是安全边界**（`src/lib/server/backend.ts`）：目标源固定为 `INTERNAL_API_BASE_URL`，转发路径必须同源且以 `/api/` 开头，请求头只放行固定的 7 个（`cookie`、`origin`、`referer`、`x-csrf-token`、`content-type`、`accept`、`idempotency-key`）。**不要扩大该白名单，不要接受客户端传入的绝对地址，不要伪造 `Origin` 或信任 `X-Forwarded-*`。** 上传请求体上限 11 MiB，由 `Content-Length` 与流式计数双重校验；后端对图片上传另有 6 MiB 请求体限制（见第 4 节），代理上限不得作为放宽后端限制的理由。
 - AI 供应商密钥只在服务端进程环境，不要放进 `PUBLIC_*` 或前端。默认无配置时功能应显示不可用，不要提供 Mock 开关绕过。
 - 公开数据与私人数据边界见第 8 节。
 
