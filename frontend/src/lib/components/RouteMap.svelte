@@ -23,6 +23,13 @@
   let dark = false, stopTheme: (() => void) | undefined;
   function loadBasemap() { basemapController?.retry(); }
   function toggleBasemap() { basemapController?.toggle(); }
+  const fitPadding = () => Math.min(55, container.clientWidth / 4, container.clientHeight / 4);
+  // Fly back to the whole route after the user has panned, zoomed or rotated away.
+  function recenter() {
+    if (!map || !bounds || disposed) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    map.fitBounds(bounds, { padding: fitPadding(), maxZoom: map.getMaxZoom(), bearing: 0, pitch: 0, duration: reduce ? 0 : 700, easing: value => 1 - Math.pow(1 - value, 3) });
+  }
   function scheduleFit(duration = 0) {
     if (resizeFrame || disposed) return;
     resizeFrame = requestAnimationFrame(() => {
@@ -94,6 +101,7 @@
 <div class="relative mt-4 overflow-hidden rounded-xl border border-border" data-glass-stable class:spacious class:embedded>
   <div bind:this={container} class="route-map w-full" role="img" aria-label="活动路线地图，绿色为路线，起与终标记起终点" data-testid={loaded ? 'route-map-ready' : 'route-map-loading'}></div>
   <div class="absolute left-3 top-3"><button type="button" onclick={toggleBasemap} disabled={!routeReady || !!error} aria-pressed={basemapEnabled} class="button-secondary">{basemapEnabled ? '关闭底图' : '开启底图'}</button></div>
+  <div class="absolute bottom-3 left-3"><button type="button" onclick={recenter} disabled={!routeReady || !!error} aria-label="回到路线" title="回到路线" class="button-secondary locate-button"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3.5" /><circle cx="12" cy="12" r="8" /><path d="M12 1.5v3 M12 19.5v3 M1.5 12h3 M19.5 12h3" /></svg></button></div>
   <BasemapPicker preference={basemapPreference} style={basemapStyle} status={basemapStatus} />
   {#if embedded}
     {#if error}<div class="map-status"><FeedbackState kind="error" title={error} /></div>
@@ -110,6 +118,7 @@
 <details class="mt-3 text-sm text-muted-foreground"><summary class="w-fit font-medium">地图与隐私说明</summary><p class="mt-2 leading-6">底图由 OpenFreeMap 提供，使用 OpenMapTiles 与 OpenStreetMap 数据；会请求样式、字体、图标和当前视口瓦片；完整 GPX 与轨迹点不会发送给底图服务，路径在本地绘制。关闭底图可停止后续瓦片请求。不同轨迹段不会连线，起终点重合时两个标记分别显示。公共底图为尽力服务，可能暂不可用。</p></details>
 <style>
   .embedded { margin-top: 1rem; }
+  .locate-button { width: 2.75rem; padding: 0; }
   .map-status { position: absolute; inset: 3.5rem 1rem auto; background: var(--surface); border-radius: .5rem; }
   .map-basemap { inset: auto 1rem 2rem; width: fit-content; padding: .375rem .5rem; font-size: .75rem; }
   .route-map { height: var(--route-map-height, clamp(18rem, 50svh, 32rem)); }

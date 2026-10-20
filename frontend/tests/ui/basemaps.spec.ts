@@ -189,3 +189,25 @@ for (const colorScheme of ['light', 'dark'] as const) test(`pressing map overlay
     await expect.poll(() => button.locator('.rn-glass-surface').evaluate(el => new DOMMatrix(getComputedStyle(el).transform).a)).toBeCloseTo(1, 3);
   }
 });
+
+test('locate button flies back to the whole route after the map is moved away', async ({ page }) => {
+  await installActivities(page); await installBasemaps(page); await loginRunner(page);
+  await page.goto(`/activities/${sampleActivity.id}`); await expect(page.getByTestId('route-map-ready')).toBeVisible(); await basemapReady(page, 'positron'); await observeMaps(page);
+  const locate = page.getByRole('button', { name: '回到路线', exact: true });
+  await expect(locate).toBeEnabled();
+  // It mirrors the basemap toggle: same inset from the left edge, and the bottom gap equals the toggle's top gap.
+  const toggle = await page.getByRole('button', { name: /底图$/ }).first().boundingBox(), pin = await locate.boundingBox(), frame = await page.locator('.maplibregl-map').boundingBox();
+  expect(pin!.x - frame!.x).toBeCloseTo(toggle!.x - frame!.x, 0);
+  expect(frame!.y + frame!.height - (pin!.y + pin!.height)).toBeCloseTo(toggle!.y - frame!.y, 0);
+  await locate.click();
+  await expect.poll(() => page.evaluate(() => (window as any).__maps.at(-1).isMoving())).toBe(false);
+  const fitted = (await mapState(page)).camera as [number[], number, number, number];
+  await page.evaluate(() => (window as any).__maps.at(-1).jumpTo({ center: [121.9, 31.6], zoom: 6, bearing: 40, pitch: 45 }));
+  expect((await mapState(page)).camera[1]).toBe(6);
+  await locate.click();
+  await expect.poll(() => page.evaluate(() => (window as any).__maps.at(-1).isMoving())).toBe(false);
+  const back = (await mapState(page)).camera as [number[], number, number, number];
+  expect(back[0][0]).toBeCloseTo(fitted[0][0], 4); expect(back[0][1]).toBeCloseTo(fitted[0][1], 4);
+  expect(back[1]).toBeCloseTo(fitted[1], 2); expect(back[2]).toBe(0); expect(back[3]).toBe(0);
+  await expect(page.getByLabel('路线起点')).toBeVisible();
+});
