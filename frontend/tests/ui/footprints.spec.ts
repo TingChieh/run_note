@@ -59,7 +59,9 @@ for(const mode of ['tracks','heatmap'])test(`city locator moves and restores the
   await page.getByRole('button',{name:'回到全部足迹',exact:true}).click();
   const canvas=page.locator('.maplibregl-canvas');
   // Element screenshots also capture fixed overlays; exclude the development-only tuner.
-  const screenshotStyle='.glass-tuner { visibility: hidden !important; }';
+  // The glass map controls re-sample their backdrop and differ by 1-2/255 on a few edge pixels
+  // between renders on software GL (SwiftShader); this test compares the map camera, so hide them.
+  const screenshotStyle='.glass-tuner, .maplibregl-control-container { visibility: hidden !important; }';
   async function mapScreenshot(name:string) {
     await canvas.scrollIntoViewIfNeeded();const box=(await canvas.boundingBox())!;
     // Crop inside the canvas: fractional page positions can include a row of rounded frame pixels.
@@ -294,7 +296,10 @@ test('nested month and year menus stay anchored inside the open calendar', async
   for (const [label, name, value] of [['月份', '11月', '10'], ['年份', '2025年', '2025']]) {
     const select = calendar.getByLabel(label, { exact: true });
     await expect(select).toHaveClass(/rn-liquid-select/);
-    await select.click();
+    // The 32px arrow toggle overlays the select's right 36px; with a narrower font (Linux CJK
+    // fallback) the select's exact centre sits under it. Click the label area, as the later
+    // responsive loop of this test already does.
+    await select.click({ position: { x: 12, y: 20 } });
     const menu = page.getByRole('listbox', { name: `${label}选项`, exact: true });
     await expect(menu).toBeVisible(); await expect(calendar).toBeVisible();
     const anchor = (await select.boundingBox())!, box = (await menu.boundingBox())!;
