@@ -48,7 +48,10 @@ jobs:
       - run: .venv/bin/python -m pip install --require-hashes -r requirements.lock
       - run: .venv/bin/ruff check app migrations tests
       - run: .venv/bin/ruff format --check app migrations tests
-      - run: .venv/bin/pytest -q
+      - run: .venv/bin/pytest -q --junitxml="$RUNNER_TEMP/junit.xml"
+      - name: Annotate failing tests (diagnostics only)
+        if: failure()
+        run: python ../.github/scripts/annotate_failures.py junit "$RUNNER_TEMP/junit.xml"
       - name: Stop isolated test cluster
         if: always()
         run: |
@@ -190,7 +193,12 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/18/bin
           PYTHON: python
-        run: infra/native/tests/ops-e2e.sh "$(tail -1 "$RUNNER_TEMP/release.path")"
+        run: |
+          set -o pipefail
+          infra/native/tests/ops-e2e.sh "$(tail -1 "$RUNNER_TEMP/release.path")" 2>&1 | tee "$RUNNER_TEMP/e2e.log"
+      - name: Annotate rehearsal failure (diagnostics only)
+        if: failure()
+        run: python .github/scripts/annotate_failures.py tail "$RUNNER_TEMP/e2e.log" 60
       - name: Keep the release tarball for inspection
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
