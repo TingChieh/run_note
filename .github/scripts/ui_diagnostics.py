@@ -32,6 +32,15 @@ CLICK_TRY = """    try { await select.click({ position: { x: 12, y: 20 }, timeou
     catch (e) { console.log('::notice title=click error::' + String(e).slice(0, 1800).replace(/%/g, '%25').replace(/\\n/g, '%0A')); throw e; }
 """
 
+AFTER_EACH = """
+test.afterEach(async ({ page }, info) => {
+  if (info.error) {
+    const dom = await page.evaluate(() => document.querySelector('[role=dialog]')?.outerHTML.slice(0, 900)).catch(() => 'n/a');
+    console.log('::notice title=test error::' + (String(info.error.message).slice(0, 1500) + ' DOM ' + dom).replace(/%/g, '%25').replace(/\\n/g, '%0A'));
+  }
+});
+"""
+
 GLASS = """
   { const probe = await page.evaluate(async () => {
     const el = [...document.querySelectorAll('button')].find(b => b.textContent?.trim() === '登录')!;
@@ -90,6 +99,7 @@ def main():
         1,
     )
     nested = trace_steps(nested, "nested month and year menus")
+    nested += AFTER_EACH
     (UI / "zz-diag-nested.spec.ts").write_text(nested)
     city = inject(footprints, "  const before=await mapScreenshot('before');", CITY)
     (UI / "zz-diag-city.spec.ts").write_text(city)
