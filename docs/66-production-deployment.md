@@ -125,7 +125,7 @@ sudo -u runnote /opt/run-note/current/backend/.venv/bin/python /opt/run-note/cur
 
 | 任务 | 结果 | 范围 |
 | --- | --- | --- |
-| `backend` | 通过 | PGDG PostgreSQL 18 + PostGIS 隔离集群（端口 55432，`jit=off`），仅对 `TEST_DATABASE_URL` 执行 `alembic upgrade head`，`ruff check` / `ruff format --check`，`pytest`（625 项，无跳过） |
+| `backend` | 通过 | PGDG PostgreSQL 18 + PostGIS 隔离集群（端口 55432，`jit=off`），仅对 `TEST_DATABASE_URL` 执行 `alembic upgrade head`，`ruff check` / `ruff format --check`，`pytest`（共 625 项通过 CI；本机同一套件为 624 passed、1 skipped，CI 未单独统计跳过数，该跳过项未逐一核实） |
 | `frontend` | 通过 | `pnpm test`、`pnpm check`、`pnpm build` |
 | `frontend-ui` | 通过 | 合成 API + Chrome，167 项通过 |
 | `infra` | 通过 | shellcheck、ops 单元测试、Caddy validate、`systemd-analyze verify`、Linux 上 `--require-hashes` 安装、构建发布包、`ops-e2e.sh` 全部 10 步、上传 tarball |
