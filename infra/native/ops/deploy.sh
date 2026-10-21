@@ -24,7 +24,7 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-[ -n "$tarball" ] && [ -f "$tarball" ] || die "usage: deploy.sh [--migrate] RELEASE.tar.gz"
+if [ -z "$tarball" ] || [ ! -f "$tarball" ]; then die "usage: deploy.sh [--migrate] RELEASE.tar.gz"; fi
 [ "$(id -u)" -eq 0 ] || [ -n "${RUNNOTE_ALLOW_NONROOT:-}" ] || die "run as root (sudo)"
 require_cmd tar curl flock "${PYTHON:-python3.12}"
 

@@ -24,7 +24,7 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-[ -n "$dump" ] && [ -f "$dump" ] || die "usage: restore-drill.sh DUMP [--strict-counts] [--keep]"
+if [ -z "$dump" ] || [ ! -f "$dump" ]; then die "usage: restore-drill.sh DUMP [--strict-counts] [--keep]"; fi
 require_cmd psql pg_restore createdb dropdb
 : "${PGDATABASE:?PGDATABASE must name the live database}"
 live="$PGDATABASE"
