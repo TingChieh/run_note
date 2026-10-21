@@ -1,19 +1,39 @@
 [Unit]
-Description=RunNote API
-After=network.target
+Description=Run Note API (FastAPI / uvicorn)
+After=network.target postgresql.service
+Wants=postgresql.service
 
 [Service]
 Type=simple
 User=runnote
 Group=runnote
-WorkingDirectory=/opt/run-note/backend
+WorkingDirectory=/opt/run-note/current/backend
 EnvironmentFile=/etc/run-note/backend.env
-ExecStart=/opt/run-note/backend/.venv/bin/uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 --no-proxy-headers
+Environment=PYTHONDONTWRITEBYTECODE=1
+# Two workers: the footprint worker deduplicates through PostgreSQL, imports use an advisory lock.
+# Each worker holds at most 5 pooled connections (db/session.py) -> keep workers*5 < max_connections.
+# --no-proxy-headers: client IPs come from AUTH_TRUSTED_PROXIES logic in the application, never from uvicorn.
+ExecStart=/opt/run-note/current/backend/.venv/bin/uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 --workers 2 --no-proxy-headers --no-server-header --timeout-graceful-shutdown 20
 Restart=on-failure
 RestartSec=5
+TimeoutStopSec=30
+LimitNOFILE=4096
+UMask=0077
+
+# Sandbox: the API needs no writable path (logs go to the journal).
 NoNewPrivileges=true
 PrivateTmp=true
-UMask=0077
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
 
 [Install]
 WantedBy=multi-user.target

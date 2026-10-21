@@ -222,7 +222,7 @@ SvelteKit 3 的实际配置位于 `vite.config.ts`，TS 继承 `$app/tsconfig`�
 
 Linux 主机原生安装 PostgreSQL/PostGIS、Python、Node.js 与 Caddy。应用以专用低权限用户运行；后端使用独立 `.venv`，前端使用 pnpm 锁文件构建后的 `frontend/build`。systemd 分别管理 Uvicorn 和 SvelteKit Node 服务，Caddy 负责 HTTPS 与同源路由：`/api/*` 保留路径转发至 API，其他请求转发至 Node。
 
-数据库、API 和 Node 端口仅内部可达，只有 Caddy 对公网开放。部署时先核对版本、备份数据库，在受控单次步骤执行 Alembic，再启动/切换应用；不让各 worker 自行迁移。密钥通过受控环境文件提供，不写入 unit 或仓库。本项目提供 `infra/native/` 的 systemd/Caddy 模板和配置说明，模板尚未在 Linux/公网 HTTPS 部署实测；恢复与版本回滚须在目标环境验收。
+数据库、API 和 Node 端口仅内部可达，只有 Caddy 对公网开放。部署时先核对版本、备份数据库，在受控单次步骤执行 Alembic，再启动/切换应用；不让各 worker 自行迁移。密钥通过受控环境文件提供，不写入 unit 或仓库。本项目提供 `infra/native/` 的 systemd/Caddy 模板和配置说明，模板尚未在 Linux/公网 HTTPS 部署实测；恢复与版本回滚须在目标环境验收。发布、迁移、备份恢复演练与回滚的脚本、流程和验证记录见[生产部署基础设施](docs/66-production-deployment.md)。
 
 部署前需显式设置 `SITE_OWNER_EMAIL`，恢复包含该账号的数据库，并用 `backend/.venv/bin/python scripts/site-owner.py status` 核对。缺少账号时不会开放注册或选取第一条用户；空库初始化、前后端环境分配及 HTTPS 上线验收见[部署说明](docs/55-single-owner-showcase.md#原生部署)。本次新增 `users.is_active`、`users.showcase_enabled`，须在备份和恢复演练后由操作者受控执行一次 `alembic upgrade head`。历史普通账号默认停用/不公开，配置站主不受状态字段锁出。部署顺序、升级影响和验收见[部署补充](docs/56-admin-users-personal-showcase.md#部署与迁移)。
 
