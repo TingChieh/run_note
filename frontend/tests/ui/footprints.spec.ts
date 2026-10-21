@@ -293,6 +293,9 @@ test('nested month and year menus stay anchored inside the open calendar', async
   await dateFixture(page);
   await page.getByRole('button', { name: '选择开始日期（周一）', exact: true }).click();
   const calendar = page.getByRole('dialog', { name: '选择开始日期（周一）', exact: true });
+  // The popover expands from its trigger (scale/translate). Interact only once it has settled,
+  // as the responsive loop below does; on a slower runner a click mid-expansion never opens the menu.
+  await expect.poll(() => calendar.evaluate(el => el.getAnimations().length)).toBe(0);
   for (const [label, name, value] of [['月份', '11月', '10'], ['年份', '2025年', '2025']]) {
     const select = calendar.getByLabel(label, { exact: true });
     await expect(select).toHaveClass(/rn-liquid-select/);
