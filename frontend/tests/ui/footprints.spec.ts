@@ -319,7 +319,7 @@ test('nested month and year menus stay anchored inside the open calendar', async
     await expect(menu).toBeHidden();
   }
   await expect(calendar.locator('.month-announcement')).toHaveText('2025年11月');
-  await calendar.getByLabel('月份', { exact: true }).click();
+  await calendar.getByLabel('月份', { exact: true }).click({ position: { x: 12, y: 20 } });
   await page.keyboard.press('Escape');
   await expect(page.getByRole('listbox', { name: '月份选项' })).toBeHidden();
   await expect(calendar).toBeVisible();

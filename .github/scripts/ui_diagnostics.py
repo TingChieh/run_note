@@ -58,10 +58,10 @@ CLICK_TRY = """    {
 
 AFTER_EACH = """
 test.afterEach(async ({ page }, info) => {
-  if (info.error) {
+  {
     const dom = await page.evaluate(() => (document.querySelector('[role=dialog]') as HTMLElement | null)?.outerHTML.length).catch(() => 'n/a');
-    const steps = ((globalThis as any).__steps ?? []).slice(-3).join(' || ');
-    console.log('::notice title=test error::' + (`last steps: ${steps} ERR ${String(info.error.message).slice(0, 1200)} dialog-html-length ${dom}`).replace(/%/g, '%25').replace(/\\n/g, '%0A'));
+    const steps = ((globalThis as any).__steps ?? []).map((x: string) => x.slice(0, 40)).join(' | ');
+    console.log('::notice title=test error::' + (`${info.title.slice(0, 20)} steps(ms): ${steps} ERR ${String(info.error?.message ?? 'none').slice(0, 600)} dom ${dom}`).replace(/%/g, '%25').replace(/\\n/g, '%0A'));
   }
 });
 """
@@ -105,7 +105,7 @@ def trace_steps(source: str, test_name: str) -> str:
             n += 1
             tag = line.strip()[:70].replace("'", "").replace("`", "").replace("\\", "").replace("%", "")
             indent = line[: len(line) - len(line.lstrip())]
-            out.append(f"{indent}(globalThis as any).__steps = [...((globalThis as any).__steps ?? []), '{n}: {tag}'];")
+            out.append(f"{indent}(globalThis as any).__steps = [...((globalThis as any).__steps ?? []), '{n}@' + (Date.now() - ((globalThis as any).__t0 ??= Date.now())) + ': {tag}'];")
         out.append(line)
     return source[:start] + "\n".join(out) + source[end:]
 
@@ -125,10 +125,13 @@ def main():
     )
     nested = trace_steps(nested, "nested month and year menus") + AFTER_EACH
     (UI / "zz-diag-nested.spec.ts").write_text(nested)
+    basemaps = (UI / "basemaps.spec.ts").read_text()
+    basemaps = trace_steps(basemaps, "automatic theme, persistent manual override") + AFTER_EACH
+    (UI / "zz-diag-basemaps.spec.ts").write_text(basemaps)
     pathlib.Path("playwright.ci-diagnostics.config.ts").write_text(
         "import base from './playwright.ui.config';\n"
         "export default { ...base, testMatch: ['zz-diag-*.spec.ts'], workers: 1, retries: 0,"
-        " timeout: 20000, expect: { timeout: 5000 }, use: { ...base.use, actionTimeout: 5000 } };\n"
+        " timeout: 60000, expect: { timeout: 5000 }, use: { ...base.use, actionTimeout: 5000 } };\n"
     )
 
 
