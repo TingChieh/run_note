@@ -28,17 +28,29 @@ NESTED = """
   console.log('::notice title=nested-menu probe::' + JSON.stringify(probe).replace(/%/g, '%25')); }
 """
 
-CLICK_TRY = """    try { await select.click({ position: { x: 12, y: 20 }, timeout: 5000 }); }
-    catch (e) { console.log('::notice title=click error::' + String(e).slice(0, 1800).replace(/%/g, '%25').replace(/\\n/g, '%0A')); throw e; }
-"""
-
-AFTER_EACH = """
-test.afterEach(async ({ page }, info) => {
-  if (info.error) {
-    const dom = await page.evaluate(() => document.querySelector('[role=dialog]')?.outerHTML.slice(0, 900)).catch(() => 'n/a');
-    console.log('::notice title=test error::' + (String(info.error.message).slice(0, 1500) + ' DOM ' + dom).replace(/%/g, '%25').replace(/\\n/g, '%0A'));
-  }
-});
+CLICK_TRY = """    {
+      const log = await page.evaluate(() => {
+        const out: string[] = [], t0 = performance.now(), at = () => (performance.now() - t0).toFixed(0);
+        (window as any).__rnlog = out;
+        const dlg = document.querySelector('[role=dialog]')!;
+        const sel = dlg.querySelector('select[aria-label="月份"]') as HTMLSelectElement;
+        const panelId = sel.getAttribute('aria-controls')!;
+        for (const type of ['pointerdown', 'pointerup', 'click', 'blur', 'focus', 'change'])
+          sel.addEventListener(type, () => out.push(`${at()} select:${type}`), true);
+        window.addEventListener('blur', () => out.push(`${at()} window:blur`));
+        window.addEventListener('resize', () => out.push(`${at()} window:resize`));
+        document.addEventListener('pointerdown', e => out.push(`${at()} doc:pointerdown target=${(e.target as HTMLElement).className || (e.target as HTMLElement).tagName}`), true);
+        new MutationObserver(m => out.push(`${at()} mutation select-subtree n=${m.length}`)).observe(sel, { childList: true, subtree: true, attributes: true });
+        const panel = document.getElementById(panelId)!;
+        panel.addEventListener('beforetoggle', e => out.push(`${at()} panel:beforetoggle ${(e as ToggleEvent).newState}`));
+        panel.addEventListener('toggle', e => out.push(`${at()} panel:toggle ${(e as ToggleEvent).newState}`));
+        return panelId;
+      });
+      try { await select.click({ position: { x: 12, y: 20 }, timeout: 5000 }); } catch (e) { console.log('::notice title=click error::' + String(e).slice(0, 700).replace(/%/g, '%25').replace(/\\n/g, '%0A')); }
+      await page.waitForTimeout(1500);
+      const res = await page.evaluate(id => ({ log: (window as any).__rnlog, open: document.getElementById(id)!.matches(':popover-open'), active: document.activeElement?.outerHTML.slice(0, 100), anim: document.querySelector('[role=dialog]')!.getAnimations().length }), log);
+      console.log('::notice title=nested-menu events::' + JSON.stringify(res).replace(/%/g, '%25'));
+    }
 """
 
 GLASS = """
@@ -98,8 +110,6 @@ def main():
         CLICK_TRY,
         1,
     )
-    nested = trace_steps(nested, "nested month and year menus")
-    nested += AFTER_EACH
     (UI / "zz-diag-nested.spec.ts").write_text(nested)
     city = inject(footprints, "  const before=await mapScreenshot('before');", CITY)
     (UI / "zz-diag-city.spec.ts").write_text(city)
