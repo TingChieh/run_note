@@ -46,6 +46,11 @@ jobs:
           "$pg_bin/createdb" -h 127.0.0.1 -p 55432 -U run_note run_note_test
       - run: python -m venv .venv
       - run: .venv/bin/python -m pip install --require-hashes -r requirements.lock
+      # Most integration modules assume an already-migrated isolated test database (README
+      # "测试环境"); only tests/integration/test_auth.py and test_migrations.py migrate for
+      # themselves. Prepare exactly the allow-listed *_test database, never DATABASE_URL.
+      - name: Migrate the isolated test database to head
+        run: DATABASE_URL="$TEST_DATABASE_URL" .venv/bin/alembic upgrade head
       - run: .venv/bin/ruff check app migrations tests
       - run: .venv/bin/ruff format --check app migrations tests
       - run: .venv/bin/pytest -q --junitxml="$RUNNER_TEMP/junit.xml"
@@ -87,6 +92,8 @@ jobs:
           "$pg_bin/createdb" -h 127.0.0.1 -p 55432 -U run_note run_note_test
       - run: python -m venv .venv
       - run: .venv/bin/python -m pip install --require-hashes -r requirements.lock
+      - name: Migrate the isolated test database to head
+        run: DATABASE_URL="$TEST_DATABASE_URL" .venv/bin/alembic upgrade head
       - run: .venv/bin/pytest -q
       - name: Stop isolated test cluster
         if: always()
@@ -129,7 +136,8 @@ jobs:
         with:
           node-version: '22'
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright test --config playwright.ui.config.ts
+      # `github` reporter adds per-failure annotations (readable without log access).
+      - run: pnpm exec playwright test --config playwright.ui.config.ts --reporter=list,github
       - name: Keep Playwright evidence on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
