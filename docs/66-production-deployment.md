@@ -119,17 +119,39 @@ sudo -u runnote /opt/run-note/current/backend/.venv/bin/python /opt/run-note/cur
 | PASS | `pnpm exec playwright test --config playwright.ui.config.ts theme.spec.ts`（worktree，真实 Chrome） | 7 passed（仅用于确认 worktree 中合成 UI 配置可运行） |
 | 发现并修复 | e2e 首轮 | `deploy.sh` 的 EXIT trap 在成功时返回非零，会使成功部署被报告为失败；已修复并重跑通过。回滚的首版先重命名现网库再建新库，建库失败会留下无库状态；已改为"旁路恢复并核验后再改名交换" |
 
+### Linux CI 验证（GitHub Actions，ubuntu-24.04，PR 分支 `deploy/phase1-infra`）
+
+在 push / pull_request 触发的运行中，全部任务通过（`backend-macOS` 仅在 main 上运行，PR 中为跳过）：
+
+| 任务 | 结果 | 范围 |
+| --- | --- | --- |
+| `backend` | 通过 | PGDG PostgreSQL 18 + PostGIS 隔离集群（端口 55432，`jit=off`），仅对 `TEST_DATABASE_URL` 执行 `alembic upgrade head`，`ruff check` / `ruff format --check`，`pytest`（625 项，无跳过） |
+| `frontend` | 通过 | `pnpm test`、`pnpm check`、`pnpm build` |
+| `frontend-ui` | 通过 | 合成 API + Chrome，167 项通过 |
+| `infra` | 通过 | shellcheck、ops 单元测试、Caddy validate、`systemd-analyze verify`、Linux 上 `--require-hashes` 安装、构建发布包、`ops-e2e.sh` 全部 10 步、上传 tarball |
+
+CI 暴露的问题与根因（均已修复，且没有跳过、没有加长超时、没有放宽断言）：
+
+- **测试库未迁移**：多数集成用例默认库已迁移，CI 的空集群没有；加入对隔离测试库的 `alembic upgrade head`。
+- **PostgreSQL JIT**：PGDG 构建带 LLVM，首次执行昂贵的 PostGIS 查询时 JIT 编译会拖慢到超过 3 秒语句超时（Homebrew 构建无 LLVM，所以本机不复现）。CI 集群与生产建议均设 `jit=off`；设置后两个只在 Linux 失败的计时用例通过。
+- **UI 测试的同步问题（仅测试文件）**：玻璃按钮在入场动画中量取位置；嵌套月份/年份下拉的箭头按钮覆盖下拉框右侧，Linux 字体更窄时中心点被拦截（两处点击改为点标签区）；城市定位还原的地图截图比较时包含了玻璃控件边缘（比较时隐藏地图控件）。
+- **脚本问题**：`tar -tzf | head -1` 在 `pipefail` 下因 SIGPIPE 失败（改为 `sed` 读完整输出）；shellcheck 的 SC2015；runner 缺少 `/usr/bin/node`（仅影响 systemd verify，CI 中补链接）。
+
+已知未消除的不确定性：`frontend-ui` 中的 `basemaps.spec.ts` 长用例（本机约 15 秒）曾在一次运行中触发 30 秒超时，其余运行均通过；未定位到具体步骤，视为 runner 负载抖动，若复现需单独调查。
+
 ### 未运行 / 无法验证
 
-- **未在 Linux 上运行任何脚本**：`systemd-analyze verify`、`caddy validate`、PGDG apt 安装（`postgresql-18-postgis-3` 包名与 PostGIS 版本）、真实 `runuser`/`systemctl`/`flock`/GNU `mv -T` 路径，都只由 CI 的 `infra` 与 `backend` 任务覆盖，**CI 尚未实际运行**。本机用 shim 替代 `systemctl`/`runuser`/`chown`（macOS 另替代 `flock`/`mv -T`）。
-- Linux 上 `requirements.lock` 的 `--require-hashes` 安装只在 macOS 本机验证过，Linux 轮子哈希待 CI 验证。
-- 未运行后端 `pytest`（后端代码未改）、`pnpm test`/`pnpm check`（前端代码未改）、完整 UI 套件（仅 `theme.spec.ts`）。
+- Linux 上的 `systemd-analyze verify`、`caddy validate`、PGDG 安装、`--require-hashes` 安装和 e2e 已由 CI 覆盖（见上）。但 e2e 仍用 shim 替代 `systemctl`/`runuser`/`chown`，**真实 systemd 单元启动、真实 `runuser` 与角色所有权路径未在真实服务器上演练**。
 - 未验证：restic 异地上传与取回、`HEALTHCHECK_URL` 心跳、`runnote-backup.timer` 实际触发、真实域名下 HTTPS/Cookie/Origin/CSRF、CSP Report-Only 在真实页面的违规情况、`statement_timeout=3s` 对大 GPX 导入在目标规格上的影响。
 - 本地 `tests/ops-e2e.sh` 用 `postgres` 超级用户和 `DB_OWNER=postgres`；真实服务器上的 `runnote` 角色所有权调整只在脚本里写了，未在真实角色上演练。
 - CI 动作按当时 `v4`/`v5` 标签解析到的 commit SHA 固定（来自 GitHub API），上游已有更新主版本（checkout v7 等），升级需单独评估。
 
 ## 改动范围与保留行为
 
-- 新增/修改：`infra/native/`（单元、Caddyfile、`env/`、`ops/`、`tests/`、README）、`.github/workflows/ci.yml`、本文档与设计/计划文档、`README.md`/`AGENTS.md` 的指引。
-- 未改：`backend/`、`frontend/` 源码，数据库 schema，迁移，现有 API，`backend.command`（仍是本地开发脚本）、`compose.dev.yml`（已停用）。
+- 新增/修改：`infra/native/`、两个 UI 测试文件的同步修正（`frontend/tests/ui/liquid-glass.spec.ts`、`footprints.spec.ts`，仅测试）、`.github/scripts/annotate_failures.py`、（单元、Caddyfile、`env/`、`ops/`、`tests/`、README）、`.github/workflows/ci.yml`、本文档与设计/计划文档、`README.md`/`AGENTS.md` 的指引。
+- 未改：`backend/`、`frontend/` 业务源码，数据库 schema，迁移，现有 API，`backend.command`（仍是本地开发脚本）、`compose.dev.yml`（已停用）。
 - 本阶段**未实现自动 CD**（无 SSH 部署 job）；`build-release.sh` 与 `deploy.sh` 已把部署做成可手动、可审阅的两步。
+
+## 已知待办（未在本分支处理）
+
+- **认证身份锁**：`require_identity` 对每个认证请求（含纯读）执行 `SELECT … FOR UPDATE` 并持有到请求提交；实测同一用户的读请求在另一个慢读期间被阻塞（空闲 16 ms → 约 1.8 s），持锁超过 3 秒的语句超时即报错。拟议方案为仅对纯读路径去掉行锁、写路径保留，并补并发回归测试；这是业务代码改动，需独立分支与确认，**未在本分支实施**。

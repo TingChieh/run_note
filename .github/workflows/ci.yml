@@ -144,17 +144,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # `github` reporter adds per-failure annotations (readable without log access).
       - run: pnpm exec playwright test --config playwright.ui.config.ts --reporter=list,github
-      - name: Probe UI failures on this runner (diagnostics only)
-        if: failure()
-        run: |
-          for mode in tracks heatmap; do
-            if [ -f "test-results/city-$mode-restored.png" ]; then
-              result="$(python3 ../.github/scripts/png_diff.py "test-results/city-$mode-before.png" "test-results/city-$mode-restored.png" 2>&1 || true)"
-              echo "::notice title=map screenshot diff ($mode)::$result"
-            fi
-          done
-          python3 ../.github/scripts/ui_diagnostics.py
-          pnpm exec playwright test --config playwright.ci-diagnostics.config.ts -g "nested month|city locator|official button" --reporter=list || true
       - name: Keep Playwright evidence on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
