@@ -54,9 +54,12 @@ jobs:
       - run: .venv/bin/ruff check app migrations tests
       - run: .venv/bin/ruff format --check app migrations tests
       - run: .venv/bin/pytest -q --junitxml="$RUNNER_TEMP/junit.xml"
-      - name: Annotate failing tests (diagnostics only)
-        if: failure()
-        run: python ../.github/scripts/annotate_failures.py junit "$RUNNER_TEMP/junit.xml"
+      - name: Annotate failing and slowest tests (diagnostics only)
+        if: always()
+        run: |
+          [ -f "$RUNNER_TEMP/junit.xml" ] || exit 0
+          python ../.github/scripts/annotate_failures.py junit "$RUNNER_TEMP/junit.xml"
+          python ../.github/scripts/annotate_failures.py slow "$RUNNER_TEMP/junit.xml" 12
       - name: Stop isolated test cluster
         if: always()
         run: |
@@ -138,6 +141,17 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # `github` reporter adds per-failure annotations (readable without log access).
       - run: pnpm exec playwright test --config playwright.ui.config.ts --reporter=list,github
+      - name: Probe UI failures on this runner (diagnostics only)
+        if: failure()
+        run: |
+          for mode in tracks heatmap; do
+            if [ -f "test-results/city-$mode-restored.png" ]; then
+              result="$(python3 ../.github/scripts/png_diff.py "test-results/city-$mode-before.png" "test-results/city-$mode-restored.png" 2>&1 || true)"
+              echo "::notice title=map screenshot diff ($mode)::$result"
+            fi
+          done
+          python3 ../.github/scripts/ui_diagnostics.py
+          pnpm exec playwright test --config playwright.ci-diagnostics.config.ts -g "nested month|city locator|official button" --reporter=list || true
       - name: Keep Playwright evidence on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -186,7 +200,12 @@ jobs:
           sudo touch /opt/run-note/current/backend/.venv/bin/uvicorn /opt/run-note/current/ops/backup.sh
           sudo chmod +x /opt/run-note/current/backend/.venv/bin/uvicorn /opt/run-note/current/ops/backup.sh
           sudo cp infra/native/runnote-*.service infra/native/runnote-*.timer /etc/systemd/system/
-          systemd-analyze verify /etc/systemd/system/runnote-api.service /etc/systemd/system/runnote-web.service /etc/systemd/system/runnote-backup.service /etc/systemd/system/runnote-backup.timer
+          if ! systemd-analyze verify /etc/systemd/system/runnote-api.service /etc/systemd/system/runnote-web.service /etc/systemd/system/runnote-backup.service /etc/systemd/system/runnote-backup.timer > "$RUNNER_TEMP/verify.log" 2>&1; then
+            cat "$RUNNER_TEMP/verify.log"
+            python .github/scripts/annotate_failures.py tail "$RUNNER_TEMP/verify.log" 40
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/verify.log"
       - name: Install PostgreSQL 18 + PostGIS
         run: |
           sudo apt-get install -y postgresql-common
@@ -206,7 +225,7 @@ jobs:
           infra/native/tests/ops-e2e.sh "$(tail -1 "$RUNNER_TEMP/release.path")" 2>&1 | tee "$RUNNER_TEMP/e2e.log"
       - name: Annotate rehearsal failure (diagnostics only)
         if: failure()
-        run: python .github/scripts/annotate_failures.py tail "$RUNNER_TEMP/e2e.log" 60
+        run: '[ ! -f "$RUNNER_TEMP/e2e.log" ] || python .github/scripts/annotate_failures.py tail "$RUNNER_TEMP/e2e.log" 60'
       - name: Keep the release tarball for inspection
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

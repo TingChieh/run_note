@@ -2,6 +2,7 @@
 """Turn failures into GitHub annotations so they are readable without downloading logs.
 
   annotate_failures.py junit REPORT.xml      one ::error:: per failed/errored pytest case
+  annotate_failures.py slow REPORT.xml [N]   the N (default 12) slowest pytest cases as a notice
   annotate_failures.py tail FILE [LINES]     the last LINES (default 40) of a captured log
 
 Diagnostics only: it never changes a step's pass/fail result.
@@ -18,7 +19,7 @@ def clean(text: str) -> str:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) < 3 or argv[1] not in {"junit", "tail"}:
+    if len(argv) < 3 or argv[1] not in {"junit", "slow", "tail"}:
         print(__doc__)
         return 2
     if argv[1] == "junit":
@@ -32,6 +33,15 @@ def main(argv: list[str]) -> int:
                     body = (node.get("message") or "") + "\n" + (node.text or "")
                     print(f"::error title=pytest {kind}::{clean(name + chr(10) + body[-LIMIT:])}")
         print(f"{failed} failing pytest case(s)")
+        return 0
+    if argv[1] == "slow":
+        cases = [
+            (float(c.get("time", 0)), f"{c.get('classname', '')}::{c.get('name', '')}")
+            for c in ET.parse(argv[2]).getroot().iter("testcase")
+        ]
+        top = sorted(cases, reverse=True)[: int(argv[3]) if len(argv) > 3 else 12]
+        body = chr(10).join(f"{seconds:7.2f}s {name}" for seconds, name in top)
+        print(f"::notice title=slowest pytest cases ({len(cases)} total)::{clean(body)}")
         return 0
     lines = open(argv[2], encoding="utf-8", errors="replace").read().splitlines()
     count = int(argv[3]) if len(argv) > 3 else 40
