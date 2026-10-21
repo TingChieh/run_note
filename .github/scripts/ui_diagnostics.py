@@ -28,6 +28,10 @@ NESTED = """
   console.log('::notice title=nested-menu probe::' + JSON.stringify(probe).replace(/%/g, '%25')); }
 """
 
+CLICK_TRY = """    try { await select.click({ position: { x: 12, y: 20 }, timeout: 5000 }); }
+    catch (e) { console.log('::notice title=click error::' + String(e).slice(0, 1800).replace(/%/g, '%25').replace(/\\n/g, '%0A')); throw e; }
+"""
+
 GLASS = """
   { const probe = await page.evaluate(async () => {
     const el = [...document.querySelectorAll('button')].find(b => b.textContent?.trim() === '登录')!;
@@ -79,6 +83,11 @@ def main():
         "    await select.click({ position: { x: 12, y: 20 } });",
         NESTED,
         "nested month and year menus",
+    )
+    nested = nested.replace(
+        "    await select.click({ position: { x: 12, y: 20 } });",
+        CLICK_TRY,
+        1,
     )
     nested = trace_steps(nested, "nested month and year menus")
     (UI / "zz-diag-nested.spec.ts").write_text(nested)
