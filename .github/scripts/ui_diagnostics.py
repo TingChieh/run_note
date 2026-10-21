@@ -57,9 +57,30 @@ def inject(source: str, anchor: str, probe: str, nth_after: str | None = None) -
     return source[:at] + probe + source[at:]
 
 
+def trace_steps(source: str, test_name: str) -> str:
+    """Print a notice before every statement of one test so a hang shows where it stopped."""
+    start = source.index(test_name)
+    end = source.index("\ntest(", start + 1)
+    out, n = [], 0
+    for line in source[start:end].split("\n"):
+        if line.startswith("    await ") or line.startswith("  await "):
+            n += 1
+            tag = line.strip()[:70].replace("'", "").replace("`", "").replace("\\", "").replace("%", "")
+            indent = line[: len(line) - len(line.lstrip())]
+            out.append(f"{indent}console.log('::notice title=step {n}::{tag}');")
+        out.append(line)
+    return source[:start] + "\n".join(out) + source[end:]
+
+
 def main():
     footprints = (UI / "footprints.spec.ts").read_text()
-    nested = inject(footprints, "    await select.click();", NESTED, "nested month and year menus")
+    nested = inject(
+        footprints,
+        "    await select.click({ position: { x: 12, y: 20 } });",
+        NESTED,
+        "nested month and year menus",
+    )
+    nested = trace_steps(nested, "nested month and year menus")
     (UI / "zz-diag-nested.spec.ts").write_text(nested)
     city = inject(footprints, "  const before=await mapScreenshot('before');", CITY)
     (UI / "zz-diag-city.spec.ts").write_text(city)
@@ -74,7 +95,7 @@ def main():
     pathlib.Path("playwright.ci-diagnostics.config.ts").write_text(
         "import base from './playwright.ui.config';\n"
         "export default { ...base, testMatch: ['zz-diag-*.spec.ts'], workers: 1, retries: 0,"
-        " timeout: 20000 };\n"
+        " timeout: 20000, expect: { timeout: 5000 }, use: { ...base.use, actionTimeout: 5000 } };\n"
     )
 
 

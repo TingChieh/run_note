@@ -50,7 +50,7 @@ else
   log "WARNING: no $tarball.sha256 beside the tarball; integrity not verified"
 fi
 
-top="$(tar -tzf "$tarball" | head -1 | cut -d/ -f1)"
+top="$(tar -tzf "$tarball" | sed -n '1{s#/.*##;p;}')"
 id="$(tar -xzOf "$tarball" "$top/RELEASE" 2>/dev/null | sed -n 's/^id=//p' | head -1)"
 [ "$id" = "$top" ] || die "RELEASE id does not match the archive's top directory"
 valid_release_id "${id:-}" || die "tarball has no valid RELEASE id"
