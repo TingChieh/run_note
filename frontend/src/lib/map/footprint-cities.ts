@@ -37,13 +37,50 @@ function inRing(point: Point, ring: Point[]): boolean {
 function inPolygon(point: Point, polygon: Polygon): boolean {
   return inRing(point,polygon[0]) && !polygon.slice(1).some(ring=>inRing(point,ring));
 }
+const polygonBounds = new WeakMap<Polygon, Bounds>();
+function boundsOf(polygon: Polygon): Bounds {
+  let cached = polygonBounds.get(polygon);
+  if (!cached) {
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    for (const [x,y] of polygon[0]) { if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y; }
+    cached = [[minX,minY],[maxX,maxY]];
+    polygonBounds.set(polygon, cached);
+  }
+  return cached;
+}
+function lineBounds(line: Point[]): Bounds {
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  for (const [x,y] of line) { if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y; }
+  return [[minX,minY],[maxX,maxY]];
+}
+// Exact, only cheaper: polygons whose outline box misses the line's box cannot touch it, and only ring edges
+// inside the line's box can cross it, so the n x m edge comparison shrinks to n x (nearby edges).
 function touchesLine(line: Point[], region: CityRegion): boolean {
-  if(line.some(point=>region.polygons.some(polygon=>inPolygon(point,polygon))))return true;
-  for(let i=1;i<line.length;i++){
-    const a=line[i-1],b=line[i];
-    // Crossing the dateline must never invent a segment through mainland China.
-    if(Math.abs(a[0]-b[0])>180)continue;
-    for(const polygon of region.polygons)for(const ring of polygon)for(let j=1;j<ring.length;j++)if(intersects(a,b,ring[j-1],ring[j]))return true;
+  const box = lineBounds(line);
+  for (const polygon of region.polygons) {
+    if (!overlaps(box, boundsOf(polygon))) continue;
+    const outline = boundsOf(polygon);
+    for (const point of line) {
+      if (point[0]<outline[0][0] || point[0]>outline[1][0] || point[1]<outline[0][1] || point[1]>outline[1][1]) continue;
+      if (inPolygon(point, polygon)) return true;
+    }
+  }
+  for (const polygon of region.polygons) {
+    if (!overlaps(box, boundsOf(polygon))) continue;
+    for (const ring of polygon) {
+      const edges: [Point, Point][] = [];
+      for (let j=1;j<ring.length;j++) {
+        const c=ring[j-1], d=ring[j];
+        if (Math.max(c[0],d[0])>=box[0][0] && Math.min(c[0],d[0])<=box[1][0] && Math.max(c[1],d[1])>=box[0][1] && Math.min(c[1],d[1])<=box[1][1]) edges.push([c,d]);
+      }
+      if (!edges.length) continue;
+      for (let i=1;i<line.length;i++) {
+        const a=line[i-1], b=line[i];
+        // Crossing the dateline must never invent a segment through mainland China.
+        if (Math.abs(a[0]-b[0])>180) continue;
+        for (const [c,d] of edges) if (intersects(a,b,c,d)) return true;
+      }
+    }
   }
   return false;
 }

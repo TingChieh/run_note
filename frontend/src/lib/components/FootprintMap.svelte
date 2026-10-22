@@ -4,8 +4,8 @@
   const fetch = view.fetch;
 
   import FeedbackState from '#lib/components/FeedbackState.svelte';
-  import { onMount, onDestroy } from 'svelte';
-  import type { Map as LibreMap } from 'maplibre-gl';
+  import { onMount, onDestroy, untrack } from 'svelte';
+  import type { Map as LibreMap, GeoJSONSource } from 'maplibre-gl';
   import type { FootprintCollection } from '#lib/api/footprints.ts';
   import { geometryBounds, displayFootprints } from '#lib/api/footprints.ts';
   import type { CityLocations, FootprintCity } from '#lib/map/footprint-cities.ts';
@@ -29,7 +29,7 @@
   let cityOpen=$state(false), cityName=$state('');
   let cities=$state<FootprintCity[]>([]), unlocatedBounds=$state<CityLocations['unlocatedBounds']>(null);
   let cityLookup=$state<'loading'|'ready'|'failed'>('loading'), selectedCity=$state('');
-  let cityWorker:Worker|undefined;
+  let cityWorker:Worker|undefined, appliedData:FootprintCollection|undefined;
   const displayData=$derived(displayFootprints(data));
   const allBounds=$derived(geometryBounds(displayData.features.map(f=>f.geometry)));
   const records=$derived(data.mode==='tracks'?[...new Map(data.features.map(f=>[String(f.properties!.activity_id),{id:String(f.properties!.activity_id),title:String(f.properties!.title),date:String(f.properties!.activity_date)}])).values()]:[]);
@@ -66,18 +66,25 @@
         worker.terminate();cityWorker=undefined;
       };
       worker.onerror=()=>{if(disposed || cityWorker!==worker)return;cityLookup='failed';worker.terminate();cityWorker=undefined;};
-      worker.postMessage($state.snapshot(data.features.map(feature=>feature.geometry)));
+      worker.postMessage(data.features.map(feature=>feature.geometry));
     }catch{cityLookup='failed';cityWorker?.terminate();cityWorker=undefined;}
   }
+  // The page swaps `data` in place (mode switch, background refresh): update the live source instead of rebuilding the map.
+  function applyData() {
+    const source=map?.getSource('footprints') as GeoJSONSource|undefined;
+    if(!map || !source || appliedData===data)return;
+    appliedData=data;
+    source.setData({type:'FeatureCollection',features:colorFootprintFeatures(displayData.features,palette)});
+    choices=[];heat=null;heatPage=0;highlight([]);frame(allBounds);loadCities();
+  }
+  $effect(()=>{data;untrack(applyData);});
   const palette=['#14785b','#315caf','#b4552c','#854caa','#397d87','#ba3970'];
   function loadBasemap() { basemapController?.retry(); }
   function toggleBasemap() { basemapController?.toggle(); }
   onMount(()=>{loadCities();stopTheme=watchSystemTheme(value=>{dark=value;if(map && !disposed && !basemapController)applyMapTheme(map,dark);});void(async()=>{
     try {
       const lib=await import('maplibre-gl'); if(disposed)return;
-      const display=displayData;
-      const bounds=allBounds;
-      map=new lib.Map({container,fadeDuration:0,locale:{'NavigationControl.ZoomIn':'放大地图','NavigationControl.ZoomOut':'缩小地图','Map.Title':'足迹地图'},style:createRouteMapStyle(dark),center:bounds?.[0]??[0,0],zoom:13,maxZoom:19,attributionControl:false});
+      map=new lib.Map({container,fadeDuration:0,locale:{'NavigationControl.ZoomIn':'放大地图','NavigationControl.ZoomOut':'缩小地图','Map.Title':'足迹地图'},style:createRouteMapStyle(dark),center:allBounds?.[0]??[0,0],zoom:13,maxZoom:19,attributionControl:false});
       map.addControl(new lib.AttributionControl({compact:true}),'bottom-right');
       map.addControl(new lib.NavigationControl({showCompass:false}),'top-right');
       map.on('dragstart',()=>{selectedCity='';});
@@ -86,7 +93,8 @@
       map.on('error',e=>{if('sourceId' in e && e.sourceId==='footprints')error='地图绘制失败，请重试。下方记录入口仍可使用。';});
       map.on('load',()=>{
         if(!map || disposed)return;
-        const features=colorFootprintFeatures(display.features,palette);
+        appliedData=data;
+        const features=colorFootprintFeatures(displayData.features,palette);
         map.addSource('footprints',{type:'geojson',data:{type:'FeatureCollection',features}});
         map.addLayer({id:'footprint-fill',type:'fill',source:'footprints',filter:['==','$type','Polygon'],paint:{'fill-color':['step',['get','count'],'#c0dfac',2,'#72b78a',4,'#2d9474',8,'#e69338',16,'#bd432c'],'fill-opacity':0.8}});
         map.addLayer({id:'footprint-lines',type:'line',source:'footprints',filter:['==','$type','LineString'],paint:{'line-color':['get','color'],'line-width':3,'line-opacity':0.8},layout:{'line-join':'round','line-cap':'round'}});
@@ -99,8 +107,9 @@
           for(const hit of hits){const p=hit.properties;if(p?.activity_id)unique.set(p.activity_id,{id:p.activity_id,title:p.title,date:p.activity_date});else if(p?.count)heat=p.count;}
           choices=[...unique.values()];highlight(choices.map(record=>record.id));
         });
-        if(bounds)map.fitBounds(bounds,{padding:45,maxZoom:map.getMaxZoom(),duration:0});
-        map.on('render',()=>{if(!error && map?.isSourceLoaded('footprints'))ready=true;});
+        if(allBounds)map.fitBounds(allBounds,{padding:45,maxZoom:map.getMaxZoom(),duration:0});
+        const markReady=()=>{if(!error && map?.isSourceLoaded('footprints')){ready=true;map.off('render',markReady);}};
+        map.on('render',markReady);
         basemapController=createBasemapController(map,'footprint-fill',state=>{basemap=state.status;basemapPreference=state.preference;basemapStyle=state.style;});
       });
     }catch{if(!disposed)error='无法初始化地图，请使用支持 WebGL 的浏览器。';}

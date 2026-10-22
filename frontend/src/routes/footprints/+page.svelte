@@ -16,27 +16,46 @@
   import { readAllFootprints as scoped_readAllFootprints,FootprintError } from '#lib/api/footprints.ts';
   import type { Selection,FootprintsAll,FootprintSnapshot } from '#lib/api/footprints.ts';
   let mode=$state<Selection['mode']>('tracks');
-  let data=$state<FootprintsAll|null>(null), loading=$state(false), message=$state(''), requestId=0, mounted=$state(false);
+  // Raw: a 50k-point collection must not be deep-proxied; it is only ever replaced wholesale.
+  let data=$state.raw<FootprintsAll|null>(null), loading=$state(false), message=$state(''), requestId=0, mounted=$state(false);
   let status=$state<FootprintSnapshot['status']|null>(null), generatedAt=$state<string|null>(null), refreshing=$state(false), refreshFailed=$state(false);
   let controller:AbortController|undefined, timer:ReturnType<typeof setTimeout>|undefined, disposed=false;
   let mapVersion=$state(0);
+  // Last ready result per mode: switching back renders instantly, then revalidates in the background.
+  type Cached={data:FootprintsAll;generatedAt:string|null;refreshing:boolean;refreshFailed:boolean};
+  const cache=new Map<Selection['mode'],Cached>();
   const generatedLabel=$derived(generatedAt ? new Intl.DateTimeFormat('zh-CN',{timeZone:page.data.showcase?.timezone??'UTC',dateStyle:'medium',timeStyle:'short'}).format(new Date(generatedAt)) : '');
-  function changeMode(next: Selection['mode']) { if(mode===next)return; mode=next; void load(); }
-  async function load() {
+  function changeMode(next: Selection['mode']) {
+    if(mode===next)return; mode=next;
+    const hit=cache.get(next);
+    if(!hit){void load();return;}
+    clearTimeout(timer);loading=false;message='';status='ready';data=hit.data;generatedAt=hit.generatedAt;refreshing=hit.refreshing;refreshFailed=hit.refreshFailed;
+    void load(true);
+  }
+  function reload() { cache.clear(); void load(); }
+  // silent: revalidate or poll without clearing what is already on screen.
+  async function load(silent=false) {
     clearTimeout(timer);timer=undefined;
     const id=++requestId;controller?.abort();controller=new AbortController();const signal=controller.signal;
-    loading=true;data=null;message='';status=null;generatedAt=null;refreshing=false;refreshFailed=false;
+    if(!silent){loading=true;data=null;message='';status=null;generatedAt=null;refreshing=false;refreshFailed=false;}
+    const requested=mode;
     try {
-      await goto(view.href(`/footprints?${new URLSearchParams({mode})}`),{state:page.state,shallow:true,replace:true});
+      // The URL update must not delay the request.
+      const navigation=goto(view.href(`/footprints?${new URLSearchParams({mode})}`),{state:page.state,shallow:true,replace:true}).catch(()=>{});
+      const result=await readAllFootprints(requested,signal);
+      await navigation;
       if(disposed || id!==requestId)return;
-      const result=await readAllFootprints(mode,signal);
-      if(disposed || id!==requestId)return;
-      status=result.status;data=result.result?footprintDisplayData(result.result):null;generatedAt=result.generated_at;refreshing=result.refreshing;refreshFailed=result.refresh_failed;
+      const next=result.result?footprintDisplayData(result.result):null;
+      // Keep the same object when nothing changed, so the live map is not redrawn.
+      if(!(next && data && generatedAt===result.generated_at))data=next;
+      status=result.status;generatedAt=result.generated_at;refreshing=result.refreshing;refreshFailed=result.refresh_failed;message='';
+      if(data)cache.set(requested,{data,generatedAt,refreshing,refreshFailed});else cache.delete(requested);
       if(result.status==='failed')message='足迹生成暂未完成，请稍后重新读取';
-      if(result.status==='pending')timer=setTimeout(()=>{void load();},5000);
+      if(result.status==='pending')timer=setTimeout(()=>{void load(true);},5000);
     }catch(cause){
       if(disposed || id!==requestId || signal.aborted)return;
-      if(cause instanceof FootprintError && cause.status===401){data=null;status=null;generatedAt=null;refreshing=false;refreshFailed=false;window.location.replace('/admin?reason=changed');return;}
+      if(cause instanceof FootprintError && cause.status===401){cache.clear();data=null;status=null;generatedAt=null;refreshing=false;refreshFailed=false;window.location.replace('/admin?reason=changed');return;}
+      if(silent && data)return;
       message=cause instanceof Error?cause.message:'无法读取足迹，请重试';
     }finally{if(!disposed && id===requestId)loading=false;}
   }
@@ -50,15 +69,15 @@
 <div class="footprints-page">
   <div class="mode-row"><div class="mode-switch" role="group" aria-label="地图模式"><button type="button" aria-pressed={mode==='tracks'} disabled={!mounted} onclick={()=>changeMode('tracks')}>轨迹叠加</button><button type="button" aria-pressed={mode==='heatmap'} disabled={!mounted} onclick={()=>changeMode('heatmap')}>运动热力图</button></div><p>{mode==='tracks'?'看每次跑步的路线':'看不同记录经过的区域'}</p></div>
   {#if loading}<PageSkeleton title="正在读取个人足迹…" />{/if}
-  {#if status==='pending'}<FeedbackState kind="loading" title="正在生成全部足迹…"><p>导入后会自动更新，完成后即可查看全部记录。页面会自动检查进度。</p><button onclick={()=>{void load();}} class="button-secondary mt-3">重新读取足迹</button></FeedbackState>{/if}
-  {#if message}<FeedbackState kind="error" title={message}><button onclick={()=>{void load();}} class="button-secondary">重新读取足迹</button></FeedbackState>{/if}
+  {#if status==='pending'}<FeedbackState kind="loading" title="正在生成全部足迹…"><p>导入后会自动更新，完成后即可查看全部记录。页面会自动检查进度。</p><button onclick={reload} class="button-secondary mt-3">重新读取足迹</button></FeedbackState>{/if}
+  {#if message}<FeedbackState kind="error" title={message}><button onclick={reload} class="button-secondary">重新读取足迹</button></FeedbackState>{/if}
   {#if data}
     {#if refreshFailed}<div data-testid="footprint-refresh-failed"><FeedbackState title="自动更新暂未完成，当前显示上次生成的足迹。"><p>后台会继续尝试更新，也可稍后重新读取。</p></FeedbackState></div>{/if}
-    <div class="result-summary" aria-live="polite"><p data-testid="footprint-summary">全部 <strong>{data.activity_count}</strong> 条运动记录，地图显示 <strong>{data.visible_activity_count}</strong> 条。</p><div class="snapshot-status"><p class="generated-label" data-testid="footprint-generated">更新于 {generatedLabel}{refreshing?' · 后台更新中':''}</p><button class="button-secondary" onclick={()=>{void load();}}>重新读取足迹</button></div></div>
+    <div class="result-summary" aria-live="polite"><p data-testid="footprint-summary">全部 <strong>{data.activity_count}</strong> 条运动记录，地图显示 <strong>{data.visible_activity_count}</strong> 条。</p><div class="snapshot-status"><p class="generated-label" data-testid="footprint-generated">更新于 {generatedLabel}{refreshing?' · 后台更新中':''}</p><button class="button-secondary" onclick={reload}>重新读取足迹</button></div></div>
     {#if data.unsupported_segment_count}<FeedbackState title="部分轨迹超出地图支持范围">{data.unsupported_segment_count} 个轨迹段包含超出 ±85.051129° 的极区部分，地图仅显示支持范围。</FeedbackState>{/if}
     {#if data.features.length===0}<FeedbackState title="还没有可显示的足迹"><p>导入带路线的运动记录后，足迹会自动生成。</p><a href={view.href("/activities")}  class="button-secondary mt-3">导入 GPX 或查看运动记录</a></FeedbackState>
     {:else}
-      {#key data}{#key mapVersion}<FootprintMap {data} onretry={()=>{mapVersion++;}} />{/key}{/key}
+      {#key mapVersion}<FootprintMap {data} onretry={()=>{mapVersion++;}} />{/key}
       {#if data.mode==='heatmap'}<section class="heat-legend" data-testid="heat-legend" aria-label="热度图例"><div class="legend-heading"><h2>每格经过的不同运动记录数</h2><span>当前最高 {data.max_count} 次</span></div><div class="legend-levels">{#each [{color:'#c0dfac',label:'1 次'},{color:'#72b78a',label:'2–3 次'},{color:'#2d9474',label:'4–7 次'},{color:'#e69338',label:'8–15 次'},{color:'#bd432c',label:'16 次及以上'}] as level}<span><i style:background={level.color} aria-hidden="true"></i>{level.label}</span>{/each}</div><p>热度按不同运动记录计数，不按 GPS 点数量。同一记录在同一格内只计一次。</p></section>{/if}
     {/if}
   {/if}

@@ -167,6 +167,23 @@ test('all records ignore old date URLs and both modes preserve map, legend and k
   await page.setViewportSize({width:390,height:1000});await page.reload();await ready(page);await capture(page,'mobile-heatmap');
   await page.locator('.map-toolbar').evaluate(el=>el.scrollIntoView({block:'start'}));await page.screenshot({path:'test-results/footprints-mobile-heatmap-map.png',fullPage:false});
 });
+test('switching back to a loaded mode reuses the live map and revalidates in the background',async({page})=>{
+  const state=await fixture(page);await loginRunner(page);await page.goto('/footprints');await ready(page);
+  await page.getByRole('button',{name:'运动热力图',exact:true}).click();await ready(page);
+  await expect(page.getByTestId('heat-legend')).toBeVisible();
+  await page.locator('.maplibregl-canvas').evaluate(el=>{(el as HTMLElement).dataset.mark='live';});
+  const count=state.requests.length;
+  await page.getByRole('button',{name:'轨迹叠加',exact:true}).click();
+  // Cached result: no skeleton, no new map, legend follows the mode, revalidation still happens.
+  await expect(page.getByTestId('heat-legend')).toHaveCount(0);
+  await expect(page.getByTestId('page-skeleton')).toHaveCount(0);
+  await expect(page.locator('.maplibregl-canvas[data-mark="live"]')).toHaveCount(1);
+  await expect(page.getByTestId('footprint-map-ready')).toBeVisible();
+  await expect.poll(()=>state.requests.length).toBe(count+1);
+  expect(state.requests.at(-1)?.search).toBe('?mode=tracks');
+  await expect(page.locator('.record-list summary')).toContainText('全部可显示记录');
+  await expect(page.locator('.maplibregl-canvas[data-mark="live"]')).toHaveCount(1);
+});
 test('overlapping routes expose every hit and keyboard record selection links to existing details',async({page})=>{
   await fixture(page);await loginRunner(page);await page.goto('/footprints?year=2026');await ready(page);
   const canvas=page.locator('.maplibregl-canvas');const box=(await canvas.boundingBox())!;
