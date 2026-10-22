@@ -216,6 +216,6 @@
   .day-fade.stale { opacity: .55; }
   @keyframes day-fade { from { opacity: 0; } to { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { .day-fade { animation: none; } }
-  @media (max-width: 767px) { .dashboard { --dashboard-card-gap:.75rem; } .annual-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); } .annual-metrics > div { padding: 1rem; } .dashboard-card { padding: 1rem; } dd { font-size: 1.65rem; } .calendar-card h2 { font-size: 1.3rem; } .keyboard-hint { display: none; } }
+  @media (max-width: 767px) { .dashboard { --dashboard-card-gap:.75rem; } .annual-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); } .annual-metrics > div { padding: 1rem; } .dashboard-card { padding: 1rem; } dd { font-size: 1.65rem; } .calendar-card { display: none; } .keyboard-hint { display: none; } }
   @media (max-width: 359px) { dd { font-size: 1.4rem; } }
 </style>

@@ -115,7 +115,8 @@ test('populated dashboard: hierarchy, disclosure, calendar keyboard, date and ch
     await page.setViewportSize({width,height:900});
     // ECharts resizes its canvas in ResizeObserver after the viewport changes.
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), { message: `Dashboard fits ${width}px after chart resize` }).toBe(true);
-    await expect.poll(() => day.evaluate(el=>el.getBoundingClientRect().width)).toBeGreaterThan(4);
+    if (width < 768) await expect(day).toBeHidden();
+    else await expect.poll(() => day.evaluate(el=>el.getBoundingClientRect().width)).toBeGreaterThan(4);
   }
   await page.setViewportSize({width:390,height:1100}); await capture(page,'mobile-data');
   await page.getByRole('heading',{name:'运动趋势',exact:true}).scrollIntoViewIfNeeded();

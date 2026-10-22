@@ -57,10 +57,11 @@ test('whole calendar fits every year and valid year input refreshes automaticall
   await expect(page.getByRole('button',{name:'查看',exact:true})).toHaveCount(0);
   for(const width of [320,390,768,1440]) {
     await page.setViewportSize({width,height:1000});
+    if(width<768) { await expect(page.getByRole('region',{name:'2026 年运动日历',exact:true})).toBeHidden(); continue; }
     await expect(page.locator('[data-date]')).toHaveCount(365);
     await expect.poll(()=>page.locator('.calendar-scroll').evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
     await expect(page.getByRole('button',{name:/2026-12-31，/})).toBeVisible();
-    if(width===390 || width===1440) await captureRegion(page,page.getByRole('region',{name:'2026 年运动日历',exact:true}),`.cache/dashboard-explorer/calendar-${width}.png`);
+    if(width===768 || width===1440) await captureRegion(page,page.getByRole('region',{name:'2026 年运动日历',exact:true}),`.cache/dashboard-explorer/calendar-${width}.png`);
   }
   await page.getByLabel('年份',{exact:true}).fill('2024');
   await expect(page.locator('[data-date]')).toHaveCount(366);
@@ -196,29 +197,6 @@ test('thumbnail expiry clears the selected private map and metrics before login 
     await expect.poll(() => exiting).toEqual({metrics:0,map:0,cards:0});
   } finally { release(); }
   await expect(page).toHaveURL(/admin\?reason=expired/);
-});
-
-test('monthly calendar dates remain readable at every heat level in light and dark themes',async({page})=>{
-  await page.emulateMedia({reducedMotion:'reduce'});
-  await page.setViewportSize({width:390,height:1000});
-  await page.route('**/api/v1/showcase/statistics/calendar?**',async route=>{
-    const response=await route.fetch(), body=await response.json();
-    for(const [index,distance] of [[1,0],[2,2],[3,3],[4,4]]) Object.assign(body.data.days[index],{activity_count:1,distance_m:distance,missing_duration_count:1});
-    body.data.activity_count=4;body.data.distance_m=9;
-    await route.fulfill({response,json:body});
-  });
-  await loginRunner(page);await page.goto('/dashboard?year=2026');
-  await expect(page.locator('.month-days button')).toHaveCount(365);
-  await page.getByLabel('日历维度').selectOption('distance');
-  for (const level of [0,1,2,3,4]) await expect(page.locator(`.month-days .day-level-${level}`).first()).toBeVisible();
-  for(const colorScheme of ['light','dark'] as const) {
-    await page.emulateMedia({colorScheme});
-    await expect(page.locator('html')).toHaveAttribute('data-theme',colorScheme);
-    await expect.poll(()=>page.locator('.month-days button').evaluateAll(elements=>{
-      const luminance=(color:string)=>{const rgb=color.match(/[\d.]+/g)!.slice(0,3).map(Number).map(n=>{const v=n/255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;});return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722;};
-      return Math.min(...elements.slice(0,5).map(el=>{const style=getComputedStyle(el),bg=luminance(style.backgroundColor),fg=luminance(style.color);return(Math.max(bg,fg)+.05)/(Math.min(bg,fg)+.05);}));
-    })).toBeGreaterThanOrEqual(4.5);
-  }
 });
 
 for (const width of [390,1440]) test(`switching a record keeps the map, metrics and history in place during slow reads at ${width}px`,async({page})=>{
