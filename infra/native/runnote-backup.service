@@ -1,0 +1,25 @@
+[Unit]
+Description=Run Note database backup with restore drill
+After=postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=oneshot
+# postgres: local-socket peer auth as superuser (the restore drill needs CREATE EXTENSION postgis).
+User=postgres
+Group=postgres
+EnvironmentFile=/etc/run-note/backup.env
+Environment=RESTIC_CACHE_DIR=/var/backups/run-note/.restic-cache
+ExecStart=/opt/run-note/current/ops/backup.sh --label nightly --drill
+TimeoutStartSec=2h
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/backups/run-note
+ProtectKernelTunables=true
+ProtectControlGroups=true

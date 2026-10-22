@@ -37,6 +37,7 @@ frontend/src/
   routes/          页面与 /api 代理端点
 frontend/tests/    unit / ui / e2e / fixtures
 scripts/           离线运维脚本（local-auth.py、site-owner.py）
+infra/native/      原生部署资产：systemd 单元、Caddyfile、env 模板、ops/ 发布与备份脚本、tests/（见 docs/66）
 docs/              设计与验收记录（中文）；docs/design-system/ 为 UI 规范
 ```
 
@@ -140,6 +141,14 @@ pnpm build                                     # 生产构建（adapter-node）
 pnpm showcase                                  # 设计系统独立 showcase（不进生产）
 pnpm exec playwright test --config <file>      # 运行指定 Playwright 配置
 pnpm test:e2e                                  # 默认 e2e，需后端已启动且测试库 ready
+```
+
+部署资产自检（仓库根目录；全部在隔离环境，不连生产）：
+
+```bash
+backend/.venv/bin/python -m unittest discover -s infra/native/tests   # 运维脚本单元测试
+shellcheck -x --source-path=SCRIPTDIR infra/native/ops/*.sh infra/native/tests/*.sh
+infra/native/tests/ops-e2e.sh <release.tar.gz>                      # 需 PG_BIN、PYTHON；临时集群里演练部署/迁移/回滚/恢复
 ```
 
 本地后端生命周期（仓库根目录，仅管理本仓库后端，默认端口 8001）：`./backend.command start|stop|restart|status|logs`。

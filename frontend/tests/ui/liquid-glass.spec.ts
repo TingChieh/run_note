@@ -227,6 +227,10 @@ test('official button surface squishes independently of its native hit area', as
   const surface = submit.locator(':scope > .rn-glass-surface');
   await expect(surface).toHaveAttribute('aria-hidden', 'true');
   const shadow = surface.locator('.rn-glass-shadow');
+  // The auth card fades in with a sub-pixel translate (.page-reveal); the hit area is only
+  // comparable once that entrance has settled, otherwise the first measurement is a mid-animation
+  // frame and the exact equality below races the animation (it did on slower Linux runners).
+  await page.evaluate(async () => { await Promise.all(document.getAnimations().map(animation => animation.finished.catch(() => {}))); });
   const box = (await submit.boundingBox())!;
   const rest = await shadow.evaluate(el => el.getBoundingClientRect().width);
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);

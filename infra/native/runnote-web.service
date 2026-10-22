@@ -1,23 +1,42 @@
 [Unit]
-Description=RunNote web
+Description=Run Note web (SvelteKit adapter-node)
 After=network.target runnote-api.service
+Wants=runnote-api.service
 
 [Service]
 Type=simple
 User=runnote
 Group=runnote
-WorkingDirectory=/opt/run-note/frontend
+WorkingDirectory=/opt/run-note/current/frontend
 EnvironmentFile=/etc/run-note/frontend.env
+# Loopback only. Only Caddy may reach this port, so only Caddy can set x-forwarded-proto.
 Environment=HOST=127.0.0.1
 Environment=PORT=3000
 Environment=PROTOCOL_HEADER=x-forwarded-proto
 Environment=BODY_SIZE_LIMIT=11M
+Environment=NODE_ENV=production
+# NodeSource installs /usr/bin/node; engines require ^22.17 || ^24 (frontend/package.json).
 ExecStart=/usr/bin/node build/index.js
 Restart=on-failure
 RestartSec=5
+TimeoutStopSec=30
+LimitNOFILE=4096
+UMask=0077
+
 NoNewPrivileges=true
 PrivateTmp=true
-UMask=0077
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+# V8 JIT needs writable+executable memory, so MemoryDenyWriteExecute is deliberately not set.
 
 [Install]
 WantedBy=multi-user.target

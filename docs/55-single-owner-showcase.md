@@ -26,6 +26,8 @@
 
 ## 原生部署
 
+> 2026-10-21 更新：模板已演进为 `/opt/run-note/current` 发布软链、域名由 `RUNNOTE_DOMAIN` 环境变量提供、API 2 worker 与沙箱加固，并新增备份/恢复演练与发布/回滚脚本。以 [生产部署基础设施](66-production-deployment.md) 为准；下列步骤保留为历史说明。
+
 `infra/native/` 提供 Linux systemd 的 API/Web unit 和 Caddyfile 模板，路径假定 `/opt/run-note`、低权限用户 `runnote`，Node 路径需按主机安装位置核对。本次仅新增模板，尚未安装 unit、启动生产服务或配置公网域名。
 
 1. 原生安装 PostgreSQL/PostGIS、Python 3.12、Node（满足前端 engines）、pnpm 11.25.0 和 Caddy。依赖使用后端锁文件与 `pnpm install --frozen-lockfile`，前端运行 `pnpm build`。

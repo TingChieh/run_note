@@ -29,3 +29,4 @@ test-results/
 /backups/
 /tmp/
 /backend/tmp/
+/dist-release/
