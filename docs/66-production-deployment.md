@@ -164,6 +164,29 @@ Python 虚拟环境**不可重定位**：`bin/uvicorn` 等入口脚本的第一�
 - 退役旧布局（staging）时，需要从服务器的 `Caddyfile` 删掉旧站点块并移除 `access.d` 下的片段，同时 `systemctl disable --now runnote-api runnote-web runnote-backup.timer`；Caddyfile 里 `{$RUNNOTE_DOMAIN}` 为空会导致校验失败（旧配置继续生效，不会中断）。
 - 该实例的本地备份**没有异地副本**：restic 尚未配置，没有异地灾难恢复能力。
 
+### 一键发布（`ops/ship.py`）
+
+在**维护者的电脑上**运行，通过 SSH 驱动服务器，把已合并的 `main` 发布出去。它做的就是手工发布的那套检查，并在不满足时**拒绝**（退出码 2，服务器上什么都没动）：
+
+```bash
+infra/native/ops/ship.py --dry-run          # 只做本地检查 + 构建，不碰服务器
+infra/native/ops/ship.py                    # 发布（部署前会询问确认；--yes 跳过）
+infra/native/ops/ship.py --migrate          # 本次带数据库迁移时才允许
+```
+
+顺序与拒绝条件：
+1. 本地工作树干净、在 `main`、与 `origin/main` 完全一致。
+2. 该提交的**每个** CI job 都成功（只读调用 GitHub API，使用 git 已保存的凭据；`--wait-ci 秒数` 可等待 CI 结束）。
+3. 自已部署的提交以来是否有迁移文件变化：有就必须显式加 `--migrate`，否则拒绝；已部署的提交不是目标的祖先（即这是回退而不是发布）也拒绝。
+4. 构建发布包（`build-release.sh`，自带自包含检查）。
+5. 上传、校验 SHA-256，并在服务器上运行 `verify-release.sh`。
+6. 先做一次**带真实恢复演练的备份**，再用新发布包自带的 `deploy.sh` 部署（`--migrate` 原样传递；`deploy.sh` 自己仍然负责迁移前备份、严格演练和失败保护）。
+7. 验证：发布目录有完成标记、两个服务 active、没有旧发布的进程、回环健康检查 200、数据（活动数、用户数）没有减少、公网 HTTPS 的健康检查与页面 200，并打印回滚命令。
+
+**配置在仓库之外，不会提交任何个人信息**：`RUNNOTE_SSH_HOST`（必填，`~/.ssh/config` 里的别名即可）、`RUNNOTE_INSTANCE`（默认 `production`）、`RUNNOTE_STAGE_DIR`（默认 `/root/run-note-stage`）、`RUNNOTE_GITHUB_REPO`（默认从 `origin` 推导），从环境变量读取，其次从 `~/.config/run-note/deploy.env`（`KEY=VALUE`）。域名、端口、路径来自服务器上的 `/etc/run-note-instances/<实例>.conf`。
+
+它**不会**：自动触发（只在你运行时执行）、改动数据库结构（迁移只由 `deploy.sh --migrate` 完成）、碰密钥或环境文件、在失败时自动回滚数据库。回滚同 schema 的发布用 `rollback.sh previous`；涉及迁移的回滚见"回滚决策"。
+
 ### 上线验收脚本（`ops/acceptance-check.py`）
 
 随每个发布包一起交付（`<release>/ops/acceptance-check.py`，`verify-release.sh` 会检查它在发布包里、可执行、能编译）。它以站主身份登录，导入**一条纯合成 GPX**，检查私有视图与匿名展示，删除这条记录，登出并证明旧会话已失效，共约 37 项。**可以在已经有真实数据的站点上安全运行。**
@@ -241,6 +264,8 @@ python3 ops/acceptance-check.py --loopback-port 3100 --domain run.example.com --
 | PASS | 多实例：`caddy-instances.sh`（真实 Caddy 2.11.7 进程，高端口，沙箱目录） | staging 仍要求 Basic Auth 且只代理旧上游；production 维护页返回 503、带 Retry-After、不到达任何上游、不要求认证；上线后 production 只代理自己的上游、无需 Basic Auth、带齐安全响应头且无 `Server` 头；production 上线后 staging 仍要求 Basic Auth；伪造的 `X-Forwarded-For` 对两个站点都被真实对端地址覆盖 |
 | PASS | 原有 `ops-e2e.sh`（旧布局，未改动） | 全部步骤仍通过，证明向后兼容 |
 | 回归敏感性 | 变异检查 | 去掉 `lib.sh` 的环境冲突检查、去掉 `backup.sh` 的数据库守卫、去掉 `init-instance.sh` 对 PUBLIC 的 `REVOKE`，各自被对应测试发现（注意 e2e 执行的是发布包内的 `ops/`，变异后必须重新构建发布包） |
+| PASS | 一键发布：`unittest discover -s infra/native/tests` | 98 tests OK（新增 22）：缺少服务器地址、不安全的主机/实例/目录值被拒；配置优先级（环境变量 > 配置文件 > 默认值）；实例定义缺键或含异常字符被拒；脏工作树、非 `main`、与 `origin/main` 不一致被拒；迁移文件变化被检出，未知或非祖先的已部署提交被拒而不是猜测；CI 全绿/跳过通过，失败、进行中、没有运行都被报告；整条流程用假服务器验证命令顺序（上传 → 备份 → 部署 → 验证）、`--dry-run` 不碰服务器、红色 CI 或缺少 `--migrate` 或已部署或未确认都在上传之前拒绝、备份失败不进入部署、部署未完成与数据减少/服务异常/公网错误都判失败并给出回滚命令；工具文本不含任何个人信息 |
+| PASS | 一键发布：对真实服务器的只读演练 | 真实的本地预检、真实的 CI 读取、真实的 SSH 读取实例定义与已部署提交，在已部署的提交上按设计拒绝（"nothing to ship"），服务器无任何改动 |
 | 发现并修复 | 把验收脚本整理进仓库时 | 原脚本在空站上写的断言（"列表恰好 1 项""总数回到 0""统计恰好为 1"）在已有数据的站点上不成立，而且**统计摘要接口根本不认 `year` 参数**（只认 `date_from`/`date_to`），空站上"恰好为 1"碰巧通过而掩盖了这一点。新工具改为探针日期 + 基线相对断言，摘要改用区间查询，开跑前先要求探针日期为空 |
 | PASS | `acceptance-check.py`：`unittest discover -s infra/native/tests` | 76 tests OK（新增 9）：合成 GPX 格式正确且全部点在探针日期；multipart 内容；`read_kv`；用法错误（目标二选一、回环模式缺域名、公共 http 原点）被拒；回环模式带上 `Host`、`X-Forwarded-Proto: https`、不带 Basic Auth，并把 `__Host-` Secure Cookie 在回环 http 上发回；写请求带站点 Origin 与 CSRF 令牌，关闭时不带 |
 | PASS | `acceptance-check.py` 在本机隔离环境、**预置 3 条活动**的站点上 | 第 4 次运行 37/37 通过，预置数据原样保留，探针日期回到空，无存活会话。（第 2 次运行曾在足迹快照一项超时 150 秒，之后三次未复现，原因未查明，属于后台 worker 的偶发时序；默认等待放宽到 180 秒，超时仍如实报 FAIL）|
