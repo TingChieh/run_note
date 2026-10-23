@@ -153,6 +153,7 @@ infra/native/ops/ship.py [--dry-run] [--migrate]                          # 在�
 infra/native/ops/acceptance-check.py --base https://… --backend-env …          # 站主登录 + 合成 GPX 的上线验收（已有真实数据的站点上也安全；见 docs/66）
 infra/native/ops/verify-release.sh <release.tar.gz>                       # 发布包自包含检查（build-release.sh 每次构建都会运行）
 infra/native/tests/ops-e2e-instances.sh <release.tar.gz>             # 旧布局与第二实例并行：隔离、各自备份/回滚、站点模式（见 docs/66“同机多实例”）
+infra/native/tests/offsite-e2e.sh                                   # 需 PG_BIN 与 restic；本地 restic 仓库演练异地备份的设置、上传、取回验证与损坏检测
 infra/native/tests/caddy-instances.sh                                # 需 caddy；沙箱里的真实 Caddy 进程，验证 staging Basic Auth / production 维护页与上线
 ```
 

@@ -242,6 +242,8 @@ jobs:
           sudo apt-get install -y postgresql-common
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y postgresql-18 postgresql-18-postgis-3
+      - name: Install restic (off-site backup rehearsal)
+        run: sudo apt-get install -y restic
       - name: Build the release tarball
         run: |
           pnpm --dir frontend install --frozen-lockfile
@@ -263,6 +265,10 @@ jobs:
         run: |
           set -o pipefail
           infra/native/tests/ops-e2e-instances.sh "$(tail -1 "$RUNNER_TEMP/release.path")" 2>&1 | tee "$RUNNER_TEMP/e2e-instances.log"
+      - name: Off-site backup (setup, upload, retrieval check, damaged copy) against a local restic repository
+        env:
+          PG_BIN: /usr/lib/postgresql/18/bin
+        run: infra/native/tests/offsite-e2e.sh
       - name: Annotate rehearsal failure (diagnostics only)
         if: failure()
         run: |
