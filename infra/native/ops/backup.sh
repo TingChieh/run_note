@@ -26,6 +26,7 @@ while [ $# -gt 0 ]; do
 done
 [[ "$label" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,60}$ ]] || die "invalid label"
 : "${PGDATABASE:?PGDATABASE must be set}"
+assert_instance_database
 require_cmd pg_dump pg_restore psql
 KEEP_NIGHTLY="${KEEP_NIGHTLY:-14}"
 KEEP_PRE="${KEEP_PRE:-10}"

@@ -183,6 +183,8 @@ jobs:
           curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
           sudo apt-get update && sudo apt-get install -y caddy
           RUNNOTE_DOMAIN=run.example.test caddy validate --config infra/native/Caddyfile --adapter caddyfile
+      - name: Caddy edge behaviour (staging basic auth, production maintenance then live)
+        run: infra/native/tests/caddy-instances.sh
       - name: Verify systemd units
         run: |
           sudo useradd --system runnote || true
@@ -200,6 +202,41 @@ jobs:
             exit 1
           fi
           cat "$RUNNER_TEMP/verify.log"
+      - name: Verify the rendered production-instance units as systemd expands them
+        run: |
+          mkdir -p "$RUNNER_TEMP/instances"
+          cp infra/native/instances/production.conf.example "$RUNNER_TEMP/instances/production.conf"
+          python infra/native/ops/instance.py check --dir "$RUNNER_TEMP/instances"
+          sudo groupadd --system run_note || true
+          sudo useradd --system --gid run_note run_note || true
+          sudo install -d /etc/run-note-production /opt/run-note-production/current/backend/.venv/bin /opt/run-note-production/current/frontend /opt/run-note-production/current/ops /var/backups/run-note-production
+          for f in backend frontend backup; do sudo touch /etc/run-note-production/$f.env; done
+          sudo touch /opt/run-note-production/current/backend/.venv/bin/uvicorn /opt/run-note-production/current/ops/backup.sh
+          sudo chmod +x /opt/run-note-production/current/backend/.venv/bin/uvicorn /opt/run-note-production/current/ops/backup.sh
+          sudo python infra/native/ops/instance.py render production --dir "$RUNNER_TEMP/instances" --out /etc/systemd/system
+          sudo systemctl daemon-reload
+          units=/etc/systemd/system/runnote-production
+          systemd-analyze verify ${units}-api.service ${units}-web.service ${units}-backup.service ${units}-backup.timer
+          systemd-analyze calendar '*-*-* 03:15:00 Asia/Hong_Kong'
+          show() { systemctl show "$1" --property="$2" --value; }
+          expect() { case "$3" in *"$2"*) echo "ok: $1 has $2" ;; *) echo "::error::$1 lacks '$2' (got: $3)"; exit 1 ;; esac; }
+          expect "api User" "run_note" "$(show runnote-production-api.service User)"
+          expect "api Group" "run_note" "$(show runnote-production-api.service Group)"
+          expect "api WorkingDirectory" "/opt/run-note-production/current/backend" "$(show runnote-production-api.service WorkingDirectory)"
+          expect "api ExecStart" "--port 8100" "$(show runnote-production-api.service ExecStart)"
+          expect "api EnvironmentFiles" "/etc/run-note-production/backend.env" "$(show runnote-production-api.service EnvironmentFiles)"
+          expect "web User" "run_note" "$(show runnote-production-web.service User)"
+          expect "web Environment" "PORT=3100" "$(show runnote-production-web.service Environment)"
+          expect "web EnvironmentFiles" "/etc/run-note-production/frontend.env" "$(show runnote-production-web.service EnvironmentFiles)"
+          expect "web After" "runnote-production-api.service" "$(show runnote-production-web.service After)"
+          expect "backup User" "postgres" "$(show runnote-production-backup.service User)"
+          expect "backup Environment" "RUNNOTE_INSTANCE=production" "$(show runnote-production-backup.service Environment)"
+          expect "backup ReadWritePaths" "/var/backups/run-note-production" "$(show runnote-production-backup.service ReadWritePaths)"
+          expect "timer calendar" "Asia/Hong_Kong" "$(show runnote-production-backup.timer TimersCalendar)"
+          # nothing of the legacy installation leaks in
+          for unit in api web backup; do
+            if systemctl cat runnote-production-$unit.service | grep -E '/opt/run-note/|/etc/run-note/|User=runnote$|runnote-(api|web)\.service'; then echo "::error::legacy name in runnote-production-$unit"; exit 1; fi
+          done
       - name: Install PostgreSQL 18 + PostGIS
         run: |
           sudo apt-get install -y postgresql-common
@@ -217,9 +254,19 @@ jobs:
         run: |
           set -o pipefail
           infra/native/tests/ops-e2e.sh "$(tail -1 "$RUNNER_TEMP/release.path")" 2>&1 | tee "$RUNNER_TEMP/e2e.log"
+      - name: Two instances side by side (isolation, per-instance backup/rollback, site mode)
+        env:
+          PG_BIN: /usr/lib/postgresql/18/bin
+          PYTHON: python
+        run: |
+          set -o pipefail
+          infra/native/tests/ops-e2e-instances.sh "$(tail -1 "$RUNNER_TEMP/release.path")" 2>&1 | tee "$RUNNER_TEMP/e2e-instances.log"
       - name: Annotate rehearsal failure (diagnostics only)
         if: failure()
-        run: '[ ! -f "$RUNNER_TEMP/e2e.log" ] || python .github/scripts/annotate_failures.py tail "$RUNNER_TEMP/e2e.log" 60'
+        run: |
+          for log in e2e e2e-instances; do
+            [ ! -f "$RUNNER_TEMP/$log.log" ] || python .github/scripts/annotate_failures.py tail "$RUNNER_TEMP/$log.log" 60
+          done
       - name: Keep the release tarball for inspection
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

@@ -27,6 +27,7 @@ done
 if [ -z "$dump" ] || [ ! -f "$dump" ]; then die "usage: restore-drill.sh DUMP [--strict-counts] [--keep]"; fi
 require_cmd psql pg_restore createdb dropdb
 : "${PGDATABASE:?PGDATABASE must name the live database}"
+assert_instance_database
 live="$PGDATABASE"
 
 # Integrity of the file itself, when a checksum sits beside it.

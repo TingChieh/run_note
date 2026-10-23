@@ -13,6 +13,7 @@ set -euo pipefail
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
 load_backup_env "$0" "$@"
+assert_instance_database
 
 target_arg="previous" dump=""
 while [ $# -gt 0 ]; do
@@ -26,7 +27,6 @@ done
 [ "$(id -u)" -eq 0 ] || [ -n "${RUNNOTE_ALLOW_NONROOT:-}" ] || die "run as root (sudo)"
 require_cmd curl flock
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
-SERVICES=(runnote-api runnote-web)
 releases="$RUNNOTE_ROOT/releases"
 
 exec 9>"$RUNNOTE_ROOT/.deploy.lock"
@@ -82,7 +82,7 @@ read -r answer
 stamp="$(date -u +%Y%m%d%H%M%S)"
 safety="${PGDATABASE}_pre_rollback_$stamp"
 staging="${PGDATABASE}_restore_$stamp"
-owner="${DB_OWNER:-$APP_USER}"
+owner="${DB_OWNER:-${DB_ROLE:-$APP_USER}}"
 
 # Build and verify the replacement FIRST, beside the live database; only then swap names.
 log "restoring into staging database $staging (live database untouched)"

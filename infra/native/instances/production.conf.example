@@ -1,0 +1,32 @@
+# /etc/run-note-instances/production.conf  (root:root, mode 0644; contains NO secrets)
+#
+# Every name an instance uses is spelled out. Nothing is derived from the instance name, and the
+# file name must equal INSTANCE. `ops/instance.py check` refuses a file that shares a directory,
+# user, group, database, role, port, unit name or domain with the legacy installation
+# (/opt/run-note, /etc/run-note, user runnote, ports 8000/3000, units runnote-api/web/backup) or
+# with any other instance in this directory.
+#
+# Mind the similar spellings: the legacy installation is "runnote" / "run-note" (no underscore in the
+# user and role), this production instance is "run_note" (system user, group, database, role).
+INSTANCE=production
+DOMAIN=run.aisaka.cc
+
+ROOT=/opt/run-note-production
+ETC=/etc/run-note-production
+BACKUP_DIR=/var/backups/run-note-production
+
+APP_USER=run_note
+APP_GROUP=run_note
+DB_NAME=run_note
+DB_ROLE=run_note
+
+API_PORT=8100
+WEB_PORT=3100
+
+SERVICE_API=runnote-production-api
+SERVICE_WEB=runnote-production-web
+SERVICE_BACKUP=runnote-production-backup
+
+# 03:15 Hong Kong time, no random delay (a single host has nothing to spread load against).
+BACKUP_ONCALENDAR=*-*-* 03:15:00 Asia/Hong_Kong
+BACKUP_RANDOM_DELAY=0

@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly Run Note backup
+
+[Timer]
+OnCalendar=@@BACKUP_ONCALENDAR@@
+RandomizedDelaySec=@@BACKUP_RANDOM_DELAY@@
+Persistent=true
+
+[Install]
+WantedBy=timers.target
