@@ -6,6 +6,7 @@ from threading import Event, Lock, Thread
 from sqlalchemy import and_, or_, select, text
 
 from app.modules.footprints.model import FootprintSnapshot
+from app.modules.footprints.provinces import fill_province_caches
 from app.modules.footprints.snapshot import (
     ALGORITHM_VERSION,
     REFRESH_INTERVAL,
@@ -87,6 +88,11 @@ def run_scan(session_factory, now, expected_revision, *, limit=10, stop_event=No
         except Exception as error:
             # Includes connection/readiness loss; next scan retries without leaking data in logs.
             logger.warning("Footprint worker task unavailable (%s)", type(error).__name__)
+    try:
+        fill_province_caches(session_factory, stop_event=stop_event)
+    except Exception as error:
+        # Reads compute missing rows themselves; the next scan retries without leaking details.
+        logger.warning("Province cache fill unavailable (%s)", type(error).__name__)
     return published
 
 
