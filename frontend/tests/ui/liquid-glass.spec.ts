@@ -177,9 +177,18 @@ test('liquid select preserves native values, keyboard selection and Escape focus
   await expect(select).toHaveValue('distance');
   await select.selectOption('count');
   await expect(select).toHaveValue('count');
+  // Below 768px the yearly calendar card, and with it this select, is intentionally hidden.
   await page.setViewportSize({ width: 320, height: 844 });
-  await select.click(); await expect(menu).toBeVisible();
-  const box = (await menu.boundingBox())!;
+  await expect(select).toBeHidden();
+  // The narrow-viewport placement of a liquid select menu is checked on a select that stays
+  // visible on phones: the import format select on the activities page.
+  await installActivities(page); await page.goto('/activities');
+  const format = page.getByLabel('文件格式', { exact: true });
+  await expect(format).toHaveClass(/rn-liquid-select/);
+  await format.click({ position: { x: 12, y: 20 } });
+  const formatMenu = page.getByRole('listbox', { name: '文件格式选项' });
+  await expect(formatMenu).toBeVisible();
+  const box = (await formatMenu.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(320);
 });
 
