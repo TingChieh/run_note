@@ -167,5 +167,66 @@ class SchemaRelation(unittest.TestCase):
         self.assertRegex(head, r"^\d{4}_[a-z0-9_]+$")
 
 
+class DbStateClassification(unittest.TestCase):
+    """The first-initialisation guard: `empty` only when nothing but PostGIS exists."""
+
+    def facts(self, **override):
+        base = {
+            "version_table": False,
+            "version_rows": [],
+            "extensions": ["plpgsql", "postgis"],
+            "foreign": {"relation": [], "function": [], "type": [], "schema": []},
+            "large_objects": 0,
+        }
+        base.update(override)
+        return base
+
+    def test_precreated_postgis_only_is_empty(self):
+        self.assertEqual(schema_compat.classify_state(self.facts()), "empty")
+        self.assertEqual(schema_compat.classify_state(self.facts(extensions=["plpgsql"])), "empty")
+
+    def test_missing_version_table_alone_is_not_enough(self):
+        for kind in ("relation", "function", "type", "schema"):
+            with self.subTest(kind=kind):
+                foreign = {"relation": [], "function": [], "type": [], "schema": []}
+                foreign[kind] = ["public.something"]
+                state = schema_compat.classify_state(self.facts(foreign=foreign))
+                self.assertTrue(state.startswith("refuse "), state)
+                self.assertIn("public.something", state)
+
+    def test_large_objects_and_unexpected_extensions_are_refused(self):
+        self.assertTrue(
+            schema_compat.classify_state(self.facts(large_objects=2)).startswith("refuse ")
+        )
+        state = schema_compat.classify_state(
+            self.facts(extensions=["plpgsql", "postgis", "pg_trgm"])
+        )
+        self.assertTrue(state.startswith("refuse "))
+        self.assertIn("pg_trgm", state)
+
+    def test_versioned_database_reports_its_revision(self):
+        state = schema_compat.classify_state(
+            self.facts(version_table=True, version_rows=["0012_x"])
+        )
+        self.assertEqual(state, "revision 0012_x")
+
+    def test_version_table_without_a_row_or_with_several_is_refused(self):
+        for rows in ([], ["a", "b"]):
+            with self.subTest(rows=rows):
+                state = schema_compat.classify_state(
+                    self.facts(version_table=True, version_rows=rows)
+                )
+                self.assertTrue(state.startswith("refuse "), state)
+
+    def test_version_table_beats_the_emptiness_check(self):
+        # A versioned database is judged by its revision, never re-labelled `empty`.
+        state = schema_compat.classify_state(
+            self.facts(
+                version_table=True, version_rows=["0001_a"], foreign={"relation": ["public.t"]}
+            )
+        )
+        self.assertEqual(state, "revision 0001_a")
+
+
 if __name__ == "__main__":
     unittest.main()

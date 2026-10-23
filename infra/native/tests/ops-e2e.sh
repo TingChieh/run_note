@@ -57,7 +57,7 @@ dburl="postgresql+psycopg://postgres:pw@127.0.0.1:$port/rn_e2e"
 python3 - "$tarball" "$WORK" <<'PY'
 import os, shutil, sys, tarfile
 src, work = sys.argv[1:]
-def variant(new_id, drop_last_migration):
+def variant(new_id, drop_last_migration, bad_migration=False):
     stage = os.path.join(work, "variant")
     shutil.rmtree(stage, ignore_errors=True); os.makedirs(stage)
     with tarfile.open(src) as t: t.extractall(stage)
@@ -70,6 +70,15 @@ def variant(new_id, drop_last_migration):
         v = os.path.join(new, "backend", "migrations", "versions")
         last = sorted(f for f in os.listdir(v) if f[:4].isdigit() and f.endswith(".py"))[-1]
         os.remove(os.path.join(v, last))
+    if bad_migration:
+        v = os.path.join(new, "backend", "migrations", "versions")
+        last = sorted(f for f in os.listdir(v) if f[:4].isdigit() and f.endswith(".py"))[-1][:-3]
+        body = (
+            f'revision = "9999_e2e_bad"\ndown_revision = "{last}"\nbranch_labels = None\n'
+            'depends_on = None\n\n\ndef upgrade():\n    raise RuntimeError("synthetic failure")\n'
+            "\n\ndef downgrade():\n    pass\n"
+        )
+        open(os.path.join(v, "9999_e2e_bad.py"), "w").write(body)
     out = os.path.join(work, f"run-note-{new_id}.tar.gz")
     with tarfile.open(out, "w:gz") as t: t.add(new, arcname=new_id)
     import hashlib
@@ -78,9 +87,11 @@ def variant(new_id, drop_last_migration):
 variant("e2e-r0-old-schema", True)
 variant("e2e-r1-sibling", False)
 variant("e2e-r3-old-sibling", True)
+variant("e2e-r4-bad-migration", False, True)
 PY
 r0="$WORK/run-note-e2e-r0-old-schema.tar.gz"; r1="$tarball"; r2="$WORK/run-note-e2e-r1-sibling.tar.gz"
 r3="$WORK/run-note-e2e-r3-old-sibling.tar.gz"
+r4="$WORK/run-note-e2e-r4-bad-migration.tar.gz"
 [ -f "$r1.sha256" ] || fail "tarball has no .sha256"
 
 # ---- config files ----------------------------------------------------------------------
@@ -125,6 +136,65 @@ step "1. database at the OLD revision with some data"
 psql -X -qAt -d rn_e2e -c "insert into users(id,email_normalized,username,password_hash,display_name) values (gen_random_uuid(),'seed@example.test','seed','x','Seed')" >/dev/null
 rev() { psql -X -qAt -d rn_e2e -c 'select version_num from alembic_version'; }
 [ "$(rev)" = 0012_site_settings ] || fail "setup revision wrong: $(rev)"
+
+step "I. first initialisation of a database that has no schema yet (separate root/etc/backups)"
+INIT="$WORK/init"; mkdir -p "$INIT"
+init_db() { # $1 database; leaves a pre-created PostGIS-only database and its own config
+  dropdb --if-exists "$1"; createdb "$1"; psql -X -qAt -d "$1" -c "create extension postgis" >/dev/null
+  rm -rf "${INIT:?}/etc" "${INIT:?}/root" "${INIT:?}/backups"; mkdir -p "$INIT/etc" "$INIT/root" "$INIT/backups"
+  sed "s#/rn_e2e\$#/$1#" "$WORK/etc/backend.env" > "$INIT/etc/backend.env"
+  cp "$WORK/etc/frontend.env" "$INIT/etc/frontend.env"
+  printf 'PGDATABASE=%s\nPGHOST=127.0.0.1\nPGPORT=%s\nPGUSER=postgres\n' "$1" "$port" > "$INIT/etc/backup.env"
+  chmod 600 "$INIT"/etc/*.env
+}
+init_deploy() { RUNNOTE_ROOT="$INIT/root" RUNNOTE_ETC="$INIT/etc" BACKUP_DIR="$INIT/backups" deploy "$@"; }
+user_tables() { psql -X -qAt -d "$1" -c "select count(*) from pg_tables where schemaname='public' and tablename<>'spatial_ref_sys'"; }
+has_version_table() { psql -X -qAt -d "$1" -c "select to_regclass('alembic_version') is not null"; }
+no_backups() { [ -z "$(ls -A "$INIT/backups")" ] || fail "a backup/drill ran although there was nothing to protect"; }
+untouched() { [ "$(has_version_table "$1")" = "$2" ] || fail "$1: alembic_version presence changed"; [ ! -e "$INIT/root/current" ] || fail "a release was installed"; }
+
+init_db rn_init
+expect_fail "empty database without --migrate" init_deploy "$r1"
+grep -q "re-run with --migrate" "$WORK/last.out" || fail "refusal reason missing"
+[ "$(user_tables rn_init)" = 0 ] || fail "schema created without --migrate"; untouched rn_init f; no_backups
+
+init_db rn_init
+psql -X -qAt -d rn_init -c "create table leftover(i int)" >/dev/null
+expect_fail "unversioned database with an application table" init_deploy "$r1" --migrate
+grep -q "contains objects" "$WORK/last.out" || fail "refusal reason missing"
+[ "$(user_tables rn_init)" = 1 ] || fail "existing table was touched"; untouched rn_init f; no_backups
+
+init_db rn_init
+psql -X -qAt -d rn_init -c "create table alembic_version(version_num varchar(32) not null primary key)" >/dev/null
+expect_fail "alembic_version without a row (half-initialised)" init_deploy "$r1" --migrate
+grep -q "has no row" "$WORK/last.out" || fail "refusal reason missing"
+[ "$(psql -X -qAt -d rn_init -c 'select count(*) from alembic_version')" = 0 ] || fail "alembic_version was touched"
+[ ! -e "$INIT/root/current" ] || fail "a release was installed"; no_backups
+
+init_db rn_init
+psql -X -qAt -d rn_init -c "create extension pg_trgm" >/dev/null
+expect_fail "unexpected extension" init_deploy "$r1" --migrate
+grep -q "unexpected extension" "$WORK/last.out" || fail "refusal reason missing"
+untouched rn_init f; no_backups
+
+init_db rn_init
+expect_fail "first initialisation whose migration fails" init_deploy "$r4" --migrate
+grep -q "first initialisation failed" "$WORK/last.out" || fail "failure message missing"
+[ "$(user_tables rn_init)" = 0 ] || fail "a failed first initialisation left tables behind"
+untouched rn_init f; no_backups
+echo "ok: the failed attempt was rolled back (transactional DDL); the database is still empty" >&2
+
+# The same database, retried with a good release: this is the real first deployment.
+init_deploy "$r1" --migrate
+[ "$(psql -X -qAt -d rn_init -c 'select version_num from alembic_version')" = 0013_backfill_distance_category ] || fail "not at head after first initialisation"
+[ -L "$INIT/root/current" ] || fail "current not set after first initialisation"
+no_backups
+echo "ok: first initialisation migrated to head without any backup or restore drill" >&2
+
+# Once initialised it is an ordinary database: a same-schema deploy needs no --migrate, no backup.
+init_deploy "$r2"
+no_backups
+dropdb --if-exists rn_init
 
 step "2. deploy old-schema release R0 (schema matches -> allowed, no migration)"
 deploy "$r0"

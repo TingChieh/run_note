@@ -9,6 +9,9 @@
 #   2. unpack + build the venv      5. only with --migrate: backup, restore drill, stop, migrate
 #   3. (nothing live is touched)    6. switch symlink, restart, smoke test
 # A schema change is never applied implicitly and never rolled back by swapping a symlink.
+# A database with NO schema yet (pre-created, PostGIS only) is initialised only with an explicit
+# --migrate and only if it is provably empty; there is nothing to back up, so that path skips the
+# backup and drill. Any other unversioned database is refused (see schema_compat.py db-state).
 set -euo pipefail
 umask 022
 # shellcheck source=lib.sh
@@ -80,20 +83,42 @@ log "checking configuration (values are never printed)"
 (cd "$partial/backend" && PYTHONPATH="$partial/backend" "$PY" "$partial/ops/envfile.py" check "$BACKEND_ENV" --kind backend)
 
 release_head="$("$PY" "$partial/ops/schema_compat.py" head "$partial/backend/migrations")"
-db_rev="$(cd "$partial/backend" && as_app "$PY" "$partial/ops/envfile.py" exec "$BACKEND_ENV" -- \
-  "$PY" "$partial/ops/schema_compat.py" db-revision)"
-relation="$("$PY" "$partial/ops/schema_compat.py" relation "$partial/backend/migrations" "$db_rev")"
+db_state="$(cd "$partial/backend" && as_app "$PY" "$partial/ops/envfile.py" exec "$BACKEND_ENV" -- \
+  "$PY" "$partial/ops/schema_compat.py" db-state)"
+case "$db_state" in
+  empty) db_rev=none relation=initialize ;;
+  "revision "*)
+    db_rev="${db_state#revision }"
+    relation="$("$PY" "$partial/ops/schema_compat.py" relation "$partial/backend/migrations" "$db_rev")" ;;
+  "refuse "*) die "refusing to deploy: ${db_state#refuse }" ;;
+  *) die "unexpected database state: $db_state" ;;
+esac
 log "release head=$release_head database=$db_rev relation=$relation"
 
 case "$relation" in
   same) [ "$migrate" -eq 0 ] || log "database already at head; --migrate has nothing to do" ;;
+  initialize) [ "$migrate" -eq 1 ] || die "the database is empty (no schema yet). First initialisation must be requested explicitly: re-run with --migrate" ;;
   behind) [ "$migrate" -eq 1 ] || die "database is behind this release; the schema must change first. Review the migrations, then re-run with --migrate (a verified backup is taken first)" ;;
   ahead|unknown) die "database revision $db_rev is newer than (or foreign to) this release. Deploying older code onto a newer schema is a rollback: use rollback.sh and its database-restore procedure" ;;
   *) die "unexpected relation: $relation" ;;
 esac
 
 backup_file=""
-if [ "$relation" = behind ]; then
+if [ "$relation" = initialize ]; then
+  log "first initialisation of an empty database: no data exists, so no backup or restore drill"
+  for unit in "${SERVICES[@]}"; do "$SYSTEMCTL" stop "$unit" || true; done
+  # Re-check with the services stopped: nothing may have appeared since the first look.
+  recheck="$(cd "$partial/backend" && as_app "$PY" "$partial/ops/envfile.py" exec "$BACKEND_ENV" -- \
+    "$PY" "$partial/ops/schema_compat.py" db-state)"
+  [ "$recheck" = empty ] || die "database changed since it was inspected ($recheck); refusing to initialise. Nothing was migrated"
+  log "applying migrations (single step, not per worker)"
+  if ! (cd "$partial/backend" && as_app "$PY" "$partial/ops/envfile.py" exec "$BACKEND_ENV" -- "$PY" -m alembic upgrade head); then
+    die "first initialisation failed. Services are stopped. Inspect the database state with schema_compat.py db-state before retrying"
+  fi
+  after="$(cd "$partial/backend" && as_app "$PY" "$partial/ops/envfile.py" exec "$BACKEND_ENV" -- \
+    "$PY" "$partial/ops/schema_compat.py" db-revision)"
+  [ "$after" = "$release_head" ] || die "after initialisation the database is at '$after', expected $release_head"
+elif [ "$relation" = behind ]; then
   log "stopping services for a write-free backup and migration"
   for unit in "${SERVICES[@]}"; do "$SYSTEMCTL" stop "$unit" || true; done
   log "taking pre-migration backup and running a real restore drill"
