@@ -11,6 +11,7 @@ from app.modules.footprints.model import (
 )
 from app.modules.gpx.model import ActivityPoint, ActivitySegment, GpxImport
 from app.modules.mifitness.model import MifitnessImport
+from app.modules.route_groups.model import RouteFingerprint, RouteGroup, RouteGroupMember
 from app.modules.running_goals.model import RunningGoal
 from app.modules.sharing.model import ActivityShareLink
 from app.modules.site_settings.model import SiteImage, SiteSettings
@@ -37,4 +38,7 @@ __all__ = [
     "ActivityProvinceCache",
     "FootprintActivityCache",
     "FootprintSnapshot",
+    "RouteFingerprint",
+    "RouteGroup",
+    "RouteGroupMember",
 ]
