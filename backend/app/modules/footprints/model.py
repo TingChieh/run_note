@@ -14,7 +14,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -37,6 +37,27 @@ class FootprintActivityCache(Base):
     tracks: Mapped[list] = mapped_column(JSONB)
     cells: Mapped[list] = mapped_column(JSONB)
     unsupported_segment_count: Mapped[int] = mapped_column(Integer)
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ActivityProvinceCache(Base):
+    """Provinces one activity passes through; a pure derivative of its stored segments."""
+
+    __tablename__ = "activity_province_caches"
+    __table_args__ = (
+        UniqueConstraint("activity_id"),
+        ForeignKeyConstraint(
+            ["activity_id", "user_id"], ["activities.id", "activities.user_id"], ondelete="CASCADE"
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    activity_id: Mapped[UUID] = mapped_column()
+    atlas_version: Mapped[str] = mapped_column(String(64))
+    province_codes: Mapped[list[int]] = mapped_column(ARRAY(Integer))
     generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

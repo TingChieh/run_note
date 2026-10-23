@@ -4,7 +4,11 @@ from app.db.base import Base
 from app.modules.activities.model import Activity
 from app.modules.ai_reports.model import AIReport
 from app.modules.auth.model import AuthRateBucket, AuthSession
-from app.modules.footprints.model import FootprintActivityCache, FootprintSnapshot
+from app.modules.footprints.model import (
+    ActivityProvinceCache,
+    FootprintActivityCache,
+    FootprintSnapshot,
+)
 from app.modules.gpx.model import ActivityPoint, ActivitySegment, GpxImport
 from app.modules.mifitness.model import MifitnessImport
 from app.modules.running_goals.model import RunningGoal
@@ -30,6 +34,7 @@ __all__ = [
     "MifitnessImport",
     "ActivitySegment",
     "ActivityPoint",
+    "ActivityProvinceCache",
     "FootprintActivityCache",
     "FootprintSnapshot",
 ]
