@@ -9,7 +9,6 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
 from app.core.errors import ApiError
-from app.modules.footprints.service import MAX_POINTS, MAX_SEGMENTS, limit_error
 
 
 @lru_cache(maxsize=1)
@@ -36,17 +35,11 @@ def province_summary(db, owner, year=None):
         date_filter = " AND a.activity_date>=:start AND a.activity_date<:end"
     db.execute(text("SET LOCAL statement_timeout = '5000ms'"))
     try:
-        counts = db.execute(
-            text(f"""SELECT
-            (SELECT count(*) FROM activities a WHERE a.user_id=:owner{date_filter}) AS activities,
-            count(s.id) AS segments, COALESCE(sum(s.point_count),0) AS points
-            FROM activities a JOIN activity_segments s ON s.activity_id=a.id
-            WHERE a.user_id=:owner{date_filter}
-        """),
-            params,
-        ).one()
-        if counts.points > MAX_POINTS or counts.segments > MAX_SEGMENTS:
-            raise limit_error()
+        # No point/segment pre-check: the cumulative answer must not stop working as history
+        # grows. A synthetic 1.1 M-point history takes ~150 ms; the statement timeout is the guard.
+        activities = db.scalar(
+            text(f"SELECT count(*) FROM activities a WHERE a.user_id=:owner{date_filter}"), params
+        )
         rows = (
             db.execute(
                 text(f"""WITH regions AS MATERIALIZED (
@@ -88,7 +81,7 @@ def province_summary(db, owner, year=None):
         return {
             "year": year,
             "total": 34,
-            "activity_count": counts.activities,
+            "activity_count": activities,
             "located_activity_count": rows[0]["located"] if rows else 0,
             "provinces": [
                 {"code": r["code"], "name": r["name"], "activity_count": r["activity_count"]}

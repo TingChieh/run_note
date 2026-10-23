@@ -81,3 +81,47 @@ def test_dense_cumulative_route_and_parallel_statistics_fit_query_budget(clients
     assert {110000, 310000} <= {p["code"] for p in data["provinces"]}
     assert all(p["activity_count"] == 1 for p in data["provinces"])
     assert statistics_response.json()["data"]["activity_count"] == 1
+
+
+def test_cumulative_provinces_keep_working_past_the_former_point_budget(clients):  # noqa: F811
+    """History growing past 250,000 points used to turn the all-time card into an error."""
+    a, _, _, app = clients
+    owner = register(a)
+    with app.state.session_factory.begin() as db:
+        activity = Activity(
+            user_id=UUID(owner),
+            source="gpx",
+            title="Synthetic long history",
+            activity_date=date(2026, 10, 14),
+            date_source="manual",
+            timezone="Asia/Shanghai",
+            distance_m=Decimal(1000),
+            temporal_quality="manual",
+            quality_summary={},
+            metrics_version="gpx-v1",
+        )
+        db.add(activity)
+        db.flush()
+        geom = db.scalar(
+            text("""SELECT ST_MakeLine(ST_SetSRID(ST_MakePoint(
+            121.48 + i * 0.0001, 31.23 + (i % 7) * 0.0001), 4326) ORDER BY i)
+            FROM generate_series(1,1000) AS i""")
+        )
+        # 300 segments x 1,000 points = 300,000 stored points, above the former 250,000 cap.
+        db.add_all(
+            ActivitySegment(
+                activity_id=activity.id,
+                segment_index=index,
+                source_track_index=0,
+                source_segment_index=index,
+                break_reason="source",
+                point_count=1000,
+                geom=geom,
+            )
+            for index in range(300)
+        )
+    response = a.get("/api/v1/footprints/provinces")
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["activity_count"] == 1
+    assert {p["code"] for p in data["provinces"]} == {310000}
