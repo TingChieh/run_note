@@ -13,3 +13,9 @@ def test_lock_key_is_stable_per_owner_and_distinct_between_owners():
 def test_thresholds_match_the_design():
     assert (groups.MIN_DISTANCE_M, groups.DISTANCE_TOLERANCE) == (1000, 0.15)
     assert (groups.BUFFER_M, groups.MIN_COVERAGE) == (50, 0.8)
+
+
+def test_fingerprint_vertex_bound_is_small_and_coarsening_only_gets_coarser():
+    assert 100 <= groups.MAX_FINGERPRINT_VERTICES <= 5000
+    assert all(factor > 1 for factor in groups.COARSEN_FACTORS)
+    assert list(groups.COARSEN_FACTORS) == sorted(groups.COARSEN_FACTORS)

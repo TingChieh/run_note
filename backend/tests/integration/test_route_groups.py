@@ -1,7 +1,8 @@
 """Route grouping against a real PostGIS test database: synthetic loops only."""
 
 from datetime import date
-from math import cos, hypot, radians
+from math import cos, hypot, radians, sin
+from time import perf_counter
 from uuid import UUID, uuid4
 
 import pytest
@@ -176,3 +177,46 @@ def test_the_footprint_worker_scan_also_fills_route_groups(clients):  # noqa: F8
     run = add_run(app, owner, ring(), day=date(2025, 7, 1))
     run_scan(app.state.session_factory, app.state.clock(), get_expected_revision())
     assert run in members(app, owner)
+
+
+def long_wave(*, north=0.0, points=100_000):
+    """About 11 km of dense, gently wavy track: 0.1 m between points, 10 m of lateral drift."""
+    return [
+        (LON + i * 1e-6, LAT + north + 0.002 * sin(i / 8000) + 3e-6 * sin(i / 7))
+        for i in range(points)
+    ]
+
+
+def test_a_very_long_dense_track_makes_a_small_fingerprint_and_groups(clients):  # noqa: F811
+    a, b, _, app = clients
+    quiet(a, b)
+    owner = register(a)
+    first = add_run(app, owner, long_wave(), day=date(2025, 5, 1), distance_m=11000)
+    second = add_run(app, owner, long_wave(north=0.0001), day=date(2025, 5, 3), distance_m=11100)
+    started = perf_counter()
+    built = 0
+    while True:  # the shared test database may hold older pending runs; drain them in batches
+        with app.state.session_factory.begin() as db:
+            batch = groups.build_fingerprints(db, 20)
+        if not batch:
+            break
+        built += batch
+    elapsed = perf_counter() - started
+    assert built >= 2
+    assert elapsed < 30
+    with app.state.session_factory() as db:
+        rows = db.execute(
+            text(
+                """SELECT ST_GeometryType(geom), ST_NPoints(geom), ST_SRID(geom)
+                   FROM route_fingerprints WHERE activity_id = ANY(:ids)"""
+            ),
+            {"ids": [UUID(first), UUID(second)]},
+        ).all()
+    assert len(rows) == 2
+    for kind, count, srid in rows:
+        assert kind == "ST_MultiLineString"
+        assert 2 <= count <= groups.MAX_FINGERPRINT_VERTICES
+        assert srid == 4326
+    fill(app)
+    found = members(app, owner)
+    assert found[first] == found[second]

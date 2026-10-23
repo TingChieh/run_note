@@ -15,6 +15,10 @@ BUFFER_M = 50
 MIN_COVERAGE = 0.8
 # About five metres; applied in degrees before the line is stored.
 SIMPLIFY_DEGREES = 0.00005
+# A stored fingerprint stays small enough for the buffer/intersection match; noisy or very
+# long tracks are coarsened step by step and left ungrouped (NULL) if they still do not fit.
+MAX_FINGERPRINT_VERTICES = 2000
+COARSEN_FACTORS = (10, 100)
 FILL_BATCH = 20
 MAX_OWNERS_PER_SCAN = 50
 
@@ -48,10 +52,30 @@ def build_fingerprints(db, limit: int) -> int:
             """INSERT INTO route_fingerprints (id, user_id, activity_id, algorithm_version, geom)
                SELECT gen_random_uuid(), a.user_id, a.id, :version,
                       CASE WHEN a.distance_m >= :min_distance THEN (
-                          SELECT ST_Multi(ST_SimplifyPreserveTopology(
-                                     ST_Collect(s.geom ORDER BY s.segment_index), :tolerance))
-                          FROM activity_segments s
-                          WHERE s.activity_id = a.id AND s.geom IS NOT NULL
+                          SELECT CASE
+                                     WHEN ST_NPoints(c.g) <= :max_vertices THEN c.g
+                                     WHEN ST_NPoints(c.g1) <= :max_vertices THEN c.g1
+                                     WHEN ST_NPoints(c.g2) <= :max_vertices THEN c.g2
+                                 END
+                          FROM (
+                              SELECT ST_Multi(ST_Simplify(
+                                         ST_RemoveRepeatedPoints(
+                                             ST_Collect(s.geom ORDER BY s.segment_index),
+                                             :tolerance),
+                                         :tolerance, true)) AS g
+                              FROM activity_segments s
+                              WHERE s.activity_id = a.id AND s.geom IS NOT NULL
+                          ) base
+                          CROSS JOIN LATERAL (
+                              SELECT CASE WHEN NOT ST_IsEmpty(base.g) THEN base.g END AS g
+                          ) c0
+                          CROSS JOIN LATERAL (
+                              SELECT c0.g AS g,
+                                     CASE WHEN ST_NPoints(c0.g) > :max_vertices THEN
+                                         ST_Multi(ST_Simplify(c0.g, :coarse1, true)) END AS g1,
+                                     CASE WHEN ST_NPoints(c0.g) > :max_vertices THEN
+                                         ST_Multi(ST_Simplify(c0.g, :coarse2, true)) END AS g2
+                          ) c
                       ) END
                FROM activities a
                WHERE NOT EXISTS (SELECT 1 FROM route_fingerprints f WHERE f.activity_id = a.id)
@@ -63,6 +87,9 @@ def build_fingerprints(db, limit: int) -> int:
             "version": ALGORITHM_VERSION,
             "min_distance": MIN_DISTANCE_M,
             "tolerance": SIMPLIFY_DEGREES,
+            "max_vertices": MAX_FINGERPRINT_VERTICES,
+            "coarse1": SIMPLIFY_DEGREES * COARSEN_FACTORS[0],
+            "coarse2": SIMPLIFY_DEGREES * COARSEN_FACTORS[1],
             "limit": limit,
         },
     )
