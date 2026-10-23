@@ -127,6 +127,10 @@ export RUNNOTE_INSTANCES_DIR="$WORK/instances" SYSTEMD_DIR="$WORK/systemd"; mkdi
 legacy_env() { RUNNOTE_ROOT="$L/root" RUNNOTE_ETC="$L/etc" BACKUP_DIR="$L/backups" API_URL="http://127.0.0.1:$L_API" WEB_URL="http://127.0.0.1:$L_WEB" DB_OWNER=rn_legacy_role "$@"; }
 prod_env() { RUNNOTE_INSTANCE=prod "$@"; }
 ops_of() { local t="$1" d; d="$(mktemp -d "$WORK/ops.XXXX")"; tar -xzf "$t" -C "$d" --strip-components=1; echo "$d/ops"; }
+# Every instance tool below runs from the UNPACKED RELEASE, exactly as an operator would run it.
+REL_OPS="$(ops_of "$r1")"; REL_ROOT="$(dirname "$REL_OPS")"
+[ -f "$REL_ROOT/infra/native/templates/api.service.in" ] || fail "the unpacked release carries no templates"
+[ ! -e "$REL_OPS/templates" ] || fail "test premise: templates must not sit next to ops/ in a release"
 legacy_deploy() { legacy_env "$(ops_of "$1")/deploy.sh" "${@:2}" "$1"; }
 prod_deploy() { prod_env "$(ops_of "$1")/deploy.sh" "${@:2}" "$1"; }
 cur() { basename "$(readlink "$1/current")"; }
@@ -138,9 +142,9 @@ python3 "$here/fake_health.py" $P_API & fake_p_api=$!; pids="$pids $fake_p_api"
 python3 "$here/fake_health.py" $P_WEB & fake_p_web=$!; pids="$pids $fake_p_web"
 
 step "1. instance definitions are valid and disjoint from the legacy layout and from each other"
-python3 "$here/../ops/instance.py" check --dir "$WORK/instances" | tee "$WORK/last.out" >&2
+python3 "$REL_OPS/instance.py" check --dir "$WORK/instances" | tee "$WORK/last.out" >&2
 cp "$conf" "$WORK/instances/clash.conf"; sed -i.bak 's/^INSTANCE=prod/INSTANCE=clash/' "$WORK/instances/clash.conf"
-expect_fail "a second instance that reuses prod's ports/user/database" python3 "$here/../ops/instance.py" check --dir "$WORK/instances"
+expect_fail "a second instance that reuses prod's ports/user/database" python3 "$REL_OPS/instance.py" check --dir "$WORK/instances"
 rm -f "$WORK/instances/clash.conf" "$WORK/instances/clash.conf.bak"
 
 step "2. legacy installation: first initialisation + deploy with the old, unchanged environment overrides"
@@ -157,8 +161,21 @@ legacy_head="$(rev rn_legacy)"; legacy_release="$(cur "$L/root")"
 grep -q "restart runnote-api" "$WORK/calls.log" || fail "legacy services were not restarted by their legacy names"
 
 step "3. init-instance.sh creates production: user, directories, role, database, env files, units; nothing started"
+# A damaged release (a template missing) must be refused before ANYTHING is created.
+broken="$(mktemp -d "$WORK/broken.XXXX")"; cp -R "$REL_ROOT/." "$broken/"; rm "$broken/infra/native/templates/web.service.in"
 : > "$WORK/calls.log"
-"$here/../ops/init-instance.sh" prod --owner-email owner@example.test 2>&1 | tee "$WORK/init.out" >&2
+expect_fail "init-instance from a release whose template is missing" "$broken/ops/init-instance.sh" prod --owner-email owner@example.test
+grep -q "web.service.in" "$WORK/last.out" || fail "the missing template is not named"
+grep -q "nothing was created" "$WORK/last.out" || fail "preflight refusal message missing"
+if grep -qE "useradd|groupadd|chown" "$WORK/calls.log"; then fail "the refused init already created users or changed ownership"; fi
+if [ -e "$P" ]; then fail "the refused init already created directories"; fi
+[ -z "$(pgq -d postgres -c "select 1 from pg_roles where rolname='rn_prod' union all select 1 from pg_database where datname='rn_prod'")" ] || fail "the refused init already created database objects"
+rm -rf "$broken"
+# the same tool, run from the unpacked release, with a path error in the instance definition
+expect_fail "init-instance for an instance that has no definition" env RUNNOTE_INSTANCES_DIR="$WORK/no-such-dir" "$REL_OPS/init-instance.sh" prod --owner-email owner@example.test
+[ ! -e "$P" ] || fail "init created directories for an unknown instance"
+: > "$WORK/calls.log"
+"$REL_OPS/init-instance.sh" prod --owner-email owner@example.test 2>&1 | tee "$WORK/init.out" >&2
 for secret in "$(sed -n 's/^AUTH_RATE_HASH_KEY=//p' "$P/etc/backend.env")" "$(sed -n 's#^DATABASE_URL=postgresql+psycopg://[^:]*:\([^@]*\)@.*#\1#p' "$P/etc/backend.env")"; do
   [ -n "$secret" ] || fail "could not read a generated secret back"
   if grep -qF -- "$secret" "$WORK/init.out" "$WORK/calls.log"; then fail "a generated secret leaked into output or the command log"; fi
@@ -179,8 +196,8 @@ done
 for u in runnote-prod-api.service runnote-prod-web.service runnote-prod-backup.service runnote-prod-backup.timer; do
   [ -f "$SYSTEMD_DIR/$u" ] || fail "unit $u not installed"
 done
-python3 "$here/../ops/envfile.py" check "$P/etc/backend.env" --kind backend --skip-settings --expect-db-name rn_prod --expect-db-user rn_prod --expect-origin-host prod.example.test >&2
-python3 "$here/../ops/envfile.py" check "$P/etc/frontend.env" --kind frontend --expect-api-port "$P_API" >&2
+python3 "$REL_OPS/envfile.py" check "$P/etc/backend.env" --kind backend --skip-settings --expect-db-name rn_prod --expect-db-user rn_prod --expect-origin-host prod.example.test >&2
+python3 "$REL_OPS/envfile.py" check "$P/etc/frontend.env" --kind frontend --expect-api-port "$P_API" >&2
 grep -c . "$P/etc/backend.env" >/dev/null
 [ "$(pgq -d postgres -c "select rolsuper::text||rolcreatedb::text||rolcreaterole::text from pg_roles where rolname='rn_prod'")" = "falsefalsefalse" ] || fail "application role has extra privileges"
 [ "$(pgq -d rn_prod -c "select extname from pg_extension where extname='postgis'")" = postgis ] || fail "PostGIS not installed by the administrator"
@@ -189,15 +206,15 @@ if [ -z "$secret_b" ] || [ "$secret_a" = "$secret_b" ]; then fail "the instances
 unset secret_a secret_b
 
 step "3b. init-instance.sh refuses to run over anything that exists"
-expect_fail "second init over existing env files" "$here/../ops/init-instance.sh" prod --owner-email owner@example.test
+expect_fail "second init over existing env files" "$REL_OPS/init-instance.sh" prod --owner-email owner@example.test
 grep -q "already exists" "$WORK/last.out" || fail "refusal reason missing"
 rm -f "$P"/etc/*.env
-expect_fail "init when the role/database already exist" "$here/../ops/init-instance.sh" prod --owner-email owner@example.test
+expect_fail "init when the role/database already exist" "$REL_OPS/init-instance.sh" prod --owner-email owner@example.test
 grep -q "already exists" "$WORK/last.out" || fail "role/database refusal reason missing"
 # put the original files back is impossible (secrets were never kept); recreate the instance cleanly
 pgq -d postgres -c "drop database rn_prod" -c "drop role rn_prod" >/dev/null
 rm -rf "${P:?}/etc" "${P:?}/backups" "${P:?}/opt"
-"$here/../ops/init-instance.sh" prod --owner-email owner@example.test >/dev/null 2>&1
+"$REL_OPS/init-instance.sh" prod --owner-email owner@example.test >/dev/null 2>&1
 
 step "4. PostgreSQL boundary: each role reaches only its own database"
 role_of() { sed -n 's#^DATABASE_URL=postgresql+psycopg://\([^:]*\):.*#\1#p' "$1"; }
@@ -290,23 +307,32 @@ grep -q "release not found" "$WORK/last.out" || fail "refusal reason missing"
 
 step "11. set-site-mode: maintenance first; live only when released and the owner exists; validation failure restores"
 export CADDY_SITES_DIR="$WORK/caddy/sites.d" CADDYFILE="$WORK/caddy/Caddyfile" RUNNOTE_DOMAIN=staging.example.test
-mkdir -p "$WORK/caddy"; : > "$CADDYFILE"
-"$here/../ops/set-site-mode.sh" prod maintenance
+mkdir -p "$WORK/caddy"
+# the main Caddyfile as installed on a host: the shipped one, with /etc/caddy pointed at the sandbox
+sed "s#/etc/caddy/#$WORK/caddy/#g" "$REL_ROOT/infra/native/Caddyfile" > "$CADDYFILE"
+printf 'legacy.example.test {\n\trespond "old"\n}\n' > "$WORK/caddy/Caddyfile.old"   # a Caddyfile from before multi-instance
+CADDYFILE="$WORK/caddy/Caddyfile.old" expect_fail "set-site-mode against a Caddyfile that never imports instance sites" "$REL_OPS/set-site-mode.sh" prod maintenance
+grep -q "not the current Run Note Caddyfile" "$WORK/last.out" || fail "Caddyfile refusal reason missing"
+[ ! -e "$CADDY_SITES_DIR/prod.caddy" ] || fail "a site file was written despite the refusal"
+"$REL_OPS/set-site-mode.sh" prod maintenance
 if ! grep -q "503" "$CADDY_SITES_DIR/prod.caddy" || grep -q reverse_proxy "$CADDY_SITES_DIR/prod.caddy"; then fail "maintenance site is wrong"; fi
 if ! grep -q "caddy validate" "$WORK/calls.log" || ! grep -q "reload caddy" "$WORK/calls.log"; then fail "site mode must validate then reload"; fi
-expect_fail "going live before the site owner exists" "$here/../ops/set-site-mode.sh" prod live
+expect_fail "going live before the site owner exists" "$REL_OPS/set-site-mode.sh" prod live
 grep -q "owner of prod does not exist" "$WORK/last.out" || fail "owner refusal reason missing"
 grep -q "503" "$CADDY_SITES_DIR/prod.caddy" || fail "a refused go-live changed the site file"
 # the production API from step 7 is still listening; create the SYNTHETIC owner row the way the offline script would
 pgq -d rn_prod -c "insert into users(id,email_normalized,username,password_hash,display_name) values (gen_random_uuid(),'owner@example.test','owner','x','Owner')" >/dev/null
 : > "$WORK/calls.log"; touch "$WORK/caddy-fail"
-expect_fail "go-live whose generated site does not validate" "$here/../ops/set-site-mode.sh" prod live
+expect_fail "go-live whose generated site does not validate" "$REL_OPS/set-site-mode.sh" prod live
 if ! grep -q "503" "$CADDY_SITES_DIR/prod.caddy" || grep -q "reload caddy" "$WORK/calls.log"; then fail "validation failure must restore the maintenance site and not reload"; fi
 rm -f "$WORK/caddy-fail"
-"$here/../ops/set-site-mode.sh" prod live
+"$REL_OPS/set-site-mode.sh" prod live
 grep -q "import runnote_app $P_API $P_WEB" "$CADDY_SITES_DIR/prod.caddy" || fail "live site does not proxy the production ports"
 grep -q "basic_auth" "$CADDY_SITES_DIR/prod.caddy" && fail "production must not use basic auth"
-"$here/../ops/set-site-mode.sh" prod maintenance   # back to the safe state at any time
+"$REL_OPS/set-site-mode.sh" prod maintenance   # back to the safe state at any time
 grep -q "503" "$CADDY_SITES_DIR/prod.caddy" || fail "could not return to maintenance"
 
 step "ALL MULTI-INSTANCE E2E STEPS PASSED"
+# A passing run leaves nothing behind (each release has its own virtualenv, ~1 GB per run). A failing
+# run keeps $WORK for diagnosis; set KEEP_WORK=1 to keep it on success as well.
+if [ -z "${KEEP_WORK:-}" ]; then rm -rf "${WORK:?}"; fi

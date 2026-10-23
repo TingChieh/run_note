@@ -23,6 +23,11 @@ CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
 SITES_DIR="${CADDY_SITES_DIR:-/etc/caddy/sites.d}"
 here="$(cd "$(dirname "$0")" && pwd)"
 require_cmd python3 "$CADDY"
+# The site file only takes effect if the main Caddyfile defines the shared snippet and imports the
+# sites directory; otherwise "maintenance" would validate, reload and serve nothing at all.
+if ! grep -q '^(runnote_app) {' "$CADDYFILE" || ! grep -qF "import $SITES_DIR/*.caddy" "$CADDYFILE"; then
+  die "$CADDYFILE is not the current Run Note Caddyfile (needs the (runnote_app) snippet and 'import $SITES_DIR/*.caddy'); install infra/native/Caddyfile first"
+fi
 
 if [ "$mode" = live ]; then
   release="$(current_release_dir)"

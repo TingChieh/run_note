@@ -128,7 +128,24 @@ Python 虚拟环境**不可重定位**：`bin/uvicorn` 等入口脚本的第一�
 - `maintenance`：对该域名返回 503 的"即将上线"页，**不代理任何上游**；证书照常签发。随时允许。
 - `live`：只有在 ① 当前发布完整（有 `.deploy-complete`）② API 与 Node 在实例端口上就绪 ③ **配置的站主账号已存在** 时才允许；生成的站点文件连同整个 Caddyfile 一起 `caddy validate`，失败则恢复原文件、不重载。
 
+#### 发布包布局与自包含检查
+运维工具**始终从解包后的发布包里运行**（不是从仓库检出里）。两种布局都受支持，`instance.py` 只根据**自身所在位置**解析模板，不依赖当前工作目录，也不写死任何主机路径：
+
+| 布局 | 脚本 | 模板 |
+| --- | --- | --- |
+| 仓库（开发与测试） | `infra/native/ops/instance.py` | `infra/native/templates/` |
+| 发布包（运维） | `<release>/ops/instance.py` | `<release>/infra/native/templates/` |
+
+找不到一套**完整**的模板时拒绝，并列出查过的两个位置和缺哪些文件。`init-instance.sh` 在创建任何东西之前先把单元渲染到临时目录（预检），所以损坏的发布包或有问题的实例定义会在没有产生用户、数据库、密钥之前就被发现，而不是半途失败后留下残局。
+
+`ops/verify-release.sh` 是每个发布包的出厂检查，`build-release.sh` 每次构建都会运行，不通过就**删除发布包**并让构建失败：
+1. 部署工具需要的全部文件都在发布包里（`ops/` 全部脚本、`infra/native/` 的 Caddyfile、单元、六个模板、`production.conf.example`、环境示例、`scripts/site-owner.py` 等），脚本可执行且语法正确，Caddyfile 含 `(runnote_app)` 与 `sites.d` 导入。
+2. 在**空的工作目录**里用发布包自带的 `ops/instance.py` 真实渲染：旧布局渲染结果与发布包里的现有单元逐字节一致；示例 `production.conf` 通过 `check`；production 的 `maintenance` 与 `live` 站点各渲染出完整的 5 个文件。
+
+`set-site-mode.sh` 另有一道前置检查：服务器上的主 Caddyfile 必须就是当前的 Run Note Caddyfile（含 `(runnote_app)` 片段并 `import <sites 目录>/*.caddy`），否则拒绝。旧版（多实例之前）的 Caddyfile 不会导入实例站点，若不拦住，"维护页"会校验通过、重载成功，却什么也不会提供。安装新 Caddyfile 时，把 staging 的 Basic Auth 片段放到 `/etc/caddy/access.d/`，先 `caddy validate` 再重载。
+
 #### 一个新实例的初始化顺序（以 production 为例）
+先把发布包解开并进入其中（`tar -xzf run-note-<id>.tar.gz && cd run-note-<id>`），下面的 `ops/…` 都指该发布包里的脚本。
 1. 把 `infra/native/instances/production.conf.example` 复制为 `/etc/run-note-instances/production.conf`（root 拥有、0644，**不含密钥**），`python3 ops/instance.py check`。
 2. `sudo ops/init-instance.sh production --owner-email <站主邮箱>`：创建系统用户和组、目录及权限、数据库角色与库（管理员预装 PostGIS）、三个环境文件（密钥在服务器上生成，不打印）、安装（**不启用、不启动**）systemd 单元。已有任何同名对象则拒绝，绝不覆盖。
 3. 构建发布包，用发布包自带的 `ops/` 执行：`sudo env RUNNOTE_INSTANCE=production ./ops/deploy.sh --migrate run-note-<id>.tar.gz`（空库首次初始化，必须显式 `--migrate`）。
@@ -204,6 +221,10 @@ Python 虚拟环境**不可重定位**：`bin/uvicorn` 等入口脚本的第一�
 | PASS | 多实例：`caddy-instances.sh`（真实 Caddy 2.11.7 进程，高端口，沙箱目录） | staging 仍要求 Basic Auth 且只代理旧上游；production 维护页返回 503、带 Retry-After、不到达任何上游、不要求认证；上线后 production 只代理自己的上游、无需 Basic Auth、带齐安全响应头且无 `Server` 头；production 上线后 staging 仍要求 Basic Auth；伪造的 `X-Forwarded-For` 对两个站点都被真实对端地址覆盖 |
 | PASS | 原有 `ops-e2e.sh`（旧布局，未改动） | 全部步骤仍通过，证明向后兼容 |
 | 回归敏感性 | 变异检查 | 去掉 `lib.sh` 的环境冲突检查、去掉 `backup.sh` 的数据库守卫、去掉 `init-instance.sh` 对 PUBLIC 的 `REVOKE`，各自被对应测试发现（注意 e2e 执行的是发布包内的 `ops/`，变异后必须重新构建发布包） |
+| 发现并修复 | 生产初始化前的真实服务器检查 | `instance.py` 假定模板在 `ops/` 旁边的 `templates/`（仓库布局），而发布包里模板在 `infra/native/templates/`，`init-instance.sh` 与 `set-site-mode.sh` 在发布包里无法渲染。双实例 e2e 当时直接从仓库布局调用这两个脚本，所以没发现。修复：按脚本自身位置解析两种布局；`init-instance.sh` 预检；`verify-release.sh` 出厂检查；`set-site-mode.sh` 校验主 Caddyfile；e2e 改为从解包后的发布包运行 |
+| PASS | 发布包布局：`unittest discover -s infra/native/tests` | 67 tests OK（新增 14）：发布包布局下从任意工作目录渲染；实例渲染 5 个文件；候选位置只由脚本位置决定；整个模板目录缺失、缺一个模板、占位符损坏、`ops/` 被移到无模板处都被拒绝并点名；第一候选不完整时落到完整的第二候选；`verify-release.sh` 接受完整发布包，缺任一必需资源（脚本、模板、示例配置、Caddyfile、单元、`site-owner.py`）、脚本不可执行或语法错误、Caddyfile 不能承载实例、旧布局渲染与现有单元不一致、文件不存在，都被拒绝并点名。这些新测试在旧版 `instance.py` 上全部失败（6 失败 + 2 报错） |
+| PASS | 发布包布局：`build-release.sh` 出厂检查 | 用旧版 `instance.py` 构建时，构建在自包含检查处失败并**丢弃发布包**（目录里不留任何产物） |
+| PASS | 发布包布局：`ops-e2e-instances.sh` 改为从解包后的发布包运行 | `instance.py`、`init-instance.sh`、`set-site-mode.sh`、`deploy.sh` 都取自 `tar -xzf` 解出的发布包（测试先断言发布包里模板不在 `ops/` 旁边）；模板缺失的损坏发布包在创建任何用户、目录、数据库对象之前被拒绝并点名模板；未知实例定义目录被拒且不创建目录；旧版 Caddyfile 下 `set-site-mode.sh` 被拒且不写站点文件；其余隔离步骤全部仍通过 |
 | 发现并修复 | Phase 2C 真实服务器首次部署 | 首次初始化成功，但 `runnote-api` 以 `status=203/EXEC` 无法启动：`bin/uvicorn` 的 shebang 是 `#!…/releases/.partial-<id>/backend/.venv/bin/python`。根因是 venv 在 `.partial-<id>` 内创建后整个目录被 `mv` 成正式目录。迁移能成功是因为脚本用 `python -m alembic`，不经过入口脚本；Phase 1 的 e2e 用 `fake_health.py` 代替真实 API，从未执行过发布包里的 `uvicorn`。修复：在最终目录构建，完成标记 `.deploy-complete`，见"发布目录的生命周期" |
 | PASS | `ops-e2e.sh` 新增（临时集群） | 部署后断言 `uvicorn` 的 shebang 等于最终发布路径、无 `.partial` 残留、有完成标记；**用已安装发布里的真实 `uvicorn` 与 `node` 启动**，`/api/v1/health/ready` 与 Node 代理 `/api/health` 均 200；首次初始化的迁移失败后 `releases/` 为空（无半成品）；存在未完成的同名目录时 `deploy.sh` 拒绝且不删除，`rollback.sh` 拒绝切换。原有全部步骤（首次初始化各拒绝场景、升级+演练、回滚拒绝、恢复回滚、冒烟失败自动返回）仍通过 |
 | 回归敏感性 | 把旧版 `deploy.sh` 放回同一套 e2e | 新测试在旧代码上失败，报出 `#!…/.partial-…` 的 shebang，证明它能抓到这个缺陷 |
