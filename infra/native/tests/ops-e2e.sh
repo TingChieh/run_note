@@ -12,6 +12,18 @@ set -euo pipefail
 tarball="${1:?usage: ops-e2e.sh RELEASE_TARBALL}"
 : "${PG_BIN:?}" "${PYTHON:?}"
 here="$(cd "$(dirname "$0")" && pwd)"
+# The rehearsal's "old" schema is the head minus the newest migration; both revisions are read from
+# the migration files so a new migration never needs a change here.
+read -r HEAD_REV OLD_REV < <(python3 - "$here/../../../backend/migrations/versions" <<'PY'
+import re, sys
+from pathlib import Path
+files = sorted(p for p in Path(sys.argv[1]).glob("[0-9][0-9][0-9][0-9]_*.py"))
+def field(path, name):
+    return re.search(rf'^{name}\s*=\s*"([^"]+)"', path.read_text(), re.M).group(1)
+print(field(files[-1], "revision"), field(files[-1], "down_revision"))
+PY
+)
+if [ -z "$HEAD_REV" ] || [ -z "$OLD_REV" ]; then echo "cannot derive migration revisions" >&2; exit 1; fi
 WORK="${WORK:-$(mktemp -d)}"
 port="${PG_PORT:-55441}" api_port=18000 web_port=18001
 rm -rf "$WORK"; mkdir -p "$WORK"/{shims,etc,root,backups}
@@ -53,7 +65,7 @@ export PGHOST=127.0.0.1 PGPORT=$port PGUSER=postgres
 createdb rn_e2e
 dburl="postgresql+psycopg://postgres:pw@127.0.0.1:$port/rn_e2e"
 
-# ---- derive an older release (no 0013) and a same-schema sibling from the built tarball --
+# ---- derive an older release (without the newest migration) and a same-schema sibling from the built tarball --
 python3 - "$tarball" "$WORK" <<'PY'
 import os, shutil, sys, tarfile
 src, work = sys.argv[1:]
@@ -132,10 +144,10 @@ cp "$WORK/backend.env.good" "$WORK/etc/backend.env"; chmod 600 "$WORK/etc/backen
 step "1. database at the OLD revision with some data"
 (cd "$here/../../../backend" && DATABASE_URL="$dburl" "$PYTHON" -m venv "$WORK/mig-venv" >/dev/null \
   && "$WORK/mig-venv/bin/pip" install -q --require-hashes -r requirements.lock \
-  && DATABASE_URL="$dburl" "$WORK/mig-venv/bin/python" -m alembic upgrade 0012_site_settings 2>&1 | tail -1)
+  && DATABASE_URL="$dburl" "$WORK/mig-venv/bin/python" -m alembic upgrade "$OLD_REV" 2>&1 | tail -1)
 psql -X -qAt -d rn_e2e -c "insert into users(id,email_normalized,username,password_hash,display_name) values (gen_random_uuid(),'seed@example.test','seed','x','Seed')" >/dev/null
 rev() { psql -X -qAt -d rn_e2e -c 'select version_num from alembic_version'; }
-[ "$(rev)" = 0012_site_settings ] || fail "setup revision wrong: $(rev)"
+[ "$(rev)" = "$OLD_REV" ] || fail "setup revision wrong: $(rev)"
 
 step "I. first initialisation of a database that has no schema yet (separate root/etc/backups)"
 INIT="$WORK/init"; mkdir -p "$INIT"
@@ -220,7 +232,7 @@ echo "ok: the failed attempt was rolled back (transactional DDL); the database i
 
 # The same database, retried with a good release: this is the real first deployment.
 init_deploy "$r1" --migrate
-[ "$(psql -X -qAt -d rn_init -c 'select version_num from alembic_version')" = 0013_backfill_distance_category ] || fail "not at head after first initialisation"
+[ "$(psql -X -qAt -d rn_init -c 'select version_num from alembic_version')" = "$HEAD_REV" ] || fail "not at head after first initialisation"
 [ -L "$INIT/root/current" ] || fail "current not set after first initialisation"
 no_backups
 echo "ok: first initialisation migrated to head without any backup or restore drill" >&2
@@ -248,12 +260,12 @@ deploy "$r0"
 
 step "3. deploy R1 (needs migration) WITHOUT --migrate is refused and changes nothing"
 expect_fail "behind without --migrate" deploy "$r1"
-[ "$(rev)" = 0012_site_settings ] || fail "database changed without --migrate"
+[ "$(rev)" = "$OLD_REV" ] || fail "database changed without --migrate"
 [ "$(basename "$(readlink "$WORK/root/current")")" = e2e-r0-old-schema ] || fail "current moved"
 
 step "4. deploy R1 --migrate: backup + REAL restore drill + migration + switch"
 deploy "$r1" --migrate
-[ "$(rev)" = 0013_backfill_distance_category ] || fail "not migrated: $(rev)"
+[ "$(rev)" = "$HEAD_REV" ] || fail "not migrated: $(rev)"
 pre="$(ls "$WORK"/backups/*-pre-*.dump | head -1)"; [ -s "$pre" ] || fail "no pre-migration dump"
 [ -f "$pre.sha256" ] || fail "no checksum"
 current_id="$(basename "$(readlink "$WORK/root/current")")"
@@ -273,12 +285,12 @@ rollback_to previous
 step "7. rollback across the migration is REFUSED without a database restore"
 expect_fail "rollback to R0 over a newer schema" rollback_to e2e-r0-old-schema
 grep -q "does not match" "$WORK/last.out" || fail "refusal reason missing"
-[ "$(rev)" = 0013_backfill_distance_category ] || fail "refused rollback still changed the database"
+[ "$(rev)" = "$HEAD_REV" ] || fail "refused rollback still changed the database"
 
 step "8. rollback to R0 WITH restore of the pre-migration dump"
 psql -X -qAt -d rn_e2e -c "insert into users(id,email_normalized,username,password_hash,display_name) values (gen_random_uuid(),'late@example.test','late','x','Late')" >/dev/null
 printf 'rn_e2e\n' | rollback_to e2e-r0-old-schema --restore-db "$pre"
-[ "$(rev)" = 0012_site_settings ] || fail "restore did not return to the old revision: $(rev)"
+[ "$(rev)" = "$OLD_REV" ] || fail "restore did not return to the old revision: $(rev)"
 [ "$(basename "$(readlink "$WORK/root/current")")" = e2e-r0-old-schema ] || fail "current not R0 after restore"
 [ "$(psql -X -qAt -d rn_e2e -c "select count(*) from users where username='late'")" = 0 ] || fail "post-backup write should be gone"
 safety="$(psql -X -qAt -d postgres -c "select datname from pg_database where datname like 'rn_e2e_pre_rollback_%'")"
