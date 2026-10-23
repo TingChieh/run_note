@@ -171,7 +171,9 @@ grep -q "chown root:postgres .*backup.env" "$WORK/calls.log" || fail "backup.env
 if grep -q "systemctl enable\|systemctl start\|systemctl restart" "$WORK/calls.log"; then fail "init-instance must not enable or start anything"; fi
 mode() { python3 -c 'import os,stat,sys;print(oct(stat.S_IMODE(os.stat(sys.argv[1]).st_mode))[2:])' "$1"; }
 [ "$(mode "$P/etc")" = 750 ] || fail "etc directory mode is $(mode "$P/etc"), want 750"
-[ "$(mode "$P/etc/backend.env")" = 640 ] && [ "$(mode "$P/etc/frontend.env")" = 640 ] && [ "$(mode "$P/etc/backup.env")" = 640 ] || fail "env file modes are not 640"
+for f in backend frontend backup; do
+  if [ "$(mode "$P/etc/$f.env")" != 640 ]; then fail "$f.env mode is not 640"; fi
+done
 [ "$(mode "$P/backups")" = 700 ] || fail "backup directory mode is not 700"
 [ "$(mode "$P/opt")" = 755 ] || fail "instance root mode is not 755"
 for u in runnote-prod-api.service runnote-prod-web.service runnote-prod-backup.service runnote-prod-backup.timer; do
@@ -183,7 +185,7 @@ grep -c . "$P/etc/backend.env" >/dev/null
 [ "$(pgq -d postgres -c "select rolsuper::text||rolcreatedb::text||rolcreaterole::text from pg_roles where rolname='rn_prod'")" = "falsefalsefalse" ] || fail "application role has extra privileges"
 [ "$(pgq -d rn_prod -c "select extname from pg_extension where extname='postgis'")" = postgis ] || fail "PostGIS not installed by the administrator"
 secret_a="$(sed -n 's/^AUTH_RATE_HASH_KEY=//p' "$L/etc/backend.env")"; secret_b="$(sed -n 's/^AUTH_RATE_HASH_KEY=//p' "$P/etc/backend.env")"
-[ -n "$secret_b" ] && [ "$secret_a" != "$secret_b" ] || fail "the instances share an AUTH_RATE_HASH_KEY"
+if [ -z "$secret_b" ] || [ "$secret_a" = "$secret_b" ]; then fail "the instances share an AUTH_RATE_HASH_KEY"; fi
 unset secret_a secret_b
 
 step "3b. init-instance.sh refuses to run over anything that exists"
@@ -212,7 +214,7 @@ cp "$P/etc/backend.env" "$WORK/backend.env.good"; cp "$P/etc/frontend.env" "$WOR
 sed "s#/rn_prod\$#/rn_legacy#" "$WORK/backend.env.good" > "$P/etc/backend.env"; chmod 640 "$P/etc/backend.env"
 expect_fail "production env pointing at the legacy database" prod_deploy "$r1" --migrate
 grep -q "instance database" "$WORK/last.out" || fail "refusal reason missing"
-[ -z "$(ls "$P/opt/releases")" ] && [ ! -e "$P/opt/current" ] || fail "something was installed"
+if [ -n "$(ls "$P/opt/releases")" ] || [ -e "$P/opt/current" ]; then fail "something was installed"; fi
 cp "$WORK/backend.env.good" "$P/etc/backend.env"; chmod 640 "$P/etc/backend.env"
 printf 'INTERNAL_API_BASE_URL=http://127.0.0.1:%s\n' "$L_API" > "$P/etc/frontend.env"; chmod 640 "$P/etc/frontend.env"
 expect_fail "production frontend pointing at the legacy API port" prod_deploy "$r1" --migrate
