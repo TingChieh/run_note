@@ -102,7 +102,7 @@ Python 虚拟环境**不可重定位**：`bin/uvicorn` 等入口脚本的第一�
 | | 旧布局（现有 staging） | production 实例 |
 | --- | --- | --- |
 | 配置 | 无（内置默认） | `/etc/run-note-instances/production.conf` |
-| 域名 | staging.aisaka.cc | run.aisaka.cc |
+| 域名 | staging.example.com | run.example.com |
 | 程序目录 | `/opt/run-note` | `/opt/run-note-production` |
 | 配置/密钥目录 | `/etc/run-note`（`root:runnote`） | `/etc/run-note-production`（0750 `root:run_note`） |
 | 备份目录 | `/var/backups/run-note` | `/var/backups/run-note-production`（0700 postgres） |
@@ -164,6 +164,49 @@ Python 虚拟环境**不可重定位**：`bin/uvicorn` 等入口脚本的第一�
 - 退役旧布局（staging）时，需要从服务器的 `Caddyfile` 删掉旧站点块并移除 `access.d` 下的片段，同时 `systemctl disable --now runnote-api runnote-web runnote-backup.timer`；Caddyfile 里 `{$RUNNOTE_DOMAIN}` 为空会导致校验失败（旧配置继续生效，不会中断）。
 - 该实例的本地备份**没有异地副本**：restic 尚未配置，没有异地灾难恢复能力。
 
+### 一键发布（`ops/ship.py`）
+
+在**维护者的电脑上**运行，通过 SSH 驱动服务器，把已合并的 `main` 发布出去。它做的就是手工发布的那套检查，并在不满足时**拒绝**（退出码 2，服务器上什么都没动）：
+
+```bash
+infra/native/ops/ship.py --dry-run          # 只做本地检查 + 构建，不碰服务器
+infra/native/ops/ship.py                    # 发布（部署前会询问确认；--yes 跳过）
+infra/native/ops/ship.py --migrate          # 本次带数据库迁移时才允许
+```
+
+顺序与拒绝条件：
+1. 本地工作树干净、在 `main`、与 `origin/main` 完全一致。
+2. 该提交的**每个** CI job 都成功（只读调用 GitHub API，使用 git 已保存的凭据；`--wait-ci 秒数` 可等待 CI 结束）。
+3. 自已部署的提交以来是否有迁移文件变化：有就必须显式加 `--migrate`，否则拒绝；已部署的提交不是目标的祖先（即这是回退而不是发布）也拒绝。
+4. 构建发布包（`build-release.sh`，自带自包含检查）。
+5. 上传、校验 SHA-256，并在服务器上运行 `verify-release.sh`。
+6. 先做一次**带真实恢复演练的备份**，再用新发布包自带的 `deploy.sh` 部署（`--migrate` 原样传递；`deploy.sh` 自己仍然负责迁移前备份、严格演练和失败保护）。
+7. 验证：发布目录有完成标记、两个服务 active、没有旧发布的进程、回环健康检查 200、数据（活动数、用户数）没有减少、公网 HTTPS 的健康检查与页面 200，并打印回滚命令。
+
+**配置在仓库之外，不会提交任何个人信息**：`RUNNOTE_SSH_HOST`（必填，`~/.ssh/config` 里的别名即可）、`RUNNOTE_INSTANCE`（默认 `production`）、`RUNNOTE_STAGE_DIR`（默认 `/root/run-note-stage`）、`RUNNOTE_GITHUB_REPO`（默认从 `origin` 推导），从环境变量读取，其次从 `~/.config/run-note/deploy.env`（`KEY=VALUE`）。域名、端口、路径来自服务器上的 `/etc/run-note-instances/<实例>.conf`。
+
+它**不会**：自动触发（只在你运行时执行）、改动数据库结构（迁移只由 `deploy.sh --migrate` 完成）、碰密钥或环境文件、在失败时自动回滚数据库。回滚同 schema 的发布用 `rollback.sh previous`；涉及迁移的回滚见"回滚决策"。
+
+### 上线验收脚本（`ops/acceptance-check.py`）
+
+随每个发布包一起交付（`<release>/ops/acceptance-check.py`，`verify-release.sh` 会检查它在发布包里、可执行、能编译）。它以站主身份登录，导入**一条纯合成 GPX**，检查私有视图与匿名展示，删除这条记录，登出并证明旧会话已失效，共约 37 项。**可以在已经有真实数据的站点上安全运行。**
+
+```bash
+# 站点已公开（经反向代理）：
+python3 ops/acceptance-check.py --base https://run.example.com --backend-env /etc/run-note-production/backend.env
+# 站点故意还在维护页、未公开：直连 Node（带上代理会带的 Host / X-Forwarded-Proto / Origin）：
+python3 ops/acceptance-check.py --loopback-port 3100 --domain run.example.com --backend-env /etc/run-note-production/backend.env
+```
+站主密码在隐藏提示里输入（自动化测试才用 `RN_ACCEPTANCE_PASSWORD`），只留在内存，不打印、不写盘；报告里只有检查项名称和 PASS/FAIL，没有 Cookie、令牌、邮箱或凭据。
+
+对已有真实数据的安全性：
+- 所有断言都限定在**探针日期 2000-01-15 / 探针年份 2000** 内，并且和导入前的**基线**比较（总数 +1、回到基线），不使用绝对数字。
+- 开跑前这个日期和年份必须是空的；否则**拒绝运行（退出码 2），什么都不改**。
+- 清理放在 `finally` 里，任何检查失败也会删除探针活动。
+- 每次运行会让足迹快照重建两次（导入一次、删除一次）。数据量大的站点这是后台开销，不影响请求。
+- 回环模式只改变**测试客户端**（允许在回环 http 上发送 Secure Cookie）；服务端的任何安全设置、CSRF、Cookie 属性都不变。
+- 取 CSRF 令牌失败（例如每 IP 每小时 60 次的额度用尽，429）时，只显示状态码、错误码和 `Retry-After`，**立即停止**，不会继续发无效登录。
+
 ### 回滚决策
 
 应用对 schema 要求**精确匹配**：`alembic_version` 必须等于发布的唯一 head，否则 `/api/health` 返回 503，足迹后台 worker 也不写入（`app/db/schema.py`、`modules/health/service.py`、`footprints/worker.py`）。降级迁移遇到真实数据会 `RuntimeError`（`0011`、`0012`），`0013` 为空操作。因此：
@@ -221,6 +264,11 @@ Python 虚拟环境**不可重定位**：`bin/uvicorn` 等入口脚本的第一�
 | PASS | 多实例：`caddy-instances.sh`（真实 Caddy 2.11.7 进程，高端口，沙箱目录） | staging 仍要求 Basic Auth 且只代理旧上游；production 维护页返回 503、带 Retry-After、不到达任何上游、不要求认证；上线后 production 只代理自己的上游、无需 Basic Auth、带齐安全响应头且无 `Server` 头；production 上线后 staging 仍要求 Basic Auth；伪造的 `X-Forwarded-For` 对两个站点都被真实对端地址覆盖 |
 | PASS | 原有 `ops-e2e.sh`（旧布局，未改动） | 全部步骤仍通过，证明向后兼容 |
 | 回归敏感性 | 变异检查 | 去掉 `lib.sh` 的环境冲突检查、去掉 `backup.sh` 的数据库守卫、去掉 `init-instance.sh` 对 PUBLIC 的 `REVOKE`，各自被对应测试发现（注意 e2e 执行的是发布包内的 `ops/`，变异后必须重新构建发布包） |
+| PASS | 一键发布：`unittest discover -s infra/native/tests` | 98 tests OK（新增 22）：缺少服务器地址、不安全的主机/实例/目录值被拒；配置优先级（环境变量 > 配置文件 > 默认值）；实例定义缺键或含异常字符被拒；脏工作树、非 `main`、与 `origin/main` 不一致被拒；迁移文件变化被检出，未知或非祖先的已部署提交被拒而不是猜测；CI 全绿/跳过通过，失败、进行中、没有运行都被报告；整条流程用假服务器验证命令顺序（上传 → 备份 → 部署 → 验证）、`--dry-run` 不碰服务器、红色 CI 或缺少 `--migrate` 或已部署或未确认都在上传之前拒绝、备份失败不进入部署、部署未完成与数据减少/服务异常/公网错误都判失败并给出回滚命令；工具文本不含任何个人信息 |
+| PASS | 一键发布：对真实服务器的只读演练 | 真实的本地预检、真实的 CI 读取、真实的 SSH 读取实例定义与已部署提交，在已部署的提交上按设计拒绝（"nothing to ship"），服务器无任何改动 |
+| 发现并修复 | 把验收脚本整理进仓库时 | 原脚本在空站上写的断言（"列表恰好 1 项""总数回到 0""统计恰好为 1"）在已有数据的站点上不成立，而且**统计摘要接口根本不认 `year` 参数**（只认 `date_from`/`date_to`），空站上"恰好为 1"碰巧通过而掩盖了这一点。新工具改为探针日期 + 基线相对断言，摘要改用区间查询，开跑前先要求探针日期为空 |
+| PASS | `acceptance-check.py`：`unittest discover -s infra/native/tests` | 76 tests OK（新增 9）：合成 GPX 格式正确且全部点在探针日期；multipart 内容；`read_kv`；用法错误（目标二选一、回环模式缺域名、公共 http 原点）被拒；回环模式带上 `Host`、`X-Forwarded-Proto: https`、不带 Basic Auth，并把 `__Host-` Secure Cookie 在回环 http 上发回；写请求带站点 Origin 与 CSRF 令牌，关闭时不带 |
+| PASS | `acceptance-check.py` 在本机隔离环境、**预置 3 条活动**的站点上 | 第 4 次运行 37/37 通过，预置数据原样保留，探针日期回到空，无存活会话。（第 2 次运行曾在足迹快照一项超时 150 秒，之后三次未复现，原因未查明，属于后台 worker 的偶发时序；默认等待放宽到 180 秒，超时仍如实报 FAIL）|
 | 发现并修复 | 生产初始化前的真实服务器检查 | `instance.py` 假定模板在 `ops/` 旁边的 `templates/`（仓库布局），而发布包里模板在 `infra/native/templates/`，`init-instance.sh` 与 `set-site-mode.sh` 在发布包里无法渲染。双实例 e2e 当时直接从仓库布局调用这两个脚本，所以没发现。修复：按脚本自身位置解析两种布局；`init-instance.sh` 预检；`verify-release.sh` 出厂检查；`set-site-mode.sh` 校验主 Caddyfile；e2e 改为从解包后的发布包运行 |
 | PASS | 发布包布局：`unittest discover -s infra/native/tests` | 67 tests OK（新增 14）：发布包布局下从任意工作目录渲染；实例渲染 5 个文件；候选位置只由脚本位置决定；整个模板目录缺失、缺一个模板、占位符损坏、`ops/` 被移到无模板处都被拒绝并点名；第一候选不完整时落到完整的第二候选；`verify-release.sh` 接受完整发布包，缺任一必需资源（脚本、模板、示例配置、Caddyfile、单元、`site-owner.py`）、脚本不可执行或语法错误、Caddyfile 不能承载实例、旧布局渲染与现有单元不一致、文件不存在，都被拒绝并点名。这些新测试在旧版 `instance.py` 上全部失败（6 失败 + 2 报错） |
 | PASS | 发布包布局：`build-release.sh` 出厂检查 | 用旧版 `instance.py` 构建时，构建在自包含检查处失败并**丢弃发布包**（目录里不留任何产物） |

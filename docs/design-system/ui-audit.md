@@ -211,11 +211,11 @@ node node_modules/@playwright/test/cli.js test --config playwright.ui.config.ts 
 
 本地证据（不进入仓库，均为合成数据）：
 
-- [浅色仪表盘](/Users/tingchieh/.codex/visualizations/2026/10/16/01a14356-8298-77a3-9e56-5c7d4279ec66/ui-audit-dashboard-light.jpg)
-- [深色仪表盘](/Users/tingchieh/.codex/visualizations/2026/10/16/01a14356-8298-77a3-9e56-5c7d4279ec66/ui-audit-dashboard-dark.jpg)
-- [手机仪表盘](/Users/tingchieh/.codex/visualizations/2026/10/16/01a14356-8298-77a3-9e56-5c7d4279ec66/ui-audit-dashboard-mobile.jpg)
-- [手机日期浮层](/Users/tingchieh/.codex/visualizations/2026/10/16/01a14356-8298-77a3-9e56-5c7d4279ec66/ui-audit-datepicker-mobile.jpg)
-- [浏览器观察记录](/Users/tingchieh/.codex/visualizations/2026/10/16/01a14356-8298-77a3-9e56-5c7d4279ec66/ui-audit-observations.json)
+- [浅色仪表盘](local-evidence/2026/10/16/01a14356-8298-77a3-9e56-5c7d4279ec66/ui-audit-dashboard-light.jpg)
+- [深色仪表盘](local-evidence/2026/10/16/01a14356-8298-77a3-9e56-5c7d4279ec66/ui-audit-dashboard-dark.jpg)
+- [手机仪表盘](local-evidence/2026/10/16/01a14356-8298-77a3-9e56-5c7d4279ec66/ui-audit-dashboard-mobile.jpg)
+- [手机日期浮层](local-evidence/2026/10/16/01a14356-8298-77a3-9e56-5c7d4279ec66/ui-audit-datepicker-mobile.jpg)
+- [浏览器观察记录](local-evidence/2026/10/16/01a14356-8298-77a3-9e56-5c7d4279ec66/ui-audit-observations.json)
 
 ### 未运行 / 尚未确认
 

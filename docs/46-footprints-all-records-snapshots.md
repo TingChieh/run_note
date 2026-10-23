@@ -45,7 +45,7 @@
 - PASS：前端 `pnpm test`，19 个文件、123 测试通过；`pnpm check`，0 errors / 0 warnings；`pnpm build`，adapter-node 构建成功，仅既有大 chunk 提示。
 - PASS：`pnpm exec playwright test --config /private/tmp/runnote-footprints-playwright.config.ts`，真实 Chrome 31 passed in 54.2s（足迹 13、p2 11、主题 7），使用独立合成 API 8193 与前端 5193。包括超过 5 分钟 pending 后完成、刷新失败、401、卸载、两模式、主题和键盘回归。
 - PASS：独立审查提出的轮询五分钟上限和定期失败提示问题均已修复并回归，未遗留重要发现。
-- 已目视 [桌面轨迹](/Users/tingchieh/.codex/visualizations/2026/10/15/01a14002-959f-7bd0-a695-f04997d80774/footprints-desktop-tracks.png) 与 [手机热图](/Users/tingchieh/.codex/visualizations/2026/10/15/01a14002-959f-7bd0-a695-f04997d80774/footprints-mobile-heatmap-map.png)，未见筛选控件或横向溢出。
+- 已目视 [桌面轨迹](local-evidence/2026/10/15/01a14002-959f-7bd0-a695-f04997d80774/footprints-desktop-tracks.png) 与 [手机热图](local-evidence/2026/10/15/01a14002-959f-7bd0-a695-f04997d80774/footprints-mobile-heatmap-map.png)，未见筛选控件或横向溢出。
 
 性能样本：独立测试用户六条合成活动，每条几何 50000 个顶点，总 300000 个顶点，超过原账户 250000 点预算；未创建对应 30 万条原始 `activity_points` 行。最后一次快照生成 3647.01ms，三次 ASGI TestClient 全量轨迹读取为 132.29/140.23/146.43ms，每次 4 条 SQL，JSON 序列化约 6968336 字节。逐项确认保留全部 300000 个顶点，读取没有原始点/段查询和 `ST_Intersects`。这些是本机单用户热缓存样本，不是生产延迟、浏览器绘制性能或无限容量证明。
 

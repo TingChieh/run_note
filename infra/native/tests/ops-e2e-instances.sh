@@ -164,7 +164,7 @@ step "3. init-instance.sh creates production: user, directories, role, database,
 # A damaged release (a template missing) must be refused before ANYTHING is created.
 broken="$(mktemp -d "$WORK/broken.XXXX")"; cp -R "$REL_ROOT/." "$broken/"; rm "$broken/infra/native/templates/web.service.in"
 : > "$WORK/calls.log"
-expect_fail "init-instance from a release whose template is missing" "$broken/ops/init-instance.sh" prod --owner-email owner@example.test
+expect_fail "init-instance from a release whose template is missing" "$broken/ops/init-instance.sh" prod --owner-email owner@example.com
 grep -q "web.service.in" "$WORK/last.out" || fail "the missing template is not named"
 grep -q "nothing was created" "$WORK/last.out" || fail "preflight refusal message missing"
 if grep -qE "useradd|groupadd|chown" "$WORK/calls.log"; then fail "the refused init already created users or changed ownership"; fi
@@ -172,10 +172,10 @@ if [ -e "$P" ]; then fail "the refused init already created directories"; fi
 [ -z "$(pgq -d postgres -c "select 1 from pg_roles where rolname='rn_prod' union all select 1 from pg_database where datname='rn_prod'")" ] || fail "the refused init already created database objects"
 rm -rf "$broken"
 # the same tool, run from the unpacked release, with a path error in the instance definition
-expect_fail "init-instance for an instance that has no definition" env RUNNOTE_INSTANCES_DIR="$WORK/no-such-dir" "$REL_OPS/init-instance.sh" prod --owner-email owner@example.test
+expect_fail "init-instance for an instance that has no definition" env RUNNOTE_INSTANCES_DIR="$WORK/no-such-dir" "$REL_OPS/init-instance.sh" prod --owner-email owner@example.com
 [ ! -e "$P" ] || fail "init created directories for an unknown instance"
 : > "$WORK/calls.log"
-"$REL_OPS/init-instance.sh" prod --owner-email owner@example.test 2>&1 | tee "$WORK/init.out" >&2
+"$REL_OPS/init-instance.sh" prod --owner-email owner@example.com 2>&1 | tee "$WORK/init.out" >&2
 for secret in "$(sed -n 's/^AUTH_RATE_HASH_KEY=//p' "$P/etc/backend.env")" "$(sed -n 's#^DATABASE_URL=postgresql+psycopg://[^:]*:\([^@]*\)@.*#\1#p' "$P/etc/backend.env")"; do
   [ -n "$secret" ] || fail "could not read a generated secret back"
   if grep -qF -- "$secret" "$WORK/init.out" "$WORK/calls.log"; then fail "a generated secret leaked into output or the command log"; fi
@@ -206,15 +206,15 @@ if [ -z "$secret_b" ] || [ "$secret_a" = "$secret_b" ]; then fail "the instances
 unset secret_a secret_b
 
 step "3b. init-instance.sh refuses to run over anything that exists"
-expect_fail "second init over existing env files" "$REL_OPS/init-instance.sh" prod --owner-email owner@example.test
+expect_fail "second init over existing env files" "$REL_OPS/init-instance.sh" prod --owner-email owner@example.com
 grep -q "already exists" "$WORK/last.out" || fail "refusal reason missing"
 rm -f "$P"/etc/*.env
-expect_fail "init when the role/database already exist" "$REL_OPS/init-instance.sh" prod --owner-email owner@example.test
+expect_fail "init when the role/database already exist" "$REL_OPS/init-instance.sh" prod --owner-email owner@example.com
 grep -q "already exists" "$WORK/last.out" || fail "role/database refusal reason missing"
 # put the original files back is impossible (secrets were never kept); recreate the instance cleanly
 pgq -d postgres -c "drop database rn_prod" -c "drop role rn_prod" >/dev/null
 rm -rf "${P:?}/etc" "${P:?}/backups" "${P:?}/opt"
-"$REL_OPS/init-instance.sh" prod --owner-email owner@example.test >/dev/null 2>&1
+"$REL_OPS/init-instance.sh" prod --owner-email owner@example.com >/dev/null 2>&1
 
 step "4. PostgreSQL boundary: each role reaches only its own database"
 role_of() { sed -n 's#^DATABASE_URL=postgresql+psycopg://\([^:]*\):.*#\1#p' "$1"; }
@@ -321,7 +321,11 @@ expect_fail "going live before the site owner exists" "$REL_OPS/set-site-mode.sh
 grep -q "owner of prod does not exist" "$WORK/last.out" || fail "owner refusal reason missing"
 grep -q "503" "$CADDY_SITES_DIR/prod.caddy" || fail "a refused go-live changed the site file"
 # the production API from step 7 is still listening; create the SYNTHETIC owner row the way the offline script would
-pgq -d rn_prod -c "insert into users(id,email_normalized,username,password_hash,display_name) values (gen_random_uuid(),'owner@example.test','owner','x','Owner')" >/dev/null
+# a real owner: the password hash is made by the installed release itself (argon2), like the offline script does
+OWNER_PASSWORD="E2e-owner-pass-2026"
+owner_hash="$(cd "$P/opt/current/backend" && .venv/bin/python -c 'import sys; from app.core.security import hash_password; print(hash_password(sys.argv[1]))' "$OWNER_PASSWORD")"
+printf "insert into users(id,email_normalized,username,password_hash,display_name) values (gen_random_uuid(),'owner@example.com','owner','%s','Owner');\n" "$owner_hash" | pgq -d rn_prod >/dev/null
+unset owner_hash
 : > "$WORK/calls.log"; touch "$WORK/caddy-fail"
 expect_fail "go-live whose generated site does not validate" "$REL_OPS/set-site-mode.sh" prod live
 if ! grep -q "503" "$CADDY_SITES_DIR/prod.caddy" || grep -q "reload caddy" "$WORK/calls.log"; then fail "validation failure must restore the maintenance site and not reload"; fi
@@ -331,6 +335,56 @@ grep -q "import runnote_app $P_API $P_WEB" "$CADDY_SITES_DIR/prod.caddy" || fail
 grep -q "basic_auth" "$CADDY_SITES_DIR/prod.caddy" && fail "production must not use basic auth"
 "$REL_OPS/set-site-mode.sh" prod maintenance   # back to the safe state at any time
 grep -q "503" "$CADDY_SITES_DIR/prod.caddy" || fail "could not return to maintenance"
+
+step "12. the acceptance tool shipped in the release, against the installed production release (loopback, production-mode cookies)"
+cat > "$WORK/acc_helper.py" <<'PY'
+"""Seed or remove one synthetic activity through the public API, using the tool's own client."""
+import importlib.util, os, sys
+spec = importlib.util.spec_from_file_location("acc", os.environ["ACC_TOOL"]); acc = importlib.util.module_from_spec(spec); spec.loader.exec_module(acc)
+class A: loopback_port = os.environ["ACC_PORT"]; domain = os.environ["ACC_DOMAIN"]; base = None
+action, day = sys.argv[1], sys.argv[2]
+acc.PROBE_DATE = day
+site = acc.Site(A(), None); site.fetch_csrf()
+status, data, _ = site.json("POST", "/api/v1/auth/login", {"email": os.environ["ACC_EMAIL"], "password": os.environ["ACC_PASSWORD"]}); assert status == 200, status
+site.fetch_csrf()
+if action == "seed":
+    body, ctype = acc.multipart({"title": "pre-existing " + day, "activity_date": day, "timezone": "Asia/Shanghai"}, "s.gpx", acc.synthetic_gpx())
+    status, data, _ = site.json("POST", "/api/v1/gpx-imports", raw=body, headers={"Content-Type": ctype}); assert status == 201, status
+    print(data["data"]["activity"]["id"])
+else:
+    _, listing, _ = site.json("GET", f"/api/v1/activities?limit=100&activity_date={day}")
+    for item in (listing.get("data") or {}).get("items", []):
+        site.fetch_csrf(); status, _, _ = site.json("DELETE", "/api/v1/activities/" + item["id"]); assert status in (200, 204), status
+site.fetch_csrf(); site.json("POST", "/api/v1/auth/logout")
+PY
+export ACC_TOOL="$REL_OPS/acceptance-check.py" ACC_PORT="$P_WEB" ACC_DOMAIN=prod.example.test ACC_EMAIL=owner@example.com ACC_PASSWORD="$OWNER_PASSWORD"
+acc_count() { pgq -d rn_prod -c "select count(*) from activities where activity_date='$1'"; }
+python3 "$WORK/acc_helper.py" seed 2026-09-10 >/dev/null
+[ "$(acc_count 2026-09-10)" = 1 ] || fail "could not seed the pre-existing activity"
+
+# 12a. real data on the probe date: the tool refuses and changes nothing
+python3 "$WORK/acc_helper.py" seed 2000-01-15 >/dev/null
+before_all="$(pgq -d rn_prod -c "select count(*) from activities")"
+if RN_ACCEPTANCE_PASSWORD="$OWNER_PASSWORD" python3 "$REL_OPS/acceptance-check.py" --loopback-port "$P_WEB" --domain prod.example.test --owner-email owner@example.com --footprint-wait 5 >"$WORK/acc-refused.out" 2>&1; then fail "the tool ran although the probe date was occupied"; fi
+grep -q "probe date and year are empty (precondition)" "$WORK/acc-refused.out" || fail "precondition refusal reason missing"
+[ "$(pgq -d rn_prod -c "select count(*) from activities")" = "$before_all" ] || fail "a refused run changed the data"
+echo "ok (refused as designed): acceptance tool on a site with data on the probe date" >&2
+python3 "$WORK/acc_helper.py" clean 2000-01-15
+
+# 12b. normal run on a site that already holds data
+set +e
+RN_ACCEPTANCE_PASSWORD="$OWNER_PASSWORD" python3 "$REL_OPS/acceptance-check.py" --loopback-port "$P_WEB" --domain prod.example.test --owner-email owner@example.com --footprint-wait 200 >"$WORK/acc.out" 2>&1
+acc_rc=$?
+set -e
+if [ "$acc_rc" -ne 0 ]; then tail -30 "$WORK/acc.out" >&2; fail "the acceptance tool failed against the installed release (exit $acc_rc)"; fi
+if ! grep -q "checks passed" "$WORK/acc.out" || grep -q "^\[FAIL\]" "$WORK/acc.out"; then fail "the acceptance tool did not report all checks passed"; fi
+if grep -qF -- "$OWNER_PASSWORD" "$WORK/acc.out" || grep -qF "owner@example.com" "$WORK/acc.out"; then fail "the tool printed a credential or the owner address"; fi
+[ "$(acc_count 2026-09-10)" = 1 ] || fail "the pre-existing activity was touched"
+[ "$(acc_count 2000-01-15)" = 0 ] || fail "the synthetic activity was not cleaned up"
+[ "$(pgq -d rn_prod -c "select count(*) from users")" = 1 ] || fail "the owner account changed"
+[ "$(pgq -d rn_prod -c "select count(*) from auth_sessions where user_id is not null and revoked_at is null")" = 0 ] || fail "a login session survived the run"
+echo "ok: the shipped acceptance tool passed $(grep -c '^\[PASS\]' "$WORK/acc.out") checks against the installed production release on a site that already held data, left it unchanged and printed no credential" >&2
+unset ACC_PASSWORD OWNER_PASSWORD
 
 step "ALL MULTI-INSTANCE E2E STEPS PASSED"
 # A passing run leaves nothing behind (each release has its own virtualenv, ~1 GB per run). A failing

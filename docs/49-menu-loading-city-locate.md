@@ -47,7 +47,7 @@ Chrome 验证了 320/390/768/1440px 与明暗外观；手机菜单支持键盘�
 
 骨架测试实际延迟路由模块和足迹 API，确认占位覆盖真实加载，侧栏同一实例与目标草稿42保留；减少动态效果下骨架与淡入均无动画。另有 6 项城市纯逻辑用例包含实际本地边界的北京/上海/广州匹配。
 
-截图与原始测试日志保存在 [本次证据目录](/Users/tingchieh/.codex/visualizations/2026/10/15/01a1402c-a46d-7e52-812d-a7874961ad7b)：`menu-navigation-skeleton.png`、`footprints-page-skeleton.png`、`city-panel-*`、`city-*-before/beijing/restored.png`、`menu-city-ui-verification.log`、`menu-city-unit-verification.log`。截图仅含合成数据。UI 日志仍有 replaceState 弃用及隐藏图表零尺寸提示，不将这些提示解释成业务验收通过。
+截图与原始测试日志保存在 [本次证据目录](local-evidence/2026/10/15/01a1402c-a46d-7e52-812d-a7874961ad7b)：`menu-navigation-skeleton.png`、`footprints-page-skeleton.png`、`city-panel-*`、`city-*-before/beijing/restored.png`、`menu-city-ui-verification.log`、`menu-city-unit-verification.log`。截图仅含合成数据。UI 日志仍有 replaceState 弃用及隐藏图表零尺寸提示，不将这些提示解释成业务验收通过。
 
 红绿验证记录：新骨架/城市入口用例最初因缺少相应功能失败；新增城市识别模块测试最初因模块不存在失败。真实 Chrome 揭示了选择框名称受增强箭头影响、截图边缘像素和 Worker 不能直接克隆响应式 Proxy，已分别修正并复验。
 

@@ -92,7 +92,7 @@ SSR 代理的固定目标源、同源 `/api/` 路径、七项请求头白名单�
 用户明确授权“提交部署”，并选择“部署到本机现有服务，完成数据库备份、恢复演练、迁移和重启”。本节是前述“未部署”开发验收之后的执行记录，不代表公网发布。
 
 - 目标：原生 `127.0.0.1:5432/running_note`，PostgreSQL 18.6 /PostGIS 3.6.4；核对既有后端8001及Vite前端5183的命令和项目工作目录后暂停，消除备份期间的会话及后台写入。
-- 项目外自定义格式完整备份：`/Users/tingchieh/Backups/RunNote/20261016T213353+0800-admin_users/running_note-before-admin_users.dump`，9779171字节、权限0600、目录0700；`pg_restore --list`通过。SHA256：`20c860d18aae2ef0d3643804ea1f388443f32018d6c92e4c0447cb8fb59a313c`。不包含整个实例全局角色/服务配置。
+- 项目外自定义格式完整备份：`~/Backups/RunNote/20261016T213353+0800-admin_users/running_note-before-admin_users.dump`，9779171字节、权限0600、目录0700；`pg_restore --list`通过。SHA256：`20c860d18aae2ef0d3643804ea1f388443f32018d6c92e4c0447cb8fb59a313c`。不包含整个实例全局角色/服务配置。
 - 独立原生恢复目标：`127.0.0.1:64657/runnote_admin_users_restore_test`，明确通过 `_test` 名称与目标允许验证。完整事务恢复、旧结构/全表内容指纹校验、`0010→0011`演练和 `alembic check`均通过。恢复不带原owner/ACL；临时实例已停止、目录保留。
 - 首轮演练在新增约束比对处停止：PostgreSQL18对两个新增非空字段登记 `users_is_active_not_null`、`users_showcase_enabled_not_null`，均为有效的 `n` 约束。将验证限定为仅允许这两个预期约束后，从同一未变化备份重新完整恢复演练通过；开发库在演练通过前未执行升级。
 - 开发库最终基线复核一致后，仅执行一次 `0010_footprint_snapshots→0011_admin_user_states`。全部原列内容指纹、行数、索引和几何元数据保持；仅增加两个预期 Boolean非空默认false字段及对应约束。`alembic check`输出 `No new upgrade operations detected.`。未重置密码、启用普通账号、改运动记录或重写配置密钥。

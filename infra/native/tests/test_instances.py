@@ -142,13 +142,13 @@ class InstanceDefinition(unittest.TestCase):
             "WEB_PORT": "3100",
             "APP_USER": "run_note",
             "DB_NAME": "run_note",
-            "DOMAIN": "run.aisaka.cc",
+            "DOMAIN": "run.example.com",
             "SERVICE_API": "runnote-production-api",
         }.items():
             with self.subTest(key=key):
                 other = dict(
                     INSTANCE="second",
-                    DOMAIN="second.aisaka.cc",
+                    DOMAIN="second.example.com",
                     ROOT="/opt/run-note-second",
                     ETC="/etc/run-note-second",
                     BACKUP_DIR="/var/backups/run-note-second",
@@ -301,7 +301,7 @@ class Rendering(unittest.TestCase):
 
     def test_caddy_maintenance_never_proxies_and_live_proxies_only_its_own_ports(self):
         maintenance = self.text("production.caddy")
-        self.assertIn("run.aisaka.cc {", maintenance)
+        self.assertIn("run.example.com {", maintenance)
         self.assertIn("503", maintenance)
         self.assertNotIn("reverse_proxy", maintenance)
         self.assertNotIn("runnote_app", maintenance)
@@ -613,7 +613,7 @@ class LibInInstanceMode(unittest.TestCase):
                 "--expect-db-user",
                 "run_note",
                 "--expect-origin-host",
-                "run.aisaka.cc",
+                "run.example.com",
                 "--expect-api-port",
                 "8100",
             ],
@@ -626,7 +626,7 @@ class EnvFileExpectations(unittest.TestCase):
     GOOD = {
         "APP_ENV": "production",
         "DATABASE_URL": "postgresql+psycopg://run_note:s3cretpw@127.0.0.1:5432/run_note",
-        "SITE_ORIGIN": "https://run.aisaka.cc",
+        "SITE_ORIGIN": "https://run.example.com",
         "SITE_OWNER_EMAIL": "owner@example.test",
         "AUTH_RATE_HASH_KEY": "k" * 40,
         "AUTH_TRUSTED_PROXIES": '["127.0.0.1"]',
@@ -642,7 +642,7 @@ class EnvFileExpectations(unittest.TestCase):
             "--expect-db-user",
             "run_note",
             "--expect-origin-host",
-            "run.aisaka.cc",
+            "run.example.com",
         )
         self.assertEqual(envfile.instance_problems(self.GOOD, "backend", args), [])
         self.assertEqual(
@@ -660,7 +660,7 @@ class EnvFileExpectations(unittest.TestCase):
         cases = [
             (self.argv("--expect-db-name", "other"), "database"),
             (self.argv("--expect-db-user", "other"), "role"),
-            (self.argv("--expect-origin-host", "staging.aisaka.cc"), "SITE_ORIGIN"),
+            (self.argv("--expect-origin-host", "staging.example.com"), "SITE_ORIGIN"),
         ]
         for args, word in cases:
             problems = envfile.instance_problems(self.GOOD, "backend", args)

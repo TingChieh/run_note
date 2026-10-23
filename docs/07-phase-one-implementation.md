@@ -192,8 +192,8 @@ Docker/Compose 安装、启动、镜像或容器卷测试不再是项目任务�
 执行的非破坏性准备命令：
 
 ```bash
-/opt/homebrew/opt/postgresql@18/bin/createdb -w -h 127.0.0.1 -p 5432 -U tingchieh -O run_note running_note_phase_one_test
-/opt/homebrew/opt/postgresql@18/bin/psql -w -h 127.0.0.1 -p 5432 -U tingchieh -d running_note_phase_one_test -c 'CREATE EXTENSION IF NOT EXISTS postgis;'
+/opt/homebrew/opt/postgresql@18/bin/createdb -w -h 127.0.0.1 -p 5432 -U "$USER" -O run_note running_note_phase_one_test
+/opt/homebrew/opt/postgresql@18/bin/psql -w -h 127.0.0.1 -p 5432 -U "$USER" -d running_note_phase_one_test -c 'CREATE EXTENSION IF NOT EXISTS postgis;'
 ```
 
 管理员仅在新测试库预装 PostGIS，没有提高应用账号权限；应用角色负责 Alembic 和 API 集成测试。测试连接通过现有 Settings 的 URL `.set(database='running_note_phase_one_test')` 构造，仅放入子进程环境，不写入 `.env` 或报告。

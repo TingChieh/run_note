@@ -10,7 +10,7 @@
 
 ## 备份与恢复演练
 
-- 备份：`/Users/tingchieh/Backups/RunNote/20261015T231912+0800-footprints/running_note-before-footprints.dump`，7879928 字节，权限 0600；父目录 0700。
+- 备份：`~/Backups/RunNote/20261015T231912+0800-footprints/running_note-before-footprints.dump`，7879928 字节，权限 0600；父目录 0700。
 - SHA-256：`1c828a42f6a6d6814ce4396d32307f415814ecca7ee7e1cbdefdebbea1a6f476`。
 - `pg_dump --format=custom` 及 `pg_restore --list` 均 exit 0；归档包含活动及原始轨迹点数据。归档不包含整个 PostgreSQL 实例的全局角色或服务配置。
 - 恢复目标：`127.0.0.1:52394/runnote_footprints_restore_test`，独立原生 PostgreSQL18 实例，名称以 `_test` 结尾并显式通过允许目标验证。
@@ -45,6 +45,6 @@
 
 保留的主要数据：184 条活动、224381 个轨迹点、238 个轨迹段、167 条小米导入记录，其他表指纹亦全部一致。
 
-审计文件：`/Users/tingchieh/Backups/RunNote/20261015T231912+0800-footprints/migration-audit.json`，权限 0600。包含迁移日志和全表摘要，不含凭据或原始业务行。
+审计文件：`~/Backups/RunNote/20261015T231912+0800-footprints/migration-audit.json`，权限 0600。包含迁移日志和全表摘要，不含凭据或原始业务行。
 
 未重跑业务单元、集成、前端类型/构建或浏览器测试，本轮没有业务代码变化；前轮功能验证见 46、47 号文档。本轮没有启动开发后端、真实 AI 调用、导入、业务数据删除、Git 提交、推送或部署。后台实际生成与开发账号完整业务验收仍为未运行。

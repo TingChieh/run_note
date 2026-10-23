@@ -69,14 +69,14 @@ node tests/fixtures/check-showcase-isolation.mjs
 
 计算样式原始 JSON 与比较摘要保存在本机证据目录：
 
-- [改动前样式](/Users/tingchieh/.codex/visualizations/2026/10/16/01a14356-8298-77a3-9e56-5c7d4279ec66/ui-design-system-prechange-styles.json)
-- [当前样式](/Users/tingchieh/.codex/visualizations/2026/10/16/01a14356-8298-77a3-9e56-5c7d4279ec66/ui-design-system-current-styles.json)
-- [逐值比较摘要](/Users/tingchieh/.codex/visualizations/2026/10/16/01a14356-8298-77a3-9e56-5c7d4279ec66/ui-design-system-style-equivalence.json)
+- [改动前样式](local-evidence/2026/10/16/01a14356-8298-77a3-9e56-5c7d4279ec66/ui-design-system-prechange-styles.json)
+- [当前样式](local-evidence/2026/10/16/01a14356-8298-77a3-9e56-5c7d4279ec66/ui-design-system-current-styles.json)
+- [逐值比较摘要](local-evidence/2026/10/16/01a14356-8298-77a3-9e56-5c7d4279ec66/ui-design-system-style-equivalence.json)
 
 人工浏览器证据（合成内容，不进入仓库）：
 
-- [桌面浅色展示](/Users/tingchieh/.codex/visualizations/2026/10/16/01a14356-8298-77a3-9e56-5c7d4279ec66/ui-showcase-desktop-light.png)
-- [移动深色控件](/Users/tingchieh/.codex/visualizations/2026/10/16/01a14356-8298-77a3-9e56-5c7d4279ec66/ui-showcase-mobile-dark.png)
+- [桌面浅色展示](local-evidence/2026/10/16/01a14356-8298-77a3-9e56-5c7d4279ec66/ui-showcase-desktop-light.png)
+- [移动深色控件](local-evidence/2026/10/16/01a14356-8298-77a3-9e56-5c7d4279ec66/ui-showcase-mobile-dark.png)
 
 ### 既有失败与运行干扰
 

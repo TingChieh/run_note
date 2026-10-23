@@ -286,9 +286,9 @@ WHERE datname=current_database() AND pid<>pg_backend_pid();
 
 ### 项目外备份与实际恢复
 
-备份目录：`/Users/tingchieh/Backups/RunNote/20261012T192819+0800`，目录权限0700。
+备份目录：`~/Backups/RunNote/20261012T192819+0800`，目录权限0700。
 
-自定义格式完整数据库备份：`/Users/tingchieh/Backups/RunNote/20261012T192819+0800/running_note.dump`，文件权限0600。无表/schema筛选，非schema-only或data-only。该备份为单个数据库的pg_dump，未备份全实例的全局角色/服务配置。
+自定义格式完整数据库备份：`~/Backups/RunNote/20261012T192819+0800/running_note.dump`，文件权限0600。无表/schema筛选，非schema-only或data-only。该备份为单个数据库的pg_dump，未备份全实例的全局角色/服务配置。
 
 SHA-256：`8bc92010e5b92246774f220d5e308efddae19df869d9029504344280de74b920`。同时保留 `archive-list.txt` 与 `verification.json`，后者记录脱敏数据库身份、表行数/内容摘要、约束、列、索引、几何元数据及HTTP验收结果，不含连接密码。
 
@@ -306,8 +306,8 @@ SHA-256：`8bc92010e5b92246774f220d5e308efddae19df869d9029504344280de74b920`。�
 
 ```bash
 pg_dump -h 127.0.0.1 -p 5432 -U run_note -d running_note \
-  --format=custom --file '/Users/tingchieh/Backups/RunNote/20261012T192819+0800/running_note.dump'
-pg_restore --list '/Users/tingchieh/Backups/RunNote/20261012T192819+0800/running_note.dump'
+  --format=custom --file '~/Backups/RunNote/20261012T192819+0800/running_note.dump'
+pg_restore --list '~/Backups/RunNote/20261012T192819+0800/running_note.dump'
 initdb -D '/var/folders/nq/btgfkmq15c78jyqcz4zpt1lh0000gn/T/runnote-s2-restore-99m7iyh2/data' -A trust -U restore_admin --no-locale --encoding=UTF8
 pg_ctl -D '/var/folders/nq/btgfkmq15c78jyqcz4zpt1lh0000gn/T/runnote-s2-restore-99m7iyh2/data' -l '/var/folders/nq/btgfkmq15c78jyqcz4zpt1lh0000gn/T/runnote-s2-restore-99m7iyh2/postgres.log' \
   -o '-p 55441 -k /var/folders/nq/btgfkmq15c78jyqcz4zpt1lh0000gn/T/runnote-s2-restore-99m7iyh2/socket -h 127.0.0.1' -w start
@@ -322,7 +322,7 @@ CREATE DATABASE runnote_s2_restore_test;
 ```bash
 pg_restore -h 127.0.0.1 -p 55441 -U restore_admin \
   --dbname runnote_s2_restore_test --no-owner --no-privileges \
-  --exit-on-error --single-transaction '/Users/tingchieh/Backups/RunNote/20261012T192819+0800/running_note.dump'
+  --exit-on-error --single-transaction '~/Backups/RunNote/20261012T192819+0800/running_note.dump'
 pg_ctl -D '/var/folders/nq/btgfkmq15c78jyqcz4zpt1lh0000gn/T/runnote-s2-restore-99m7iyh2/data' -w -m fast stop
 lsof -nP -iTCP:55441 -sTCP:LISTEN
 ```

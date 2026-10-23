@@ -149,6 +149,8 @@ pnpm test:e2e                                  # 默认 e2e，需后端已启动
 backend/.venv/bin/python -m unittest discover -s infra/native/tests   # 运维脚本单元测试
 shellcheck -x --source-path=SCRIPTDIR infra/native/ops/*.sh infra/native/tests/*.sh
 infra/native/tests/ops-e2e.sh <release.tar.gz>                      # 需 PG_BIN、PYTHON；临时集群里演练部署/迁移/回滚/恢复
+infra/native/ops/ship.py [--dry-run] [--migrate]                          # 在你的电脑上一键发布已合并的 main（CI 全绿、迁移需显式 --migrate、先备份；配置在仓库之外，见 docs/66）
+infra/native/ops/acceptance-check.py --base https://… --backend-env …          # 站主登录 + 合成 GPX 的上线验收（已有真实数据的站点上也安全；见 docs/66）
 infra/native/ops/verify-release.sh <release.tar.gz>                       # 发布包自包含检查（build-release.sh 每次构建都会运行）
 infra/native/tests/ops-e2e-instances.sh <release.tar.gz>             # 旧布局与第二实例并行：隔离、各自备份/回滚、站点模式（见 docs/66“同机多实例”）
 infra/native/tests/caddy-instances.sh                                # 需 caddy；沙箱里的真实 Caddy 进程，验证 staging Basic Auth / production 维护页与上线
@@ -162,7 +164,7 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
 
 ### 账号与入口
 
-- 唯一站主由后端 `SITE_OWNER_EMAIL` 指定（默认 `tingchieh77@outlook.com`），账号缺失时展示接口返回 503，不回退到任意用户。唯一管理员由配置邮箱计算，不依赖可编辑角色字段。
+- 唯一站主由后端 `SITE_OWNER_EMAIL` 指定（默认值见 `backend/app/core/config.py`；生产必须显式设置），账号缺失时展示接口返回 503，不回退到任意用户。唯一管理员由配置邮箱计算，不依赖可编辑角色字段。
 - 匿名展示页面为 `/dashboard`、`/activities`（含详情和 wall）、`/footprints`、`/ai`；只在 `/admin` 提供管理员登录，旧 `/login` 与 `/register` 返回 404，注册 API 禁用。写操作仍由认证依赖与 CSRF/Origin 双重保护。
 - 用户管理页 `/admin/users` 在导航中归属"设置"（与 `/settings`、`/settings/site` 同组，使用 `settings-header.svelte.ts` 共享头部），仅站主可管理账号；普通启用用户在 `/workspace/*` 管理本人，公开 `/p/{username}/*` 始终只读。历史普通账号默认停用且不公开，显式启用后可登录本人工作区。
 - 禁用账号会撤销会话并关闭展示，重新启用不恢复旧状态；修改邮箱或重置密码撤销全部会话。站主的邮箱/启用/展示状态受保护。

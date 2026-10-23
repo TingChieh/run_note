@@ -24,7 +24,7 @@
 
 开工时代码唯一 head：0004_public_sharing（本轮新增后为0005_ai_reports）。该升级仅新增 users.bio及长度约束、activity_share_links和索引，不重建既有活动/GPX表。当前开发库不能直接运行依赖bio等字段的新版完整业务。
 
-已找到 `/Users/tingchieh/Backups/RunNote/20261012T192819+0800/running_note.dump`：25206字节、0600，SHA256 8bc92010e5b92246774f220d5e308efddae19df869d9029504344280de74b920；pg_restore --list退出0，包含表、数据、约束及索引目录。此前实际恢复验证记于09进度文档。本轮不重复恢复基础设施验收。
+已找到 `~/Backups/RunNote/20261012T192819+0800/running_note.dump`：25206字节、0600，SHA256 8bc92010e5b92246774f220d5e308efddae19df869d9029504344280de74b920；pg_restore --list退出0，包含表、数据、约束及索引目录。此前实际恢复验证记于09进度文档。本轮不重复恢复基础设施验收。
 
 **该旧备份生成时业务表为空，不能证明覆盖当前17用户/14活动。当前数据的最新完整备份尚未确认。**
 

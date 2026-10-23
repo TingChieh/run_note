@@ -9,7 +9,7 @@
 # Mind the similar spellings: the legacy installation is "runnote" / "run-note" (no underscore in the
 # user and role), this production instance is "run_note" (system user, group, database, role).
 INSTANCE=production
-DOMAIN=run.aisaka.cc
+DOMAIN=run.example.com
 
 ROOT=/opt/run-note-production
 ETC=/etc/run-note-production

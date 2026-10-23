@@ -11,7 +11,7 @@
 ## 写入暂停、备份与隔离恢复
 
 - 迁移前检查未见目标开发库客户端会话或等待锁。原8001/5183服务连接隔离数据库 `55445/runnote_ai_20261013_test`，与开发库无关。迁移操作期间未发现竞争写入会话。
-- 备份：`/Users/tingchieh/Backups/RunNote/20261013T124735+0800-run-note-v1-upgrade/running_note.dump`，自定义pg_dump归档，39,487字节，SHA-256 `2d216fadb6eaadce7d8974c77a68bbd8b10cdaff541ffd8e87974e66fc1dfcca`。归档目录模式0700，文件模式0600；归档目录清单45项。备份位于项目外。
+- 备份：`~/Backups/RunNote/20261013T124735+0800-run-note-v1-upgrade/running_note.dump`，自定义pg_dump归档，39,487字节，SHA-256 `2d216fadb6eaadce7d8974c77a68bbd8b10cdaff541ffd8e87974e66fc1dfcca`。归档目录模式0700，文件模式0600；归档目录清单45项。备份位于项目外。
 - `pg_dump`成功，`pg_restore --list`成功；新备份恢复到独立临时PostgreSQL实例成功，恢复库结构、业务行数及数据摘要核对通过。恢复副本从0003演练升级至0005成功。隔离恢复数据目录保留于 `/private/tmp/runnote-v1-final-restore-8f24hoat`，不属于开发库。
 - 备份/恢复没有覆盖集群级角色/ACL、其他数据库或实例级配置；本任务验证的是目标库完整归档及业务数据恢复。
 

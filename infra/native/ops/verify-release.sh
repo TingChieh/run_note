@@ -24,7 +24,7 @@ required=(
   RELEASE backend/alembic.ini backend/requirements.lock frontend/build/index.js scripts/site-owner.py
   ops/lib.sh ops/deploy.sh ops/rollback.sh ops/backup.sh ops/restore-drill.sh
   ops/init-instance.sh ops/set-site-mode.sh ops/verify-release.sh
-  ops/envfile.py ops/instance.py ops/schema_compat.py
+  ops/acceptance-check.py ops/envfile.py ops/instance.py ops/schema_compat.py
   infra/native/Caddyfile infra/native/instances/production.conf.example
   infra/native/runnote-api.service infra/native/runnote-web.service
   infra/native/runnote-backup.service infra/native/runnote-backup.timer
@@ -41,6 +41,8 @@ for f in ops/deploy.sh ops/rollback.sh ops/backup.sh ops/restore-drill.sh ops/in
   [ -x "$work/$f" ] || fail "$f is not executable"
   bash -n "$work/$f" || fail "$f has a syntax error"
 done
+[ -x "$work/ops/acceptance-check.py" ] || fail "ops/acceptance-check.py is not executable"
+python3 -m py_compile "$work/ops/acceptance-check.py" || fail "ops/acceptance-check.py does not compile"
 grep -q '^(runnote_app) {' "$work/infra/native/Caddyfile" || fail "the shipped Caddyfile lacks the (runnote_app) snippet"
 grep -qF 'import /etc/caddy/sites.d/*.caddy' "$work/infra/native/Caddyfile" || fail "the shipped Caddyfile does not import sites.d"
 
