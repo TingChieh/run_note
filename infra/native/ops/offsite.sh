@@ -190,7 +190,7 @@ cmd_setup() {
     s3:*)
       ask key_id "R2 access key id" secret
       ask key_secret "R2 secret access key" secret
-      [ -n "$key_id" ] && [ -n "$key_secret" ] || die "both the access key id and the secret are required"
+      if [ -z "$key_id" ] || [ -z "$key_secret" ]; then die "both the access key id and the secret are required"; fi
       export AWS_ACCESS_KEY_ID="$key_id" AWS_SECRET_ACCESS_KEY="$key_secret" AWS_DEFAULT_REGION=auto
       ;;
   esac
