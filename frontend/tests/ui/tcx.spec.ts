@@ -50,6 +50,8 @@ test('TCX selection exposes explicit time repair, retains failed draft, then sho
     await expect(page.getByText('156 bpm',{exact:true})).toBeVisible();
   }
   await page.screenshot({path:'test-results/tcx-mobile.png',fullPage:true});
+  // The yearly calendar and its day panel are hidden below 768px; read the day panel at desktop width.
+  await page.setViewportSize({width:1440,height:1000});
   await page.goto('/dashboard?year=2026&day=2026-10-04');
   await expect(page.getByRole('region',{name:'2026-10-04 的活动（1）',exact:true})).toContainText('用时 19:26');
   expect(attempts).toBe(2);

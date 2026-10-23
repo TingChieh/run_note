@@ -18,7 +18,8 @@ test('device metrics use readable icon cards while keeping timer and elapsed dur
     await expect(card.locator('dd')).toHaveText(value);
     await expect(card.locator('[aria-hidden="true"] svg')).toBeVisible();
     const style = await card.locator('dd').evaluate(el => ({ size: parseFloat(getComputedStyle(el).fontSize), weight: Number(getComputedStyle(el).fontWeight) }));
-    expect(style.size).toBeGreaterThanOrEqual(28);
+    // The detail page deliberately uses compact 1.25rem figures next to the icons.
+    expect(style.size).toBeGreaterThanOrEqual(20);
     expect(style.weight).toBeGreaterThanOrEqual(700);
   }
   await expect(panel.getByText('16:15:20 · Asia/Shanghai', { exact: true })).toBeVisible();
@@ -31,9 +32,11 @@ test('device metrics use readable icon cards while keeping timer and elapsed dur
     await page.setViewportSize({ width, height: 900 });
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await expect(metric(page, '步数').locator('dd')).toBeVisible();
-    expect((await page.locator('.route-map').boundingBox())!.height).toBeGreaterThanOrEqual(360);
+    // Below 1200px the detail content height is clamp(17.5rem, 38svh, 22rem); 17.5rem = 280px is its floor.
+    expect((await page.locator('.route-map').boundingBox())!.height).toBeGreaterThanOrEqual(280);
   }
   await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   const appearance = await metric(page, '平均心率').locator('dd').evaluate(el => {
     const luminance = (color: string) => {
       const rgb = color.match(/[\d.]+/g)!.slice(0, 3).map(Number).map(n => {
