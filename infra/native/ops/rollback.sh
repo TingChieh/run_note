@@ -40,6 +40,7 @@ else
   target="$releases/$target_arg"
 fi
 [ -d "$target/backend/migrations" ] || die "release not found: $target"
+[ -e "$target/$COMPLETE_MARKER" ] || die "$target is not a completed release (no $COMPLETE_MARKER marker); refusing to switch to it"
 current="$(current_release_dir)"
 [ "$target" != "$current" ] || die "already on $(basename "$target")"
 PY="$target/backend/.venv/bin/python"

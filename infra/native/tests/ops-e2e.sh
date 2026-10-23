@@ -153,6 +153,39 @@ has_version_table() { psql -X -qAt -d "$1" -c "select to_regclass('alembic_versi
 no_backups() { [ -z "$(ls -A "$INIT/backups")" ] || fail "a backup/drill ran although there was nothing to protect"; }
 untouched() { [ "$(has_version_table "$1")" = "$2" ] || fail "$1: alembic_version presence changed"; [ ! -e "$INIT/root/current" ] || fail "a release was installed"; }
 
+# A virtualenv is not relocatable: its console scripts name the interpreter by absolute path. The
+# release must therefore be built where it stays. Check the shebang and, below, run the real thing.
+assert_final_path_venv() { # $1 root
+  local rel real shebang
+  rel="$(readlink "$1/current")"; real="$(cd "$rel" && pwd -P)"
+  shebang="$(head -1 "$rel/backend/.venv/bin/uvicorn")"
+  [ "$shebang" = "#!$real/backend/.venv/bin/python" ] || [ "$shebang" = "#!$rel/backend/.venv/bin/python" ] \
+    || fail "uvicorn shebang does not name the final release path: $shebang"
+  case "$shebang" in *.partial*) fail "uvicorn shebang still names a staging directory" ;; esac
+  [ -e "$rel/.deploy-complete" ] || fail "installed release has no completion marker"
+  for staged in "$1"/releases/.partial*; do [ ! -e "$staged" ] || fail "staging directory left behind: $staged"; done
+}
+real_stack_check() { # $1 root, $2 etc: start the INSTALLED uvicorn and node exactly as the systemd units do
+  local root="$1" etc="$2" ap=18010 wp=18011 api web waited
+  (cd "$root/current/backend" && exec python3 "$root/current/ops/envfile.py" exec "$etc/backend.env" -- \
+    "$root/current/backend/.venv/bin/uvicorn" app.main:create_app --factory --host 127.0.0.1 --port $ap \
+    --workers 1 --no-proxy-headers --no-server-header >"$WORK/real-api.log" 2>&1) & api=$!
+  (cd "$root/current/frontend" && exec env INTERNAL_API_BASE_URL="http://127.0.0.1:$ap" HOST=127.0.0.1 PORT=$wp \
+    PROTOCOL_HEADER=x-forwarded-proto BODY_SIZE_LIMIT=11M NODE_ENV=production node build/index.js \
+    >"$WORK/real-web.log" 2>&1) & web=$!
+  waited=0
+  until curl -fsS --max-time 3 "http://127.0.0.1:$ap/api/v1/health/ready" >/dev/null 2>&1 \
+    && curl -fsS --max-time 3 "http://127.0.0.1:$wp/api/health" >/dev/null 2>&1; do
+    sleep 1; waited=$((waited + 1))
+    if [ "$waited" -gt 45 ]; then
+      kill "$api" "$web" 2>/dev/null || true; tail -5 "$WORK/real-api.log" "$WORK/real-web.log" >&2
+      fail "the installed release did not become ready when started from its final path"
+    fi
+  done
+  kill "$api" "$web" 2>/dev/null || true; wait "$api" "$web" 2>/dev/null || true
+  echo "ok: installed uvicorn + node started from the final release path; /api/v1/health/ready and the Node proxy answered" >&2
+}
+
 init_db rn_init
 expect_fail "empty database without --migrate" init_deploy "$r1"
 grep -q "re-run with --migrate" "$WORK/last.out" || fail "refusal reason missing"
@@ -182,6 +215,7 @@ expect_fail "first initialisation whose migration fails" init_deploy "$r4" --mig
 grep -q "first initialisation failed" "$WORK/last.out" || fail "failure message missing"
 [ "$(user_tables rn_init)" = 0 ] || fail "a failed first initialisation left tables behind"
 untouched rn_init f; no_backups
+[ -z "$(ls -A "$INIT/root/releases")" ] || fail "a failed deploy left a half-built release directory behind"
 echo "ok: the failed attempt was rolled back (transactional DDL); the database is still empty" >&2
 
 # The same database, retried with a good release: this is the real first deployment.
@@ -190,6 +224,18 @@ init_deploy "$r1" --migrate
 [ -L "$INIT/root/current" ] || fail "current not set after first initialisation"
 no_backups
 echo "ok: first initialisation migrated to head without any backup or restore drill" >&2
+assert_final_path_venv "$INIT/root"
+real_stack_check "$INIT/root" "$INIT/etc"
+
+# An interrupted build (no completion marker) is not a release: it is neither deployed over,
+# nor rolled back to, and it is never deleted automatically.
+mkdir -p "$INIT/root/releases/e2e-r1-sibling/backend/migrations"
+expect_fail "deploy over a never-completed release directory" init_deploy "$r2"
+grep -q "never completed" "$WORK/last.out" || fail "refusal reason missing"
+[ -d "$INIT/root/releases/e2e-r1-sibling" ] || fail "the unfinished directory was deleted automatically"
+expect_fail "rollback to a never-completed release directory" env RUNNOTE_ROOT="$INIT/root" RUNNOTE_ETC="$INIT/etc" BACKUP_DIR="$INIT/backups" "$(ops_of "$r1")/rollback.sh" e2e-r1-sibling
+grep -q "not a completed release" "$WORK/last.out" || fail "rollback refusal reason missing"
+rm -rf "$INIT/root/releases/e2e-r1-sibling"
 
 # Once initialised it is an ordinary database: a same-schema deploy needs no --migrate, no backup.
 init_deploy "$r2"
@@ -212,6 +258,7 @@ pre="$(ls "$WORK"/backups/*-pre-*.dump | head -1)"; [ -s "$pre" ] || fail "no pr
 [ -f "$pre.sha256" ] || fail "no checksum"
 current_id="$(basename "$(readlink "$WORK/root/current")")"
 [ "$current_id" != e2e-r0-old-schema ] || fail "current did not move to R1"
+assert_final_path_venv "$WORK/root"
 
 step "5. same-schema redeploy (R1 sibling): no migration, no backup"
 before="$(ls "$WORK"/backups/*.dump | wc -l | tr -d ' ')"
