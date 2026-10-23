@@ -4,7 +4,7 @@
 
 ## 数据获取结果
 
-用户授权导出的跑步数据保存在仓库外：`/Users/tingchieh/Downloads/RunNote-MiFitness-20261015-running/`。
+用户授权导出的跑步数据保存在仓库外：`~/Downloads/RunNote-MiFitness-20261015-running/`。
 
 - 167 条跑步设备汇总，162 条有下载轨迹，5 条仅有汇总。
 - 162 份 GPX 原件，共 22,045,942 字节、213,945 点、162 源段。原件不修改；`normalized_gpx/` 是仅补标准命名空间的派生副本。

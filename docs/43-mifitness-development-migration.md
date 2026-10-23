@@ -12,7 +12,7 @@
 
 ## 备份与恢复演练
 
-最终有效备份目录：`/Users/tingchieh/Backups/RunNote/20261015T214518+0800-mifitness/`，权限 0700。
+最终有效备份目录：`~/Backups/RunNote/20261015T214518+0800-mifitness/`，权限 0700。
 
 - 完整自定义格式备份：`running_note-before-mifitness.dump`，520,361 字节，权限 0600。
 - SHA-256：`9877ad07340171855431f30d55e22cf16a606660d5b43e5e22b12b6e91e99665`。
@@ -27,7 +27,7 @@
 
 ## 迁移前会话变动的处理
 
-第一次备份保留于 `/Users/tingchieh/Backups/RunNote/20261015T213904+0800-mifitness/`。首次恢复演练通过后，执行前校验发现 `auth_sessions` 指纹变化，因此在 DDL 执行之前停止；`development_upgrade_attempted` 仍为 false，开发库仍为 `0008`。
+第一次备份保留于 `~/Backups/RunNote/20261015T213904+0800-mifitness/`。首次恢复演练通过后，执行前校验发现 `auth_sessions` 指纹变化，因此在 DDL 执行之前停止；`development_upgrade_attempted` 仍为 false，开发库仍为 `0008`。
 
 只读逐字段比较恢复副本与开发库，确认仅 1 条已有会话的 `last_seen_at` 向前更新 639.067493 秒；身份、令牌、会话数量及所有业务数据未变。该字段由现有认证服务定期刷新。不覆盖或回写该会话，也不把旧备份中的时间恢复到开发库。
 

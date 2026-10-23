@@ -102,7 +102,7 @@ Python 虚拟环境**不可重定位**：`bin/uvicorn` 等入口脚本的第一�
 | | 旧布局（现有 staging） | production 实例 |
 | --- | --- | --- |
 | 配置 | 无（内置默认） | `/etc/run-note-instances/production.conf` |
-| 域名 | staging.aisaka.cc | run.aisaka.cc |
+| 域名 | staging.example.com | run.example.com |
 | 程序目录 | `/opt/run-note` | `/opt/run-note-production` |
 | 配置/密钥目录 | `/etc/run-note`（`root:runnote`） | `/etc/run-note-production`（0750 `root:run_note`） |
 | 备份目录 | `/var/backups/run-note` | `/var/backups/run-note-production`（0700 postgres） |

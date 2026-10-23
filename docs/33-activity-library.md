@@ -29,7 +29,7 @@
 - 开发库升级：用户明确授权“升级，不用启动后端，完成测试即可”。目标核对为 `127.0.0.1:5432/running_note`、角色 run_note；无其他数据库连接且后端已关闭。生成新鲜自定义格式备份并检查目录/校验和，在 55447 专用隔离库恢复真实备份并演练升级后，开发库从 0007 升至 `0008_activity_labels`。设置 5 秒锁超时、60 秒语句超时；Alembic check 通过。
 - 升级前后全部既有表按 UTC/C 统一规则的数据指纹、原列和约束、PostGIS 一致；17 用户、17 活动、10,436 轨迹点保留。新增两列非空默认正确，17 条活动分类和标签为空，新约束已验证。初次恢复校验因源库 en_US.UTF-8 与隔离库 C 排序规则不同导致聚合指纹差异，逐字段确认无差异后统一排序规则验证通过。
 - 升级后专项复验：42 项测试通过（schema、活动标签/批量删除、原有编辑删除、数据库就绪检查），测试只写纯合成 `_test` 库。恢复真实备份的专用测试库已清理，55447 隔离 PostgreSQL 已关闭。
-- 备份及升级前后验证文件：`/Users/tingchieh/Backups/RunNote/activity-labels-20261015-124904`，其中 `running_note-before-0008.dump`、`SHA256SUMS`、`before.json`、`rehearsal.json`、`after.json` 可复核。用户记录未执行编辑或删除；开发后端未启动。
+- 备份及升级前后验证文件：`~/Backups/RunNote/activity-labels-20261015-124904`，其中 `running_note-before-0008.dump`、`SHA256SUMS`、`before.json`、`rehearsal.json`、`after.json` 可复核。用户记录未执行编辑或删除；开发后端未启动。
 
 临时 Chrome/HTTP 测试服务和 55447 隔离 PostgreSQL 已停止，数据目录保留。测试截图保存在 `frontend/.cache/activity-library/`。验证命令：`pnpm test`、`pnpm check`、`pnpm build`；Chrome 使用 `playwright.activity-library.config.ts`，真实联调用 `playwright.activity-library-e2e.config.ts`，仅显式允许的 `_test` 数据库。未修改环境配置、未调用真实 AI、未提交、推送或部署。
 
