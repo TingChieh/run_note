@@ -173,7 +173,7 @@ cd backend
 .venv/bin/ruff format --check app migrations tests
 ```
 
-集成测试使用单独的 PostgreSQL/PostGIS 数据库，名称以 `_test` 结尾；会执行迁移，不能指向业务库。本机已经有 `running_note_phase_one_test`，不重复创建。
+集成测试使用单独的 PostgreSQL/PostGIS 数据库，名称以 `_test` 结尾；会执行迁移，不能指向业务库。测试库按需创建、用完可以删除，本机不再保留常驻测试库；每次需要时按下面的步骤新建，库名以 `_test` 结尾。
 
 全新测试环境由管理员创建独立测试库，并仅在该库启用扩展。命令使用管理员身份连接已确认的目标实例（管理员用户名按实际环境替换）：
 
