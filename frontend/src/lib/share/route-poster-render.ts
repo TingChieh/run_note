@@ -24,6 +24,7 @@ export interface PosterPalette {
   heading: string;
   headingInk: string;
   brandInk: string;
+  success: string;
   font: string;
 }
 
@@ -34,7 +35,7 @@ export function posterPalette(element: HTMLElement): PosterPalette {
   return { background: token('background'), surface: token('surface'), foreground: token('foreground'),
     muted: token('muted-foreground'), route: token('primary'), line: token('border'),
     heading: token('sport-yellow'), headingInk: token('sport-heading-ink'),
-    brandInk: token('primary-foreground'), font: token('font-body') };
+    brandInk: token('primary-foreground'), success: token('success'), font: token('font-body') };
 }
 
 export const posterPeriod = (month?: string) => month ? `${month.slice(0, 4)} 年 ${Number(month.slice(5))} 月` : '全部记录';

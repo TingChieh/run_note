@@ -16,6 +16,7 @@
   import RouteMap from '#lib/components/RouteMap.svelte';
   import ActivityWallPreview from '#lib/components/ActivityWallPreview.svelte';
   import ActivityActions from '#lib/components/ActivityActions.svelte';
+  import ActivityPosterDialog from '#lib/components/ActivityPosterDialog.svelte';
   import { ActivityError, readActivity as scoped_readActivity, readRoute as scoped_readRoute, formatDate, formatDistance, formatDuration, activityDuration, formatStartTime, formatPace, qualityLabel, qualityEntries, type Activity, type Route } from '#lib/api/activities.ts';
   let activity = $state<Activity | null>(null), route = $state<Route | null>(null), loading = $state(true), routeLoading = $state(false), message = $state(''), routeError = $state(''), disposed = false;
   let switching = $state(false), swapped = $state(false);
@@ -91,6 +92,7 @@
     <div class="hero-distance" class:detail-swap={swapped} aria-hidden="true"><span>本次距离</span><strong>{formatDistance(activity.distance_m)}</strong></div>
     {/key}
   </section>
+  {#if activity.has_route}<div class="poster-action">{#key activity.id}<ActivityPosterDialog activityId={activity.id} />{/key}</div>{/if}
   {#key activity.id}{#if view.manage}<ActivityActions {activity} onupdated={(value) => { activity = value; }} />{/if}{/key}
   <div class="detail-workspace" class:switching aria-busy={switching}>
     <section class="metric-panel" aria-label="运动指标"><div class="panel-heading"><h2>每一步，都算数</h2><p class="section-caption">本次运动概览</p></div>
@@ -123,6 +125,7 @@
   {#if view.manage}<p class="mt-6 text-sm text-muted-foreground">个人展示站公开全部记录和完整轨迹；以下分享设置仅控制旧版摘要链接。</p>{#key activity.id}<SharePanel {activity} />{/key}{/if}
 {:else if loading}<div class="mt-6"><FeedbackState kind="loading" title="正在读取活动…" /></div>{/if}
 <style>
+  .poster-action { display: flex; justify-content: flex-end; margin-top: var(--space-4); }
   .sport-hero { display: flex; justify-content: space-between; align-items: center; gap: 2rem; background: var(--sport-yellow); border-radius: var(--radius-card); padding: clamp(1.5rem, 3vw, 2rem); margin-top: 1.5rem; color: var(--sport-detail-ink); }
   .hero-copy { min-width: 0; }
   .hero-kicker { display: flex; align-items: center; gap: .5rem; font-size: .875rem; font-weight: 600; }
