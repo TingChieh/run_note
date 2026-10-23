@@ -162,7 +162,7 @@ Python 虚拟环境**不可重定位**：`bin/uvicorn` 等入口脚本的第一�
 - 两个实例共用同一个 PostgreSQL 集群、同一个超级用户账号、同一个 Caddy 进程、同一台机器的内存与 IP；这是"隔离"而不是"独立硬件"。
 - 旧布局的库保留默认的 PUBLIC 可连接（见上）。
 - 退役旧布局（staging）时，需要从服务器的 `Caddyfile` 删掉旧站点块并移除 `access.d` 下的片段，同时 `systemctl disable --now runnote-api runnote-web runnote-backup.timer`；Caddyfile 里 `{$RUNNOTE_DOMAIN}` 为空会导致校验失败（旧配置继续生效，不会中断）。
-- 该实例的本地备份**没有异地副本**：restic 尚未配置，没有异地灾难恢复能力。
+- 在执行下文"异地备份"之前，该实例的备份**没有异地副本**，没有异地灾难恢复能力。
 
 ### 一键发布（`ops/ship.py`）
 
@@ -227,6 +227,34 @@ python3 ops/acceptance-check.py --loopback-port 3100 --domain run.example.com --
 - 异地保留：每日 7、每周 4、每月 6（`restic forget --prune`，只作用于 `nightly` 标签）。本机保留 14 份夜间备份、10 份迁移前备份。
 - 手动演练：`sudo -u postgres env PGDATABASE=runnote /opt/run-note/current/ops/restore-drill.sh <dump>`。**至少每季度从异地仓库取回备份、在另一台机器上演练一次**——本机演练证明备份可用，不证明异地副本可取回。
 - 备份包含全部私人数据（含精确轨迹、密码哈希、会话）：目录 0700，异地必须加密，**不得**放入仓库（`.gitignore` 已忽略 `*.dump`）。
+
+### 异地备份（Cloudflare R2 + restic）
+
+目的：服务器整机丢失（磁盘损坏、被入侵、误删主机）时，仍能从另一处取回数据。restic 在**本机加密后**再上传，R2 只保存密文；加密密码只在服务器上生成，**丢失即无法恢复异地备份**。
+
+**你在 Cloudflare 一侧做的事（一次性）**
+1. 注册 Cloudflare 账号，开通 R2（可能需要绑定付款方式；免费额度 10 GB-月、免出站流量，当前备份体量远低于此）。
+2. 创建存储桶（例如 `run-note-backup`），**不要**开启公开访问。
+3. 创建 API 令牌：R2 → Manage API Tokens → 权限选 **Object Read & Write**，范围**限定到这个存储桶**。记下 Account ID、Access Key ID、Secret Access Key（Secret 只显示一次）。
+
+**在服务器上配置（一次性，由你本人在终端输入密钥，不经过聊天或命令行参数）**
+```bash
+ssh -t <服务器> 'sudo RUNNOTE_INSTANCE=production /opt/run-note-production/current/ops/offsite.sh setup'
+```
+它依次：询问 Account ID / 存储桶 / 访问密钥（密钥为隐藏输入）→ 在服务器生成 restic 密码（`restic.password`，0640 root:postgres）→ `restic init` → **成功后**才把设置写入 `backup.env`（失败不留半成品）→ 上传首份备份 → 立即做一次**取回验证**（`verify`）→ 在终端显示一次加密密码，请存入密码管理器后回车。已配置过的实例会拒绝重复执行。
+
+此后每晚的 `backup.sh` 自动上传（见上节保留策略）。
+
+**取回验证（可随时运行，也适合放进定期检查）**
+```bash
+sudo RUNNOTE_INSTANCE=production /opt/run-note-production/current/ops/offsite.sh verify
+```
+依次做：`restic check`；最新快照不超过 36 小时（`--max-age-hours N` 调整，说明夜间上传停了）；把最新快照**从异地真实取回**到临时目录；校验 sha256；对取回的 dump 跑 `restore-drill.sh`（恢复到临时库并与现网比对，`--no-drill` 可跳过）。全部满足才退出 0，临时目录用完即删。
+
+**已知边界**
+- 服务器持有可写、可删的访问密钥：服务器若被入侵，攻击者可以删除异地副本。R2 的对象锁定/保留策略能否缓解**尚未验证**；重要时刻可再手工下载一份离线保存。
+- 只有 `nightly` 快照按每日 7/每周 4/每月 6 清理；迁移前（`pre-*`）快照不会自动清理，体量很小，需要时用 `restic forget` 手工处理。
+- 更换密钥或迁移到新桶：用 `setup --reconfigure --repository <新位置>` 指向一个**新的空**仓库；不会读取或改写旧仓库。
 
 ### 配置校验
 
@@ -304,7 +332,7 @@ CI 暴露的问题与根因（均已修复，且没有跳过、没有加长超�
 ### 未运行 / 无法验证
 
 - Linux 上的 `systemd-analyze verify`、`caddy validate`、PGDG 安装、`--require-hashes` 安装和 e2e 已由 CI 覆盖（见上）。但 e2e 仍用 shim 替代 `systemctl`/`runuser`/`chown`，**真实 systemd 单元启动、真实 `runuser` 与角色所有权路径未在真实服务器上演练**。
-- 未验证：restic 异地上传与取回、`HEALTHCHECK_URL` 心跳、`runnote-backup.timer` 实际触发、真实域名下 HTTPS/Cookie/Origin/CSRF、CSP Report-Only 在真实页面的违规情况、`statement_timeout=3s` 对大 GPX 导入在目标规格上的影响。
+- 未验证：真实 R2 上的 restic 上传与取回（`ops/offsite.sh` 在本地 restic 仓库上经 CI 演练，S3/R2 传输与 `AWS_DEFAULT_REGION=auto` 须在首次 `setup` 时实地确认）、`HEALTHCHECK_URL` 心跳、`runnote-backup.timer` 实际触发、真实域名下 HTTPS/Cookie/Origin/CSRF、CSP Report-Only 在真实页面的违规情况、`statement_timeout=3s` 对大 GPX 导入在目标规格上的影响。
 - 本地 `tests/ops-e2e.sh` 用 `postgres` 超级用户和 `DB_OWNER=postgres`；真实服务器上的 `runnote` 角色所有权调整只在脚本里写了，未在真实角色上演练。
 - CI 动作按当时 `v4`/`v5` 标签解析到的 commit SHA 固定（来自 GitHub API），上游已有更新主版本（checkout v7 等），升级需单独评估。
 
