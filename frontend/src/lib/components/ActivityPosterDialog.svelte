@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { watchSystemTheme } from '#lib/components/system-theme.ts';
   import { page } from '$app/state';
   import { contextAPI, viewContext } from '#lib/api/view-context.ts';
@@ -73,7 +73,7 @@
     try {
       do {
         version = appearance;
-        await ensureLogo();
+        await ensureLogo(); await tick();
         if (disposed || !visible || request !== renderToken) return;
         output = await renderActivityPoster(source, posterPalette(theme === 'auto' ? dialog : themeProbe), style, { title: page.data.site?.title || 'RunNote', logo });
         if (disposed || !visible || request !== renderToken) return;
@@ -108,8 +108,9 @@
 </script>
 
 {#if allowed}
-<!-- Hidden token probe: resolves the chosen fixed appearance without switching the site theme. -->
-<div hidden data-poster-theme={theme === 'auto' ? undefined : theme}><div class="sport-theme" bind:this={themeProbe}></div></div>
+<!-- Hidden token probe, present only for a fixed appearance: resolves it without switching the site theme
+     and keeps the page's single `.sport-theme` shell unique otherwise. -->
+{#if visible && theme !== 'auto'}<div hidden data-poster-theme={theme}><div class="sport-theme" bind:this={themeProbe}></div></div>{/if}
 <button bind:this={trigger} type="button" class="button-secondary" disabled={!mounted} onclick={open}>生成分享图</button>
 <dialog bind:this={dialog} aria-labelledby="activity-poster-title" aria-describedby="activity-poster-description"
   oncancel={(event) => { event.preventDefault(); close(); }}
