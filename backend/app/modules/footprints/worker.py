@@ -14,6 +14,8 @@ from app.modules.footprints.snapshot import (
 from app.modules.users.model import User
 
 SCAN_INTERVAL_SECONDS = 60
+# Imports in quick succession coalesce into one scan instead of one rebuild per file.
+WAKE_COALESCE_SECONDS = 1.0
 logger = logging.getLogger(__name__)
 
 
@@ -94,6 +96,7 @@ class FootprintWorker:
         self.clock = clock
         self.expected_revision = expected_revision
         self.stop_event = WorkerStop()
+        self.wakeup = Event()
         self.thread = Thread(target=self._run, name="footprint-snapshots", daemon=True)
 
     def _run(self):
@@ -107,16 +110,30 @@ class FootprintWorker:
                 )
             except Exception as error:
                 logger.warning("Footprint worker scan unavailable (%s)", type(error).__name__)
-            self.stop_event.wait(SCAN_INTERVAL_SECONDS)
+            woken = self.wakeup.wait(SCAN_INTERVAL_SECONDS)
+            self.wakeup.clear()
+            if woken and not self.stop_event.is_set():
+                self.stop_event.wait(WAKE_COALESCE_SECONDS)
+
+    def wake(self):
+        """Scan soon after a committed data change instead of at the next interval."""
+        self.wakeup.set()
 
     def start(self):
         self.thread.start()
 
     def stop(self):
         self.stop_event.set()
+        self.wakeup.set()
         if self.thread.ident is None:
             return
         # Each statement is bounded; cancel also interrupts the currently active build.
         self.thread.join(timeout=12)
         if self.thread.is_alive():
             logger.warning("Footprint worker is still stopping after bounded shutdown")
+
+
+def wake_footprint_worker(app):
+    worker = getattr(app.state, "footprint_worker", None)
+    if worker is not None:
+        worker.wake()

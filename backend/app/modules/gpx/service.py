@@ -16,6 +16,7 @@ from app.modules.activities.model import Activity
 from app.modules.activities.schema import ImportView
 from app.modules.activities.service import view
 from app.modules.auth.service import require_identity
+from app.modules.footprints.worker import wake_footprint_worker
 from app.modules.gpx.fingerprint import canonical_hash
 from app.modules.gpx.metrics import pace, round_metric
 from app.modules.gpx.model import ActivityPoint, ActivitySegment, GpxImport
@@ -277,6 +278,7 @@ def import_track(
                     segment_count=segment_count,
                     metrics_version=version,
                 )
+            wake_footprint_worker(request.app)
             return response
     except IntegrityError as error:
         db.rollback()

@@ -13,6 +13,7 @@ from app.core.errors import ApiError
 from app.core.responses import ApiResponse
 from app.modules.activities.router import envelope
 from app.modules.activities.schema import ImportView
+from app.modules.footprints.worker import wake_footprint_worker
 from app.modules.mifitness import service
 from app.modules.mifitness.schema import MifitnessPreview, MifitnessRecord
 from app.modules.users.schema import valid_timezone
@@ -24,6 +25,7 @@ def save(request, db, owner, record, raw, timezone, **options):
     with service.import_record(request, db, owner, record, raw, timezone, **options) as data:
         if not options.get("preview"):
             db.commit()
+            wake_footprint_worker(request.app)
         return data
 
 

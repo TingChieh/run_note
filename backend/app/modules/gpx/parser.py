@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from xml.etree import ElementTree as ET
 
-import gpxpy
 from defusedxml import ElementTree as SafeET
 from defusedxml.common import DefusedXmlException
 
@@ -57,9 +56,7 @@ def parse_gpx(raw: bytes) -> ParsedGPX:
     namespace = next((uri for uri in namespaces.values() if root.tag == f"{{{uri}}}gpx"), None)
     if version not in namespaces or namespace is None:
         raise ApiError(400, "GPX_XML_INVALID", "不支持的 GPX 根元素或版本")
-    # Some exporters declare 1.0 while using 1.1 tags. Read the actual namespace
-    # and generate a consistent safe GPX tree without changing the source bytes.
-    version = next(v for v, uri in namespaces.items() if uri == namespace)
+    # Some exporters declare 1.0 while using 1.1 tags; the actual namespace is authoritative.
     ns = "{" + namespace + "}"
     counts = dict.fromkeys(
         (
@@ -73,16 +70,13 @@ def parse_gpx(raw: bytes) -> ParsedGPX:
         0,
     )
     tracks = []
-    safe_root = ET.Element(ns + "gpx", {"version": version, "creator": "RunNote"})
     for ti, track in enumerate(root.findall(ns + "trk")):
         source_segments = []
-        safe_track = ET.SubElement(safe_root, ns + "trk")
         for si, segment in enumerate(track.findall(ns + "trkseg")):
             counts["input_segment_count"] += 1
             if counts["input_segment_count"] > MAX_SEGMENTS:
                 raise ApiError(422, "GPX_LIMIT_EXCEEDED", "GPX 源段数超过限制")
             points = []
-            safe_segment = ET.SubElement(safe_track, ns + "trkseg")
             source_points = segment.findall(ns + "trkpt")
             if not source_points:
                 counts["empty_segment_count"] += 1
@@ -101,21 +95,8 @@ def parse_gpx(raw: bytes) -> ParsedGPX:
                 counts["missing_time_count"] += time is None
                 counts["missing_elevation_count"] += elevation is None
                 points.append(Point(lon, lat, time, elevation, ti, si, pi, lon_text, lat_text))
-                safe_point = ET.SubElement(
-                    safe_segment, ns + "trkpt", {"lon": str(lon), "lat": str(lat)}
-                )
-                if time is not None:
-                    ET.SubElement(safe_point, ns + "time").text = time.isoformat()
-                if elevation is not None:
-                    ET.SubElement(safe_point, ns + "ele").text = str(elevation)
             source_segments.append(points)
         tracks.append(source_segments)
     if counts["input_point_count"] == counts["invalid_coordinate_count"]:
         raise ApiError(422, "GPX_NO_VALID_POINTS", "GPX 不含有效轨迹点")
-    # gpxpy receives only a locally generated safe tree. Original indexes/precision above
-    # remain authoritative, including invalid-point holes and empty source segments.
-    try:
-        gpxpy.parse(ET.tostring(safe_root, encoding="unicode"), version=version)
-    except Exception:
-        raise ApiError(400, "GPX_XML_INVALID", "GPX 无法解析") from None
     return ParsedGPX(tracks, counts)
