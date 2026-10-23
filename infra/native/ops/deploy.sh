@@ -9,6 +9,10 @@
 #   2. unpack + build the venv      5. only with --migrate: backup, restore drill, stop, migrate
 #   3. (nothing live is touched)    6. switch symlink, restart, smoke test
 # A schema change is never applied implicitly and never rolled back by swapping a symlink.
+# The release is built IN ITS FINAL DIRECTORY (releases/<id>): a virtualenv is not relocatable
+# (console-script shebangs hold the absolute path it was created at), so it must never be moved.
+# A release counts as installed only once it contains the DEPLOY_COMPLETE marker, which is the
+# last thing written before `current` is switched; an interrupted build is never mistaken for one.
 # A database with NO schema yet (pre-created, PostGIS only) is initialised only with an explicit
 # --migrate and only if it is provably empty; there is nothing to back up, so that path skips the
 # backup and drill. Any other unversioned database is refused (see schema_compat.py db-state).
@@ -58,38 +62,46 @@ id="$(tar -xzOf "$tarball" "$top/RELEASE" 2>/dev/null | sed -n 's/^id=//p' | hea
 [ "$id" = "$top" ] || die "RELEASE id does not match the archive's top directory"
 valid_release_id "${id:-}" || die "tarball has no valid RELEASE id"
 target="$releases/$id"
-[ ! -e "$target" ] || die "release $id already exists; build a new one"
+if [ -e "$target" ]; then
+  if [ -e "$target/$COMPLETE_MARKER" ]; then die "release $id already exists; build a new one"; fi
+  die "$target exists but was never completed (an interrupted deploy). It is not a usable release; remove it ('rm -rf $target') after checking it is not current or previous, then re-run"
+fi
 
 previous_dir="$(current_release_dir)"
-cleanup_partial() { if [ -n "${partial:-}" ]; then rm -rf "$partial"; fi; }
-partial="$releases/.partial-$id"
-trap cleanup_partial EXIT
-rm -rf "$partial"
-mkdir -p "$partial"
+# Until the release is marked complete, a failure removes the half-built directory. The variable
+# is cleared right before `current` is switched, so a failed smoke test never deletes a live release.
+building=""
+cleanup_building() { if [ -n "${building:-}" ]; then rm -rf "$building"; fi; }
+trap cleanup_building EXIT
+mkdir "$target"
+building="$target"
 log "unpacking $id"
-tar -xzf "$tarball" -C "$partial" --strip-components=1
+tar -xzf "$tarball" -C "$target" --strip-components=1
 for required in RELEASE backend/app backend/migrations backend/requirements.lock frontend/build/index.js ops/deploy.sh; do
-  [ -e "$partial/$required" ] || die "tarball missing $required"
+  [ -e "$target/$required" ] || die "tarball missing $required"
 done
 
-log "creating virtualenv from the hashed lockfile"
-"$PYTHON" -m venv "$partial/backend/.venv"
-"$partial/backend/.venv/bin/python" -m pip install --quiet --disable-pip-version-check \
-  --require-hashes -r "$partial/backend/requirements.lock"
-PY="$partial/backend/.venv/bin/python"
+log "creating virtualenv from the hashed lockfile (in its final location)"
+"$PYTHON" -m venv "$target/backend/.venv"
+"$target/backend/.venv/bin/python" -m pip install --quiet --disable-pip-version-check \
+  --require-hashes -r "$target/backend/requirements.lock"
+PY="$target/backend/.venv/bin/python"
+# The entry point systemd will run must work from where it is installed, as the application user.
+as_app "$target/backend/.venv/bin/uvicorn" --version >/dev/null \
+  || die "the installed uvicorn entry point cannot run from $target/backend/.venv/bin"
 
 log "checking configuration (values are never printed)"
-"$PY" -I "$partial/ops/envfile.py" check "$FRONTEND_ENV" --kind frontend
-(cd "$partial/backend" && PYTHONPATH="$partial/backend" "$PY" "$partial/ops/envfile.py" check "$BACKEND_ENV" --kind backend)
+"$PY" -I "$target/ops/envfile.py" check "$FRONTEND_ENV" --kind frontend
+(cd "$target/backend" && PYTHONPATH="$target/backend" "$PY" "$target/ops/envfile.py" check "$BACKEND_ENV" --kind backend)
 
-release_head="$("$PY" "$partial/ops/schema_compat.py" head "$partial/backend/migrations")"
-db_state="$(cd "$partial/backend" && as_app "$PY" "$partial/ops/envfile.py" exec "$BACKEND_ENV" -- \
-  "$PY" "$partial/ops/schema_compat.py" db-state)"
+release_head="$("$PY" "$target/ops/schema_compat.py" head "$target/backend/migrations")"
+db_state="$(cd "$target/backend" && as_app "$PY" "$target/ops/envfile.py" exec "$BACKEND_ENV" -- \
+  "$PY" "$target/ops/schema_compat.py" db-state)"
 case "$db_state" in
   empty) db_rev=none relation=initialize ;;
   "revision "*)
     db_rev="${db_state#revision }"
-    relation="$("$PY" "$partial/ops/schema_compat.py" relation "$partial/backend/migrations" "$db_rev")" ;;
+    relation="$("$PY" "$target/ops/schema_compat.py" relation "$target/backend/migrations" "$db_rev")" ;;
   "refuse "*) die "refusing to deploy: ${db_state#refuse }" ;;
   *) die "unexpected database state: $db_state" ;;
 esac
@@ -108,32 +120,33 @@ if [ "$relation" = initialize ]; then
   log "first initialisation of an empty database: no data exists, so no backup or restore drill"
   for unit in "${SERVICES[@]}"; do "$SYSTEMCTL" stop "$unit" || true; done
   # Re-check with the services stopped: nothing may have appeared since the first look.
-  recheck="$(cd "$partial/backend" && as_app "$PY" "$partial/ops/envfile.py" exec "$BACKEND_ENV" -- \
-    "$PY" "$partial/ops/schema_compat.py" db-state)"
+  recheck="$(cd "$target/backend" && as_app "$PY" "$target/ops/envfile.py" exec "$BACKEND_ENV" -- \
+    "$PY" "$target/ops/schema_compat.py" db-state)"
   [ "$recheck" = empty ] || die "database changed since it was inspected ($recheck); refusing to initialise. Nothing was migrated"
   log "applying migrations (single step, not per worker)"
-  if ! (cd "$partial/backend" && as_app "$PY" "$partial/ops/envfile.py" exec "$BACKEND_ENV" -- "$PY" -m alembic upgrade head); then
+  if ! (cd "$target/backend" && as_app "$PY" "$target/ops/envfile.py" exec "$BACKEND_ENV" -- "$PY" -m alembic upgrade head); then
     die "first initialisation failed. Services are stopped. Inspect the database state with schema_compat.py db-state before retrying"
   fi
-  after="$(cd "$partial/backend" && as_app "$PY" "$partial/ops/envfile.py" exec "$BACKEND_ENV" -- \
-    "$PY" "$partial/ops/schema_compat.py" db-revision)"
+  after="$(cd "$target/backend" && as_app "$PY" "$target/ops/envfile.py" exec "$BACKEND_ENV" -- \
+    "$PY" "$target/ops/schema_compat.py" db-revision)"
   [ "$after" = "$release_head" ] || die "after initialisation the database is at '$after', expected $release_head"
 elif [ "$relation" = behind ]; then
   log "stopping services for a write-free backup and migration"
   for unit in "${SERVICES[@]}"; do "$SYSTEMCTL" stop "$unit" || true; done
   log "taking pre-migration backup and running a real restore drill"
-  backup_file="$(as_pg "$partial/ops/backup.sh" --label "pre-$id" --drill --strict-counts)" \
+  backup_file="$(as_pg "$target/ops/backup.sh" --label "pre-$id" --drill --strict-counts)" \
     || die "pre-migration backup or restore drill failed; nothing was migrated. Services are stopped: restart them with 'systemctl start ${SERVICES[*]}'"
   log "applying migrations (single step, not per worker)"
-  if ! (cd "$partial/backend" && as_app "$PY" "$partial/ops/envfile.py" exec "$BACKEND_ENV" -- "$PY" -m alembic upgrade head); then
+  if ! (cd "$target/backend" && as_app "$PY" "$target/ops/envfile.py" exec "$BACKEND_ENV" -- "$PY" -m alembic upgrade head); then
     die "migration failed. Services are stopped. Backup: $backup_file. Inspect 'alembic current'; restore per docs/66 if needed"
   fi
 fi
 
-mv "$partial" "$target"
-partial=""
 chown -R root:root "$target"
 chmod -R go-w "$target"
+# Last write before the switch: from here on this directory is a complete release.
+: > "$target/$COMPLETE_MARKER"
+building=""
 
 ln -sfn "$target" "$RUNNOTE_ROOT/.current.new"
 [ -z "$previous_dir" ] || ln -sfn "$previous_dir" "$RUNNOTE_ROOT/.previous.new"
@@ -146,7 +159,7 @@ if wait_http_ok "$API_URL/api/v1/health/ready" "$SMOKE_API_TIMEOUT" && wait_http
   log "smoke test passed (API ready and Node proxy reaches it)"
 else
   log "SMOKE TEST FAILED for $id"
-  if [ -n "$previous_dir" ] && [ "$relation" = same ]; then
+  if [ -n "$previous_dir" ] && [ -e "$previous_dir/$COMPLETE_MARKER" ] && [ "$relation" = same ]; then
     log "schema unchanged, so automatically returning to $(basename "$previous_dir")"
     ln -sfn "$previous_dir" "$RUNNOTE_ROOT/.current.new" && mv -T "$RUNNOTE_ROOT/.current.new" "$RUNNOTE_ROOT/current"
     for unit in "${SERVICES[@]}"; do "$SYSTEMCTL" restart "$unit"; done
@@ -163,7 +176,10 @@ fi
 keep_current="$(readlink -f "$RUNNOTE_ROOT/current")"
 keep_previous="$(readlink -f "$RUNNOTE_ROOT/previous" 2>/dev/null || true)"
 # shellcheck disable=SC2012 # directory names are validated release ids
-ls -1dt "$releases"/*/ 2>/dev/null | sed 's:/$::' | awk -v keep="$KEEP_RELEASES" 'NR>keep' | while IFS= read -r old; do
+ls -1dt "$releases"/*/ 2>/dev/null | sed 's:/$::' | while IFS= read -r dir; do
+  # Unfinished builds are neither kept nor counted: they must not push a good release out.
+  if [ -e "$dir/$COMPLETE_MARKER" ]; then printf '%s\n' "$dir"; fi
+done | awk -v keep="$KEEP_RELEASES" 'NR>keep' | while IFS= read -r old; do
   [ "$old" = "$keep_current" ] || [ "$old" = "$keep_previous" ] || { log "removing old release $(basename "$old")"; rm -rf "$old"; }
 done
 log "deploy complete: $id"

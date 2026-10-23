@@ -7,6 +7,10 @@ RUNNOTE_ROOT="${RUNNOTE_ROOT:-/opt/run-note}"
 RUNNOTE_ETC="${RUNNOTE_ETC:-/etc/run-note}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/run-note}"
 APP_USER="${APP_USER:-runnote}"
+# Written into a release directory as the very last step of deploy.sh. A directory without it
+# is an unfinished build, never a release (not served, not rolled back to, not counted).
+# shellcheck disable=SC2034 # used by deploy.sh and rollback.sh, which source this file
+COMPLETE_MARKER=".deploy-complete"
 BACKEND_ENV="${BACKEND_ENV:-$RUNNOTE_ETC/backend.env}"
 FRONTEND_ENV="${FRONTEND_ENV:-$RUNNOTE_ETC/frontend.env}"
 BACKUP_ENV="${BACKUP_ENV:-$RUNNOTE_ETC/backup.env}"

@@ -58,14 +58,26 @@ sudo -u runnote /opt/run-note/current/backend/.venv/bin/python /opt/run-note/cur
 
 | 情况 | 命令 | 行为 |
 | --- | --- | --- |
-| 发布不含迁移 | `deploy.sh <tarball>` | 校验配置 → 解包+建 venv → 比较 schema → 切软链 → 重启 → 冒烟（API ready + Node 代理可达）→ 失败且 schema 未变时自动回到上一发布 |
+| 发布不含迁移 | `deploy.sh <tarball>` | 校验配置 → 在最终目录解包+建 venv（并以应用用户实际执行 `uvicorn --version`）→ 比较 schema → 切软链 → 重启 → 冒烟（API ready + Node 代理可达）→ 失败且 schema 未变时自动回到上一发布 |
 | 发布含迁移 | `deploy.sh --migrate <tarball>` | 先停服务 → 备份 → **真实恢复演练（行数严格相等）** → `alembic upgrade head`（单次，非每 worker）→ 切软链 → 启动 → 冒烟 |
 | 忘记 `--migrate` | — | 拒绝，库与软链均不变 |
 | **空库首次初始化** | `deploy.sh --migrate <tarball>` | 数据库**没有 schema**时的专用路径：停服务 → **再次确认仍为空** → `alembic upgrade head`（单次）→ 核对 revision 等于发布 head → 切软链 → 启动 → 冒烟。**不做备份与恢复演练**（没有数据可保护） |
 | 空库但没带 `--migrate` | — | 拒绝，不会在普通部署中隐式建 schema |
 | 库比发布新 | — | 拒绝（这是回滚，不是发布） |
 
-保留最近 5 个发布（`KEEP_RELEASES` 可调），永不删除 `current` 与 `previous`。
+保留最近 5 个**完整**发布（`KEEP_RELEASES` 可调），永不删除 `current` 与 `previous`。
+
+#### 发布目录的生命周期
+
+Python 虚拟环境**不可重定位**：`bin/uvicorn` 等入口脚本的第一行写死了创建时解释器的绝对路径。因此发布在**最终目录** `releases/<id>/` 内构建，之后不再移动（旧实现先在 `.partial-<id>` 里建 venv 再改名，入口脚本指向已不存在的路径，`runnote-api` 以 `203/EXEC` 启动失败；见验证记录）。
+
+| 阶段 | 目录状态 |
+| --- | --- |
+| 解包、建 venv、配置与 schema 检查、（首次初始化 / 备份演练 / 迁移） | `releases/<id>/` 存在，**没有** `.deploy-complete` 标记；任何失败或中断前的错误退出都会删除它 |
+| 全部检查通过，紧接着切换 `current` 之前 | `chown -R root:root`、`chmod -R go-w`，最后写入 `.deploy-complete`，并解除清理保护 |
+| 之后（冒烟失败等） | 绝不删除该发布；是否回到上一发布见"回滚决策" |
+
+没有 `.deploy-complete` 的目录**不是发布**：`deploy.sh` 遇到同名目录会拒绝并要求人工确认后删除（不会自动删除，也不会在其上覆盖）；`rollback.sh` 拒绝切换过去；保留策略不把它计入，也不会因它而淘汰完好的旧发布；冒烟失败时也不会自动"回到"这样的上一发布。如果进程被强杀（来不及清理），会留下这样的目录，这是预期的、可识别的状态。
 
 #### 首次初始化与普通迁移的区别
 
@@ -130,6 +142,9 @@ sudo -u runnote /opt/run-note/current/backend/.venv/bin/python /opt/run-note/cur
 | PASS | 恢复演练负向用例 | 现网在备份后新增一行 + `--strict-counts` → FAIL；文件被改动 → 校验和失败；revision 被人为改动 → FAIL |
 | PASS | `tests/ops-e2e.sh`（10 步） | 缺少 `AUTH_TRUSTED_PROXIES` 被拒且未安装任何内容；落后 schema 不带 `--migrate` 被拒且库不变；`--migrate` 触发备份+严格计数演练+迁移；同 schema 发布无多余备份；`rollback previous` 仅切换；跨迁移回滚被拒；`--restore-db` 恢复到迁移前且后来写入保留在 `_pre_rollback_` 副本；冒烟失败自动回到上一发布 |
 | PASS | `pnpm exec playwright test --config playwright.ui.config.ts theme.spec.ts`（worktree，真实 Chrome） | 7 passed（仅用于确认 worktree 中合成 UI 配置可运行） |
+| 发现并修复 | Phase 2C 真实服务器首次部署 | 首次初始化成功，但 `runnote-api` 以 `status=203/EXEC` 无法启动：`bin/uvicorn` 的 shebang 是 `#!…/releases/.partial-<id>/backend/.venv/bin/python`。根因是 venv 在 `.partial-<id>` 内创建后整个目录被 `mv` 成正式目录。迁移能成功是因为脚本用 `python -m alembic`，不经过入口脚本；Phase 1 的 e2e 用 `fake_health.py` 代替真实 API，从未执行过发布包里的 `uvicorn`。修复：在最终目录构建，完成标记 `.deploy-complete`，见"发布目录的生命周期" |
+| PASS | `ops-e2e.sh` 新增（临时集群） | 部署后断言 `uvicorn` 的 shebang 等于最终发布路径、无 `.partial` 残留、有完成标记；**用已安装发布里的真实 `uvicorn` 与 `node` 启动**，`/api/v1/health/ready` 与 Node 代理 `/api/health` 均 200；首次初始化的迁移失败后 `releases/` 为空（无半成品）；存在未完成的同名目录时 `deploy.sh` 拒绝且不删除，`rollback.sh` 拒绝切换。原有全部步骤（首次初始化各拒绝场景、升级+演练、回滚拒绝、恢复回滚、冒烟失败自动返回）仍通过 |
+| 回归敏感性 | 把旧版 `deploy.sh` 放回同一套 e2e | 新测试在旧代码上失败，报出 `#!…/.partial-…` 的 shebang，证明它能抓到这个缺陷 |
 | 发现并修复 | Phase 2C 审计（服务器演练前） | 空库首次 `deploy.sh --migrate` 会在迁移前的备份步骤失败（`backup.sh` 要求 dump 含 `alembic_version` 数据；空库没有该表），Phase 1 的 e2e 只覆盖"旧 schema 有数据"的库，漏掉了这条路径。已新增 `db-state` 判定与专用首次初始化路径（见"首次初始化与普通迁移的区别"）。真实 PostGIS 上首次跑暴露了第二处：PostGIS 的复合类型 `geometry_dump`/`valid_detail` 的扩展归属记录在类型而非关系上，被误判为业务对象（方向是保守的——会拒绝而不是放行），已修正 |
 | PASS | `ops-e2e.sh` 新增"首次初始化"场景（临时集群，预建 PostGIS 空库） | 空库不带 `--migrate` 被拒；有业务表的无版本库被拒且表未动；有 `alembic_version` 表但无行被拒；含其他扩展被拒；首次初始化中迁移失败整体回滚、库仍为空、无备份产生；随后用正常发布重试成功，迁移到 head 且无备份/演练；初始化后同 schema 发布无需 `--migrate`。原有 10 步（升级、备份演练、回滚拒绝、恢复回滚、冒烟失败自动返回）全部仍通过 |
 | PASS | `unittest discover -s infra/native/tests` | 23 tests OK（新增 6 项 `db-state` 判定：空库、缺版本表但有对象、大对象/多余扩展、版本表无行/多行、有版本表时不被重新标为空） |

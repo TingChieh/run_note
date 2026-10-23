@@ -9,7 +9,7 @@
 | `Caddyfile` | HTTPS、安全响应头、`/api/*` 与 Node 分流；域名来自环境变量 `RUNNOTE_DOMAIN` |
 | `env/*.env.example` | 后端/前端/备份环境文件模板（只含占位符，实际文件放 `/etc/run-note/`，权限 0600/0640） |
 | `ops/build-release.sh` | CI 或工作站构建单个发布 tarball |
-| `ops/deploy.sh` | 在服务器上安装发布；schema 落后时需显式 `--migrate`，自动备份+恢复演练；证明为空的新库也需显式 `--migrate`（首次初始化，无备份），其他无版本库一律拒绝 |
+| `ops/deploy.sh` | 在服务器上安装发布；schema 落后时需显式 `--migrate`，自动备份+恢复演练；证明为空的新库也需显式 `--migrate`（首次初始化，无备份），其他无版本库一律拒绝；发布直接在最终目录 `releases/<id>` 构建（venv 不可移动），以 `.deploy-complete` 标记完成 |
 | `ops/rollback.sh` | 回滚；schema 不匹配时拒绝切软链，仅允许显式的备份恢复流程 |
 | `ops/backup.sh` / `ops/restore-drill.sh` | 备份与真实恢复演练（恢复到临时库并与现网库比对） |
 | `ops/envfile.py` / `ops/schema_compat.py` | 不经 shell 解析 EnvironmentFile 并复用应用校验；判定发布与库 schema 关系 |
