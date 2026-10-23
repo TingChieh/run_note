@@ -247,6 +247,8 @@ jobs:
           pnpm --dir frontend install --frozen-lockfile
           infra/native/ops/build-release.sh --out "$RUNNER_TEMP/release" | tee "$RUNNER_TEMP/release.path"
           tar -tzf "$(tail -1 "$RUNNER_TEMP/release.path")" | grep -E '/(RELEASE|ops/deploy.sh|backend/requirements.lock|frontend/build/index.js)$'
+      - name: The release is self-contained (tooling and templates run from the unpacked tarball)
+        run: infra/native/ops/verify-release.sh "$(tail -1 "$RUNNER_TEMP/release.path")"
       - name: Deploy / migrate / rollback / restore rehearsal
         env:
           PG_BIN: /usr/lib/postgresql/18/bin

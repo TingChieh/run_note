@@ -63,6 +63,11 @@ tarball="$out/run-note-$id.tar.gz"
 tar_flags=(-czf "$tarball" -C "$stage")
 if tar --version 2>/dev/null | grep -qi 'gnu tar'; then tar_flags+=(--owner=0 --group=0); else tar_flags+=(--uid 0 --gid 0); fi
 tar "${tar_flags[@]}" "$id"
+# A release that is not self-contained must never leave this script.
+if ! "$(dirname "$0")/verify-release.sh" "$tarball"; then
+  rm -f "$tarball"
+  die "the release failed its self-containment check and was discarded"
+fi
 sha256_of "$tarball" | awk -v f="$(basename "$tarball")" '{print $1"  "f}' > "$tarball.sha256"
 log "release ready: $tarball"
 printf '%s\n' "$tarball"

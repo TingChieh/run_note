@@ -21,7 +21,6 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-TEMPLATES = HERE.parent / "templates"
 DEFAULT_DIR = "/etc/run-note-instances"
 
 REQUIRED = (
@@ -73,8 +72,47 @@ CAL_RE = re.compile(r"^[A-Za-z0-9*:/_.,+ -]{3,64}$")
 DELAY_RE = re.compile(r"^[0-9]{1,5}(s|min|h)?$")
 
 
+# Everything render() reads. A usable template directory must contain all of them.
+TEMPLATE_FILES = (
+    "api.service.in",
+    "web.service.in",
+    "backup.service.in",
+    "backup.timer.in",
+    "caddy-maintenance.in",
+    "caddy-live.in",
+)
+
+
 class ConfigError(Exception):
     pass
+
+
+def template_candidates(here: Path = HERE) -> list[Path]:
+    """The two supported layouts, resolved from this file's own location (never the working
+    directory, never an absolute host path):
+
+    * repository : infra/native/ops/instance.py   -> infra/native/templates
+    * release    : <release>/ops/instance.py      -> <release>/infra/native/templates
+    """
+    return [here.parent / "templates", here.parent / "infra" / "native" / "templates"]
+
+
+def find_templates(here: Path = HERE) -> Path:
+    candidates = template_candidates(here)
+    for directory in candidates:
+        if all((directory / name).is_file() for name in TEMPLATE_FILES):
+            return directory
+    detail = []
+    for directory in candidates:
+        missing = [name for name in TEMPLATE_FILES if not (directory / name).is_file()]
+        detail.append(
+            f"{directory} (missing: {', '.join(missing)})"
+            if directory.is_dir()
+            else f"{directory} (not a directory)"
+        )
+    raise ConfigError(
+        "no complete template directory next to this script; looked in: " + "; ".join(detail)
+    )
 
 
 def parse_conf(path: Path) -> dict[str, str]:
@@ -225,8 +263,14 @@ def render_template(text: str, values: dict[str, str], instance: bool) -> str:
     return out
 
 
-def render(values: dict[str, str], out: Path, instance: bool, caddy_mode: str | None) -> list[Path]:
-    out.mkdir(parents=True, exist_ok=True)
+def render(
+    values: dict[str, str],
+    out: Path,
+    instance: bool,
+    caddy_mode: str | None,
+    templates: Path | None = None,
+) -> list[Path]:
+    templates = templates if templates is not None else find_templates()
     plan = {
         "api.service.in": f"{values['SERVICE_API']}.service",
         "web.service.in": f"{values['SERVICE_WEB']}.service",
@@ -237,9 +281,10 @@ def render(values: dict[str, str], out: Path, instance: bool, caddy_mode: str | 
         if caddy_mode not in {"maintenance", "live"}:
             raise ConfigError("caddy mode must be maintenance or live")
         plan[f"caddy-{caddy_mode}.in"] = f"{values['INSTANCE']}.caddy"
+    out.mkdir(parents=True, exist_ok=True)
     written = []
     for template, target in plan.items():
-        text = (TEMPLATES / template).read_text(encoding="utf-8")
+        text = (templates / template).read_text(encoding="utf-8")
         path = out / target
         path.write_text(render_template(text, values, instance), encoding="utf-8")
         written.append(path)

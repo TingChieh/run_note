@@ -4,8 +4,10 @@ envfile.py instance expectations). No database, network, root or real secrets.
     backend/.venv/bin/python -m unittest discover -s infra/native/tests -v
 """
 
+import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -330,6 +332,216 @@ class Rendering(unittest.TestCase):
         self.assertIn("API_URL='http://127.0.0.1:8100'", out)
         self.assertIn("WEB_URL='http://127.0.0.1:3100'", out)
         self.assertIn("SERVICE_API='runnote-production-api'", out)
+
+
+def make_release_tree(root: Path) -> Path:
+    """The layout build-release.sh ships: ops/ at the top, everything else under infra/native/."""
+    release = root / "release"
+    shutil.copytree(OPS, release / "ops", ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(
+        NATIVE, release / "infra" / "native", ignore=shutil.ignore_patterns("__pycache__", "tests")
+    )
+    for stub in ("backend/app", "backend/migrations", "frontend/build", "scripts"):
+        (release / stub).mkdir(parents=True, exist_ok=True)
+    (release / "backend" / "alembic.ini").write_text("[alembic]\n")
+    (release / "backend" / "requirements.lock").write_text("\n")
+    (release / "frontend" / "build" / "index.js").write_text("\n")
+    (release / "scripts" / "site-owner.py").write_text("\n")
+    (release / "RELEASE").write_text("id=test\n")
+    return release
+
+
+def run_tool(release: Path, *args: str, cwd: str = "/") -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, str(release / "ops" / "instance.py"), *args],
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+    )
+
+
+class ReleaseLayout(unittest.TestCase):
+    """The tooling must work from the unpacked release, not only from a repository checkout."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.release = make_release_tree(self.root)
+
+    def test_templates_are_found_in_the_release_layout_from_any_working_directory(self):
+        out = self.root / "legacy"
+        for cwd in ("/", self.tmp.name, str(self.release / "infra")):
+            result = run_tool(self.release, "render", "--legacy", "--out", str(out), cwd=cwd)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        for name in (
+            "runnote-api.service",
+            "runnote-web.service",
+            "runnote-backup.service",
+            "runnote-backup.timer",
+        ):
+            self.assertEqual((out / name).read_text(), (NATIVE / name).read_text(), name)
+
+    def test_an_instance_renders_from_the_release_layout(self):
+        conf = self.root / "instances"
+        conf.mkdir()
+        shutil.copy(
+            self.release / "infra/native/instances/production.conf.example",
+            conf / "production.conf",
+        )
+        for mode in ("maintenance", "live"):
+            out = self.root / f"out-{mode}"
+            result = run_tool(
+                self.release,
+                "render",
+                "production",
+                "--dir",
+                str(conf),
+                "--out",
+                str(out),
+                "--caddy-mode",
+                mode,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(len(list(out.iterdir())), 5)
+
+    def test_candidates_are_derived_from_the_script_location_only(self):
+        candidates = instance.template_candidates(self.release / "ops")
+        self.assertEqual(
+            candidates,
+            [self.release / "templates", self.release / "infra" / "native" / "templates"],
+        )
+        self.assertEqual(
+            instance.find_templates(self.release / "ops"), self.release / "infra/native/templates"
+        )
+        self.assertEqual(instance.find_templates(OPS), NATIVE / "templates")  # repository layout
+
+    def test_a_missing_template_directory_is_refused_with_both_locations_named(self):
+        shutil.rmtree(self.release / "infra" / "native" / "templates")
+        result = run_tool(self.release, "render", "--legacy", "--out", str(self.root / "x"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(str(self.release / "templates"), result.stderr)
+        self.assertIn(str(self.release / "infra" / "native" / "templates"), result.stderr)
+        self.assertFalse((self.root / "x").exists(), "a failed render must leave nothing behind")
+
+    def test_one_missing_template_is_refused_and_named(self):
+        (self.release / "infra/native/templates/caddy-live.in").unlink()
+        result = run_tool(self.release, "render", "--legacy", "--out", str(self.root / "x"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("caddy-live.in", result.stderr)
+
+    def test_an_incomplete_first_location_falls_through_to_a_complete_second_one(self):
+        (self.release / "templates").mkdir()
+        (self.release / "templates" / "api.service.in").write_text("broken")
+        self.assertEqual(
+            instance.find_templates(self.release / "ops"), self.release / "infra/native/templates"
+        )
+
+    def test_a_wrong_layout_is_not_papered_over(self):
+        # ops/ moved somewhere with no templates anywhere near it
+        lonely = self.root / "lonely" / "ops"
+        shutil.copytree(self.release / "ops", lonely)
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(lonely / "instance.py"),
+                "render",
+                "--legacy",
+                "--out",
+                str(self.root / "y"),
+            ],
+            capture_output=True,
+            text=True,
+            cwd="/",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no complete template directory", result.stderr)
+
+    def test_a_template_with_a_broken_placeholder_is_refused(self):
+        path = self.release / "infra/native/templates/api.service.in"
+        path.write_text(path.read_text() + "X=@@NO_SUCH_KEY@@\n")
+        result = run_tool(self.release, "render", "--legacy", "--out", str(self.root / "z"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("NO_SUCH_KEY", result.stderr)
+
+
+class VerifyRelease(unittest.TestCase):
+    """verify-release.sh is the gate build-release.sh applies to every tarball."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def pack(self, release: Path) -> Path:
+        tarball = self.root / "release.tar.gz"
+        with tarfile.open(tarball, "w:gz") as archive:
+            archive.add(release, arcname="rel-1")
+        return tarball
+
+    def verify(self, tarball: Path) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [str(OPS / "verify-release.sh"), str(tarball)], capture_output=True, text=True
+        )
+
+    def test_a_complete_release_passes(self):
+        release = make_release_tree(self.root)
+        result = self.verify(self.pack(release))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("self-contained", result.stderr)
+
+    def test_every_missing_resource_is_refused_and_named(self):
+        victims = [
+            "ops/init-instance.sh",
+            "ops/set-site-mode.sh",
+            "ops/instance.py",
+            "ops/lib.sh",
+            "infra/native/templates/backup.timer.in",
+            "infra/native/templates/caddy-maintenance.in",
+            "infra/native/instances/production.conf.example",
+            "infra/native/Caddyfile",
+            "infra/native/runnote-api.service",
+            "scripts/site-owner.py",
+        ]
+        for victim in victims:
+            with self.subTest(missing=victim):
+                shutil.rmtree(self.root / "release", ignore_errors=True)
+                release = make_release_tree(self.root)
+                (release / victim).unlink()
+                result = self.verify(self.pack(release))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(Path(victim).name, result.stderr)
+
+    def test_a_non_executable_or_broken_script_is_refused(self):
+        release = make_release_tree(self.root)
+        (release / "ops/deploy.sh").chmod(0o644)
+        self.assertNotEqual(self.verify(self.pack(release)).returncode, 0)
+        shutil.rmtree(self.root / "release")
+        release = make_release_tree(self.root)
+        (release / "ops/rollback.sh").write_text("#!/usr/bin/env bash\nif then\n")
+        (release / "ops/rollback.sh").chmod(0o755)
+        result = self.verify(self.pack(release))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("syntax", result.stderr)
+
+    def test_a_caddyfile_that_cannot_host_instances_is_refused(self):
+        release = make_release_tree(self.root)
+        caddyfile = release / "infra/native/Caddyfile"
+        caddyfile.write_text(caddyfile.read_text().replace("import /etc/caddy/sites.d/*.caddy", ""))
+        result = self.verify(self.pack(release))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("sites.d", result.stderr)
+
+    def test_a_drifted_legacy_template_is_refused(self):
+        release = make_release_tree(self.root)
+        path = release / "infra/native/runnote-web.service"
+        path.write_text(path.read_text().replace("Restart=on-failure", "Restart=always"))
+        result = self.verify(self.pack(release))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("runnote-web.service", result.stderr)
+
+    def test_a_missing_file_or_empty_archive_is_refused(self):
+        self.assertNotEqual(self.verify(self.root / "nope.tar.gz").returncode, 0)
 
 
 class LibInInstanceMode(unittest.TestCase):

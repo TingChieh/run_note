@@ -33,6 +33,15 @@ SYSTEMCTL="${SYSTEMCTL:-systemctl}"
 SYSTEMD_DIR="${SYSTEMD_DIR:-/etc/systemd/system}"
 here="$(cd "$(dirname "$0")" && pwd)"
 
+# ---- preflight: everything that can fail without side effects fails first ---------------
+# Rendering needs the templates and a valid instance definition. Do it into a scratch directory
+# now, so a damaged release or a bad definition is found before a user, a database or a secret
+# exists, instead of after.
+preflight="$(mktemp -d)"
+trap 'rm -rf "$preflight"' EXIT
+python3 "$here/instance.py" render "$name" --out "$preflight" ${RUNNOTE_INSTANCES_DIR:+--dir "$RUNNOTE_INSTANCES_DIR"} >/dev/null \
+  || die "cannot render the units for instance '$name'; nothing was created"
+
 # ---- refuse to run over anything that exists --------------------------------------------
 for f in backend.env frontend.env backup.env; do
   [ ! -e "$RUNNOTE_ETC/$f" ] || die "$RUNNOTE_ETC/$f already exists; this script only creates, it never overwrites"

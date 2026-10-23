@@ -293,3 +293,6 @@ grep -q "automatically returning" "$WORK/last.out" || fail "no automatic return 
 [ "$(basename "$(readlink "$WORK/root/current")")" = e2e-r0-old-schema ] || fail "did not return to previous release"
 
 step "ALL OPS E2E STEPS PASSED"
+# A passing run leaves nothing behind (each release has its own virtualenv, ~1 GB per run). A failing
+# run keeps $WORK for diagnosis; set KEEP_WORK=1 to keep it on success as well.
+if [ -z "${KEEP_WORK:-}" ]; then rm -rf "${WORK:?}"; fi

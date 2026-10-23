@@ -149,6 +149,7 @@ pnpm test:e2e                                  # 默认 e2e，需后端已启动
 backend/.venv/bin/python -m unittest discover -s infra/native/tests   # 运维脚本单元测试
 shellcheck -x --source-path=SCRIPTDIR infra/native/ops/*.sh infra/native/tests/*.sh
 infra/native/tests/ops-e2e.sh <release.tar.gz>                      # 需 PG_BIN、PYTHON；临时集群里演练部署/迁移/回滚/恢复
+infra/native/ops/verify-release.sh <release.tar.gz>                       # 发布包自包含检查（build-release.sh 每次构建都会运行）
 infra/native/tests/ops-e2e-instances.sh <release.tar.gz>             # 旧布局与第二实例并行：隔离、各自备份/回滚、站点模式（见 docs/66“同机多实例”）
 infra/native/tests/caddy-instances.sh                                # 需 caddy；沙箱里的真实 Caddy 进程，验证 staging Basic Auth / production 维护页与上线
 ```
