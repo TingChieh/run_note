@@ -1,0 +1,42 @@
+[Unit]
+Description=Run Note web (SvelteKit adapter-node)
+After=network.target @@SERVICE_API@@.service
+Wants=@@SERVICE_API@@.service
+
+[Service]
+Type=simple
+User=@@APP_USER@@
+Group=@@APP_GROUP@@
+WorkingDirectory=@@ROOT@@/current/frontend
+EnvironmentFile=@@ETC@@/frontend.env
+# Loopback only. Only Caddy may reach this port, so only Caddy can set x-forwarded-proto.
+Environment=HOST=127.0.0.1
+Environment=PORT=@@WEB_PORT@@
+Environment=PROTOCOL_HEADER=x-forwarded-proto
+Environment=BODY_SIZE_LIMIT=11M
+Environment=NODE_ENV=production
+# NodeSource installs /usr/bin/node; engines require ^22.17 || ^24 (frontend/package.json).
+ExecStart=/usr/bin/node build/index.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+LimitNOFILE=4096
+UMask=0077
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+# V8 JIT needs writable+executable memory, so MemoryDenyWriteExecute is deliberately not set.
+
+[Install]
+WantedBy=multi-user.target

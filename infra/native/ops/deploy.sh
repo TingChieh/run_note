@@ -21,6 +21,7 @@ umask 022
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
 load_backup_env "$0" "$@"
+assert_instance_database
 
 migrate=0 tarball=""
 while [ $# -gt 0 ]; do
@@ -35,7 +36,6 @@ if [ -z "$tarball" ] || [ ! -f "$tarball" ]; then die "usage: deploy.sh [--migra
 [ "$(id -u)" -eq 0 ] || [ -n "${RUNNOTE_ALLOW_NONROOT:-}" ] || die "run as root (sudo)"
 require_cmd tar curl flock "${PYTHON:-python3.12}"
 
-SERVICES=(runnote-api runnote-web)
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
 KEEP_RELEASES="${KEEP_RELEASES:-5}"
 PYTHON="${PYTHON:-python3.12}"
@@ -45,8 +45,11 @@ install -d -m 700 "$BACKUP_DIR"
 [ "$(id -u)" -ne 0 ] || chown postgres "$BACKUP_DIR"
 
 # Cheap configuration guard first (no virtualenv needed), so a bad config fails in a second.
-python3 "$(dirname "$0")/envfile.py" check "$BACKEND_ENV" --kind backend --skip-settings
-python3 "$(dirname "$0")/envfile.py" check "$FRONTEND_ENV" --kind frontend
+backend_expect=() frontend_expect=()
+while IFS= read -r _a; do [ -z "$_a" ] || backend_expect+=("$_a"); done < <(instance_check_args backend)
+while IFS= read -r _a; do [ -z "$_a" ] || frontend_expect+=("$_a"); done < <(instance_check_args frontend)
+python3 "$(dirname "$0")/envfile.py" check "$BACKEND_ENV" --kind backend --skip-settings ${backend_expect[@]+"${backend_expect[@]}"}
+python3 "$(dirname "$0")/envfile.py" check "$FRONTEND_ENV" --kind frontend ${frontend_expect[@]+"${frontend_expect[@]}"}
 
 exec 9>"$RUNNOTE_ROOT/.deploy.lock"
 flock -n 9 || die "another deploy or rollback is running"
@@ -91,8 +94,8 @@ as_app "$target/backend/.venv/bin/uvicorn" --version >/dev/null \
   || die "the installed uvicorn entry point cannot run from $target/backend/.venv/bin"
 
 log "checking configuration (values are never printed)"
-"$PY" -I "$target/ops/envfile.py" check "$FRONTEND_ENV" --kind frontend
-(cd "$target/backend" && PYTHONPATH="$target/backend" "$PY" "$target/ops/envfile.py" check "$BACKEND_ENV" --kind backend)
+"$PY" -I "$target/ops/envfile.py" check "$FRONTEND_ENV" --kind frontend ${frontend_expect[@]+"${frontend_expect[@]}"}
+(cd "$target/backend" && PYTHONPATH="$target/backend" "$PY" "$target/ops/envfile.py" check "$BACKEND_ENV" --kind backend ${backend_expect[@]+"${backend_expect[@]}"})
 
 release_head="$("$PY" "$target/ops/schema_compat.py" head "$target/backend/migrations")"
 db_state="$(cd "$target/backend" && as_app "$PY" "$target/ops/envfile.py" exec "$BACKEND_ENV" -- \

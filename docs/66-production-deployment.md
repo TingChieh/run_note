@@ -90,6 +90,63 @@ Python 虚拟环境**不可重定位**：`bin/uvicorn` 等入口脚本的第一�
 
 `empty` 的判定很严格：**缺少 `alembic_version` 不等于空**。必须同时满足：没有 `alembic_version` 表；扩展只有 `plpgsql` 与预先创建的 `postgis`；在非系统 schema 中没有任何**非扩展成员**的表、视图、序列、复合类型、函数、类型、额外 schema 或大对象。PostGIS 自带的对象（如 `spatial_ref_sys`、`geometry_columns`、`geometry_dump`、`valid_detail`）不计入。以下情形一律拒绝，不做任何修改：已有业务对象但无版本表；有 `alembic_version` 表但没有行或有多行（迁移状态不明）；存在其他扩展；数据库版本不在本发布的迁移链中（视为回滚）。
 
+### 同机多实例（staging + production）
+
+一台服务器可以同时运行多套互相隔离的实例。**不带 `RUNNOTE_INSTANCE` 的一切行为与此前完全相同**（那是"旧布局"，现有 staging 就是它，不需要任何改动）；新增的实例通过一个显式的配置文件描述。
+
+#### 为什么不用 systemd 模板单元（`%i`）
+`%i` 只能原样代入一个字符串，而一个实例要同时表达"单元名 A、系统用户 B、数据库 C、目录 D"，这些命名规则不同。靠推导规则代入，"差不多对"正是一个实例读到另一个实例文件的来源。所以每个实例用**一个显式的配置文件**写出全部名字，再由 `ops/instance.py` 从 `templates/` 渲染出**具体的**单元文件。用旧布局的值渲染出来的单元与现有 `runnote-*.service` **逐字节相同**（有单元测试保证）。
+
+#### 命名对照（注意相似拼写）
+
+| | 旧布局（现有 staging） | production 实例 |
+| --- | --- | --- |
+| 配置 | 无（内置默认） | `/etc/run-note-instances/production.conf` |
+| 域名 | staging.aisaka.cc | run.aisaka.cc |
+| 程序目录 | `/opt/run-note` | `/opt/run-note-production` |
+| 配置/密钥目录 | `/etc/run-note`（`root:runnote`） | `/etc/run-note-production`（0750 `root:run_note`） |
+| 备份目录 | `/var/backups/run-note` | `/var/backups/run-note-production`（0700 postgres） |
+| 系统用户/组 | `runnote` | `run_note` |
+| 数据库 / 角色 | `runnote_rehearsal` / `runnote` | `run_note` / `run_note` |
+| 端口（回环） | API 8000，Node 3000 | API 8100，Node 3100 |
+| 单元 | `runnote-api`、`runnote-web`、`runnote-backup` | `runnote-production-api`、`-web`、`-backup` |
+| 备份时间 | 03:15 UTC，随机延迟 15 分钟 | 03:15 **香港时间**（`Asia/Hong_Kong`），无随机延迟 |
+
+`instance.py check` 拒绝与旧布局或其他实例**共享任何**目录、用户、组、数据库名、角色、端口、单元名或域名（含嵌套目录），拒绝未知/重复/缺失的键，文件名必须等于 `INSTANCE`。
+
+#### 隔离模型
+- **操作系统**：每个实例独立的系统用户和组；配置目录 `0750 root:<实例组>`，环境文件 `0640 root:<实例组>`。staging 的用户不是 `run_note` 组成员，进不了 `/etc/run-note-production`，读不到生产的数据库密码和 `AUTH_RATE_HASH_KEY`（反之亦然）。
+- **数据库**：每个实例自己的角色和库，`init-instance.sh` 对新库 `REVOKE ALL … FROM PUBLIC` 后只授权给它自己的角色，所以别的角色连这个库就被拒绝。**旧布局的库保持 PostgreSQL 默认（PUBLIC 可连接）**，生产角色能连进去，但读不了它的表、也不能在其中建对象（表属主是 `runnote`）。想把旧库也收紧，需要对该库执行 `REVOKE CONNECT ON DATABASE <库> FROM PUBLIC; GRANT CONNECT ON DATABASE <库> TO runnote;`——这是对现有 staging 的改动，本阶段未做。
+- **环境文件与实例绑定**：`deploy.sh` 以 `envfile.py check` 加上 `--expect-db-name/--expect-db-user/--expect-origin-host/--expect-api-port`，数据库名、登录角色、`SITE_ORIGIN` 主机、前端指向的 API 端口必须等于该实例自己的定义，否则在做任何改动前拒绝。
+- **脚本上下文一致**：`deploy.sh`、`rollback.sh`、`backup.sh`、`restore-drill.sh`、`init-instance.sh`、`set-site-mode.sh` 都通过 `lib.sh` 读同一份实例定义。实例模式下**没有任何值回落到旧布局默认值**，环境里残留的 `RUNNOTE_ROOT`/`APP_USER`/`API_URL` 等与之冲突会直接报错；备份与恢复演练要求 `PGDATABASE` 等于实例的库，否则拒绝。
+- **发布、备份、恢复、回滚互相独立**：各自的发布目录与 `current/previous`、各自的备份目录与保留策略、各自的部署锁；`rollback.sh` 在 production 里找不到旧布局才有的发布 id。
+
+#### 反向代理（Caddy）
+仓库 `Caddyfile` 现在由可复用片段 `(runnote_app)`（参数为 API 与 Node 上游端口）和旧布局站点块组成：旧站点（`{$RUNNOTE_DOMAIN}`，上游 8000/3000）行为不变，并在站点内 `import /etc/caddy/access.d/*.caddy`——staging 的 Basic Auth 放在这里，**只属于该站点**；其他实例的站点由 `instance.py` 渲染到 `/etc/caddy/sites.d/<实例>.caddy`（被 `import /etc/caddy/sites.d/*.caddy` 引入）。production 站点**不使用 Basic Auth**，保留应用自身的认证、CSRF、限流和（关闭的）注册。
+
+站点有两种模式，由 `ops/set-site-mode.sh <实例> maintenance|live` 切换：
+- `maintenance`：对该域名返回 503 的"即将上线"页，**不代理任何上游**；证书照常签发。随时允许。
+- `live`：只有在 ① 当前发布完整（有 `.deploy-complete`）② API 与 Node 在实例端口上就绪 ③ **配置的站主账号已存在** 时才允许；生成的站点文件连同整个 Caddyfile 一起 `caddy validate`，失败则恢复原文件、不重载。
+
+#### 一个新实例的初始化顺序（以 production 为例）
+1. 把 `infra/native/instances/production.conf.example` 复制为 `/etc/run-note-instances/production.conf`（root 拥有、0644，**不含密钥**），`python3 ops/instance.py check`。
+2. `sudo ops/init-instance.sh production --owner-email <站主邮箱>`：创建系统用户和组、目录及权限、数据库角色与库（管理员预装 PostGIS）、三个环境文件（密钥在服务器上生成，不打印）、安装（**不启用、不启动**）systemd 单元。已有任何同名对象则拒绝，绝不覆盖。
+3. 构建发布包，用发布包自带的 `ops/` 执行：`sudo env RUNNOTE_INSTANCE=production ./ops/deploy.sh --migrate run-note-<id>.tar.gz`（空库首次初始化，必须显式 `--migrate`）。
+4. `sudo systemctl enable runnote-production-api runnote-production-web`；`sudo ops/set-site-mode.sh production maintenance`（域名此时只显示维护页，证书开始签发）。
+5. **站主由负责人在服务器上交互式创建**（需要终端）：`cd /opt/run-note-production/current && runuser -u run_note -- backend/.venv/bin/python ops/envfile.py exec /etc/run-note-production/backend.env -- backend/.venv/bin/python scripts/site-owner.py create`。
+6. 验收（在 `maintenance` 期间可通过回环或临时放开验证）：健康检查、登录、会话、CSRF、限流、合成数据功能。
+7. 手动跑一次备份并核对：`sudo systemctl start runnote-production-backup.service`；确认 `/var/backups/run-note-production` 里有 dump 且演练通过；再 `sudo systemctl enable --now runnote-production-backup.timer`。
+8. **上线**：`sudo ops/set-site-mode.sh production live`。站主不存在时该命令会拒绝，域名继续显示维护页。
+9. **退回**：`sudo ops/set-site-mode.sh production maintenance`，即刻回到维护页，不影响数据库与服务。
+
+日常发布、回滚、备份恢复对实例与旧布局的区别只有一个前缀：在命令前加 `RUNNOTE_INSTANCE=production`（备份定时器单元已内置）。
+
+#### 限制与未覆盖
+- 两个实例共用同一个 PostgreSQL 集群、同一个超级用户账号、同一个 Caddy 进程、同一台机器的内存与 IP；这是"隔离"而不是"独立硬件"。
+- 旧布局的库保留默认的 PUBLIC 可连接（见上）。
+- 退役旧布局（staging）时，需要从服务器的 `Caddyfile` 删掉旧站点块并移除 `access.d` 下的片段，同时 `systemctl disable --now runnote-api runnote-web runnote-backup.timer`；Caddyfile 里 `{$RUNNOTE_DOMAIN}` 为空会导致校验失败（旧配置继续生效，不会中断）。
+- 该实例的本地备份**没有异地副本**：restic 尚未配置，没有异地灾难恢复能力。
+
 ### 回滚决策
 
 应用对 schema 要求**精确匹配**：`alembic_version` 必须等于发布的唯一 head，否则 `/api/health` 返回 503，足迹后台 worker 也不写入（`app/db/schema.py`、`modules/health/service.py`、`footprints/worker.py`）。降级迁移遇到真实数据会 `RuntimeError`（`0011`、`0012`），`0013` 为空操作。因此：
@@ -142,6 +199,11 @@ Python 虚拟环境**不可重定位**：`bin/uvicorn` 等入口脚本的第一�
 | PASS | 恢复演练负向用例 | 现网在备份后新增一行 + `--strict-counts` → FAIL；文件被改动 → 校验和失败；revision 被人为改动 → FAIL |
 | PASS | `tests/ops-e2e.sh`（10 步） | 缺少 `AUTH_TRUSTED_PROXIES` 被拒且未安装任何内容；落后 schema 不带 `--migrate` 被拒且库不变；`--migrate` 触发备份+严格计数演练+迁移；同 schema 发布无多余备份；`rollback previous` 仅切换；跨迁移回滚被拒；`--restore-db` 恢复到迁移前且后来写入保留在 `_pre_rollback_` 副本；冒烟失败自动回到上一发布 |
 | PASS | `pnpm exec playwright test --config playwright.ui.config.ts theme.spec.ts`（worktree，真实 Chrome） | 7 passed（仅用于确认 worktree 中合成 UI 配置可运行） |
+| PASS | 多实例：`unittest discover -s infra/native/tests` | 53 tests OK（新增 30 项）：用旧布局值渲染出的单元与现有 `runnote-*.service/.timer` **逐字节相同**；示例配置有效且与旧布局不相交；12 种与旧布局的冲突（用户、组、角色、端口、目录、单元名、库名）、嵌套目录、两实例共享端口/用户/库/域名、未知/重复/缺失键、端口越界、`..` 路径、文件名与 INSTANCE 不符、`legacy` 保留名全部被拒；渲染结果中用户、路径、端口、单元名、依赖、备份时间（`03:15:00 Asia/Hong_Kong`，无随机延迟）正确且不含旧布局名；`lib.sh` 旧布局默认值不变，实例模式下全部来自配置、环境冲突覆盖报错、未知实例不回落；`envfile.py` 的实例期望校验且不回显密码 |
+| PASS | 多实例：`ops-e2e-instances.sh`（临时 PostgreSQL 集群，旧布局与 production 并行） | 共享端口/用户/库的第二实例被拒；`init-instance.sh` 创建用户、组、目录（etc 0750、环境文件 0640、备份 0700）、角色（非超级用户）、库（PostGIS 由管理员安装）、三个环境文件和单元，**不启动不启用**，生成的密钥不出现在输出或命令日志里，两实例的 `AUTH_RATE_HASH_KEY` 不同；对已有对象拒绝覆盖；legacy 角色连 production 库被拒，production 角色读不了旧库的表也不能建对象；production 环境指向旧库/旧 API 端口、环境里残留旧布局变量、在 production 上下文备份旧库、用 production 的 dump 对旧库做恢复演练，全部在改动前被拒；production 首次初始化（空库 + `--migrate`，无备份）后只重启 production 自己的两个单元，旧布局状态不变；已安装的 production 发布用真实 `uvicorn` 与 `node` 在**自己的端口**上就绪、数据库已连接；production 的失败迁移（有迁移前备份，写入自己的备份目录）不影响旧布局；两个实例各自备份到各自目录；production 回滚只在自己的发布间切换，旧布局才有的发布 id 被拒；`set-site-mode.sh` 先维护页，站主不存在时拒绝上线，Caddy 校验失败时恢复原站点且不重载，上线后站点代理自己的端口且不含 Basic Auth |
+| PASS | 多实例：`caddy-instances.sh`（真实 Caddy 2.11.7 进程，高端口，沙箱目录） | staging 仍要求 Basic Auth 且只代理旧上游；production 维护页返回 503、带 Retry-After、不到达任何上游、不要求认证；上线后 production 只代理自己的上游、无需 Basic Auth、带齐安全响应头且无 `Server` 头；production 上线后 staging 仍要求 Basic Auth；伪造的 `X-Forwarded-For` 对两个站点都被真实对端地址覆盖 |
+| PASS | 原有 `ops-e2e.sh`（旧布局，未改动） | 全部步骤仍通过，证明向后兼容 |
+| 回归敏感性 | 变异检查 | 去掉 `lib.sh` 的环境冲突检查、去掉 `backup.sh` 的数据库守卫、去掉 `init-instance.sh` 对 PUBLIC 的 `REVOKE`，各自被对应测试发现（注意 e2e 执行的是发布包内的 `ops/`，变异后必须重新构建发布包） |
 | 发现并修复 | Phase 2C 真实服务器首次部署 | 首次初始化成功，但 `runnote-api` 以 `status=203/EXEC` 无法启动：`bin/uvicorn` 的 shebang 是 `#!…/releases/.partial-<id>/backend/.venv/bin/python`。根因是 venv 在 `.partial-<id>` 内创建后整个目录被 `mv` 成正式目录。迁移能成功是因为脚本用 `python -m alembic`，不经过入口脚本；Phase 1 的 e2e 用 `fake_health.py` 代替真实 API，从未执行过发布包里的 `uvicorn`。修复：在最终目录构建，完成标记 `.deploy-complete`，见"发布目录的生命周期" |
 | PASS | `ops-e2e.sh` 新增（临时集群） | 部署后断言 `uvicorn` 的 shebang 等于最终发布路径、无 `.partial` 残留、有完成标记；**用已安装发布里的真实 `uvicorn` 与 `node` 启动**，`/api/v1/health/ready` 与 Node 代理 `/api/health` 均 200；首次初始化的迁移失败后 `releases/` 为空（无半成品）；存在未完成的同名目录时 `deploy.sh` 拒绝且不删除，`rollback.sh` 拒绝切换。原有全部步骤（首次初始化各拒绝场景、升级+演练、回滚拒绝、恢复回滚、冒烟失败自动返回）仍通过 |
 | 回归敏感性 | 把旧版 `deploy.sh` 放回同一套 e2e | 新测试在旧代码上失败，报出 `#!…/.partial-…` 的 shebang，证明它能抓到这个缺陷 |
@@ -179,6 +241,7 @@ CI 暴露的问题与根因（均已修复，且没有跳过、没有加长超�
 
 ## 改动范围与保留行为
 
+- 新增/修改（多实例）：`ops/instance.py`、`ops/init-instance.sh`、`ops/set-site-mode.sh`、`templates/`、`instances/`，以及 `lib.sh`/`deploy.sh`/`rollback.sh`/`backup.sh`/`restore-drill.sh`/`envfile.py`/`Caddyfile` 的实例上下文；
 - 新增/修改：`infra/native/`、两个 UI 测试文件的同步修正（`frontend/tests/ui/liquid-glass.spec.ts`、`footprints.spec.ts`，仅测试）、`.github/scripts/annotate_failures.py`、（单元、Caddyfile、`env/`、`ops/`、`tests/`、README）、`.github/workflows/ci.yml`、本文档与设计/计划文档、`README.md`/`AGENTS.md` 的指引。
 - 未改：`backend/`、`frontend/` 业务源码，数据库 schema，迁移，现有 API，`backend.command`（仍是本地开发脚本）、`compose.dev.yml`（已停用）。
 - 本阶段**未实现自动 CD**（无 SSH 部署 job）；`build-release.sh` 与 `deploy.sh` 已把部署做成可手动、可审阅的两步。

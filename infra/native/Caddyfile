@@ -1,7 +1,15 @@
 # Run Note edge. Install as /etc/caddy/Caddyfile and provide the host name WITHOUT editing this
 # file:   systemctl edit caddy   ->   [Service]
 #                                     Environment=RUNNOTE_DOMAIN=run.example.com
-# Only Caddy is reachable from the Internet; the API (8000) and Node (3000) bind to loopback.
+# Only Caddy is reachable from the Internet; every API and Node port binds to loopback.
+#
+# Layout: (runnote_app) is the whole application site, parameterised by its two upstream ports.
+#   - The site named by RUNNOTE_DOMAIN is the legacy single-instance site (API 8000, Node 3000).
+#   - /etc/caddy/access.d/*.caddy is imported INSIDE that site only: use it for access limits that
+#     belong to that site alone (the staging host keeps its HTTP basic auth there).
+#   - Further instances add their own site block in /etc/caddy/sites.d/<instance>.caddy, rendered
+#     by ops/instance.py (maintenance page first, application proxy once it is released).
+# A glob import that matches nothing is a no-op, so a host without these directories still works.
 # Validate before reload:   RUNNOTE_DOMAIN=run.example.com caddy validate --config /etc/caddy/Caddyfile
 #
 # Access logging is deliberately NOT enabled: request URIs can contain /shared/<token>; the API's
@@ -21,7 +29,7 @@
 	}
 }
 
-{$RUNNOTE_DOMAIN} {
+(runnote_app) {
 	encode zstd gzip
 	import security_headers
 
@@ -32,7 +40,7 @@
 
 	@api path /api/*
 	handle @api {
-		reverse_proxy 127.0.0.1:8000 {
+		reverse_proxy 127.0.0.1:{args[0]} {
 			# Overwrite, never append: the application trusts this header only from 127.0.0.1.
 			header_up X-Forwarded-For {remote_host}
 			header_up X-Forwarded-Proto https
@@ -43,7 +51,7 @@
 	}
 
 	handle {
-		reverse_proxy 127.0.0.1:3000 {
+		reverse_proxy 127.0.0.1:{args[1]} {
 			header_up X-Forwarded-For {remote_host}
 			header_up X-Forwarded-Proto https
 		}
@@ -59,3 +67,10 @@
 		}
 	}
 }
+
+{$RUNNOTE_DOMAIN} {
+	import runnote_app 8000 3000
+	import /etc/caddy/access.d/*.caddy
+}
+
+import /etc/caddy/sites.d/*.caddy

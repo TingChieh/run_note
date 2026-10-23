@@ -12,6 +12,7 @@
 | `ops/deploy.sh` | 在服务器上安装发布；schema 落后时需显式 `--migrate`，自动备份+恢复演练；证明为空的新库也需显式 `--migrate`（首次初始化，无备份），其他无版本库一律拒绝；发布直接在最终目录 `releases/<id>` 构建（venv 不可移动），以 `.deploy-complete` 标记完成 |
 | `ops/rollback.sh` | 回滚；schema 不匹配时拒绝切软链，仅允许显式的备份恢复流程 |
 | `ops/backup.sh` / `ops/restore-drill.sh` | 备份与真实恢复演练（恢复到临时库并与现网库比对） |
+| `ops/instance.py` / `ops/init-instance.sh` / `ops/set-site-mode.sh` | 同机多实例：显式实例定义（`instances/*.conf.example`）、从 `templates/` 渲染具体的 systemd 单元与 Caddy 站点、创建一个新实例（用户/目录/库/密钥/单元，不启动）、维护页与上线切换（站主不存在时拒绝上线）。不设 `RUNNOTE_INSTANCE` 时一切照旧 |
 | `ops/envfile.py` / `ops/schema_compat.py` | 不经 shell 解析 EnvironmentFile 并复用应用校验；判定发布与库 schema 关系 |
 | `tests/` | 运维脚本单元测试与隔离库端到端演练（`ops-e2e.sh`） |
 

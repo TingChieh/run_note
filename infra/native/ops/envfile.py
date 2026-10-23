@@ -5,12 +5,15 @@ Why not `source`: JSON values such as AUTH_TRUSTED_PROXIES contain quotes and br
 that a shell would rewrite, and a sourced file executes code. Values are never printed.
 
   envfile.py check FILE [--kind backend|frontend] [--skip-settings]
+                        [--expect-db-name N] [--expect-db-user U] [--expect-origin-host H]
+                        [--expect-api-port P]
   envfile.py exec FILE -- CMD [ARGS...]
 """
 
 import os
 import stat
 import sys
+from urllib.parse import urlsplit
 
 PLACEHOLDER = "CHANGE_ME"
 
@@ -95,6 +98,36 @@ def validate_settings(values: dict[str, str]) -> list[str]:
     return []
 
 
+def option(argv: list[str], name: str) -> str | None:
+    return argv[argv.index(name) + 1] if name in argv and argv.index(name) + 1 < len(argv) else None
+
+
+def instance_problems(values: dict[str, str], kind: str, argv: list[str]) -> list[str]:
+    """Tie an instance's env files to its own definition, so one instance can never be pointed at
+    another one's database, role, origin or API port. Only names and ports are ever echoed."""
+    problems = []
+    if kind == "backend":
+        url = urlsplit(values.get("DATABASE_URL", "").replace("+psycopg", "", 1))
+        name, user = option(argv, "--expect-db-name"), option(argv, "--expect-db-user")
+        if name is not None and url.path.lstrip("/") != name:
+            problems.append(
+                f"DATABASE_URL must use the instance database '{name}', "
+                f"not '{url.path.lstrip('/')}'"
+            )
+        if user is not None and (url.username or "") != user:
+            problems.append(
+                f"DATABASE_URL must log in as the instance role '{user}', not '{url.username}'"
+            )
+        host = option(argv, "--expect-origin-host")
+        if host is not None and (urlsplit(values.get("SITE_ORIGIN", "")).hostname or "") != host:
+            problems.append(f"SITE_ORIGIN must be https://{host}")
+    elif kind == "frontend":
+        port = option(argv, "--expect-api-port")
+        if port is not None and urlsplit(values.get("INTERNAL_API_BASE_URL", "")).port != int(port):
+            problems.append(f"INTERNAL_API_BASE_URL must point at the instance API port {port}")
+    return problems
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 3 or argv[1] not in {"check", "exec"}:
         print(__doc__)
@@ -128,6 +161,7 @@ def main(argv: list[str]) -> int:
             problems.append("INTERNAL_API_BASE_URL is required")
         if any(key.startswith(("AI_", "AUTH_", "DATABASE_")) for key in values):
             problems.append("frontend env must not contain backend secrets")
+    problems += instance_problems(values, kind, argv)
     for problem in problems:
         print(f"FAIL {path}: {problem}", file=sys.stderr)
     if not problems:
