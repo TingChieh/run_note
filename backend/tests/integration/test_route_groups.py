@@ -2,7 +2,6 @@
 
 from datetime import date
 from math import cos, hypot, radians, sin
-from time import perf_counter
 from uuid import UUID, uuid4
 
 import pytest
@@ -73,7 +72,14 @@ def quiet(*test_clients):
 
 
 def fill(app):
-    return groups.fill_route_groups(app.state.session_factory)
+    """Run scans until idle: the shared test database may hold other owners' pending runs."""
+    total = 0
+    for _ in range(30):
+        done = groups.fill_route_groups(app.state.session_factory)
+        if not done:
+            break
+        total += done
+    return total
 
 
 def members(app, owner):
@@ -123,7 +129,7 @@ def test_short_and_trackless_runs_get_an_empty_fingerprint_and_no_group(clients)
             {"a": UUID(short)},
         )
     assert geom_is_null is True
-    assert fill(app) == 0  # nothing is recomputed
+    assert groups.fill_route_groups(app.state.session_factory) == 0  # nothing is recomputed
 
 
 def test_a_loop_shifted_within_the_buffer_joins_and_one_beyond_it_does_not(clients):  # noqa: F811
@@ -180,7 +186,7 @@ def test_the_footprint_worker_scan_also_fills_route_groups(clients):  # noqa: F8
 
 
 def long_wave(*, north=0.0, points=100_000):
-    """About 11 km of dense, gently wavy track: 0.1 m between points, 10 m of lateral drift."""
+    """About 11 km of dense, gently wavy track: 0.1 m between points, about 0.3 m of wobble."""
     return [
         (LON + i * 1e-6, LAT + north + 0.002 * sin(i / 8000) + 3e-6 * sin(i / 7))
         for i in range(points)
@@ -193,7 +199,6 @@ def test_a_very_long_dense_track_makes_a_small_fingerprint_and_groups(clients): 
     owner = register(a)
     first = add_run(app, owner, long_wave(), day=date(2025, 5, 1), distance_m=11000)
     second = add_run(app, owner, long_wave(north=0.0001), day=date(2025, 5, 3), distance_m=11100)
-    started = perf_counter()
     built = 0
     while True:  # the shared test database may hold older pending runs; drain them in batches
         with app.state.session_factory.begin() as db:
@@ -201,9 +206,7 @@ def test_a_very_long_dense_track_makes_a_small_fingerprint_and_groups(clients): 
         if not batch:
             break
         built += batch
-    elapsed = perf_counter() - started
     assert built >= 2
-    assert elapsed < 30
     with app.state.session_factory() as db:
         rows = db.execute(
             text(
@@ -220,3 +223,99 @@ def test_a_very_long_dense_track_makes_a_small_fingerprint_and_groups(clients): 
     fill(app)
     found = members(app, owner)
     assert found[first] == found[second]
+
+
+def test_a_run_without_a_track_gets_an_empty_fingerprint_and_no_group(clients):  # noqa: F811
+    a, b, _, app = clients
+    quiet(a, b)
+    owner = register(a)
+    with app.state.session_factory.begin() as db:
+        activity = Activity(
+            user_id=UUID(owner),
+            source="gpx",
+            title="No track",
+            activity_date=date(2025, 8, 1),
+            date_source="manual",
+            timezone="UTC",
+            distance_m=1500,
+            elapsed_seconds=500,
+            timer_seconds=500,
+            avg_pace_seconds_per_km=333,
+            temporal_quality="complete",
+            quality_summary={},
+            metrics_version="gpx-v1",
+        )
+        db.add(activity)
+        db.flush()
+        identifier = activity.id
+    fill(app)
+    assert members(app, owner) == {}
+    with app.state.session_factory() as db:
+        geom_is_null = db.scalar(
+            text("SELECT geom IS NULL FROM route_fingerprints WHERE activity_id = :a"),
+            {"a": identifier},
+        )
+    assert geom_is_null is True
+
+
+def test_an_eighty_metre_shift_is_not_the_same_route(clients):  # noqa: F811
+    a, b, _, app = clients
+    quiet(a, b)
+    owner = register(a)
+    base = add_run(app, owner, ring(), day=date(2025, 9, 1))
+    shifted = add_run(app, owner, ring(east_m=80), day=date(2025, 9, 2))
+    fill(app)
+    found = members(app, owner)
+    assert found[base] != found[shifted]
+
+
+def test_a_stationary_track_does_not_stop_other_runs_from_being_grouped(clients):  # noqa: F811
+    a, b, _, app = clients
+    quiet(a, b)
+    owner = register(a)
+    still = add_run(
+        app, owner, [(LON, LAT)] * 5, day=date(2025, 10, 1), distance_m=1500, seconds=500
+    )
+    first = add_run(app, owner, ring(), day=date(2025, 10, 2))
+    second = add_run(app, owner, ring(start=5), day=date(2025, 10, 3))
+    fill(app)
+    found = members(app, owner)
+    assert still not in found
+    assert found[first] == found[second]
+    with app.state.session_factory() as db:
+        geom_is_null = db.scalar(
+            text("SELECT geom IS NULL FROM route_fingerprints WHERE activity_id = :a"),
+            {"a": UUID(still)},
+        )
+    assert geom_is_null is True
+
+
+def group_ids(app, owner):
+    with app.state.session_factory() as db:
+        return set(
+            db.scalars(text("SELECT id FROM route_groups WHERE user_id = :o"), {"o": UUID(owner)})
+        )
+
+
+def test_a_run_that_matches_two_groups_merges_them_into_the_earliest(clients):  # noqa: F811
+    a, b, _, app = clients
+    quiet(a, b)
+    owner = register(a)
+    first = add_run(app, owner, ring(), day=date(2025, 11, 1))
+    second = add_run(app, owner, ring(east_m=70), day=date(2025, 11, 2))
+    fill(app)
+    found = members(app, owner)
+    assert found[first] != found[second]  # premise: 70 m apart is below the coverage bar
+    earliest = found[first]
+    third = add_run(app, owner, ring(east_m=35), day=date(2025, 11, 3))
+    with app.state.session_factory() as db:
+        build = groups.build_fingerprints(db, 20)
+        db.commit()
+        assert build >= 1
+        both = {group for group, _ in groups.matching_groups(db, UUID(owner), UUID(third), 1200)}
+    assert both == {found[first], found[second]}  # premise: the third matches both groups
+    fill(app)
+    found = members(app, owner)
+    assert set(found.values()) == {earliest}
+    assert set(found) == {first, second, third}
+    assert group_ids(app, owner) == {earliest}

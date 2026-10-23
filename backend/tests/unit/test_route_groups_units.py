@@ -19,3 +19,9 @@ def test_fingerprint_vertex_bound_is_small_and_coarsening_only_gets_coarser():
     assert 100 <= groups.MAX_FINGERPRINT_VERTICES <= 5000
     assert all(factor > 1 for factor in groups.COARSEN_FACTORS)
     assert list(groups.COARSEN_FACTORS) == sorted(groups.COARSEN_FACTORS)
+
+
+def test_only_one_coarsening_step_and_a_length_floor_below_the_distance_minimum():
+    assert len(groups.COARSEN_FACTORS) == 1
+    assert 0 < groups.MIN_FINGERPRINT_LENGTH_M < groups.MIN_DISTANCE_M
+    assert groups.ALGORITHM_VERSION == "route-groups-v2"
