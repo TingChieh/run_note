@@ -18,11 +18,16 @@
   import { snapshot } from '$app/navigation';
   import ActivityEditor from '#lib/components/ActivityEditor.svelte';
   import MifitnessImport from '#lib/components/MifitnessImport.svelte';
+  import ImportBatchPanel from '#lib/components/ImportBatchPanel.svelte';
+  import { createItems, detectBatchFormat, runImportQueue, type ImportItem } from '#lib/import-queue.ts';
   import { ActivityError, deleteActivities as scoped_deleteActivities, readActivities as scoped_readActivities, readActivity as scoped_readActivity, uploadGpx as scoped_uploadGpx, uploadTcx as scoped_uploadTcx, warningLabel, type Activity, type ActivityList } from '#lib/api/activities.ts';
   let records = $state<ActivityList | null>(null), loading = $state(true), busy = $state(false), mounted = $state(false), disposed = false;
   let message = $state(''), listMessage = $state(''), duplicateId = $state<string | null>(null), successId = $state<string | null>(null), warnings = $state<string[]>([]);
   let importFormat = $state<'gpx' | 'tcx'>('gpx'), timeMode = $state('absolute');
   let fileInput = $state<HTMLInputElement>(null!), picked = $state<File | null>(null), dragging = $state(false), title = $state(''), timezone = $state(''), activityDate = $state('');
+  let pickedFiles = $state<File[]>([]), batchItems = $state<ImportItem[]>([]), batchRunning = $state(false);
+  let batchController: AbortController | undefined;
+  const multi = $derived(pickedFiles.length > 1);
   let selected = $state<string[]>([]), editActivity = $state<Activity | null>(null), deleteIds = $state<string[]>([]);
   let editMode = $state(false);
   let saving = $state(false), deleting = $state(false), deleteError = $state(''), lastOffset = $state(0);
@@ -50,9 +55,16 @@
   }
   function formatSize(bytes: number) { return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MiB` : `${Math.max(1, Math.round(bytes / 1024))} KiB`; }
   function pickChanged() {
-    picked = fileInput.files?.[0] ?? null;
-    const extension = picked?.name.split('.').at(-1)?.toLowerCase();
-    if (extension === 'tcx' || extension === 'gpx') importFormat = extension;
+    pickedFiles = Array.from(fileInput.files ?? []);
+    picked = pickedFiles[0] ?? null;
+    batchItems = [];
+    if (pickedFiles.length > 1) {
+      const detected = detectBatchFormat(pickedFiles);
+      if (detected.ok) { importFormat = detected.format; message = ''; } else message = detected.message;
+    } else {
+      const extension = picked?.name.split('.').at(-1)?.toLowerCase();
+      if (extension === 'tcx' || extension === 'gpx') importFormat = extension;
+    }
     timeMode = 'absolute';
   }
   function dropFile(event: DragEvent) {
@@ -133,9 +145,42 @@
     } catch (cause) { if (!disposed && request === listRequest) fail(cause, 'list'); }
     finally { if (!disposed && request === listRequest) loading = false; }
   }
+  async function runBatch(retry = false) {
+    const detected = detectBatchFormat(retry ? batchItems.map(item => item.file) : pickedFiles);
+    if (!detected.ok) { message = detected.message; return; }
+    const format = detected.format, mode = timeMode, zone = timezone.trim();
+    const upload = format === 'tcx' ? uploadTcx : uploadGpx;
+    const items = retry
+      ? batchItems.map(item => (item.status === 'failed' ? { ...item, status: 'pending' as const, message: '' } : item))
+      : createItems(pickedFiles);
+    batchController = new AbortController();
+    busy = true; batchRunning = true; batchItems = items;
+    let authExpired = false;
+    try {
+      const outcome = await runImportQueue(items, {
+        signal: batchController.signal,
+        onupdate: next => { if (!disposed) batchItems = next; },
+        importOne: async file => {
+          const form = new FormData(); form.append('file', file);
+          if (zone) form.append('timezone', zone);
+          if (format === 'tcx') form.append('time_mode', mode);
+          const result = await upload(form);
+          return { warnings: result.warnings };
+        }
+      });
+      authExpired = outcome.authExpired;
+    } finally { if (!disposed) { busy = false; batchRunning = false; } }
+    if (disposed) return;
+    // One refresh for the whole batch instead of one per file.
+    window.dispatchEvent(new CustomEvent('runnote-activities-changed'));
+    if (authExpired) { fail(new ActivityError('登录已过期，请重新登录', 401, 'AUTH_REQUIRED')); return; }
+    fileInput.value = ''; picked = null; pickedFiles = [];
+    await load();
+  }
   async function submit(event: SubmitEvent) {
     event.preventDefault(); if (controlsBusy || !mounted) return;
     message = ''; duplicateId = null; successId = null; warnings = [];
+    if (pickedFiles.length > 1) { await runBatch(); return; }
     const file = fileInput.files?.[0];
     if (!file || fileInput.files?.length !== 1) { message = '请选择一个 GPX 或 TCX 文件'; return; }
     if (file.size > 10 * 1024 * 1024) { message = '轨迹文件不能超过 10 MiB'; return; }
@@ -152,7 +197,7 @@
     } catch (cause) { if (!disposed) fail(cause); }
     finally { if (!disposed) busy = false; }
   }
-  onMount(() => { mounted = true; void load(lastOffset); return () => { disposed = true; ++listRequest; }; });
+  onMount(() => { mounted = true; void load(lastOffset); return () => { disposed = true; ++listRequest; batchController?.abort(); }; });
 </script>
 <svelte:head><title>{pageTitle('跑步记录', page.data.site)}</title></svelte:head>
 <PageHeader title="跑步记录" description="每一次跑步，都值得留下。导入 GPX 或 TCX，回顾你的轨迹与运动表现。">{#snippet actions()}<a href={view.href("/activities/wall")}  class="button-secondary">查看足迹墙</a>{/snippet}</PageHeader>
@@ -163,17 +208,18 @@
     <div class="upload-primary">
       <label class="file-pick" data-filled={picked ? 'true' : 'false'} data-dragging={dragging} ondragover={event => { event.preventDefault(); if (!controlsBusy && mounted) dragging = true; }} ondragleave={() => { dragging = false; }} ondrop={dropFile}>
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" /></svg>
-        <input bind:this={fileInput} class="sr-only" type="file" name="file" onchange={pickChanged} accept=".gpx,.tcx,application/gpx+xml,application/xml,text/xml" required disabled={controlsBusy || !mounted} aria-describedby="gpx-help" />
+        <input bind:this={fileInput} class="sr-only" type="file" name="file" multiple onchange={pickChanged} accept=".gpx,.tcx,application/gpx+xml,application/xml,text/xml" required disabled={controlsBusy || !mounted} aria-describedby="gpx-help" />
         <span class="file-pick-text">
-          {#if picked}<span class="file-pick-title">{picked.name}</span><span class="file-pick-hint">{formatSize(picked.size)} · 点击或拖入可更换</span>
-          {:else}<span class="file-pick-title">选择或拖入轨迹文件</span><span class="file-pick-hint">GPX / TCX · 单个，最大 10 MiB</span>{/if}
+          {#if multi}<span class="file-pick-title">已选择 {pickedFiles.length} 个文件</span><span class="file-pick-hint">{formatSize(pickedFiles.reduce((sum, f) => sum + f.size, 0))} · 依次导入，点击或拖入可更换</span>
+          {:else if picked}<span class="file-pick-title">{picked.name}</span><span class="file-pick-hint">{formatSize(picked.size)} · 点击或拖入可更换</span>
+          {:else}<span class="file-pick-title">选择或拖入轨迹文件</span><span class="file-pick-hint">GPX / TCX · 可多选，单个最大 10 MiB</span>{/if}
         </span>
         {#if picked}<span class="file-pick-tag">{importFormat.toUpperCase()}</span>{/if}
       </label>
-      <button disabled={controlsBusy || !mounted} class="rounded bg-primary px-5 py-3 font-semibold text-primary-foreground disabled:opacity-50">{busy ? '正在解析与保存…' : `导入 ${importFormat.toUpperCase()}`}</button>
+      <button disabled={controlsBusy || !mounted} class="rounded bg-primary px-5 py-3 font-semibold text-primary-foreground disabled:opacity-50">{busy ? (batchRunning ? '正在批量导入…' : '正在解析与保存…') : multi ? `导入 ${pickedFiles.length} 个 ${importFormat.toUpperCase()}` : `导入 ${importFormat.toUpperCase()}`}</button>
     </div>
     <div class="import-meta">
-      <label class="import-format text-sm font-medium">文件格式<select aria-label="文件格式" bind:value={importFormat} onchange={() => { timeMode = 'absolute'; }} disabled={controlsBusy || !mounted} class="rounded border border-border bg-background p-2"><option value="gpx">GPX</option><option value="tcx">TCX</option></select></label>
+      <label class="import-format text-sm font-medium">文件格式<select aria-label="文件格式" bind:value={importFormat} onchange={() => { timeMode = 'absolute'; }} disabled={controlsBusy || !mounted || multi} class="rounded border border-border bg-background p-2"><option value="gpx">GPX</option><option value="tcx">TCX</option></select></label>
       {#if importFormat === 'tcx'}
         <label class="import-time text-sm font-medium">时间解释<select aria-label="时间解释" bind:value={timeMode} disabled={controlsBusy || !mounted} aria-describedby="tcx-time-help" class="rounded border border-border bg-background p-2"><option value="absolute">遵守文件时区（默认）</option><option value="local">按当地时间解释（修正误标 UTC）</option></select></label>
       {/if}
@@ -182,14 +228,16 @@
     <details class="import-options">
       <summary>补充导入信息</summary>
       <div class="mt-3 grid gap-3 sm:grid-cols-2">
-        <label class="text-sm">标题（可选）<input bind:value={title} name="title" maxlength="120" disabled={controlsBusy || !mounted} class="mt-1 block w-full rounded border border-border p-2" placeholder="例如：周末晨跑" /></label>
+        <label class="text-sm">标题（可选）<input bind:value={title} name="title" maxlength="120" disabled={controlsBusy || !mounted || multi} class="mt-1 block w-full rounded border border-border p-2" placeholder="例如：周末晨跑" /></label>
         <label class="text-sm">时区（可选）<input bind:value={timezone} name="timezone" disabled={controlsBusy || !mounted} class="mt-1 block w-full rounded border border-border p-2" placeholder="例如：Asia/Shanghai" /></label>
-        <label class="text-sm">补录日期（可选）<input bind:value={activityDate} name="activity_date" type="date" disabled={controlsBusy || !mounted} aria-describedby="import-date-help" class="mt-1 block w-full rounded border border-border p-2" /></label>
+        <label class="text-sm">补录日期（可选）<input bind:value={activityDate} name="activity_date" type="date" disabled={controlsBusy || !mounted || multi} aria-describedby="import-date-help" class="mt-1 block w-full rounded border border-border p-2" /></label>
+        {#if multi}<p class="import-help sm:col-span-2">批量导入时标题和补录日期不可用，沿用文件里的信息；时区仍会应用到每个文件。</p>{/if}
         <p id="import-date-help" class="import-help self-end">未指定时区时使用账户时区。缺失时间的轨迹可补录日期；日期与轨迹时间冲突时会提示。</p>
       </div>
     </details>
   </form>
-  {#if busy}<div class="mt-4"><FeedbackState kind="loading" title="正在上传、解析并保存"><p>较大文件可能需要数十秒，请勿重复提交。</p></FeedbackState></div>{/if}
+  {#if busy && !batchRunning}<div class="mt-4"><FeedbackState kind="loading" title="正在上传、解析并保存"><p>较大文件可能需要数十秒，请勿重复提交。</p></FeedbackState></div>{/if}
+  {#if batchItems.length}<ImportBatchPanel items={batchItems} running={batchRunning} onstop={() => batchController?.abort()} onretry={() => void runBatch(true)} />{/if}
   {#if message}<div class="mt-4"><FeedbackState kind="error" title={message}>{#if duplicateId}<a href={view.href(`/activities/${duplicateId}`)} class="text-primary underline">查看已有活动</a>{:else}<p>可以重试当前文件；若格式有误，请选择修正后的 GPX 或 TCX。</p>{/if}</FeedbackState></div>{/if}
   {#if successId}<div class="mt-4"><FeedbackState kind="success" title="导入成功。"><a href={view.href(`/activities/${successId}`)} class="text-primary underline">查看活动与路线</a><span aria-hidden="true"> · </span><a href={view.href("/activities/wall")}  class="text-primary underline">足迹卡片已生成，查看足迹墙</a></FeedbackState></div>{/if}
   {#if warnings.length}<div class="import-warnings"><p class="font-medium">导入完成，部分数据需要留意</p><ul class="mt-2 list-inside list-disc text-sm">{#each warnings as warning}<li>{warningLabel(warning)}</li>{/each}</ul></div>{/if}
