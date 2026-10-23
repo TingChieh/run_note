@@ -48,7 +48,7 @@ infra/native/ops/build-release.sh --out ./dist-release      # 输出 run-note-<i
 
 # 服务器：先取出该发布自带的 ops/，再用它安装（新版逻辑安装新版本）
 mkdir -p /tmp/rn-stage && tar -xzf run-note-<id>.tar.gz -C /tmp/rn-stage --strip-components=1   # 只用其中的 ops/
-sudo /tmp/rn-stage/ops/deploy.sh --migrate run-note-<id>.tar.gz   # 首次库为空，需要 --migrate
+sudo /tmp/rn-stage/ops/deploy.sh --migrate run-note-<id>.tar.gz   # 空库首次初始化也必须显式 --migrate（见下表）
 sudo -u runnote /opt/run-note/current/backend/.venv/bin/python /opt/run-note/current/scripts/site-owner.py status
 ```
 
@@ -61,9 +61,22 @@ sudo -u runnote /opt/run-note/current/backend/.venv/bin/python /opt/run-note/cur
 | 发布不含迁移 | `deploy.sh <tarball>` | 校验配置 → 解包+建 venv → 比较 schema → 切软链 → 重启 → 冒烟（API ready + Node 代理可达）→ 失败且 schema 未变时自动回到上一发布 |
 | 发布含迁移 | `deploy.sh --migrate <tarball>` | 先停服务 → 备份 → **真实恢复演练（行数严格相等）** → `alembic upgrade head`（单次，非每 worker）→ 切软链 → 启动 → 冒烟 |
 | 忘记 `--migrate` | — | 拒绝，库与软链均不变 |
+| **空库首次初始化** | `deploy.sh --migrate <tarball>` | 数据库**没有 schema**时的专用路径：停服务 → **再次确认仍为空** → `alembic upgrade head`（单次）→ 核对 revision 等于发布 head → 切软链 → 启动 → 冒烟。**不做备份与恢复演练**（没有数据可保护） |
+| 空库但没带 `--migrate` | — | 拒绝，不会在普通部署中隐式建 schema |
 | 库比发布新 | — | 拒绝（这是回滚，不是发布） |
 
 保留最近 5 个发布（`KEEP_RELEASES` 可调），永不删除 `current` 与 `previous`。
+
+#### 首次初始化与普通迁移的区别
+
+| | 首次初始化（空库） | 普通迁移（已有 schema） |
+| --- | --- | --- |
+| 判定 | `schema_compat.py db-state` 返回 `empty` | `db-state` 返回 `revision <rev>`，且落后于发布 head |
+| 备份 + 严格恢复演练 | 无（没有数据） | 有，失败则不迁移 |
+| 必须 `--migrate` | 是 | 是 |
+| 失败后 | Alembic 在单个事务内迁移，失败会整体回滚，库仍为空，可直接重试 | 保留迁移前备份，按"回滚决策"处理 |
+
+`empty` 的判定很严格：**缺少 `alembic_version` 不等于空**。必须同时满足：没有 `alembic_version` 表；扩展只有 `plpgsql` 与预先创建的 `postgis`；在非系统 schema 中没有任何**非扩展成员**的表、视图、序列、复合类型、函数、类型、额外 schema 或大对象。PostGIS 自带的对象（如 `spatial_ref_sys`、`geometry_columns`、`geometry_dump`、`valid_detail`）不计入。以下情形一律拒绝，不做任何修改：已有业务对象但无版本表；有 `alembic_version` 表但没有行或有多行（迁移状态不明）；存在其他扩展；数据库版本不在本发布的迁移链中（视为回滚）。
 
 ### 回滚决策
 
@@ -117,6 +130,9 @@ sudo -u runnote /opt/run-note/current/backend/.venv/bin/python /opt/run-note/cur
 | PASS | 恢复演练负向用例 | 现网在备份后新增一行 + `--strict-counts` → FAIL；文件被改动 → 校验和失败；revision 被人为改动 → FAIL |
 | PASS | `tests/ops-e2e.sh`（10 步） | 缺少 `AUTH_TRUSTED_PROXIES` 被拒且未安装任何内容；落后 schema 不带 `--migrate` 被拒且库不变；`--migrate` 触发备份+严格计数演练+迁移；同 schema 发布无多余备份；`rollback previous` 仅切换；跨迁移回滚被拒；`--restore-db` 恢复到迁移前且后来写入保留在 `_pre_rollback_` 副本；冒烟失败自动回到上一发布 |
 | PASS | `pnpm exec playwright test --config playwright.ui.config.ts theme.spec.ts`（worktree，真实 Chrome） | 7 passed（仅用于确认 worktree 中合成 UI 配置可运行） |
+| 发现并修复 | Phase 2C 审计（服务器演练前） | 空库首次 `deploy.sh --migrate` 会在迁移前的备份步骤失败（`backup.sh` 要求 dump 含 `alembic_version` 数据；空库没有该表），Phase 1 的 e2e 只覆盖"旧 schema 有数据"的库，漏掉了这条路径。已新增 `db-state` 判定与专用首次初始化路径（见"首次初始化与普通迁移的区别"）。真实 PostGIS 上首次跑暴露了第二处：PostGIS 的复合类型 `geometry_dump`/`valid_detail` 的扩展归属记录在类型而非关系上，被误判为业务对象（方向是保守的——会拒绝而不是放行），已修正 |
+| PASS | `ops-e2e.sh` 新增"首次初始化"场景（临时集群，预建 PostGIS 空库） | 空库不带 `--migrate` 被拒；有业务表的无版本库被拒且表未动；有 `alembic_version` 表但无行被拒；含其他扩展被拒；首次初始化中迁移失败整体回滚、库仍为空、无备份产生；随后用正常发布重试成功，迁移到 head 且无备份/演练；初始化后同 schema 发布无需 `--migrate`。原有 10 步（升级、备份演练、回滚拒绝、恢复回滚、冒烟失败自动返回）全部仍通过 |
+| PASS | `unittest discover -s infra/native/tests` | 23 tests OK（新增 6 项 `db-state` 判定：空库、缺版本表但有对象、大对象/多余扩展、版本表无行/多行、有版本表时不被重新标为空） |
 | 发现并修复 | e2e 首轮 | `deploy.sh` 的 EXIT trap 在成功时返回非零，会使成功部署被报告为失败；已修复并重跑通过。回滚的首版先重命名现网库再建新库，建库失败会留下无库状态；已改为"旁路恢复并核验后再改名交换" |
 
 ### Linux CI 验证（GitHub Actions，ubuntu-24.04，PR 分支 `deploy/phase1-infra`）
