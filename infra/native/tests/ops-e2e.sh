@@ -23,7 +23,7 @@ def field(path, name):
 print(field(files[-1], "revision"), field(files[-1], "down_revision"))
 PY
 )
-[ -n "$HEAD_REV" ] && [ -n "$OLD_REV" ] || { echo "cannot derive migration revisions" >&2; exit 1; }
+if [ -z "$HEAD_REV" ] || [ -z "$OLD_REV" ]; then echo "cannot derive migration revisions" >&2; exit 1; fi
 WORK="${WORK:-$(mktemp -d)}"
 port="${PG_PORT:-55441}" api_port=18000 web_port=18001
 rm -rf "$WORK"; mkdir -p "$WORK"/{shims,etc,root,backups}
