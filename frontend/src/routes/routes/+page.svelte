@@ -15,6 +15,7 @@
   let sort = $state<RouteSort>('count');
   let data = $state<RouteGroupList | null>(null), loading = $state(false), message = $state('');
   let requestId = 0, disposed = false, controller: AbortController | undefined, timer: ReturnType<typeof setTimeout> | undefined;
+  function schedule() { timer = setTimeout(() => { void load(true); }, 5000); }
   async function load(silent = false) {
     clearTimeout(timer); timer = undefined;
     const id = ++requestId; controller?.abort(); controller = new AbortController();
@@ -23,11 +24,11 @@
       const result = await readRouteGroups(sort, 20, 0, controller.signal);
       if (disposed || id !== requestId) return;
       data = result; message = '';
-      if (result.building) timer = setTimeout(() => { void load(true); }, 5000);
+      if (result.building) schedule();
     } catch (cause) {
       if (disposed || id !== requestId || controller.signal.aborted) return;
       if (cause instanceof RouteGroupError && cause.status === 401) { data = null; window.location.replace('/admin?reason=changed'); return; }
-      if (silent && data) return;
+      if (silent && data) { if (data.building) schedule(); return; }
       message = cause instanceof Error ? cause.message : '无法读取常跑路线，请重试';
     } finally { if (!disposed && id === requestId) loading = false; }
   }

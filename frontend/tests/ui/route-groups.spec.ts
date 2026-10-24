@@ -64,11 +64,48 @@ test('shows an error with a retry', async ({ page }) => {
   await expect(page.getByRole('button', { name: '重新读取' })).toBeVisible();
 });
 
-test('works in dark mode and on a phone width without horizontal scroll', async ({ page }) => {
+test('works on a phone width without horizontal scroll, with the dark scheme applied', async ({ page }) => {
   await fixture(page); await loginRunner(page);
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.setViewportSize({ width: 375, height: 800 });
   await page.goto('/routes');
   await expect(page.getByTestId('route-card').first()).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+});
+
+test('anonymous visitors see the list without being sent to the admin login', async ({ page }) => {
+  await fixture(page);
+  await page.goto('/routes');
+  await expect(page.getByTestId('route-card').first()).toContainText('3 次');
+  await expect(page).toHaveURL(/\/routes(?:\?.*)?$/);
+  expect(page.url()).not.toContain('/admin');
+});
+
+test('anonymous visitors can open a route detail with its run table', async ({ page }) => {
+  await fixture(page);
+  await page.goto(`/routes/${id}`);
+  await expect(page.getByTestId('route-detail-ready')).toBeVisible();
+  await expect(page.getByTestId('route-run-row')).toHaveCount(2);
+  expect(page.url()).not.toContain('/admin');
+});
+
+test('keeps polling after a transient error until the building banner clears', async ({ page }) => {
+  let calls = 0;
+  await installActivities(page); await installBasemaps(page);
+  await page.route('**/api/v1/showcase/routes/groups?**', route => {
+    calls += 1;
+    if (calls === 2) return route.fulfill({ status: 503, json: { data: null, error: { message: '路线暂不可用，请重试' } } });
+    const building = calls === 1;
+    return route.fulfill({ json: { data: { items: building ? [] : [item], total: building ? 0 : 1, limit: 20, offset: 0, building }, error: null } });
+  });
+  await page.clock.install();
+  await page.goto('/routes');
+  await expect(page.getByTestId('route-building')).toBeVisible();
+  await page.clock.fastForward(5000);
+  await expect.poll(() => calls).toBe(2);
+  await expect(page.getByTestId('route-building')).toBeVisible();
+  await page.clock.fastForward(5000);
+  await expect(page.getByTestId('route-card').first()).toBeVisible();
+  await expect(page.getByTestId('route-building')).toHaveCount(0);
 });

@@ -49,7 +49,7 @@
       <section aria-label="历次成绩"><h2>成绩列表</h2>
         <div class="table-wrap"><table><thead><tr><th>日期</th><th>标题</th><th>距离</th><th>用时</th><th>配速</th></tr></thead><tbody>
           {#each data.runs as run (run.activity_id)}
-            <tr data-testid="route-run-row"><td>{run.activity_date}</td><td><a href={view.href(`/activities/${run.activity_id}`)}>{run.title || '未命名活动'}</a></td><td>{formatDistance(run.distance_m)}</td><td>{run.duration_seconds === null ? '—' : formatDuration(run.duration_seconds)}</td><td>{formatPace(run.avg_pace_seconds_per_km)}</td></tr>
+            <tr data-testid="route-run-row"><td>{run.activity_date}</td><td><a href={view.href(`/activities/${run.activity_id}`)}>{run.title || '未命名活动'}</a></td><td>{formatDistance(run.distance_m)}</td><td>{run.duration_seconds === null ? '—' : formatDuration(run.duration_seconds)}{#if run.duration_seconds === null}<span class="sr-only">未记录用时</span>{/if}</td><td>{formatPace(run.avg_pace_seconds_per_km)}</td></tr>
           {/each}
         </tbody></table></div>
       </section>
