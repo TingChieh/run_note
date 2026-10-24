@@ -17,6 +17,7 @@
   import { liquidGlass } from '#lib/styles/liquid-glass.ts';
   import ThemeToggle from '#lib/components/ThemeToggle.svelte';
   import { SITE_DEFAULTS, brandInitial } from '#lib/site.ts';
+  import { pageDescription, pageNoindex } from '#lib/seo.ts';
   import { initializeTheme } from '#lib/components/system-theme.ts';
 
   let { children }: { children: Snippet } = $props();
@@ -50,7 +51,14 @@
   $effect(() => { void site.logo_url; logoFailed = false; });
   const appLayout = $derived(/^\/(dashboard|activities|footprints|routes|ai|settings|admin|p|workspace)(\/|$)/.test(page.url.pathname) && page.url.pathname !== '/admin' || page.url.pathname === '/' || page.status >= 400 && !/^\/admin\/?$/.test(page.url.pathname));
   const privateView = $derived(!!page.data.user || isProtected(page.url.pathname));
-  setContext(VIEW_CONTEXT, () => viewContext(page.url.pathname, page.data.user?.is_admin === true));
+  setContext(VIEW_CONTEXT, () => {
+    const context = viewContext(page.url.pathname, page.data.user?.is_admin === true);
+    // A missing personal showcase 404 keeps the shell, but must not advertise that user's links.
+    if (context.kind === 'public' && !page.data.showcase) return viewContext('/', page.data.user?.is_admin === true);
+    return context;
+  });
+  const description = $derived(pageDescription(page.url.pathname, page.status, site.description));
+  const noindex = $derived(pageNoindex(page.url.pathname, page.status));
   const authPage = $derived(/^\/admin\/?$/.test(page.url.pathname));
   const routeLoading = $derived(!!navigating.to && !navigating.shallow && !navigating.willUnload && navigating.to.url.pathname !== page.url.pathname && !(settingsSection(page.url.pathname) && settingsSection(navigating.to.url.pathname)));
   async function logout() {
@@ -58,7 +66,7 @@
     try {
       await authWrite('logout', {});
       checking = true;
-      window.location.assign(viewContext(page.url.pathname).kind === 'workspace' ? '/dashboard' : page.url.pathname);
+      window.location.assign(viewContext(page.url.pathname).kind === 'workspace' ? '/' : page.url.pathname);
     } catch (cause) {
       if (cause instanceof AuthError && cause.status === 401) { checking = true; window.location.replace('/admin?reason=changed'); return; }
       message = cause instanceof Error ? cause.message : '退出失败，请重试'; busy = false;
@@ -107,7 +115,7 @@
     };
   });
 </script>
-<svelte:head><meta name="description" content={site.description} /></svelte:head>
+<svelte:head><meta name="description" content={description} />{#if noindex}<meta name="robots" content="noindex,nofollow" />{/if}</svelte:head>
 <a href="#main" class="skip-link">跳转到主要内容</a>
 <div use:liquidGlass class:app-shell={appLayout} class:public-shell={!appLayout} class="sport-theme">
   <header data-auth-ready={mounted}>
@@ -118,7 +126,7 @@
         <a href="/" class="brand">{#if site.logo_url && !logoFailed}<img class="brand-mark brand-logo" src={site.logo_url} alt="" width="32" height="32" onerror={() => { logoFailed = true; }} />{:else}<span class="brand-mark" aria-hidden="true">{brandInitial(site.title)}</span>{/if}{site.title}</a>
         <nav aria-label="主要导航" class="public-navigation">
           <ThemeToggle compact />
-          {#if page.data.user}<a href="/dashboard" data-sveltekit-reload class="button-secondary">我的运动统计</a>{#if !checking}<button type="button" onclick={logout} disabled={busy || !mounted} class="button-secondary">{busy ? '退出中…' : '退出登录'}</button>{/if}
+          {#if page.data.user}<a href="/" data-sveltekit-reload class="button-secondary">我的运动统计</a>{#if !checking}<button type="button" onclick={logout} disabled={busy || !mounted} class="button-secondary">{busy ? '退出中…' : '退出登录'}</button>{/if}
           {:else}<a href="/activities" data-sveltekit-reload class="public-activities">跑步记录</a>{/if}
         </nav>
         <span class="sr-only" data-testid="current-user">{checking ? '正在确认身份…' : page.data.user ? `已登录：${page.data.user.email}` : '未登录'}</span>

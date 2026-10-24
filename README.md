@@ -138,7 +138,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-打开 <http://127.0.0.1:5173>，首页进入 `/dashboard`。访客可直接浏览累计与年度统计、目标、日历、趋势、`/activities` 列表与详情、`/activities/wall` 足迹墙、`/footprints` 全部轨迹/热力图及 `/ai` 已完成报告，所有数据固定来自 `SITE_OWNER_EMAIL`（默认值见 `backend/app/core/config.py`；部署时请显式设置）。**包括原 private/unlisted 记录和完整轨迹、精确起终点**；邮箱、用户名、私人备注和源文件不公开。
+打开 <http://127.0.0.1:5173>，首页 `/` 就是数据汇总。旧地址 `/dashboard` 会跳回 `/` 并保留查询参数。访客可直接浏览累计与年度统计、目标、日历、趋势、`/activities` 列表与详情、`/activities/wall` 足迹墙、`/footprints` 全部轨迹/热力图及 `/ai` 已完成报告，所有数据固定来自 `SITE_OWNER_EMAIL`（默认值见 `backend/app/core/config.py`；部署时请显式设置）。**包括原 private/unlisted 记录和完整轨迹、精确起终点**；邮箱、用户名、私人备注和源文件不公开。
 
 只有 `/admin` 提供登录，旧 `/login`、`/register` 返回 404，注册 API 关闭。配置站主可在 `/admin/users` 新建、编辑、启用/禁用账号、重置密码和开启个人展示。普通启用用户登录后进入 `/workspace/dashboard`，只能管理本人记录、目标、报告与设置。历史普通账号默认停用且不公开，须管理员显式启用；不会删除账号、转移记录或自动重置密码。页面不展示登录/注册入口，直接输入 `/admin`。
 
@@ -146,7 +146,7 @@ pnpm dev
 
 SvelteKit 同源 `/api` 代理固定到服务端 `INTERNAL_API_BASE_URL`，数据库凭据不进入浏览器。生产 Caddy 可以直接代理 `/api/*`，权限仍由 FastAPI 执行。认证使用 HttpOnly/SameSite Cookie 与 CSRF/Origin 校验。
 
-旧版 `/u/{username}`、`/public/activities/{id}`、`/shared/{token}` 摘要功能保留原规则，不返回坐标。旧版摘要可见性/主页开关/撤销链接只控制这些入口，**不会关闭完整公开展示**。普通账号的完整展示由管理员开关控制，停用账号也会阻断旧摘要与分享链接。
+旧版 `/u/{username}` 已移除，直接返回 404。`/public/activities/{id}` 与 `/shared/{token}` 仍是不含坐标的摘要。摘要可见性、主页开关和撤销链接只控制这些摘要，**不会关闭完整公开展示**。普通账号的完整展示由管理员开关控制，停用账号也会阻断旧摘要与分享链接。
 
 健康接口及 API 文档：
 

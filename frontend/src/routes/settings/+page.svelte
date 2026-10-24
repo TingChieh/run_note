@@ -9,7 +9,7 @@
   import { SiteError, removeAvatar, uploadAvatar } from '#lib/api/site.ts';
   import { page } from '$app/state';
   import { invalidateAll } from '$app/navigation';
-  import { sharingWrite, publicProfilePath } from '#lib/api/sharing.ts';
+  import { sharingWrite } from '#lib/api/sharing.ts';
   import { changePassword } from '#lib/api/auth.ts';
   import { onMount } from 'svelte';
   import { unfoldBar } from '#lib/styles/reveal-from-left.ts';
@@ -59,7 +59,6 @@
       <ul class="identity-chips" aria-label="账户信息">
         <li><span>邮箱</span>{page.data.user.email}</li>
         <li><span>时区</span>{page.data.user.timezone}</li>
-        <li><span>主页</span><a href={publicProfilePath(page.data.user.username)} data-sveltekit-reload class="text-primary underline">{publicProfilePath(page.data.user.username)}</a></li>
       </ul>
       <p class="text-xs text-muted-foreground">头像支持 PNG、JPEG、WebP，不超过 5 MiB，自动裁成正方形并移除位置信息。</p>
       <a href={view.href("/activities")} class="text-sm text-primary underline">管理记录与分享 →</a>
@@ -79,7 +78,6 @@
       </div>
       <p class="block-hint">仅展示主动设为公开的记录、统计和日历，不会公开历史私人记录。</p>
       <p class="status-badge" class:on={baseline.enabled}>已保存：{baseline.enabled ? '已开启' : '已关闭'}</p>
-      {#if baseline.enabled}<a href={publicProfilePath(page.data.user.username)} data-sveltekit-reload class="text-sm text-primary underline">查看公开主页 →</a>{/if}
       <details class="block-details"><summary>展示与隐私说明</summary><p>开启完整展示后，个人展示页将展示全部记录和完整路线；这里的公开主页设置仅影响旧版摘要主页。私人备注和原始文件不公开。</p><p>关闭主页会立即关闭主页及其资料、统计、日历和列表接口。关闭主页不会撤销独立分享链接或单条公开记录；独立记录需到详情单独撤销链接或设为私人，已被他人保存的摘要无法收回。</p></details>
     </section>
   </form>

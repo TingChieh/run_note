@@ -40,9 +40,10 @@ describe('authentication boundary', () => {
     await expect(readSession(async () => envelope({user: {id:'old-user'}}))).rejects.toThrow('身份无效');
   });
   it('only allows local paths after authentication', () => {
-    expect(safeNext(null)).toBe('/dashboard');
+    expect(safeNext(null)).toBe('/');
     expect(safeNext('/settings?tab=me')).toBe('/settings?tab=me');
-    for (const value of ['https://evil.example', '//evil.example', '/\\evil.example', '/login', '/register', '/api/v1/me', '/%2f%2fevil.example', '/settings\n']) expect(safeNext(value)).toBe('/dashboard');
+    expect(safeNext('/dashboard?year=2026')).toBe('/dashboard?year=2026');
+    for (const value of ['https://evil.example', '//evil.example', '/\\evil.example', '/login', '/register', '/api/v1/me', '/%2f%2fevil.example', '/settings\n']) expect(safeNext(value)).toBe('/');
   });
 });
 

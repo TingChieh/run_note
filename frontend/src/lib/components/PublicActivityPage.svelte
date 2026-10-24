@@ -6,7 +6,7 @@
   import MetricSummary from './MetricSummary.svelte';
   import { dashboardDistance } from '#lib/api/dashboard-format.ts';
   import { onMount } from 'svelte';
-  import { readPublicActivity, publicProfilePath, type PublicActivity } from '#lib/api/sharing.ts';
+  import { readPublicActivity, type PublicActivity } from '#lib/api/sharing.ts';
   import { formatDuration, formatPace } from '#lib/api/activities.ts';
   let { apiPath }: { apiPath: string } = $props();
   let activity=$state<PublicActivity|null>(null), message=$state(''), loading=$state(true), serial=0, disposed=false;
@@ -20,5 +20,5 @@
   <PageHeader title={activity.title || '未命名活动'} description={`${activity.author.display_name} · ${activity.activity_date}`} />
   <div class="mt-6"><MetricSummary items={[{label:'距离',icon:'distance',value:dashboardDistance(activity.distance_m)},{label:'用时',icon:'duration',value:formatDuration(activity.elapsed_seconds)},{label:'配速',icon:'pace',value:formatPace(activity.avg_pace_seconds_per_km)}]} /></div>
   <section class="aux-panel mt-6" aria-label="分享范围"><h2 class="text-xl font-semibold">公开运动摘要</h2><p class="mt-3 text-sm text-muted-foreground">为保护位置隐私，此分享不公开轨迹坐标和精确起终点。“—”表示缺失或无法可靠计算。</p>
-  <a href={publicProfilePath(activity.author.username)} data-sveltekit-reload class="button-secondary mt-5">查看作者公开主页</a><p class="mt-3 text-sm text-muted-foreground">作者可独立关闭主页，不影响此条分享。</p></section>
+  </section>
 {/if}

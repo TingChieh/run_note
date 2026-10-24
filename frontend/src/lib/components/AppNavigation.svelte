@@ -38,7 +38,7 @@
     { href: '/settings', label: '设置', path: 'M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6' }
     ,...(user && !user.is_admin ? [{ href: '/workspace/dashboard', label: '本人工作区', path: 'M3 10 12 3l9 7v10H3z' }] : [])
   ].filter(item => item.href !== '/settings' || view.manage));
-  const active = (href: string) => href === '/settings' && pathname.startsWith('/admin/users') ? true : href.endsWith('/activities') && pathname.startsWith(`${href}/wall`) ? false : pathname === href || pathname.startsWith(`${href}/`);
+  const active = (href: string) => href === '/' ? pathname === '/' : href === '/settings' && pathname.startsWith('/admin/users') ? true : href.endsWith('/activities') && pathname.startsWith(`${href}/wall`) ? false : pathname === href || pathname.startsWith(`${href}/`);
   afterNavigate(() => { open = false; });
   function close(event: KeyboardEvent) { if (event.key === 'Escape' && open) { open = false; toggle?.focus(); } }
 </script>
@@ -52,8 +52,10 @@
   </div>
 </div>
 <aside id="app-navigation" class="app-sidebar" class:nav-open={open} inert={mobile && !open}>
-  <a href={view.href("/dashboard")} class="brand desktop-brand" aria-label={`${site.title} 数据汇总`}>{#if site.logo_url && !logoFailed}<img class="brand-mark brand-logo" src={site.logo_url} alt="" width="32" height="32" onerror={() => { logoFailed = true; }} />{:else}<span class="brand-mark" aria-hidden="true">{brandInitial(site.title)}</span>{/if}{site.title}</a>
-  {#if site.subtitle}<p class="nav-caption">{site.subtitle}</p>{/if}
+  <div class="sidebar-brand">
+    <a href={view.href("/dashboard")} class="brand desktop-brand" aria-label={`${site.title} 数据汇总`}>{#if site.logo_url && !logoFailed}<img class="brand-mark brand-logo" src={site.logo_url} alt="" width="32" height="32" onerror={() => { logoFailed = true; }} />{:else}<span class="brand-mark" aria-hidden="true">{brandInitial(site.title)}</span>{/if}{site.title}</a>
+    {#if site.subtitle}<p class="nav-caption">{site.subtitle}</p>{/if}
+  </div>
   <nav aria-label="主要导航">
     {#each navigation as item, index}
       <a href={view.href(item.href)} aria-current={active(view.href(item.href)) ? 'page' : undefined} class="nav-link" onclick={(event) => {
@@ -82,11 +84,11 @@
         <p class="account-email" data-testid="current-user">{checking ? '正在确认身份…' : context.kind === 'workspace' ? '本人工作区' : context.manage ? '管理员模式' : '个人跑步展示'}</p>
       </div>
     </div>
-    {#if user && !checking}<button type="button" onclick={onlogout} disabled={busy || !mounted} class="button-secondary mt-3 w-full">{busy ? '退出中…' : '退出登录'}</button>{/if}
+    {#if user && !checking}<button type="button" onclick={onlogout} disabled={busy || !mounted} class="button-secondary w-full">{busy ? '退出中…' : '退出登录'}</button>{/if}
   </div>
 </aside>
 <style>
   .mobile-actions { display: flex; align-items: center; gap: var(--space-2); }
   .runner-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
-  .appearance-row { margin-bottom: var(--space-2); }
+  .appearance-row { margin: 0; }
 </style>

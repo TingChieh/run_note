@@ -30,6 +30,11 @@ describe('map external resource boundary', () => {
     expect(original.layers[0].source).toBe('route');
     expect(original.layers[0].id).toBe('route-lines');
   });
+  it('skips numeric comparisons when a feature property is missing', () => {
+    const style = prepareBasemapStyle({ version: 8 as const, sources: { openmaptiles: { type: 'vector' as const, url: 'https://tiles.openfreemap.org/planet' } },
+      layers: [{ id: 'country', type: 'symbol' as const, source: 'openmaptiles', 'source-layer': 'place', filter: ['<=', ['get', 'rank'], 2] }] }, 'basemap-1-');
+    expect(style.layers[0]).toMatchObject({ filter: ['case', ['==', ['typeof', ['get', 'rank']], 'number'], ['<=', ['get', 'rank'], 2], false] });
+  });
   it('rejects malformed styles before mutating the map', () => {
     for (const value of [null, {}, { version: 7, sources: {}, layers: [] }, { version: 8, sources: {}, layers: [{ id: 'bad', type: 'line', source: 'missing' }] }]) {
       expect(() => prepareBasemapStyle(value, 'basemap-1-')).toThrow();

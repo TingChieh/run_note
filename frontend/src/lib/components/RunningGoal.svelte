@@ -104,25 +104,27 @@
     </div>
     <button id="goal-edit" class="button-secondary" type="button" disabled={goalLoading || !!goalError || saving} onclick={() => void edit(!editing)} aria-expanded={editing}>{editing ? '取消' : target ? '调整' : '设置'}</button>
   </div>{/if}</div>
-  <label class="sr-only" for="goal-period">目标周期</label>
-  <select id="goal-period" aria-label="目标周期" bind:value={period} disabled={saving}><option value="week">每周</option><option value="month">每月</option><option value="year">年度</option></select>
   {#snippet distanceValue()}
     <p class="goal-distance"><strong>{dashboardDistance(distance)}</strong>
       {#if editing}<span class="goal-target"> / <label class="sr-only" for="goal-km">目标距离（km）</label><input transition:goalInputPop id="goal-km" inputmode="decimal" type="text" bind:value={input} disabled={saving} aria-describedby={`goal-confirmed${feedback ? ' goal-feedback' : ''}`} onkeydown={(event)=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();void edit(false);}}} /> km</span><span id="goal-confirmed" class="sr-only">已保存目标：/ {target === null ? '未设目标' : `${target} km`}</span>
       {:else}<span class="goal-readonly"> / {target === null ? '未设目标' : `${target} km`}</span>{/if}
     </p>
   {/snippet}
-  {#if goalError}<p role="alert" class="goal-note">{goalError}</p><button type="button" onclick={() => void loadGoals()}>重试目标</button>{/if}
   {#if editing || (!loading && !error)}{@render distanceValue()}{/if}
+  <div class="goal-extra">
+  <label class="sr-only" for="goal-period">目标周期</label>
+  <select id="goal-period" aria-label="目标周期" bind:value={period} disabled={saving}><option value="week">每周</option><option value="month">每月</option><option value="year">年度</option></select>
+  {#if goalError}<p role="alert" class="goal-note">{goalError}</p><button type="button" onclick={() => void loadGoals()}>重试目标</button>{/if}
   {#if loading}<p role="status">正在读取跑量…</p>{:else if error}<p role="alert">{error}</p><button type="button" disabled={saving} onclick={() => refresh++}>重试跑量</button>{:else}
     {#if target !== null}<progress max="100" value={progress} aria-label={`${labels[period]}跑量目标进度`}>{Math.round(progress)}%</progress><p class="goal-note">{progress >= 100 ? '目标已达成' : `已完成 ${Math.round(progress)}%`}</p>{/if}
   {/if}
   <details><summary>{labels[period]} · 统计范围</summary><p class="goal-note">{range.from} 至 {range.to}（不含结束日），截至今天。按活动当地日期归属；周一开始。目标仅供个人参考。</p></details>
+  </div>
   {#if feedback}<p id="goal-feedback" role="alert" class="goal-note">{feedback}</p>{/if}
   </form>
 </section>
 <style>
-  .running-goal { margin-top:var(--space-2); padding:var(--space-2); border-radius:var(--radius-control); background:var(--surface); color:var(--foreground); }
+  .running-goal { margin:0; padding:var(--space-2); border-radius:var(--radius-control); background:var(--surface); color:var(--foreground); }
   .goal-heading { display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
   button { min-height:44px; padding:.4rem .5rem; color:var(--primary); font-weight:650; border-radius:.5rem; }
   button:hover { background:var(--primary-soft); }
