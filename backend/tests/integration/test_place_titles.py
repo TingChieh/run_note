@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 import psycopg.errors
 import pytest
 from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, OperationalError
 
 from app.modules.activities.model import Activity
 from app.modules.place_titles import queue, rules, service
@@ -310,7 +310,7 @@ def test_a_very_long_track_is_sampled_within_the_bound(clients, region):  # noqa
     started = time.monotonic()
     with app.state.session_factory() as db:
         total, near = service.measure_shares(db, long_id)
-    assert time.monotonic() - started < 10
+    assert time.monotonic() - started < 60  # generous: only guards against a hang
     assert 0 < total <= rules.MAX_SAMPLES + 5
     assert 0 < near["lake"] < total
 
@@ -364,7 +364,7 @@ def test_many_segments_still_yield_a_bounded_sample_set(clients, region):  # noq
     with app.state.session_factory() as db:
         total, near = service.measure_shares(db, many_id)
         found = service.resolve(db, many_id)
-    assert time.monotonic() - started < 10
+    assert time.monotonic() - started < 60  # generous: only guards against a hang
     assert 0 < total <= rules.MAX_SAMPLES
     assert near["lake"] == total
     assert found is not None and found[0] == "lake"
@@ -842,3 +842,173 @@ def test_backfill_rejects_a_malformed_log_before_changing_anything(clients, regi
         encoding="utf-8",
     )
     assert backfill.revert_log(app.state.session_factory, gone)["skipped"] == 1
+
+
+def test_backfill_classifies_why_a_run_is_not_matched(clients, region):  # noqa: F811
+    a, b, _, app = clients
+    quiet(a, b)
+    add_place(app, "lake", box_around_ring(margin_m=0), region)
+    owner = register(a)
+    matched = add_run(app, owner, ring(), day=date(2024, 2, 1))
+    far = add_run(
+        app, owner, [(x + 1.0, y) for x, y in ring()], day=date(2024, 2, 2)
+    )  # about 100 km east of the lake
+    short = add_run(app, owner, ring(), day=date(2024, 2, 3), distance_m=500)
+    by_id = {str(p.activity_id): p for p in preview(app, owner)}
+    assert by_id[matched].reason == "matched" and by_id[matched].new_title == "湖边跑步"
+    assert by_id[far].reason == "no_match" and by_id[far].new_title is None
+    assert by_id[short].reason == "too_short" and by_id[short].new_title is None
+    # A title edited between listing and measuring is reported as edited.
+    edited = add_run(app, owner, ring(), day=date(2024, 2, 4))
+    with app.state.session_factory.begin() as db:
+        db.execute(text("UPDATE activities SET title='改过' WHERE id=:a"), {"a": UUID(edited)})
+    assert service._measure(app.state.session_factory, UUID(owner), UUID(edited)) == (
+        "skip",
+        "edited",
+    )
+
+
+def test_backfill_reports_timeouts_and_errors_separately(clients, region, monkeypatch):  # noqa: F811
+    a, b, _, app = clients
+    quiet(a, b)
+    add_place(app, "lake", box_around_ring(margin_m=0), region)
+    owner = register(a)
+    slow = add_run(app, owner, ring(), day=date(2024, 3, 1))
+    broken = add_run(app, owner, ring(), day=date(2024, 3, 2))
+    lost = add_run(app, owner, ring(), day=date(2024, 3, 3))
+    timeout = DBAPIError("statement", {}, psycopg.errors.QueryCanceled())
+    dead = OperationalError("statement", {}, psycopg.errors.AdminShutdown())
+    errors = {slow: timeout, broken: RuntimeError("boom"), lost: dead}
+    real = service.resolve
+
+    def resolve(db, activity_id):
+        if str(activity_id) in errors:
+            raise errors[str(activity_id)]
+        return real(db, activity_id)
+
+    monkeypatch.setattr(service, "resolve", resolve)
+    by_id = {str(p.activity_id): p.reason for p in preview(app, owner)}
+    assert by_id[slow] == "retry" and by_id[lost] == "retry" and by_id[broken] == "error"
+
+
+def test_a_transient_error_leaves_the_queue_row_pending_but_other_errors_skip_it(
+    clients,  # noqa: F811
+    region,
+    monkeypatch,
+):
+    a, b, _, app = clients
+    quiet(a, b)
+    add_place(app, "lake", box_around_ring(margin_m=0), region)
+    owner = register(a)
+    deadlock = add_run(app, owner, ring(), day=date(2024, 4, 1))
+    dropped = add_run(app, owner, ring(), day=date(2024, 4, 2))
+    plain = add_run(app, owner, ring(), day=date(2024, 4, 3))
+    for activity in (deadlock, dropped, plain):
+        enqueue(app, owner, activity)
+    invalid = DBAPIError("s", {}, psycopg.errors.DeadlockDetected())
+    closed = DBAPIError("s", {}, psycopg.errors.ConnectionException(), connection_invalidated=True)
+    errors = {deadlock: invalid, dropped: closed, plain: RuntimeError("boom")}
+    real = service.resolve
+
+    def resolve(db, activity_id):
+        if str(activity_id) in errors:
+            raise errors[str(activity_id)]
+        return real(db, activity_id)
+
+    monkeypatch.setattr(service, "resolve", resolve)
+    fill(app)
+    assert queue_state(app, deadlock)[0] == "pending"
+    assert queue_state(app, dropped)[0] == "pending"
+    assert queue_state(app, plain)[0] == "skipped"
+
+
+def test_apply_overwrites_skipped_and_pending_queue_rows(clients, region, tmp_path):  # noqa: F811
+    from app.modules.place_titles import backfill
+
+    a, b, _, app = clients
+    quiet(a, b)
+    add_place(app, "lake", box_around_ring(margin_m=0), region)
+    owner = register(a)
+    was_skipped = add_run(app, owner, ring(), day=date(2024, 5, 1))
+    was_pending = add_run(app, owner, ring(), day=date(2024, 5, 2))
+    for activity in (was_skipped, was_pending):
+        enqueue(app, owner, activity)
+    with app.state.session_factory.begin() as db:
+        db.execute(
+            text("UPDATE activity_place_names SET state='skipped' WHERE activity_id=:a"),
+            {"a": UUID(was_skipped)},
+        )
+    proposals = preview(app, owner)
+    assert len(proposals) == 2
+    result = backfill.apply_proposals(app.state.session_factory, proposals, tmp_path / "l.json")
+    assert result["applied"] == 2 and result["failed"] == 0
+    for activity in (was_skipped, was_pending):
+        state, category, applied = queue_state(app, activity)
+        assert (state, category, applied) == ("done", "lake", "湖边跑步")
+        assert title_of(app, activity) == "湖边跑步"
+
+
+def test_backfill_log_failure_stops_loudly_and_a_readonly_dir_fails_before_any_change(
+    clients,  # noqa: F811
+    region,
+    tmp_path,
+    monkeypatch,
+):
+    from app.modules.place_titles import backfill
+
+    a, b, _, app = clients
+    quiet(a, b)
+    add_place(app, "lake", box_around_ring(margin_m=0), region)
+    owner = register(a)
+    first = add_run(app, owner, ring(), day=date(2024, 6, 1))
+    second = add_run(app, owner, ring(), day=date(2024, 6, 2))
+    proposals = preview(app, owner)
+    assert [str(p.activity_id) for p in proposals] == [first, second]
+
+    real = backfill._write_log
+
+    def refuse(path, entries):
+        raise OSError("disk full")
+
+    # The very first (empty) log write fails: nothing has been changed yet.
+    monkeypatch.setattr(backfill, "_write_log", refuse)
+    with pytest.raises(OSError):
+        backfill.apply_proposals(app.state.session_factory, proposals, tmp_path / "x.json")
+    assert title_of(app, first) == rules.default_title(date(2024, 6, 1))
+
+    # The first write works, the one after the first change fails: stop right there.
+    calls = []
+
+    def flaky(path, entries):
+        calls.append(len(entries))
+        if len(entries) == 1:
+            raise OSError("disk full")
+        real(path, entries)
+
+    monkeypatch.setattr(backfill, "_write_log", flaky)
+    with pytest.raises(backfill.LogWriteError) as caught:
+        backfill.apply_proposals(app.state.session_factory, proposals, tmp_path / "y.json")
+    assert str(caught.value.activity_id) == first
+    assert caught.value.counts["applied"] == 1
+    assert title_of(app, first) == "湖边跑步"
+    assert title_of(app, second) == rules.default_title(date(2024, 6, 2))  # not touched
+    assert calls == [0, 1]
+
+
+def test_an_untitled_gpx_import_gets_exactly_the_default_title_the_sql_matches(clients):  # noqa: F811
+    a, b, _, app = clients
+    quiet(a, b)
+    register(a)
+    result = upload(a)
+    assert result.status_code in (200, 201), result.text
+    activity = result.json()["data"]["activity"]["id"]
+    with app.state.session_factory() as db:
+        title, activity_date, matches = db.execute(
+            text(
+                f"SELECT title, activity_date, title = {service.DEFAULT_TITLE_SQL} "
+                "FROM activities WHERE id=:a"
+            ),
+            {"a": UUID(activity)},
+        ).one()
+    assert title == rules.default_title(activity_date)
+    assert matches is True

@@ -7,9 +7,11 @@ Lock order is the same as everywhere else: users row first, then the queue row. 
 import json
 import logging
 import os
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from typing import Literal
 from uuid import UUID
 
 from sqlalchemy import text
@@ -25,6 +27,17 @@ class BackfillLogError(ValueError):
     """The revert log is unreadable or malformed."""
 
 
+Reason = Literal["matched", "no_match", "too_short", "edited", "retry", "error"]
+REASON_LABELS = {
+    "matched": "命中",
+    "no_match": "附近无地物",
+    "too_short": "太短",
+    "edited": "标题已被改过",
+    "retry": "测量超时",
+    "error": "测量出错",
+}
+
+
 @dataclass
 class Proposal:
     activity_id: UUID
@@ -34,6 +47,7 @@ class Proposal:
     category: str | None
     share: float | None
     new_title: str | None
+    reason: Reason = "matched"
 
 
 def _candidate_page(session_factory, owner, after, size):
@@ -76,6 +90,12 @@ def collect(session_factory, owner: UUID | None = None, limit: int | None = None
         for activity_id, run_owner, activity_date, title in rows:
             outcome = service._measure(session_factory, run_owner, activity_id)
             category, share = (outcome[1], outcome[2]) if outcome[0] == "found" else (None, None)
+            if outcome[0] == "found":
+                reason: Reason = "matched"
+            elif outcome[0] == "retry":
+                reason = "retry"
+            else:
+                reason = outcome[1]
             proposals.append(
                 Proposal(
                     activity_id,
@@ -85,6 +105,7 @@ def collect(session_factory, owner: UUID | None = None, limit: int | None = None
                     category,
                     share,
                     rules.title_for(category) if category else None,
+                    reason,
                 )
             )
         after = (rows[-1][2], rows[-1][0])
@@ -116,10 +137,70 @@ def _record_done(db, proposal: Proposal):
 
 
 def _write_log(log_path: Path, entries: list[dict]):
-    """Atomic: a reader (or a crash) never sees a half-written log."""
+    """Atomic and private (0600): a reader or a crash never sees a half-written log."""
     temporary = log_path.with_name(log_path.name + ".tmp")
-    temporary.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.unlink(missing_ok=True)
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(entries, ensure_ascii=False, indent=2))
+        handle.flush()
+        os.fsync(handle.fileno())
     os.replace(temporary, log_path)
+    try:  # best effort: make the rename itself durable
+        directory = os.open(log_path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    except OSError:
+        pass
+
+
+def default_log_dir() -> Path:
+    """Outside the repository: the log holds real activity ids and titles."""
+    base = os.environ.get("XDG_STATE_HOME")
+    root = Path(base) if base and Path(base).is_absolute() else Path.home() / ".local" / "state"
+    return root / "run_note" / "place-titles"
+
+
+def ensure_private_dir(path: Path) -> None:
+    os.makedirs(path, mode=0o700, exist_ok=True)
+    os.chmod(path, 0o700)
+
+
+def is_inside(path: Path, root: Path) -> bool:
+    return path.resolve().is_relative_to(root.resolve())
+
+
+class LogWriteError(RuntimeError):
+    """The log could not be updated after a title was already changed in the database."""
+
+    def __init__(self, counts: dict[str, int], activity_id: UUID):
+        super().__init__("log write failed")
+        self.counts = counts
+        self.activity_id = activity_id
+
+
+def format_summary(kind: str, counts: dict[str, int]) -> str:
+    """Chinese one-line summary for "apply" or "revert"."""
+    if kind == "apply":
+        return (
+            f"已改名 {counts.get('applied', 0)} 条 / 期间已被修改 "
+            f"{counts.get('changed_meanwhile', 0)} 条 / 失败 {counts.get('failed', 0)} 条 / "
+            f"未命中 {counts.get('unmatched', 0)} 条"
+        )
+    if kind == "revert":
+        return (
+            f"已还原 {counts.get('reverted', 0)} 条 / 已跳过（不存在或标题已变）"
+            f"{counts.get('skipped', 0)} 条 / 失败 {counts.get('failed', 0)} 条"
+        )
+    raise ValueError(kind)
+
+
+def format_preview(proposals: list[Proposal]) -> str:
+    tally = Counter(p.reason for p in proposals)
+    parts = "，".join(f"{label} {tally.get(key, 0)} 条" for key, label in REASON_LABELS.items())
+    return f"候选 {len(proposals)} 条：{parts}"
 
 
 def apply_proposals(session_factory, proposals: list[Proposal], log_path: Path) -> dict[str, int]:
@@ -160,7 +241,10 @@ def apply_proposals(session_factory, proposals: list[Proposal], log_path: Path) 
             }
         )
         # Rewrite after every change so an interrupted run still leaves a usable log.
-        _write_log(log_path, entries)
+        try:
+            _write_log(log_path, entries)
+        except OSError:
+            raise LogWriteError(counts, proposal.activity_id) from None
     return counts
 
 

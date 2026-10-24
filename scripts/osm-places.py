@@ -42,13 +42,14 @@ def main():
     target = make_url(settings.database_url)
     # Never print the connection URL, password or credentials.
     label = f"{target.host}:{target.port or 5432}/{target.database}"
-    engine = create_engine(settings.database_url, hide_parameters=True)
+    engine = create_engine(settings.database_url, hide_parameters=True, pool_pre_ping=True)
     try:
         # Short session: check the revision, then release the connection before the long osmium
         # runs so no transaction is left idle for minutes.
         with Session(engine) as db:
             current = db.scalars(text("SELECT version_num FROM alembic_version")).all()
             db.rollback()
+        engine.dispose()  # no pooled connection sits idle through the osmium runs
         if current != [get_expected_revision()]:
             raise SystemExit("数据库结构不是最新版本；未做任何更改")
         if (

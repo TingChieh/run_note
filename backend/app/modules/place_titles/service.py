@@ -5,6 +5,7 @@ from uuid import UUID
 
 import psycopg.errors
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 from app.modules.activities.service import lock_owner
 from app.modules.place_titles import rules
@@ -124,28 +125,43 @@ def _finish(db, activity_id, state, category=None, share=None, title=None):
     )
 
 
+def _is_transient(error: Exception) -> bool:
+    """Timeouts, lost connections and deadlocks: the run stays pending and is retried later."""
+    if isinstance(error, OperationalError) or getattr(error, "connection_invalidated", False):
+        return True
+    orig = getattr(error, "orig", None)
+    if isinstance(orig, psycopg.errors.QueryCanceled):
+        return True
+    state = getattr(orig, "sqlstate", None) or ""
+    return state.startswith("08") or state == "40P01"
+
+
 def _measure(session_factory, owner: UUID, activity_id: UUID):
-    """Read-only, no row locks. Returns ("skip",), ("found", category, share) or ("retry",)."""
+    """Read-only, no row locks.
+
+    Returns ("found", category, share), ("retry",) or ("skip", reason) with reason one of
+    "edited" (deleted, renamed or user-titled), "too_short", "no_match" and "error".
+    """
     try:
         with session_factory() as db:
             db.execute(text(f"SET LOCAL statement_timeout = '{STATEMENT_TIMEOUT}'"))
-            is_default = db.scalar(
+            row = db.execute(
                 text(
-                    f"""SELECT title = {DEFAULT_TITLE_SQL} FROM activities
+                    f"""SELECT title = {DEFAULT_TITLE_SQL}, distance_m FROM activities
                         WHERE id = :activity AND user_id = :owner"""
                 ),
                 {"activity": activity_id, "owner": owner},
-            )
-            if not is_default:  # deleted, renamed or user-titled
-                return ("skip",)
+            ).first()
+            if row is None or not row[0]:  # deleted, renamed or user-titled
+                return ("skip", "edited")
+            if row[1] is None or row[1] < rules.MIN_DISTANCE_M:
+                return ("skip", "too_short")
             found = resolve(db, activity_id)
-            return ("skip",) if found is None else ("found", *found)
+            return ("skip", "no_match") if found is None else ("found", *found)
     except Exception as error:  # one bad run must not block the others
         logger.warning("place title failed for one run (%s)", type(error).__name__)
-        if isinstance(getattr(error, "orig", None), psycopg.errors.QueryCanceled):
-            # A busy database must not exclude the run for good: retry it later, after the others.
-            return ("retry",)
-        return ("skip",)
+        # A busy or briefly unreachable database must not exclude the run for good.
+        return ("retry",) if _is_transient(error) else ("skip", "error")
 
 
 def _record(session_factory, owner: UUID, activity_id: UUID, outcome) -> bool:
