@@ -25,6 +25,7 @@ from app.modules.mifitness.metrics import normalize_summary, record_fingerprint,
 from app.modules.mifitness.model import MifitnessImport
 from app.modules.mifitness.parser import PARSER_VERSION
 from app.modules.mifitness.schema import MifitnessPreview
+from app.modules.place_titles.queue import enqueue as enqueue_place_title
 from app.modules.tcx.model import TcxImport
 
 SUPPLEMENT_FIELDS = {
@@ -239,6 +240,7 @@ def import_record(
                     point_count, segment_count = gpx_service.persist_segments(
                         db, activity.id, derived.segments
                     )
+                    enqueue_place_title(db, owner, activity.id)
             else:
                 activity = owned_activity(db, owner, enrich_activity_id)
                 updates = supplement(activity, summary, warnings)

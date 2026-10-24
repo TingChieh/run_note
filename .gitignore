@@ -30,3 +30,6 @@ test-results/
 /tmp/
 /backend/tmp/
 /dist-release/
+
+# Place title backfill logs hold real activity ids and titles (see docs/72).
+place-titles-*.json*
