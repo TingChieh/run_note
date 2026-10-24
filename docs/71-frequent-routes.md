@@ -15,7 +15,7 @@
 
 ## 接口与隐私
 
-四组只读 GET 端点（`limit` 默认 20、上限 100；`offset` 默认 0、上限 1000000；`sort` 取 `count|recent|distance`；出现其他查询参数返回 422）：
+四组只读 GET 端点（`limit` 默认 20、上限 100；`offset` 默认 0、上限 1000000；`sort` 取 `count|recent|distance`；本人工作区列表出现其他查询参数返回 422，展示端点与各详情端点不做该检查，见“已知后续事项”）：
 
 | 范围 | 列表 | 详情 |
 | --- | --- | --- |
@@ -44,13 +44,20 @@
 | 后端 `.venv/bin/ruff format --check app migrations tests` | 187 files already formatted |
 | 后端 `.venv/bin/alembic heads`（只读） | `0015_route_groups (head)`，唯一 head |
 | 集成（测试库）`test_route_groups.py`、`test_showcase.py`、`test_province_cache.py`、`test_footprint_snapshots.py`、`test_gpx_import.py`、`test_mifitness_import.py` | 109 passed，0 failed，0 skipped |
-| 集成（测试库）整个 `tests/integration` 一次 | 276 passed，1 failed，1 skipped，用时 162.86 s |
+| 集成（测试库）整个 `tests/integration` 一次（修复前） | 276 passed，1 failed，1 skipped，用时 162.86 s；修复提交 5ca13a7 之后未再整目录重跑 |
+| 集成（测试库）修复语句计数用例后的 7 文件序列 | 113 passed |
+| 集成（测试库）`test_gpx_import.py` + `test_route_groups.py` | 70 passed |
+| 集成（测试库）最后一轮修复后 `test_route_groups.py`、`test_footprint_snapshots.py`、`test_gpx_import.py`、`test_province_cache.py`、`test_showcase.py` | 95 passed，0 failed，0 skipped |
 | 前端 `pnpm test` | 33 个文件，198 passed |
 | 前端 `pnpm check` | 0 errors，0 warnings |
 | 前端 `pnpm build` | 成功（既有大体积 chunk 警告属已知状态） |
 | `pnpm exec playwright test --config playwright.route-groups.config.ts`（合成 API） | 9 passed |
 
-整个集成目录的 1 个失败：`tests/integration/test_gpx_import.py::test_fifty_thousand_distinct_points_persist_in_batches`，断言 `len(statements) < 250` 实得 373。该用例在上面的功能子集运行中同一版本通过，仅在整目录运行中失败；它统计 API 引擎上的 SQL 语句数。失败原因未调查，未重试；与本功能的关系未确认（语句计数可能受整目录运行时的并发后台活动影响，只是推测，未验证）。1 个 skipped 的用例同样未调查。
+整个集成目录当时的 1 个失败：`tests/integration/test_gpx_import.py::test_fifty_thousand_distinct_points_persist_in_batches`，断言 `len(statements) < 250` 实得 373。后续调查（`.superpowers` 任务报告）：计数监听挂在与应用共享的 API 引擎上，应用自己的后台 footprint worker 扫描（含新增的 `fill_route_groups`）在之前的测试留下待处理工作时会把语句计入。证据：该文件单独运行 88 条；先跑 `test_route_groups.py` 后 107 条；再跑另外六个文件后 324 条；而 5 万点插入本身只需约 50 条。已分类的部分里指纹 63、分组 56、省份缓存 2，另有 153 条未归类。因此“多出的语句来自后台扫描”是强烈的迹象，但并未被完全证明。测试侧修复（提交 5ca13a7）：该用例开头停止应用的 worker。修复后同一 7 文件序列 113 passed，`test_gpx_import.py` + `test_route_groups.py` 70 passed。**修复后没有重新运行整个 `tests/integration` 目录**，所以“整目录全绿”尚未被验证。
+
+整目录运行中的 1 个 skipped 是 `tests/integration/test_migrations.py` 中依赖 `TEST_SNAPSHOT_DATABASE_URL` 的参数化用例（该变量未设置），与本功能无关。
+
+后端另做了一处失败处理修正：指纹计算仅因 `statement_timeout`（`QueryCanceled`）失败时不再写入永久的 NULL 指纹，该活动不写行，下一次扫描会重试；其他错误仍写 NULL 指纹。新增集成用例覆盖超时与普通错误两条路径。指纹是派生数据，该改动只影响失败处理，不改变阈值与算法输出，因此没有升级 `ALGORITHM_VERSION`。卡片焦点环也补了不支持 `:has()` 时的降级（内部链接保留默认轮廓）。
 
 ### 未运行
 
@@ -65,10 +72,21 @@
 
 - 开发库 revision 低于代码 head（`0015_route_groups`），升级前 `/api/health` 与 `/api/v1/health/ready` 因 revision 不匹配返回 503。升级开发库需要用户明确授权，并按“备份 → 恢复演练 → 受控单次升级 → 复核”的顺序，降级不是默认回滚手段。
 - 阈值（15%、50 米、80%）只在合成样本上验证。已入组的“桥接”活动被删除后，组不会自动拆分。
-- 瞬时超时会让该次跑步写入永久 NULL 指纹（不再参与归类）；每个用户的 except 只记录日志，会吞掉丢失连接类错误；回退产生的单跑步组不会再被重新考虑合并；MATCH 与组内全部成员比较，成本随组大小增长；`assign_user` 的锁在最坏情况下最多持有约 20 x 10 秒；关闭服务时不会取消正在执行的 MATCH。
-- 总数 `total` 与内连接 LATERAL 在某成员缺少指纹几何时可能不一致；详情接口不拒绝未知查询参数；根展示的 owner 覆盖 422 检查仅在根路由上有测试，具名路由未单独断言。
-- 测试缺口：`sort=recent`、offset 越界、空用户、单次跑步 404、中位数与配速数值等断言不足；404 用例不断言错误码；迁移单测的列检查只是子串匹配；前端 `readRouteGroup` 对非 UUID、错误信封、非 JSON 的路径未测；卡片的 `:has()` 焦点环对旧浏览器无降级，也没有专门用例。
+- 每个用户的 except 只记录日志，会吞掉丢失连接类错误；回退产生的单跑步组不会再被重新考虑合并；MATCH 与组内全部成员比较，成本随组大小增长（见下）；`assign_user` 的锁在最坏情况下最多持有约 20 x 10 秒；关闭服务时不会取消正在执行的 MATCH。
+- 总数 `total` 与内连接 LATERAL 在某成员缺少指纹几何时可能不一致；根展示的 owner 覆盖 422 检查仅在根路由上有测试，具名路由未单独断言。
+- 测试缺口：`sort=recent`、offset 越界、空用户、单次跑步 404、中位数与配速数值等断言不足；404 用例不断言错误码；迁移单测的列检查只是子串匹配；前端 `readRouteGroup` 对非 UUID、错误信封、非 JSON 的路径未测；卡片的 `:has()` 焦点环没有专门用例。
 - 性能事件：首版指纹使用 `ST_SimplifyPreserveTopology`，在 30 万点的轨迹上使 PostgreSQL 长时间无响应，需要重启测试库实例。改为 `ST_RemoveRepeatedPoints` 加 `ST_Simplify` 并设置 2000 顶点上限后，在测试库中清空约 70 个待处理活动（含 30 万与 20 万点的轨迹）不到 1 秒。教训：针对用户轨迹的 SQL 必须是线性时间，因为 `statement_timeout` 无法中断 GEOS 的计算。
+
+### 已知后续事项
+
+- MATCH 与组内全部成员比较，成本随组大小增长，从未在数百次跑步的组上测量。
+- `fill_route_groups` 没有单次扫描的耗时上限：首次全量归类可能推迟下一次足迹快照扫描。
+- 滚动发布时若两个 `ALGORITHM_VERSION` 同时存在，每次扫描会互相删除对方的派生数据；目前只运行一个应用实例。
+- 单链接合并可能形成链式合并；桥接跑步被删除后，已发生的合并不会撤销。
+- 展示列表与各详情端点不拒绝未知查询参数，而本人工作区列表会返回 422。
+- 公开页的轮询端点每 5 秒执行两个 NOT EXISTS 扫描。
+- 若有一批 20 个以上持续超时的活动排在最前面，同一次扫描里排在它们之后的活动要等超时活动被处理或下一轮才能得到指纹（按创建时间排序、超时行不落库）。
+- 测试缺口：`sort=recent`、offset 越界、空用户、单次跑步 404、仅根路由有 422 owner 覆盖用例、`/workspace` 与 `/p/{username}` 包装页没有 UI 用例、没有真实浏览器下的暗色/键盘/375 px 检查。
 
 ## 未受影响的部分
 
