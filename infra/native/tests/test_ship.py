@@ -5,6 +5,7 @@ orchestration against a scripted stand-in for the server. No SSH, network or rea
 """
 
 import importlib.util
+import re
 import subprocess
 import tempfile
 import unittest
@@ -369,9 +370,24 @@ class Orchestration(unittest.TestCase):
         )
 
     def test_nothing_personal_is_baked_into_the_tool(self):
-        text = (REPO / "infra" / "native" / "ops" / "ship.py").read_text()
-        for needle in ("aisaka", "@outlook.com", "@gmail.com", "hk_server", "103.24", "/Users/"):
-            self.assertNotIn(needle, text)
+        """ship.py and this test carry no literal personal value: patterns only, plus whatever the
+        local private config (outside the repository) names, when that file exists."""
+        patterns = [
+            r"[\w.+-]+@(?!example\.(?:com|org)\b)[\w-]+\.\w+",  # any e-mail except placeholders
+            r"/Users/\w+",  # a home directory
+            r"\b(?!127\.)\d{1,3}(?:\.\d{1,3}){3}\b",  # a non-loopback IPv4 literal
+        ]
+        private = Path.home() / ".config" / "run-note" / "deploy.env"
+        if private.is_file():
+            for line in private.read_text().splitlines():
+                key, _, value = line.partition("=")
+                value = value.strip().strip("'\"")
+                if key.strip().endswith(("HOST", "DOMAIN", "EMAIL")) and len(value) >= 4:
+                    patterns.append(re.escape(value))
+        for path in (REPO / "infra" / "native" / "ops" / "ship.py", Path(__file__)):
+            text = path.read_text()
+            for pattern in patterns:
+                self.assertIsNone(re.search(pattern, text), f"{path.name} contains a personal value")
 
 
 if __name__ == "__main__":

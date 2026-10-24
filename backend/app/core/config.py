@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     app_env: Literal["development", "test", "production"] = "development"
     database_url: str
-    site_owner_email: str = "tingchieh77@outlook.com"
+    site_owner_email: str = "owner@example.com"
     site_origin: str = "http://localhost:5173"
     auth_rate_hash_key: SecretStr | None = None
     auth_trusted_proxies: tuple[str, ...] = ()
