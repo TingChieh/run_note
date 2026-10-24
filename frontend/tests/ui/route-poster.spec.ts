@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { sampleActivity, loginRunner } from '../fixtures/activities';
+import { expectPosterDialogFits, fitViewports } from '../fixtures/poster-fit';
 
 async function installPoster(page: Page, count = 251) {
   const state = { count, routeFailures: 0, hold: null as Promise<void> | null, summary401: false, emptyMonth: false,
@@ -500,3 +501,31 @@ test('signed-in accounts can only share their own records', async ({page, browse
     }
   } finally { await context.close(); }
 });
+
+for (const scheme of ['light', 'dark'] as const) for (const size of fitViewports) {
+  if (scheme === 'dark' && size.width !== 1440 && size.width !== 390) continue;
+  test(`dialog fits a ${size.width}x${size.height} ${scheme} viewport and keeps preview and styles reachable`, async ({ page }) => {
+    await installPoster(page); await page.setViewportSize(size); await page.emulateMedia({ colorScheme: scheme });
+    await open(page);
+    await generate(page);
+    const shots = process.env.POSTER_SHOTS;
+    if (shots) { await page.waitForTimeout(600); await page.screenshot({ path: `${shots}/route-${scheme}-${size.width}x${size.height}.png` }); }
+    await expectPosterDialogFits(page, dialog(page), dialog(page).locator('.poster-style').last());
+    if (shots) await page.screenshot({ path: `${shots}/route-${scheme}-${size.width}x${size.height}-end.png` });
+  });
+}
+
+for (const size of fitViewports) {
+  test(`sample state fits a ${size.width}x${size.height} viewport while the data is still loading`, async ({ page }) => {
+    const state = await installPoster(page); await page.setViewportSize(size);
+    let finish!: () => void; state.hold = new Promise(resolve => { finish = resolve; });
+    try {
+      await open(page);
+      await expect(sample(page)).toBeVisible();
+      await expect(dialog(page)).toContainText('示例效果，非你的数据');
+      const shots = process.env.POSTER_SHOTS;
+      if (shots) { await page.waitForTimeout(600); await page.screenshot({ path: `${shots}/route-sample-${size.width}x${size.height}.png` }); }
+      await expectPosterDialogFits(page, dialog(page), dialog(page).locator('.poster-style').last());
+    } finally { state.hold = null; finish(); }
+  });
+}
