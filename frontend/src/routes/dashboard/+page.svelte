@@ -113,7 +113,7 @@
       { href: '/activities/wall', title: '足迹墙', description: '每次跑步一张卡片，回顾全部足迹', icon: '▧' },
       { href: '/ai', title: 'AI 分析', description: '回顾运动数据，查看已有分析', icon: '✦' },
       { href: '/settings', title: '设置', description: '管理账号资料与公开个人主页', icon: '⚙' }
-    ].filter(feature => feature.href !== '/settings' || view.manage) as feature}
+    ].filter(feature => (feature.href !== '/settings' || view.manage) && (feature.href !== '/ai' || !!page.data.user)) as feature}
       <a href={view.href(feature.href)} class="feature-entrance">
         <span class="feature-icon" aria-hidden="true">{feature.icon}</span>
         <span class="min-w-0"><strong>{feature.title}</strong><span class="feature-description">{feature.description}</span></span>

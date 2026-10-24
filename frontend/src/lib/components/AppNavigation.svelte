@@ -37,7 +37,7 @@
     { href: '/ai', label: 'AI 分析', path: 'm12 3 3 6 6 3-6 3-3 6-3-6-6-3 6-3z' },
     { href: '/settings', label: '设置', path: 'M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6' }
     ,...(user && !user.is_admin ? [{ href: '/workspace/dashboard', label: '本人工作区', path: 'M3 10 12 3l9 7v10H3z' }] : [])
-  ].filter(item => item.href !== '/settings' || view.manage));
+  ].filter(item => (item.href !== '/settings' || view.manage) && (item.href !== '/ai' || !!user)));
   const active = (href: string) => href === '/' ? pathname === '/' : href === '/settings' && pathname.startsWith('/admin/users') ? true : href.endsWith('/activities') && pathname.startsWith(`${href}/wall`) ? false : pathname === href || pathname.startsWith(`${href}/`);
   afterNavigate(() => { open = false; });
   function close(event: KeyboardEvent) { if (event.key === 'Escape' && open) { open = false; toggle?.focus(); } }
