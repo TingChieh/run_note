@@ -392,3 +392,92 @@ def test_listing_pages_sorts_and_flags_unprocessed_runs_as_building(clients):  #
     assert (page["total"], len(page["items"])) == (2, 1)
     assert a.get("/api/v1/routes/groups?sort=nope").status_code == 422
     assert a.get("/api/v1/routes/groups?owner=x").status_code == 422
+
+
+LISTING_KEYS = {
+    "id",
+    "run_count",
+    "first_date",
+    "last_date",
+    "median_distance_m",
+    "best_duration_seconds",
+    "avg_duration_seconds",
+    "best_pace_seconds_per_km",
+    "avg_pace_seconds_per_km",
+    "shape",
+}
+RUN_KEYS = {
+    "activity_id",
+    "title",
+    "activity_date",
+    "distance_m",
+    "duration_seconds",
+    "avg_pace_seconds_per_km",
+    "coverage",
+}
+
+
+def username_of(app, owner):
+    with app.state.session_factory() as db:
+        return db.scalar(text("SELECT username FROM users WHERE id = :o"), {"o": UUID(owner)})
+
+
+def test_showcase_serves_only_the_site_owner_and_rejects_owner_overrides(clients):  # noqa: F811
+    a, b, _, app = clients
+    quiet(a, b)
+    owner = register(a)
+    other = register(b)
+    for day in (1, 2):
+        add_run(app, owner, ring(), day=date(2025, 11, day))
+    for day in (1, 2, 3):  # a second user with a bigger group must never show up in the root view
+        add_run(app, other, ring(east_m=900), day=date(2025, 11, day))
+    fill(app)
+    data = read(a, "/api/v1/showcase/routes/groups")
+    assert data["total"] == 1
+    assert [item["run_count"] for item in data["items"]] == [2]
+    assert set(data["items"][0]) == LISTING_KEYS
+    group = data["items"][0]["id"]
+    detail = read(a, f"/api/v1/showcase/routes/groups/{group}")
+    assert len(detail["runs"]) == 2
+    assert all(set(run) == RUN_KEYS for run in detail["runs"])
+    assert read(a, "/api/v1/routes/groups")["items"][0]["id"] == group
+    for key in ("owner", "user_id", "email", "username"):
+        assert a.get(f"/api/v1/showcase/routes/groups?{key}=1").status_code == 422
+    assert a.get(f"/api/v1/showcase/routes/groups/{uuid4()}").status_code == 404
+    other_group = read(b, "/api/v1/routes/groups")["items"][0]["id"]
+    assert a.get(f"/api/v1/showcase/routes/groups/{other_group}").status_code == 404
+
+
+def test_named_showcase_follows_showcase_enabled_and_never_leaks_other_users(clients):  # noqa: F811
+    a, b, _, app = clients
+    quiet(a, b)
+    owner = register(a)
+    other = register(b)
+    for day in (1, 2):
+        add_run(app, owner, ring(), day=date(2025, 12, day))
+    for day in (1, 2, 3):
+        add_run(app, other, ring(east_m=900), day=date(2025, 12, day))
+    fill(app)
+    mine = username_of(app, owner)
+    theirs = username_of(app, other)
+    data = read(a, f"/api/v1/showcase/users/{mine}/routes/groups")
+    assert data["total"] == 1 and data["items"][0]["run_count"] == 2
+    group = data["items"][0]["id"]
+    assert len(read(a, f"/api/v1/showcase/users/{mine}/routes/groups/{group}")["runs"]) == 2
+    assert a.get("/api/v1/showcase/users/nobody_here/routes/groups").status_code == 404
+    # the other user is not the site owner of client a: hidden until active and showcase_enabled
+    hidden = f"/api/v1/showcase/users/{theirs}/routes/groups"
+    assert a.get(hidden).status_code == 404
+    flags = "UPDATE users SET is_active = :active, showcase_enabled = :shown WHERE id = :o"
+    for active, shown, expected in ((True, False, 404), (False, True, 404), (True, True, 200)):
+        with app.state.session_factory.begin() as db:
+            db.execute(text(flags), dict(active=active, shown=shown, o=UUID(other)))
+        assert a.get(hidden).status_code == expected
+    shown = read(a, hidden)
+    assert shown["total"] == 1 and shown["items"][0]["run_count"] == 3
+    assert shown["items"][0]["id"] != group
+    # a group id of another subject is never served through a different named account
+    assert (
+        a.get(f"/api/v1/showcase/users/{mine}/routes/groups/{shown['items'][0]['id']}").status_code
+        == 404
+    )
