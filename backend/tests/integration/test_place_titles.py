@@ -669,3 +669,176 @@ def test_a_mostly_invalid_file_trips_the_circuit_breaker(clients):  # noqa: F811
         assert region_categories(app, region) == {"park": 1}
     finally:
         clear_places(app, region)
+
+
+def preview(app, owner):
+    from app.modules.place_titles import backfill
+
+    return backfill.collect(app.state.session_factory, owner=UUID(owner))
+
+
+def version_of(app, owner):
+    with app.state.session_factory() as db:
+        return db.scalar(
+            text("SELECT activity_data_version FROM users WHERE id=:o"), {"o": UUID(owner)}
+        )
+
+
+def test_backfill_previews_without_writing_then_applies_and_reverts(clients, region, tmp_path):  # noqa: F811
+    from app.modules.place_titles import backfill
+
+    a, b, _, app = clients
+    quiet(a, b)
+    add_place(app, "lake", box_around_ring(margin_m=0), region)
+    owner = register(a)
+    lakeside = add_run(app, owner, ring(), day=date(2025, 7, 1))
+    named = add_run(app, owner, ring(), day=date(2025, 7, 2), title="我的晨跑")
+    before = version_of(app, owner)
+    proposals = preview(app, owner)
+    assert [str(p.activity_id) for p in proposals] == [lakeside]  # user-named run is no candidate
+    assert proposals[0].new_title == "湖边跑步"
+    assert title_of(app, lakeside) == rules.default_title(date(2025, 7, 1))  # preview wrote nothing
+    assert queue_state(app, lakeside) is None and version_of(app, owner) == before
+
+    log = tmp_path / "log.json"
+    expected = {"applied": 1, "changed_meanwhile": 0, "unmatched": 0, "failed": 0}
+    assert backfill.apply_proposals(app.state.session_factory, proposals, log) == expected
+    assert json.loads(log.read_text(encoding="utf-8")) == [
+        {
+            "activity_id": lakeside,
+            "old_title": rules.default_title(date(2025, 7, 1)),
+            "new_title": "湖边跑步",
+        }
+    ]
+    assert title_of(app, lakeside) == "湖边跑步" and title_of(app, named) == "我的晨跑"
+    assert queue_state(app, lakeside)[0] == "done" and version_of(app, owner) == before + 1
+    assert preview(app, owner) == []  # done: not repeated
+
+    with app.state.session_factory.begin() as db:
+        db.execute(text("UPDATE activities SET title='手改' WHERE id=:a"), {"a": UUID(lakeside)})
+    assert backfill.revert_log(app.state.session_factory, log)["reverted"] == 0  # edited since
+    with app.state.session_factory.begin() as db:
+        db.execute(
+            text("UPDATE activities SET title='湖边跑步' WHERE id=:a"), {"a": UUID(lakeside)}
+        )
+    result = backfill.revert_log(app.state.session_factory, log)
+    assert result == {"reverted": 1, "skipped": 0, "failed": 0}
+    assert title_of(app, lakeside) == rules.default_title(date(2025, 7, 1))
+    assert version_of(app, owner) == before + 2
+    assert queue_state(app, lakeside)[0] == "skipped" and queue_state(app, lakeside)[2] is None
+    again = backfill.revert_log(app.state.session_factory, log)
+    assert again == {"reverted": 0, "skipped": 1, "failed": 0}
+    assert version_of(app, owner) == before + 2
+
+
+def test_backfill_unmatched_stay_retryable_and_edited_titles_are_not_overwritten(
+    clients,  # noqa: F811
+    region,
+    tmp_path,
+):
+    from app.modules.place_titles import backfill
+
+    a, b, _, app = clients
+    quiet(a, b)
+    owner = register(a)
+    unmatched = add_run(app, owner, ring(), day=date(2025, 8, 1))
+    proposals = preview(app, owner)
+    assert proposals and proposals[0].new_title is None  # no places in this region: no match
+    log = tmp_path / "l.json"
+    result = backfill.apply_proposals(app.state.session_factory, proposals, log)
+    assert result["unmatched"] == 1 and result["applied"] == 0
+    assert json.loads(log.read_text(encoding="utf-8")) == []
+    assert queue_state(app, unmatched) is None
+    add_place(app, "lake", box_around_ring(margin_m=0), region)  # now it matches
+    retry = preview(app, owner)
+    assert [(str(p.activity_id), p.new_title) for p in retry] == [(unmatched, "湖边跑步")]
+
+    with app.state.session_factory.begin() as db:  # the user renames it before apply
+        db.execute(text("UPDATE activities SET title='我改的' WHERE id=:a"), {"a": UUID(unmatched)})
+    result = backfill.apply_proposals(app.state.session_factory, retry, tmp_path / "m.json")
+    assert result == {"applied": 0, "changed_meanwhile": 1, "unmatched": 0, "failed": 0}
+    assert title_of(app, unmatched) == "我改的" and queue_state(app, unmatched) is None
+
+
+def test_backfill_one_failing_run_is_counted_and_the_others_still_apply(
+    clients,  # noqa: F811
+    region,
+    tmp_path,
+    monkeypatch,
+):
+    from app.modules.place_titles import backfill
+
+    a, b, _, app = clients
+    quiet(a, b)
+    add_place(app, "lake", box_around_ring(margin_m=0), region)
+    owner = register(a)
+    bad = add_run(app, owner, ring(), day=date(2025, 9, 1))
+    good = add_run(app, owner, ring(), day=date(2025, 9, 2))
+    proposals = preview(app, owner)
+    assert len(proposals) == 2
+    real = service.apply_title
+
+    def apply_title(db, owner_id, activity_id, new_title):
+        if str(activity_id) == bad:
+            db.execute(text("SELECT 1 / 0"))  # a real error: the transaction is aborted
+        return real(db, owner_id, activity_id, new_title)
+
+    monkeypatch.setattr(service, "apply_title", apply_title)
+    log = tmp_path / "log.json"
+    result = backfill.apply_proposals(app.state.session_factory, proposals, log)
+    assert result == {"applied": 1, "changed_meanwhile": 0, "unmatched": 0, "failed": 1}
+    assert title_of(app, bad) == rules.default_title(date(2025, 9, 1))
+    assert title_of(app, good) == "湖边跑步"
+    assert [e["activity_id"] for e in json.loads(log.read_text(encoding="utf-8"))] == [good]
+    assert not (tmp_path / "log.json.tmp").exists()
+
+
+def test_backfill_pages_through_candidates_and_honours_the_limit(clients, region):  # noqa: F811
+    from app.modules.place_titles import backfill
+
+    a, b, _, app = clients
+    quiet(a, b)
+    add_place(app, "lake", box_around_ring(margin_m=0), region)
+    owner = register(a)
+    ids = [add_run(app, owner, ring(), day=date(2024, 1, day)) for day in (1, 2, 3, 4, 5)]
+    assert [str(p.activity_id) for p in preview(app, owner)] == ids
+    assert backfill.PAGE_SIZE > 2
+    original = backfill.PAGE_SIZE
+    backfill.PAGE_SIZE = 2  # force several pages
+    try:
+        assert [str(p.activity_id) for p in preview(app, owner)] == ids
+        limited = backfill.collect(app.state.session_factory, owner=UUID(owner), limit=3)
+        assert [str(p.activity_id) for p in limited] == ids[:3]
+    finally:
+        backfill.PAGE_SIZE = original
+
+
+def test_backfill_rejects_a_malformed_log_before_changing_anything(clients, region, tmp_path):  # noqa: F811
+    from app.modules.place_titles import backfill
+
+    a, b, _, app = clients
+    quiet(a, b)
+    add_place(app, "lake", box_around_ring(margin_m=0), region)
+    owner = register(a)
+    run = add_run(app, owner, ring(), day=date(2025, 12, 1))
+    with app.state.session_factory.begin() as db:
+        db.execute(text("UPDATE activities SET title='湖边跑步' WHERE id=:a"), {"a": UUID(run)})
+    good = {"activity_id": run, "old_title": "旧", "new_title": "湖边跑步"}
+    bad_logs = [
+        "not json",
+        json.dumps({"activity_id": run}),
+        json.dumps([good, {"activity_id": "nope", "old_title": "a", "new_title": "b"}]),
+        json.dumps([good, {"activity_id": run, "old_title": "a"}]),
+    ]
+    for content in bad_logs:
+        path = tmp_path / "bad.json"
+        path.write_text(content, encoding="utf-8")
+        with pytest.raises(backfill.BackfillLogError, match="还原日志"):
+            backfill.revert_log(app.state.session_factory, path)
+        assert title_of(app, run) == "湖边跑步"  # the valid first entry was not applied either
+    gone = tmp_path / "gone.json"
+    gone.write_text(
+        json.dumps([{"activity_id": str(uuid4()), "old_title": "a", "new_title": "b"}]),
+        encoding="utf-8",
+    )
+    assert backfill.revert_log(app.state.session_factory, gone)["skipped"] == 1
