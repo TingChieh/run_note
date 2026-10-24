@@ -45,17 +45,20 @@ async function capture(page: Page, name: string) {
   await page.screenshot({path:`test-results/dashboard-${name}.png`,fullPage:false});
 }
 test('home opens data summary, preserves filters and exposes all feature entrances', async ({ page, request }) => {
-  const redirect = await request.get('/?year=2026&metric=count', { maxRedirects: 0 });
-  expect(redirect.status()).toBe(303);
-  expect(redirect.headers().location).toBe('/dashboard?year=2026&metric=count');
+  const home = await request.get('/?year=2026&metric=count', { maxRedirects: 0 });
+  expect(home.status()).toBe(200);
+  const redirect = await request.get('/dashboard?year=2026&metric=count', { maxRedirects: 0 });
+  expect(redirect.status()).toBe(308);
+  expect(new URL(redirect.headers().location ?? '', 'http://127.0.0.1').pathname).toBe('/');
+  expect(new URL(redirect.headers().location ?? '', 'http://127.0.0.1').search).toBe('?year=2026&metric=count');
   await page.goto('/');
-  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page).toHaveURL(/\/(\?|$)/);
   await fixture(page);
   await page.goto('/admin');
   await page.getByLabel('邮箱', { exact: true }).fill('runner@example.com');
   await page.getByLabel('密码', { exact: true }).fill('Synthetic-ui-password-2026');
   await page.getByRole('button', { name: '登录', exact: true }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/(\?|$)/);
   await page.goto('/?year=2026&metric=count');
   await expect(page.getByRole('heading', { level: 1, name: '数据汇总', exact: true })).toBeVisible();
   await expect(page.getByTestId('annual-distance')).toHaveText('10.2 km');

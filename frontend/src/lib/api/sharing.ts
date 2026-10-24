@@ -5,7 +5,6 @@ export interface PublicProfile { username: string; display_name: string; bio: st
 export interface PublicList { items: PublicActivity[]; total: number; limit: number; offset: number }
 export interface Share { link_id: string; created_at: string; expires_at: string | null; revoked_at: string | null; status: 'active' | 'revoked' | 'expired' }
 export interface CreatedShare { link_id: string; share_url: string; expires_at: string | null }
-export const publicProfilePath = (name: string) => `/u/${encodeURIComponent(name)}`;
 export function parsePublicActivity(value: unknown): PublicActivity {
   const v = value as PublicActivity;
   if (!v || typeof v.id !== 'string' || typeof v.title !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v.activity_date) || typeof v.author?.username !== 'string' || typeof v.author?.display_name !== 'string' || v.has_shared_route !== false) throw new ActivityError('公开服务返回无效响应',502);

@@ -104,7 +104,7 @@ test('device theme applies to the first page and switches live without losing a 
 test('private and public pages have readable surfaces, warnings and keyboard focus in dark mode', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
   await installActivities(page); await installAI(page); await installPublic(page); await loginRunner(page);
-  for (const path of ['/dashboard?year=2026', '/activities', '/settings', '/ai', '/u/runner', `/public/activities/${sampleActivity.id}`, '/shared/synthetic-token']) {
+  for (const path of ['/?year=2026', '/activities', '/settings', '/ai', `/public/activities/${sampleActivity.id}`, '/shared/synthetic-token']) {
     await page.goto(path); await dark(page);
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     await expect(page.locator('header[data-auth-ready="true"]')).toHaveCount(1);

@@ -131,4 +131,20 @@ grep -q "^RESTIC_PASSWORD_FILE=$WORK/backups/restic.password\$" "$envfile" || fa
 grep -q 'off-site copy verified' "$WORK/finish.log" || fail "finish did not verify"
 "$ops/offsite.sh" verify || fail "verify failed after finish"
 
+step "8. verify as the database account does not need to see backup.env (root loaded it already)"
+# As root, backup.env is read first and the check then runs as postgres, whose view of the root-only
+# directory makes the file invisible. Reproduce that: the settings come from the environment and
+# the file does not exist.
+python3 - "$envfile" "$repo" <<'PY'
+import re, sys
+path, repo = sys.argv[1:3]
+text = re.sub(r"^RESTIC_REPOSITORY=.*$", "RESTIC_REPOSITORY=" + repo, open(path).read(), flags=re.M)
+open(path, "w").write(text)
+PY
+env RUNNOTE_BACKUP_ENV_LOADED=1 BACKUP_ENV="$WORK/etc/invisible.env" PGDATABASE=rn_offsite \
+  RESTIC_REPOSITORY="$repo" RESTIC_PASSWORD_FILE="$WORK/backups/restic.password" \
+  "$ops/offsite.sh" verify --no-drill > "$WORK/invisible.log" 2>&1 \
+  || { cat "$WORK/invisible.log" >&2; fail "verify needed to see backup.env after it was already loaded"; }
+! grep -q 'does not exist' "$WORK/invisible.log" || fail "verify still checks for backup.env"
+
 echo "=== ALL OFFSITE E2E STEPS PASSED" >&2

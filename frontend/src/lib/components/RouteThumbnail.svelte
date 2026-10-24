@@ -31,15 +31,15 @@
   });
 </script>
 <div class="route-thumbnail" class:compact bind:this={element}>
-  <span class="route-watermark" aria-hidden="true">RUNNOTE</span>
+  <span class="route-watermark" aria-hidden="true"></span>
   {#if drawing}<svg viewBox="0 0 360 220" role="img" aria-label={`${activity.title || '未命名活动'}的路线轮廓`}>{#each drawing.paths as path}<path d={path} />{/each}{#each drawing.points as [x,y]}<circle cx={x} cy={y} r="3" />{/each}</svg>
   {:else}<div class="thumbnail-empty"><span aria-hidden="true">{activity.has_route?'↗':'◷'}</span><p>{loading?'正在描绘足迹…':error||'没有路线'}</p></div>{/if}
 </div>
 <style>
   .route-thumbnail{position:relative;aspect-ratio:360/220;overflow:hidden;display:grid;place-items:center;background:var(--route-thumbnail);border-radius:1rem;color:var(--primary);}
-  .route-watermark{position:absolute;bottom:.6rem;right:.7rem;opacity:.22;letter-spacing: var(--tracking-caps);font-size: var(--text-caption);font-weight: var(--weight-bold);}
+  .route-watermark{position:absolute;right:.7rem;bottom:.6rem;width:4.8rem;height:.7rem;background:var(--primary);opacity:.45;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 78 10'%3E%3Ctext x='0' y='8' font-size='8' font-family='sans-serif' font-weight='700' letter-spacing='1.2'%3ERUNNOTE%3C/text%3E%3C/svg%3E") center / contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 78 10'%3E%3Ctext x='0' y='8' font-size='8' font-family='sans-serif' font-weight='700' letter-spacing='1.2'%3ERUNNOTE%3C/text%3E%3C/svg%3E") center / contain no-repeat;}
   svg{display:block;width:100%;height:100%;padding:.65rem;}svg path{fill:none;stroke:var(--primary);stroke-width:3;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;}svg circle{fill:var(--primary);}
-  .thumbnail-empty{text-align:center;}.thumbnail-empty>span{font-size: var(--text-title);opacity:.4;}.thumbnail-empty p{font-size: var(--text-caption);opacity:.8;}
+  .thumbnail-empty{text-align:center;color:var(--foreground);}.thumbnail-empty>span{font-size: var(--text-title);color:var(--primary);}.thumbnail-empty p{font-size: var(--text-caption);color:var(--foreground);}
   .compact { width: 104px; aspect-ratio: 4/3; border-radius: .625rem; }
   .compact .route-watermark { display: none; }
   .compact svg { padding: .25rem; }

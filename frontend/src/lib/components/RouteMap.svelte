@@ -99,7 +99,7 @@
   onDestroy(() => { disposed = true; stopTheme?.(); basemapController?.destroy(); observer?.disconnect(); if (resizeFrame) cancelAnimationFrame(resizeFrame); for (const marker of markers) marker.remove(); map?.remove(); map = undefined; });
 </script>
 <div class="relative mt-4 overflow-hidden rounded-xl border border-border" data-glass-stable class:spacious class:embedded>
-  <div bind:this={container} class="route-map w-full" role="img" aria-label="活动路线地图，绿色为路线，起与终标记起终点" data-testid={loaded ? 'route-map-ready' : 'route-map-loading'}></div>
+  <div bind:this={container} class="route-map w-full" role="region" aria-label="活动路线地图，绿色为路线，起与终标记起终点" data-testid={loaded ? 'route-map-ready' : 'route-map-loading'}></div>
   <div class="absolute left-3 top-3"><button type="button" onclick={toggleBasemap} disabled={!routeReady || !!error} aria-pressed={basemapEnabled} class="button-secondary">{basemapEnabled ? '关闭底图' : '开启底图'}</button></div>
   <div class="absolute bottom-3 left-3"><button type="button" onclick={recenter} disabled={!routeReady || !!error} aria-label="回到路线" title="回到路线" class="button-secondary locate-button"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3.5" /><circle cx="12" cy="12" r="8" /><path d="M12 1.5v3 M12 19.5v3 M1.5 12h3 M19.5 12h3" /></svg></button></div>
   <BasemapPicker preference={basemapPreference} style={basemapStyle} status={basemapStatus} />

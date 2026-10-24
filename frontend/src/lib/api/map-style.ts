@@ -34,6 +34,37 @@ export function watchBasemapPreference(update: (value: BasemapPreference) => voi
   return () => { window.removeEventListener(preferenceEvent, changed); window.removeEventListener('storage', stored); };
 }
 
+const numericCompare = new Set(['==', '!=', '>', '>=', '<', '<=']);
+function isBareGet(value: unknown): value is ['get', string] {
+  return Array.isArray(value) && value.length === 2 && value[0] === 'get' && typeof value[1] === 'string';
+}
+// OpenFreeMap rank filters compare ['get','rank'] with a number. Features that omit the
+// property evaluate to null and MapLibre logs a type warning. Skip the comparison unless
+// the property is actually a number, which keeps the previous "no match" result.
+function guardNullNumbers(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    const [op, ...rest] = value;
+    if (typeof op === 'string' && numericCompare.has(op) && rest.length === 2) {
+      const left = guardNullNumbers(rest[0]);
+      const right = guardNullNumbers(rest[1]);
+      const property = isBareGet(left) ? left : isBareGet(right) ? right : null;
+      const other = property === left ? right : left;
+      if (property && typeof other === 'number') return ['case', ['==', ['typeof', property], 'number'], [op, left, right], false];
+      return [op, left, right];
+    }
+    return [op, ...rest.map(guardNullNumbers)];
+  }
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, guardNullNumbers(item)]));
+  return value;
+}
+function guardLayer<T extends { filter?: unknown; paint?: unknown; layout?: unknown }>(layer: T): T {
+  return { ...layer,
+    ...(layer.filter === undefined ? {} : { filter: guardNullNumbers(layer.filter) }),
+    ...(layer.paint === undefined ? {} : { paint: guardNullNumbers(layer.paint) }),
+    ...(layer.layout === undefined ? {} : { layout: guardNullNumbers(layer.layout) })
+  };
+}
+
 // Validate the external structure before touching MapLibre; preserve source-layer names.
 export function prepareBasemapStyle(value: unknown, prefix: string): StyleSpecification {
   if (!value || typeof value !== 'object') throw new Error('Invalid basemap style');
@@ -51,7 +82,7 @@ export function prepareBasemapStyle(value: unknown, prefix: string): StyleSpecif
   }
   return { ...style,
     sources: Object.fromEntries(Object.entries(style.sources).map(([id, source]) => [prefix + id, source])),
-    layers: style.layers.map(layer => ({ ...layer, id: prefix + layer.id, ...('source' in layer ? { source: prefix + layer.source } : {}) }))
+    layers: style.layers.map(layer => guardLayer({ ...layer, id: prefix + layer.id, ...('source' in layer ? { source: prefix + layer.source } : {}) }))
   };
 }
 export const BASEMAP_TIMEOUT_MS = 8000;

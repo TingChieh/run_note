@@ -6,7 +6,7 @@
   import { formatDistance, formatDuration, activityDuration, formatPace, type Activity, type Route, type ActivityError } from '#lib/api/activities.ts';
   import { cardTilt } from '#lib/styles/card-tilt.ts';
   import RouteThumbnail from './RouteThumbnail.svelte';
-  let { activity, route = null, managedRoute = false, routeLoading = false, routeError = '', compact = false, onselect, selected = false, centered, interactive = false, onauthrequired }: { onselect?: () => void; selected?: boolean; centered?: boolean; interactive?: boolean; onauthrequired?: (cause: ActivityError) => void; activity: Activity; compact?: boolean; route?: Route | null; managedRoute?: boolean; routeLoading?: boolean; routeError?: string } = $props();
+  let { activity, route = null, managedRoute = false, routeLoading = false, routeError = '', compact = false, headingLevel = 3, onselect, selected = false, centered, interactive = false, onauthrequired }: { onselect?: () => void; selected?: boolean; centered?: boolean; interactive?: boolean; onauthrequired?: (cause: ActivityError) => void; activity: Activity; compact?: boolean; headingLevel?: 2 | 3; route?: Route | null; managedRoute?: boolean; routeLoading?: boolean; routeError?: string } = $props();
   const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
   let title = $derived(activity.title || '未命名活动');
   // Imported runs default to "跑步 · <date>"; the deck already shows the date.
@@ -18,7 +18,7 @@
 </script>
 {#snippet content()}
   <RouteThumbnail {activity} initialRoute={route} {managedRoute} {routeLoading} {routeError} {onauthrequired} />
-  <div class="wall-card-copy"><p class="wall-date">{dateLabel} {#if !interactive}<span aria-hidden="true">↗</span>{/if}</p><h3 {title}>{heading}</h3><strong class="wall-distance">{formatDistance(activity.distance_m)}</strong><p class="wall-facts"><span><span class:sr-only={interactive}>{'用时 '}</span>{formatDuration(activityDuration(activity))}</span><span class="fact-separator" aria-hidden="true">·</span><span><span class:sr-only={interactive}>{'配速 '}</span>{formatPace(activity.avg_pace_seconds_per_km)}</span></p></div>
+  <div class="wall-card-copy"><p class="wall-date">{dateLabel} {#if !interactive}<span aria-hidden="true">↗</span>{/if}</p>{#if headingLevel === 2}<h2 class="wall-title" {title}>{heading}</h2>{:else}<h3 class="wall-title" {title}>{heading}</h3>{/if}<strong class="wall-distance">{formatDistance(activity.distance_m)}</strong><p class="wall-facts"><span><span class:sr-only={interactive}>{'用时 '}</span>{formatDuration(activityDuration(activity))}</span><span class="fact-separator" aria-hidden="true">·</span><span><span class:sr-only={interactive}>{'配速 '}</span>{formatPace(activity.avg_pace_seconds_per_km)}</span></p></div>
 {/snippet}
 {#if onselect}
   <button type="button" class="wall-card" class:compact class:interactive class:centered={interactive && (centered ?? selected)}
@@ -30,11 +30,11 @@
   <a class="wall-card" class:compact href={view.href(`/activities/${activity.id}`)}>{@render content()}</a>
 {/if}
 <style>
-  .wall-card{display:block;min-width:0;height:100%;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);padding:.7rem;transition:border-color .15s ease;}.wall-card:hover{border-color:var(--primary);}.wall-card-copy{padding:.7rem .4rem .3rem;}.wall-date{display:flex;justify-content:space-between;color:var(--muted-foreground);font-size: var(--text-caption);font-variant-numeric:tabular-nums;}h3{font-size: var(--text-body);font-weight: var(--weight-semibold);margin-top:.4rem;overflow-wrap:anywhere;}.wall-distance{display:block;font-size: var(--text-stat);font-weight: var(--weight-bold);letter-spacing: 0;margin-top:.6rem;color:var(--primary);font-variant-numeric:tabular-nums;}.wall-facts{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.3rem;margin:.4rem 0;color:var(--muted-foreground);font-size: var(--text-caption);font-variant-numeric:tabular-nums;}
+  .wall-card{display:block;min-width:0;height:100%;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);padding:.7rem;transition:border-color .15s ease;}.wall-card:hover{border-color:var(--primary);}.wall-card-copy{padding:.7rem .4rem .3rem;}.wall-date{display:flex;justify-content:space-between;color:var(--muted-foreground);font-size: var(--text-caption);font-variant-numeric:tabular-nums;}.wall-title{font-size: var(--text-body);font-weight: var(--weight-semibold);margin-top:.4rem;overflow-wrap:anywhere;}.wall-distance{display:block;font-size: var(--text-stat);font-weight: var(--weight-bold);letter-spacing: 0;margin-top:.6rem;color:var(--primary);font-variant-numeric:tabular-nums;}.wall-facts{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.3rem;margin:.4rem 0;color:var(--muted-foreground);font-size: var(--text-caption);font-variant-numeric:tabular-nums;}
   .compact{padding:var(--space-2);}
   .compact :global(.route-thumbnail){aspect-ratio:2/1;border-radius:var(--radius-control);}
   .compact .wall-card-copy{padding:var(--space-2) var(--space-1) var(--space-1);}
-  .compact h3{font-size: var(--text-body);margin-top:var(--space-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .compact .wall-title{font-size: var(--text-body);margin-top:var(--space-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .compact .wall-distance{font-size: var(--text-stat);margin-top:var(--space-2);}
   .compact .wall-facts{margin:var(--space-1) 0;gap:var(--space-1);}
   /* Deck typography follows the card width (each stack slot is a size container). */
@@ -49,7 +49,7 @@
   .interactive :global(.route-thumbnail svg){padding:var(--space-1);}
   .interactive :global(.route-thumbnail svg path){stroke-width:3.5;}
   .interactive .wall-date{font-size: var(--text-caption);}
-  .interactive h3{font-size: var(--text-body-fluid);white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;}
+  .interactive .wall-title{font-size: var(--text-body-fluid);white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;}
   .interactive .wall-distance{font-size: var(--text-stat-fluid);}
   .interactive .wall-facts{flex-wrap:nowrap;justify-content:flex-start;white-space:nowrap;font-size: var(--text-caption-fluid);}
   .interactive .fact-separator{display:inline;}

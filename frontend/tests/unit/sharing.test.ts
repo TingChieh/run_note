@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { parsePublicActivity, publicProfilePath, sharingWrite } from '../../src/lib/api/sharing';
+import { parsePublicActivity, sharingWrite } from '../../src/lib/api/sharing';
 import { isProtected } from '../../src/lib/api/auth';
 describe('public sharing', () => {
   it('anonymous pages are outside the authentication gate', () => {
     for (const path of ['/u/runner','/shared/token','/public/activities/id']) expect(isProtected(path)).toBe(false);
-    expect(publicProfilePath('a/b')).toBe('/u/a%2Fb');
   });
   it('rejects invalid summaries and coordinate exposure', () => {
     const value = { id:'1',title:'Run',activity_date:'2024-01-01',distance_m:'1000',elapsed_seconds:null,avg_pace_seconds_per_km:null,author:{username:'runner',display_name:'Runner'},has_shared_route:false };
