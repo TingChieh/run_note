@@ -38,6 +38,8 @@ busy 时防重复提交，失败保留草稿，字段错误与输入关联。写
 
 适用：账户资料、公开范围、站点与用户管理。参考 [settings](../../frontend/src/routes/settings/+page.svelte)、[site](../../frontend/src/routes/settings/site/+page.svelte)、[用户管理](../../frontend/src/routes/admin/users/+page.svelte)。结构：根布局渲染的 PageHeader（黄色页头，底部为玻璃分段标签）→ 页面内容。
 
+页面级模式/排序切换（`/footprints` 的地图模式、`/routes` 的排序）沿用同一外观：在页面自己的 `PageHeader` 的 `footer` 插槽里放 `.settings-tabs` 按钮组（`role="group"`、中文 `aria-label`、`aria-pressed`），不再在页面内自写 `.mode-switch` 样式。按钮版标签不会被全局按钮材质涂上白底（由 `liquid-glass.css` 的 `:where(:not(.settings-tabs > button))` 排除保证）；增强器不可用时选中项回落为主色填充，不会留下无底色的白字。表格工具栏里的列表筛选（如用户管理）仍用 `.compact-switch`。
+
 - **账户设置**：顶部身份卡（头像、昵称、用户名、邮箱/时区/主页标签）→ 两列 `.settings-grid`（个人资料、公开个人主页含开关）→ 账户安全（修改密码默认折叠）。
 - **站点设置**：左列站点文字与“默认外观”卡片选项，右列吸顶的实时预览与图标上传；手机上纵排。
 - **用户管理**：一行工具栏（搜索、状态分段、总数）→ 紧凑表格（首字母头像、两个开关、行内小按钮）→ 分页与折叠说明。

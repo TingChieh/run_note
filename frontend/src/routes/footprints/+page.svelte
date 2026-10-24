@@ -65,9 +65,13 @@
   });
 </script>
 <svelte:head><title>{pageTitle('个人足迹', page.data.site)}</title></svelte:head>
-<PageHeader title="个人足迹" description="沿着跑过的路，看看你的运动版图。" />
+<PageHeader title="个人足迹" description="沿着跑过的路，看看你的运动版图。">
+  {#snippet footer()}
+    <div class="settings-tabs" role="group" aria-label="地图模式"><button type="button" aria-pressed={mode==='tracks'} disabled={!mounted} onclick={()=>changeMode('tracks')}>轨迹叠加</button><button type="button" aria-pressed={mode==='heatmap'} disabled={!mounted} onclick={()=>changeMode('heatmap')}>运动热力图</button></div>
+  {/snippet}
+</PageHeader>
 <div class="footprints-page">
-  <div class="mode-row"><div class="mode-switch" role="group" aria-label="地图模式"><button type="button" aria-pressed={mode==='tracks'} disabled={!mounted} onclick={()=>changeMode('tracks')}>轨迹叠加</button><button type="button" aria-pressed={mode==='heatmap'} disabled={!mounted} onclick={()=>changeMode('heatmap')}>运动热力图</button></div><p>{mode==='tracks'?'看每次跑步的路线':'看不同记录经过的区域'}</p></div>
+  <p class="mode-hint" data-testid="footprint-mode-hint">{mode==='tracks'?'看每次跑步的路线':'看不同记录经过的区域'}</p>
   {#if loading}<PageSkeleton title="正在读取个人足迹…" />{/if}
   {#if status==='pending'}<FeedbackState kind="loading" title="正在生成全部足迹…"><p>导入后会自动更新，完成后即可查看全部记录。页面会自动检查进度。</p><button onclick={reload} class="button-secondary mt-3">重新读取足迹</button></FeedbackState>{/if}
   {#if message}<FeedbackState kind="error" title={message}><button onclick={reload} class="button-secondary">重新读取足迹</button></FeedbackState>{/if}
@@ -85,12 +89,7 @@
 </div>
 <style>
   .footprints-page { display: grid; gap: var(--space-4); margin-top: var(--space-6); min-width: 0; }
-  .mode-row { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.75rem; }
-  .mode-row p { color:var(--muted-foreground); font-size: var(--text-small); }
-  .mode-switch { display:inline-flex; gap:.25rem; background:var(--muted); padding:.25rem; border-radius:var(--radius-control); }
-  .mode-switch button { min-height:2.75rem; padding:.5rem 1rem; font-weight: var(--weight-semibold); border-radius:.45rem; color:var(--muted-foreground); }
-  .mode-switch button[aria-pressed='true'] { color:var(--primary-foreground); background:var(--primary); }
-  .mode-switch button:not([aria-pressed='true']):hover { color:var(--primary); background:var(--surface); }
+  .mode-hint { color:var(--muted-foreground); font-size: var(--text-small); }
   summary { cursor:pointer; font-weight: var(--weight-semibold); }
   .snapshot-status { display:flex; align-items:center; flex-wrap:wrap; gap:.5rem; }
   .result-summary { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:.5rem; font-size: var(--text-small); }
@@ -106,6 +105,5 @@
   .map-notes { border-top:1px solid var(--border); padding-top:1rem; font-size: var(--text-small); }
   .map-notes summary { color:var(--primary); }
   .notes-content { display:grid; gap:.75rem; color:var(--muted-foreground); margin-top:.75rem; line-height: var(--line-height-body); }
-  @media(max-width:767px) { .mode-row p { display:none; } .result-summary { display:grid; gap:.5rem; } }
-  @media(max-width:359px) { .mode-switch button { padding:.5rem .75rem; } }
+  @media(max-width:767px) { .mode-hint { display:none; } .result-summary { display:grid; gap:.5rem; } }
 </style>

@@ -47,11 +47,14 @@
   });
 </script>
 <svelte:head><title>{pageTitle('常跑路线', page.data.site)}</title></svelte:head>
-<PageHeader title="常跑路线" description="形状重合的跑步会自动归为同一条路线。" />
+<PageHeader title="常跑路线" description="形状重合的跑步会自动归为同一条路线。">
+  {#snippet footer()}
+    <div class="settings-tabs" role="group" aria-label="排序方式">
+      {#each SORTS as item}<button type="button" aria-pressed={sort === item.value} onclick={() => choose(item.value)}>{item.label}</button>{/each}
+    </div>
+  {/snippet}
+</PageHeader>
 <div class="routes-page">
-  <div class="mode-switch compact-switch route-sort" role="group" aria-label="排序方式">
-    {#each SORTS as item}<button type="button" aria-pressed={sort === item.value} onclick={() => choose(item.value)}>{item.label}</button>{/each}
-  </div>
   {#if loading}<PageSkeleton title="正在读取常跑路线…" />{/if}
   {#if message}<FeedbackState kind="error" title={message}><button class="button-secondary" onclick={() => load()}>重新读取</button></FeedbackState>{/if}
   {#if data}
@@ -66,7 +69,6 @@
 </div>
 <style>
   .routes-page { display: grid; gap: var(--space-4); margin-top: var(--space-6); min-width: 0; }
-  .route-sort { justify-self: start; max-width: 100%; }
   .total { color: var(--muted-foreground); font-size: var(--text-small); }
   .grid { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr)); }
 </style>

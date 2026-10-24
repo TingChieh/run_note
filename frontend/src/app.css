@@ -502,9 +502,9 @@
   .save-bar-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
   .save-status { flex: 1 1 10rem; padding: 0; background: none; font-size: var(--text-small); color: var(--muted-foreground); }
   .settings-tabs { display: flex; flex-wrap: wrap; width: max-content; max-width: 100%; overflow-x: clip; gap: .25rem; margin-top: var(--space-4); padding: .25rem; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--surface) 45%, transparent); }
-  .settings-tabs a { display: inline-flex; align-items: center; min-height: 2.5rem; padding: .375rem 1.125rem; border-radius: var(--radius-pill); font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--sport-heading-ink); transition: background-color var(--transition-control), color var(--transition-control), box-shadow var(--transition-control); }
-  .settings-tabs a:hover { background: color-mix(in srgb, var(--surface) 70%, transparent); }
-  .settings-tabs a[aria-current='page'] { color: var(--primary-foreground); background: var(--primary); box-shadow: 0 .125rem .5rem var(--glass-shadow); }
+  .settings-tabs :is(a, button) { display: inline-flex; align-items: center; min-height: 2.5rem; padding: .375rem 1.125rem; border-radius: var(--radius-pill); font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--sport-heading-ink); transition: background-color var(--transition-control), color var(--transition-control), box-shadow var(--transition-control); }
+  .settings-tabs :is(a, button):hover { background: color-mix(in srgb, var(--surface) 70%, transparent); }
+  .settings-tabs :is(a[aria-current='page'], button[aria-pressed='true']) { color: var(--primary-foreground); background: var(--primary); box-shadow: 0 .125rem .5rem var(--glass-shadow); }
 }
 
 /* Compact text field set: input, textarea and select share one height, radius and focus ring. */
@@ -570,5 +570,5 @@
 /* Glass lens under the active tab or segment (see enhanceSegmented in lib/styles/liquid-glass-indicator.ts). */
 @layer components {
   .settings-tabs, .mode-switch.compact-switch { position: relative; }
-  .settings-tabs.rn-liquid-navigation a[aria-current='page'], .mode-switch.compact-switch.rn-liquid-navigation button[aria-pressed='true'] { background: transparent !important; box-shadow: none !important; }
+  .settings-tabs.rn-liquid-navigation :is(a[aria-current='page'], button[aria-pressed='true']), .mode-switch.compact-switch.rn-liquid-navigation button[aria-pressed='true'] { background: transparent !important; box-shadow: none !important; }
 }
