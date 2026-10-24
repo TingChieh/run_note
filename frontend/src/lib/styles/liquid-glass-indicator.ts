@@ -1,4 +1,4 @@
-import { createGlass, createSpring } from '../vendor/liquidglass/liquid-glass.js';
+import { createGlass, createSpring, engine } from '../vendor/liquidglass/liquid-glass.js';
 import { glassOptics, type GlassSettings } from './liquid-glass-settings.ts';
 
 /** Decorative copy of known navigation/option labels; never copies arbitrary page content. */
@@ -15,7 +15,14 @@ export function createIndicator(host: HTMLElement, items: HTMLElement[], initial
   });
   host.append(outline, copy);
   const motion = matchMedia('(prefers-reduced-motion: reduce)');
-  const glass = createGlass(copy, { clip: true, ...glassOptics(initial, .55), chroma: 0 });
+  // WebKit applies filter:url() before the displacement image has painted, so the capsule
+  // is an empty outline. Clip the already-coloured copy instead of filtering it.
+  const glass = engine === 'webkit' ? null : createGlass(copy, { clip: true, ...glassOptics(initial, .55), chroma: 0 });
+  const clipCopy = (x: number, y: number, width: number, height: number, radius: number) => {
+    const boxWidth = copy.clientWidth, boxHeight = copy.clientHeight;
+    if (boxWidth < 1 || boxHeight < 1) return;
+    copy.style.clipPath = `inset(${y}px ${Math.max(0, boxWidth - x - width)}px ${Math.max(0, boxHeight - y - height)}px ${x}px round ${radius}px)`;
+  };
   let index = start, pos = 0, velocity = 0, press = 0, alive = true;
   function render() {
     if (!alive || !items[index]) return;
@@ -25,7 +32,9 @@ export function createIndicator(host: HTMLElement, items: HTMLElement[], initial
     const height = item.offsetHeight + (horizontal ? 0 : stretch) + 6 * press;
     const x = horizontal ? pos - stretch / 2 + 2 * press : item.offsetLeft + 2 * press;
     const top = horizontal ? item.offsetTop - 3 * press : pos - stretch / 2 - 3 * press;
-    glass.update({ x, y: top - host.scrollTop, width, height, radius: height / 2 });
+    const lensY = top - host.scrollTop;
+    if (glass) glass.update({ x, y: lensY, width, height, radius: height / 2 });
+    else clipCopy(x, lensY, width, height, height / 2);
     Object.assign(outline.style, { width: `${width}px`, height: `${height}px`, borderRadius: `${height / 2}px`, transform: `translate(${x}px, ${top}px)` });
   }
   const spring = createSpring(0, (value, speed) => { pos = value; velocity = speed; render(); }, { stiffness: 380, damping: 30 });
@@ -49,8 +58,8 @@ export function createIndicator(host: HTMLElement, items: HTMLElement[], initial
   host.addEventListener('scroll', refresh, { passive: true });
   refresh();
   return { move, refresh, press(value: number) { pressure.set(motion.matches ? 0 : value); },
-    update(settings: GlassSettings) { glass.update({ ...glassOptics(settings, .55), chroma: 0 }); },
-    destroy() { alive = false; resize.disconnect(); host.removeEventListener('scroll', refresh); motion.removeEventListener('change', changedMotion); spring.stop(); pressure.stop(); glass.destroy(); copy.remove(); outline.remove(); }
+    update(settings: GlassSettings) { glass?.update({ ...glassOptics(settings, .55), chroma: 0 }); },
+    destroy() { alive = false; resize.disconnect(); host.removeEventListener('scroll', refresh); motion.removeEventListener('change', changedMotion); spring.stop(); pressure.stop(); glass?.destroy(); copy.style.clipPath = ''; copy.remove(); outline.remove(); }
   };
 }
 

@@ -10,11 +10,13 @@ export function liquidGlass(root: HTMLElement) {
     if (disposed) return;
     const selector = 'button:not(.rn-switch):not(.compact-switch > button):not(.maplibregl-ctrl-zoom-in):not(.maplibregl-ctrl-zoom-out):not([data-date]):not(.history-card):not(.wall-card):not(.rn-menu-option):not(.rn-select-toggle), a.button-primary, a.button-secondary, .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in)';
     const preferences = [matchMedia('(prefers-reduced-transparency: reduce)'), matchMedia('(forced-colors: active)')];
+    const nativeSelect = matchMedia('(hover: none) and (pointer: coarse)');
+    const keepsBlur = (element: HTMLElement) => element.matches('button.bg-primary, .button-primary, button.save, button.apply-button, a.button-primary');
     const motion = matchMedia('(prefers-reduced-motion: reduce)');
     const controls = new Map<HTMLElement, { update(): void; render(): void; release(): void; surface: HTMLElement; destroy(): void }>();
     const backdrops = new Map<HTMLElement, number>();
     const enhancements = new Map<HTMLElement, { update(settings: GlassSettings): void; destroy(): void }>();
-    const enhancementSelector = '.app-sidebar nav, .settings-tabs, .compact-switch, .rn-slider > input[type="range"], .rn-switch-track, select:not([multiple])';
+    const enhancementSelector = '.app-sidebar nav, .settings-tabs, .compact-switch, .rn-slider > input[type="range"], .rn-switch-track, select:not([multiple]):not([inert])';
     let settings = readGlassSettings();
     const previousOpacity = root.style.getPropertyValue('--glass-opacity');
     let frame = 0;
@@ -54,8 +56,13 @@ export function liquidGlass(root: HTMLElement) {
       const copy = source ? span('rn-glass-copy') : null;
       if (copy) layer.append(copy);
       const copied = !!copy;
+      // Backdrop URL filters exist only in Chromium. A blur on every control freezes WebKit,
+      // so only its primary actions stay frosted. Firefox keeps the original CSS blur fallback.
+      const staticGlass = engine === 'webkit' && !copied && !keepsBlur(element);
+      const frosted = !copied && engine !== 'blink' && !staticGlass;
+      if (staticGlass) element.classList.add('rn-glass-static');
       const glass = createGlass(layer, { mode: copied ? 'content' : 'backdrop', clip: true,
-        ...optics(element), chroma: copied ? settings.chroma : 0, mapScale: 1, fallback: fallback() });
+        ...optics(element), chroma: copied ? settings.chroma : 0, mapScale: 1, fallback: frosted ? fallback() : 'none' });
       const bleed = 12;
       let press = 0, alive = true, geometry = '';
       const syncCopy = () => {
@@ -110,7 +117,8 @@ export function liquidGlass(root: HTMLElement) {
       const update = () => {
         geometry = '';
         if (!copied && engine !== 'blink') {
-          layer.style.backdropFilter = fallback(); layer.style.setProperty('-webkit-backdrop-filter', fallback());
+          const filter = staticGlass ? 'none' : fallback();
+          layer.style.backdropFilter = filter; layer.style.setProperty('-webkit-backdrop-filter', filter);
         }
         if (element.matches(':disabled, [aria-disabled="true"]')) release();
         render();
@@ -141,7 +149,8 @@ export function liquidGlass(root: HTMLElement) {
         }
       }
       for (const [element, enhancement] of enhancements) {
-        if (!enabled || !root.contains(element) || !element.matches(enhancementSelector)) {
+        const native = element instanceof HTMLSelectElement && (nativeSelect.matches || typeof HTMLElement.prototype.showPopover !== 'function');
+        if (!enabled || native || !root.contains(element) || !element.matches(enhancementSelector)) {
           enhancement.destroy(); enhancements.delete(element);
         }
       }
@@ -154,7 +163,7 @@ export function liquidGlass(root: HTMLElement) {
         const existing = enhancements.get(element);
         if (existing) { existing.update(settings); continue; }
         if (element instanceof HTMLSelectElement) {
-          if ('showPopover' in HTMLElement.prototype && element.size <= 1 && !element.querySelector('optgroup')) enhancements.set(element, enhanceSelect(element, root, settings));
+          if (!nativeSelect.matches && typeof HTMLElement.prototype.showPopover === 'function' && element.size <= 1 && !element.querySelector('optgroup')) enhancements.set(element, enhanceSelect(element, root, settings));
         } else if (element instanceof HTMLInputElement) enhancements.set(element, enhanceSlider(element, settings));
         else if (element.classList.contains('rn-switch-track')) enhancements.set(element, enhanceSwitch(element, settings));
         else if (element.matches('.settings-tabs, .compact-switch')) enhancements.set(element, enhanceSegmented(element, settings));
@@ -171,6 +180,7 @@ export function liquidGlass(root: HTMLElement) {
     const releaseAll = () => controls.forEach(control => control.release());
     const relayout = () => { controls.forEach(control => control.render()); align(); };
     preferences.forEach(query => query.addEventListener('change', schedule));
+    nativeSelect.addEventListener('change', schedule);
     motion.addEventListener('change', releaseAll);
     const unwatchTheme = watchSystemTheme(() => align());
     window.addEventListener('blur', releaseAll); window.addEventListener('scroll', align, { capture: true, passive: true });
@@ -178,7 +188,7 @@ export function liquidGlass(root: HTMLElement) {
     reconcile();
     cleanup = () => {
       observer.disconnect(); resize.disconnect(); unwatch();
-      preferences.forEach(query => query.removeEventListener('change', schedule)); motion.removeEventListener('change', releaseAll);
+      preferences.forEach(query => query.removeEventListener('change', schedule)); nativeSelect.removeEventListener('change', schedule); motion.removeEventListener('change', releaseAll);
       unwatchTheme();
       window.removeEventListener('blur', releaseAll); window.removeEventListener('scroll', align, true); window.removeEventListener('resize', relayout);
       if (frame) cancelAnimationFrame(frame); if (alignFrame) cancelAnimationFrame(alignFrame);
