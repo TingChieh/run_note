@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.db.schema import get_expected_revision
-from app.modules.place_titles.osm import import_region
+from app.modules.place_titles.osm import RegionImportError, import_region
 
 FILTERS = [
     "nwr/natural=water,coastline,bay",
@@ -36,41 +36,49 @@ def main():
         raise SystemExit("未找到 osmium 命令行工具，请先安装 osmium-tool；未做任何更改")
     if not args.pbf.is_file():
         raise SystemExit("找不到指定的 OSM 文件；未做任何更改")
+    if not sys.stdin.isatty():
+        raise SystemExit("导入需要交互式终端；未做任何更改")
     settings = Settings()
     target = make_url(settings.database_url)
     # Never print the connection URL, password or credentials.
     label = f"{target.host}:{target.port or 5432}/{target.database}"
     engine = create_engine(settings.database_url, hide_parameters=True)
     try:
+        # Short session: check the revision, then release the connection before the long osmium
+        # runs so no transaction is left idle for minutes.
         with Session(engine) as db:
-            if db.scalars(text("SELECT version_num FROM alembic_version")).all() != [
-                get_expected_revision()
-            ]:
-                raise SystemExit("Schema is not current; no changes made")
-            if not sys.stdin.isatty():
-                raise SystemExit("Import requires an interactive terminal; no changes made")
-            if (
-                input(f"Replace region '{args.region}' at {label}? Type the database name: ")
-                != target.database
-            ):
-                raise SystemExit("Cancelled; no changes made")
-            skipped: Counter = Counter()
-            with tempfile.TemporaryDirectory() as work:
-                filtered, lines = Path(work) / "filtered.osm.pbf", Path(work) / "features.geojsons"
+            current = db.scalars(text("SELECT version_num FROM alembic_version")).all()
+            db.rollback()
+        if current != [get_expected_revision()]:
+            raise SystemExit("数据库结构不是最新版本；未做任何更改")
+        if (
+            input(f"Replace region '{args.region}' at {label}? Type the database name: ")
+            != target.database
+        ):
+            raise SystemExit("已取消；未做任何更改")
+        skipped: Counter = Counter()
+        with tempfile.TemporaryDirectory() as work:
+            filtered, lines = Path(work) / "filtered.osm.pbf", Path(work) / "features.geojsons"
+            try:
+                subprocess.run(
+                    ["osmium", "tags-filter", str(args.pbf), *FILTERS, "-o", str(filtered)],
+                    check=True,
+                )
+                subprocess.run(
+                    ["osmium", "export", str(filtered), "-f", "geojsonseq", "-o", str(lines)],
+                    check=True,
+                )
+            except subprocess.CalledProcessError:
+                raise SystemExit("osmium 执行失败；未做任何更改") from None
+            # No database connection is open above. A fresh transaction replaces the region and
+            # commits right after the file has been read.
+            with Session(engine) as db, lines.open(encoding="utf-8") as handle:
                 try:
-                    subprocess.run(
-                        ["osmium", "tags-filter", str(args.pbf), *FILTERS, "-o", str(filtered)],
-                        check=True,
-                    )
-                    subprocess.run(
-                        ["osmium", "export", str(filtered), "-f", "geojsonseq", "-o", str(lines)],
-                        check=True,
-                    )
-                except subprocess.CalledProcessError:
-                    raise SystemExit("osmium 执行失败；未做任何更改") from None
-                with lines.open(encoding="utf-8") as handle:
                     written = import_region(db, args.region, handle, skipped)
-            db.commit()
+                except RegionImportError as error:
+                    db.rollback()
+                    raise SystemExit(str(error)) from None
+                db.commit()
         print(f"Region '{args.region}' replaced at {label}: {written}")
         if skipped:
             print(f"Skipped features by reason: {dict(skipped)}")

@@ -1,5 +1,6 @@
 """Place-based run naming against a real PostGIS test database: synthetic geometry only."""
 
+import json
 import time
 from datetime import date
 from math import cos, hypot, radians
@@ -476,8 +477,6 @@ def test_a_run_deleted_after_measuring_is_dropped_without_error(clients, region,
 
 
 def osm_line(properties, geometry):
-    import json
-
     feature = {"type": "Feature", "properties": properties, "geometry": geometry}
     return "\x1e" + json.dumps(feature) + "\n"
 
@@ -551,5 +550,122 @@ def test_import_region_isolates_bad_and_oversized_features(clients, monkeypatch)
         # the two good parks survive the failures between them; the 50-point river is too large
         assert written == {"park": 2}
         assert skipped == {"invalid": 1, "too_large": 1}
+    finally:
+        clear_places(app, region)
+
+
+def region_categories(app, region):
+    with app.state.session_factory() as db:
+        return dict(
+            db.execute(
+                text(
+                    "SELECT category, count(*) FROM place_features WHERE region = :r "
+                    "GROUP BY category"
+                ),
+                {"r": region},
+            ).all()
+        )
+
+
+def test_import_region_stores_multipolygons_rivers_and_coastlines(clients):  # noqa: F811
+    from app.modules.place_titles import osm
+
+    a, b, _, app = clients
+    quiet(a, b)
+    lake = {"natural": "water", "water": "lake"}
+    multi = {
+        "type": "MultiPolygon",
+        "coordinates": [[square(121.0, 31.0, 0.01)], [square(121.1, 31.0, 0.01)]],
+    }
+    river = {"type": "LineString", "coordinates": [[121.0, 31.0 + i * 0.001] for i in range(10)]}
+    coast = {"type": "LineString", "coordinates": [[122.0, 30.0 + i * 0.01] for i in range(10)]}
+    lines = [
+        osm_line(lake, multi),
+        osm_line({"waterway": "river"}, river),
+        osm_line({"natural": "coastline"}, coast),
+    ]
+    region = f"synthetic-{uuid4().hex[:8]}"
+    try:
+        with app.state.session_factory.begin() as db:
+            written = osm.import_region(db, region, lines)
+        assert written == {"lake": 1, "river": 1, "sea": 1}
+        assert region_categories(app, region) == {"lake": 1, "river": 1, "sea": 1}
+    finally:
+        clear_places(app, region)
+
+
+def test_reimporting_one_region_leaves_other_regions_alone(clients):  # noqa: F811
+    from app.modules.place_titles import osm
+
+    a, b, _, app = clients
+    quiet(a, b)
+    lake = {"natural": "water", "water": "lake"}
+    polygon = {"type": "Polygon", "coordinates": [square(121.0, 31.0, 0.01)]}
+    first, second = f"synthetic-{uuid4().hex[:8]}", f"synthetic-{uuid4().hex[:8]}"
+    try:
+        with app.state.session_factory.begin() as db:
+            osm.import_region(db, first, [osm_line(lake, polygon)] * 2)
+            osm.import_region(db, second, [osm_line(lake, polygon)] * 3)
+        with app.state.session_factory.begin() as db:
+            osm.import_region(db, first, [osm_line(lake, polygon)])
+        assert region_categories(app, first) == {"lake": 1}
+        assert region_categories(app, second) == {"lake": 3}
+    finally:
+        clear_places(app, first)
+        clear_places(app, second)
+
+
+def test_a_systemic_error_rolls_back_and_keeps_the_previous_region(clients):  # noqa: F811
+    from app.modules.place_titles import osm
+
+    a, b, _, app = clients
+    quiet(a, b)
+    lake = {"natural": "water", "water": "lake"}
+    polygon = {"type": "Polygon", "coordinates": [square(121.0, 31.0, 0.01)]}
+    region = f"synthetic-{uuid4().hex[:8]}"
+
+    class TimingOut:
+        """Delegates to the session but cancels the second feature like a statement timeout."""
+
+        def __init__(self, db):
+            self.db, self.inserts = db, 0
+
+        def begin_nested(self):
+            return self.db.begin_nested()
+
+        def execute(self, statement, params=None):
+            if statement is osm.INSERT_SQL:
+                self.inserts += 1
+                if self.inserts == 2:
+                    raise DBAPIError("statement", {}, psycopg.errors.QueryCanceled())
+            return self.db.execute(statement, params)
+
+    try:
+        with app.state.session_factory.begin() as db:
+            osm.import_region(db, region, [osm_line(lake, polygon)] * 2)
+        with pytest.raises(DBAPIError):
+            with app.state.session_factory.begin() as db:
+                osm.import_region(TimingOut(db), region, [osm_line(lake, polygon)] * 3)
+        assert region_categories(app, region) == {"lake": 2}  # the replace was rolled back
+    finally:
+        clear_places(app, region)
+
+
+def test_a_mostly_invalid_file_trips_the_circuit_breaker(clients):  # noqa: F811
+    from app.modules.place_titles import osm
+
+    a, b, _, app = clients
+    quiet(a, b)
+    park = {"leisure": "park"}
+    broken = {"type": "Polygon", "coordinates": [[[121.0, 31.0], [121.1, 31.0], [121.0, 31.0]]]}
+    good = {"type": "Polygon", "coordinates": [square(121.0, 31.0, 0.01)]}
+    region = f"synthetic-{uuid4().hex[:8]}"
+    try:
+        with app.state.session_factory.begin() as db:
+            osm.import_region(db, region, [osm_line(park, good)])
+        with pytest.raises(osm.RegionImportError):
+            with app.state.session_factory.begin() as db:
+                osm.import_region(db, region, [osm_line(park, broken)] * 150)
+        assert region_categories(app, region) == {"park": 1}
     finally:
         clear_places(app, region)
