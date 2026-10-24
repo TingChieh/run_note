@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_identity, get_session
+from app.api.dependencies import get_read_identity, get_session
 from app.core.errors import ApiError
 from app.core.responses import ApiResponse
 from app.modules.activities.router import envelope
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/v1/footprints", tags=["footprints"])
 @router.get("/all", response_model=ApiResponse[AllFootprintView])
 def read_all(
     request: Request,
-    identity: Annotated[tuple, Depends(get_identity)],
+    identity: Annotated[tuple, Depends(get_read_identity)],
     db: Annotated[Session, Depends(get_session)],
     mode: Literal["tracks", "heatmap"] = "tracks",
 ):
@@ -33,7 +33,7 @@ def read_all(
 @router.get("/provinces")
 def provinces(
     request: Request,
-    identity: Annotated[tuple, Depends(get_identity)],
+    identity: Annotated[tuple, Depends(get_read_identity)],
     db: Annotated[Session, Depends(get_session)],
     year: Annotated[int | None, Query(ge=1900, le=2100)] = None,
 ):
@@ -45,7 +45,7 @@ def provinces(
 @router.get("")
 def read_footprints(
     request: Request,
-    identity: Annotated[tuple, Depends(get_identity)],
+    identity: Annotated[tuple, Depends(get_read_identity)],
     db: Annotated[Session, Depends(get_session)],
     date_from: date,
     date_to: date,
