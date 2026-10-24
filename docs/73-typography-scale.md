@@ -28,7 +28,7 @@
 - 大数字：hero、目标、页面主距离 40 / 700；汇总卡片与足迹墙距离 28 / 700；活动列表与详情侧栏的行内数字 20 / 700。一律 `tabular-nums`。宽度 ≤640px 时，活动详情页的 h1 和首屏距离降到 28 / 700，390px 宽时标题回到一行。
 - 登录页 h1 与其他页面同为 40 / 700。原先登录页是 30 / 600。
 - 按钮：14 / 600。dashboard 上原先 20 / 600 的年份箭头、16 / 400 的功能入口和日历日格、16 / 600 的目标按钮，都收到这一档。
-- 详情页底部的足迹卡片标题允许换行。足迹墙网格里的紧凑卡片在窄列上仍用省略号。
+- 详情页底部的足迹卡片标题允许换行，并随卡片宽度在 14–16px 之间缩放。用时/配速行与大数字同样用流式字号，上限仍是阶梯上的 12 和 28。足迹墙网格里的紧凑卡片在窄列上仍用省略号。
 
 海报画布按像素坐标排版，不套用 CSS 字号阶梯；字重仍只能是 400/500/600/700。弹簧刚度等非文字数值不受这套规则约束。
 
@@ -71,5 +71,14 @@
 - `pnpm build`：构建成功。既有的大于 500 kB chunk 警告仍在。
 - `pnpm exec playwright test --config playwright.ui.config.ts`：167 项通过。
 - `pnpm exec playwright test --config playwright.ui.config.ts tests/ui/ui-shell.spec.ts -g "mobile menu supports keyboard" --repeat-each=10`：10 项通过。
+- 足迹卡片高度：`tests/ui/footprint-card-deck.spec.ts` 的 mixed metrics 用例通过。窄卡用时/配速改为 `--text-caption-fluid`，标题和大数字分别用 `--text-body-fluid`、`--text-stat-fluid`。
+
+2026-10-24 流式字号后再运行：
+
+- `pnpm check`：0 错误、0 警告。
+- `pnpm test`：34 个文件、201 项通过。
+- `pnpm lint:style`：通过。
+- `pnpm build`：构建成功。既有的大于 500 kB chunk 警告仍在。
+- `pnpm exec playwright test --config playwright.ui.config.ts`：167 项通过。
 
 未在 macOS 上用苹方复看。字重上限 600/700 是针对「苹方最高 600、可变字体数字更粗」的代码层修正。设计系统像素快照（`playwright.design-system.config.ts`）未作为本次回归运行。开发服务与生产站点未加载这套改动。未 rebase `main`。

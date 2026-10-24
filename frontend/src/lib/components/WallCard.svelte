@@ -49,9 +49,9 @@
   .interactive :global(.route-thumbnail svg){padding:var(--space-1);}
   .interactive :global(.route-thumbnail svg path){stroke-width:3.5;}
   .interactive .wall-date{font-size: var(--text-caption);}
-  .interactive h3{font-size: var(--text-small);white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;}
-  .interactive .wall-distance{font-size: var(--text-stat);}
-  .interactive .wall-facts{flex-wrap:nowrap;justify-content:flex-start;white-space:nowrap;font-size: var(--text-caption);}
+  .interactive h3{font-size: var(--text-body-fluid);white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;}
+  .interactive .wall-distance{font-size: var(--text-stat-fluid);}
+  .interactive .wall-facts{flex-wrap:nowrap;justify-content:flex-start;white-space:nowrap;font-size: var(--text-caption-fluid);}
   .interactive .fact-separator{display:inline;}
   .interactive :global(.thumbnail-empty>span){font-size: var(--text-stat);line-height: var(--line-height-solid);}
   .interactive :global(.thumbnail-empty p){font-size: var(--text-caption);line-height: var(--line-height-title);}
