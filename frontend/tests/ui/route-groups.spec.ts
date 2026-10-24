@@ -109,3 +109,17 @@ test('keeps polling after a transient error until the building banner clears', a
   await expect(page.getByTestId('route-card').first()).toBeVisible();
   await expect(page.getByTestId('route-building')).toHaveCount(0);
 });
+
+test('sort buttons use the shared glass segmented control with a selected item', async ({ page }) => {
+  await fixture(page); await loginRunner(page);
+  await page.goto('/routes');
+  const group = page.getByRole('group', { name: '排序方式' });
+  await expect(group).toHaveClass(/compact-switch/);
+  await expect(page.getByTestId('route-card').first()).toBeVisible();
+  const selected = group.getByRole('button', { name: '跑得最多' }), other = group.getByRole('button', { name: '最近跑过' });
+  await expect(selected).toHaveAttribute('aria-pressed', 'true');
+  await expect(other).toHaveAttribute('aria-pressed', 'false');
+  // The shared enhancer adds the glass lens inside the container; the page no longer styles the buttons itself.
+  await expect(group).toHaveClass(/rn-liquid-navigation/);
+  await expect(group.locator('.rn-moving-copy')).toHaveCount(1);
+});
