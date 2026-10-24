@@ -8,7 +8,7 @@ export function liquidGlass(root: HTMLElement) {
   void Promise.all([import('../vendor/liquidglass/liquid-glass.js'), import('./liquid-glass-indicator.ts'),
     import('./liquid-glass-slider.ts'), import('./liquid-glass-select.ts'), import('./liquid-glass-switch.ts')]).then(([{ createGlass, createSpring, engine }, { enhanceNavigation, enhanceSegmented }, { enhanceSlider }, { enhanceSelect }, { enhanceSwitch }]) => {
     if (disposed) return;
-    const selector = 'button:not(.rn-switch):not(.compact-switch > button):not(.maplibregl-ctrl-zoom-in):not(.maplibregl-ctrl-zoom-out):not([data-date]):not(.history-card):not(.wall-card):not(.rn-menu-option):not(.rn-select-toggle), a.button-primary, a.button-secondary, .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in)';
+    const selector = 'button:not(.rn-switch):not(.compact-switch > button):not(.settings-tabs > button):not(.maplibregl-ctrl-zoom-in):not(.maplibregl-ctrl-zoom-out):not([data-date]):not(.history-card):not(.wall-card):not(.rn-menu-option):not(.rn-select-toggle), a.button-primary, a.button-secondary, .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in)';
     const preferences = [matchMedia('(prefers-reduced-transparency: reduce)'), matchMedia('(forced-colors: active)')];
     const nativeSelect = matchMedia('(hover: none) and (pointer: coarse)');
     const keepsBlur = (element: HTMLElement) => element.matches('button.bg-primary, .button-primary, button.save, button.apply-button, a.button-primary');

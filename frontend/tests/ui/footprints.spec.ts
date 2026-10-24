@@ -425,3 +425,23 @@ test('route-less manual records remain counted in the all-record summary',async(
   await expect(page.getByTestId('footprint-summary')).toContainText('全部 3 条运动记录，地图显示 0 条');
   await expect(page.getByRole('status').filter({hasText:'还没有可显示的足迹'})).toContainText('带路线的运动记录');
 });
+for (const scheme of ['light','dark'] as const) {
+  test(`the mode switch sits in the page header with the settings-tabs look (${scheme})`,async({page})=>{
+    await page.emulateMedia({colorScheme:scheme});
+    await fixture(page);await loginRunner(page);await page.goto('/footprints');await ready(page);
+    const group=page.locator('.page-header .page-header-footer').getByRole('group',{name:'地图模式',exact:true});
+    await expect(group).toHaveClass(/settings-tabs/);await expect(group).not.toHaveClass(/compact-switch/);
+    await expect(group).toHaveClass(/rn-liquid-navigation/);await expect(group.locator('.rn-moving-copy')).toHaveCount(1);
+    const tracks=group.getByRole('button',{name:'轨迹叠加',exact:true}),heat=group.getByRole('button',{name:'运动热力图',exact:true});
+    await expect(tracks).toHaveAttribute('aria-pressed','true');await expect(heat).toHaveAttribute('aria-pressed','false');
+    const outline=group.locator('.rn-moving-outline');
+    const share=async(item:typeof tracks)=>{const [o,b]=await Promise.all([outline.boundingBox(),item.boundingBox()]);
+      return Math.max(0,Math.min(o!.x+o!.width,b!.x+b!.width)-Math.max(o!.x,b!.x))*Math.max(0,Math.min(o!.y+o!.height,b!.y+b!.height)-Math.max(o!.y,b!.y))/(b!.width*b!.height);};
+    await expect.poll(()=>share(tracks)).toBeGreaterThan(.8);expect(await share(heat)).toBeLessThan(.2);
+    await heat.click();await ready(page);
+    await expect(heat).toHaveAttribute('aria-pressed','true');await expect(tracks).toHaveAttribute('aria-pressed','false');
+    await expect.poll(()=>share(heat)).toBeGreaterThan(.8);
+    await page.mouse.move(0,0);
+    await expect(page.getByTestId('footprint-mode-hint')).toContainText('经过的区域');
+  });
+}

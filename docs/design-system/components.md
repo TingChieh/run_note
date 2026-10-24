@@ -49,7 +49,7 @@ MetricSummary 的 icon 枚举：`distance/duration/elapsed/pace/count/days/heart
 | Card / Panel | `.aux-panel`、`.dashboard-card`、设置页的 `.settings-block` / `.identity-card` 与业务专用卡片 | 不按名字合并布局；普通表面不自动玻璃化 |
 | Stack / Grid / Container / Section / Divider | `.aux-stack`、`.page-content`、原生 section、grid/flex、border | 使用语义区域/标题与 min-width:0；无需一个类包装一个 Svelte 组件 |
 | Dialog / Popover / Dropdown | 原生 dialog；DatePicker Popover；select 增强 | dialog 标题/描述、Escape、取消、焦点恢复、失败留草稿；top layer 不靠 z-index；不要复制菜单引擎 |
-| Tabs / 分段控件 | 设置分区用 `.settings-tabs`（链接，`aria-current="page"`）；列表筛选用 `.mode-switch.compact-switch`（按钮，`aria-pressed`）；两者共用玻璃指示器，见下文“玻璃分段” | 没有 tabpanel 与方向键协议时不能加 role=tab；当前项靠 aria-current / aria-pressed 表达，不靠颜色 |
+| Tabs / 分段控件 | 设置分区用 `.settings-tabs`（链接，`aria-current="page"`）；页面级的模式/排序切换（个人足迹的轨迹/热力图、常跑路线的排序）同样放进 `PageHeader` 的 `footer` 插槽，容器写 `<div class="settings-tabs" role="group" aria-label="…">`，子项为 `type="button"` + `aria-pressed`；表格工具栏内的列表筛选用 `.mode-switch.compact-switch`（按钮，`aria-pressed`）；两者共用玻璃指示器，见下文“玻璃分段” | 没有 tabpanel 与方向键协议时不能加 role=tab；当前项靠 aria-current / aria-pressed 表达，不靠颜色 |
 | Pagination | 页面局部实现（用户管理用 `.user-pager` + `.button-compact`） | 保留 limit/offset/total、pending 和既有分页大小；页空后回退属于业务；不在通用控件内 fetch |
 | DataTable | 原生 table + 局部 overflow；图表 details 数据兜底 | caption/列头/scope、缺失值；横向滚动只限容器 |
 
@@ -60,7 +60,7 @@ MetricSummary 的 icon 枚举：`distance/duration/elapsed/pace/count/days/heart
 | 名称 | 入口 | 契约 |
 | --- | --- | --- |
 | 开关 | `button.rn-switch[role="switch"]` + `.rn-switch-track` / `.rn-switch-static`（`liquid-glass-controls.css`）；`liquid-glass-switch.ts` 的 `enhanceSwitch` 由根 `liquidGlass` action 自动增强 | 必须有 `aria-checked` 与可读名称（`aria-label` 或 `aria-labelledby`）；锁定态用原生 `disabled` 并在名称里说明原因；几何为上游 LgSwitch：轨道 64×28、滑块 36×24，按下放大并带弹簧拉伸；玻璃配方独立为 `switchOptics`（折射 0.43 倍、色散不低于 0.12），不随意改全局配方；`prefers-reduced-transparency`/强制色下回退静态滑块；开关表示“立即生效”的布尔值，需要草稿加保存的设置不要用立即写入 |
-| 玻璃分段 | `.settings-tabs`、`.compact-switch` 容器内的直接子 `a` / `button`；`enhanceSegmented`（`liquid-glass-indicator.ts`，`createIndicator` 的水平模式）自动增强 | 当前项只用 `aria-current="page"` 或 `aria-pressed="true"` 表达；玻璃块跟随指针/焦点，离开后回到当前项，点击后留在被点项直到页面或状态更新；其内部不得再套 `.rn-glass-control`，因此 `.compact-switch > button` 已从按钮增强选择器中排除；样式必须写在未分层的 `liquid-glass-controls.css`（需要压过全局按钮的 `!important` 渐变），不要放进 `@layer components` |
+| 玻璃分段 | `.settings-tabs`、`.compact-switch` 容器内的直接子 `a` / `button`；`enhanceSegmented`（`liquid-glass-indicator.ts`，`createIndicator` 的水平模式）自动增强 | 当前项只用 `aria-current="page"` 或 `aria-pressed="true"` 表达；玻璃块跟随指针/焦点，离开后回到当前项，点击后留在被点项直到页面或状态更新；其内部不得再套 `.rn-glass-control`，因此 `.compact-switch > button` 已从按钮增强选择器中排除；`.settings-tabs > button` 同样不增强为 `.rn-glass-control`（`liquid-glass.ts` 与 `liquid-glass.css` 的全局按钮选择器已排除）；样式必须写在未分层的 `liquid-glass-controls.css`（需要压过全局按钮的 `!important` 渐变），不要放进 `@layer components` |
 | 设置页头 | 根 `routes/+layout.svelte` 渲染一份 `PageHeader`（含 `footer` 插槽里的 `SettingsTabs`），覆盖 `/settings`、`/settings/site`、`/admin/users` 与 `/workspace/settings` | 页头与标签栏在这几页之间切换时不重建；各页面不再自带 `PageHeader`；页头动作由页面通过 `useSettingsHeader()`（`lib/settings-header.svelte.ts`）登记，离开时清理；设置分区之间切换不显示骨架屏、不淡入（`quiet-swap`） |
 | SaveBar | `lib/components/SaveBar.svelte`：`form`、`dirty`、`busy`、`message`、`error`、`label`、`busyLabel`、`ondiscard` | 悬浮保存条，仅在有未保存更改、保存中或有结果/错误时出现，用 `unfoldBar` 展开收起；提交按钮用 `type="submit"` 加 `form` 属性关联表单；`message` 由调用方 6 秒后清除；状态文字是 `role="status"`，错误是 `FeedbackState` 的 alert |
 | `.text-field` | `app.css`（components 层）；token `--radius-field` | 36px 高，聚焦为主色边框加 3px 光晕，`aria-invalid="true"` 变错误色；textarea 最小 5.5rem、仅纵向拉伸；设置页、站点设置、用户管理已采用 |

@@ -114,7 +114,10 @@ test('sort buttons use the shared glass segmented control with a selected item',
   await fixture(page); await loginRunner(page);
   await page.goto('/routes');
   const group = page.getByRole('group', { name: '排序方式' });
-  await expect(group).toHaveClass(/compact-switch/);
+  await expect(group).toHaveClass(/settings-tabs/);
+  await expect(group).not.toHaveClass(/compact-switch/);
+  // The switch lives in the yellow page header footer, like the settings tabs.
+  await expect(page.locator('.page-header .page-header-footer').getByRole('group', { name: '排序方式' })).toHaveCount(1);
   await expect(page.getByTestId('route-card').first()).toBeVisible();
   const selected = group.getByRole('button', { name: '跑得最多' }), other = group.getByRole('button', { name: '最近跑过' });
   await expect(selected).toHaveAttribute('aria-pressed', 'true');
