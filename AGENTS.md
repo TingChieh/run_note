@@ -159,6 +159,8 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
 
 本地后端生命周期（仓库根目录，仅管理本仓库后端，默认端口 8001）：`./backend.command start|stop|restart|status|logs`。
 
+**Shell 脚本写法（`infra/native/`）**：不要写 `A && B || C`（如 `[ -f x ] && [ -n y ] || die "…"`），一律用 `if …; then …; fi`。CI 上的 ShellCheck 版本比开发机旧，会对这种写法报 SC2015，而本机的 ShellCheck 放过它，结果只有推送后才发现。`tests/test_shell_style.py` 在本机就会拦住这个写法；推送前仍需跑上面的 `shellcheck` 命令与 `unittest`。macOS 自带 bash 3.2：不要用 `mapfile`，也没有 `timeout`。
+
 `pnpm build` 会输出既有的大体积 chunk 警告，属已知状态，不是本次改动引入的失败。
 
 ## 8. 站主展示、受管账号与公开数据边界
