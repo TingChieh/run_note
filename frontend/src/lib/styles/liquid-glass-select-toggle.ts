@@ -1,3 +1,5 @@
+import { isElementShown } from './browser-support.ts';
+
 const hosts = new WeakMap<HTMLElement, { count: number; position: string }>();
 
 /** Place an arrow over the existing select without wrapping or moving Svelte-owned DOM. */
@@ -17,7 +19,7 @@ export function createSelectToggle(select: HTMLSelectElement, panelId: string, o
   const position = () => {
     button.style.left = `${select.offsetLeft + select.offsetWidth - 36}px`;
     button.style.top = `${select.offsetTop + (select.offsetHeight - 32) / 2}px`;
-    button.hidden = !select.checkVisibility(); button.disabled = select.disabled;
+    button.hidden = !isElementShown(select); button.disabled = select.disabled;
   };
   let pointerWasOpen = false;
   const pointer = (event: PointerEvent) => { pointerWasOpen = button.getAttribute('aria-expanded') === 'true'; event.preventDefault(); };

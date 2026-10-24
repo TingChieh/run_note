@@ -15,6 +15,7 @@
   import PageSkeleton from '#lib/components/PageSkeleton.svelte';
   import { AuthError, authWrite, isProtected, readSession } from '#lib/api/auth.ts';
   import { liquidGlass } from '#lib/styles/liquid-glass.ts';
+  import { installDialogScrollLock } from '#lib/styles/dialog-scroll-lock.ts';
   import ThemeToggle from '#lib/components/ThemeToggle.svelte';
   import { SITE_DEFAULTS, brandInitial } from '#lib/site.ts';
   import { initializeTheme } from '#lib/components/system-theme.ts';
@@ -39,6 +40,7 @@
     menuNavigationPending = false;
   });
   onMount(initializeTheme);
+  onMount(() => installDialogScrollLock());
   onMount(() => {
     if (!import.meta.env.DEV) return;
     let disposed = false;

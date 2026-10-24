@@ -1,8 +1,9 @@
-import { createGlass } from '../vendor/liquidglass/liquid-glass.js';
 import { createIndicator } from './liquid-glass-indicator.ts';
 import { glassOptics, type GlassSettings } from './liquid-glass-settings.ts';
 import { createSelectToggle } from './liquid-glass-select-toggle.ts';
 import { preparePopoverMotion, positionPopoverMotion } from './popover-motion.ts';
+import { followViewportWidth, isElementShown, visualViewportBox } from './browser-support.ts';
+import { attachMenuGlass } from './menu-glass.ts';
 
 let nextId = 0;
 
@@ -21,7 +22,7 @@ export function enhanceSelect(select: HTMLSelectElement, root: HTMLElement, init
   select.setAttribute('aria-controls', panel.id); select.setAttribute('aria-expanded', 'false'); select.classList.add('rn-liquid-select');
   let settings = initial, active = 0, buttons: HTMLButtonElement[] = [];
   let indicator: ReturnType<typeof createIndicator> | undefined;
-  let glass: ReturnType<typeof createGlass> | undefined;
+  let glass: ReturnType<typeof attachMenuGlass> | undefined;
   let search = '', searchAt = 0;
   let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
   let pointerWasOpen = false;
@@ -38,15 +39,18 @@ export function enhanceSelect(select: HTMLSelectElement, root: HTMLElement, init
   }
   function position() {
     if (!isOpen()) return;
-    const rect = select.getBoundingClientRect(), margin = 12, gap = 8;
-    const width = Math.min(Math.max(rect.width, 192), innerWidth - margin * 2);
+    const rect = select.getBoundingClientRect(), view = visualViewportBox(), margin = 12, gap = 8;
+    const width = Math.min(Math.max(rect.width, 192), view.width - margin * 2);
     panel.style.width = `${width}px`;
-    panel.style.maxHeight = `${Math.max(44, Math.min(320, innerHeight - margin * 2))}px`;
-    panel.style.left = `${Math.max(margin, Math.min(rect.left, innerWidth - width - margin))}px`;
+    panel.style.maxHeight = `${Math.max(44, Math.min(320, view.height - margin * 2))}px`;
+    const left = view.left + Math.max(margin, Math.min(rect.left - view.left, view.width - width - margin));
+    panel.style.left = `${left}px`;
     const height = panel.offsetHeight;
-    const desired = rect.bottom + gap + height <= innerHeight - margin ? rect.bottom + gap : rect.top - gap - height;
-    panel.style.top = `${Math.max(margin, Math.min(desired, innerHeight - height - margin))}px`;
-    positionPopoverMotion(panel, rect, { left: parseFloat(panel.style.left), top: parseFloat(panel.style.top) });
+    const below = rect.bottom + gap + height <= view.top + view.height - margin;
+    const desired = below ? rect.bottom + gap : rect.top - gap - height;
+    const top = Math.max(view.top + margin, Math.min(desired, view.top + view.height - height - margin));
+    panel.style.top = `${top}px`;
+    positionPopoverMotion(panel, rect, { left, top });
   }
   function close() { if (isOpen()) panel.hidePopover(); }
   function highlight(index: number, immediate = false) {
@@ -89,7 +93,7 @@ export function enhanceSelect(select: HTMLSelectElement, root: HTMLElement, init
     preparePopoverMotion(panel); panel.showPopover(); position();
     select.setAttribute('aria-expanded', 'true');
     arrow.expanded(true);
-    glass = createGlass(panel, { mode: 'backdrop', fit: true, radius: 24, ...glassOptics(settings, .7), chroma: 0, fallback: `blur(${16 + settings.blur}px) saturate(1.6)` });
+    glass = attachMenuGlass(panel, settings);
     indicator = createIndicator(panel, buttons, settings);
     highlight(Math.max(0, select.selectedIndex), true);
     select.focus({ preventScroll: true }); search = '';
@@ -143,11 +147,12 @@ export function enhanceSelect(select: HTMLSelectElement, root: HTMLElement, init
   const observer = new MutationObserver(() => { if (select.disabled || isOpen()) close(); });
   observer.observe(select, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled'] });
   const visibility = new MutationObserver(() => {
-    if (select.closest('[hidden], [inert]') || !select.checkVisibility()) close();
+    if (select.closest('[hidden], [inert]') || !isElementShown(select)) close();
   });
   for (let ancestor = select.parentElement; ancestor; ancestor = ancestor.parentElement) visibility.observe(ancestor, { attributes: true, attributeFilter: ['hidden', 'inert', 'open'] });
   select.addEventListener('pointerdown', pointer); select.addEventListener('click', click); select.addEventListener('keydown', keyboard); select.addEventListener('blur', focusOut);
-  panel.addEventListener('beforetoggle', beforeToggle); document.addEventListener('pointerdown', outside); window.addEventListener('resize', close); window.addEventListener('blur', close); window.addEventListener('scroll', scrolled, true);
+  panel.addEventListener('beforetoggle', beforeToggle); document.addEventListener('pointerdown', outside); window.addEventListener('blur', close); window.addEventListener('scroll', scrolled, true);
+  const unwatchViewport = followViewportWidth(position, close);
   return { update(next: GlassSettings) {
     settings = next; indicator?.update(next);
     arrow.position();
@@ -157,6 +162,6 @@ export function enhanceSelect(select: HTMLSelectElement, root: HTMLElement, init
     close(); release(); arrow.destroy(); observer.disconnect(); visibility.disconnect(); panel.remove(); select.classList.remove('rn-liquid-select');
     for (const [name, value] of previous) { if (value === null) select.removeAttribute(name); else select.setAttribute(name, value); }
     select.removeEventListener('pointerdown', pointer); select.removeEventListener('click', click); select.removeEventListener('keydown', keyboard); select.removeEventListener('blur', focusOut);
-    panel.removeEventListener('beforetoggle', beforeToggle); document.removeEventListener('pointerdown', outside); window.removeEventListener('resize', close); window.removeEventListener('blur', close); window.removeEventListener('scroll', scrolled, true);
+    panel.removeEventListener('beforetoggle', beforeToggle); document.removeEventListener('pointerdown', outside); unwatchViewport(); window.removeEventListener('blur', close); window.removeEventListener('scroll', scrolled, true);
   } };
 }

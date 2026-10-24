@@ -1,9 +1,11 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { setBasemapPreference, type BasemapPreference, type BasemapStyle, type BasemapStatus } from '#lib/api/map-style.ts';
-  import { createGlass } from '#lib/vendor/liquidglass/liquid-glass.js';
   import { createIndicator } from '#lib/styles/liquid-glass-indicator.ts';
   import { readGlassSettings, watchGlassSettings, glassOptics } from '#lib/styles/liquid-glass-settings.ts';
   import { preparePopoverMotion, positionPopoverMotion } from '#lib/styles/popover-motion.ts';
+  import { bindVisualViewport, popoverSupported, visualViewportBox } from '#lib/styles/browser-support.ts';
+  import { attachMenuGlass } from '#lib/styles/menu-glass.ts';
   let { preference, style, status, onselect = setBasemapPreference }: { preference: BasemapPreference; style: BasemapStyle; status: BasemapStatus; onselect?: (value: BasemapPreference) => void } = $props();
   let indicator: ReturnType<typeof createIndicator> | undefined;
   const id = $props.id();
@@ -12,14 +14,17 @@
   function position() {
     if (!trigger || !panel?.matches(':popover-open')) return;
     const box = trigger.parentElement!.getBoundingClientRect();
+    const view = visualViewportBox();
     const height = panel?.offsetHeight || 280;
-    const desired = box.bottom + 8 + height <= window.innerHeight - 12 ? box.bottom + 8 : box.top - 8 - height;
-    top = Math.max(12, Math.min(desired, window.innerHeight - height - 12));
-    right = Math.max(12, Math.min(window.innerWidth - box.right, window.innerWidth - panel.offsetWidth - 12));
-    positionPopoverMotion(panel, box, { left: window.innerWidth - right - panel.offsetWidth, top });
+    const desired = box.bottom + 8 + height <= view.top + view.height - 12 ? box.bottom + 8 : box.top - 8 - height;
+    top = Math.max(view.top + 12, Math.min(desired, view.top + view.height - height - 12));
+    const panelWidth = panel.offsetWidth;
+    const left = view.left + Math.max(12, Math.min(box.right - view.left - panelWidth, view.width - panelWidth - 12));
+    right = window.innerWidth - (left + panelWidth);
+    positionPopoverMotion(panel, box, { left, top });
   }
   function menuGlass(node: HTMLDivElement) {
-    let glass: ReturnType<typeof createGlass> | undefined;
+    let glass: ReturnType<typeof attachMenuGlass> | undefined;
     let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
     let settings = readGlassSettings();
     const release = () => { indicator?.destroy(); indicator = undefined; glass?.destroy(); glass = undefined; };
@@ -30,7 +35,7 @@
       if (!expanded) { cleanupTimer = setTimeout(release, 240); return; }
       position();
       const buttons = [...node.querySelectorAll<HTMLButtonElement>('.rn-menu-option')];
-      if (!glass) glass = createGlass(node, { mode: 'backdrop', fit: true, radius: 24, ...glassOptics(settings, .7), chroma: 0, fallback: `blur(${16 + settings.blur}px) saturate(1.6)` });
+      if (!glass) glass = attachMenuGlass(node, settings);
       indicator ??= createIndicator(node, buttons, settings);
       indicator.refresh();
       indicator.move(Math.max(0, buttons.findIndex(button => button.getAttribute('aria-pressed') === 'true')), true);
@@ -40,6 +45,7 @@
   }
   function togglePanel(event: MouseEvent) {
     event.preventDefault();
+    if (!popoverSupported() || typeof panel.togglePopover !== 'function') return;
     if (!panel.matches(':popover-open')) preparePopoverMotion(panel);
     panel.togglePopover();
     // Measure the laid-out panel before its first paint, using the stable wrapper
@@ -47,9 +53,21 @@
     if (panel.matches(':popover-open')) position();
   }
   function choose(value: BasemapPreference) { onselect(value); panel.hidePopover(); trigger.focus(); }
+  function chooseNative(value: string) { onselect(value as BasemapPreference); }
+  let fallback: HTMLSelectElement;
+  onMount(() => {
+    if (!popoverSupported()) { fallback.removeAttribute('inert'); fallback.removeAttribute('tabindex'); }
+    return bindVisualViewport(position);
+  });
 </script>
 <svelte:window onresize={position} onscroll={position} />
 <div class="basemap-picker" data-glass-stable data-basemap-status={status} data-basemap-style={style}>
+  <select class="basemap-fallback" aria-label="底图样式" inert tabindex="-1" bind:this={fallback} value={preference} onchange={event => chooseNative(event.currentTarget.value)}>
+    <option value="auto">自动（跟随外观）</option>
+    <option value="positron">Positron</option>
+    <option value="dark">Dark</option>
+    <option value="liberty">Liberty</option>
+  </select>
   <button bind:this={trigger} type="button" popovertarget={id} aria-label="切换底图" aria-expanded={expanded} aria-controls={id} class="button-secondary" title="切换底图" onclick={togglePanel}>
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5" /></svg><span>图层</span>
   </button>
@@ -63,6 +81,13 @@
 </div>
 <style>
   .basemap-picker { position:absolute; top:var(--space-3); right:calc(var(--space-3) + 44px); z-index:2; }
+  @supports selector(:popover-open) {
+    .basemap-fallback { position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip-path:inset(50%); border:0; white-space:nowrap; }
+  }
+  @supports not selector(:popover-open) {
+    .basemap-picker > button, .basemap-options { display:none; }
+    .basemap-fallback { display:block; width:100%; min-height:2.75rem; border:1px solid var(--border); border-radius:var(--radius-control); background:var(--surface); color:var(--foreground); }
+  }
   .basemap-picker > button { display:flex; align-items:center; gap:var(--space-2); background:var(--surface); }
   .basemap-options { width:16rem; max-width:calc(100vw - var(--space-8)); max-height:calc(100dvh - var(--space-6)); }
   .basemap-options p { padding:var(--space-2) var(--space-3); font-size:var(--text-small); font-weight:600; color:var(--muted-foreground); }

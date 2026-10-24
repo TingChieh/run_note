@@ -138,7 +138,7 @@
   .goal-overview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--dashboard-card-gap,1rem);min-width:0;}
   .goal-card{min-width:0;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);padding:var(--space-4);}
   .goal-heading{display:flex;align-items:center;justify-content:space-between;gap:.5rem;}
-  h2{display:flex;align-items:center;gap:.6rem;color:var(--muted-foreground);font-size:1rem;font-weight:600;}
+  h2{display:flex;align-items:center;gap:.6rem;flex-shrink:0;white-space:nowrap;color:var(--muted-foreground);font-size:1rem;font-weight:600;}
   h2>span{font-size:1.35rem;color:var(--primary);}
   .goal-edit{min-height:44px;color:var(--primary);font-size:.8rem;font-weight:650;padding:.35rem .65rem;border-radius:var(--radius-pill);}
   .goal-edit:hover{background:var(--primary-soft);}

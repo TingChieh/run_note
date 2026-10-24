@@ -210,7 +210,8 @@
   .day-title { font-size: 1.125rem; font-weight: 650; }
   .day-activity { display: block; border: 1px solid var(--border); border-radius: var(--radius-control); padding: 1rem; }
   .day-activity { transition: border-color var(--transition-control), background-color var(--transition-control), transform var(--motion-hover); }
-  .day-activity:hover { border-color: var(--primary); background: var(--muted); transform: translateX(2px); }
+  .day-activity:hover { border-color: var(--primary); background: var(--muted); }
+  @media (hover: hover) and (pointer: fine) { .day-activity:hover { transform: translateX(2px); } }
   .day-height { overflow: hidden; padding: 3px; margin: calc(var(--space-4) - 3px) -3px -3px; transition: height 280ms cubic-bezier(.22,.61,.36,1); }
   .day-fade { animation: day-fade 240ms ease-out both; transition: opacity 160ms ease; }
   .day-fade.stale { opacity: .55; }

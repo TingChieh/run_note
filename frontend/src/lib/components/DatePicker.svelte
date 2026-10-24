@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { preparePopoverMotion, positionPopoverMotion } from '#lib/styles/popover-motion.ts';
+  import { bindVisualViewport, popoverSupported, visualViewportBox } from '#lib/styles/browser-support.ts';
 
   let { label, value = $bindable(''), min = '1900-01-01', max = '2100-12-31', timezone = 'UTC', required = false, disabled = false, granularity = 'date', onselect }:
     { label: string; value?: string; min?: string; max?: string; timezone?: string; required?: boolean; disabled?: boolean;
@@ -47,10 +48,12 @@
   function position() {
     if (!opened) return;
     const rect = field.getBoundingClientRect(), size = { width: panel.offsetWidth, height: panel.offsetHeight };
-    left = Math.max(12, Math.min(rect.left, window.innerWidth - size.width - 12));
+    const view = visualViewportBox();
+    left = view.left + Math.max(12, Math.min(rect.left - view.left, view.width - size.width - 12));
     const below = rect.bottom + 8;
-    const belowSpace = window.innerHeight - below - 12, aboveSpace = rect.top - 20;
-    top = Math.max(12, Math.min(belowSpace >= size.height || belowSpace >= aboveSpace ? below : rect.top - size.height - 8, window.innerHeight - size.height - 12));
+    const belowSpace = view.top + view.height - below - 12, aboveSpace = rect.top - view.top - 20;
+    const desired = belowSpace >= size.height || belowSpace >= aboveSpace ? below : rect.top - size.height - 8;
+    top = Math.max(view.top + 12, Math.min(desired, view.top + view.height - size.height - 12));
     positionPopoverMotion(panel, trigger.getBoundingClientRect(), { left, top });
   }
   async function focusDate(date: string) {
@@ -59,6 +62,12 @@
   }
   async function open() {
     if (disabled) return;
+    if (!popoverSupported() || typeof panel.showPopover !== 'function') {
+      const input = field.querySelector('input');
+      const showPicker = input && 'showPicker' in input ? input.showPicker : undefined;
+      if (typeof showPicker === 'function') void Promise.resolve(showPicker.call(input)).catch(() => {});
+      return;
+    }
     if (opened) { close(); return; }
     if (monthly) { focused = boundedMonth(value || today().slice(0, 7)); month = focused; }
     else { focused = bounded(value || today()); month = focused.slice(0, 7); }
@@ -72,6 +81,7 @@
     const next = new Date(Date.UTC(year, monthIndex + offset, 1)).toISOString().slice(0, 7);
     return next < min.slice(0, 7) ? min.slice(0, 7) : next > max.slice(0, 7) ? max.slice(0, 7) : next;
   }
+  onMount(() => bindVisualViewport(position));
   function navigate(event: KeyboardEvent, date: string) {
     const current = new Date(`${date}T00:00:00Z`);
     const offsets: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7, Home: -current.getUTCDay(), End: 6 - current.getUTCDay() };
@@ -157,6 +167,10 @@
   .date-control:focus-within { border-color: var(--primary); }
   input { width: 100%; min-width: 0; border: 0; background: transparent; padding: .5rem 0 .5rem .75rem; border-radius: var(--radius-control); color: var(--foreground); }
   input::-webkit-calendar-picker-indicator { display: none; }
+  @supports not selector(:popover-open) {
+    input::-webkit-calendar-picker-indicator { display: revert; opacity: 1; }
+    .calendar-trigger { display: none; }
+  }
   .calendar-trigger { display: grid; place-items: center; flex-shrink: 0; width: 2.75rem; height: 2.75rem; border-radius: .65rem; color: var(--primary); }
   .calendar-trigger:hover, .calendar-trigger[aria-expanded='true'] { background: var(--primary-soft); }
   .date-popover { position: fixed; inset: auto; margin: 0; width: 20rem; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); color: var(--foreground); box-shadow: var(--shadow-popover); }

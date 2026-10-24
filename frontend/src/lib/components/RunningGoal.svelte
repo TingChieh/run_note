@@ -128,8 +128,8 @@
   button:hover { background:var(--primary-soft); }
   select { margin:0 0 var(--space-1); width:100%; min-height:44px; font-size:.875rem; color:var(--foreground); }
   .goal-distance { display:flex;align-items:baseline;gap:.25rem; margin:0; min-height:var(--space-8); line-height:1.4; } .goal-distance strong { font-size:1.25rem; font-variant-numeric:tabular-nums; } .goal-distance span { font-size:.75rem; color:var(--muted-foreground); }
-  progress { display:block; width:100%; height:var(--space-1); accent-color:var(--primary); border:0; border-radius:1rem; overflow:hidden; }
-  progress::-webkit-progress-bar { background:var(--primary-soft); } progress::-webkit-progress-value { background:var(--primary); }
+  progress { appearance:none; display:block; width:100%; height:var(--space-1); border:0; border-radius:1rem; overflow:hidden; background:var(--primary-soft); color:var(--primary); }
+  progress::-webkit-progress-bar { background:var(--primary-soft); border-radius:1rem; } progress::-webkit-progress-value { background:var(--primary); border-radius:1rem; } progress::-moz-progress-bar { background:var(--primary); border-radius:1rem; }
   .goal-note, details { font-size:.75rem; line-height:1.4; margin-top:var(--space-1); } .goal-note { color:var(--muted-foreground); } summary { cursor:pointer; }
   .goal-heading>strong,.goal-distance strong{flex-shrink:0;}
   .goal-actions{display:flex;align-items:center;gap:0;--goal-launch-distance:var(--space-4);}.goal-actions button{font-size:.75rem;padding:.4rem .25rem;white-space:nowrap;}

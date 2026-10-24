@@ -214,6 +214,17 @@
   @keyframes motion-enter { from { opacity: 0; transform: translate3d(0, .5rem, 0); } to { opacity: 1; transform: translate3d(0, 0, 0); } }
   @media (prefers-reduced-motion: reduce) { .feedback, .auth-card, .stagger > * { animation: none; } }
   @keyframes feedback-spin { to { transform: rotate(360deg); } }
+  /* Open dialogs specify opacity 1. The entrance transition is extra; reduced transparency skips it. */
+  dialog[open], dialog[open]::backdrop { opacity: 1; }
+  html:has(dialog[open]) { overflow: hidden; }
+  html:has(dialog[open]) body { overflow: hidden; overscroll-behavior: none; }
+  dialog[open] { overscroll-behavior: contain; }
+  html.rn-dialog-lock body { position: fixed; left: 0; right: 0; width: 100%; overflow: hidden; }
+  @media (prefers-reduced-transparency: reduce) {
+    dialog[open], dialog[open]::backdrop, .app-sidebar.nav-open, :is(.rn-glass-menu, .date-popover):popover-open {
+      opacity: 1 !important; animation: none !important; transition: none !important; transform: none !important; translate: 0 0; scale: 1;
+    }
+  }
   @media (max-width: 1023px) {
     .mobile-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) var(--space-4); background: var(--surface); border-bottom: 1px solid var(--border); }
     .app-sidebar { display: none; position: static; width: 100%; padding: var(--space-4); border-right: 0; border-bottom: 1px solid var(--border); }

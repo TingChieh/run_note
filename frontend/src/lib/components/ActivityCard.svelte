@@ -47,7 +47,8 @@
 <style>
   .activity-card { min-width: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); color: var(--foreground); }
   .activity-card { transition: border-color var(--transition-control), box-shadow var(--motion-hover), transform var(--motion-hover); }
-  .activity-card:hover { border-color: var(--primary); box-shadow: var(--shadow-popover); transform: translateY(-2px); }
+  .activity-card:hover { border-color: var(--primary); box-shadow: var(--shadow-popover); }
+  @media (hover: hover) and (pointer: fine) { .activity-card:hover { transform: translateY(-2px); } }
   @media (prefers-reduced-motion: reduce) { .activity-card:hover { transform: none; } }
   .activity-card.selected { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
   .card-link { display: block; min-width: 0; padding: var(--space-6); color: inherit; }
