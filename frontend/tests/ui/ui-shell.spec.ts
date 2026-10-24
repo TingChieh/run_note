@@ -118,12 +118,15 @@ test('mobile menu supports keyboard, Escape and navigation without overflow', as
   await page.screenshot({ path: 'test-results/ui-mobile-dashboard.png', fullPage: true });
 });
 test('anonymous auth/public layout, protected SSR and cross-tab identity change remain intact', async ({ page, context, request }) => {
-  for (const path of ['/activities', '/dashboard', '/footprints', '/ai']) {
+  for (const path of ['/', '/activities', '/footprints', '/ai']) {
     const response = await request.get(path, { maxRedirects: 0 }); expect(response.status()).toBe(200);
   }
+  const legacyHome = await request.get('/dashboard?year=2026', { maxRedirects: 0 });
+  expect(legacyHome.status()).toBe(308);
+  expect(new URL(legacyHome.headers().location ?? '', 'http://127.0.0.1').search).toBe('?year=2026');
   expect((await request.get('/settings', { maxRedirects: 0 })).status()).toBe(303);
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const path of ['/admin', '/u/runner', '/shared/example']) {
+  for (const path of ['/admin', '/public/activities/11111111-1111-4111-8111-111111111111', '/shared/synthetic-token']) {
     await page.goto(path); await noOverflow(page);
     await expect(page.locator('.app-sidebar')).toHaveCount(0);
   }
@@ -153,7 +156,7 @@ test('all P0 route shells fit narrow and desktop viewports; details retain paren
   await expect(page.getByRole('navigation').getByRole('link', { name: '跑步记录', exact: true })).toHaveAttribute('aria-current', 'page');
   for (const width of [320, 390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 });
-    await page.goto('/u/runner');
+    await page.goto('/public/activities/11111111-1111-4111-8111-111111111111');
     await expect(page.locator('.app-sidebar')).toHaveCount(0);
     await expect(page.getByRole('link', { name: '我的运动统计' })).toBeVisible();
     await noOverflow(page);
@@ -207,7 +210,7 @@ test('unified sports shell spans every private route and keeps account widgets o
   }
   await page.setViewportSize({width:390,height:900}); await page.goto('/');
   await page.screenshot({path:'test-results/unified-overview-mobile.png',fullPage:true});
-  for (const route of ['/admin','/u/runner','/shared/example']) {
+  for (const route of ['/admin','/public/activities/11111111-1111-4111-8111-111111111111','/shared/synthetic-token']) {
     await page.goto(route); await expect(page.locator('.app-sidebar')).toHaveCount(0);
     await expect(page.getByRole('region',{name:'跑量目标'})).toHaveCount(0); await noOverflow(page);
   }
@@ -279,16 +282,42 @@ test('successful background session checks keep loaded content and drafts visibl
   } finally { release(); }
 });
 
+test('sidebar subtitle stays against the logo at every desktop height', async ({ page }) => {
+  await page.goto('/');
+  for (const height of [1000, 900, 800]) {
+    await page.setViewportSize({ width: 1440, height });
+    const gap = await page.evaluate(() => {
+      const brand = document.querySelector('.desktop-brand')!.getBoundingClientRect();
+      const caption = document.querySelector('.nav-caption')!.getBoundingClientRect();
+      const nav = document.querySelector('.app-sidebar nav')!.getBoundingClientRect();
+      return { logo: caption.top - brand.bottom, beforeNav: nav.top - caption.bottom };
+    });
+    expect(gap.logo, `logo gap at ${height}`).toBeGreaterThanOrEqual(2);
+    expect(gap.logo, `logo gap at ${height}`).toBeLessThanOrEqual(8);
+    expect(gap.beforeNav, `nav gap at ${height}`).toBeGreaterThan(gap.logo);
+  }
+});
+
 test('compact goal and complete desktop navigation fit common laptop heights', async ({ page }) => {
   await page.route('**/api/v1/me/running-goals', route => route.fulfill({ json: { data: { week: 5, month: null, year: null }, error: null } }));
   await login(page);
   const goal = page.getByRole('region', { name: '跑量目标' });
   await expect(goal.locator('.goal-distance')).toBeVisible();
-  for (const [width, height] of [[1366, 768], [1440, 900], [1280, 720]]) {
+  for (const [width, height] of [[1366, 768], [1440, 900], [1280, 800], [1280, 720]]) {
     await page.setViewportSize({ width, height });
     const size = await page.locator('.app-sidebar').evaluate(el => ({ client: el.clientHeight, scroll: el.scrollHeight }));
     expect(size.scroll, `${width}×${height} sidebar`).toBeLessThanOrEqual(size.client);
     expect((await goal.boundingBox())!.height).toBeLessThanOrEqual(190);
+    const spacing = await page.locator('.nav-account').evaluate(el => {
+      const kids = [...el.children].filter(node => node instanceof HTMLElement && getComputedStyle(node).display !== 'none' && !node.hasAttribute('hidden'));
+      const gaps = [];
+      for (let index = 1; index < kids.length; index += 1) gaps.push(kids[index].getBoundingClientRect().top - kids[index - 1].getBoundingClientRect().bottom);
+      const logout = el.querySelector('button');
+      const sidebar = el.closest('.app-sidebar')!;
+      return { gaps, bottom: logout ? sidebar.getBoundingClientRect().bottom - logout.getBoundingClientRect().bottom : 0 };
+    });
+    expect(Math.min(...spacing.gaps), `${width}×${height} account gaps`).toBeGreaterThanOrEqual(8);
+    expect(spacing.bottom, `${width}×${height} logout inset`).toBeGreaterThanOrEqual(8);
     await expect(page.getByRole('button', { name: '退出登录', exact: true })).toBeInViewport();
     await page.screenshot({ path: test.info().outputPath(`compact-sidebar-${width}-${height}.png`) });
   }

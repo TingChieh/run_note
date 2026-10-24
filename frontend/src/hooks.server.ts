@@ -5,6 +5,7 @@ import { viewContext } from '#lib/api/view-context.ts';
 import { isProtected, readSession } from '#lib/api/auth.ts';
 import { parseSite } from '#lib/api/site.ts';
 import { SITE_DEFAULTS } from '#lib/site.ts';
+import { pageNoindex } from '#lib/seo.ts';
 
 export const handle: Handle = async ({ event, resolve }) => {
   if (event.url.pathname.startsWith('/api/')) return resolve(event);
@@ -38,8 +39,9 @@ export const handle: Handle = async ({ event, resolve }) => {
       .replace('%runnote.theme%', site.default_theme),
   });
   response.headers.set('Cache-Control', 'no-store');
-  if (!event.locals.user) {
-    response.headers.set('Referrer-Policy','no-referrer');
+  if (!event.locals.user) response.headers.set('Referrer-Policy','no-referrer');
+  // Public showcase pages can be indexed. Login, private areas, missing pages and summary links stay out.
+  if (pageNoindex(event.url.pathname, response.status) || /^\/(shared|public|u)(\/|$)/.test(event.url.pathname)) {
     response.headers.set('X-Robots-Tag','noindex, nofollow');
   }
   response.headers.append('Vary', 'Cookie');

@@ -6,6 +6,11 @@ export function viewContext(path: string, admin = false): ViewContext {
   return { kind: 'root', prefix: '', username: null, manage: admin };
 }
 export function contextPath(context: ViewContext, path: string): string {
+  // The site home is the data summary. Named and workspace views keep their own /dashboard.
+  if (context.kind === 'root' && /^\/dashboard([?#]|$)/.test(path)) {
+    const rest = path.slice('/dashboard'.length);
+    return rest ? `/${rest}` : '/';
+  }
   return /^\/(dashboard|activities|footprints|ai|settings)(\/|\?|#|$)/.test(path) ? context.prefix + path : path;
 }
 export function contextAPI(context: ViewContext, path: string): string {

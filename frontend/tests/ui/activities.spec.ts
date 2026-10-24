@@ -185,6 +185,7 @@ for (const source of ['list', 'wall'] as const) {
       await page.goto(source === 'wall' ? '/activities/wall' : sourcePath);
       await page.getByRole('button',{name:'下一页',exact:true}).click();
       const title = source === 'wall' ? '返回测试 25' : '返回测试 21';
+      const cardLevel = source === 'wall' ? 2 : 3;
       await page.getByRole('link').filter({has:page.getByRole('heading',{name:title,exact:true})}).click();
       await expect(page.getByRole('heading',{name:title,level:1})).toBeVisible();
       if(reload){await page.reload();await expect(page.getByRole('heading',{name:title,level:1})).toBeVisible();}
@@ -195,7 +196,7 @@ for (const source of ['list', 'wall'] as const) {
       if(source === 'wall' && reload)await page.screenshot({path:testInfo.outputPath('detail-back-mobile.png')});
       await back.focus();await page.keyboard.press('Enter');
       await expect(page).toHaveURL(sourcePath);
-      await expect(page.getByRole('heading',{name:title,level:3})).toBeVisible();
+      await expect(page.getByRole('heading',{name:title,level:cardLevel})).toBeVisible();
       if(source === 'list')await expect(page.locator('.pagination')).toContainText('第 2 页');
       else await expect(page.locator('.wall-pagination')).toContainText('第 2 / 3 页');
       // Traversing forward must keep the same return target, without creating a loop.
@@ -203,7 +204,7 @@ for (const source of ['list', 'wall'] as const) {
       await expect(page.getByRole('heading',{name:title,level:1})).toBeVisible();
       await page.getByRole('button',{name:'返回',exact:true}).click();
       await expect(page).toHaveURL(sourcePath);
-      await expect(page.getByRole('heading',{name:title,level:3})).toBeVisible();
+      await expect(page.getByRole('heading',{name:title,level:cardLevel})).toBeVisible();
     });
   }
 }

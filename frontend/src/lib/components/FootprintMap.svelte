@@ -8,7 +8,7 @@
   import type { Map as LibreMap, GeoJSONSource } from 'maplibre-gl';
   import type { FootprintCollection } from '#lib/api/footprints.ts';
   import { geometryBounds, displayFootprints } from '#lib/api/footprints.ts';
-  import type { CityLocations, FootprintCity } from '#lib/map/footprint-cities.ts';
+  import { dominantCity, type CityLocations, type FootprintCity } from '#lib/map/footprint-cities.ts';
   import { colorFootprintFeatures } from '#lib/map/footprint-colors.ts';
   import { createRouteMapStyle, applyMapTheme, type BasemapPreference, type BasemapStyle } from '#lib/api/map-style.ts';
   import BasemapPicker from './BasemapPicker.svelte';
@@ -16,7 +16,8 @@
   import { watchSystemTheme } from './system-theme';
   import 'maplibre-gl/dist/maplibre-gl.css';
   let { data, onretry }: {data: FootprintCollection; onretry: () => void} = $props();
-  let container: HTMLDivElement, map: LibreMap | undefined, disposed=false;
+  let container: HTMLDivElement, frameEl: HTMLDivElement, map: LibreMap | undefined, disposed=false;
+  let framing: 'auto' | 'all' | 'picked' | 'free' = 'auto';
   let ready=$state(false), error=$state(''), basemap=$state<'loading'|'ready'|'failed'|'off'>('loading');
   let choices=$state<{id:string;title:string;date:string}[]>([]), heat=$state<number|null>(null);
   let observer: ResizeObserver|undefined;
@@ -33,10 +34,45 @@
   const displayData=$derived(displayFootprints(data));
   const allBounds=$derived(geometryBounds(displayData.features.map(f=>f.geometry)));
   const records=$derived(data.mode==='tracks'?[...new Map(data.features.map(f=>[String(f.properties!.activity_id),{id:String(f.properties!.activity_id),title:String(f.properties!.title),date:String(f.properties!.activity_date)}])).values()]:[]);
-  function frame(bounds: [[number,number],[number,number]] | null) {
-    selectedCity='';
-    if(map && bounds)map.fitBounds(bounds,{padding:40,maxZoom:map.getMaxZoom(),duration:0});
+  // Equal insets keep a symmetric route's midpoint on the canvas centre.
+  // 72px clears the top-right zoom control and the layer button.
+  const cameraPadding = 72;
+  function fit(bounds: [[number,number],[number,number]] | null, animate = false) {
+    if (!map || !bounds) return;
+    const motion = animate && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    map.fitBounds(bounds, { padding: cameraPadding, maxZoom: map.getMaxZoom(), bearing: 0, pitch: 0, duration: motion ? 350 : 0 });
   }
+  function frame(bounds: [[number,number],[number,number]] | null) {
+    framing = 'free'; selectedCity = ''; fit(bounds);
+  }
+  function preferredBounds() {
+    if (data.mode !== 'tracks' || !cities.length) return allBounds;
+    return dominantCity(displayData.features.map(feature => ({
+      geometry: feature.geometry,
+      activityId: typeof feature.properties?.activity_id === 'string' ? feature.properties.activity_id : undefined,
+      activityDate: typeof feature.properties?.activity_date === 'string' ? feature.properties.activity_date : undefined,
+    })), cities)?.bounds ?? allBounds;
+  }
+  function frameInitial() {
+    if (!map || framing === 'free') return;
+    if (framing === 'all') { fit(allBounds); return; }
+    if (framing === 'picked' && selectedCity) { locateCity(selectedCity, false); return; }
+    if (data.mode === 'tracks' && cityLookup === 'loading') return;
+    fit(preferredBounds());
+  }
+  function sizeCanvas() {
+    if (!frameEl) return;
+    const available = window.innerHeight - frameEl.getBoundingClientRect().top - 16;
+    frameEl.style.height = `${Math.min(720, Math.max(424, Math.floor(available)))}px`;
+  }
+  function cityMarkerData() {
+    return { type: 'FeatureCollection' as const, features: data.mode === 'tracks' ? cities.map(city => ({
+      type: 'Feature' as const,
+      properties: { code: city.code, name: city.name },
+      geometry: { type: 'Point' as const, coordinates: [(city.bounds[0][0] + city.bounds[1][0]) / 2, (city.bounds[0][1] + city.bounds[1][1]) / 2] as [number, number] },
+    })) : [] };
+  }
+  function syncCityMarkers() { (map?.getSource('footprint-cities') as GeoJSONSource | undefined)?.setData(cityMarkerData()); }
   function highlight(ids:string[]) {
     selectedIds=ids;
     if(!map?.getLayer('footprint-lines'))return;
@@ -48,12 +84,11 @@
     frame(geometryBounds(displayData.features.filter(f=>f.properties?.activity_id===record.id).map(f=>f.geometry)));
   }
   function selectHeat(index:number) { const feature=displayData.features[index]; heat=Number(feature.properties?.count);choices=[];frame(geometryBounds([feature.geometry])); }
-  function overview() { map?.stop();choices=[];heat=null;highlight([]);frame(allBounds); }
-  function locateCity(code=cityName) {
+  function overview() { map?.stop();choices=[];heat=null;highlight([]);framing='all';selectedCity='';fit(allBounds); }
+  function locateCity(code=cityName, animate=true) {
     const city=code==='unlocated' && unlocatedBounds ? {name:'未识别区域',bounds:unlocatedBounds} : cities.find(city=>city.code===code);
     if(!map || !ready || error || !city)return;
-    map.stop();selectedCity=code;cityName=code;
-    map.fitBounds(city.bounds,{padding:40,maxZoom:map.getMaxZoom(),bearing:0,pitch:0,duration:window.matchMedia('(prefers-reduced-motion: reduce)').matches?0:350});
+    map.stop();framing='picked';selectedCity=code;cityName=code;fit(city.bounds, animate);
   }
   function loadCities() {
     cityWorker?.terminate();cityLookup='loading';
@@ -63,11 +98,13 @@
         if(disposed || cityWorker!==worker)return;
         cities=event.data.cities;unlocatedBounds=event.data.unlocatedBounds;
         cityName=cities[0]?.code??(unlocatedBounds?'unlocated':'');cityLookup='ready';
+        syncCityMarkers();
+        requestAnimationFrame(() => { if (!disposed && framing === 'auto') { sizeCanvas(); map?.resize(); frameInitial(); } });
         worker.terminate();cityWorker=undefined;
       };
-      worker.onerror=()=>{if(disposed || cityWorker!==worker)return;cityLookup='failed';worker.terminate();cityWorker=undefined;};
+      worker.onerror=()=>{if(disposed || cityWorker!==worker)return;cityLookup='failed';frameInitial();worker.terminate();cityWorker=undefined;};
       worker.postMessage(data.features.map(feature=>feature.geometry));
-    }catch{cityLookup='failed';cityWorker?.terminate();cityWorker=undefined;}
+    }catch{cityLookup='failed';frameInitial();cityWorker?.terminate();cityWorker=undefined;}
   }
   // The page swaps `data` in place (mode switch, background refresh): update the live source instead of rebuilding the map.
   function applyData() {
@@ -75,20 +112,22 @@
     if(!map || !source || appliedData===data)return;
     appliedData=data;
     source.setData({type:'FeatureCollection',features:colorFootprintFeatures(displayData.features,palette)});
-    choices=[];heat=null;heatPage=0;highlight([]);frame(allBounds);loadCities();
+    framing='auto';choices=[];heat=null;heatPage=0;highlight([]);loadCities();frameInitial();
   }
   $effect(()=>{data;untrack(applyData);});
   const palette=['#14785b','#315caf','#b4552c','#854caa','#397d87','#ba3970'];
   function loadBasemap() { basemapController?.retry(); }
   function toggleBasemap() { basemapController?.toggle(); }
-  onMount(()=>{loadCities();stopTheme=watchSystemTheme(value=>{dark=value;if(map && !disposed && !basemapController)applyMapTheme(map,dark);});void(async()=>{
+  const onWindowResize = () => { sizeCanvas(); map?.resize(); if (framing === 'all') fit(allBounds); else if (framing === 'picked') locateCity(selectedCity, false); else if (framing === 'auto') frameInitial(); };
+  onMount(()=>{loadCities();sizeCanvas();window.addEventListener('resize', onWindowResize);stopTheme=watchSystemTheme(value=>{dark=value;if(map && !disposed && !basemapController)applyMapTheme(map,dark);});void(async()=>{
     try {
       const lib=await import('maplibre-gl'); if(disposed)return;
-      map=new lib.Map({container,fadeDuration:0,locale:{'NavigationControl.ZoomIn':'放大地图','NavigationControl.ZoomOut':'缩小地图','Map.Title':'足迹地图'},style:createRouteMapStyle(dark),center:allBounds?.[0]??[0,0],zoom:13,maxZoom:19,attributionControl:false});
+      const center: [number, number] = allBounds ? [(allBounds[0][0] + allBounds[1][0]) / 2, (allBounds[0][1] + allBounds[1][1]) / 2] : [0, 0];
+      map=new lib.Map({container,fadeDuration:0,locale:{'NavigationControl.ZoomIn':'放大地图','NavigationControl.ZoomOut':'缩小地图','Map.Title':'足迹地图'},style:createRouteMapStyle(dark),center,zoom:data.mode==='tracks'?12:4,maxZoom:19,attributionControl:false});
       map.addControl(new lib.AttributionControl({compact:true}),'bottom-right');
       map.addControl(new lib.NavigationControl({showCompass:false}),'top-right');
-      map.on('dragstart',()=>{selectedCity='';});
-      observer=new ResizeObserver(()=>map?.resize()); observer.observe(container);
+      map.on('dragstart',()=>{selectedCity='';framing='free';});
+      observer=new ResizeObserver(()=>{sizeCanvas();map?.resize();}); observer.observe(frameEl ?? container);
       map.on('webglcontextlost',()=>{basemapController?.destroy();ready=false;error='地图绘图上下文已丢失，请重新绘制地图。下方数据入口仍可使用。';});
       map.on('error',e=>{if('sourceId' in e && e.sourceId==='footprints')error='地图绘制失败，请重试。下方记录入口仍可使用。';});
       map.on('load',()=>{
@@ -99,6 +138,9 @@
         map.addLayer({id:'footprint-fill',type:'fill',source:'footprints',filter:['==','$type','Polygon'],paint:{'fill-color':['step',['get','count'],'#c0dfac',2,'#72b78a',4,'#2d9474',8,'#e69338',16,'#bd432c'],'fill-opacity':0.8}});
         map.addLayer({id:'footprint-lines',type:'line',source:'footprints',filter:['==','$type','LineString'],paint:{'line-color':['get','color'],'line-width':3,'line-opacity':0.8},layout:{'line-join':'round','line-cap':'round'}});
         map.addLayer({id:'footprint-points',type:'circle',source:'footprints',filter:['==','$type','Point'],paint:{'circle-color':['get','color'],'circle-radius':5}});
+        map.addSource('footprint-cities',{type:'geojson',data:cityMarkerData()});
+        map.addLayer({id:'footprint-city-markers',type:'circle',source:'footprint-cities',maxzoom:8,paint:{'circle-radius':7,'circle-color':'#14785b','circle-stroke-width':2,'circle-stroke-color':'#ffffff','circle-opacity':0.95}});
+        map.on('click','footprint-city-markers',event=>{const code=event.features?.[0]?.properties?.code;if(typeof code==='string')locateCity(code);});
         applyMapTheme(map,dark);
         map.on('click',e=>{
           if(!map)return;
@@ -107,14 +149,14 @@
           for(const hit of hits){const p=hit.properties;if(p?.activity_id)unique.set(p.activity_id,{id:p.activity_id,title:p.title,date:p.activity_date});else if(p?.count)heat=p.count;}
           choices=[...unique.values()];highlight(choices.map(record=>record.id));
         });
-        if(allBounds)map.fitBounds(allBounds,{padding:45,maxZoom:map.getMaxZoom(),duration:0});
+        sizeCanvas();frameInitial();
         const markReady=()=>{if(!error && map?.isSourceLoaded('footprints')){ready=true;map.off('render',markReady);}};
         map.on('render',markReady);
         basemapController=createBasemapController(map,'footprint-fill',state=>{basemap=state.status;basemapPreference=state.preference;basemapStyle=state.style;});
       });
     }catch{if(!disposed)error='无法初始化地图，请使用支持 WebGL 的浏览器。';}
   })();});
-  onDestroy(()=>{disposed=true;cityWorker?.terminate();stopTheme?.();basemapController?.destroy();observer?.disconnect();map?.remove();map=undefined;});
+  onDestroy(()=>{disposed=true;window.removeEventListener('resize', onWindowResize);cityWorker?.terminate();stopTheme?.();basemapController?.destroy();observer?.disconnect();map?.remove();map=undefined;});
 </script>
 <div class="map-section content-reveal">
   <div class="map-toolbar"><div class="toolbar-actions"><button type="button" onclick={overview} disabled={!ready || !!error} class="button-secondary">回到全部足迹</button><button type="button" onclick={()=>{cityOpen=!cityOpen;}} disabled={!ready || !!error || cityLookup!=='ready' || !cityName} aria-expanded={cityOpen} aria-controls="footprint-cities" class="button-secondary city-menu-toggle">城市</button><button type="button" onclick={toggleBasemap} disabled={!ready || !!error} aria-pressed={basemap!=='off'} class="button-secondary">{basemap==='off'?'开启底图':'关闭底图'}</button></div><p class="map-hint" id="footprint-map-help">拖动或缩放探索 · 方向键移动 · + / − 缩放</p></div>
@@ -129,7 +171,7 @@
   </div>{/if}
   {#if basemap==='failed' && !error}<div class="basemap-feedback" role="status"><span>底图暂不可用，足迹仍可查看。</span><button type="button" onclick={loadBasemap} class="button-secondary">重试底图</button></div>{:else if basemap==='loading' && ready && !error}<p role="status" class="basemap-status">正在加载底图，足迹可先查看…</p>{/if}
   {#if error}<FeedbackState kind="error" title={error}><button type="button" class="button-secondary" onclick={onretry}>重新绘制地图</button></FeedbackState>{:else if !ready}<p role="status" class="basemap-status">正在绘制足迹…</p>{/if}
-  <div class="map-frame"><div bind:this={container} class="map-canvas" role="region" aria-label={data.mode==='heatmap'?'个人运动热力图':'个人多轨迹叠加地图'} aria-describedby="footprint-map-help" data-testid={ready?'footprint-map-ready':'footprint-map-loading'}></div>
+  <div class="map-frame" bind:this={frameEl}><div bind:this={container} class="map-canvas" role="region" aria-label={data.mode==='heatmap'?'个人运动热力图':'个人多轨迹叠加地图'} aria-describedby="footprint-map-help" data-testid={ready?'footprint-map-ready':'footprint-map-loading'}></div>
     <BasemapPicker preference={basemapPreference} style={basemapStyle} status={basemap} />
   </div>
   {#if choices.length}<div class="route-choices" data-testid="route-choices"><p class="font-semibold" role="status">此处经过的记录（{choices.length}）</p><ul>{#each choices as record}<li><div><span class="record-date">{record.date}</span><a href={view.href(`/activities/${record.id}`)}>{record.title || '未命名活动'} · 查看详情</a></div><button type="button" class="button-secondary" onclick={()=>selectRecord(record)} aria-pressed={selectedIds.length===1 && selectedIds[0]===record.id}>定位路线</button></li>{/each}</ul></div>{/if}
@@ -152,8 +194,8 @@
   .map-hint { font-size:.75rem; color:var(--muted-foreground); }
   .basemap-feedback { display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:.5rem; padding:.5rem .75rem; border:1px solid var(--border); border-radius:var(--radius-control); background:var(--surface); color:var(--muted-foreground); font-size:.8125rem; }
   .basemap-status { font-size:.8125rem; margin:0; }
-  .map-frame { position:relative; overflow:hidden; border:1px solid var(--border); border-radius:var(--radius-card); background:var(--muted); }
-  .map-canvas { height:clamp(480px,62vh,720px); width:100%; }
+  .map-frame { position:relative; overflow:hidden; height:min(720px, max(424px, calc(100dvh - 26rem))); border:1px solid var(--border); border-radius:var(--radius-card); background:var(--muted); }
+  .map-canvas { height:100%; width:100%; }
   .route-choices { border-left:3px solid var(--primary); padding:.75rem 1rem; background:var(--primary-soft); border-radius:var(--radius-control); }
   .route-choices ul,.record-list ul { display:grid; gap:.5rem; margin-top:.75rem; max-height:20rem; overflow:auto; }
   li { display:flex; justify-content:space-between; align-items:center; gap:.75rem; min-width:0; padding:.5rem 0; }
@@ -168,6 +210,6 @@
   .heat-table { max-height:20rem; overflow:auto; margin-top:.75rem; }
   table { width:100%; font-size:.8125rem; text-align:left; }
   th,td { padding:.5rem; border-bottom:1px solid var(--border); }
-  @media(max-width:767px) { .map-canvas { height:clamp(420px,60svh,600px); } .map-hint { display:none; } .route-choices { padding:.75rem; } }
+  @media(max-width:767px) { .map-frame { height:min(600px, max(424px, calc(100dvh - 22rem))); } .map-hint { display:none; } .route-choices { padding:.75rem; } }
   @media(max-width:1023px) { .city-buttons { display:none; } .city-menu-toggle { display:inline-flex; } .city-panel { display:grid; } }
 </style>

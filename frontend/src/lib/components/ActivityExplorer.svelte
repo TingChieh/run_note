@@ -21,6 +21,17 @@
   let detailLoading = $state(false), detailError = $state(''), routeLoading = $state(false), routeError = $state('');
   let active = false, listRequest = 0, selectionRequest = 0, categoriesRequest = 0;
   let strip = $state<HTMLUListElement>(), panel = $state<HTMLDivElement>();
+  let canScrollPrev = $state(false), canScrollNext = $state(false);
+  function syncStrip() {
+    if (!strip) { canScrollPrev = false; canScrollNext = false; return; }
+    canScrollPrev = strip.scrollLeft > 8;
+    canScrollNext = strip.scrollWidth - strip.clientWidth - strip.scrollLeft > 8;
+  }
+  function pageStrip(direction: 1 | -1) {
+    if (!strip) return;
+    const distance = Math.max(280, Math.round(strip.clientWidth * 0.85));
+    strip.scrollBy({ left: direction * distance, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }
   let detailAnimations: Animation[] = [];
   function stopDetailAnimations() { for (const animation of detailAnimations) animation.cancel(); detailAnimations = []; }
   async function animateDetails(out = false) {
@@ -116,6 +127,15 @@
     active = true; void loadCategories(); void loadPage();
     return () => { active = false; ++listRequest; ++selectionRequest; ++categoriesRequest; stopDetailAnimations(); };
   });
+  $effect(() => {
+    void items.length;
+    const node = strip;
+    if (!node) return;
+    const observer = new ResizeObserver(() => syncStrip());
+    observer.observe(node);
+    const frame = requestAnimationFrame(() => syncStrip());
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); };
+  });
 </script>
 
 {#snippet arrowIcon(direction: 'left' | 'right')}
@@ -154,11 +174,15 @@
     </div>
   {/if}
   {#if listError}<FeedbackState kind="error" title={listError}><button class="button-secondary" onclick={() => void loadPage()}>重试足迹记录</button></FeedbackState>{/if}
-  <div class="browse-controls"><p>左右滑动浏览最近记录 · 点击切换地图</p><span class="record-count" aria-live="polite">最近 {items.length} 条记录</span></div>
+  <div class="browse-controls"><p>左右滑动浏览最近记录 · 点击切换地图</p><span class="record-count" aria-live="polite">共 {items.length} 条</span></div>
   {#if items.length}
-    <ul class="activity-strip stagger" bind:this={strip} aria-label="按时间浏览运动记录">
+    <div class="strip-frame" class:can-scroll-prev={canScrollPrev} class:can-scroll-next={canScrollNext}>
+    <button type="button" class="strip-page strip-prev" aria-label="向左查看更早的记录" disabled={!canScrollPrev} onclick={() => pageStrip(-1)}><span aria-hidden="true">‹</span></button>
+    <ul class="activity-strip stagger" bind:this={strip} aria-label="按时间浏览运动记录" onscroll={syncStrip}>
       {#each items as item (item.id)}<li><button class="history-card" class:selected={item.id === selectedId} data-id={item.id} aria-label={`选择运动 ${item.title}`} aria-pressed={item.id === selectedId} onclick={() => void choose(item)}><div class="history-copy"><time datetime={item.activity_date}>{formatDate(item.activity_date)}</time><strong>{item.title || '未命名活动'}</strong><span>{item.category || '未分类'}</span></div><RouteThumbnail activity={item} compact onauthrequired={cause => { fail(cause); }} /></button></li>{/each}
     </ul>
+    <button type="button" class="strip-page strip-next" aria-label="向右查看更多记录" disabled={!canScrollNext} onclick={() => pageStrip(1)}><span aria-hidden="true">›</span></button>
+    </div>
   {:else if !listLoading && !listError}<FeedbackState kind="empty" title="此分类下没有运动记录"><a href={view.href("/activities")}  class="button-secondary">查看跑步记录</a></FeedbackState>{/if}
   {#if listLoading && !items.length}<FeedbackState kind="loading" title="正在读取足迹记录…" />{/if}
 </section>
@@ -196,6 +220,13 @@
   .switch-status { position: absolute; top: -.25rem; right: 0; transform: translateY(-100%); color: var(--muted-foreground); font-size: .75rem; animation: explorer-pending 180ms step-end; }
   @keyframes explorer-pending { from { opacity: 0; } to { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { .switch-status { animation: none; } }
+  .strip-frame { position: relative; }
+  .strip-frame::before, .strip-frame::after { content: ''; position: absolute; top: 0; bottom: 0; width: 2.75rem; pointer-events: none; z-index: 1; opacity: 0; }
+  .strip-frame.can-scroll-prev::before { left: 0; opacity: 1; background: linear-gradient(to right, var(--surface), transparent); }
+  .strip-frame.can-scroll-next::after { right: 0; opacity: 1; background: linear-gradient(to left, var(--surface), transparent); }
+  .strip-page { position: absolute; top: 50%; z-index: 2; display: none; place-items: center; width: 2.25rem; height: 2.25rem; padding: 0; border-radius: 50%; background: var(--surface); transform: translateY(-50%); }
+  .strip-prev { left: var(--space-1); } .strip-next { right: var(--space-1); }
+  .strip-page span { font-size: 1.5rem; line-height: 1; }
   .activity-strip { display: flex; gap: var(--space-3); overflow-x: auto; scroll-snap-type: x proximity; margin-top: var(--space-1); padding: var(--space-1) .125rem var(--space-2); }
   .activity-strip li { flex: 0 0 19rem; max-width: 100%; min-width: 0; scroll-snap-align: start; }
   .history-card { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); width: 100%; min-height: 5.5rem; padding: var(--space-2); text-align: left; border: 1px solid var(--border); border-radius: 1rem; transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease; }
@@ -204,7 +235,7 @@
   .history-card :global(.route-thumbnail) { flex-shrink: 0; }
   a.inactive { pointer-events: none; opacity: .5; }
   button:disabled { opacity: .45; cursor: not-allowed; }
-  @media(min-width:1024px) {
+  @media(min-width:1024px) { .strip-page { display: grid; } .activity-strip { padding-inline: 2.75rem; }
     .explorer-metrics { align-self: start; }
     .explorer-metrics :global(.metrics) { height: calc(var(--route-map-height) + 2px); grid-auto-rows: minmax(0, 1fr); }
     .explorer-metrics :global(.metrics > div) { display: flex; flex-direction: column; justify-content: center; padding-block: var(--space-1); }

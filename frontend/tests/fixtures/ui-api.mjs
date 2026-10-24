@@ -142,7 +142,8 @@ createServer(async (req, res) => {
     }
     return send(null,405,'不支持的请求');
   }
-  if (!signedIn && !showcase) return send(null, 401);
+  const publicRead = req.method === 'GET' && (url.pathname.startsWith('/api/v1/public/') || url.pathname.startsWith('/api/v1/shared/'));
+  if (!signedIn && !showcase && !publicRead) return send(null, 401);
   if (url.pathname === '/api/v1/me' && req.method === 'GET') return send(current?.is_admin ? user : clean(current ?? user));
   if (url.pathname === '/api/v1/me/password' && req.method === 'PATCH') {
     if (req.headers['x-csrf-token'] !== 'ui-csrf') return send(null,403,'请求校验失败');
@@ -187,5 +188,11 @@ createServer(async (req, res) => {
     const from = url.searchParams.get('date_from'), to = url.searchParams.get('date_to');
     return send({ period: url.searchParams.get('period'), date_from: from, date_to: to, week_start: 'monday', date_assignment: 'activity_local_date', buckets: [{ ...summary, bucket_start: from, bucket_end: to, is_partial: true }] });
   }
+  const activityDetail = url.pathname.match(/^\/api\/v1\/activities\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
+  if (activityDetail && req.method === 'GET') return send({ id: activityDetail[1], title: '合成活动', activity_date: '2026-10-13', timezone: 'Asia/Shanghai', started_at: '2026-10-13T00:00:00Z', ended_at: '2026-10-13T00:30:00Z', distance_m: '1000', elapsed_seconds: '600', avg_pace_seconds_per_km: '600', temporal_quality: 'complete', visibility: 'public', allow_shared_route: false, quality_summary: {}, metrics_version: 'gpx-v1', has_route: false, created_at: '2026-10-13T01:00:00Z', notes: '', category: '', tags: [] });
+  const publicActivity = url.pathname.match(/^\/api\/v1\/public\/activities\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
+  const publicSummary = { id: publicActivity?.[1] ?? '11111111-1111-4111-8111-111111111111', title: '合成分享', activity_date: '2026-10-13', distance_m: '1000', elapsed_seconds: 600, avg_pace_seconds_per_km: 600, author: { username: 'runner', display_name: '晨跑者' }, has_shared_route: false };
+  if (publicActivity && req.method === 'GET') return send(publicSummary);
+  if (url.pathname === '/api/v1/shared/synthetic-token' && req.method === 'GET') return send(publicSummary);
   return send(null, 404, '合成测试数据为空');
 }).listen(Number(process.env.UI_API_PORT ?? 8191), '127.0.0.1');

@@ -26,7 +26,7 @@ test('admin login native validation, password visibility, busy and failure retry
   await expect(page.getByLabel('密码',{exact:true})).toHaveValue('');
   await page.unroute('**/api/v1/auth/login');
   await page.getByLabel('密码',{exact:true}).fill('Synthetic-ui-password-2026');
-  await page.getByRole('button',{name:'登录',exact:true}).click();await expect(page).toHaveURL(/\/dashboard$/);
+  await page.getByRole('button',{name:'登录',exact:true}).click();await expect(page).toHaveURL(/\/$/);
 });
 test('settings separates draft from saved public state and saves with retry',async({page})=>{
   await loginRunner(page);await responsive(page,'settings');
@@ -62,19 +62,28 @@ test('AI no data, unavailable and quota block generation',async({page})=>{
   const state=await installAI(page);await loginRunner(page);state.empty=true;await page.goto('/ai');await expect(page.getByRole('link',{name:'导入 GPX / TCX'})).toBeVisible();await page.getByRole('checkbox').check();await expect(page.getByRole('button',{name:'生成近期总结与下周建议'})).toBeDisabled();
   state.empty=false;state.configured=false;await page.reload();await expect(page.getByText(/AI服务尚未配置/)).toBeVisible();state.configured=true;state.quota=0;await page.reload();await page.getByRole('checkbox').check();await expect(page.getByRole('button',{name:'生成近期总结与下周建议'})).toBeDisabled();expect(state.calls).toHaveLength(0);
 });
-test('anonymous public profile calendar, whitelist detail and revocation',async({page})=>{
+test('removed public profile addresses are not found and share summaries stay coordinate-free',async({page})=>{
   const state=await installPublic(page);const privateReads:string[]=[];page.on('request',req=>{if(/\/api\/v1\/(activities|statistics|ai-reports)(\/|\?|$)/.test(req.url()))privateReads.push(req.url());});
-  await page.goto('/u/runner?year=2026');await expect(page.getByRole('heading',{name:'晨跑者',exact:true})).toBeVisible();await responsive(page,'public');
-  await page.getByRole('button',{name:'上一年',exact:true}).click();await expect(page.getByLabel('年份',{exact:true})).toHaveValue('2025');await page.getByRole('button',{name:'下一年',exact:true}).click();
-  const date=page.locator('[data-date="2026-10-13"]');await date.focus();await page.keyboard.press('ArrowUp');await expect(page.locator('[data-date="2026-10-12"]')).toBeFocused();await page.keyboard.press('ArrowDown');await expect(date).toBeFocused();await page.keyboard.press('Enter');await expect(page.getByRole('heading',{name:'2026-10-13 的公开记录'})).toBeVisible();
-  await page.getByRole('link',{name:'河畔晨跑 →',exact:true}).click();await expect(page.getByRole('heading',{name:'河畔晨跑'})).toBeVisible();await responsive(page,'public-detail');
+  const missing=await page.goto('/u/runner?year=2026');
+  expect(missing?.status()).toBe(404);
+  await expect(page.getByRole('heading',{name:'页面不存在',exact:true})).toBeVisible();
+  await expect(page.getByRole('link',{name:'数据汇总',exact:true})).toHaveAttribute('href','/');
+  await expect(page.getByRole('button',{name:'重新读取主页'})).toHaveCount(0);
+  await page.goto(`/public/activities/${sampleActivity.id}`);await expect(page.getByRole('heading',{name:'河畔晨跑'})).toBeVisible();await responsive(page,'public-detail');
   expect(await page.locator('body').innerText()).not.toMatch(/PRIVATE_.*SENTINEL/);expect(privateReads).toEqual([]);await expect(page.locator('canvas')).toHaveCount(0);
+  await expect(page.getByRole('link',{name:'查看作者公开主页'})).toHaveCount(0);
   state.closed=true;await page.reload();await expect(page.getByRole('heading',{name:'分享不可用'})).toBeVisible();await expect(page.getByText('5.1 km',{exact:true})).toHaveCount(0);
-  state.closed=false;await page.getByRole('button',{name:'重新读取分享'}).click();await expect(page.getByRole('heading',{name:'河畔晨跑'})).toBeVisible();
-  await page.goto('/shared/synthetic-token');await expect(page.getByRole('heading',{name:'河畔晨跑'})).toBeVisible();state.closed=true;await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});document.dispatchEvent(new Event('visibilitychange'));});await expect(page.getByRole('heading',{name:'河畔晨跑'})).toHaveCount(0);await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});document.dispatchEvent(new Event('visibilitychange'));});await expect(page.getByRole('heading',{name:'分享不可用'})).toBeVisible();
+  state.closed=false;await page.goto('/shared/synthetic-token');await expect(page.getByRole('heading',{name:'河畔晨跑'})).toBeVisible();state.closed=true;await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});document.dispatchEvent(new Event('visibilitychange'));});await expect(page.getByRole('heading',{name:'河畔晨跑'})).toHaveCount(0);await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});document.dispatchEvent(new Event('visibilitychange'));});await expect(page.getByRole('heading',{name:'分享不可用'})).toBeVisible();
 });
-test('public empty and closed states remain compact and retryable',async({page})=>{
-  const state=await installPublic(page);state.empty=true;await page.goto('/u/runner?year=2026');await expect(page.getByText('尚无公开跑步记录。',{exact:true})).toBeVisible();await responsive(page,'public-empty');state.closed=true;await page.reload();await expect(page.getByRole('heading',{name:'主页不可用'})).toBeVisible();state.closed=false;await page.getByRole('button',{name:'重新读取主页'}).click();await expect(page.getByRole('heading',{name:'晨跑者',exact:true})).toBeVisible();expect(await page.locator('body').innerText()).not.toMatch(/PRIVATE_.*SENTINEL/);
+test('invalid share links are real 404 pages without a retry',async({page})=>{
+  const response=await page.goto('/shared/invalidtoken');
+  expect(response?.status()).toBe(404);
+  await expect(page.getByRole('heading',{name:'页面不存在',exact:true})).toBeVisible();
+  await expect(page.getByText('分享不存在或已停止',{exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'重新读取分享'})).toHaveCount(0);
+  const activity=await page.goto('/public/activities/999999999');
+  expect(activity?.status()).toBe(404);
+  await expect(page.getByRole('button',{name:'重新读取分享'})).toHaveCount(0);
 });
 test('sharing keeps saved permissions, copies and revokes links',async({page,context})=>{
   await context.grantPermissions(['clipboard-read','clipboard-write']);await installActivities(page);await loginRunner(page);await page.goto(`/activities/${sampleActivity.id}`);
@@ -87,7 +96,7 @@ test('login error receives keyboard focus and supports retry on mobile',async({p
   await page.getByLabel('邮箱',{exact:true}).fill('runner@example.com');await page.getByLabel('密码',{exact:true}).fill('Synthetic-ui-password-2026');
   await page.route('**/api/v1/auth/login',route=>route.fulfill({status:401,json:{error:{message:'邮箱或密码不正确'}}}));
   await page.getByRole('button',{name:'登录',exact:true}).click();await expect(page.locator('#auth-error')).toBeFocused();await expect(page.getByRole('alert')).toContainText('邮箱或密码不正确');
-  await page.unroute('**/api/v1/auth/login');await page.getByLabel('密码',{exact:true}).fill('Synthetic-ui-password-2026');await page.getByRole('button',{name:'登录',exact:true}).click();await expect(page).toHaveURL(/\/dashboard$/);
+  await page.unroute('**/api/v1/auth/login');await page.getByLabel('密码',{exact:true}).fill('Synthetic-ui-password-2026');await page.getByRole('button',{name:'登录',exact:true}).click();await expect(page).toHaveURL(/\/$/);
 });
 test('historical AI failed, pending and stale snapshots remain accessible without calls',async({page})=>{
   const state=await installAI(page);state.reports=[{...report,status:'failed',analysis:null,error_code:'PROVIDER_ERROR',is_stale:true}];

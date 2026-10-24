@@ -117,3 +117,32 @@ export function locateFootprintCities(geometries: Geometry[], regions: CityRegio
   }
   return {cities:[...found.values()].sort((a,b)=>a.code.localeCompare(b.code)),unlocatedBounds};
 }
+
+export interface TrackPlacement { geometry: Geometry; activityId?: string; activityDate?: string }
+
+/** Prefer the city that contains the most tracks. Equal counts use the latest activity date. */
+export function dominantCity(tracks: TrackPlacement[], cities: FootprintCity[]): FootprintCity | null {
+  if (!cities.length) return null;
+  const stats = new Map<string, { count: number; latest: string }>();
+  for (const city of cities) stats.set(city.code, { count: 0, latest: '' });
+  const seen = new Set<string>();
+  for (const track of tracks) {
+    const bounds = geometryBounds([track.geometry]);
+    if (!bounds) continue;
+    const identity = track.activityId ?? `${bounds[0][0]},${bounds[0][1]},${bounds[1][0]},${bounds[1][1]}`;
+    for (const city of cities) {
+      if (!overlaps(bounds, city.bounds)) continue;
+      const token = `${city.code}:${identity}`;
+      if (seen.has(token)) continue;
+      seen.add(token);
+      const stat = stats.get(city.code)!;
+      stat.count += 1;
+      if ((track.activityDate ?? '') > stat.latest) stat.latest = track.activityDate ?? '';
+    }
+  }
+  return [...cities].sort((a, b) => {
+    const left = stats.get(a.code)!;
+    const right = stats.get(b.code)!;
+    return right.count - left.count || right.latest.localeCompare(left.latest) || a.code.localeCompare(b.code);
+  })[0] ?? null;
+}

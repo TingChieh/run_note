@@ -47,9 +47,9 @@ export async function authWrite(action: 'login' | 'logout', data: unknown, fetch
   return result;
 }
 export function safeNext(value: string | null): string {
-  if (!value || !value.startsWith('/') || value.startsWith('//') || /[\\\s%]/.test(value)) return '/dashboard';
+  if (!value || !value.startsWith('/') || value.startsWith('//') || /[\\\s%]/.test(value)) return '/';
   const path = value.split(/[?#]/)[0];
-  if (/^\/(login|register|api|admin)(\/|$)/.test(path)) return '/dashboard';
+  if (/^\/(login|register|api|admin)(\/|$)/.test(path)) return '/';
   return value;
 }
 export function isProtected(path: string): boolean { return /^\/(settings|workspace|admin\/users)(\/|$)/.test(path); }

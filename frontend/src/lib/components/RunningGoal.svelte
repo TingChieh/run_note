@@ -19,6 +19,7 @@
   let goalLoading = $state(true), goalError = $state(''), saving = $state(false);
   let active = false, goalToken = 0, distanceToken = 0, disposed = false;
   let editing = $state(false), distance = $state<number | null>(null), loading = $state(true), error = $state(''), feedback = $state('');
+  let detailsOpen = $state(false);
   let range = $state({ from: '', to: '' });
   let refresh = $state(0);
   const timezone = $derived(user.timezone); // value-deduped: a refreshed profile object with the same timezone must not refetch
@@ -96,33 +97,43 @@
     return()=>{active=false;disposed=true;++goalToken;++distanceToken;window.removeEventListener('runnote-activities-changed',syncDistance);window.removeEventListener('runnote-goals-changed',loadGoals);window.removeEventListener('focus',sync);};
   });
 </script>
-<section class="running-goal" aria-label="跑量目标" aria-busy={loading || goalLoading || saving}>
+<section class="running-goal" class:is-expanded={detailsOpen} aria-label="跑量目标" aria-busy={loading || goalLoading || saving}>
   <form onsubmit={save}>
   <div class="goal-heading"><strong>跑量目标</strong>{#if !readonly}<div class="goal-actions rn-goal-actions">
     <div class="goal-save-reveal" class:is-open={editing} inert={!editing} aria-hidden={!editing}>
       <div class="goal-save-clip"><button class="button-secondary" type="submit" disabled={!editing || saving} aria-label={saving ? '保存中…' : '保存'}>{saving ? '…' : '保存'}</button></div>
     </div>
     <button id="goal-edit" class="button-secondary" type="button" disabled={goalLoading || !!goalError || saving} onclick={() => void edit(!editing)} aria-expanded={editing}>{editing ? '取消' : target ? '调整' : '设置'}</button>
-  </div>{/if}</div>
-  <label class="sr-only" for="goal-period">目标周期</label>
-  <select id="goal-period" aria-label="目标周期" bind:value={period} disabled={saving}><option value="week">每周</option><option value="month">每月</option><option value="year">年度</option></select>
+  </div>{/if}<button type="button" class="goal-fold" aria-expanded={detailsOpen} onclick={() => { detailsOpen = !detailsOpen; }}>{detailsOpen ? '收起' : '详情'}</button></div>
   {#snippet distanceValue()}
     <p class="goal-distance"><strong>{dashboardDistance(distance)}</strong>
       {#if editing}<span class="goal-target"> / <label class="sr-only" for="goal-km">目标距离（km）</label><input transition:goalInputPop id="goal-km" inputmode="decimal" type="text" bind:value={input} disabled={saving} aria-describedby={`goal-confirmed${feedback ? ' goal-feedback' : ''}`} onkeydown={(event)=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();void edit(false);}}} /> km</span><span id="goal-confirmed" class="sr-only">已保存目标：/ {target === null ? '未设目标' : `${target} km`}</span>
       {:else}<span class="goal-readonly"> / {target === null ? '未设目标' : `${target} km`}</span>{/if}
     </p>
   {/snippet}
-  {#if goalError}<p role="alert" class="goal-note">{goalError}</p><button type="button" onclick={() => void loadGoals()}>重试目标</button>{/if}
   {#if editing || (!loading && !error)}{@render distanceValue()}{/if}
+  <div class="goal-extra">
+  <label class="sr-only" for="goal-period">目标周期</label>
+  <select id="goal-period" aria-label="目标周期" bind:value={period} disabled={saving}><option value="week">每周</option><option value="month">每月</option><option value="year">年度</option></select>
+  {#if goalError}<p role="alert" class="goal-note">{goalError}</p><button type="button" onclick={() => void loadGoals()}>重试目标</button>{/if}
   {#if loading}<p role="status">正在读取跑量…</p>{:else if error}<p role="alert">{error}</p><button type="button" disabled={saving} onclick={() => refresh++}>重试跑量</button>{:else}
     {#if target !== null}<progress max="100" value={progress} aria-label={`${labels[period]}跑量目标进度`}>{Math.round(progress)}%</progress><p class="goal-note">{progress >= 100 ? '目标已达成' : `已完成 ${Math.round(progress)}%`}</p>{/if}
   {/if}
   <details><summary>{labels[period]} · 统计范围</summary><p class="goal-note">{range.from} 至 {range.to}（不含结束日），截至今天。按活动当地日期归属；周一开始。目标仅供个人参考。</p></details>
+  </div>
   {#if feedback}<p id="goal-feedback" role="alert" class="goal-note">{feedback}</p>{/if}
   </form>
 </section>
 <style>
-  .running-goal { margin-top:var(--space-2); padding:var(--space-2); border-radius:var(--radius-control); background:var(--surface); color:var(--foreground); }
+  .running-goal { margin:0; padding:var(--space-2); border-radius:var(--radius-control); background:var(--surface); color:var(--foreground); }
+  .goal-fold { display:none; }
+  @media (min-width:1024px) and (max-height:900px) {
+    .goal-fold { display:inline-flex; min-height:2rem; padding:.2rem .45rem; font-size:.75rem; }
+    .running-goal:not(.is-expanded) form { display:flex; align-items:center; flex-wrap:wrap; gap:var(--space-2); }
+    .running-goal:not(.is-expanded) .goal-heading { flex:1 1 auto; }
+    .running-goal:not(.is-expanded) .goal-distance { min-height:0; margin:0; }
+    .running-goal:not(.is-expanded) .goal-extra { display:none; }
+  }
   .goal-heading { display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
   button { min-height:44px; padding:.4rem .5rem; color:var(--primary); font-weight:650; border-radius:.5rem; }
   button:hover { background:var(--primary-soft); }
