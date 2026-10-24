@@ -295,7 +295,7 @@ cmd_finish() {
   open_prompts
   local current
   current="$(sed -n 's/^RESTIC_PASSWORD_FILE=//p' "$BACKUP_ENV" | tail -n 1)"
-  [ -n "$current" ] && [ -f "$current" ] || die "the password file named in backup.env is missing"
+  if [ -z "$current" ] || [ ! -f "$current" ]; then die "the password file named in backup.env is missing"; fi
   if [ "$current" != "$PASSWORD_FILE" ]; then
     [ ! -e "$PASSWORD_FILE" ] || die "$PASSWORD_FILE already exists; not replacing it"
     mkdir -p "$BACKUP_DIR"
