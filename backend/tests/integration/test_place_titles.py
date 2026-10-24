@@ -13,6 +13,7 @@ from sqlalchemy.exc import DBAPIError
 from app.modules.activities.model import Activity
 from app.modules.place_titles import queue, rules, service
 from tests.integration.test_gpx_import import clients, register, upload  # noqa: F401
+from tests.integration.test_mifitness_import import record, send, track
 
 pytestmark = pytest.mark.integration  # clients is requested by name
 
@@ -173,7 +174,7 @@ def test_an_empty_place_table_keeps_the_queue_pending(clients):  # noqa: F811
     a, b, _, app = clients
     quiet(a, b)
     with app.state.session_factory() as db:
-        if service.place_count(db):
+        if service.has_places(db):
             pytest.skip("shared test database already holds place features")
     owner = register(a)
     activity = add_run(app, owner, ring(), day=date(2025, 3, 1))
@@ -216,10 +217,35 @@ def test_imports_without_a_title_are_queued_and_titled_imports_are_not(clients):
     assert plain.status_code in (200, 201), plain.text
     activity = plain.json()["data"]["activity"]["id"]
     assert queue_state(app, activity)[0] == "pending"
-    titled = upload(a, file="equator-six.gpx", fields={"title": "自己的名字"}, raw=None)
-    # A duplicate upload is rejected; that is fine: only a new, titled activity matters here.
-    if titled.status_code in (200, 201):
-        assert queue_state(app, titled.json()["data"]["activity"]["id"]) is None
+    # A different file than above, so it is not rejected as a duplicate.
+    titled = upload(a, file="different-date.gpx", fields={"title": "自己的名字"})
+    assert titled.status_code in (200, 201), titled.text
+    assert queue_state(app, titled.json()["data"]["activity"]["id"]) is None
+
+
+def test_a_mifitness_import_with_a_route_is_queued(clients):  # noqa: F811
+    a, b, _, app = clients
+    quiet(a, b)
+    register(a)
+    result = send(a, record(), raw=track())
+    assert result.status_code == 201, result.text
+    activity = result.json()["data"]["activity"]
+    assert activity["has_route"] is True
+    assert queue_state(app, activity["id"])[0] == "pending"
+
+
+def test_the_sql_default_title_matches_the_importer_default(clients):  # noqa: F811
+    _, _, _, app = clients
+    with app.state.session_factory() as db:
+        for day in (date(2025, 1, 2), date(2024, 12, 31), date(999, 3, 4)):
+            sql = db.scalar(
+                text(
+                    f"SELECT {service.DEFAULT_TITLE_SQL} FROM (SELECT CAST(:d AS date) AS "
+                    "activity_date) t"
+                ),
+                {"d": day},
+            )
+            assert sql == rules.default_title(day)
 
 
 def test_the_footprint_scan_also_names_pending_runs(clients, region):  # noqa: F811
@@ -288,6 +314,61 @@ def test_a_very_long_track_is_sampled_within_the_bound(clients, region):  # noqa
     assert 0 < near["lake"] < total
 
 
+def test_many_segments_still_yield_a_bounded_sample_set(clients, region):  # noqa: F811
+    """3000 two-point segments: every segment would add samples without the final thinning."""
+    a, b, _, app = clients
+    quiet(a, b)
+    owner = register(a)
+    with app.state.session_factory.begin() as db:
+        activity = Activity(
+            user_id=UUID(owner),
+            source="gpx",
+            title=rules.default_title(date(2025, 7, 2)),
+            activity_date=date(2025, 7, 2),
+            date_source="manual",
+            timezone="UTC",
+            distance_m=60_000,
+            elapsed_seconds=20000,
+            timer_seconds=20000,
+            avg_pace_seconds_per_km=330,
+            temporal_quality="complete",
+            quality_summary={},
+            metrics_version="gpx-v1",
+        )
+        db.add(activity)
+        db.flush()
+        many_id = activity.id
+        db.execute(
+            text(
+                """INSERT INTO activity_segments
+                   (id, activity_id, segment_index, source_track_index, source_segment_index,
+                    break_reason, point_count, geom)
+                   SELECT gen_random_uuid(), :id, i, 0, i, 'speed_jump', 2,
+                          ST_MakeLine(ARRAY[
+                              ST_SetSRID(ST_MakePoint(:lon + i * 0.0002, :lat), 4326),
+                              ST_SetSRID(ST_MakePoint(:lon + (i + 1) * 0.0002, :lat), 4326)])
+                   FROM generate_series(0, 2999) AS i"""
+            ),
+            {"id": many_id, "lon": LON, "lat": LAT},
+        )
+    west, east = LON - 0.01, LON + 0.62
+    south, north = LAT - 500 / METRES, LAT + 500 / METRES
+    add_place(
+        app,
+        "lake",
+        [(west, south), (east, south), (east, north), (west, north), (west, south)],
+        region,
+    )
+    started = time.monotonic()
+    with app.state.session_factory() as db:
+        total, near = service.measure_shares(db, many_id)
+        found = service.resolve(db, many_id)
+    assert time.monotonic() - started < 10
+    assert 0 < total <= rules.MAX_SAMPLES
+    assert near["lake"] == total
+    assert found is not None and found[0] == "lake"
+
+
 def failing_resolve(failing, error):
     real = service.resolve
 
@@ -333,8 +414,62 @@ def test_a_timed_out_run_stays_pending_and_is_tried_once_per_pass(
     for activity in (slow, good):
         enqueue(app, owner, activity)
     timeout = DBAPIError("statement", {}, psycopg.errors.QueryCanceled())
-    monkeypatch.setattr(service, "resolve", failing_resolve({slow}, timeout))
+    attempts = []
+    wrapped = failing_resolve({slow}, timeout)
+
+    def counting(db, activity_id):
+        attempts.append(str(activity_id))
+        return wrapped(db, activity_id)
+
+    monkeypatch.setattr(service, "resolve", counting)
     fill(app)  # must terminate although the slow run never leaves the pending state
+    assert attempts.count(slow) == 1 and attempts.count(good) == 1
     assert queue_state(app, slow)[0] == "pending"
     assert queue_state(app, good)[0] == "done"
     assert title_of(app, slow) == rules.default_title(date(2025, 9, 1))
+
+
+def test_a_real_database_error_aborts_only_that_run(clients, region, monkeypatch):  # noqa: F811
+    a, b, _, app = clients
+    quiet(a, b)
+    add_place(app, "lake", box_around_ring(margin_m=0), region)
+    owner = register(a)
+    bad = add_run(app, owner, ring(), day=date(2025, 10, 1))
+    good = add_run(app, owner, ring(), day=date(2025, 10, 2))
+    for activity in (bad, good):
+        enqueue(app, owner, activity)
+    real = service.resolve
+
+    def resolve(db, activity_id):
+        if str(activity_id) == bad:
+            db.execute(text("SELECT 1 / 0"))  # a real error: the transaction is aborted
+        return real(db, activity_id)
+
+    monkeypatch.setattr(service, "resolve", resolve)
+    assert fill(app) >= 1  # other pending rows may exist in the shared database
+    assert queue_state(app, bad)[0] == "skipped"
+    assert queue_state(app, good)[0] == "done"
+
+
+def test_a_run_deleted_after_measuring_is_dropped_without_error(clients, region, monkeypatch):  # noqa: F811
+    a, b, _, app = clients
+    quiet(a, b)
+    add_place(app, "lake", box_around_ring(margin_m=0), region)
+    owner = register(a)
+    gone = add_run(app, owner, ring(), day=date(2025, 11, 1))
+    kept = add_run(app, owner, ring(), day=date(2025, 11, 2))
+    for activity in (gone, kept):
+        enqueue(app, owner, activity)
+    real = service.resolve
+
+    def resolve(db, activity_id):
+        found = real(db, activity_id)
+        if str(activity_id) == gone:
+            with app.state.session_factory.begin() as other:  # no lock is held by the worker
+                other.execute(text("DELETE FROM activities WHERE id=:a"), {"a": UUID(gone)})
+        return found
+
+    monkeypatch.setattr(service, "resolve", resolve)
+    assert fill(app) >= 1  # other pending rows may exist in the shared database
+    assert queue_state(app, gone) is None
+    assert queue_state(app, kept)[0] == "done"
