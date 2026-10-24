@@ -63,7 +63,10 @@ ask() {
 }
 
 load_env() { # re-exec the caller once with backup.env loaded (PGDATABASE, RESTIC_*, AWS_*)
-  [ -f "$BACKUP_ENV" ] || die "$BACKUP_ENV does not exist; run init-instance.sh first"
+  # Already loaded by root before dropping to postgres: that account cannot even see the file
+  # (its directory is root-only), so it must not be checked here.
+  if [ -n "${RUNNOTE_BACKUP_ENV_LOADED:-}" ]; then return 0; fi
+  if [ ! -f "$BACKUP_ENV" ]; then die "$BACKUP_ENV does not exist; run init-instance.sh first"; fi
   load_backup_env "$0" "$@"
 }
 
