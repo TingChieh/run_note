@@ -49,7 +49,7 @@
 <svelte:head><title>{pageTitle('常跑路线', page.data.site)}</title></svelte:head>
 <PageHeader title="常跑路线" description="形状重合的跑步会自动归为同一条路线。" />
 <div class="routes-page">
-  <div class="sort-row" role="group" aria-label="排序方式">
+  <div class="mode-switch compact-switch route-sort" role="group" aria-label="排序方式">
     {#each SORTS as item}<button type="button" aria-pressed={sort === item.value} onclick={() => choose(item.value)}>{item.label}</button>{/each}
   </div>
   {#if loading}<PageSkeleton title="正在读取常跑路线…" />{/if}
@@ -66,10 +66,7 @@
 </div>
 <style>
   .routes-page { display: grid; gap: var(--space-4); margin-top: var(--space-6); min-width: 0; }
-  .sort-row { display: inline-flex; gap: .25rem; background: var(--muted); padding: .25rem; border-radius: var(--radius-control); justify-self: start; max-width: 100%; flex-wrap: wrap; }
-  .sort-row button { min-height: 2.75rem; padding: .5rem 1rem; font-weight: var(--weight-semibold); border-radius: .45rem; color: var(--muted-foreground); }
-  .sort-row button[aria-pressed='true'] { color: var(--primary-foreground); background: var(--primary); }
-  .sort-row button:not([aria-pressed='true']):hover { color: var(--primary); background: var(--surface); }
+  .route-sort { justify-self: start; max-width: 100%; }
   .total { color: var(--muted-foreground); font-size: var(--text-small); }
   .grid { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr)); }
 </style>

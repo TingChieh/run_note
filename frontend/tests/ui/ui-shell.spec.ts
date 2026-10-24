@@ -391,3 +391,32 @@ test('unknown, retired and unpublished routes share one styled 404 page inside t
     await expect(page.locator('.app-sidebar')).toHaveCount(1);
   }
 });
+
+test('AI 分析 navigation entry and dashboard card are hidden from anonymous visitors on desktop and mobile, but the route stays reachable', async ({ page }) => {
+  await page.goto('/');
+  // Assert only after hydration and the anonymous session resolved, not just the SSR markup.
+  await expect(page.locator('header[data-auth-ready="true"]')).toHaveCount(1);
+  const features = page.getByRole('navigation', { name: '功能入口' });
+  await expect(features.getByRole('link', { name: /跑步记录/ })).toBeVisible();
+  await expect(features.getByRole('link', { name: /AI 分析/ })).toHaveCount(0);
+  await expect(page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: '跑步记录', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'AI 分析', exact: true })).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: '打开导航' }).click();
+  await expect(page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: '跑步记录', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'AI 分析', exact: true })).toHaveCount(0);
+  await expect(features.getByRole('link', { name: /AI 分析/ })).toHaveCount(0);
+  await page.goto('/ai');
+  await expect(page.getByRole('heading', { level: 1, name: 'AI 跑步分析' })).toBeVisible();
+});
+
+test('AI 分析 navigation entry is shown to logged-in users on desktop and mobile', async ({ page }) => {
+  await login(page);
+  await expect(page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: 'AI 分析', exact: true })).toBeVisible();
+  await page.goto('/');
+  await expect(page.locator('header[data-auth-ready="true"]')).toHaveCount(1);
+  await expect(page.getByRole('navigation', { name: '功能入口' }).getByRole('link', { name: /AI 分析/ })).toHaveCount(1);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: '打开导航' }).click();
+  await expect(page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: 'AI 分析', exact: true })).toBeVisible();
+});
