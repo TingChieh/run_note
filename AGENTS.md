@@ -1,7 +1,7 @@
 # AGENTS.md — Run Note 工作指南
 
 面向 AI 编码 Agent 的长期工作规范。只描述稳定、可验证、会影响实际改动的项目知识。
-人类向的安装与背景说明见 `README.md`；两份文档职责不同，不要互相复制。
+人类向的项目介绍见 `README.md`，详细的本地环境与测试库步骤见 `docs/00-legacy-readme.md`；两份文档职责不同，不要互相复制。
 文档与代码冲突时一律以代码和实际查询结果为准。
 
 ## 1. 项目概览与技术栈
@@ -114,7 +114,7 @@ docs/              设计与验收记录（中文）；docs/design-system/ 为 U
 - 迁移**手写**，不依赖 autogenerate。文件名与 `revision` 同为 `NNNN_snake_case`（四位序号 + 变更描述，序号连续递增），维护一条线性 `down_revision` 链；新增前先 `ls backend/migrations/versions/` 确认下一个序号。
 - 升级必须实现，**降级要防御性**：存在真实数据时 `raise RuntimeError` 而不是破坏数据。
 - 新增迁移后，`/api/v1/health/ready` 与 `/api/health` 会因 revision 不匹配返回 503，直到目标库执行 `alembic upgrade head`。启动时期望值由 `get_expected_revision()` 读取，要求 head 唯一。
-- **不要引用文档里写死的 revision 号。** 迁移 head 用 `alembic heads` 动态查询，目标库当前版本用 `alembic current`。`README.md` 与设计文档中的 head 描述已多次滞后于代码。
+- **不要引用文档里写死的 revision 号。** 迁移 head 用 `alembic heads` 动态查询，目标库当前版本用 `alembic current`。`docs/00-legacy-readme.md` 与设计文档中的 head 描述已多次滞后于代码。
 - 配置集中在 `app/core/config.py`（`Settings`），环境文件是**仓库根目录的 `.env`**（前后端共用）。字段小写蛇形，环境变量为大写蛇形。`extra="ignore"`、`hide_input_in_errors=True` 必须保留。密钥用 `SecretStr`。
 - `AUTH_RATE_HASH_KEY` 至少 32 字节，由 `scripts/local-auth.py` 管理，写入 Git 忽略的 `.env.auth-rate.key`（权限 600）。**不要输出、轮换或把它放进前端**。
 - 开发库与测试库严格分离，迁移与集成测试只允许作用于独立的 `_test` 库（规则见第 9 节"数据库保护"）。
@@ -218,7 +218,7 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
 后端集成测试与 `playwright.*-e2e.config.ts` 适用同一规则：
 
 - 只允许名字以 `_test` 结尾、且显式列入 `TEST_DATABASE_ALLOWED_TARGETS` 的库；`backend/tests/conftest.py` 会以只读连接核对实际库名与端口，不匹配直接拒绝。
-- 优先复用既有测试库；确需新建时按 `README.md` 的步骤创建，库名必须以 `_test` 结尾并加入允许目标，绝不能改用开发库。
+- 优先复用既有测试库；确需新建时按 `docs/00-legacy-readme.md` 的步骤创建，库名必须以 `_test` 结尾并加入允许目标，绝不能改用开发库。
 - **只在进程环境注入测试变量，不要修改 `.env`**。既有做法见 `docs/09-phase-two-progress.md` 的"运行测试"小节（在 `backend/` 下就地构造 `TEST_DATABASE_URL` 与 `TEST_DATABASE_ALLOWED_TARGETS` 后以子进程调用 `pytest`）。
 - 未配置这些变量时集成用例会跳过，**跳过不等于通过**。
 
