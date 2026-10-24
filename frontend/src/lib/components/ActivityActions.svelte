@@ -78,17 +78,17 @@
   .activity-actions { margin-top: 1.5rem; padding: 1.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); min-width: 0; }
   .action-heading, .action-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
   .action-heading { justify-content: space-between; }
-  h2 { font-size: 1.125rem; font-weight: 700; }
-  .delete-button { color: var(--error); padding: .625rem .875rem; border: 1px solid var(--border); border-radius: .75rem; font-size: .875rem; font-weight: 600; }
+  h2 { font-size: var(--text-section); font-weight: var(--weight-semibold); }
+  .delete-button { color: var(--error); padding: .625rem .875rem; border: 1px solid var(--border); border-radius: .75rem; font-size: var(--text-small); font-weight: var(--weight-semibold); }
   button:disabled { opacity: .5; cursor: wait; }
-  .hint { color: var(--muted-foreground); font-size: .875rem; line-height: 1.6; }
-  .labels { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; color: var(--primary); font-size: .875rem; overflow-wrap: anywhere; }
-  .notes { margin-top: 1rem; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .9375rem; }
+  .hint { color: var(--muted-foreground); font-size: var(--text-small); line-height: var(--line-height-body); }
+  .labels { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; color: var(--primary); font-size: var(--text-small); overflow-wrap: anywhere; }
+  .notes { margin-top: 1rem; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-body); }
   dialog { margin: auto; width: min(28rem, calc(100% - 2rem)); max-height: calc(100svh - 2rem); overflow-y: auto; padding: 1.5rem; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); color: var(--foreground); }
   dialog::backdrop { background: rgb(0 0 0 / .5); }
-  .delete-title { margin: 1rem 0 .5rem; overflow-wrap: anywhere; font-weight: 600; }
+  .delete-title { margin: 1rem 0 .5rem; overflow-wrap: anywhere; font-weight: var(--weight-semibold); }
   .dialog-buttons { justify-content: flex-end; margin-top: 1.5rem; }
-  .delete-confirm { padding: .625rem 1rem; border-radius: .75rem; background: var(--error); color: white; font-size: .875rem; font-weight: 600; }
+  .delete-confirm { padding: .625rem 1rem; border-radius: .75rem; background: var(--error); color: white; font-size: var(--text-small); font-weight: var(--weight-semibold); }
   dialog :global(.feedback) { margin-top: 1rem; }
   @media (max-width: 639px) { .activity-actions, dialog { padding: 1rem; } }
 </style>

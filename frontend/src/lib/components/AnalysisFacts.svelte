@@ -10,17 +10,17 @@
   <p class="mt-2 text-sm text-muted-foreground">{facts.date_from} 至 {facts.date_to}（结束日期不包含在内）。按活动本地日期归属，完整自然周从周一开始。</p>
   {#if facts.evidence_limited}<p role="note" class="mt-3 rounded bg-warning-soft p-3 text-warning">分析依据有限：活动较少或覆盖周数不足，无法判断长期运动表现。</p>{/if}
   <dl class="facts-metrics my-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
-    <div><dt class="text-sm text-muted-foreground">总跑量</dt><dd class="text-2xl font-semibold">{dashboardDistance(facts.summary.distance_m)}</dd></div>
-    <div><dt class="text-sm text-muted-foreground">运动次数</dt><dd class="text-2xl font-semibold">{facts.summary.activity_count} 次</dd></div>
-    <div><dt class="text-sm text-muted-foreground">平均每周频率</dt><dd class="text-2xl font-semibold">{Number(facts.average_runs_per_week).toFixed(1)} 次/周</dd></div>
-    <div><dt class="text-sm text-muted-foreground">平均配速</dt><dd class="text-2xl font-semibold">{formatPace(facts.summary.avg_pace_seconds_per_km)}</dd></div>
+    <div><dt class="text-sm text-muted-foreground">总跑量</dt><dd class="text-2xl font-bold">{dashboardDistance(facts.summary.distance_m)}</dd></div>
+    <div><dt class="text-sm text-muted-foreground">运动次数</dt><dd class="text-2xl font-bold">{facts.summary.activity_count} 次</dd></div>
+    <div><dt class="text-sm text-muted-foreground">平均每周频率</dt><dd class="text-2xl font-bold">{Number(facts.average_runs_per_week).toFixed(1)} 次/周</dd></div>
+    <div><dt class="text-sm text-muted-foreground">平均配速</dt><dd class="text-2xl font-bold">{formatPace(facts.summary.avg_pace_seconds_per_km)}</dd></div>
   </dl>
   {#if facts.schema_version === 'running-summary-v2' && facts.device_metrics}
     {@const d = facts.device_metrics}
     <dl aria-label="设备指标" class="facts-metrics my-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
-      <div><dt class="text-sm text-muted-foreground">平均心率（用时加权估计）</dt><dd class="text-2xl font-semibold">{hr(d.avg_heart_rate_bpm)}</dd><p class="mt-2 text-sm text-muted-foreground">心率覆盖 {d.heart_rate_record_count} / {facts.summary.activity_count} 条；参与加权 {d.heart_rate_weighted_count} 条</p></div>
-      <div><dt class="text-sm text-muted-foreground">热量（已知记录小计）</dt><dd class="text-2xl font-semibold">{d.calories_kcal === null ? '暂无数据' : `${d.calories_kcal} kcal`}</dd><p class="mt-2 text-sm text-muted-foreground">覆盖 {d.calories_record_count} / {facts.summary.activity_count} 条</p></div>
-      <div><dt class="text-sm text-muted-foreground">步数（已知记录小计）</dt><dd class="text-2xl font-semibold">{d.steps === null ? '暂无数据' : `${d.steps} 步`}</dd><p class="mt-2 text-sm text-muted-foreground">覆盖 {d.steps_record_count} / {facts.summary.activity_count} 条</p></div>
+      <div><dt class="text-sm text-muted-foreground">平均心率（用时加权估计）</dt><dd class="text-2xl font-bold">{hr(d.avg_heart_rate_bpm)}</dd><p class="mt-2 text-sm text-muted-foreground">心率覆盖 {d.heart_rate_record_count} / {facts.summary.activity_count} 条；参与加权 {d.heart_rate_weighted_count} 条</p></div>
+      <div><dt class="text-sm text-muted-foreground">热量（已知记录小计）</dt><dd class="text-2xl font-bold">{d.calories_kcal === null ? '暂无数据' : `${d.calories_kcal} kcal`}</dd><p class="mt-2 text-sm text-muted-foreground">覆盖 {d.calories_record_count} / {facts.summary.activity_count} 条</p></div>
+      <div><dt class="text-sm text-muted-foreground">步数（已知记录小计）</dt><dd class="text-2xl font-bold">{d.steps === null ? '暂无数据' : `${d.steps} 步`}</dd><p class="mt-2 text-sm text-muted-foreground">覆盖 {d.steps_record_count} / {facts.summary.activity_count} 条</p></div>
     </dl>
     <p class="text-sm text-muted-foreground">心率按有效用时加权平均，非逐点重算；缺心率或正用时的记录不参与。热量与步数仅为已知记录小计，不代表完整总量；设备热量并非精确能量消耗，步数不能用于推断跑步步频。</p>
   {:else}

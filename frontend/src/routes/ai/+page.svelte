@@ -119,7 +119,7 @@
     <div class="content-reveal"><p class="mt-4 text-sm">模型：{context.model ?? '未配置'} · 今日剩余额度：{context.remaining_today}/{context.daily_limit}（UTC日期；失败调用也计入额度）</p>
     {#if !context.configured}<p role="note" class="mt-3 text-warning">AI服务尚未配置，请联系服务端维护者；运动记录和统计仍可使用。</p>{/if}
     {#if context.stats_snapshot.summary.activity_count === 0}<p role="note" class="mt-3 text-warning">该范围没有运动记录，无法分析；不会调用AI或扣减额度。</p><a href={view.href("/activities")}  class="button-secondary mt-3">导入 GPX / TCX</a>{/if}
-    <label class="mt-5 flex items-start gap-3 rounded-lg border border-border bg-muted p-4 text-sm leading-6"><input type="checkbox" bind:checked={consent} disabled={busy} class="mt-1" /><span>我同意向已配置的AI服务发送所选日期范围的最小统计摘要（周跑量、频率、配速、汇总心率、热量、步数、各指标覆盖率和质量数量）；不包含原始GPX / TCX文件、GPS坐标、邮箱、用户名、标题或备注。</span></label>
+    <label class="mt-5 flex items-start gap-3 rounded-lg border border-border bg-muted p-4 text-sm"><input type="checkbox" bind:checked={consent} disabled={busy} class="mt-1" /><span>我同意向已配置的AI服务发送所选日期范围的最小统计摘要（周跑量、频率、配速、汇总心率、热量、步数、各指标覆盖率和质量数量）；不包含原始GPX / TCX文件、GPS坐标、邮箱、用户名、标题或备注。</span></label>
     {#if pending}<p class="mt-3 text-sm text-warning">上次请求结果尚未确认。先读取历史，或按原标识重试；不会因网络中断自动另发新请求。</p>{/if}
     <button onclick={() => generate(!!pending)} disabled={busy || loading || !consent || !context.configured || from !== context.date_from || to !== context.date_to || context.stats_snapshot.summary.activity_count === 0 || !pending && context.remaining_today === 0} class="mt-4 rounded bg-primary px-5 py-3 text-primary-foreground disabled:opacity-50">{busy ? '正在生成分析…' : pending ? '按原请求标识重试（防重复）' : '生成近期总结与下周建议'}</button></div>
   {/if}
@@ -149,7 +149,7 @@
 {#if detailError}<div class="aux-panel mb-6"><FeedbackState kind="error" title={detailError} /><button class="button-secondary mt-3" disabled={busy || detailLoading} onclick={() => { if (requestedReport) void openReport(requestedReport); }}>重试读取报告</button></div>{/if}
 {#if selected}<AnalysisFacts facts={selected.stats_snapshot} />{:else if context}<AnalysisFacts facts={context.stats_snapshot} />{/if}
 <section class="aux-panel mt-6" aria-label="分析历史">
-  <div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-2xl font-semibold">分析历史</h2><button onclick={() => refreshHistory()} disabled={historyLoading || busy} class="button-secondary">读取历史</button></div>
+  <div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-xl font-semibold">分析历史</h2><button onclick={() => refreshHistory()} disabled={historyLoading || busy} class="button-secondary">读取历史</button></div>
   {#if historyLoading}<div class="mt-3"><FeedbackState kind="loading" title="正在读取历史…" /></div>{/if}
   {#if historyError}<div class="mt-3"><FeedbackState kind="error" title={historyError} /></div>{/if}
   {#if history}

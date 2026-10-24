@@ -224,13 +224,13 @@
   .table-scroll { max-width: 100%; overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; text-align: left; }
   th, td { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); vertical-align: middle; }
-  thead th { padding-block: var(--space-2); font-size: .8125rem; font-weight: 600; color: var(--muted-foreground); white-space: nowrap; }
+  thead th { padding-block: var(--space-2); font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--muted-foreground); white-space: nowrap; }
   tbody tr { transition: background-color var(--transition-control); }
   tbody tr:hover { background: color-mix(in srgb, var(--muted) 60%, transparent); }
   tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
   tbody th { min-width: 14rem; font-weight: inherit; }
   .user-cell { display: flex; align-items: center; gap: var(--space-3); }
-  .user-avatar { display: grid; place-items: center; flex: none; width: 2.5rem; height: 2.5rem; border-radius: 50%; background: var(--primary-soft); color: var(--primary); font-weight: 700; }
+  .user-avatar { display: grid; place-items: center; flex: none; width: 2.5rem; height: 2.5rem; border-radius: 50%; background: var(--primary-soft); color: var(--primary); font-weight: var(--weight-bold); }
   .user-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); min-width: 24rem; align-items: center; }
   dialog { margin: auto; width: min(36rem, calc(100vw - var(--space-8))); max-height: calc(100dvh - var(--space-8)); overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-card); padding: var(--space-6); color: var(--foreground); background: var(--surface); }
   dialog::backdrop { background: var(--surface-backdrop); }
@@ -241,8 +241,8 @@
   .select-cell { width: 3rem; }
   .select-cell input { width: 1.25rem; height: 1.25rem; }
   .selection-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); margin-bottom: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
-  .selected-count { flex: 1; color: var(--muted-foreground); white-space: nowrap; font-size: .875rem; }
-  .delete-button, .delete-submit { padding: .625rem .875rem; border-radius: var(--radius-control); font-size: .875rem; font-weight: 600; color: var(--error); border: 1px solid var(--error-border); }
+  .selected-count { flex: 1; color: var(--muted-foreground); white-space: nowrap; font-size: var(--text-small); }
+  .delete-button, .delete-submit { padding: .625rem .875rem; border-radius: var(--radius-control); font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--error); border: 1px solid var(--error-border); }
   .delete-submit:disabled, .delete-button:disabled { opacity: .5; }
   .delete-list { max-height: 12rem; overflow-y: auto; padding-left: var(--space-6); list-style: disc; }
 </style>

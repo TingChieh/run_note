@@ -115,14 +115,14 @@
 {#if basemapStatus === 'failed'}<div class="basemap-feedback" role="status"><span>底图暂不可用，轨迹仍可查看。</span><button type="button" onclick={loadBasemap} class="font-medium text-primary underline">重试底图</button></div>
 {:else if basemapStatus === 'loading'}<p role="status" class="mt-3 text-sm">正在加载底图…</p>{/if}
 {/if}
-<details class="mt-3 text-sm text-muted-foreground"><summary class="w-fit font-medium">地图与隐私说明</summary><p class="mt-2 leading-6">底图由 OpenFreeMap 提供，使用 OpenMapTiles 与 OpenStreetMap 数据；会请求样式、字体、图标和当前视口瓦片；完整 GPX 与轨迹点不会发送给底图服务，路径在本地绘制。关闭底图可停止后续瓦片请求。不同轨迹段不会连线，起终点重合时两个标记分别显示。公共底图为尽力服务，可能暂不可用。</p></details>
+<details class="mt-3 text-sm text-muted-foreground"><summary class="w-fit font-medium">地图与隐私说明</summary><p class="mt-2">底图由 OpenFreeMap 提供，使用 OpenMapTiles 与 OpenStreetMap 数据；会请求样式、字体、图标和当前视口瓦片；完整 GPX 与轨迹点不会发送给底图服务，路径在本地绘制。关闭底图可停止后续瓦片请求。不同轨迹段不会连线，起终点重合时两个标记分别显示。公共底图为尽力服务，可能暂不可用。</p></details>
 <style>
   .embedded { margin-top: 1rem; }
   .locate-button { width: 2.75rem; padding: 0; }
   .map-status { position: absolute; inset: 3.5rem 1rem auto; background: var(--surface); border-radius: .5rem; }
-  .map-basemap { inset: auto 1rem 2rem; width: fit-content; padding: .375rem .5rem; font-size: .75rem; }
+  .map-basemap { inset: auto 1rem 2rem; width: fit-content; padding: .375rem .5rem; font-size: var(--text-caption); }
   .route-map { height: var(--route-map-height, clamp(18rem, 50svh, 32rem)); }
-  .basemap-feedback { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-3); margin-top: var(--space-3); color: var(--muted-foreground); font-size: .875rem; }
+  .basemap-feedback { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-3); margin-top: var(--space-3); color: var(--muted-foreground); font-size: var(--text-small); }
   .spacious .route-map { height: 32.5rem; }
   @media (max-width: 1199px) { .spacious .route-map { height: clamp(22.5rem, 55svh, 32.5rem); } }
   @media (max-width: 639px) { .route-map { height: var(--route-map-height, clamp(17rem, 40svh, 22rem)); } }

@@ -23,7 +23,7 @@
   svg { display: block; width: 100%; aspect-ratio: 360/220; padding: .65rem; background: var(--route-thumbnail); }
   svg path { fill: none; stroke: var(--primary); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
   .body { display: grid; gap: .5rem; padding: 1rem; }
-  h2 { font-size: 1rem; font-weight: 650; }
+  h2 { font-size: var(--text-section); font-weight: var(--weight-semibold); }
   h2 a { color: var(--foreground); }
   h2 a::after { content: ''; position: absolute; inset: 0; }
   .route-card { position: relative; transition: border-color .15s, box-shadow .15s; }
@@ -31,8 +31,8 @@
   .route-card:has(a:focus-visible) { outline: 2px solid var(--ring); outline-offset: 3px; }
   /* The card draws the ring through :has(); keep the link's own outline where it is unsupported. */
   @supports selector(:has(*)) { h2 a:focus-visible { outline: none; } }
-  .count { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem; font-size: .875rem; }
-  .count span, dt { color: var(--muted-foreground); font-size: .8125rem; }
+  .count { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem; font-size: var(--text-small); }
+  .count span, dt { color: var(--muted-foreground); font-size: var(--text-small); }
   dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
-  dd { font-weight: 600; font-variant-numeric: tabular-nums; }
+  dd { font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; }
 </style>

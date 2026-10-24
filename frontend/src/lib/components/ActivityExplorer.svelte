@@ -227,15 +227,15 @@
 <style>
   .activity-explorer { --explorer-padding: var(--space-4); --route-map-height: clamp(14rem, 36svh, 24rem); min-width: 0; padding: var(--explorer-padding); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
   .explorer-heading, .selected-heading, .browse-controls { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; }
-  .eyebrow, .selected-heading p, .browse-controls p { color: var(--muted-foreground); font-size: .75rem; line-height: 1.6; }
-  h2 { font-size: 1.25rem; font-weight: 700; } h3 { font-size: 1.375rem; font-weight: 700; overflow-wrap: anywhere; }
+  .eyebrow, .selected-heading p, .browse-controls p { color: var(--muted-foreground); font-size: var(--text-caption); line-height: var(--line-height-body); }
+  h2 { font-size: var(--text-section); font-weight: var(--weight-semibold); } h3 { font-size: var(--text-card); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
   .explorer-filters { display: flex; flex-wrap: wrap; gap: .75rem; }
-  .explorer-heading label { display: flex; align-items: center; gap: .5rem; font-size: .875rem; max-width: 100%; }
+  .explorer-heading label { display: flex; align-items: center; gap: .5rem; font-size: var(--text-small); max-width: 100%; }
   select { min-height: 2.75rem; max-width: 14rem; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); padding: .5rem; }
-  .selected-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: center; } .selected-heading > div { min-width: 0; } .selected-heading h3 { font-size: 1.125rem; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .selected-heading p { margin-top: var(--space-1); min-height: 1.2rem; overflow-wrap: anywhere; }
+  .selected-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: center; } .selected-heading > div { min-width: 0; } .selected-heading h3 { font-size: var(--text-card); line-height: var(--line-height-heading); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .selected-heading p { margin-top: var(--space-1); min-height: 1.2rem; overflow-wrap: anywhere; }
   .explorer-workspace { position: relative; display: grid; grid-template-columns: minmax(0,1.7fr) minmax(17rem,1fr); gap: var(--space-4); margin-top: var(--space-2); }
   .explorer-route :global(.embedded) { margin-top: 0; }
-  .record-arrow { position: absolute; top: calc(var(--route-map-height) / 2); transform: translateY(-50%); z-index: 3; display: grid; place-items: center; width: 2.75rem; height: 2.75rem; padding: 0; border-radius: 50%; line-height: 1; background: var(--surface); }
+  .record-arrow { position: absolute; top: calc(var(--route-map-height) / 2); transform: translateY(-50%); z-index: 3; display: grid; place-items: center; width: 2.75rem; height: 2.75rem; padding: 0; border-radius: 50%; line-height: var(--line-height-solid); background: var(--surface); }
   .arrow-icon { display: block; width: 1.5rem; height: 1.5rem; }
   .record-previous { left: calc(0px - var(--explorer-padding) - .5px); transform: translate(-50%, -50%); } .record-next { right: calc(0px - var(--explorer-padding) - .5px); transform: translate(50%, -50%); }
   .explorer-route, .explorer-metrics { min-width: 0; }
@@ -248,13 +248,13 @@
   .explorer-metrics :global(.metrics) { grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--space-2); }
   .explorer-metrics :global(.metrics > div) { padding: var(--space-2); background: var(--muted); border: 0; border-radius: .75rem; }
   .explorer-metrics :global(.metrics.sport dt), .explorer-metrics :global(.metrics.sport dd) { padding-left: var(--space-8); }
-  .explorer-metrics :global(.metrics dt) { font-size: .75rem; }
-  .explorer-metrics :global(.metrics dd) { font-size: 1.125rem; }
+  .explorer-metrics :global(.metrics dt) { font-size: var(--text-caption); }
+  .explorer-metrics :global(.metrics dd) { font-size: var(--text-section); }
   .explorer-metrics :global(.metrics.sport .metric-icon) { position: absolute; left: var(--space-2); top: 50%; transform: translateY(-50%); margin-bottom: 0; width: 1.5rem; height: 1.5rem; }
   .explorer-metrics :global(.metric-icon svg) { width: 16px; height: 16px; }
   .browse-controls { margin-top: var(--space-3); }
-  .record-count { margin-left: auto; color: var(--muted-foreground); font-size: .75rem; white-space: nowrap; }
-  .switch-status { position: absolute; top: -.25rem; right: 0; transform: translateY(-100%); color: var(--muted-foreground); font-size: .75rem; animation: explorer-pending 180ms step-end; }
+  .record-count { margin-left: auto; color: var(--muted-foreground); font-size: var(--text-caption); white-space: nowrap; }
+  .switch-status { position: absolute; top: -.25rem; right: 0; transform: translateY(-100%); color: var(--muted-foreground); font-size: var(--text-caption); animation: explorer-pending 180ms step-end; }
   @keyframes explorer-pending { from { opacity: 0; } to { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { .switch-status { animation: none; } }
   .strip-frame { position: relative; }
@@ -262,12 +262,13 @@
   .strip-viewport::after { content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 2.75rem; pointer-events: none; z-index: 1; opacity: 0; background: linear-gradient(to left, var(--surface), transparent); }
   .strip-frame.can-scroll-next .strip-viewport::after { opacity: 1; }
   .strip-page { display: none; place-items: center; width: 2.25rem; height: 2.25rem; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--foreground); }
-  .strip-page span { font-size: 1.5rem; line-height: 1; }
+  .strip-page span { font-size: var(--text-section); line-height: var(--line-height-solid); }
   .activity-strip { display: flex; gap: var(--space-3); overflow-x: auto; scroll-snap-type: x proximity; margin-top: var(--space-1); padding: var(--space-1) .125rem var(--space-2); }
   .activity-strip li { flex: 0 0 19rem; max-width: 100%; min-width: 0; scroll-snap-align: start; }
   .history-card { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); width: 100%; min-height: 5.5rem; padding: var(--space-2); text-align: left; border: 1px solid var(--border); border-radius: 1rem; transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease; }
   .history-card.selected { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); background: var(--primary-soft); }
-  .history-copy { display: grid; gap: .375rem; min-width: 0; } .history-copy strong { font-size: .875rem; overflow-wrap: anywhere; } .history-copy time, .history-copy > span { font-size: .75rem; color: var(--muted-foreground); overflow-wrap: anywhere; }
+  .history-card { font-size: var(--text-small); font-weight: var(--weight-semibold); }
+  .history-copy { display: grid; gap: .375rem; min-width: 0; } .history-copy strong { font-size: var(--text-card); overflow-wrap: anywhere; font-weight: var(--weight-semibold);} .history-copy time, .history-copy > span { font-size: var(--text-caption); color: var(--muted-foreground); overflow-wrap: anywhere; }
   .history-card :global(.route-thumbnail) { flex-shrink: 0; }
   a.inactive { pointer-events: none; opacity: .5; }
   button:disabled { opacity: .45; cursor: not-allowed; }

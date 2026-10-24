@@ -53,24 +53,24 @@
   .card-link { display: block; min-width: 0; padding: var(--space-6); color: inherit; }
   .card-link:focus-visible { outline-offset: -3px; }
   .card-controls { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--border); }
-  .card-selection { display: inline-flex; align-items: center; gap: .5rem; min-height: 2.75rem; color: var(--muted-foreground); font-size: .8125rem; cursor: pointer; }
+  .card-selection { display: inline-flex; align-items: center; gap: .5rem; min-height: 2.75rem; color: var(--muted-foreground); font-size: var(--text-small); cursor: pointer; }
   .card-selection input { width: 1.125rem; height: 1.125rem; accent-color: var(--primary); }
   .card-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-left: auto; }
-  .card-actions button { min-height: 2.75rem; padding: .5rem .75rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--surface); color: var(--foreground); font-size: .8125rem; }
+  .card-actions button { min-height: 2.75rem; padding: .5rem .75rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--surface); color: var(--foreground); font-size: var(--text-small); }
   .card-actions button:hover:enabled { border-color: var(--primary); color: var(--primary); }
   .card-actions button:disabled { opacity: .5; cursor: not-allowed; }
   .record-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); }
   .record-heading :global(.route-thumbnail) { flex-shrink: 0; }
   .record-identity { min-width: 0; flex: 1; }
   .record-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
-  time { color: var(--muted-foreground); font-size: .8125rem; font-variant-numeric: tabular-nums; }
-  h3 { margin-top: .375rem; font-size: 1.25rem; font-weight: 700; overflow-wrap: anywhere; }
-  .visibility { flex-shrink: 0; padding: .125rem .5rem; border-radius: .375rem; background: var(--muted); color: var(--muted-foreground); font-size: .75rem; }
+  time { color: var(--muted-foreground); font-size: var(--text-small); font-variant-numeric: tabular-nums; }
+  h3 { margin-top: .375rem; font-size: var(--text-card); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+  .visibility { flex-shrink: 0; padding: .125rem .5rem; border-radius: .375rem; background: var(--muted); color: var(--muted-foreground); font-size: var(--text-caption); }
   .record-labels { display: flex; flex-wrap: wrap; gap: .375rem; margin-top: .625rem; }
-  .record-chip { max-width: 100%; padding: .25rem .5rem; border-radius: .5rem; background: var(--muted); color: var(--muted-foreground); font-size: .75rem; overflow-wrap: anywhere; }
+  .record-chip { max-width: 100%; padding: .25rem .5rem; border-radius: .5rem; background: var(--muted); color: var(--muted-foreground); font-size: var(--text-caption); overflow-wrap: anywhere; }
   .category, .achievement { color: var(--primary); background: var(--route-thumbnail); }
-  .achievement { font-weight: 700; }
-  .record-footer { display: flex; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--border); color: var(--muted-foreground); font-size: .75rem; }
-  .record-entry { color: var(--primary); font-weight: 550; flex-shrink: 0; }
+  .achievement { font-weight: var(--weight-bold); }
+  .record-footer { display: flex; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--border); color: var(--muted-foreground); font-size: var(--text-caption); }
+  .record-entry { color: var(--primary); font-weight: var(--weight-semibold); flex-shrink: 0; }
   @media (max-width: 639px) { .card-link { padding: var(--space-4); } }
 </style>

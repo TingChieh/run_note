@@ -278,26 +278,26 @@
 <style>
   .records-heading-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
   .selection-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; padding: 1rem; margin-top: 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
-  .selection-toolbar label { display: flex; align-items: center; gap: .5rem; min-height: 2.75rem; font-size: .875rem; }
+  .selection-toolbar label { display: flex; align-items: center; gap: .5rem; min-height: 2.75rem; font-size: var(--text-small); }
   .selection-toolbar input { width: 1.125rem; height: 1.125rem; accent-color: var(--primary); }
-  .selected-count { flex: 1; color: var(--muted-foreground); white-space: nowrap; font-size: .875rem; }
-  .delete-button, .delete-confirm { padding: .625rem .875rem; border-radius: .75rem; font-size: .875rem; font-weight: 600; color: var(--error); border: 1px solid var(--border); }
+  .selected-count { flex: 1; color: var(--muted-foreground); white-space: nowrap; font-size: var(--text-small); }
+  .delete-button, .delete-confirm { padding: .625rem .875rem; border-radius: .75rem; font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--error); border: 1px solid var(--border); }
   .delete-confirm { background: var(--error); color: white; border-color: var(--error); }
   button:disabled { opacity: .45; cursor: not-allowed; }
   dialog { margin: auto; width: min(34rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow-y: auto; padding: 1.5rem; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); color: var(--foreground); }
   dialog::backdrop { background: rgb(0 0 0 / .5); }
-  .dialog-hint { margin-top: 1rem; color: var(--muted-foreground); font-size: .875rem; line-height: 1.7; }
+  .dialog-hint { margin-top: 1rem; color: var(--muted-foreground); font-size: var(--text-small); line-height: var(--line-height-body); }
   .dialog-buttons { display: flex; flex-wrap: wrap; gap: .75rem; justify-content: flex-end; margin-top: 1.5rem; }
   .import-card { margin-top: var(--space-6); padding: var(--space-4) var(--space-6); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
   .import-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-1) var(--space-4); margin-bottom: var(--space-3); }
-  .import-head h2 { font-size: 1.0625rem; font-weight: 600; }
-  .import-note, .import-help { color: var(--muted-foreground); font-size: .8125rem; line-height: 1.6; }
+  .import-head h2 { font-size: var(--text-section); font-weight: var(--weight-semibold); }
+  .import-note, .import-help { color: var(--muted-foreground); font-size: var(--text-small); line-height: var(--line-height-body); }
   .import-help { margin-top: var(--space-2); }
   .upload-primary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: var(--space-3); }
   .import-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-6); margin-top: var(--space-3); }
   .import-format, .import-time { display: flex; width: fit-content; max-width: 100%; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
   .import-options { margin-top: var(--space-3); }
-  summary { width: fit-content; color: var(--primary); font-size: .8125rem; font-weight: 550; cursor: pointer; }
+  summary { width: fit-content; color: var(--primary); font-size: var(--text-small); font-weight: var(--weight-semibold); cursor: pointer; }
   .import-warnings { margin-top: var(--space-4); padding: var(--space-4); background: var(--warning-soft); color: var(--warning); border: 1px solid var(--warning-border); border-radius: var(--radius-control); }
   .activity-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); margin-top: var(--space-4); }
   .pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-3); margin-top: var(--space-6); }

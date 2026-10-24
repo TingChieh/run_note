@@ -67,9 +67,9 @@
 <style>
   .routes-page { display: grid; gap: var(--space-4); margin-top: var(--space-6); min-width: 0; }
   .sort-row { display: inline-flex; gap: .25rem; background: var(--muted); padding: .25rem; border-radius: var(--radius-control); justify-self: start; max-width: 100%; flex-wrap: wrap; }
-  .sort-row button { min-height: 2.75rem; padding: .5rem 1rem; font-weight: 600; border-radius: .45rem; color: var(--muted-foreground); }
+  .sort-row button { min-height: 2.75rem; padding: .5rem 1rem; font-weight: var(--weight-semibold); border-radius: .45rem; color: var(--muted-foreground); }
   .sort-row button[aria-pressed='true'] { color: var(--primary-foreground); background: var(--primary); }
   .sort-row button:not([aria-pressed='true']):hover { color: var(--primary); background: var(--surface); }
-  .total { color: var(--muted-foreground); font-size: .875rem; }
+  .total { color: var(--muted-foreground); font-size: var(--text-small); }
   .grid { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr)); }
 </style>

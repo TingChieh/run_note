@@ -26,14 +26,14 @@
 </div>
 <style>
   .batch-panel { display: grid; gap: var(--space-2); margin-top: var(--space-4); padding: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-control); min-width: 0; }
-  .batch-headline { font-size: .9375rem; font-weight: 600; overflow-wrap: anywhere; }
+  .batch-headline { font-size: var(--text-body); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
   .batch-progress { width: 100%; height: .375rem; overflow: hidden; background: var(--muted); border-radius: 999px; }
   .batch-progress span { display: block; height: 100%; background: var(--primary); border-radius: inherit; transition: width .2s ease; }
   @media (prefers-reduced-motion: reduce) { .batch-progress span { transition: none; } }
-  .batch-note { color: var(--muted-foreground); font-size: .8125rem; }
-  .batch-failures { display: grid; gap: var(--space-1); max-height: 14rem; overflow: auto; font-size: .8125rem; }
+  .batch-note { color: var(--muted-foreground); font-size: var(--text-small); }
+  .batch-failures { display: grid; gap: var(--space-1); max-height: 14rem; overflow: auto; font-size: var(--text-small); }
   .batch-failures li { display: grid; gap: .125rem; padding: var(--space-1) 0; border-bottom: 1px solid var(--border); }
-  .batch-name { font-weight: 600; overflow-wrap: anywhere; }
+  .batch-name { font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
   .batch-reason { color: var(--muted-foreground); overflow-wrap: anywhere; }
   .batch-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
   .batch-actions:empty { display: none; }

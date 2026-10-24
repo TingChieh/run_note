@@ -116,18 +116,18 @@
 <style>
   .mifitness-import{margin-top:var(--space-4);padding:var(--space-4) var(--space-6);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);min-width:0;}
   .head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:var(--space-1) var(--space-4);margin-bottom:var(--space-3);}
-  h2{font-size:1.0625rem;font-weight:600;}h3{font-weight:600;overflow-wrap:anywhere;}
-  .intro{font-size:.8125rem;color:var(--muted-foreground);line-height:1.6;}
+  h2{font-size: var(--text-section);font-weight: var(--weight-semibold);}h3{font-weight: var(--weight-semibold);overflow-wrap:anywhere;}
+  .intro{font-size: var(--text-small);color:var(--muted-foreground);line-height: var(--line-height-body);}
   .file-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,15rem),1fr));align-items:stretch;gap:var(--space-3);}
   .tz{border-style:solid;cursor:text;}
-  .tz input{width:100%;min-width:0;padding:0;border:0;background:transparent;font-size:var(--text-small);font-weight:600;}
+  .tz input{width:100%;min-width:0;padding:0;border:0;background:transparent;font-size:var(--text-small);font-weight: var(--weight-semibold);}
   .tz input:focus-visible{outline:none;}
   .actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-3);margin-top:var(--space-3);}
   button{white-space:normal;}
   ol{display:grid;gap:var(--space-4);margin-top:var(--space-4);}ol>li{border-top:1px solid var(--border);padding-top:var(--space-4);min-width:0;}
-  dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,7rem),1fr));gap:var(--space-3);margin-top:var(--space-3);}dt{font-size:.75rem;color:var(--muted-foreground);}dd{font-weight:600;}
-  .state{font-size:.875rem;color:var(--muted-foreground);margin-top:var(--space-2);}
-  .warnings{margin-top:var(--space-3);padding:var(--space-3);color:var(--warning);background:var(--warning-soft);border-radius:var(--radius-control);font-size:.875rem;}
+  dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,7rem),1fr));gap:var(--space-3);margin-top:var(--space-3);}dt{font-size: var(--text-caption);color:var(--muted-foreground);}dd{font-weight: var(--weight-bold);}
+  .state{font-size: var(--text-small);color:var(--muted-foreground);margin-top:var(--space-2);}
+  .warnings{margin-top:var(--space-3);padding:var(--space-3);color:var(--warning);background:var(--warning-soft);border-radius:var(--radius-control);font-size: var(--text-small);}
   .error{color:var(--error);overflow-wrap:anywhere;}
   @media(max-width:639px){.mifitness-import{padding:var(--space-3) var(--space-4);}}
 </style>

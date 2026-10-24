@@ -65,30 +65,30 @@
 <div class="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground"><span>{metric === 'distance' ? '每日距离' : '每日活动次数'}：少</span>{#each colors as color}<span class="h-3 w-3 rounded-sm" style:background={color}></span>{/each}<span>多</span>{#if !enhanced}<span>（按本年最大值分为四档；零距离活动用浅绿，灰色为无记录）</span>{/if}</div>
 {#if enhanced}<p class="scroll-hint">全年日期完整展示 · 点击日期查看活动</p>{:else}<p class="mt-3 text-sm text-muted-foreground">点击任意日期查看活动；历史日期按活动保存时的当地日期归属。</p>{/if}
 <style>
-  .months { display: grid; grid-auto-columns: 17px; grid-auto-flow: column; width: max-content; margin-left: 19px; margin-bottom: 8px; font-size: 10px; }
+  .months { display: grid; grid-auto-columns: 17px; grid-auto-flow: column; width: max-content; margin-left: 19px; margin-bottom: 8px; font-size: var(--text-caption); }
   .months span { width: 35px; }
   .calendar { display: flex; gap: 9px; width: max-content; }
-  .weekdays { display: grid; grid-template-rows: repeat(7, 13px); gap: 4px; font-size: 10px; line-height: 13px; }
-  .days { display: grid; grid-template-rows: repeat(7, 13px); grid-auto-flow: column; grid-auto-columns: 13px; gap: 4px; }
-  .days button { transition: outline-color var(--motion-hover), outline-offset var(--motion-hover), transform 120ms ease-out; border-radius: 3px; cursor: pointer; width: 13px; height: 13px; }
+  .weekdays { display: grid; grid-template-rows: repeat(7, 1rem); gap: 4px; font-size: var(--text-caption); line-height: var(--line-height-solid); align-items: center; }
+  .days { display: grid; grid-template-rows: repeat(7, 1rem); grid-auto-flow: column; grid-auto-columns: 1rem; gap: 4px; }
+  .days button { transition: outline-color var(--motion-hover), outline-offset var(--motion-hover), transform 120ms ease-out; border-radius: 3px; cursor: pointer; width: 1rem; height: 1rem; font-size: var(--text-small); font-weight: var(--weight-semibold); }
   .days button:active { transform: scale(.9); }
   .days button:hover, .days button:focus-visible, .days button.selected { outline: 2px solid var(--calendar-ring); outline-offset: 1px; }
   .calendar-scroll { max-width: 100%; overflow-x: auto; }
   .enhanced { overflow: visible; }
-  .enhanced .months { grid-template-columns: repeat(var(--weeks), minmax(0,1fr)); grid-auto-columns: auto; gap: 3px; width: auto; margin-left: 25px; font-size: 10px; }
+  .enhanced .months { grid-template-columns: repeat(var(--weeks), minmax(0,1fr)); grid-auto-columns: auto; gap: 3px; width: auto; margin-left: 25px; font-size: var(--text-caption); }
   .enhanced .months span { width: auto; white-space: nowrap; }
   .enhanced .calendar { gap: 9px; width: 100%; }
-  .enhanced .weekdays { flex: 0 0 16px; grid-template-rows: repeat(7,minmax(0,1fr)); gap: 3px; line-height: 1; font-size: 10px; align-items: center; }
+  .enhanced .weekdays { flex: 0 0 16px; grid-template-rows: repeat(7,minmax(0,1fr)); gap: 3px; line-height: var(--line-height-solid); font-size: var(--text-caption); align-items: center; }
   .enhanced .days { flex: 1; min-width: 0; grid-template-columns: repeat(var(--weeks),minmax(0,1fr)); grid-template-rows: repeat(7,minmax(0,1fr)); gap: 3px; }
   .enhanced .days button { width: 100%; height: auto; aspect-ratio: 1; border-radius: 2px; }
   .month-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(9rem,1fr)); gap: 1.5rem 1rem; }
   .year-month { min-width: 0; }
-  .year-month h3 { margin-bottom: .5rem; font-size: .875rem; font-weight: 600; }
+  .year-month h3 { margin-bottom: .5rem; font-size: var(--text-small); font-weight: var(--weight-semibold); }
   .month-days { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 3px; }
-  .month-days button { min-width: 0; min-height: 20px; aspect-ratio: 1; width: 100%; border-radius: 3px; font-size: .625rem; color: var(--calendar-label); }
+  .month-days button { min-width: 0; min-height: 20px; aspect-ratio: 1; width: 100%; border-radius: 3px; font-size: var(--text-caption); color: var(--calendar-label); }
   .month-days .day-level-2 { color: var(--calendar-active-label); }
   .month-days :is(.day-level-3, .day-level-4) { color: var(--calendar-strong-label); }
   .month-days button:hover, .month-days button:focus-visible, .month-days button.selected { outline: 2px solid var(--calendar-ring); outline-offset: 1px; }
-  .month-weekday { text-align: center; font-size: .625rem; color: var(--muted-foreground); }
-  .scroll-hint { font-size: .75rem; color: var(--muted-foreground); margin-top: .75rem; }
+  .month-weekday { text-align: center; font-size: var(--text-caption); color: var(--muted-foreground); }
+  .scroll-hint { font-size: var(--text-caption); color: var(--muted-foreground); margin-top: .75rem; }
 </style>

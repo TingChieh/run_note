@@ -20,21 +20,21 @@
 <style>
   .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
   .metrics > div { min-width: 0; padding: var(--space-6); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
-  dt { color: var(--muted-foreground); font-size: .875rem; }
-  dd { margin-top: var(--space-2); font-size: clamp(1.75rem, 3vw, 2.25rem); line-height: 1.25; font-weight: 700; letter-spacing: -.035em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  dt { color: var(--muted-foreground); font-size: var(--text-small); }
+  dd { margin-top: var(--space-2); font-size: var(--text-stat); line-height: var(--line-height-title); font-weight: var(--weight-bold); letter-spacing: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
   .compact { gap: var(--space-3); }
   .compact > div { padding: 0; border: 0; border-radius: 0; background: transparent; }
-  .compact dt { font-size: .75rem; }
-  .compact dd { font-size: clamp(1rem, 2vw, 1.25rem); margin-top: .25rem; letter-spacing: -.02em; }
+  .compact dt { font-size: var(--text-caption); }
+  .compact dd { font-size: var(--text-section); margin-top: .25rem; letter-spacing: 0; font-weight: var(--weight-bold);}
   .sport { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
   .sport.stacked { grid-template-columns: 1fr; }
   .sport > div { position: relative; padding: 1.4rem 1.5rem; border-radius: var(--radius-card); }
-  .sport dt { padding-left: 4.5rem; font-size: .875rem; }
-  .sport dd { padding-left: 4.5rem; margin-top: .25rem; font-size: clamp(1.65rem, 2.5vw, 2.8rem); letter-spacing: -.04em; }
+  .sport dt { padding-left: 4.5rem; font-size: var(--text-small); }
+  .sport dd { padding-left: 4.5rem; margin-top: .25rem; font-size: var(--text-stat); letter-spacing: 0; font-weight: var(--weight-bold);}
   .metric-icon { position: absolute; left: 1.5rem; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 3.5rem; height: 3.5rem; border-radius: 50%; color: var(--sport-ink, #20332b); background: var(--sport-green, #86a912); }
   .metric-icon.duration { background: var(--sport-blue, #4bb6df); }
   .metric-icon.pace { background: var(--sport-coral, #f06373); }
   .metric-icon.calories { background: var(--sport-yellow-accent, #f5c519); }
   @media (min-width: 640px) and (max-width: 1199px) { .sport:not(.stacked) dt, .sport:not(.stacked) dd { padding-left: 0; } .sport:not(.stacked) .metric-icon { position: static; transform: none; margin-bottom: .75rem; } }
-  @media (max-width: 639px) { .metrics:not(.compact) { grid-template-columns: 1fr; gap: var(--space-3); } .metrics:not(.compact):not(.sport) > div { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); padding: var(--space-4); } .metrics:not(.compact):not(.sport) dd { margin: 0; } .sport > div { padding: 1rem 1.25rem; } .sport dt, .sport dd { padding-left: 4rem; } .sport dd { font-size: 2.25rem; } .metric-icon { left: 1.25rem; width: 3rem; height: 3rem; } }
+  @media (max-width: 639px) { .metrics:not(.compact) { grid-template-columns: 1fr; gap: var(--space-3); } .metrics:not(.compact):not(.sport) > div { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); padding: var(--space-4); } .metrics:not(.compact):not(.sport) dd { margin: 0; } .sport > div { padding: 1rem 1.25rem; } .sport dt, .sport dd { padding-left: 4rem; } .sport dd { font-size: var(--text-stat); font-weight: var(--weight-bold);} .metric-icon { left: 1.25rem; width: 3rem; height: 3rem; } }
 </style>
