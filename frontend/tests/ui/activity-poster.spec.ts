@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { expectPosterDialogFits, fitViewports } from '../fixtures/poster-fit';
 import { installActivities, loginRunner, sampleActivity } from '../fixtures/activities';
 
 const dialog = (page: Page) => page.getByRole('dialog', { name: '生成分享图' });
@@ -53,3 +54,15 @@ test('shows a retryable error when the record cannot be read', async ({ page }) 
   await dialog(page).getByRole('button', { name: '重新读取', exact: true }).click();
   await expect(preview(page)).toBeVisible();
 });
+
+for (const scheme of ['light', 'dark'] as const) for (const size of fitViewports) {
+  if (scheme === 'dark' && size.width !== 1440 && size.width !== 390) continue;
+  test(`dialog fits a ${size.width}x${size.height} ${scheme} viewport and keeps preview and styles reachable`, async ({ page }) => {
+    await page.setViewportSize(size); await page.emulateMedia({ colorScheme: scheme });
+    await visit(page); await open(page);
+    const shots = process.env.POSTER_SHOTS;
+    if (shots) { await page.waitForTimeout(600); await page.screenshot({ path: `${shots}/activity-${scheme}-${size.width}x${size.height}.png` }); }
+    await expectPosterDialogFits(page, dialog(page), dialog(page).locator('.poster-style').last());
+    if (shots) await page.screenshot({ path: `${shots}/activity-${scheme}-${size.width}x${size.height}-end.png` });
+  });
+}

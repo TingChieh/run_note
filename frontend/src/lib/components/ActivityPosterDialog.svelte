@@ -112,7 +112,7 @@
      and keeps the page's single `.sport-theme` shell unique otherwise. -->
 {#if visible && theme !== 'auto'}<div hidden data-poster-theme={theme}><div class="sport-theme" bind:this={themeProbe}></div></div>{/if}
 <button bind:this={trigger} type="button" class="button-secondary" disabled={!mounted} onclick={open}>生成分享图</button>
-<dialog bind:this={dialog} aria-labelledby="activity-poster-title" aria-describedby="activity-poster-description"
+<dialog bind:this={dialog} class="poster-dialog" aria-labelledby="activity-poster-title" aria-describedby="activity-poster-description"
   oncancel={(event) => { event.preventDefault(); close(); }}
   onclose={() => { if (dialog.open) return; stop(); visible = false; trigger?.focus(); }}>
   <div class="poster-heading"><h2 id="activity-poster-title">生成分享图</h2><button type="button" class="button-secondary" onclick={close}>关闭</button></div>
@@ -191,7 +191,7 @@
 {/if}
 
 <style>
-  dialog{margin:auto;width:min(58rem,calc(100% - 2rem));max-height:calc(100svh - 2rem);overflow-y:auto;padding:var(--space-6);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);color:var(--foreground);}
+  dialog{margin:auto;padding:var(--space-6);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);color:var(--foreground);}
   dialog{opacity:0;transform:translateY(1rem) scale(.97);transition:opacity 220ms ease,transform 320ms cubic-bezier(.22,.61,.36,1),overlay 320ms allow-discrete,display 320ms allow-discrete;}
   dialog[open]{opacity:1;transform:none;}
   dialog::backdrop{background:var(--surface-backdrop);opacity:0;transition:opacity 260ms ease,overlay 320ms allow-discrete,display 320ms allow-discrete;}
@@ -199,7 +199,7 @@
   @starting-style{dialog[open]{opacity:0;transform:translateY(1rem) scale(.97);}dialog[open]::backdrop{opacity:0;}}
   @media(prefers-reduced-motion:reduce){dialog,dialog::backdrop{transition:none;}}
   .poster-heading{display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);}.poster-heading h2{font-size: var(--text-section);font-weight: var(--weight-semibold);}
-  .poster-workspace{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:var(--space-6);margin-top:var(--space-6);align-items:start;}
+  .poster-workspace{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);}
   .poster-options{display:grid;gap:var(--space-4);min-width:0;}
   .poster-help,.poster-privacy{font-size:var(--text-small);color:var(--muted-foreground);overflow-wrap:anywhere;}.poster-privacy{padding-top:var(--space-2);border-top:1px solid var(--border);}
   .poster-group{min-width:0;margin:0;padding:0;border:0;}.poster-group legend{margin-bottom:var(--space-2);}
@@ -207,9 +207,9 @@
   .poster-appearance-options label{display:flex;align-items:center;justify-content:center;gap:var(--space-2);padding:var(--space-2) var(--space-3);border:1px solid var(--border);border-radius:var(--radius-control);font-size:var(--text-small);cursor:pointer;}.poster-appearance-options label.selected{border-color:var(--primary);background:var(--primary-soft);}.poster-appearance-options label:has(input:focus-visible){outline:2px solid var(--ring);outline-offset:2px;}.poster-group:disabled label{opacity:.65;cursor:wait;}.poster-appearance-options input{margin:0;}
   .poster-style-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-2);}
   .poster-style{position:relative;display:grid;gap:var(--space-1);min-width:0;padding:var(--space-3);border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface);cursor:pointer;}.poster-style.selected{border-color:var(--primary);background:var(--primary-soft);}.poster-style:has(input:focus-visible){outline:2px solid var(--ring);outline-offset:2px;}
-  .poster-style input{position:absolute;right:var(--space-2);top:var(--space-2);width:1rem;height:1rem;margin:0;}.poster-style svg{width:100%;height:calc(var(--space-12) * 2);}.poster-style-name{font-size:var(--text-small);font-weight: var(--weight-semibold);}
+  .poster-style input{position:absolute;right:var(--space-2);top:var(--space-2);width:1rem;height:1rem;margin:0;}.poster-style svg{width:100%;}.poster-style-name{font-size:var(--text-small);font-weight: var(--weight-semibold);}
   .mini-background{fill:var(--background);}.mini-heading{fill:var(--sport-yellow);}.mini-heading-ink{fill:var(--sport-heading-ink);}.mini-primary{fill:var(--primary);}.mini-primary-ink{fill:var(--primary-foreground);}.mini-ink{fill:var(--foreground);}.mini-muted{fill:var(--muted-foreground);}.mini-divider{stroke:var(--border);}.mini-card{fill:var(--surface);stroke:var(--border);}.mini-dash{fill:none;stroke:var(--border);stroke-dasharray:3 2;}.mini-route,.mini-route-light{fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}.mini-route{stroke:var(--primary);}.mini-route-light{stroke:var(--sport-yellow);}.mini-start{fill:var(--success);}.mini-end{fill:var(--foreground);}
-  .poster-save{display:flex;flex-wrap:wrap;gap:var(--space-3);}.poster-preview{min-width:0;}.poster-preview{display:flex;justify-content:center;}.poster-preview img{display:block;width:auto;height:auto;max-width:100%;max-height:calc(100svh - 11rem);aspect-ratio:1080/1920;border-radius:var(--radius-control);}
+  .poster-save{display:flex;flex-wrap:wrap;gap:var(--space-3);}.poster-preview{min-width:0;}
   .poster-placeholder{min-height:24rem;display:flex;align-items:center;justify-content:center;padding:var(--space-6);border:1px dashed var(--border);border-radius:var(--radius-control);color:var(--muted-foreground);}
-  @media(max-width:639px){dialog{padding:var(--space-4);}.poster-preview img{max-height:none;}.poster-workspace{grid-template-columns:minmax(0,1fr);gap:var(--space-4);}.poster-placeholder{min-height:12rem;}.poster-save>button{flex:1;}}
+  @media(max-width:719px){.poster-workspace{grid-template-columns:minmax(0,1fr);}.poster-placeholder{min-height:12rem;}.poster-save>button{flex:1;}}
 </style>

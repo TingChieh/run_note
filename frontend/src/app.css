@@ -257,6 +257,25 @@
   html:has(dialog[open]) body { overflow: hidden; overscroll-behavior: none; }
   dialog[open] { overscroll-behavior: contain; }
   html.rn-dialog-lock body { position: fixed; left: 0; right: 0; width: 100%; overflow: hidden; }
+  /* Poster dialogs (RoutePosterDialog, ActivityPosterDialog): capped to the viewport; the header stays put and the
+     two columns scroll on their own (the whole body scrolls when stacked), so nothing is cut off without a way to reach it. */
+  .poster-dialog { --poster-preview-max: max(14rem, calc(100vh - 15rem)); width: min(58rem, calc(100% - 2rem)); max-height: calc(100vh - 2rem); overflow: hidden; }
+  @supports (height: 100dvh) { .poster-dialog { --poster-preview-max: max(14rem, calc(100dvh - 15rem)); max-height: calc(100dvh - 2rem); } }
+  .poster-dialog[open] { display: flex; flex-direction: column; }
+  .poster-dialog > * { flex: none; }
+  .poster-dialog > .poster-workspace { flex: 1 1 auto; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); gap: var(--space-4); margin-top: var(--space-4); }
+  .poster-dialog .poster-options, .poster-dialog .poster-preview { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--space-1); }
+  .poster-dialog .poster-preview { display: flex; flex-direction: column; align-items: center; }
+  .poster-dialog .poster-preview > * { max-width: 100%; }
+  .poster-dialog .poster-preview > :is(.poster-help, .poster-summary, .poster-reshuffle, .poster-placeholder) { align-self: stretch; }
+  .poster-dialog .poster-preview img { display: block; flex: none; width: auto; height: auto; max-width: 100%; max-height: var(--poster-preview-max); aspect-ratio: 1080 / 1920; object-fit: contain; border-radius: var(--radius-control); }
+  .poster-dialog .poster-style svg { height: calc(var(--space-12) * 1.5); }
+  @media (max-width: 719px) {
+    .poster-dialog { padding: var(--space-4); }
+    .poster-dialog > .poster-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; align-content: start; overflow-y: auto; overscroll-behavior: contain; gap: var(--space-4); }
+    .poster-dialog .poster-options, .poster-dialog .poster-preview { overflow: visible; min-height: auto; }
+    .poster-dialog .poster-preview img { width: min(100%, 20rem); max-height: none; }
+  }
   @media (prefers-reduced-transparency: reduce) {
     dialog[open], dialog[open]::backdrop, .app-sidebar.nav-open, :is(.rn-glass-menu, .date-popover):popover-open {
       opacity: 1 !important; animation: none !important; transition: none !important; transform: none !important; translate: 0 0; scale: 1;
