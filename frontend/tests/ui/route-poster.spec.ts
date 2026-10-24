@@ -514,3 +514,18 @@ for (const scheme of ['light', 'dark'] as const) for (const size of fitViewports
     if (shots) await page.screenshot({ path: `${shots}/route-${scheme}-${size.width}x${size.height}-end.png` });
   });
 }
+
+for (const size of fitViewports) {
+  test(`sample state fits a ${size.width}x${size.height} viewport while the data is still loading`, async ({ page }) => {
+    const state = await installPoster(page); await page.setViewportSize(size);
+    let finish!: () => void; state.hold = new Promise(resolve => { finish = resolve; });
+    try {
+      await open(page);
+      await expect(sample(page)).toBeVisible();
+      await expect(dialog(page)).toContainText('示例效果，非你的数据');
+      const shots = process.env.POSTER_SHOTS;
+      if (shots) { await page.waitForTimeout(600); await page.screenshot({ path: `${shots}/route-sample-${size.width}x${size.height}.png` }); }
+      await expectPosterDialogFits(page, dialog(page), dialog(page).locator('.poster-style').last());
+    } finally { state.hold = null; finish(); }
+  });
+}
