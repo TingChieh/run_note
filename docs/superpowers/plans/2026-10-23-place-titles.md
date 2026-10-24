@@ -289,7 +289,7 @@ git commit -m "feat: add place feature and place name queue tables"
 
 **Interfaces:**
 - Produces（`rules.py`）：
-  - 常量 `ALGORITHM_VERSION = "place-titles-v1"`、`STEP_M = 200`、`RADIUS_M = 100`、`MIN_SHARE = 0.4`、`MIN_DISTANCE_M = 1000`
+  - 常量 `ALGORITHM_VERSION = "place-titles-v1"`、`STEP_M = 200`、`MAX_SAMPLES = 500`、`RADIUS_M = 100`、`MIN_SHARE = 0.4`、`MIN_DISTANCE_M = 1000`
   - `CATEGORIES = ("sea", "lake", "river", "park", "stadium")`（即并列时的优先级顺序）
   - `TITLE_WORDS: dict[str, str]`（`sea`→`海边跑步` 等）
   - `choose_category(total: int, near: dict[str, int]) -> tuple[str, float] | None`
@@ -362,6 +362,8 @@ from datetime import date
 
 ALGORITHM_VERSION = "place-titles-v1"
 STEP_M = 200
+# Upper bound on sampled points per run, so a very long track cannot blow up the join.
+MAX_SAMPLES = 500
 RADIUS_M = 100
 MIN_SHARE = 0.4
 MIN_DISTANCE_M = 1000
@@ -616,6 +618,8 @@ def test_the_footprint_scan_also_names_pending_runs(clients):  # noqa: F811
 
 实施者须按真实文件调整：`box_around_ring` 里不要 `import` 自身模块，直接引用同文件的 `LAT/LON/METRES`（从 `test_route_groups.py` 复制常量）；`upload()` 的参数与重复检测行为以 `tests/integration/test_gpx_import.py` 实际定义为准（若第二次上传因重复被拒，用 `fixtures/gpx/` 下另一份样例文件）；若某个断言因样例几何与阈值不符失败，先用 `service.measure_shares` 打印份额定位，调整测试样例而不是放宽阈值。
 
+追加一条集成测试（长轨迹有界，来自常跑路线构建时的一次真实事故：对 30 万点轨迹做不可中断的长查询会拖垮 PostgreSQL）：构造一条约 100 km 长、10 万个点的合成轨迹（`generate_series` 生成缓慢折线即可，`distance_m` 取 ≥ 1000），在地物表放一个覆盖其中一段的 `lake` 面，调用 `service.measure_shares`，断言返回的采样点总数 `total <= rules.MAX_SAMPLES + 5` 且语句在几秒内完成；同时在 `test_place_titles_rules.py` 里断言 `MAX_SAMPLES == 500`。
+
 - [ ] **Step 2: 运行确认失败**
 
 在已授权升级到 `0016_place_titles` 的 `_test` 库上（只在进程环境注入 `TEST_DATABASE_URL` 与 `TEST_DATABASE_ALLOWED_TARGETS`，做法见 `docs/09-phase-two-progress.md`“运行测试”）：
@@ -664,17 +668,20 @@ FILL_BATCH = 20
 SHARES_SQL = text(
     """
 WITH line AS (
-    SELECT ST_Collect(s.geom ORDER BY s.segment_index) AS g
+    SELECT ST_Collect(s.geom ORDER BY s.segment_index) AS g,
+           ST_Length(ST_Collect(s.geom ORDER BY s.segment_index)::geography) AS len
     FROM activity_segments s
     WHERE s.activity_id = :activity AND s.geom IS NOT NULL
 ), parts AS (
-    SELECT p.geom AS geom FROM line, LATERAL ST_Dump(line.g) AS p WHERE line.g IS NOT NULL
+    SELECT p.geom AS geom, line.len AS len
+    FROM line, LATERAL ST_Dump(line.g) AS p WHERE line.g IS NOT NULL
 ), samples AS (
     SELECT row_number() OVER () AS n, d.geom AS pt
     FROM (
         SELECT ST_LineInterpolatePoints(
                    parts.geom,
-                   least(1.0, :step / nullif(ST_Length(parts.geom::geography), 0)),
+                   least(1.0, greatest(:step, parts.len / :max_samples)
+                              / nullif(ST_Length(parts.geom::geography), 0)),
                    true
                ) AS pts
         FROM parts
@@ -697,7 +704,13 @@ def place_count(db) -> int:
 
 def measure_shares(db, activity_id: UUID) -> tuple[int, dict[str, int]]:
     total, near = db.execute(
-        SHARES_SQL, {"activity": activity_id, "step": rules.STEP_M, "radius": rules.RADIUS_M}
+        SHARES_SQL,
+        {
+            "activity": activity_id,
+            "step": rules.STEP_M,
+            "max_samples": rules.MAX_SAMPLES,
+            "radius": rules.RADIUS_M,
+        },
     ).one()
     return int(total), {category: int(points) for category, points in near.items()}
 
