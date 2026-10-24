@@ -38,10 +38,10 @@
 </section>
 <style>
   .province-map-card{min-width:0;border:1px solid var(--border);border-radius:var(--radius-card);padding:var(--space-4);background:var(--surface);}
-  .map-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;}h2{font-size:1.25rem;font-weight:700;}.eyebrow{font-size:.75rem;color:var(--muted-foreground);margin-bottom:.25rem;}
-  .province-count{font-size:1.4rem;font-weight:750;color:var(--primary);font-variant-numeric:tabular-nums;}.map-year{font-size:.8rem;color:var(--muted-foreground);margin:.5rem 0;}
-  svg{display:block;width:100%;height:auto;max-height:18rem;margin:var(--space-2) 0;color:var(--muted-foreground);}path{fill:var(--province-unvisited);stroke:var(--surface);stroke-width:.8;}path.lit{fill:var(--sport-green);}path.sea{fill:var(--province-sea);stroke:var(--province-sea);stroke-width:.65;}svg text{font-size:8px;fill:currentColor;}
-  .visited-provinces{display:flex;flex-wrap:wrap;gap:.4rem;}.visited-provinces .province-badge{display:inline-flex;align-items:center;min-height:44px;padding:.4rem .8rem;border-radius:99px;background:var(--primary-soft);color:var(--primary);font-size:.8rem;font-weight:650;}
-  .map-note,.empty-map{font-size:.75rem;line-height:1.7;color:var(--muted-foreground);margin-top:.75rem;}.map-link{display:flex;align-items:center;justify-content:space-between;font-size:.875rem;font-weight:650;color:var(--primary);margin-top:1rem;min-height:44px;}
+  .map-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;}h2{font-size: var(--text-section);font-weight: var(--weight-semibold);}.eyebrow{font-size: var(--text-caption);color:var(--muted-foreground);margin-bottom:.25rem;}
+  .province-count{font-size: var(--text-stat);font-weight: var(--weight-bold);color:var(--primary);font-variant-numeric:tabular-nums;}.map-year{font-size: var(--text-caption);color:var(--muted-foreground);margin:.5rem 0;}
+  svg{display:block;width:100%;height:auto;max-height:18rem;margin:var(--space-2) 0;color:var(--muted-foreground);}path{fill:var(--province-unvisited);stroke:var(--surface);stroke-width:.8;}path.lit{fill:var(--sport-green);}path.sea{fill:var(--province-sea);stroke:var(--province-sea);stroke-width:.65;}svg text{font-size: var(--text-caption);fill:currentColor;}
+  .visited-provinces{display:flex;flex-wrap:wrap;gap:.4rem;}.visited-provinces .province-badge{display:inline-flex;align-items:center;min-height:44px;padding:.4rem .8rem;border-radius:99px;background:var(--primary-soft);color:var(--primary);font-size: var(--text-caption);font-weight: var(--weight-semibold);}
+  .map-note,.empty-map{font-size: var(--text-caption);line-height: var(--line-height-body);color:var(--muted-foreground);margin-top:.75rem;}.map-link{display:flex;align-items:center;justify-content:space-between;font-size: var(--text-small);font-weight: var(--weight-semibold);color:var(--primary);margin-top:1rem;min-height:44px;}
   @media(max-width:639px){.province-map-card{padding:1.15rem;}}
 </style>

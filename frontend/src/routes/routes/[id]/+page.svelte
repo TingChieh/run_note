@@ -61,11 +61,11 @@
   .detail { margin-top: var(--space-6); }
   .back { justify-self: start; }
   .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: .75rem; }
-  dt { color: var(--muted-foreground); font-size: .8125rem; }
-  dd { font-weight: 650; font-variant-numeric: tabular-nums; }
-  h2 { font-weight: 650; margin-bottom: .5rem; }
+  dt { color: var(--muted-foreground); font-size: var(--text-small); }
+  dd { font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; }
+  h2 { font-weight: var(--weight-semibold); margin-bottom: .5rem; }
   .table-wrap { overflow-x: auto; }
-  table { width: 100%; text-align: left; font-size: .875rem; }
+  table { width: 100%; text-align: left; font-size: var(--text-small); }
   th, td { padding: .5rem .75rem .5rem 0; white-space: nowrap; }
   tbody tr { border-top: 1px solid var(--border); }
 </style>

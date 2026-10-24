@@ -74,7 +74,7 @@ export async function renderActivityPoster(data: ActivityPosterData, palette: Po
         mark(110, 150, palette.route);
         text(when, 970, 146, 32, palette.muted, 400, 480, 'right');
         text(data.title, 110, 262, 56, palette.foreground, 600, 860);
-        route(110, 380, 860, 800, palette.route, 10, palette.background, palette.foreground);
+        route(110, 380, 860, 700, palette.route, 10, palette.background, palette.foreground);
         line(110, 1300, 860);
         text(data.kilometers, 104, 1520, 230, palette.foreground, 700, 560);
         text('公里', after(data.kilometers, 104, 230, 700, 560), 1520, 56, palette.muted);
@@ -86,8 +86,8 @@ export async function renderActivityPoster(data: ActivityPosterData, palette: Po
         mark(90, 150, palette.brandInk, palette.brandInk, palette.route);
         text(data.date, 990, 146, 32, palette.brandInk, 400, 480, 'right');
         route(150, 220, 780, 640, palette.heading, 14, palette.route, palette.foreground, palette.brandInk);
-        text(data.kilometers, 84, 1130, 250, palette.brandInk, 800, 700);
-        text('公里', after(data.kilometers, 84, 250, 800, 700), 1130, 60, palette.brandInk);
+        text(data.kilometers, 84, 1130, 250, palette.brandInk, 700, 700);
+        text('公里', after(data.kilometers, 84, 250, 700, 700), 1130, 60, palette.brandInk);
         text(data.title, 90, 1400, 52, palette.foreground, 600, 900);
         text(data.weekday, 90, 1465, 34, palette.muted);
         stat('用时', data.duration, 90, 1590);
@@ -97,16 +97,16 @@ export async function renderActivityPoster(data: ActivityPosterData, palette: Po
         panel(110, 170, 860, 1580, palette.surface, 44);
         ctx.save(); ctx.beginPath(); ctx.roundRect(110, 170, 860, 1580, 44); ctx.clip();
         ctx.fillStyle = palette.heading; ctx.fillRect(110, 170, 860, 190); ctx.restore();
-        text(brand.title, 190, 290, 64, palette.headingInk, 800, 440);
+        text(brand.title, 190, 290, 64, palette.headingInk, 700, 440);
 
         text('RUN TICKET', 890, 288, 36, palette.headingInk, 700, 300, 'right');
         text(when, 190, 470, 36, palette.muted, 400, 700);
-        text(data.title, 190, 550, 58, palette.foreground, 600, 700);
+        text(data.title, 190, 600, 58, palette.foreground, 600, 700);
         route(220, 620, 640, 380, palette.route, 8, palette.surface, palette.foreground);
         ctx.save(); ctx.setLineDash([14, 12]); line(150, 1100, 780); ctx.restore();
         for (const x of [110, 970]) { ctx.beginPath(); ctx.arc(x, 1100, 32, 0, Math.PI * 2); ctx.fillStyle = palette.background; ctx.fill(); }
-        text(data.kilometers, 190, 1290, 180, palette.foreground, 800, 480);
-        text('公里', after(data.kilometers, 190, 180, 800, 480), 1290, 50, palette.muted);
+        text(data.kilometers, 190, 1290, 180, palette.foreground, 700, 480);
+        text('公里', after(data.kilometers, 190, 180, 700, 480), 1290, 50, palette.muted);
         for (const [i, [label, value]] of [['用时', data.duration], ['平均配速', `${data.pace}/公里`]].entries()) {
           const y = 1430 + i * 100;
           text(label, 190, y, 38, palette.muted); text(value, 890, y, 46, palette.foreground, 600, 440, 'right');
@@ -118,7 +118,7 @@ export async function renderActivityPoster(data: ActivityPosterData, palette: Po
         text(data.weekday, 970, 146, 34, palette.muted, 400, 200, 'right');
         text(data.date, 110, 260, 44, palette.muted, 400, 860);
         const [whole, fraction = ''] = data.kilometers.split('.');
-        text(whole, 90, 930, 520, palette.route, 800, 880);
+        text(whole, 90, 930, 520, palette.route, 700, 880);
         text(fraction ? `.${fraction}` : '', 110, 1230, 190, palette.foreground, 700, 400);
         text('公里', 110 + (fraction ? 340 : 0), 1230, 64, palette.muted);
         for (const [i, [label, value]] of [['标题', data.title], ['用时', data.duration], ['平均配速', `${data.pace}/公里`]].entries()) {

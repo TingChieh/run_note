@@ -129,8 +129,8 @@
   .showcase-top { justify-content: space-between; }
   .reference, .example-stack { display: grid; gap: var(--space-4); }
   .reference-states, .pattern-grid, .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
-  h2 { font-size: 1.25rem; font-weight: 650; }
-  h3 { font-weight: 600; }
+  h2 { font-size: var(--text-section); font-weight: var(--weight-semibold); }
+  h3 { font-weight: var(--weight-semibold); }
   .description { color: var(--muted-foreground); font-size: var(--text-small); }
   .aux-panel > :not(:first-child), form { margin-top: var(--space-4); }
   .field, label:not(.choice) { display: grid; gap: var(--space-2); min-width: 0; }

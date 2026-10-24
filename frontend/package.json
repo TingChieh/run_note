@@ -14,6 +14,7 @@
     "start:local": "node scripts/start-node-local.mjs",
     "prepare": "svelte-kit sync",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "lint:style": "stylelint \"src/**/*.{css,svelte}\" \"tests/fixtures/**/*.{css,svelte}\"",
     "test": "vitest run",
     "test:e2e": "playwright test"
   },
@@ -24,6 +25,8 @@
     "@sveltejs/kit": "3.0.1",
     "@sveltejs/vite-plugin-svelte": "7.3.1",
     "@tailwindcss/vite": "4.3.3",
+    "postcss-html": "2.0.0",
+    "stylelint": "17.16.0",
     "svelte": "5.57.2",
     "svelte-check": "4.7.6",
     "tailwindcss": "4.3.3",

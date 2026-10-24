@@ -162,7 +162,7 @@
 </div>
 
 <style>
-  .date-field { display: grid; gap: .35rem; min-width: 0; font-size: .875rem; }
+  .date-field { display: grid; gap: .35rem; min-width: 0; font-size: var(--text-small); }
   .date-control { display: flex; align-items: center; width: 13.5rem; max-width: 100%; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); }
   .date-control:focus-within { border-color: var(--primary); }
   input { width: 100%; min-width: 0; border: 0; background: transparent; padding: .5rem 0 .5rem .75rem; border-radius: var(--radius-control); color: var(--foreground); }
@@ -176,27 +176,27 @@
   .date-popover { position: fixed; inset: auto; margin: 0; width: 20rem; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); color: var(--foreground); box-shadow: var(--shadow-popover); }
   .calendar-header { display: flex; align-items: center; gap: .25rem; margin-bottom: .75rem; }
   .month-selectors { display: flex; flex: 1; min-width: 0; gap: var(--space-2); }
-  select { min-width: 0; min-height: 2.5rem; border: 0; background: var(--surface); color: var(--foreground); padding: .25rem; font-size: .9375rem; font-weight: 650; }
-  .month-step { flex-shrink: 0; width: 2.5rem; height: 2.5rem; border-radius: .65rem; font-size: 1.5rem; color: var(--primary); }
+  select { min-width: 0; min-height: 2.5rem; border: 0; background: var(--surface); color: var(--foreground); padding: .25rem; font-size: var(--text-body); font-weight: var(--weight-semibold); }
+  .month-step { flex-shrink: 0; width: 2.5rem; height: 2.5rem; border-radius: .65rem; font-size: var(--text-stat); color: var(--primary); }
   .month-step:hover:not(:disabled) { background: var(--primary-soft); }
   .weekdays, .calendar-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .25rem; text-align: center; }
-  .weekdays { color: var(--muted-foreground); font-size: .75rem; margin-bottom: .5rem; }
+  .weekdays { color: var(--muted-foreground); font-size: var(--text-caption); margin-bottom: .5rem; }
   .calendar-months { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .375rem; }
-  .calendar-months button { min-height: 2.75rem; border-radius: .65rem; font-size: .9375rem; }
+  .calendar-months button { min-height: 2.75rem; border-radius: .65rem; font-size: var(--text-body); }
   .calendar-months button:hover:not(:disabled) { background: var(--primary-soft); color: var(--primary); }
   .calendar-months .today { box-shadow: inset 0 0 0 1px var(--primary); }
-  .calendar-months button[aria-pressed='true'], .calendar-months button[aria-pressed='true']:hover { background: var(--primary); color: var(--primary-foreground); font-weight: 700; }
+  .calendar-months button[aria-pressed='true'], .calendar-months button[aria-pressed='true']:hover { background: var(--primary); color: var(--primary-foreground); font-weight: var(--weight-bold); }
   .calendar-months button:focus-visible { outline-offset: 1px; }
-  .calendar-days button { min-height: 2.25rem; border-radius: .65rem; font-size: .875rem; }
+  .calendar-days button { min-height: 2.25rem; border-radius: .65rem; font-size: var(--text-small); }
   .calendar-days button:hover:not(:disabled) { background: var(--primary-soft); color: var(--primary); }
   .calendar-days .outside { color: var(--muted-foreground); }
   .calendar-days .today { box-shadow: inset 0 0 0 1px var(--primary); }
-  .calendar-days button[aria-pressed='true'], .calendar-days button[aria-pressed='true']:hover { background: var(--primary); color: var(--primary-foreground); font-weight: 700; }
+  .calendar-days button[aria-pressed='true'], .calendar-days button[aria-pressed='true']:hover { background: var(--primary); color: var(--primary-foreground); font-weight: var(--weight-bold); }
   .calendar-days button:focus-visible { outline-offset: 1px; }
   .calendar-footer { display: flex; justify-content: space-between; margin-top: .75rem; padding-top: .5rem; border-top: 1px solid var(--border); }
-  .calendar-footer button { min-height: 2.5rem; padding: .25rem .75rem; border-radius: .65rem; color: var(--primary); font-weight: 550; }
+  .calendar-footer button { min-height: 2.5rem; padding: .25rem .75rem; border-radius: .65rem; color: var(--primary); font-weight: var(--weight-semibold); }
   .calendar-footer button:hover:not(:disabled) { background: var(--primary-soft); }
-  .calendar-help { text-align: center; color: var(--muted-foreground); font-size: .6875rem; margin-top: .25rem; }
+  .calendar-help { text-align: center; color: var(--muted-foreground); font-size: var(--text-caption); margin-top: .25rem; }
   .month-announcement { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   @media (max-width: 767px) { .date-control { width: 100%; } }
 </style>
