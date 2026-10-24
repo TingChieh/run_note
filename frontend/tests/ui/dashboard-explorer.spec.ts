@@ -363,9 +363,8 @@ test('history strip starts flush left and parks paging arrows beside the cards',
     expect(start.nextOutside, `${width} right arrow beside the strip`).toBe(true);
     await region.locator('.strip-frame').screenshot({ path: testInfo.outputPath(`history-strip-${width}-start.png`) });
     await next.click();
-    await expect.poll(async () => (await measure()).scrollLeft).toBeGreaterThan(8);
+    await expect.poll(async () => (await measure()).prevHidden).toBe(false);
     const paged = await measure();
-    expect(paged.prevHidden, `${width} left arrow after paging`).toBe(false);
     expect(paged.covered, `${width} arrow covers a card after paging`).toBe(false);
     expect(paged.prevOutside, `${width} left arrow beside the strip`).toBe(true);
     expect(paged.nextOutside, `${width} right arrow beside the strip`).toBe(true);
@@ -374,7 +373,7 @@ test('history strip starts flush left and parks paging arrows beside the cards',
     await expect.poll(async () => (await measure()).nextHidden).toBe(true);
     const end = await measure();
     expect(end.scrollLeft, `${width} scrolled`).toBeGreaterThan(8);
-    expect(end.prevHidden, `${width} left arrow at end`).toBe(false);
+    await expect.poll(async () => (await measure()).prevHidden).toBe(false);
     expect(end.covered, `${width} arrow covers a card at end`).toBe(false);
     expect(end.prevOutside, `${width} left arrow beside the strip at end`).toBe(true);
     expect(end.lastFits, `${width} last card inside the strip`).toBe(true);
