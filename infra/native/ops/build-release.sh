@@ -49,8 +49,10 @@ cp frontend/package.json "$root/frontend/"
 cp scripts/site-owner.py scripts/osm-places.py scripts/backfill-place-titles.py "$root/scripts/"
 cp -R infra/native "$root/infra/native"
 cp -R infra/native/ops "$root/ops"
-find "$root" \( -name __pycache__ -o -name '*.pyc' -o -name '.DS_Store' \) -prune -exec rm -rf {} +
+find "$root" \( -name __pycache__ -o -name '*.pyc' -o -name '._*' -o -name '.DS_Store' \) -prune -exec rm -rf {} +
 rm -rf "$root/infra/native/tests"
+# macOS metadata must never ship: AppleDouble companions (`._*`) are mostly NUL bytes and Alembic
+# would try to import `._0001_x.py`; the find above removes them (and .DS_Store) from the staged tree.
 
 cat > "$root/RELEASE" <<META
 id=$id
@@ -61,8 +63,17 @@ META
 
 tarball="$out/run-note-$id.tar.gz"
 tar_flags=(-czf "$tarball" -C "$stage")
-if tar --version 2>/dev/null | grep -qi 'gnu tar'; then tar_flags+=(--owner=0 --group=0); else tar_flags+=(--uid 0 --gid 0); fi
-tar "${tar_flags[@]}" "$id"
+if tar --version 2>/dev/null | grep -qi 'gnu tar'; then
+  tar_flags+=(--owner=0 --group=0)
+else
+  # bsdtar: never archive extended attributes / AppleDouble data (older bsdtar lacks the flags,
+  # COPYFILE_DISABLE below covers it).
+  tar_flags+=(--uid 0 --gid 0)
+  for f in --no-mac-metadata --no-xattrs; do
+    if tar "$f" -cf /dev/null --files-from /dev/null 2>/dev/null; then tar_flags+=("$f"); fi
+  done
+fi
+COPYFILE_DISABLE=1 tar "${tar_flags[@]}" "$id"
 # A release that is not self-contained must never leave this script.
 if ! "$(dirname "$0")/verify-release.sh" "$tarball"; then
   rm -f "$tarball"
