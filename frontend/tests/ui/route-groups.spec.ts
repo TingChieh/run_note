@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { loginRunner, installActivities } from '../fixtures/activities';
 import { installBasemaps } from '../fixtures/basemaps';
+import { blockGlassModules, expectEnhancedLook, expectUnenhancedFallback, reduceTransparency } from '../fixtures/segmented';
 
 const id = '11111111-1111-4111-8111-111111111111';
 const shape = [[[121.47, 31.23], [121.474, 31.23], [121.474, 31.233], [121.47, 31.233], [121.47, 31.23]]];
@@ -151,4 +152,31 @@ for (const scheme of ['light', 'dark'] as const) {
     expect(box!.width).toBeGreaterThan(20);
     expect(box!.height).toBeGreaterThan(20);
   });
+}
+
+for (const scheme of ['light', 'dark'] as const) {
+  for (const path of ['/routes', '/settings']) {
+    const find = (page: import('@playwright/test').Page) => path === '/routes' ? page.getByRole('group', { name: '排序方式' }) : page.locator('.settings-tabs').first();
+    test(`${path}: enhanced tabs are plain buttons with a distinct lens (${scheme})`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: scheme });
+      await fixture(page); await loginRunner(page);
+      await page.goto(path);
+      await expectEnhancedLook(find(page));
+    });
+    test(`${path}: reduced transparency keeps the selected tab filled (${scheme})`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: scheme });
+      await fixture(page); await loginRunner(page);
+      await page.goto(path);
+      await expect(find(page)).toHaveClass(/rn-liquid-navigation/);
+      await reduceTransparency(page);
+      await expectUnenhancedFallback(find(page));
+    });
+    test(`${path}: without the glass modules the selected tab keeps its fill (${scheme})`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: scheme });
+      await blockGlassModules(page);
+      await fixture(page); await loginRunner(page);
+      await page.goto(path);
+      await expectUnenhancedFallback(find(page));
+    });
+  }
 }

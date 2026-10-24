@@ -52,7 +52,7 @@
 }
 
 /* Important material properties unify scoped Svelte and third-party controls. */
-.sport-theme :is(button:where(:not(.wall-card)):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary) {
+.sport-theme :is(button:where(:not(.wall-card)):where(:not(.settings-tabs > button)):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary) {
   box-shadow: var(--button-glass-selection), inset 0 1px 0 var(--glass-edge), inset 0 -1px 0 var(--glass-rim), 0 .25rem .875rem var(--glass-shadow) !important;
   transition: color var(--transition-control), background-color var(--transition-control), border-color var(--transition-control), box-shadow var(--transition-control);
 }
@@ -264,18 +264,18 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sport-theme :is(button:where(:not(.wall-card)):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary) { transition: none !important; scale: 1 !important; }
+  .sport-theme :is(button:where(:not(.wall-card)):where(:not(.settings-tabs > button)):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary) { transition: none !important; scale: 1 !important; }
 }
 
 @media (prefers-reduced-transparency: reduce) {
   .sport-theme { --glass-action-foreground: var(--primary-foreground); --glass-danger-ink: var(--glass-danger-foreground); }
-  .sport-theme :is(button:where(:not(.wall-card)):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary) {
+  .sport-theme :is(button:where(:not(.wall-card)):where(:not(.settings-tabs > button)):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary) {
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
   }
-  .sport-theme :is(button:where(:not(.wall-card)):not(.rn-menu-option):not(.rn-select-toggle):not(.maplibregl-ctrl-attrib-button):not([data-date]), a.button-primary, a.button-secondary) { background-image: none !important; }
-  .sport-theme :is(button:where(:not(.wall-card)):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary),
-  .sport-theme :is(button:where(:not(.wall-card)):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary):not(:disabled):not([aria-disabled="true"]):hover {
+  .sport-theme :is(button:where(:not(.wall-card)):where(:not(.settings-tabs > button)):not(.rn-menu-option):not(.rn-select-toggle):not(.maplibregl-ctrl-attrib-button):not([data-date]), a.button-primary, a.button-secondary) { background-image: none !important; }
+  .sport-theme :is(button:where(:not(.wall-card)):where(:not(.settings-tabs > button)):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary),
+  .sport-theme :is(button:where(:not(.wall-card)):where(:not(.settings-tabs > button)):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary):not(:disabled):not([aria-disabled="true"]):hover {
     background-color: var(--button-glass-fallback) !important;
   }
   .sport-theme .maplibregl-ctrl-group, .sport-theme input::file-selector-button { background: var(--surface) !important; }
@@ -291,8 +291,8 @@
     box-shadow: none !important;
   }
   .sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-out { border-top-color: ButtonText; }
-  .sport-theme :is(button:where(:not(.wall-card)):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary),
-  .sport-theme :is(button:where(:not(.wall-card)):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary):not(:disabled):not([aria-disabled="true"]):hover,
+  .sport-theme :is(button:where(:not(.wall-card)):where(:not(.settings-tabs > button)):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary),
+  .sport-theme :is(button:where(:not(.wall-card)):where(:not(.settings-tabs > button)):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary):not(:disabled):not([aria-disabled="true"]):hover,
   .sport-theme input::file-selector-button {
     background-color: ButtonFace !important;
     color: ButtonText !important;
@@ -300,9 +300,9 @@
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
   }
-  .sport-theme :is(button:where(:not(.wall-card)):not(.rn-menu-option):not(.rn-select-toggle):not(.maplibregl-ctrl-attrib-button):not([data-date]), a.button-primary, a.button-secondary),
+  .sport-theme :is(button:where(:not(.wall-card)):where(:not(.settings-tabs > button)):not(.rn-menu-option):not(.rn-select-toggle):not(.maplibregl-ctrl-attrib-button):not([data-date]), a.button-primary, a.button-secondary),
   .sport-theme input::file-selector-button { background-image: none !important; }
-  .sport-theme :is(button:where(:not(.wall-card)):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary):is(:disabled, [aria-disabled="true"]) { color: GrayText !important; }
+  .sport-theme :is(button:where(:not(.wall-card)):where(:not(.settings-tabs > button)):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary):is(:disabled, [aria-disabled="true"]) { color: GrayText !important; }
   .sport-theme button:not(.rn-menu-option):not(.rn-select-toggle):is([aria-pressed="true"], .selected, .today) { outline: 2px solid Highlight; outline-offset: -2px; }
   .sport-theme .maplibregl-ctrl-group button:not(.rn-menu-option):not(.rn-select-toggle):focus-visible { outline-color: Highlight; }
 }

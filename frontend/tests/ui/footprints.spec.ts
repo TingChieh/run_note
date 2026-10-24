@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { loginRunner, installActivities, sampleActivity, incompleteActivity } from '../fixtures/activities';
 import { installAI } from '../fixtures/p2';
 import { installBasemaps } from '../fixtures/basemaps';
+import { blockGlassModules, expectEnhancedLook, expectUnenhancedFallback, reduceTransparency } from '../fixtures/segmented';
 import type { FootprintCollection } from '../../src/lib/api/footprints.ts';
 async function fixture(page: Page) {
   const state={multipleCities:false,heatCells:1,status:'ready' as 'ready'|'pending'|'failed',refreshing:false,refreshFailed:false,scenario:'multi' as 'multi'|'single'|'point'|'empty',failures:0,expired:false,requests:[] as URL[]};
@@ -443,5 +444,21 @@ for (const scheme of ['light','dark'] as const) {
     await expect.poll(()=>share(heat)).toBeGreaterThan(.8);
     await page.mouse.move(0,0);
     await expect(page.getByTestId('footprint-mode-hint')).toContainText('经过的区域');
+  });
+}
+for (const scheme of ['light','dark'] as const) {
+  const find=(page:Page)=>page.locator('.page-header .page-header-footer').getByRole('group',{name:'地图模式',exact:true});
+  test(`footprints: enhanced mode switch is plain buttons with a distinct lens (${scheme})`,async({page})=>{
+    await page.emulateMedia({colorScheme:scheme});await fixture(page);await loginRunner(page);await page.goto('/footprints');await ready(page);
+    await expectEnhancedLook(find(page));
+  });
+  test(`footprints: reduced transparency keeps the selected mode filled (${scheme})`,async({page})=>{
+    await page.emulateMedia({colorScheme:scheme});await fixture(page);await loginRunner(page);await page.goto('/footprints');await ready(page);
+    await expect(find(page)).toHaveClass(/rn-liquid-navigation/);await reduceTransparency(page);
+    await expectUnenhancedFallback(find(page));
+  });
+  test(`footprints: without the glass modules the selected mode keeps its fill (${scheme})`,async({page})=>{
+    await page.emulateMedia({colorScheme:scheme});await blockGlassModules(page);await fixture(page);await loginRunner(page);await page.goto('/footprints');await expect(find(page)).toBeVisible();
+    await expectUnenhancedFallback(find(page));
   });
 }
