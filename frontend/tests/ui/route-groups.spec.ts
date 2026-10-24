@@ -123,3 +123,29 @@ test('sort buttons use the shared glass segmented control with a selected item',
   await expect(group).toHaveClass(/rn-liquid-navigation/);
   await expect(group.locator('.rn-moving-copy')).toHaveCount(1);
 });
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(`the selected sort button is visibly marked by the glass indicator (${scheme})`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme: scheme });
+    await fixture(page); await loginRunner(page);
+    await page.goto('/routes');
+    const group = page.getByRole('group', { name: '排序方式' });
+    await expect(page.getByTestId('route-card').first()).toBeVisible();
+    const selected = group.getByRole('button', { name: '跑得最多' }), other = group.getByRole('button', { name: '最近跑过' });
+    await expect(selected).toHaveAttribute('aria-pressed', 'true');
+    const outline = group.locator('.rn-moving-outline');
+    await expect(outline).toHaveCount(1);
+    const overlap = async () => {
+      const [o, s, u] = await Promise.all([outline.boundingBox(), selected.boundingBox(), other.boundingBox()]);
+      const area = (a: NonNullable<typeof o>, b: NonNullable<typeof o>) =>
+        Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+      return { onSelected: area(o!, s!) / (s!.width * s!.height), onOther: area(o!, u!) / (u!.width * u!.height) };
+    };
+    // The spring animates to the selected item; wait until it covers the pressed button and not the other one.
+    await expect.poll(async () => (await overlap()).onSelected).toBeGreaterThan(.8);
+    expect((await overlap()).onOther).toBeLessThan(.2);
+    const box = await outline.boundingBox();
+    expect(box!.width).toBeGreaterThan(20);
+    expect(box!.height).toBeGreaterThan(20);
+  });
+}
