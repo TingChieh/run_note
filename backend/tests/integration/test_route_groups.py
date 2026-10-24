@@ -481,3 +481,50 @@ def test_named_showcase_follows_showcase_enabled_and_never_leaks_other_users(cli
         a.get(f"/api/v1/showcase/users/{mine}/routes/groups/{shown['items'][0]['id']}").status_code
         == 404
     )
+
+
+def test_a_run_that_only_timed_out_is_retried_later_while_a_broken_one_is_marked(clients):  # noqa: F811
+    import psycopg.errors
+    from sqlalchemy.exc import OperationalError
+
+    a, b, _, app = clients
+    quiet(a, b)
+    owner = register(a)
+    slow = add_run(app, owner, ring(), day=date(2025, 11, 1))
+    broken = add_run(app, owner, ring(), day=date(2025, 11, 2))
+    fine = add_run(app, owner, ring(start=5), day=date(2025, 11, 3))
+    original = groups.insert_fingerprints
+
+    def flaky(db, ids, *, compute=True):
+        if compute and len(ids) > 1 and {UUID(slow), UUID(broken)} & set(ids):
+            raise RuntimeError("batch fails, so the runs are retried one by one")
+        if compute and ids == [UUID(slow)]:
+            raise OperationalError("select", {}, psycopg.errors.QueryCanceled())
+        if compute and ids == [UUID(broken)]:
+            raise RuntimeError("bad track")
+        return original(db, ids, compute=compute)
+
+    def rows():
+        with app.state.session_factory() as db:
+            found = db.execute(
+                text(
+                    "SELECT activity_id, geom IS NULL FROM route_fingerprints "
+                    "WHERE activity_id = ANY(:ids)"
+                ),
+                {"ids": [UUID(slow), UUID(broken), UUID(fine)]},
+            ).all()
+        return {str(activity): is_null for activity, is_null in found}
+
+    groups.insert_fingerprints = flaky
+    try:
+        fill(app)  # returns, so a run that keeps timing out cannot make the scan spin
+    finally:
+        groups.insert_fingerprints = original
+    after = rows()
+    assert slow not in after
+    assert after[broken] is True
+    assert after[fine] is False
+    fill(app)
+    assert rows()[slow] is False
+    found = members(app, owner)
+    assert found[slow] == found[fine]

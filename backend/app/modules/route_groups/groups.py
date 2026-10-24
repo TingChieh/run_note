@@ -4,6 +4,7 @@ import hashlib
 import logging
 from uuid import UUID, uuid4
 
+import psycopg.errors
 from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
@@ -102,7 +103,9 @@ def build_fingerprints(db, limit: int) -> int:
     """One row per activity, oldest first; geom stays NULL when the run cannot be grouped.
 
     A failing batch is retried one run at a time, and a run that fails alone gets a NULL
-    fingerprint, so a single bad track cannot make every later scan fail the same way.
+    fingerprint, so a single bad track cannot make every later scan fail the same way. A run
+    that only hit the statement timeout gets no row: a busy database must not exclude it for
+    good, and the next scan tries it again (a scan with nothing else to build still ends).
     """
     db.execute(text("SET LOCAL statement_timeout = '5000ms'"))
     ids = list(
@@ -130,6 +133,8 @@ def build_fingerprints(db, limit: int) -> int:
                 built += insert_fingerprints(db, [activity_id])
         except Exception as error:
             logger.warning("route fingerprint failed for one run (%s)", type(error).__name__)
+            if isinstance(getattr(error, "orig", None), psycopg.errors.QueryCanceled):
+                continue
             built += insert_fingerprints(db, [activity_id], compute=False)
     return built
 

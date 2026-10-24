@@ -29,7 +29,8 @@
   .route-card { position: relative; transition: border-color .15s, box-shadow .15s; }
   .route-card:hover { border-color: var(--primary); }
   .route-card:has(a:focus-visible) { outline: 2px solid var(--ring); outline-offset: 3px; }
-  h2 a:focus-visible { outline: none; }
+  /* The card draws the ring through :has(); keep the link's own outline where it is unsupported. */
+  @supports selector(:has(*)) { h2 a:focus-visible { outline: none; } }
   .count { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem; font-size: .875rem; }
   .count span, dt { color: var(--muted-foreground); font-size: .8125rem; }
   dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
