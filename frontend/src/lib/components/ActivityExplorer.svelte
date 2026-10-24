@@ -22,15 +22,35 @@
   let active = false, listRequest = 0, selectionRequest = 0, categoriesRequest = 0;
   let strip = $state<HTMLUListElement>(), panel = $state<HTMLDivElement>();
   let canScrollPrev = $state(false), canScrollNext = $state(false);
+  let userScrolling = false, adjustingSelection = false, userScrollTimer = 0;
   function syncStrip() {
     if (!strip) { canScrollPrev = false; canScrollNext = false; return; }
     canScrollPrev = strip.scrollLeft > 8;
     canScrollNext = strip.scrollWidth - strip.clientWidth - strip.scrollLeft > 8;
   }
+  function noteUserScroll() {
+    userScrolling = true;
+    window.clearTimeout(userScrollTimer);
+    userScrollTimer = window.setTimeout(() => { userScrolling = false; }, 400);
+  }
+  function onStripScroll() {
+    syncStrip();
+    if (!adjustingSelection) noteUserScroll();
+  }
+  let scrollTarget: number | null = null;
   function pageStrip(direction: 1 | -1) {
     if (!strip) return;
+    noteUserScroll();
     const distance = Math.max(280, Math.round(strip.clientWidth * 0.85));
-    strip.scrollBy({ left: direction * distance, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    const max = Math.max(0, strip.scrollWidth - strip.clientWidth);
+    const target = Math.min(max, Math.max(0, (scrollTarget ?? strip.scrollLeft) + direction * distance));
+    scrollTarget = target;
+    strip.scrollTo({ left: target, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }
+  function onStripScrollEnd() {
+    scrollTarget = null;
+    userScrolling = false;
+    window.clearTimeout(userScrollTimer);
   }
   let detailAnimations: Animation[] = [];
   function stopDetailAnimations() { for (const animation of detailAnimations) animation.cancel(); detailAnimations = []; }
@@ -68,15 +88,17 @@
     const button = strip.querySelector<HTMLButtonElement>(`[data-id="${selectedId}"]`);
     if (!button) return;
     const card = button.getBoundingClientRect(), viewport = strip.getBoundingClientRect();
-    // Paging and arrow layout must not drag a card the reader has already scrolled past.
-    if (!force && (card.right <= viewport.left + 1 || card.left >= viewport.right - 1)) return;
-    if (card.left < viewport.left) strip.scrollLeft += card.left - viewport.left;
-    else if (card.right > viewport.right) strip.scrollLeft += card.right - viewport.right;
+    if (!force && (userScrolling || card.right <= viewport.left + 1 || card.left >= viewport.right - 1)) return;
+    const delta = card.left < viewport.left ? card.left - viewport.left : card.right > viewport.right ? card.right - viewport.right : 0;
+    if (!delta) return;
+    adjustingSelection = true;
+    strip.scrollLeft += delta;
+    adjustingSelection = false;
   }
   $effect(() => {
     const element = strip;
     if (!element) return;
-    const observer = new ResizeObserver(() => revealSelection());
+    const observer = new ResizeObserver(() => { if (!userScrolling) revealSelection(); });
     observer.observe(element);
     return () => observer.disconnect();
   });
@@ -127,7 +149,7 @@
   }
   onMount(() => {
     active = true; void loadCategories(); void loadPage();
-    return () => { active = false; ++listRequest; ++selectionRequest; ++categoriesRequest; stopDetailAnimations(); };
+    return () => { active = false; window.clearTimeout(userScrollTimer); ++listRequest; ++selectionRequest; ++categoriesRequest; stopDetailAnimations(); };
   });
   $effect(() => {
     void items.length;
@@ -181,7 +203,7 @@
     <div class="strip-frame" class:can-scroll-next={canScrollNext}>
     <button type="button" class="strip-page strip-prev" aria-label="向左查看更早的记录" disabled={!canScrollPrev} onclick={() => pageStrip(-1)}><span aria-hidden="true">‹</span></button>
     <div class="strip-viewport">
-    <ul class="activity-strip stagger" bind:this={strip} aria-label="按时间浏览运动记录" onscroll={syncStrip}>
+    <ul class="activity-strip stagger" bind:this={strip} aria-label="按时间浏览运动记录" onscroll={onStripScroll} onscrollend={onStripScrollEnd} onwheel={() => { scrollTarget = null; }}>
       {#each items as item (item.id)}<li><button class="history-card" class:selected={item.id === selectedId} data-id={item.id} aria-label={`选择运动 ${item.title}`} aria-pressed={item.id === selectedId} onclick={() => void choose(item)}><div class="history-copy"><time datetime={item.activity_date}>{formatDate(item.activity_date)}</time><strong>{item.title || '未命名活动'}</strong><span>{item.category || '未分类'}</span></div><RouteThumbnail activity={item} compact onauthrequired={cause => { fail(cause); }} /></button></li>{/each}
     </ul>
     </div>
@@ -228,7 +250,7 @@
   .strip-viewport { position: relative; min-width: 0; }
   .strip-viewport::after { content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 2.75rem; pointer-events: none; z-index: 1; opacity: 0; background: linear-gradient(to left, var(--surface), transparent); }
   .strip-frame.can-scroll-next .strip-viewport::after { opacity: 1; }
-  .strip-page { display: none; place-items: center; width: 2.25rem; height: 2.25rem; padding: 0; border-radius: 50%; background: var(--surface); }
+  .strip-page { display: none; place-items: center; width: 2.25rem; height: 2.25rem; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--foreground); }
   .strip-page span { font-size: 1.5rem; line-height: 1; }
   .activity-strip { display: flex; gap: var(--space-3); overflow-x: auto; scroll-snap-type: x proximity; margin-top: var(--space-1); padding: var(--space-1) .125rem var(--space-2); }
   .activity-strip li { flex: 0 0 19rem; max-width: 100%; min-width: 0; scroll-snap-align: start; }
@@ -239,12 +261,12 @@
   a.inactive { pointer-events: none; opacity: .5; }
   button:disabled { opacity: .45; cursor: not-allowed; }
   @media(min-width:1024px) {
-    .strip-frame { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "prev strip next"; align-items: center; }
-    .strip-prev { grid-area: prev; margin-right: var(--space-2); }
-    .strip-next { grid-area: next; margin-left: var(--space-2); }
-    .strip-viewport { grid-area: strip; }
-    .strip-page { display: grid; }
-    .strip-page:disabled { display: none; }
+    .strip-frame { display: grid; grid-template-columns: 2.25rem minmax(0, 1fr) 2.25rem; column-gap: var(--space-2); align-items: center; }
+    .strip-prev { grid-column: 1; }
+    .strip-viewport { grid-column: 2; }
+    .strip-next { grid-column: 3; }
+    .strip-page { display: grid; position: static; }
+    .strip-page:disabled { visibility: hidden; pointer-events: none; }
     .explorer-metrics { align-self: start; }
     .explorer-metrics :global(.metrics) { height: calc(var(--route-map-height) + 2px); grid-auto-rows: minmax(0, 1fr); }
     .explorer-metrics :global(.metrics > div) { display: flex; flex-direction: column; justify-content: center; padding-block: var(--space-1); }

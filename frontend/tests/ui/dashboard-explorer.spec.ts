@@ -384,3 +384,63 @@ test('history strip starts flush left and parks paging arrows beside the cards',
     expect((await measure()).scrollLeft, `${width} restored`).toBeLessThan(8);
   }
 });
+
+test('history strip pages to the end and back without reduced motion', async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await explorer(page);
+  const region = page.getByRole('region', { name: '运动足迹', exact: true });
+  const strip = region.locator('.activity-strip');
+  const prev = region.locator('.strip-prev');
+  const next = region.locator('.strip-next');
+  await expect(region.getByRole('button', { name: '选择运动 运动 1', exact: true })).toBeVisible();
+  const left = () => strip.evaluate(el => el.scrollLeft);
+  const settled = async () => {
+    await expect.poll(async () => {
+      const first = await left();
+      await page.waitForTimeout(80);
+      return Math.abs(first - await left()) < 1 ? first : -1;
+    }, { timeout: 4000 }).toBeGreaterThanOrEqual(0);
+    return left();
+  };
+  for (const [width, height] of [[1280, 800], [1710, 1112]] as const) {
+    await page.setViewportSize({ width, height });
+    await strip.evaluate(el => { el.scrollLeft = 0; });
+    expect(await settled(), `${width} start`).toBeLessThan(8);
+    const widths = [await strip.evaluate(el => el.clientWidth)];
+    await next.click();
+    for (let sample = 0; sample < 15; sample += 1) {
+      widths.push(await strip.evaluate(el => el.clientWidth));
+      await page.waitForTimeout(40);
+    }
+    expect(Math.max(...widths) - Math.min(...widths), `${width} strip width changed while scrolling`).toBeLessThanOrEqual(1);
+    expect(await settled(), `${width} first page`).toBeGreaterThan(200);
+    await region.locator('.strip-frame').screenshot({ path: testInfo.outputPath(`smooth-strip-${width}-paged.png`) });
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const before = await left();
+      const room = await strip.evaluate(el => el.scrollWidth - el.clientWidth - el.scrollLeft);
+      if (room <= 8) break;
+      await next.click();
+      expect(await settled(), `${width} page ${attempt}`).toBeGreaterThan(before + 40);
+    }
+    expect(await strip.evaluate(el => el.scrollWidth - el.clientWidth - el.scrollLeft), `${width} reached the end`).toBeLessThanOrEqual(8);
+    await expect(next).toBeDisabled();
+    await expect(prev).toBeEnabled();
+    await region.locator('.strip-frame').screenshot({ path: testInfo.outputPath(`smooth-strip-${width}-end.png`) });
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const before = await left();
+      if (before <= 8) break;
+      await prev.click();
+      expect(await settled(), `${width} back ${attempt}`).toBeLessThan(before - 40);
+    }
+    expect(await left(), `${width} returned`).toBeLessThan(8);
+    await expect(prev).toBeDisabled();
+    await expect(next).toBeEnabled();
+    for (let i = 0; i < 40 && !(await next.isDisabled()); i += 1) await next.click();
+    expect(await settled(), `${width} rapid clicks leave the start`).toBeGreaterThan(200);
+    expect(await strip.evaluate(el => el.scrollWidth - el.clientWidth - el.scrollLeft), `${width} rapid clicks reach the end`).toBeLessThanOrEqual(8);
+    await expect(next).toBeDisabled();
+    for (let i = 0; i < 40 && !(await prev.isDisabled()); i += 1) await prev.click();
+    expect(await settled(), `${width} rapid clicks return`).toBeLessThan(8);
+    await expect(prev).toBeDisabled();
+  }
+});
