@@ -218,7 +218,7 @@
   @keyframes page-enter-down { from { transform: translate3d(0, -1.5rem, 0); } to { transform: translate3d(0, 0, 0); } }
   .page-reveal.quiet-swap, .page-reveal.quiet-swap.page-enter-up, .page-reveal.quiet-swap.page-enter-down { animation: none; }
   @media (prefers-reduced-motion: reduce) { .page-reveal, .content-reveal { animation: none; } }
-  .page-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-4); }
+  .page-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-4); min-width: 0; }
   .page-description { margin-top: var(--space-3); max-width: 48rem; color: var(--muted-foreground); }
   .page-actions { flex-shrink: 0; }
   .app-footer { width: 100%; max-width: var(--content-width); margin-inline: auto; display: flex; flex-wrap: wrap; gap: var(--space-3); padding: var(--space-6) clamp(1rem, 3vw, 3rem); color: var(--muted-foreground); font-size: var(--text-caption); }
@@ -467,7 +467,7 @@
 
 /* Settings pages: identity card, block grid, floating save bar and header-integrated section tabs. */
 @layer components {
-  .page-header-footer { flex-basis: 100%; }
+  .page-header-footer { flex-basis: 100%; min-width: 0; max-width: 100%; }
   .settings-stack { display: grid; gap: var(--space-6); margin-top: var(--space-6); }
   .settings-grid { display: grid; gap: var(--space-6); }
   @media (min-width: 900px) { .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; } }
@@ -495,7 +495,7 @@
   .save-bar { display: grid; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-card); background: color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter: blur(16px) saturate(1.4); box-shadow: 0 .5rem 1.5rem var(--glass-shadow); }
   .save-bar-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
   .save-status { flex: 1 1 10rem; padding: 0; background: none; font-size: var(--text-small); color: var(--muted-foreground); }
-  .settings-tabs { display: flex; flex-wrap: wrap; width: fit-content; max-width: 100%; gap: .25rem; margin-top: var(--space-4); padding: .25rem; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--surface) 45%, transparent); }
+  .settings-tabs { display: flex; flex-wrap: wrap; width: max-content; max-width: 100%; overflow-x: clip; gap: .25rem; margin-top: var(--space-4); padding: .25rem; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--surface) 45%, transparent); }
   .settings-tabs a { display: inline-flex; align-items: center; min-height: 2.5rem; padding: .375rem 1.125rem; border-radius: var(--radius-pill); font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--sport-heading-ink); transition: background-color var(--transition-control), color var(--transition-control), box-shadow var(--transition-control); }
   .settings-tabs a:hover { background: color-mix(in srgb, var(--surface) 70%, transparent); }
   .settings-tabs a[aria-current='page'] { color: var(--primary-foreground); background: var(--primary); box-shadow: 0 .125rem .5rem var(--glass-shadow); }

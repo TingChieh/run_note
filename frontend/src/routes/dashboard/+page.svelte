@@ -165,7 +165,8 @@
   .goal-explanation{font-size: var(--text-caption);line-height: var(--line-height-body);color:var(--muted-foreground);}
   @media(max-width:1199px){.milestone-layout{grid-template-columns:1fr;}}
   .feature-entrances { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--space-4); }
-  .feature-entrance { display:flex; align-items:center; gap:.85rem; min-width:0; padding:1.1rem; border:1px solid var(--border); border-radius:var(--radius-card); background:var(--surface); }
+  .feature-entrance { display:flex; align-items:center; gap:.85rem; min-width:0; padding:1.1rem; border:1px solid var(--border); border-radius:var(--radius-card); background:var(--surface); font-size: var(--text-small); font-weight: var(--weight-semibold); }
+  .feature-entrance strong { font-size: var(--text-small); font-weight: var(--weight-semibold); }
   .feature-entrance:hover { border-color:var(--primary); background:var(--muted); }
   .feature-icon { display:grid; place-items:center; flex-shrink:0; width:2.5rem; height:2.5rem; border-radius:50%; background:var(--sport-green); color:var(--sport-ink); font-size: var(--text-section); }
   .feature-entrance:nth-child(2) .feature-icon { background:var(--sport-blue); }
@@ -197,7 +198,7 @@
   .eyebrow { color: var(--muted-foreground); font-size: var(--text-caption); margin-bottom: .25rem; }
   .year-controls { display: flex; gap: .4rem; align-items: center; }
   .year-controls input { width: 4.5rem; text-align: center; border: 1px solid var(--border); border-radius: var(--radius-control); padding: .5rem; font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
-  .year-arrow { min-width: 2.5rem; font-size: var(--text-section); padding: .3rem .6rem; }
+  .year-arrow { min-width: 2.5rem; font-size: var(--text-small); font-weight: var(--weight-semibold); padding: .3rem .6rem; }
   .calendar-toolbar { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem; margin-top: var(--space-6); font-size: var(--text-small); }
   .calendar-toolbar p { color: var(--muted-foreground); align-self: center; }
   select { border: 1px solid var(--border); border-radius: var(--radius-control); padding: .45rem .5rem; margin-left: .3rem; background: var(--surface); }

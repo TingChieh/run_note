@@ -200,6 +200,7 @@
   .activity-strip li { flex: 0 0 19rem; max-width: 100%; min-width: 0; scroll-snap-align: start; }
   .history-card { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); width: 100%; min-height: 5.5rem; padding: var(--space-2); text-align: left; border: 1px solid var(--border); border-radius: 1rem; transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease; }
   .history-card.selected { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); background: var(--primary-soft); }
+  .history-card { font-size: var(--text-small); font-weight: var(--weight-semibold); }
   .history-copy { display: grid; gap: .375rem; min-width: 0; } .history-copy strong { font-size: var(--text-card); overflow-wrap: anywhere; font-weight: var(--weight-semibold);} .history-copy time, .history-copy > span { font-size: var(--text-caption); color: var(--muted-foreground); overflow-wrap: anywhere; }
   .history-card :global(.route-thumbnail) { flex-shrink: 0; }
   a.inactive { pointer-events: none; opacity: .5; }

@@ -70,7 +70,7 @@
   .calendar { display: flex; gap: 9px; width: max-content; }
   .weekdays { display: grid; grid-template-rows: repeat(7, 1rem); gap: 4px; font-size: var(--text-caption); line-height: var(--line-height-solid); align-items: center; }
   .days { display: grid; grid-template-rows: repeat(7, 1rem); grid-auto-flow: column; grid-auto-columns: 1rem; gap: 4px; }
-  .days button { transition: outline-color var(--motion-hover), outline-offset var(--motion-hover), transform 120ms ease-out; border-radius: 3px; cursor: pointer; width: 1rem; height: 1rem; }
+  .days button { transition: outline-color var(--motion-hover), outline-offset var(--motion-hover), transform 120ms ease-out; border-radius: 3px; cursor: pointer; width: 1rem; height: 1rem; font-size: var(--text-small); font-weight: var(--weight-semibold); }
   .days button:active { transform: scale(.9); }
   .days button:hover, .days button:focus-visible, .days button.selected { outline: 2px solid var(--calendar-ring); outline-offset: 1px; }
   .calendar-scroll { max-width: 100%; overflow-x: auto; }
