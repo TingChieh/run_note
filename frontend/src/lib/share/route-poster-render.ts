@@ -205,7 +205,7 @@ export async function renderPoster(data: PosterData, palette: PosterPalette, sty
         text(lead, 76, 300, 44, palette.muted, 500);
         text(posterPeriod(data.month), 76, 362, 28, palette.muted);
         text(data.kilometers, 64, 700, Math.min(300, Math.floor(1560 / data.kilometers.length)), palette.foreground, 700, 940);
-        text('公里', 80, 700, 52, palette.foreground, 600);
+        text('公里', 80, 790, 52, palette.foreground, 600);
         ctx.fillStyle = palette.route; ctx.fillRect(80, 846, 180, 14);
         const rows = [['跑步次数', count, ''], ['活动天数', days, ''], ['距离约等于', data.halfMarathons, '次半程马拉松']];
         for (const [i, [label, value, unit]] of rows.entries()) {
