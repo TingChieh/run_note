@@ -64,8 +64,9 @@ backend/.venv/bin/python scripts/backfill-place-titles.py --revert <日志>
 | 后端 `.venv/bin/ruff check app migrations tests ../scripts/backfill-place-titles.py ../scripts/osm-places.py` | All checks passed |
 | 后端 `.venv/bin/ruff format --check`（同上范围） | 202 files already formatted |
 | 后端 `.venv/bin/alembic heads`（只读） | `0016_place_titles (head)`，唯一 head |
-| 集成（测试库）`test_place_titles.py`、`test_route_groups.py`、`test_gpx_import.py`、`test_mifitness_import.py`、`test_footprint_snapshots.py`、`test_province_cache.py`、`test_showcase.py` | 136 passed，0 failed，0 skipped，81.34 s |
-| 集成（测试库）整个 `tests/integration` 一次 | 304 passed，1 skipped，0 failed，178.16 s |
+| 集成（测试库）`test_place_titles.py`、`test_route_groups.py`、`test_gpx_import.py`、`test_mifitness_import.py`、`test_footprint_snapshots.py`、`test_province_cache.py`、`test_showcase.py`（评审修复**之前**） | 136 passed，0 failed，0 skipped，81.34 s |
+| 集成（测试库）整个 `tests/integration` 一次（评审修复**之前**） | 304 passed，1 skipped，0 failed，178.16 s |
+| 集成（测试库）整个 `tests/integration` 一次（评审修复**之后**，由控制会话在 `3b97841` 上运行，20 分钟超时保护，运行前后检查无残留后端） | 310 passed，1 skipped，0 failed，137.11 s |
 | `scripts/osm-places.py --help`、`scripts/backfill-place-titles.py --help` | 均正常打印用法 |
 
 评审修复后另跑：`test_place_titles.py` 32 passed，`test_route_groups.py`、`test_gpx_import.py`、`test_mifitness_import.py`、`test_footprint_snapshots.py` 合计 99 passed，均 0 failed、0 skipped，运行后无残留后端。`--apply --revert`、`--revert` 与 `--limit`/`--log-dir` 同用、无 tty 的 `--apply` 均在访问数据库前以 1 退出。
