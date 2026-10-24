@@ -13,12 +13,15 @@ describe('public metadata', () => {
     expect(pageNoindex('/activities', 200)).toBe(false);
   });
   it('publishes a robots file and a static sitemap', () => {
-    expect(robotsTxt('https://run.example')).toContain('Disallow: /admin');
-    expect(robotsTxt('https://run.example')).toContain('Disallow: /workspace');
-    expect(robotsTxt('https://run.example')).toContain('Sitemap: https://run.example/sitemap.xml');
+    const robots = robotsTxt('https://run.example');
+    for (const path of ['/admin', '/workspace', '/settings', '/api', '/shared', '/public']) {
+      expect(robots).toContain(`Disallow: ${path}\n`);
+    }
+    expect(robots).not.toContain('Disallow: /\n');
+    expect(robots).toContain('Sitemap: https://run.example/sitemap.xml');
     const sitemap = sitemapXml('https://run.example');
     expect(sitemap).toContain('https://run.example/');
     expect(sitemap).toContain('https://run.example/activities/wall');
-    expect(sitemap).not.toContain('/admin');
+    for (const path of ['/admin', '/settings', '/shared', '/public', '/api']) expect(sitemap).not.toContain(path);
   });
 });

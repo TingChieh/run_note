@@ -26,8 +26,11 @@ export function pageNoindex(pathname: string, status: number): boolean {
 
 export const SITEMAP_PATHS = ['/', '/activities', '/activities/wall', '/footprints', '/ai'] as const;
 
+const ROBOTS_DISALLOW = ['/admin', '/workspace', '/settings', '/api', '/shared', '/public'] as const;
+
 export function robotsTxt(origin: string): string {
-  return `User-agent: *\nDisallow: /admin\nDisallow: /workspace\n\nSitemap: ${origin}/sitemap.xml\n`;
+  const rules = ROBOTS_DISALLOW.map(path => `Disallow: ${path}`).join('\n');
+  return `User-agent: *\n${rules}\n\nSitemap: ${origin}/sitemap.xml\n`;
 }
 
 export function sitemapXml(origin: string): string {
