@@ -23,6 +23,7 @@
   let strip = $state<HTMLUListElement>(), panel = $state<HTMLDivElement>();
   let canScrollPrev = $state(false), canScrollNext = $state(false);
   let userScrolling = false, adjustingSelection = false, userScrollTimer = 0;
+  let scrollTarget: number | null = null;
   function syncStrip() {
     if (!strip) { canScrollPrev = false; canScrollNext = false; return; }
     canScrollPrev = strip.scrollLeft > 8;
@@ -31,13 +32,12 @@
   function noteUserScroll() {
     userScrolling = true;
     window.clearTimeout(userScrollTimer);
-    userScrollTimer = window.setTimeout(() => { userScrolling = false; }, 400);
+    userScrollTimer = window.setTimeout(() => { userScrolling = false; scrollTarget = null; }, 400);
   }
   function onStripScroll() {
     syncStrip();
     if (!adjustingSelection) noteUserScroll();
   }
-  let scrollTarget: number | null = null;
   function pageStrip(direction: 1 | -1) {
     if (!strip) return;
     noteUserScroll();
