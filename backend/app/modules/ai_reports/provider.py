@@ -13,7 +13,8 @@ from app.core.errors import ApiError
 from app.modules.ai_reports.device_metrics import DEVICE_METRIC_KEYS
 from app.modules.ai_reports.schema import AnalysisText, ProviderResult
 
-PROMPT_VERSION = "running-qualitative-v3"
+PROMPT_VERSION = "running-qualitative-v4"
+DASHSCOPE_HOSTS = {"dashscope.aliyuncs.com", "dashscope-intl.aliyuncs.com"}
 PROMPT = """你是跑步数据解释助手。输入是后端计算的唯一事实依据。
 不能推断未提供的能力、健康状况或运动表现。
 只返回JSON对象，字段trend_summary（字符串）、recommendations（字符串数组）、limitations（字符串）。
@@ -26,6 +27,8 @@ PROMPT = """你是跑步数据解释助手。输入是后端计算的唯一事�
 热量和步数仅是已知记录小计；覆盖不足时不能比较完整总量，不得虚构缺失指标。
 严格只写定性文字，不写任何数字、中文数字数量、英文数量、距离、次数、配速或百分比数值；事实数值由页面单独展示。
 不要复述输入中的数量，也不要在建议中安排具体训练次数、时长或距离。
+任何数字字符和汉字数字都不得出现：零、一、二、两、半、十、百、千、万，也包括含这些字的常见说法，例如“为零”“零星”“零散”“一直”“一些”“一定”“唯一”“第一”“十分”“半数”。
+请分别改用“缺失”“少量”“分散”“持续”“部分”“必要”“首要”“非常”“较多”之类不含数字的说法。
 “一个周区间”“一次轻松跑”“两次训练”均不合规，应改成“覆盖周数有限”“轻松活动”“规律训练”等不含数量的表达。
 依据有限时明确承认，禁止虚构。不得提供医疗诊断、保证效果或具体训练处方。提醒建议仅供参考，不构成医疗建议。
 不要输出HTML、Markdown代码围栏或其他字段。
@@ -103,6 +106,10 @@ def request_body(snapshot: dict, model: str, *, base_url: str | None = None) -> 
         # options scoped to its API instead of sending them to other providers.
         body["thinking"] = {"type": "disabled"}
         body["response_format"] = {"type": "json_object"}
+    elif base_url and urlsplit(base_url).hostname in DASHSCOPE_HOSTS:
+        # Alibaba Model Studio hybrid models also think by default and can spend the whole
+        # budget before any content (finish_reason=length). Scope its switch to its own hosts.
+        body["enable_thinking"] = False
     return body
 
 

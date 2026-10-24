@@ -77,6 +77,50 @@ def test_deepseek_default_thinking_does_not_exhaust_report_budget(monkeypatch, b
     assert result.analysis.model_dump() == TEXT
 
 
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    ],
+)
+def test_dashscope_thinking_is_disabled_so_budget_is_not_exhausted(monkeypatch, base_url):
+    def respond(url, key, body, timeout):
+        # Hybrid models on Model Studio think by default and can return empty content with
+        # finish_reason=length; model the observed provider boundary.
+        if body.get("enable_thinking") is False:
+            content, finish = json.dumps(TEXT), "stop"
+        else:
+            content, finish = "", "length"
+        return json.dumps(
+            {"choices": [{"message": {"content": content}, "finish_reason": finish}]}
+        ).encode()
+
+    monkeypatch.setattr("app.modules.ai_reports.provider.bounded_request", respond)
+    settings = Settings(
+        database_url="postgresql+psycopg://fake@127.0.0.1:1/test",
+        ai_base_url=base_url,
+        ai_api_key="local-test-secret",
+        ai_model="some-model",
+        _env_file=None,
+    )
+    assert OpenAIProvider().generate(SNAPSHOT, settings).analysis.model_dump() == TEXT
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://api.openai.com/v1",
+        "https://dashscope.aliyuncs.com.evil.example/v1",
+        "https://evil.example/dashscope.aliyuncs.com/v1",
+    ],
+)
+def test_vendor_specific_switches_are_not_sent_to_other_hosts(base_url):
+    body = request_body(SNAPSHOT, "m", base_url=base_url)
+    assert "enable_thinking" not in body and "thinking" not in body
+    assert "response_format" not in body
+
+
 def test_truncated_response_is_rejected_even_if_json_is_parseable(monkeypatch):
     def respond(*args):
         return json.dumps(
