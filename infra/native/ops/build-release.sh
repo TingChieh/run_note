@@ -46,7 +46,7 @@ cp -R backend/app backend/migrations "$root/backend/"
 cp backend/alembic.ini backend/pyproject.toml backend/requirements.lock "$root/backend/"
 cp -R frontend/build "$root/frontend/build"
 cp frontend/package.json "$root/frontend/"
-cp scripts/site-owner.py "$root/scripts/"
+cp scripts/site-owner.py scripts/osm-places.py scripts/backfill-place-titles.py "$root/scripts/"
 cp -R infra/native "$root/infra/native"
 cp -R infra/native/ops "$root/ops"
 find "$root" \( -name __pycache__ -o -name '*.pyc' -o -name '.DS_Store' \) -prune -exec rm -rf {} +

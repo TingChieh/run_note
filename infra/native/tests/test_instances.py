@@ -334,6 +334,9 @@ class Rendering(unittest.TestCase):
         self.assertIn("SERVICE_API='runnote-production-api'", out)
 
 
+OFFLINE_SCRIPTS = ("site-owner.py", "osm-places.py", "backfill-place-titles.py")
+
+
 def make_release_tree(root: Path) -> Path:
     """The layout build-release.sh ships: ops/ at the top, everything else under infra/native/."""
     release = root / "release"
@@ -346,7 +349,10 @@ def make_release_tree(root: Path) -> Path:
     (release / "backend" / "alembic.ini").write_text("[alembic]\n")
     (release / "backend" / "requirements.lock").write_text("\n")
     (release / "frontend" / "build" / "index.js").write_text("\n")
-    (release / "scripts" / "site-owner.py").write_text("\n")
+    for script in OFFLINE_SCRIPTS:
+        path = release / "scripts" / script
+        path.write_text("\n")
+        path.chmod(0o755)
     (release / "RELEASE").write_text("id=test\n")
     return release
 
@@ -502,6 +508,8 @@ class VerifyRelease(unittest.TestCase):
             "infra/native/Caddyfile",
             "infra/native/runnote-api.service",
             "scripts/site-owner.py",
+            "scripts/osm-places.py",
+            "scripts/backfill-place-titles.py",
         ]
         for victim in victims:
             with self.subTest(missing=victim):
@@ -523,6 +531,23 @@ class VerifyRelease(unittest.TestCase):
         result = self.verify(self.pack(release))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("syntax", result.stderr)
+
+    def test_offline_scripts_must_be_executable_and_compile(self):
+        for script in OFFLINE_SCRIPTS:
+            with self.subTest(script=script, defect="not executable"):
+                shutil.rmtree(self.root / "release", ignore_errors=True)
+                release = make_release_tree(self.root)
+                (release / "scripts" / script).chmod(0o644)
+                result = self.verify(self.pack(release))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"scripts/{script} is not executable", result.stderr)
+            with self.subTest(script=script, defect="syntax error"):
+                shutil.rmtree(self.root / "release", ignore_errors=True)
+                release = make_release_tree(self.root)
+                (release / "scripts" / script).write_text("def broken(:\n")
+                result = self.verify(self.pack(release))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"scripts/{script} does not compile", result.stderr)
 
     def test_a_caddyfile_that_cannot_host_instances_is_refused(self):
         release = make_release_tree(self.root)

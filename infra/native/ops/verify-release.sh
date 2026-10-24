@@ -21,7 +21,8 @@ tar -xzf "$tarball" -C "$work" --strip-components=1
 
 # ---- every file the tooling needs, at the path the operator and the scripts use ---------
 required=(
-  RELEASE backend/alembic.ini backend/requirements.lock frontend/build/index.js scripts/site-owner.py
+  RELEASE backend/alembic.ini backend/requirements.lock frontend/build/index.js
+  scripts/site-owner.py scripts/osm-places.py scripts/backfill-place-titles.py
   ops/lib.sh ops/deploy.sh ops/rollback.sh ops/backup.sh ops/restore-drill.sh
   ops/init-instance.sh ops/set-site-mode.sh ops/verify-release.sh ops/offsite.sh
   ops/acceptance-check.py ops/envfile.py ops/instance.py ops/schema_compat.py
@@ -43,6 +44,10 @@ for f in ops/deploy.sh ops/rollback.sh ops/backup.sh ops/restore-drill.sh ops/in
 done
 [ -x "$work/ops/acceptance-check.py" ] || fail "ops/acceptance-check.py is not executable"
 python3 -m py_compile "$work/ops/acceptance-check.py" || fail "ops/acceptance-check.py does not compile"
+for f in scripts/site-owner.py scripts/osm-places.py scripts/backfill-place-titles.py; do
+  [ -x "$work/$f" ] || fail "$f is not executable"
+  python3 -m py_compile "$work/$f" || fail "$f does not compile (syntax error)"
+done
 grep -q '^(runnote_app) {' "$work/infra/native/Caddyfile" || fail "the shipped Caddyfile lacks the (runnote_app) snippet"
 grep -qF 'import /etc/caddy/sites.d/*.caddy' "$work/infra/native/Caddyfile" || fail "the shipped Caddyfile does not import sites.d"
 
