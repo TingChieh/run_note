@@ -473,3 +473,83 @@ def test_a_run_deleted_after_measuring_is_dropped_without_error(clients, region,
     assert fill(app) >= 1  # other pending rows may exist in the shared database
     assert queue_state(app, gone) is None
     assert queue_state(app, kept)[0] == "done"
+
+
+def osm_line(properties, geometry):
+    import json
+
+    feature = {"type": "Feature", "properties": properties, "geometry": geometry}
+    return "\x1e" + json.dumps(feature) + "\n"
+
+
+def square(lon, lat, size):
+    return [[lon, lat], [lon, lat + size], [lon + size, lat + size], [lon + size, lat], [lon, lat]]
+
+
+def test_import_region_replaces_filters_by_area_and_stores_no_tags(clients):  # noqa: F811
+    from collections import Counter
+
+    from app.modules.place_titles import osm
+
+    a, b, _, app = clients
+    quiet(a, b)
+    lake = {"natural": "water", "water": "lake"}
+    polygon = lambda ring_: {"type": "Polygon", "coordinates": [ring_]}  # noqa: E731
+    lines = [
+        osm_line({**lake, "name": "x"}, polygon(square(121.0, 31.0, 0.01))),
+        osm_line(lake, polygon(square(121.0, 31.0, 0.0001))),  # below the area threshold
+        osm_line({"highway": "path"}, polygon(square(121.0, 31.0, 0.01))),
+    ]
+    region = f"synthetic-{uuid4().hex[:8]}"
+    try:
+        skipped = Counter()
+        with app.state.session_factory.begin() as db:
+            assert osm.import_region(db, region, lines, skipped) == {"lake": 1}
+        assert skipped == {"too_small": 1}
+        with app.state.session_factory.begin() as db:
+            assert osm.import_region(db, region, lines[:1]) == {"lake": 1}  # replaced, not appended
+            count = db.scalar(
+                text("SELECT count(*) FROM place_features WHERE region = :r"), {"r": region}
+            )
+            assert count == 1
+            columns = set(
+                db.scalars(
+                    text(
+                        "SELECT column_name FROM information_schema.columns"
+                        " WHERE table_name = 'place_features'"
+                    )
+                )
+            )
+            assert columns == {"id", "category", "geom", "region", "imported_at"}
+    finally:
+        clear_places(app, region)
+
+
+def test_import_region_isolates_bad_and_oversized_features(clients, monkeypatch):  # noqa: F811
+    from collections import Counter
+
+    from app.modules.place_titles import osm
+
+    a, b, _, app = clients
+    quiet(a, b)
+    park = {"leisure": "park"}
+    good = {"type": "Polygon", "coordinates": [square(121.0, 31.0, 0.01)]}
+    broken = {"type": "Polygon", "coordinates": [[[121.0, 31.0], [121.1, 31.0], [121.0, 31.0]]]}
+    river = {"type": "LineString", "coordinates": [[121.0, 31.0 + i * 0.001] for i in range(50)]}
+    lines = [
+        osm_line(park, good),
+        osm_line(park, broken),  # fewer than four points: invalid GeoJSON geometry
+        osm_line(park, good),
+        osm_line({"waterway": "river"}, river),
+    ]
+    region = f"synthetic-{uuid4().hex[:8]}"
+    monkeypatch.setattr(osm, "MAX_FEATURE_POINTS", 20)
+    try:
+        skipped = Counter()
+        with app.state.session_factory.begin() as db:
+            written = osm.import_region(db, region, lines, skipped)
+        # the two good parks survive the failures between them; the 50-point river is too large
+        assert written == {"park": 2}
+        assert skipped == {"invalid": 1, "too_large": 1}
+    finally:
+        clear_places(app, region)
