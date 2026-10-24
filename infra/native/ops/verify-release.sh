@@ -15,9 +15,35 @@ command -v python3 >/dev/null 2>&1 || fail "python3 is required"
 
 top="$(tar -tzf "$tarball" | sed -n '1{s#/.*##;p;}')"
 [ -n "$top" ] || fail "empty archive"
+# ---- no macOS metadata, no NUL-containing Python ----------------------------------------
+# bsdtar archives extended attributes as AppleDouble companions (`._name`, mostly NUL bytes).
+# Alembic imports every *.py in migrations/versions, so a `._0001_x.py` breaks `alembic heads`
+# with "source code string cannot contain null bytes". Shell globs skip dot-files, so check the
+# archive listing BEFORE extracting (macOS tar hides, merges or chokes on `._*`) and
+# again with find on the unpacked tree.
+# bsdtar hides AppleDouble entries from `tar -t`, so list the archive with Python's tarfile.
+junk="$(python3 -c '
+import sys, tarfile
+with tarfile.open(sys.argv[1]) as t:
+    for n in t.getnames():
+        b = n.rstrip("/").rsplit("/", 1)[-1]
+        if b.startswith("._") or b == ".DS_Store":
+            print(n)
+' "$tarball")"
+if [ -n "$junk" ]; then
+  fail "release contains macOS metadata files (._* / .DS_Store): $(printf '%s\n' "$junk" | wc -l | tr -d ' ') found, e.g. $(printf '%s\n' "$junk" | head -3 | tr '\n' ' ')"
+fi
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 tar -xzf "$tarball" -C "$work" --strip-components=1
+
+junk="$(find "$work" \( -name '._*' -o -name '.DS_Store' \) | head -3 | tr '\n' ' ')"
+[ -z "$junk" ] || fail "release contains macOS metadata files (._* / .DS_Store): $junk"
+while IFS= read -r -d '' pyfile; do
+  if [ "$(LC_ALL=C tr -d -c '\000' < "$pyfile" | wc -c | tr -d ' ')" -gt 0 ]; then
+    fail "Python file contains NUL bytes: ${pyfile#"$work"/}"
+  fi
+done < <(find "$work" -type f -name '*.py' -print0)
 
 # ---- every file the tooling needs, at the path the operator and the scripts use ---------
 required=(

@@ -141,6 +141,7 @@ Python 虚拟环境**不可重定位**：`bin/uvicorn` 等入口脚本的第一�
 `ops/verify-release.sh` 是每个发布包的出厂检查，`build-release.sh` 每次构建都会运行，不通过就**删除发布包**并让构建失败：
 1. 部署工具需要的全部文件都在发布包里（`ops/` 全部脚本、`infra/native/` 的 Caddyfile、单元、六个模板、`production.conf.example`、环境示例、`scripts/site-owner.py`、`scripts/osm-places.py`、`scripts/backfill-place-titles.py` 等），`ops/` 的八个 shell 脚本（`bash -n`）、`ops/acceptance-check.py` 与这三个 `scripts/` 离线脚本（均用 `py_compile`）可执行且语法正确，缺失、不可执行、语法错误都会点名拒绝，Caddyfile 含 `(runnote_app)` 与 `sites.d` 导入。
 2. 在**空的工作目录**里用发布包自带的 `ops/instance.py` 真实渲染：旧布局渲染结果与发布包里的现有单元逐字节一致；示例 `production.conf` 通过 `check`；production 的 `maintenance` 与 `live` 站点各渲染出完整的 5 个文件。
+3. 发布包里不得有 macOS 元数据：任何以 `._` 开头的文件或 `.DS_Store`（在打包前按归档清单检查，因为 macOS 的 `tar` 列表会隐藏它们），以及任何含 NUL 字节的 `*.py`（用 `find` 检查，包含隐藏文件），都会点名拒绝。`build-release.sh` 本身也让这类文件进不了包：暂存目录里删除 `._*` 与 `.DS_Store`，打包时设置 `COPYFILE_DISABLE=1`，并在 bsdtar 支持时加 `--no-mac-metadata --no-xattrs`。起因：在 macOS 上构建时，带扩展属性（`com.apple.provenance`）的源文件会让 bsdtar 写入 `._*` 伴生文件（几乎全是 NUL），Alembic 会加载 `migrations/versions` 下的每个 `*.py`，迁移检查因 `source code string cannot contain null bytes` 失败；因为部署在切换之前就中止，生产不受影响。
 
 `set-site-mode.sh` 另有一道前置检查：服务器上的主 Caddyfile 必须就是当前的 Run Note Caddyfile（含 `(runnote_app)` 片段并 `import <sites 目录>/*.caddy`），否则拒绝。旧版（多实例之前）的 Caddyfile 不会导入实例站点，若不拦住，"维护页"会校验通过、重载成功，却什么也不会提供。安装新 Caddyfile 时，把 staging 的 Basic Auth 片段放到 `/etc/caddy/access.d/`，先 `caddy validate` 再重载。
 
