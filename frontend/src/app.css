@@ -155,13 +155,14 @@
   /* :root raises specificity above the themed sidebar/header .brand-mark backgrounds below. */
   :root img.brand-logo.brand-mark { object-fit: cover; padding: 0; background: transparent; }
   .app-sidebar { position: fixed; inset: 0 auto 0 0; width: var(--sidebar-width); display: flex; flex-direction: column; padding: var(--space-8) var(--space-4) var(--space-6); background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; }
-  .desktop-brand { margin: 0 var(--space-3) var(--space-8); }
-  .nav-caption { margin: 0 var(--space-3) var(--space-3); color: var(--muted-foreground); font-size: .75rem; }
+  .sidebar-brand { display: grid; gap: var(--space-1); margin: 0 var(--space-3) var(--space-8); }
+  .desktop-brand { margin: 0; }
+  .nav-caption { margin: 0; color: var(--muted-foreground); font-size: .75rem; }
   .app-sidebar nav { display: grid; gap: var(--space-2); }
   .nav-link { display: flex; align-items: center; gap: var(--space-3); padding: .7rem var(--space-3); border-radius: var(--radius-control); font-weight: 500; color: var(--muted-foreground); }
   .nav-link:hover { background: var(--muted); }
   .nav-link[aria-current="page"] { background: var(--primary-soft); color: var(--primary); font-weight: 650; box-shadow: inset 3px 0 var(--primary); }
-  .nav-account { border-top: 1px solid var(--border); margin-top: auto; padding: var(--space-6) var(--space-3) 0; }
+  .nav-account { display: flex; flex-direction: column; gap: var(--space-2); border-top: 1px solid var(--border); margin-top: auto; padding: var(--space-6) var(--space-3) 0; }
   .account-email { margin-top: var(--space-2); color: var(--muted-foreground); font-size: .75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .runner-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .button-secondary, .nav-toggle { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); min-height: 2.75rem; padding: .5rem .875rem; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--foreground); font-size: var(--text-small); font-weight: 550; }
@@ -233,7 +234,7 @@
     .app-sidebar.nav-open { opacity: 1; transform: none; }
     @starting-style { .app-sidebar.nav-open { opacity: 0; transform: translateY(calc(-1 * var(--space-3))) scale(.96); } }
     @media (prefers-reduced-motion: reduce) { .app-sidebar { transition: none; transform: none; } }
-    .desktop-brand, .nav-caption { display: none; }
+    .sidebar-brand, .desktop-brand, .nav-caption { display: none; }
     .nav-account { margin-top: var(--space-4); padding-top: var(--space-4); }
     .app-shell .content-column { margin-left: 0; min-height: calc(100dvh - 69px); }
     .app-shell .navigation-progress { left: 0; }
@@ -314,11 +315,12 @@
   .sport-theme .app-sidebar .brand-mark { color: var(--sport-sidebar); background: white; }
   .sport-theme .nav-caption, .sport-theme .account-email { color: white; }
   .sport-theme .app-sidebar nav { gap: .25rem; flex: 0 0 auto; }
-  .sport-theme .nav-link { color: white; background: transparent; min-height: clamp(2.5rem, calc((100dvh - 30rem) / 7 - .25rem), 3.5rem); padding: .5rem .75rem; border-radius: .75rem; font-size: 1.0625rem; }
+  .sport-theme .sidebar-brand, .sport-theme .app-sidebar nav, .sport-theme .nav-account { flex-shrink: 0; }
+  .sport-theme .nav-link { color: white; background: transparent; box-sizing: border-box; height: 3.5rem; min-height: 3.5rem; padding: .5rem .75rem; border-radius: .75rem; font-size: 1.0625rem; }
   .sport-theme .nav-link:hover { background: var(--sport-nav-hover); }
   .sport-theme .nav-link[aria-current="page"] { color: var(--sport-nav-active-ink); background: var(--sport-nav-active); box-shadow: none; font-weight: 700; }
   .sport-theme .nav-account { border-color: #ffffff40; }
-  .sport-theme .nav-account .running-goal { margin: 0 0 var(--space-2); }
+  .sport-theme .nav-account .running-goal { margin: 0; }
   .sport-theme .runner-identity { display: flex; align-items: center; gap: .75rem; }
   .sport-theme .runner-identity-text { flex: 1; min-width: 0; }
   .sport-theme .runner-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -337,19 +339,6 @@
   .sport-theme .nav-toggle { background: transparent; color: white; border: 0; }
   .sport-theme .nav-toggle:hover { background: var(--sport-nav-hover); color: white; }
   .sport-theme .mobile-bar :focus-visible { outline-color: white; }
-  @media (min-width: 1024px) and (max-height: 900px) {
-    .sport-theme .app-sidebar { padding-block: var(--space-3); }
-    .sport-theme .desktop-brand { margin-bottom: var(--space-2); }
-    .sport-theme .nav-caption { margin-bottom: var(--space-2); }
-    .sport-theme .nav-account { flex-shrink: 0; padding-top: var(--space-2); }
-    .sport-theme .account-email { margin-top: var(--space-1); }
-  }
-  /* 720px-class laptops: the seven-link admin sidebar only fits once the decorative caption goes and links shrink with the viewport height. */
-  @media (min-width: 1024px) and (max-height: 760px) {
-    .sport-theme .nav-caption { display: none; }
-    .sport-theme .app-sidebar nav { gap: .125rem; }
-    .sport-theme .app-sidebar .nav-link { padding-block: .25rem; }
-  }
 }
 
 @layer components {
@@ -369,6 +358,8 @@
   .sport-theme .auth-intro { padding: 1.25rem; background: var(--sport-yellow); border-radius: 1rem; color: var(--sport-heading-ink); }
   .sport-theme .auth-intro p { color: var(--sport-heading-ink); }
   .sport-theme .auth-eyebrow { font-size: .75rem; font-weight: 650; margin-bottom: .75rem; }
+  .sport-theme .auth-lead { margin-top: .75rem; font-size: .875rem; }
+  .auth-help { font-size: .875rem; color: var(--foreground); }
 }
 
 /* Keep shared control shapes consistent when pages use Tailwind utilities. */

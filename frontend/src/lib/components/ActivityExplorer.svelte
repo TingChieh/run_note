@@ -21,6 +21,37 @@
   let detailLoading = $state(false), detailError = $state(''), routeLoading = $state(false), routeError = $state('');
   let active = false, listRequest = 0, selectionRequest = 0, categoriesRequest = 0;
   let strip = $state<HTMLUListElement>(), panel = $state<HTMLDivElement>();
+  let canScrollPrev = $state(false), canScrollNext = $state(false);
+  let userScrolling = false, adjustingSelection = false, userScrollTimer = 0;
+  let scrollTarget: number | null = null;
+  function syncStrip() {
+    if (!strip) { canScrollPrev = false; canScrollNext = false; return; }
+    canScrollPrev = strip.scrollLeft > 8;
+    canScrollNext = strip.scrollWidth - strip.clientWidth - strip.scrollLeft > 8;
+  }
+  function noteUserScroll() {
+    userScrolling = true;
+    window.clearTimeout(userScrollTimer);
+    userScrollTimer = window.setTimeout(() => { userScrolling = false; scrollTarget = null; }, 400);
+  }
+  function onStripScroll() {
+    syncStrip();
+    if (!adjustingSelection) noteUserScroll();
+  }
+  function pageStrip(direction: 1 | -1) {
+    if (!strip) return;
+    noteUserScroll();
+    const distance = Math.max(280, Math.round(strip.clientWidth * 0.85));
+    const max = Math.max(0, strip.scrollWidth - strip.clientWidth);
+    const target = Math.min(max, Math.max(0, (scrollTarget ?? strip.scrollLeft) + direction * distance));
+    scrollTarget = target;
+    strip.scrollTo({ left: target, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }
+  function onStripScrollEnd() {
+    scrollTarget = null;
+    userScrolling = false;
+    window.clearTimeout(userScrollTimer);
+  }
   let detailAnimations: Animation[] = [];
   function stopDetailAnimations() { for (const animation of detailAnimations) animation.cancel(); detailAnimations = []; }
   async function animateDetails(out = false) {
@@ -52,18 +83,33 @@
     catch (cause) { if (active) { const message = fail(cause); if (selection === selectionRequest) routeError = message; } }
     finally { if (active && selection === selectionRequest) routeLoading = false; }
   }
-  function revealSelection() {
+  function revealSelection(force = false) {
     if (!strip) return;
     const button = strip.querySelector<HTMLButtonElement>(`[data-id="${selectedId}"]`);
-    if (!button) return;
-    const card = button.getBoundingClientRect(), viewport = strip.getBoundingClientRect();
-    if (card.left < viewport.left) strip.scrollLeft += card.left - viewport.left;
-    else if (card.right > viewport.right) strip.scrollLeft += card.right - viewport.right;
+    const item = button?.closest('li');
+    if (!item) return;
+    const box = item.getBoundingClientRect(), port = strip.getBoundingClientRect();
+    const outside = box.right <= port.left + 1 || box.left >= port.right - 1;
+    const clipped = box.left < port.left - 1 || box.right > port.right + 1;
+    if (!force && (userScrolling || !clipped || outside)) return;
+    if (!clipped && !outside) return;
+    // A short nudge stays inside the proximity range and snaps back. Land on this card's snap start.
+    const max = Math.max(0, strip.scrollWidth - strip.clientWidth);
+    const target = Math.min(max, Math.max(0, strip.scrollLeft + box.left - port.left));
+    if (Math.abs(strip.scrollLeft - target) < 1) return;
+    scrollTarget = null;
+    adjustingSelection = true;
+    const snap = strip.style.scrollSnapType;
+    strip.style.scrollSnapType = 'none';
+    strip.scrollLeft = target;
+    void strip.offsetWidth;
+    strip.style.scrollSnapType = snap;
+    adjustingSelection = false;
   }
   $effect(() => {
     const element = strip;
     if (!element) return;
-    const observer = new ResizeObserver(() => revealSelection());
+    const observer = new ResizeObserver(() => { if (!userScrolling) revealSelection(); });
     observer.observe(element);
     return () => observer.disconnect();
   });
@@ -72,7 +118,7 @@
     stopDetailAnimations();
     const token = ++selectionRequest;
     selectedId = item.id; detailError = ''; detailLoading = true;
-    void tick().then(() => { if (active && token === selectionRequest) revealSelection(); });
+    void tick().then(() => { if (active && token === selectionRequest) revealSelection(true); });
     try {
       const result = await readActivity(item.id);
       if (!active || token !== selectionRequest) return;
@@ -114,7 +160,16 @@
   }
   onMount(() => {
     active = true; void loadCategories(); void loadPage();
-    return () => { active = false; ++listRequest; ++selectionRequest; ++categoriesRequest; stopDetailAnimations(); };
+    return () => { active = false; window.clearTimeout(userScrollTimer); ++listRequest; ++selectionRequest; ++categoriesRequest; stopDetailAnimations(); };
+  });
+  $effect(() => {
+    void items.length;
+    const node = strip;
+    if (!node) return;
+    const observer = new ResizeObserver(() => syncStrip());
+    observer.observe(node);
+    const frame = requestAnimationFrame(() => syncStrip());
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); };
   });
 </script>
 
@@ -154,11 +209,17 @@
     </div>
   {/if}
   {#if listError}<FeedbackState kind="error" title={listError}><button class="button-secondary" onclick={() => void loadPage()}>重试足迹记录</button></FeedbackState>{/if}
-  <div class="browse-controls"><p>左右滑动浏览最近记录 · 点击切换地图</p><span class="record-count" aria-live="polite">最近 {items.length} 条记录</span></div>
+  <div class="browse-controls"><p>左右滑动浏览最近记录 · 点击切换地图</p><span class="record-count" aria-live="polite">共 {items.length} 条</span></div>
   {#if items.length}
-    <ul class="activity-strip stagger" bind:this={strip} aria-label="按时间浏览运动记录">
+    <div class="strip-frame" class:can-scroll-next={canScrollNext}>
+    <button type="button" class="strip-page strip-prev" aria-label="向左查看更早的记录" disabled={!canScrollPrev} onclick={() => pageStrip(-1)}><span aria-hidden="true">‹</span></button>
+    <div class="strip-viewport">
+    <ul class="activity-strip stagger" bind:this={strip} aria-label="按时间浏览运动记录" onscroll={onStripScroll} onscrollend={onStripScrollEnd} onwheel={() => { scrollTarget = null; }}>
       {#each items as item (item.id)}<li><button class="history-card" class:selected={item.id === selectedId} data-id={item.id} aria-label={`选择运动 ${item.title}`} aria-pressed={item.id === selectedId} onclick={() => void choose(item)}><div class="history-copy"><time datetime={item.activity_date}>{formatDate(item.activity_date)}</time><strong>{item.title || '未命名活动'}</strong><span>{item.category || '未分类'}</span></div><RouteThumbnail activity={item} compact onauthrequired={cause => { fail(cause); }} /></button></li>{/each}
     </ul>
+    </div>
+    <button type="button" class="strip-page strip-next" aria-label="向右查看更多记录" disabled={!canScrollNext} onclick={() => pageStrip(1)}><span aria-hidden="true">›</span></button>
+    </div>
   {:else if !listLoading && !listError}<FeedbackState kind="empty" title="此分类下没有运动记录"><a href={view.href("/activities")}  class="button-secondary">查看跑步记录</a></FeedbackState>{/if}
   {#if listLoading && !items.length}<FeedbackState kind="loading" title="正在读取足迹记录…" />{/if}
 </section>
@@ -196,6 +257,12 @@
   .switch-status { position: absolute; top: -.25rem; right: 0; transform: translateY(-100%); color: var(--muted-foreground); font-size: .75rem; animation: explorer-pending 180ms step-end; }
   @keyframes explorer-pending { from { opacity: 0; } to { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { .switch-status { animation: none; } }
+  .strip-frame { position: relative; }
+  .strip-viewport { position: relative; min-width: 0; }
+  .strip-viewport::after { content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 2.75rem; pointer-events: none; z-index: 1; opacity: 0; background: linear-gradient(to left, var(--surface), transparent); }
+  .strip-frame.can-scroll-next .strip-viewport::after { opacity: 1; }
+  .strip-page { display: none; place-items: center; width: 2.25rem; height: 2.25rem; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--foreground); }
+  .strip-page span { font-size: 1.5rem; line-height: 1; }
   .activity-strip { display: flex; gap: var(--space-3); overflow-x: auto; scroll-snap-type: x proximity; margin-top: var(--space-1); padding: var(--space-1) .125rem var(--space-2); }
   .activity-strip li { flex: 0 0 19rem; max-width: 100%; min-width: 0; scroll-snap-align: start; }
   .history-card { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); width: 100%; min-height: 5.5rem; padding: var(--space-2); text-align: left; border: 1px solid var(--border); border-radius: 1rem; transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease; }
@@ -205,6 +272,12 @@
   a.inactive { pointer-events: none; opacity: .5; }
   button:disabled { opacity: .45; cursor: not-allowed; }
   @media(min-width:1024px) {
+    .strip-frame { display: grid; grid-template-columns: 2.25rem minmax(0, 1fr) 2.25rem; column-gap: var(--space-2); align-items: center; }
+    .strip-prev { grid-column: 1; }
+    .strip-viewport { grid-column: 2; }
+    .strip-next { grid-column: 3; }
+    .strip-page { display: grid; position: static; }
+    .strip-page:disabled { visibility: hidden; pointer-events: none; }
     .explorer-metrics { align-self: start; }
     .explorer-metrics :global(.metrics) { height: calc(var(--route-map-height) + 2px); grid-auto-rows: minmax(0, 1fr); }
     .explorer-metrics :global(.metrics > div) { display: flex; flex-direction: column; justify-content: center; padding-block: var(--space-1); }

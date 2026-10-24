@@ -309,3 +309,193 @@ test('record details fade in without replacing the map and respect reduced motio
   await expect(region.getByTestId('route-map-ready')).toBeVisible();
   expect(await page.evaluate(()=>(window as unknown as {detailFades:number}).detailFades)).toBe(fades);
 });
+
+test('history strip starts flush left and parks paging arrows beside the cards', async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await explorer(page);
+  const region = page.getByRole('region', { name: '运动足迹', exact: true });
+  const strip = region.locator('.activity-strip');
+  const prev = region.getByRole('button', { name: '向左查看更早的记录', exact: true });
+  const next = region.getByRole('button', { name: '向右查看更多记录', exact: true });
+  await expect(region.getByRole('button', { name: '选择运动 运动 1', exact: true })).toBeVisible();
+  const measure = () => region.evaluate(root => {
+    const scroller = root.querySelector('.activity-strip') as HTMLElement;
+    const stripBox = scroller.getBoundingClientRect();
+    const cards = [...root.querySelectorAll('.history-card')].map(el => el.getBoundingClientRect());
+    const buttons = [...root.querySelectorAll('.strip-page')].map(el => {
+      const box = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      return {
+        name: el.getAttribute('aria-label') ?? '',
+        hidden: style.display === 'none' || style.visibility === 'hidden',
+        box,
+      };
+    });
+    const visibleCards = cards.flatMap(card => {
+      const left = Math.max(card.left, stripBox.left);
+      const right = Math.min(card.right, stripBox.right);
+      const top = Math.max(card.top, stripBox.top);
+      const bottom = Math.min(card.bottom, stripBox.bottom);
+      return right - left > 1 && bottom - top > 1 ? [{ left, right, top, bottom }] : [];
+    });
+    const overlaps = (box: DOMRect, card: { left: number; right: number; top: number; bottom: number }) => box.left < card.right - 0.5 && box.right > card.left + 0.5 && box.top < card.bottom - 0.5 && box.bottom > card.top + 0.5;
+    const visible = buttons.filter(button => !button.hidden);
+    return {
+      scrollLeft: scroller.scrollLeft,
+      inset: cards[0].left - stripBox.left,
+      covered: visible.some(button => visibleCards.some(card => overlaps(button.box, card))),
+      prevHidden: buttons.find(button => button.name.includes('向左'))?.hidden ?? true,
+      nextHidden: buttons.find(button => button.name.includes('向右'))?.hidden ?? true,
+      prevOutside: visible.filter(button => button.name.includes('向左')).every(button => button.box.right <= stripBox.left + 1),
+      nextOutside: visible.filter(button => button.name.includes('向右')).every(button => button.box.left >= stripBox.right - 1),
+      lastFits: cards.at(-1)!.right <= stripBox.right + 2,
+    };
+  });
+  for (const [width, height] of [[1710, 1112], [1440, 1000]] as const) {
+    await page.setViewportSize({ width, height });
+    await strip.evaluate(el => { el.scrollLeft = 0; });
+    await expect.poll(async () => (await measure()).scrollLeft).toBeLessThan(8);
+    const start = await measure();
+    expect(start.inset, `${width} first card inset`).toBeLessThan(8);
+    expect(start.prevHidden, `${width} left arrow at start`).toBe(true);
+    expect(start.nextHidden, `${width} right arrow at start`).toBe(false);
+    expect(start.covered, `${width} arrow covers a card`).toBe(false);
+    expect(start.nextOutside, `${width} right arrow beside the strip`).toBe(true);
+    await region.locator('.strip-frame').screenshot({ path: testInfo.outputPath(`history-strip-${width}-start.png`) });
+    await next.click();
+    await expect.poll(async () => (await measure()).prevHidden).toBe(false);
+    const paged = await measure();
+    expect(paged.covered, `${width} arrow covers a card after paging`).toBe(false);
+    expect(paged.prevOutside, `${width} left arrow beside the strip`).toBe(true);
+    expect(paged.nextOutside, `${width} right arrow beside the strip`).toBe(true);
+    await region.locator('.strip-frame').screenshot({ path: testInfo.outputPath(`history-strip-${width}-paged.png`) });
+    await strip.evaluate(el => { el.scrollLeft = el.scrollWidth; });
+    await expect.poll(async () => (await measure()).nextHidden).toBe(true);
+    const end = await measure();
+    expect(end.scrollLeft, `${width} scrolled`).toBeGreaterThan(8);
+    await expect.poll(async () => (await measure()).prevHidden).toBe(false);
+    expect(end.covered, `${width} arrow covers a card at end`).toBe(false);
+    expect(end.prevOutside, `${width} left arrow beside the strip at end`).toBe(true);
+    expect(end.lastFits, `${width} last card inside the strip`).toBe(true);
+    await region.locator('.strip-frame').screenshot({ path: testInfo.outputPath(`history-strip-${width}-end.png`) });
+    await strip.evaluate(el => { el.scrollLeft = 0; });
+    await expect.poll(async () => (await measure()).prevHidden).toBe(true);
+    expect((await measure()).scrollLeft, `${width} restored`).toBeLessThan(8);
+  }
+});
+
+test('history strip pages to the end and back without reduced motion', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await explorer(page);
+  const region = page.getByRole('region', { name: '运动足迹', exact: true });
+  const strip = region.locator('.activity-strip');
+  const prev = region.locator('.strip-prev');
+  const next = region.locator('.strip-next');
+  await expect(region.getByRole('button', { name: '选择运动 运动 1', exact: true })).toBeVisible();
+  const left = () => strip.evaluate(el => el.scrollLeft);
+  const settled = async () => {
+    await expect.poll(async () => {
+      const first = await left();
+      await page.waitForTimeout(80);
+      return Math.abs(first - await left()) < 1 ? first : -1;
+    }, { timeout: 4000 }).toBeGreaterThanOrEqual(0);
+    return left();
+  };
+  for (const [width, height] of [[1280, 800], [1710, 1112]] as const) {
+    await page.setViewportSize({ width, height });
+    await strip.evaluate(el => { el.scrollLeft = 0; });
+    expect(await settled(), `${width} start`).toBeLessThan(8);
+    const widths = [await strip.evaluate(el => el.clientWidth)];
+    await next.click();
+    for (let sample = 0; sample < 15; sample += 1) {
+      widths.push(await strip.evaluate(el => el.clientWidth));
+      await page.waitForTimeout(40);
+    }
+    expect(Math.max(...widths) - Math.min(...widths), `${width} strip width changed while scrolling`).toBeLessThanOrEqual(1);
+    expect(await settled(), `${width} first page`).toBeGreaterThan(200);
+    await region.locator('.strip-frame').screenshot({ path: testInfo.outputPath(`smooth-strip-${width}-paged.png`) });
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const before = await left();
+      const room = await strip.evaluate(el => el.scrollWidth - el.clientWidth - el.scrollLeft);
+      if (room <= 8) break;
+      await next.click();
+      expect(await settled(), `${width} page ${attempt}`).toBeGreaterThan(before + 40);
+    }
+    expect(await strip.evaluate(el => el.scrollWidth - el.clientWidth - el.scrollLeft), `${width} reached the end`).toBeLessThanOrEqual(8);
+    await expect(next).toBeDisabled();
+    await expect(prev).toBeEnabled();
+    await region.locator('.strip-frame').screenshot({ path: testInfo.outputPath(`smooth-strip-${width}-end.png`) });
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const before = await left();
+      if (before <= 8) break;
+      await prev.click();
+      expect(await settled(), `${width} back ${attempt}`).toBeLessThan(before - 40);
+    }
+    expect(await left(), `${width} returned`).toBeLessThan(8);
+    await expect(prev).toBeDisabled();
+    await expect(next).toBeEnabled();
+    const room = () => strip.evaluate(el => el.scrollWidth - el.clientWidth - el.scrollLeft);
+    await pageWhile(next, async () => await room() <= 8);
+    expect(await settled(), `${width} rapid clicks leave the start`).toBeGreaterThan(200);
+    expect(await room(), `${width} rapid clicks reach the end`).toBeLessThanOrEqual(8);
+    await expect(next).toBeDisabled();
+    await pageWhile(prev, async () => await left() <= 8);
+    expect(await settled(), `${width} rapid clicks return`).toBeLessThan(8);
+    await expect(prev).toBeDisabled();
+  }
+});
+
+async function pageWhile(button: Locator, done: () => Promise<boolean>) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    if (await done()) return;
+    try {
+      await button.click({ timeout: 500 });
+    } catch (error) {
+      if (await done()) return;
+      throw error;
+    }
+  }
+  await expect.poll(done, { timeout: 4000 }).toBe(true);
+}
+
+test('clicking a partly visible history card reveals the whole card', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await explorer(page);
+  await page.setViewportSize({ width: 1710, height: 1000 });
+  const region = page.getByRole('region', { name: '运动足迹', exact: true });
+  const strip = region.locator('.activity-strip');
+  await expect(region.getByRole('button', { name: '选择运动 运动 1', exact: true })).toBeVisible();
+  await region.locator('.strip-frame').evaluate(el => el.scrollIntoView({ block: 'center', inline: 'nearest' }));
+  const partial = await strip.evaluate(el => {
+    const port = el.getBoundingClientRect();
+    const card = [...el.querySelectorAll('.history-card')].find(item => {
+      const box = item.getBoundingClientRect();
+      return box.left < port.right - 8 && box.right > port.right + 8;
+    });
+    if (!card) return null;
+    const box = card.getBoundingClientRect();
+    const visibleRight = Math.min(box.right, port.right);
+    return { label: card.getAttribute('aria-label') ?? '', x: box.left + Math.min(24, (visibleRight - box.left) / 2), y: box.top + box.height / 2 };
+  });
+  if (!partial?.label) throw new Error('expected a partly visible history card');
+  const hit = await page.evaluate(({ x, y }) => {
+    const el = document.elementFromPoint(x, y);
+    return el?.closest('button')?.getAttribute('aria-label') ?? el?.tagName ?? 'none';
+  }, partial);
+  expect(hit, `click point ${partial.x},${partial.y}`).toBe(partial.label);
+  const before = await leftOf(strip);
+  await page.mouse.click(partial.x, partial.y);
+  await expect.poll(() => strip.evaluate((el, label) => {
+    const card = [...el.querySelectorAll('.history-card')].find(item => item.getAttribute('aria-label') === label);
+    if (!card) return false;
+    const box = card.getBoundingClientRect();
+    const port = el.getBoundingClientRect();
+    return box.left >= port.left - 2 && box.right <= port.right + 2;
+  }, partial.label)).toBe(true);
+  expect(await leftOf(strip)).toBeGreaterThan(before + 40);
+});
+
+function leftOf(strip: Locator) {
+  return strip.evaluate(el => el.scrollLeft);
+}
