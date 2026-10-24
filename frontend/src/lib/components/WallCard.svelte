@@ -30,12 +30,12 @@
   <a class="wall-card" class:compact href={view.href(`/activities/${activity.id}`)}>{@render content()}</a>
 {/if}
 <style>
-  .wall-card{display:block;min-width:0;height:100%;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);padding:.7rem;transition:border-color .15s ease;}.wall-card:hover{border-color:var(--primary);}.wall-card-copy{padding:.7rem .4rem .3rem;}.wall-date{display:flex;justify-content:space-between;color:var(--muted-foreground);font-size:.75rem;font-variant-numeric:tabular-nums;}h3{font-size:1rem;font-weight:650;margin-top:.4rem;overflow-wrap:anywhere;}.wall-distance{display:block;font-size:1.8rem;font-weight:750;letter-spacing:-.035em;margin-top:.6rem;color:var(--primary);font-variant-numeric:tabular-nums;}.wall-facts{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.3rem;margin:.4rem 0;color:var(--muted-foreground);font-size:.75rem;font-variant-numeric:tabular-nums;}
+  .wall-card{display:block;min-width:0;height:100%;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);padding:.7rem;transition:border-color .15s ease;}.wall-card:hover{border-color:var(--primary);}.wall-card-copy{padding:.7rem .4rem .3rem;}.wall-date{display:flex;justify-content:space-between;color:var(--muted-foreground);font-size: var(--text-caption);font-variant-numeric:tabular-nums;}h3{font-size: var(--text-body);font-weight: var(--weight-semibold);margin-top:.4rem;overflow-wrap:anywhere;}.wall-distance{display:block;font-size: var(--text-stat);font-weight: var(--weight-bold);letter-spacing: 0;margin-top:.6rem;color:var(--primary);font-variant-numeric:tabular-nums;}.wall-facts{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.3rem;margin:.4rem 0;color:var(--muted-foreground);font-size: var(--text-caption);font-variant-numeric:tabular-nums;}
   .compact{padding:var(--space-2);}
   .compact :global(.route-thumbnail){aspect-ratio:2/1;border-radius:var(--radius-control);}
   .compact .wall-card-copy{padding:var(--space-2) var(--space-1) var(--space-1);}
-  .compact h3{font-size:.875rem;margin-top:var(--space-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .compact .wall-distance{font-size:1.5rem;margin-top:var(--space-2);}
+  .compact h3{font-size: var(--text-body);margin-top:var(--space-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .compact .wall-distance{font-size: var(--text-stat);margin-top:var(--space-2);}
   .compact .wall-facts{margin:var(--space-1) 0;gap:var(--space-1);}
   /* Deck typography follows the card width (each stack slot is a size container). */
   .interactive{position:relative;transform-style:preserve-3d;width:100%;text-align:left;cursor:pointer;padding:clamp(var(--space-2),5cqi,var(--space-3));transform:perspective(700px) rotateX(var(--card-rotate-x,0deg)) rotateY(var(--card-rotate-y,0deg)) scale(calc(1 + var(--card-highlight,0) * .035));transition:border-color var(--motion-reveal),box-shadow var(--motion-reveal);box-shadow:0 var(--space-2) var(--space-6) var(--glass-shadow);}
@@ -48,13 +48,13 @@
   .interactive :global(.route-watermark){display:none;}
   .interactive :global(.route-thumbnail svg){padding:var(--space-1);}
   .interactive :global(.route-thumbnail svg path){stroke-width:3.5;}
-  .interactive .wall-date{font-size:clamp(.6875rem,6.6cqi,.8125rem);}
-  .interactive h3{font-size:clamp(.875rem,8.4cqi,1.0625rem);}
-  .interactive .wall-distance{font-size:clamp(1.375rem,14.5cqi,1.875rem);}
-  .interactive .wall-facts{flex-wrap:nowrap;justify-content:flex-start;white-space:nowrap;font-size:clamp(.6875rem,6.2cqi,.8125rem);}
+  .interactive .wall-date{font-size: var(--text-caption);}
+  .interactive h3{font-size: var(--text-body);}
+  .interactive .wall-distance{font-size: var(--text-stat);}
+  .interactive .wall-facts{flex-wrap:nowrap;justify-content:flex-start;white-space:nowrap;font-size: var(--text-caption);}
   .interactive .fact-separator{display:inline;}
-  .interactive :global(.thumbnail-empty>span){font-size:1.5rem;line-height:1;}
-  .interactive :global(.thumbnail-empty p){font-size:.6875rem;line-height:1.25;}
+  .interactive :global(.thumbnail-empty>span){font-size: var(--text-stat);line-height: var(--line-height-solid);}
+  .interactive :global(.thumbnail-empty p){font-size: var(--text-caption);line-height: var(--line-height-title);}
   .interactive[aria-pressed="true"]{border-color:var(--primary);}
   .interactive:focus-visible{outline:2px solid var(--primary);outline-offset:var(--space-1);}
   @media (prefers-reduced-motion:reduce),(hover:none),(pointer:coarse){.interactive{transform:none;}}

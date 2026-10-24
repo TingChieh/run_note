@@ -40,7 +40,7 @@
   {/if}
 </section>
 <style>
-  section{min-width:0;}.wall-preview{padding:1.5rem;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);}.wall-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1rem;}.wall-heading h2{font-size:1.25rem;font-weight:700;}.wall-eyebrow{font-size:.75rem;color:var(--muted-foreground);margin-bottom:.25rem;}.wall-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;}.wall-grid li{min-width:0;}.wall-pagination{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:.75rem;margin-top:1.5rem;font-size:.8rem;color:var(--muted-foreground);}
+  section{min-width:0;}.wall-preview{padding:1.5rem;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);}.wall-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1rem;}.wall-heading h2{font-size: var(--text-section);font-weight: var(--weight-semibold);}.wall-eyebrow{font-size: var(--text-caption);color:var(--muted-foreground);margin-bottom:.25rem;}.wall-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;}.wall-grid li{min-width:0;}.wall-pagination{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:.75rem;margin-top:1.5rem;font-size: var(--text-caption);color:var(--muted-foreground);}
   .wall-dense{container-type:inline-size;}
   .wall-dense .wall-grid{grid-template-columns:1fr;gap:var(--space-3);}
   @container(min-width:24rem){.wall-dense .wall-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}

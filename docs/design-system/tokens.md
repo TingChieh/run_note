@@ -51,22 +51,30 @@
 
 ## Typography
 
-既有：`--font-body` 为 system-ui/Apple/Segoe UI/PingFang SC/Microsoft YaHei/sans-serif；`--text-body:1rem`、`--text-small:.8125rem`、`--text-title:clamp(1.75rem,2.5vw,2.25rem)`。
+字体栈不变：`--font-body` 为 system-ui / Apple / Segoe UI / PingFang SC / Microsoft YaHei / sans-serif。组件里的 `font-size`、`font-weight`、`letter-spacing`、`line-height` 只引用下表 token；Tailwind 的 `text-xs`…`text-4xl` 与 `font-normal|medium|semibold|bold` 在 `@theme` 里对齐同一阶梯。禁止 550/650/750：苹方没有这些档，macOS 上数字会比中文更粗。
 
-本批新增角色并在全局原位等值使用：
+| Token | 值 | 角色 |
+| --- | --- | --- |
+| `--text-caption` | .75rem / 12px | 眉题、日期、角标、图例 |
+| `--text-small` | .875rem / 14px | 次要说明、按钮、表单标签 |
+| `--text-body` | 1rem / 16px | 正文；足迹墙卡片标题（唯一允许比 18 更小的卡片标题） |
+| `--text-card` | 1.125rem / 18px | 卡片标题，字重 semibold |
+| `--text-section` | 1.25rem / 20px | 区块 h2、行内数字 |
+| `--text-stat` | 1.75rem / 28px | 卡片大数字 |
+| `--text-title` / `--text-sport-title` | 2.5rem / 40px | 页面 h1、主数字 |
+| `--text-display` | 3rem / 48px | 特大展示数字 |
 
-| Token | 现值与来源 |
-| --- | --- |
-| `--line-height-body` | 1.65，body |
-| `--line-height-title` | 1.25，h1 |
-| `--line-height-heading` | 1.4，h2/h3 |
-| `--tracking-title` | -.035em，h1 |
-| `--tracking-heading` | -.015em，h2/h3 |
-| `--weight-title` | 650，基础 h1 |
-| `--text-sport-title` | clamp(1.75rem,3vw,2.5rem)，运动页头 |
-| `--weight-sport-title` | 750，运动页头 |
+| Token | 值 | 角色 |
+| --- | --- | --- |
+| `--weight-regular` | 400 | 正文、输入内容 |
+| `--weight-medium` | 500 | 标签、未选中导航 |
+| `--weight-semibold` | 600 | 标题、按钮、当前导航 |
+| `--weight-bold` | 700 | h1 与大数字 |
+| `--weight-title` / `--weight-sport-title` | 引用 bold | 页面 h1 |
 
-局部 caption .75rem、label .875rem、metric fluid 字号及 550/600/700 等仍在原组件，不假称已经迁移。详情 hero 不套通用 h1 尺寸。指标延续 tabular-nums，缺失为 `—`，0 是有效值。
+行高只有五档：`--line-height-solid: 1`（图标与单行居中）、`--line-height-tight: 1.15`（大数字）、`--line-height-title: 1.25`（h1）、`--line-height-heading: 1.4`（h2/h3 与控件）、`--line-height-body: 1.65`（正文）。中文标题字距为 0（`--tracking-title` / `--tracking-heading`）。仅全大写拉丁短标用 `--tracking-caps: .12em`。大数字加 `tabular-nums`。
+
+同类元素：所有区块 h2 为 20/600；卡片标题为 18/600，足迹墙为 16/600；大数字按 hero 40、卡片 28、行内 20，一律 700。日历月份小标题保持 14，它是格内标签而不是卡片标题。海报画布用像素坐标排版，字重仍只能是 400/500/600/700。
 
 ## Spacing、Radius 与布局
 

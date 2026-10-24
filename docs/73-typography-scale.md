@@ -1,0 +1,62 @@
+# 73. 字号与字重阶梯
+
+全站文字只使用一套字号和字重。字体栈不变。不改接口、数据库或后端。
+
+## 使用方式
+
+组件里的 `font-size`、`font-weight`、`letter-spacing`、`line-height` 只引用 `frontend/src/app.css` 的 token。Tailwind 的 `text-xs`…`text-4xl` 与 `font-normal|medium|semibold|bold` 在 `@theme` 中对齐同一阶梯。`pnpm lint:style` 与 `tests/unit/typography-scale.test.ts` 拒绝写死的字号、550/650/750，以及任意的 `text-[…]` / `font-[…]`。
+
+| Token | 值 | 角色 |
+| --- | --- | --- |
+| `--text-caption` | 12px | 眉题、日期、角标、图例 |
+| `--text-small` | 14px | 次要说明、按钮、表单标签 |
+| `--text-body` | 16px | 正文；足迹墙卡片标题 |
+| `--text-card` | 18px | 卡片标题 |
+| `--text-section` | 20px | 区块 h2、行内数字 |
+| `--text-stat` | 28px | 卡片大数字 |
+| `--text-title` | 40px | 页面 h1、主数字 |
+| `--text-display` | 48px | 特大展示数字 |
+
+字重只有 `--weight-regular` 400、`--weight-medium` 500、`--weight-semibold` 600、`--weight-bold` 700。`--weight-title` 与 `--weight-sport-title` 引用 bold。
+
+行高五档：1、1.15、1.25、1.4、1.65。中文标题字距为 0。只有全大写拉丁短标使用 `--tracking-caps: .12em`。
+
+同类元素：
+
+- 区块 h2：20 / 600。原先 dashboard 一页混用 16/600 与 20/700。
+- 卡片标题：18 / 600。足迹墙（含紧凑与可点击卡片）是 16 / 600，这是唯一更小的卡片标题。日历月份格内标签保持 14，它不是卡片标题。
+- 大数字：hero、目标、页面主距离 40 / 700；汇总卡片与足迹墙距离 28 / 700；活动列表与详情侧栏的行内数字 20 / 700。一律 `tabular-nums`。
+- 登录页 h1 与其他页面同为 40 / 700。原先登录页是 30 / 600。
+
+海报画布按像素坐标排版，不套用 CSS 字号阶梯；字重仍只能是 400/500/600/700。弹簧刚度等非文字数值不受这套规则约束。
+
+## 接口与隐私
+
+无新接口。不读取、不展示额外的私人字段。分享图仍在浏览器内绘制。
+
+## 验证记录
+
+同一套合成数据、1440×1000 视口下，收敛后的计算样式：
+
+| 元素 | 收敛前 | 收敛后 |
+| --- | --- | --- |
+| 页面 h1 | 40px / 750，字距 -1.4px；登录页 30px / 600 | 40px / 700，字距 0 |
+| dashboard 区块 h2 | 16px / 600 与 20px / 700 并存 | 全部 20px / 600 |
+| 活动卡片标题 | 20px / 700 | 18px / 600 |
+| 足迹墙卡片标题 | 14px / 650 | 16px / 600 |
+| 目标数字 | 48px / 750 | 40px / 700 |
+| 汇总卡片数字 | 38.4px / 700 | 28px / 700 |
+| 足迹墙距离 | 24px / 750 | 28px / 700 |
+| 活动列表数字 | 20px / 700 | 20px / 700 |
+| 详情侧栏数字 | 20px / 700 | 20px / 700 |
+
+2026-10-24 在本机实际运行：
+
+- `pnpm check`：0 错误、0 警告。
+- `pnpm test`：34 个文件、201 项通过。
+- `pnpm lint:style`：通过。`tests/unit/typography-scale.test.ts` 含在上面的 201 项里。
+- `pnpm build`：构建成功。既有的大于 500 kB chunk 警告仍在。
+- `pnpm exec playwright test --config playwright.ui.config.ts`：167 项通过。
+- 320px 宽的设置页：分区标签改为可换行，长邮箱在信息芯片内折行，避免字号从 13px 收到 14px 后把页面撑出横向滚动。
+
+未在 macOS 上用苹方复看。字重上限 600/700 是针对「苹方最高 600、可变字体数字更粗」的代码层修正。设计系统像素快照（`playwright.design-system.config.ts`）未作为本次回归运行。开发服务与生产站点未加载这套改动。

@@ -45,5 +45,5 @@
   .theme-controls.compact { flex-shrink: 0; }
   .compact .theme-toggle { width: 2.75rem; padding: var(--space-2); }
   .theme-auto-slot { display: flex; flex-shrink: 0; margin-left: var(--space-2); }
-  .theme-auto { flex-shrink: 0; min-width: 2.75rem; padding: var(--space-2); font-size: .75rem; }
+  .theme-auto { flex-shrink: 0; min-width: 2.75rem; padding: var(--space-2); font-size: var(--text-caption); }
 </style>

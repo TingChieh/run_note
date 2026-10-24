@@ -37,14 +37,14 @@
 </div>
 <style>
   .route-thumbnail{position:relative;aspect-ratio:360/220;overflow:hidden;display:grid;place-items:center;background:var(--route-thumbnail);border-radius:1rem;color:var(--primary);}
-  .route-watermark{position:absolute;bottom:.6rem;right:.7rem;opacity:.22;letter-spacing:.15em;font-size:.65rem;font-weight:750;}
+  .route-watermark{position:absolute;bottom:.6rem;right:.7rem;opacity:.22;letter-spacing: var(--tracking-caps);font-size: var(--text-caption);font-weight: var(--weight-bold);}
   svg{display:block;width:100%;height:100%;padding:.65rem;}svg path{fill:none;stroke:var(--primary);stroke-width:3;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;}svg circle{fill:var(--primary);}
-  .thumbnail-empty{text-align:center;}.thumbnail-empty>span{font-size:2.5rem;opacity:.4;}.thumbnail-empty p{font-size:.8rem;opacity:.8;}
+  .thumbnail-empty{text-align:center;}.thumbnail-empty>span{font-size: var(--text-title);opacity:.4;}.thumbnail-empty p{font-size: var(--text-caption);opacity:.8;}
   .compact { width: 104px; aspect-ratio: 4/3; border-radius: .625rem; }
   .compact .route-watermark { display: none; }
   .compact svg { padding: .25rem; }
   .compact .thumbnail-empty { padding: .25rem; }
-  .compact .thumbnail-empty>span { font-size: 1.25rem; }
-  .compact .thumbnail-empty p { font-size: .625rem; line-height: 1.35; }
+  .compact .thumbnail-empty>span { font-size: var(--text-section); }
+  .compact .thumbnail-empty p { font-size: var(--text-caption); line-height: var(--line-height-heading); }
   @media (max-width: 639px) { .compact { width: 80px; } }
 </style>

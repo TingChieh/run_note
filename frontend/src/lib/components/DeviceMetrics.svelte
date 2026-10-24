@@ -19,5 +19,5 @@
   </section>
 {/if}
 <style>
-  .device-metrics{margin-top:var(--space-4);min-width:0;}h3{font-size:.875rem;font-weight:600;}dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,8rem),1fr));gap:var(--space-3);margin-top:var(--space-3);}dt,p,dd span{color:var(--muted-foreground);font-size:.75rem;}dd{font-variant-numeric:tabular-nums;font-weight:600;overflow-wrap:anywhere;}p{margin-top:var(--space-1);}
+  .device-metrics{margin-top:var(--space-4);min-width:0;}h3{font-size: var(--text-card);font-weight: var(--weight-semibold);}dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,8rem),1fr));gap:var(--space-3);margin-top:var(--space-3);}dt,p,dd span{color:var(--muted-foreground);font-size: var(--text-caption);}dd{font-variant-numeric:tabular-nums;font-weight: var(--weight-semibold);overflow-wrap:anywhere;}p{margin-top:var(--space-1);}
 </style>

@@ -19,7 +19,7 @@
 </script>
 <section class="share-card" aria-labelledby="share-title" aria-busy={busy}>
   <h2 id="share-title" class="text-xl font-semibold">公开与分享</h2>
-  <p class="mt-3 text-sm text-muted-foreground">以下设置仅控制旧版摘要入口与摘要分享链接。本站的跑步记录和完整轨迹始终公开展示。</p><details class="mt-3 text-sm text-muted-foreground"><summary class="w-fit font-medium">分享范围与撤销说明</summary><p class="mt-2 leading-6">分享只包含标题、日期及运动指标，不包含轨迹坐标、精确起终点、邮箱、备注或原始 GPX。已被他人保存的摘要无法收回。</p></details>
+  <p class="mt-3 text-sm text-muted-foreground">以下设置仅控制旧版摘要入口与摘要分享链接。本站的跑步记录和完整轨迹始终公开展示。</p><details class="mt-3 text-sm text-muted-foreground"><summary class="w-fit font-medium">分享范围与撤销说明</summary><p class="mt-2">分享只包含标题、日期及运动指标，不包含轨迹坐标、精确起终点、邮箱、备注或原始 GPX。已被他人保存的摘要无法收回。</p></details>
   <p class="mt-4 text-sm font-semibold text-primary">已保存摘要权限：{saved === 'private' ? '关闭旧版摘要' : saved === 'unlisted' ? '仅链接可见' : '公开'}</p>
   {#if visibility !== saved}<p role="status" class="mt-2 text-sm">选择尚未保存</p>{/if}
   <div class="visibility-control"><label>记录可见性 <select aria-label="记录可见性" bind:value={visibility} disabled={busy} class="ml-2 rounded border p-2"><option value="private">关闭旧版摘要</option><option value="unlisted">仅链接可见</option><option value="public">公开（可按记录地址访问）</option></select></label>

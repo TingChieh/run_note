@@ -142,14 +142,14 @@ export async function renderPoster(data: PosterData, palette: PosterPalette, sty
       panel(54, 42, 48, 48, palette.route, 14);
       text(brandInitial(brand.title), 65, 78, 34, palette.brandInk, 700, 30);
     }
-    text(brand.title, 118, 79, 35, palette.foreground, 650, 640);
+    text(brand.title, 118, 79, 35, palette.foreground, 600, 640);
     text('每一步，都算数', 794, 76, 25, palette.muted);
 
     switch (style) {
       case 'classic':
         panel(48, 128, 984, 330, palette.heading);
         text(data.month ? '这个月，我跑了' : '已累计跑了', 82, 200, 40, palette.headingInk, 500);
-        text(data.kilometers, 74, 351, data.kilometers.length > 8 ? 104 : 142, palette.headingInk, 650, 790);
+        text(data.kilometers, 74, 351, data.kilometers.length > 8 ? 104 : 142, palette.headingInk, 700, 790);
         text('公里', 911, 345, 31, palette.headingInk);
         text(posterPeriod(data.month), 84, 414, 25, palette.headingInk);
         panel(48, 490, 984, 1036, palette.surface);
@@ -157,10 +157,10 @@ export async function renderPoster(data: PosterData, palette: PosterPalette, sty
         sample(1582);
         panel(48, 1630, 984, 218, palette.surface);
         text('距离约等于', 80, 1680, 24, palette.muted);
-        text(data.halfMarathons, 75, 1770, 82, palette.foreground, 550, 340);
+        text(data.halfMarathons, 75, 1770, 82, palette.foreground, 700, 340);
         text('次半程马拉松', 80, 1816, 24, palette.muted);
         text('每次出发，都留下了足迹', 575, 1680, 24, palette.muted);
-        text(`${data.activityCount.toLocaleString('zh-CN')} 次跑步`, 575, 1748, 42, palette.foreground, 550, 420);
+        text(`${data.activityCount.toLocaleString('zh-CN')} 次跑步`, 575, 1748, 42, palette.foreground, 600, 420);
         text(`${data.activityDays.toLocaleString('zh-CN')} 个活动日`, 575, 1810, 29, palette.muted, 400, 420);
         break;
       case 'gallery':
@@ -177,13 +177,13 @@ export async function renderPoster(data: PosterData, palette: PosterPalette, sty
       case 'sport':
         panel(48, 128, 984, 388, palette.route);
         text(posterPeriod(data.month), 82, 192, 26, palette.brandInk);
-        text('每一步，都算数', 82, 262, 46, palette.brandInk, 650);
-        text(data.kilometers, 70, 421, 146, palette.brandInk, 750, 810);
+        text('每一步，都算数', 82, 262, 46, palette.brandInk, 600);
+        text(data.kilometers, 70, 421, 146, palette.brandInk, 700, 810);
         text('公里', 916, 410, 31, palette.brandInk);
         ctx.fillStyle = palette.heading; ctx.fillRect(82, 466, 140, 8);
         ctx.strokeStyle = palette.heading; ctx.lineWidth = 9;
         for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(870 + i * 38, 218); ctx.lineTo(918 + i * 38, 160); ctx.stroke(); }
-        panel(48, 550, 984, 1040, palette.surface);
+        panel(48, 600, 984, 1040, palette.surface);
         grid({x:80,y:580,width:920,height:980});
         sample(1644);
         panel(48, 1690, 984, 174, palette.surface);
@@ -193,7 +193,7 @@ export async function renderPoster(data: PosterData, palette: PosterPalette, sty
         text('我的足迹收藏', 76, 190, 52, palette.foreground, 600);
         line(76, 218, 928);
         text(posterPeriod(data.month), 76, 270, 26, palette.muted);
-        text(data.kilometers, 70, 380, 112, palette.foreground, 600, 800);
+        text(data.kilometers, 70, 380, 112, palette.foreground, 600, 700);
         text('公里', 916, 371, 31, palette.muted);
         grid({x:64,y:440,width:952,height:1152}, true);
         sample(1648);
@@ -205,7 +205,7 @@ export async function renderPoster(data: PosterData, palette: PosterPalette, sty
         text(lead, 76, 300, 44, palette.muted, 500);
         text(posterPeriod(data.month), 76, 362, 28, palette.muted);
         text(data.kilometers, 64, 700, Math.min(300, Math.floor(1560 / data.kilometers.length)), palette.foreground, 700, 940);
-        text('公里', 80, 800, 52, palette.foreground, 600);
+        text('公里', 80, 700, 52, palette.foreground, 600);
         ctx.fillStyle = palette.route; ctx.fillRect(80, 846, 180, 14);
         const rows = [['跑步次数', count, ''], ['活动天数', days, ''], ['距离约等于', data.halfMarathons, '次半程马拉松']];
         for (const [i, [label, value, unit]] of rows.entries()) {
@@ -223,7 +223,7 @@ export async function renderPoster(data: PosterData, palette: PosterPalette, sty
         panel(96, 160, 888, 1640, palette.surface, 40);
         text('跑步存根', 150, 260, 30, palette.muted, 500);
         aligned('right', posterPeriod(data.month), 930, 260, 28, palette.muted);
-        text(data.month ? '本月跑步清单' : '我的跑步清单', 150, 366, 60, palette.foreground, 650, 780);
+        text(data.month ? '本月跑步清单' : '我的跑步清单', 150, 366, 60, palette.foreground, 600, 780);
         dashed(450, [96, 984]);
         const rows = [['总距离', `${data.kilometers} 公里`], ['跑步次数', count], ['活动天数', days], ['距离约等于', `${data.halfMarathons} 次半程马拉松`]];
         for (const [i, [label, value]] of rows.entries()) {
@@ -249,7 +249,7 @@ export async function renderPoster(data: PosterData, palette: PosterPalette, sty
       }
       case 'medal': {
         text(lead, 76, 210, 40, palette.muted, 500);
-        figure(data.kilometers, 70, 370, data.kilometers.length > 8 ? 112 : 150, 650, 790, '公里');
+        figure(data.kilometers, 70, 370, data.kilometers.length > 8 ? 112 : 150, 700, 790, '公里');
         text(posterPeriod(data.month), 76, 432, 26, palette.muted);
         const [cx, cy] = [540, 1000];
         ctx.strokeStyle = palette.line; ctx.lineWidth = 6; ctx.lineCap = 'round';
@@ -286,7 +286,7 @@ export async function renderPoster(data: PosterData, palette: PosterPalette, sty
         text('跑出自己的节奏', 82, 300, 56, palette.brandInk, 700, 500);
         text(`${data.activityCount.toLocaleString('zh-CN')} 次出发`, 82, 760, 44, palette.brandInk, 600, 480);
         text(lead, 76, 960, 40, palette.muted, 500);
-        figure(data.kilometers, 64, 1200, data.kilometers.length > 8 ? 130 : 190, 750, 820, '公里');
+        figure(data.kilometers, 64, 1200, data.kilometers.length > 8 ? 130 : 190, 700, 820, '公里');
         ctx.fillStyle = palette.heading; ctx.fillRect(76, 1250, 220, 14);
         line(76, 1400, 928);
         stats(1400);

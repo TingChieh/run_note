@@ -65,8 +65,8 @@
   .basemap-picker { position:absolute; top:var(--space-3); right:calc(var(--space-3) + 44px); z-index:2; }
   .basemap-picker > button { display:flex; align-items:center; gap:var(--space-2); background:var(--surface); }
   .basemap-options { width:16rem; max-width:calc(100vw - var(--space-8)); max-height:calc(100dvh - var(--space-6)); }
-  .basemap-options p { padding:var(--space-2) var(--space-3); font-size:var(--text-small); font-weight:600; color:var(--muted-foreground); }
-  .basemap-options .rn-menu-option[aria-pressed='true'] { font-weight:650; }
+  .basemap-options p { padding:var(--space-2) var(--space-3); font-size:var(--text-small); font-weight: var(--weight-semibold); color:var(--muted-foreground); }
+  .basemap-options .rn-menu-option[aria-pressed='true'] { font-weight: var(--weight-semibold); }
   .basemap-options button:focus-visible { z-index:5; outline-offset:-3px; }
   small { display:block; padding:var(--space-2) var(--space-3); font-size:var(--text-small); color:var(--muted-foreground); }
 

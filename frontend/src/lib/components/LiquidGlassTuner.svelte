@@ -58,21 +58,21 @@
   .glass-tuner { position: fixed; z-index: var(--z-dev-tools); right: var(--space-4); bottom: var(--space-4); }
   .tuner-trigger { display: flex; align-items: center; gap: var(--space-2); min-height: 2.75rem; }
   .tuner-trigger svg { flex-shrink: 0; }
-  .dev-label { font-size: .625rem; font-weight: 700; letter-spacing: .06em; color: var(--muted-foreground); }
+  .dev-label { font-size: var(--text-caption); font-weight: var(--weight-bold); letter-spacing: var(--tracking-caps); color: var(--muted-foreground); }
   .tuner-panel { position: absolute; right: 0; bottom: calc(100% + var(--space-3)); width: min(22rem, calc(100vw - var(--space-8))); max-height: calc(100dvh - 6rem); overflow: auto; overscroll-behavior: contain; padding: var(--space-4); background: var(--surface); color: var(--foreground); border: 1px solid var(--border); border-radius: var(--radius-card); box-shadow: 0 var(--space-4) var(--space-8) var(--glass-shadow); }
   .tuner-heading, .slider-label, .tuner-footer { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
-  h2 { margin: 0; font-size: 1.125rem; font-weight: 650; }
-  .eyebrow { margin: 0; color: var(--muted-foreground); font-size: .6875rem; }
-  .tuner-hint, .tuner-footer p { color: var(--muted-foreground); font-size: .75rem; }
+  h2 { margin: 0; font-size: var(--text-section); font-weight: var(--weight-semibold); }
+  .eyebrow { margin: 0; color: var(--muted-foreground); font-size: var(--text-caption); }
+  .tuner-hint, .tuner-footer p { color: var(--muted-foreground); font-size: var(--text-caption); }
   .tuner-hint { margin: var(--space-2) 0 var(--space-3); }
   .preview-stage { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: var(--space-3); min-height: 11rem; border-radius: var(--radius-control); padding: var(--space-3); background-color: var(--muted); background-size: cover; background-position: center; }
   .preview-stage button { min-height: 2.75rem; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); color: var(--glass-light-foreground) !important; }
   .preset-row { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-3) 0 var(--space-4); }
-  .preset-row button, .tuner-heading button, .tuner-footer button { font-size: .75rem; padding: var(--space-2) var(--space-3); white-space: nowrap; }
+  .preset-row button, .tuner-heading button, .tuner-footer button { font-size: var(--text-caption); padding: var(--space-2) var(--space-3); white-space: nowrap; }
   .sliders { display: grid; gap: var(--space-3); }
-  .sliders label { display: grid; gap: var(--space-1); font-size: .8125rem; }
+  .sliders label { display: grid; gap: var(--space-1); font-size: var(--text-small); }
   output { font-variant-numeric: tabular-nums; color: var(--muted-foreground); }
-  .slider-help { font-size: .6875rem; color: var(--muted-foreground); font-weight: 400; }
+  .slider-help { font-size: var(--text-caption); color: var(--muted-foreground); font-weight: var(--weight-regular); }
   .sliders input { width: 100%; padding: 0; min-height: 2rem; accent-color: var(--primary); }
   .tuner-footer { border-top: 1px solid var(--border); padding-top: var(--space-3); margin-top: var(--space-3); }
   .tuner-footer p { margin: 0; }

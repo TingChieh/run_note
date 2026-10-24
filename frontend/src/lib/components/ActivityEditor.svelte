@@ -55,11 +55,11 @@
 </form>
 <style>
   .editor { display: grid; gap: .875rem; margin-top: 1rem; min-width: 0; }
-  label { min-width: 0; font-size: .875rem; font-weight: 600; }
-  input, textarea { display: block; box-sizing: border-box; width: 100%; min-width: 0; margin-top: .5rem; padding: .625rem .75rem; border: 1px solid var(--border); border-radius: .625rem; background: var(--background); color: var(--foreground); font-weight: 400; }
+  label { min-width: 0; font-size: var(--text-small); font-weight: var(--weight-semibold); }
+  input, textarea { display: block; box-sizing: border-box; width: 100%; min-width: 0; margin-top: .5rem; padding: .625rem .75rem; border: 1px solid var(--border); border-radius: .625rem; background: var(--background); color: var(--foreground); font-weight: var(--weight-regular); }
   textarea { resize: vertical; }
-  .hint { color: var(--muted-foreground); font-size: .8125rem; line-height: 1.6; }
+  .hint { color: var(--muted-foreground); font-size: var(--text-small); line-height: var(--line-height-body); }
   .buttons { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
-  .save { padding: .625rem 1rem; border-radius: .75rem; background: var(--primary); color: var(--primary-foreground); font-size: .875rem; font-weight: 600; }
+  .save { padding: .625rem 1rem; border-radius: .75rem; background: var(--primary); color: var(--primary-foreground); font-size: var(--text-small); font-weight: var(--weight-semibold); }
   button:disabled { opacity: .5; cursor: wait; }
 </style>

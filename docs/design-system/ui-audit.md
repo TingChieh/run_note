@@ -83,8 +83,7 @@ public activity / shared → PublicActivityPage → MetricSummary
 ### 4.2 字体、排版和图标
 
 - 系统字体栈 `--font-body`，没有扫描到额外字体下载或 `@font-face`。中文与拉丁文字延续现有系统字体。
-- 已有 `--text-body: 1rem`、`--text-small: .8125rem`、`--text-title: clamp(1.75rem, 2.5vw, 2.25rem)`。实际运动页头另用 `clamp(1.75rem, 3vw, 2.5rem)`，详情 hero 也有自己的字号。
-- 正文行高 1.65，h1 为 1.25、字距 -.035em、字重 650；运动页头 750。h2/h3 行高 1.4；局部仍使用 .75/.8/.8125/.875/.9375rem 及 550/600/650/700/750，未形成完整语义排版层级。
+- 审计当时只有 `--text-body`、`--text-small: .8125rem` 和流动的 `--text-title`，运动页头与详情 hero 各自用 clamp，并混用 550/650/750。该状态已在 2026-10-24 收敛，现行阶梯以 [Tokens](tokens.md) 为准：12/14/16/18/20/28/40/48 与字重 400/500/600/700。
 - 指标使用 `font-variant-numeric: tabular-nums`，突出距离/次数，单位随数值展示；缺失值是 `—`，不是 0。
 - 导航、ThemeToggle、DatePicker、MetricSummary 使用内联 SVG（常见 20/24/26px，线宽 1.7/1.8/2）。仪表盘、目标、入口仍使用 `↗ ▦ ◷ ♨ ✦` 等 Unicode；盒子居中不保证不同字体下光学居中。先登记图标语义、尺寸与容器，再按明确问题逐个处理，不能全量替换品牌装饰。
 

@@ -18,9 +18,9 @@
 </div>
 <style>
   .image-upload { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); }
-  .preview { display: grid; place-items: center; width: 4rem; height: 4rem; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--muted-foreground); font-size: 1.5rem; font-weight: 700; }
+  .preview { display: grid; place-items: center; width: 4rem; height: 4rem; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--muted-foreground); font-size: var(--text-stat); font-weight: var(--weight-bold); }
   .preview.circle { border-radius: 50%; }
-  .preview.large { width: 6rem; height: 6rem; font-size: 2.25rem; }
+  .preview.large { width: 6rem; height: 6rem; font-size: var(--text-title); }
   .preview img { width: 100%; height: 100%; object-fit: cover; }
   .controls { display: grid; gap: var(--space-2); min-width: 0; justify-items: start; }
   label.disabled { opacity: .5; pointer-events: none; }

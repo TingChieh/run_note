@@ -128,13 +128,13 @@
   .hero-side { display: grid; flex-shrink: 0; justify-items: end; gap: var(--space-3); }
   .sport-hero { display: flex; justify-content: space-between; align-items: center; gap: 2rem; background: var(--sport-yellow); border-radius: var(--radius-card); padding: clamp(1.5rem, 3vw, 2rem); margin-top: 1.5rem; color: var(--sport-detail-ink); }
   .hero-copy { min-width: 0; }
-  .hero-kicker { display: flex; align-items: center; gap: .5rem; font-size: .875rem; font-weight: 600; }
-  .sport-hero h1 { margin-top: .75rem; font-size: clamp(2rem, 3vw, 2.5rem); font-weight: 750; line-height: 1.2; }
-  .hero-date { margin-top: 1rem; font-size: .875rem; }
+  .hero-kicker { display: flex; align-items: center; gap: .5rem; font-size: var(--text-small); font-weight: var(--weight-semibold); }
+  .sport-hero h1 { margin-top: .75rem; font-size: var(--text-title); font-weight: var(--weight-bold); line-height: var(--line-height-tight); }
+  .hero-date { margin-top: 1rem; font-size: var(--text-small); }
   .hero-date span { opacity: .8; }
   .hero-distance { display: grid; gap: .25rem; text-align: right; font-variant-numeric: tabular-nums; }
-  .hero-distance span { font-size: .8125rem; }
-  .hero-distance strong { font-size: clamp(2rem, 3vw, 2.75rem); line-height: 1.2; letter-spacing: -.04em; }
+  .hero-distance span { font-size: var(--text-small); }
+  .hero-distance strong { font-size: var(--text-title); line-height: var(--line-height-tight); letter-spacing: 0; font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; }
   .detail-workspace { --detail-content-height: clamp(20rem, 44svh, 24rem); display: grid; grid-template-columns: 15rem minmax(0, 1fr); gap: var(--space-6); margin-top: var(--space-6); align-items: start; padding: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
   .metric-panel, .route-panel { min-width: 0; }
   /* Switching records keeps every surface in place: dim while reading, then lift the new values in. */
@@ -147,31 +147,31 @@
   .route-stage { position: relative; }
   .route-stage :global(.route-map) { transition: opacity var(--motion-reveal); }
   .route-stage.stale :global(.route-map) { opacity: .45; }
-  .route-swap-status { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: var(--space-2) var(--space-4); border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--muted-foreground); font-size: .875rem; box-shadow: 0 var(--space-2) var(--space-6) var(--glass-shadow); pointer-events: none; }
+  .route-swap-status { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: var(--space-2) var(--space-4); border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--muted-foreground); font-size: var(--text-small); box-shadow: 0 var(--space-2) var(--space-6) var(--glass-shadow); pointer-events: none; }
   .route-panel { padding-left: 1.5rem; border-left: 1px solid var(--border); }
-  .metric-panel h2, .route-panel h2 { font-size: 1.25rem; font-weight: 700; }
+  .metric-panel h2, .route-panel h2 { font-size: var(--text-section); font-weight: var(--weight-semibold); }
   .panel-heading { min-height: 3.5rem; }
-  .section-caption { margin-top: .25rem; color: var(--muted-foreground); font-size: .875rem; }
+  .section-caption { margin-top: .25rem; color: var(--muted-foreground); font-size: var(--text-small); }
   .metric-cards { margin-top: 1rem; }
   .metric-cards :global(.metrics) { gap: 0; }
   .metric-cards :global(.metrics > div) { padding: var(--space-1) 0; border: 0; border-radius: 0; background: transparent; }
   .metric-cards :global(.metrics > div + div) { border-top: 1px solid var(--border); }
   .metric-cards :global(.metrics dt), .metric-cards :global(.metrics dd) { padding-left: calc(var(--space-8) + var(--space-3)); }
-  .metric-cards :global(.metrics dt) { font-size: .75rem; line-height: 1.25; }
-  .metric-cards :global(.metrics dd) { margin-top: 0; font-size: 1.25rem; }
+  .metric-cards :global(.metrics dt) { font-size: var(--text-caption); line-height: var(--line-height-title); }
+  .metric-cards :global(.metrics dd) { margin-top: 0; font-size: var(--text-section); }
   .metric-cards :global(.metric-icon) { left: 0; width: var(--space-8); height: var(--space-8); }
   .metric-cards :global(.metric-icon svg) { width: var(--space-6); height: var(--space-6); }
-  .start-time { margin-top: var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--border); font-size: .875rem; overflow-wrap: anywhere; }
+  .start-time { margin-top: var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--border); font-size: var(--text-small); overflow-wrap: anywhere; }
   .start-time dt { color: var(--muted-foreground); }
   .start-time dd { margin-top: .25rem; font-variant-numeric: tabular-nums; }
   .route-panel :global(.spacious) { border-radius: var(--radius-card); }
   .route-panel :global(.spacious .route-map) { height: var(--detail-content-height); }
-  .metric-note { margin-top: 1rem; color: var(--muted-foreground); font-size: .8125rem; }
+  .metric-note { margin-top: 1rem; color: var(--muted-foreground); font-size: var(--text-small); }
   .route-heading { display: flex; flex-wrap: wrap; gap: .75rem; justify-content: space-between; align-items: center; }
-  .route-tag { padding: .25rem .625rem; border-radius: 2rem; background: var(--primary-soft); color: var(--primary); font-size: .75rem; font-weight: 600; }
+  .route-tag { padding: .25rem .625rem; border-radius: 2rem; background: var(--primary-soft); color: var(--primary); font-size: var(--text-caption); font-weight: var(--weight-semibold); }
   .route-placeholder { display: grid; align-content: center; min-height: var(--detail-content-height); margin-top: 1rem; }
   .quality-details { margin-top: var(--space-6); padding: var(--space-4) var(--space-6); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
-  summary { color: var(--foreground); font-size: .9375rem; font-weight: 600; }
+  summary { color: var(--foreground); font-size: var(--text-body); font-weight: var(--weight-semibold); }
   @media (max-width: 1199px) { .detail-workspace { --detail-content-height: clamp(17.5rem, 38svh, 22rem); grid-template-columns: 1fr; } .route-panel { border-left: 0; border-top: 1px solid var(--border); padding-left: 0; padding-top: var(--space-6); } .metric-cards :global(.metrics) { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--space-6); } .metric-cards :global(.metrics > div + div) { border-top: 0; } .metric-cards :global(.metrics > div:nth-child(n + 3)) { border-top: 1px solid var(--border); } }
-  @media (max-width: 639px) { .quality-details { padding: var(--space-4); } .sport-hero { flex-direction: column; align-items: stretch; gap: 1rem; } .hero-side { justify-items: start; } .hero-distance { text-align: left; border-top: 1px solid var(--sport-heading-border); padding-top: 1rem; } .hero-distance strong { font-size: 2.25rem; } .detail-workspace { padding: var(--space-4); } .metric-cards :global(.metrics) { gap: 0 var(--space-3); } .metric-cards :global(.metrics dt) { padding-left: var(--space-8); } .metric-cards :global(.metrics dd) { padding-left: 0; margin-top: var(--space-3); } .metric-cards :global(.metric-icon) { top: var(--space-1); transform: none; width: var(--space-6); height: var(--space-6); } .metric-cards :global(.metric-icon svg) { width: var(--space-4); height: var(--space-4); } }
+  @media (max-width: 639px) { .quality-details { padding: var(--space-4); } .sport-hero { flex-direction: column; align-items: stretch; gap: 1rem; } .hero-side { justify-items: start; } .hero-distance { text-align: left; border-top: 1px solid var(--sport-heading-border); padding-top: 1rem; } .hero-distance strong { font-size: var(--text-title); font-weight: var(--weight-bold);} .detail-workspace { padding: var(--space-4); } .metric-cards :global(.metrics) { gap: 0 var(--space-3); } .metric-cards :global(.metrics dt) { padding-left: var(--space-8); } .metric-cards :global(.metrics dd) { padding-left: 0; margin-top: var(--space-3); } .metric-cards :global(.metric-icon) { top: var(--space-1); transform: none; width: var(--space-6); height: var(--space-6); } .metric-cards :global(.metric-icon svg) { width: var(--space-4); height: var(--space-4); } }
 </style>
