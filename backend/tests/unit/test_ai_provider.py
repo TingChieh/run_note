@@ -8,7 +8,7 @@ import pytest
 
 from app.core.config import Settings
 from app.core.errors import ApiError
-from app.modules.ai_reports.provider import OpenAIProvider, bounded_request, request_body
+from app.modules.ai_reports.provider import PROMPT, OpenAIProvider, bounded_request, request_body
 from app.modules.ai_reports.schema import AnalysisText
 
 SNAPSHOT = {
@@ -119,6 +119,16 @@ def test_vendor_specific_switches_are_not_sent_to_other_hosts(base_url):
     body = request_body(SNAPSHOT, "m", base_url=base_url)
     assert "enable_thinking" not in body and "thinking" not in body
     assert "response_format" not in body
+
+
+def test_prompt_instructions_do_not_teach_the_model_rejected_words():
+    # The model parrots wording from the prompt: "不得声称两者对应" made it write "两者",
+    # which the qualitative-only validator rejects. Only the lines that deliberately name
+    # forbidden words (or contain unavoidable ones such as 唯一/百分比) may carry them.
+    named = ("你是跑步数据解释助手", "严格只写定性文字", "任何数字字符和汉字数字", "“一个周区间”")
+    for line in PROMPT.splitlines():
+        rejected = [c for c in line if (c.isnumeric() and c not in "参參") or c in "两兩半"]
+        assert not rejected or line.startswith(named), line
 
 
 def test_truncated_response_is_rejected_even_if_json_is_parseable(monkeypatch):
