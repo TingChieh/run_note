@@ -241,7 +241,9 @@ python3 ops/acceptance-check.py --loopback-port 3100 --domain run.example.com --
 ```bash
 ssh -t <服务器> 'sudo RUNNOTE_INSTANCE=production /opt/run-note-production/current/ops/offsite.sh setup'
 ```
-它依次：询问 Account ID / 存储桶 / 访问密钥（密钥为隐藏输入）→ 在服务器生成 restic 密码（`restic.password`，0640 root:postgres）→ `restic init` → **成功后**才把设置写入 `backup.env`（失败不留半成品）→ 上传首份备份 → 立即做一次**取回验证**（`verify`）→ 在终端显示一次加密密码，请存入密码管理器后回车。已配置过的实例会拒绝重复执行。
+它依次：询问 Account ID / 存储桶 / 访问密钥（密钥为隐藏输入）→ 在服务器生成 restic 密码（`<备份目录>/restic.password`，0600、属 postgres；**不放在 `/etc/run-note-*`**，因为该目录只有 root 和应用组能进入，夜间上传和取回验证是以 postgres 身份运行的，读不到那里的文件）→ `restic init` → **成功后**才把设置写入 `backup.env`（失败不留半成品）→ 上传首份备份 → 立即做一次**取回验证**（`verify`）→ 在终端显示一次加密密码，请存入密码管理器后回车。已配置过的实例会拒绝重复执行。
+
+如果 `setup` 在创建仓库之后、首份备份完成之前中断，用 `offsite.sh finish` 续上（它也会把留在配置目录里的旧位置密码文件移到上述位置），不要重新 `setup`。
 
 此后每晚的 `backup.sh` 自动上传（见上节保留策略）。
 

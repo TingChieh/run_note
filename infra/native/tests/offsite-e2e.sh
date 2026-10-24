@@ -58,7 +58,7 @@ step "2. a failed init leaves the configuration untouched"
 expect_fail "repository location that cannot exist" env RUNNOTE_OFFSITE_INPUT=/dev/null \
   "$ops/offsite.sh" setup --repository "$WORK/blocker/sub"
 ! grep -q '^RESTIC_REPOSITORY=' "$envfile" || fail "a failed setup wrote the repository setting"
-[ ! -e "$WORK/etc/restic.password" ] || fail "a failed init left a password file behind"
+[ ! -e "$WORK/backups/restic.password" ] || fail "a failed init left a password file behind"
 
 step "3. setup: init, first backup, off-site retrieval check with a real restore drill"
 reset_env
@@ -70,11 +70,11 @@ grep -q "^RESTIC_REPOSITORY=$repo\$" "$envfile" || fail "repository not written"
 grep -q '^RESTIC_PASSWORD_FILE=' "$envfile" || fail "password file not referenced"
 grep -q '^unrelated=kept$' "$envfile" || fail "existing settings were lost"
 grep -q '^PGDATABASE=rn_offsite$' "$envfile" || fail "PGDATABASE was lost"
-[ -s "$WORK/etc/restic.password" ] || fail "no password file"
-[ "$(wc -c < "$WORK/etc/restic.password" | tr -d ' ')" -ge 41 ] || fail "password too short"
-perm="$(python3 -c 'import os,sys;print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' "$WORK/etc/restic.password")"
-[ "$perm" = 0o640 ] || fail "password file mode is $perm, expected 0o640"
-! grep -q "$(cat "$WORK/etc/restic.password")" "$WORK/setup.log" || fail "the password leaked into the log"
+[ -s "$WORK/backups/restic.password" ] || fail "no password file"
+[ "$(wc -c < "$WORK/backups/restic.password" | tr -d ' ')" -ge 41 ] || fail "password too short"
+perm="$(python3 -c 'import os,sys;print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' "$WORK/backups/restic.password")"
+[ "$perm" = 0o600 ] || fail "password file mode is $perm, expected 0o600"
+! grep -q "$(cat "$WORK/backups/restic.password")" "$WORK/setup.log" || fail "the password leaked into the log"
 grep -q 'restore drill' "$WORK/setup.log" || fail "setup did not run the restore drill on the off-site copy"
 grep -q 'off-site copy verified' "$WORK/setup.log" || fail "no verification line"
 
@@ -84,10 +84,10 @@ expect_fail "already configured" env RUNNOTE_OFFSITE_INPUT=/dev/null "$ops/offsi
 
 step "5. verify passes; nightly backup uploads; verify sees the new snapshot"
 "$ops/offsite.sh" verify || fail "verify failed on a healthy repository"
-before="$(RESTIC_PASSWORD_FILE="$WORK/etc/restic.password" restic -r "$repo" snapshots --json | python3 -c 'import json,sys;print(len(json.load(sys.stdin)))')"
+before="$(RESTIC_PASSWORD_FILE="$WORK/backups/restic.password" restic -r "$repo" snapshots --json | python3 -c 'import json,sys;print(len(json.load(sys.stdin)))')"
 python3 "$ops/envfile.py" exec "$envfile" -- env RESTIC_CACHE_DIR="$WORK/cache" "$ops/backup.sh" --label nightly >/dev/null 2>&1 \
   || fail "nightly backup with off-site failed"
-after="$(RESTIC_PASSWORD_FILE="$WORK/etc/restic.password" restic -r "$repo" snapshots --json | python3 -c 'import json,sys;print(len(json.load(sys.stdin)))')"
+after="$(RESTIC_PASSWORD_FILE="$WORK/backups/restic.password" restic -r "$repo" snapshots --json | python3 -c 'import json,sys;print(len(json.load(sys.stdin)))')"
 [ "$after" -gt "$before" ] || fail "nightly backup did not add a snapshot ($before -> $after)"
 "$ops/offsite.sh" verify || fail "verify failed after the nightly upload"
 
@@ -104,8 +104,31 @@ path, repo = sys.argv[1:3]
 text = re.sub(r"^RESTIC_REPOSITORY=.*$", "RESTIC_REPOSITORY=" + repo, open(path).read(), flags=re.M)
 open(path, "w").write(text)
 PY
-RESTIC_PASSWORD_FILE="$WORK/etc/restic.password" restic init -r "$WORK/repo.empty" >/dev/null
+RESTIC_PASSWORD_FILE="$WORK/backups/restic.password" restic init -r "$WORK/repo.empty" >/dev/null
 expect_fail "repository with no snapshot" "$ops/offsite.sh" verify
 grep -q 'no snapshot' "$WORK/last.out" || fail "empty repository not reported as such"
+
+step "7. finish: a password file left in the root-only config directory is moved where postgres can read it"
+python3 - "$envfile" "$repo" <<'PY'
+import re, sys
+path, repo = sys.argv[1:3]
+text = re.sub(r"^RESTIC_REPOSITORY=.*$", "RESTIC_REPOSITORY=" + repo, open(path).read(), flags=re.M)
+open(path, "w").write(text)
+PY
+mv "$WORK/backups/restic.password" "$WORK/etc/restic.password"
+python3 - "$envfile" "$WORK/etc/restic.password" <<'PY'
+import re, sys
+path, pw = sys.argv[1:3]
+text = re.sub(r"^RESTIC_PASSWORD_FILE=.*$", "RESTIC_PASSWORD_FILE=" + pw, open(path).read(), flags=re.M)
+open(path, "w").write(text)
+PY
+printf '\n' > "$WORK/answers"
+RUNNOTE_OFFSITE_INPUT="$WORK/answers" "$ops/offsite.sh" finish 2>"$WORK/finish.log" \
+  || { cat "$WORK/finish.log" >&2; fail "finish failed"; }
+[ -s "$WORK/backups/restic.password" ] || fail "finish did not move the password file"
+[ ! -e "$WORK/etc/restic.password" ] || fail "the old password file is still in the config directory"
+grep -q "^RESTIC_PASSWORD_FILE=$WORK/backups/restic.password\$" "$envfile" || fail "backup.env still points at the old password file"
+grep -q 'off-site copy verified' "$WORK/finish.log" || fail "finish did not verify"
+"$ops/offsite.sh" verify || fail "verify failed after finish"
 
 echo "=== ALL OFFSITE E2E STEPS PASSED" >&2
