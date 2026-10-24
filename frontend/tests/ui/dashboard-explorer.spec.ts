@@ -309,3 +309,78 @@ test('record details fade in without replacing the map and respect reduced motio
   await expect(region.getByTestId('route-map-ready')).toBeVisible();
   expect(await page.evaluate(()=>(window as unknown as {detailFades:number}).detailFades)).toBe(fades);
 });
+
+test('history strip starts flush left and parks paging arrows beside the cards', async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await explorer(page);
+  const region = page.getByRole('region', { name: '运动足迹', exact: true });
+  const strip = region.locator('.activity-strip');
+  const prev = region.getByRole('button', { name: '向左查看更早的记录', exact: true });
+  const next = region.getByRole('button', { name: '向右查看更多记录', exact: true });
+  await expect(region.getByRole('button', { name: '选择运动 运动 1', exact: true })).toBeVisible();
+  const measure = () => region.evaluate(root => {
+    const scroller = root.querySelector('.activity-strip') as HTMLElement;
+    const stripBox = scroller.getBoundingClientRect();
+    const cards = [...root.querySelectorAll('.history-card')].map(el => el.getBoundingClientRect());
+    const buttons = [...root.querySelectorAll('.strip-page')].map(el => {
+      const box = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      return {
+        name: el.getAttribute('aria-label') ?? '',
+        hidden: style.display === 'none' || style.visibility === 'hidden',
+        box,
+      };
+    });
+    const visibleCards = cards.flatMap(card => {
+      const left = Math.max(card.left, stripBox.left);
+      const right = Math.min(card.right, stripBox.right);
+      const top = Math.max(card.top, stripBox.top);
+      const bottom = Math.min(card.bottom, stripBox.bottom);
+      return right - left > 1 && bottom - top > 1 ? [{ left, right, top, bottom }] : [];
+    });
+    const overlaps = (box: DOMRect, card: { left: number; right: number; top: number; bottom: number }) => box.left < card.right - 0.5 && box.right > card.left + 0.5 && box.top < card.bottom - 0.5 && box.bottom > card.top + 0.5;
+    const visible = buttons.filter(button => !button.hidden);
+    return {
+      scrollLeft: scroller.scrollLeft,
+      inset: cards[0].left - stripBox.left,
+      covered: visible.some(button => visibleCards.some(card => overlaps(button.box, card))),
+      prevHidden: buttons.find(button => button.name.includes('向左'))?.hidden ?? true,
+      nextHidden: buttons.find(button => button.name.includes('向右'))?.hidden ?? true,
+      prevOutside: visible.filter(button => button.name.includes('向左')).every(button => button.box.right <= stripBox.left + 1),
+      nextOutside: visible.filter(button => button.name.includes('向右')).every(button => button.box.left >= stripBox.right - 1),
+      lastFits: cards.at(-1)!.right <= stripBox.right + 2,
+    };
+  });
+  for (const [width, height] of [[1710, 1112], [1440, 1000]] as const) {
+    await page.setViewportSize({ width, height });
+    await strip.evaluate(el => { el.scrollLeft = 0; });
+    await expect.poll(async () => (await measure()).scrollLeft).toBeLessThan(8);
+    const start = await measure();
+    expect(start.inset, `${width} first card inset`).toBeLessThan(8);
+    expect(start.prevHidden, `${width} left arrow at start`).toBe(true);
+    expect(start.nextHidden, `${width} right arrow at start`).toBe(false);
+    expect(start.covered, `${width} arrow covers a card`).toBe(false);
+    expect(start.nextOutside, `${width} right arrow beside the strip`).toBe(true);
+    await region.locator('.strip-frame').screenshot({ path: testInfo.outputPath(`history-strip-${width}-start.png`) });
+    await next.click();
+    await expect.poll(async () => (await measure()).scrollLeft).toBeGreaterThan(8);
+    const paged = await measure();
+    expect(paged.prevHidden, `${width} left arrow after paging`).toBe(false);
+    expect(paged.covered, `${width} arrow covers a card after paging`).toBe(false);
+    expect(paged.prevOutside, `${width} left arrow beside the strip`).toBe(true);
+    expect(paged.nextOutside, `${width} right arrow beside the strip`).toBe(true);
+    await region.locator('.strip-frame').screenshot({ path: testInfo.outputPath(`history-strip-${width}-paged.png`) });
+    await strip.evaluate(el => { el.scrollLeft = el.scrollWidth; });
+    await expect.poll(async () => (await measure()).nextHidden).toBe(true);
+    const end = await measure();
+    expect(end.scrollLeft, `${width} scrolled`).toBeGreaterThan(8);
+    expect(end.prevHidden, `${width} left arrow at end`).toBe(false);
+    expect(end.covered, `${width} arrow covers a card at end`).toBe(false);
+    expect(end.prevOutside, `${width} left arrow beside the strip at end`).toBe(true);
+    expect(end.lastFits, `${width} last card inside the strip`).toBe(true);
+    await region.locator('.strip-frame').screenshot({ path: testInfo.outputPath(`history-strip-${width}-end.png`) });
+    await strip.evaluate(el => { el.scrollLeft = 0; });
+    await expect.poll(async () => (await measure()).prevHidden).toBe(true);
+    expect((await measure()).scrollLeft, `${width} restored`).toBeLessThan(8);
+  }
+});

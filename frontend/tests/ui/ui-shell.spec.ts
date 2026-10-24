@@ -284,43 +284,68 @@ test('successful background session checks keep loaded content and drafts visibl
 
 test('sidebar subtitle stays against the logo at every desktop height', async ({ page }) => {
   await page.goto('/');
-  for (const height of [1000, 900, 800]) {
+  for (const height of [1080, 900, 768, 720]) {
     await page.setViewportSize({ width: 1440, height });
     const gap = await page.evaluate(() => {
       const brand = document.querySelector('.desktop-brand')!.getBoundingClientRect();
       const caption = document.querySelector('.nav-caption')!.getBoundingClientRect();
       const nav = document.querySelector('.app-sidebar nav')!.getBoundingClientRect();
-      return { logo: caption.top - brand.bottom, beforeNav: nav.top - caption.bottom };
+      return { logo: caption.top - brand.bottom, beforeNav: nav.top - caption.bottom, caption: getComputedStyle(document.querySelector('.nav-caption')!).display };
     });
+    expect(gap.caption, `caption at ${height}`).not.toBe('none');
     expect(gap.logo, `logo gap at ${height}`).toBeGreaterThanOrEqual(2);
     expect(gap.logo, `logo gap at ${height}`).toBeLessThanOrEqual(8);
     expect(gap.beforeNav, `nav gap at ${height}`).toBeGreaterThan(gap.logo);
   }
 });
 
-test('compact goal and complete desktop navigation fit common laptop heights', async ({ page }) => {
+test('signed-in sidebar keeps one layout and scrolls instead of compressing', async ({ page }) => {
   await page.route('**/api/v1/me/running-goals', route => route.fulfill({ json: { data: { week: 5, month: null, year: null }, error: null } }));
   await login(page);
   const goal = page.getByRole('region', { name: '跑量目标' });
   await expect(goal.locator('.goal-distance')).toBeVisible();
-  for (const [width, height] of [[1366, 768], [1440, 900], [1280, 800], [1280, 720]]) {
+  await expect(goal.getByLabel('目标周期')).toBeVisible();
+  const sidebar = page.locator('.app-sidebar');
+  const sizes = [[1280, 720], [1366, 768], [1536, 864], [1920, 1080]] as const;
+  const linkHeights: number[] = [];
+  for (const [width, height] of sizes) {
     await page.setViewportSize({ width, height });
-    const size = await page.locator('.app-sidebar').evaluate(el => ({ client: el.clientHeight, scroll: el.scrollHeight }));
-    expect(size.scroll, `${width}×${height} sidebar`).toBeLessThanOrEqual(size.client);
-    expect((await goal.boundingBox())!.height).toBeLessThanOrEqual(190);
-    const spacing = await page.locator('.nav-account').evaluate(el => {
-      const kids = [...el.children].filter(node => node instanceof HTMLElement && getComputedStyle(node).display !== 'none' && !node.hasAttribute('hidden'));
+    await sidebar.evaluate(el => { el.scrollTop = 0; });
+    const measure = await sidebar.evaluate(el => {
+      const caption = el.querySelector('.nav-caption');
+      const links = [...el.querySelectorAll('nav .nav-link')].map(link => Math.round(link.getBoundingClientRect().height));
+      const account = el.querySelector('.nav-account')!;
+      const kids = [...account.children].filter(node => node instanceof HTMLElement && getComputedStyle(node).display !== 'none' && !node.hasAttribute('hidden'));
       const gaps = [];
       for (let index = 1; index < kids.length; index += 1) gaps.push(kids[index].getBoundingClientRect().top - kids[index - 1].getBoundingClientRect().bottom);
-      const logout = el.querySelector('button');
-      const sidebar = el.closest('.app-sidebar')!;
-      return { gaps, bottom: logout ? sidebar.getBoundingClientRect().bottom - logout.getBoundingClientRect().bottom : 0 };
+      const logout = account.querySelector('button')!;
+      el.scrollTop = el.scrollHeight;
+      const bottom = el.getBoundingClientRect().bottom - logout.getBoundingClientRect().bottom;
+      return {
+        caption: caption ? getComputedStyle(caption).display : 'missing',
+        links,
+        gaps,
+        bottom,
+        scrolls: el.scrollHeight > el.clientHeight + 1,
+        overflowX: el.scrollWidth <= el.clientWidth + 1,
+      };
     });
-    expect(Math.min(...spacing.gaps), `${width}×${height} account gaps`).toBeGreaterThanOrEqual(8);
-    expect(spacing.bottom, `${width}×${height} logout inset`).toBeGreaterThanOrEqual(8);
-    await expect(page.getByRole('button', { name: '退出登录', exact: true })).toBeInViewport();
-    await page.screenshot({ path: test.info().outputPath(`compact-sidebar-${width}-${height}.png`) });
+    expect(measure.caption, `${width}×${height} caption`).not.toBe('none');
+    expect(measure.links.length, `${width}×${height} links`).toBeGreaterThan(0);
+    for (const link of measure.links) expect(link, `${width}×${height} link`).toBe(56);
+    expect(Math.min(...measure.gaps), `${width}×${height} account gaps`).toBeGreaterThanOrEqual(8);
+    expect(measure.bottom, `${width}×${height} logout inset`).toBeGreaterThanOrEqual(24);
+    expect(measure.overflowX, `${width}×${height} horizontal clip`).toBe(true);
+    // 864 still fits the 1080 baseline; only shorter windows scroll inside the sidebar.
+    if (height <= 768) expect(measure.scrolls, `${width}×${height} should scroll`).toBe(true);
+    if (height >= 1080) expect(measure.scrolls, `${width}×${height} should fit`).toBe(false);
+    linkHeights.push(measure.links[0]);
+    await sidebar.evaluate(el => { el.scrollTop = 0; });
+    await sidebar.screenshot({ path: test.info().outputPath(`sidebar-${width}x${height}-top.png`) });
+    await sidebar.evaluate(el => { el.scrollTop = el.scrollHeight; });
+    await sidebar.screenshot({ path: test.info().outputPath(`sidebar-${width}x${height}-bottom.png`) });
   }
+  expect(new Set(linkHeights).size).toBe(1);
 });
 
 test('mobile navigation pops open and closes without losing its instance or keyboard focus', async ({ page }) => {
