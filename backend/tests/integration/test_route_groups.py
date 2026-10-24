@@ -319,3 +319,76 @@ def test_a_run_that_matches_two_groups_merges_them_into_the_earliest(clients):  
     assert set(found.values()) == {earliest}
     assert set(found) == {first, second, third}
     assert group_ids(app, owner) == {earliest}
+
+
+def read(client, path):
+    response = client.get(path)
+    assert response.status_code == 200, response.text
+    return response.json()["data"]
+
+
+def test_listing_shows_only_routes_run_at_least_twice_with_aggregates(clients):  # noqa: F811
+    a, b, _, app = clients
+    quiet(a, b)
+    owner = register(a)
+    add_run(app, owner, ring(), day=date(2025, 8, 1), seconds=400, title="早晨")
+    add_run(app, owner, ring(reverse=True), day=date(2025, 8, 8), seconds=360, distance_m=1210)
+    add_run(app, owner, ring(east_m=900), day=date(2025, 8, 9))  # a single run: not listed
+    fill(app)
+    data = read(a, "/api/v1/routes/groups")
+    assert (data["total"], data["limit"], data["offset"], data["building"]) == (1, 20, 0, False)
+    item = data["items"][0]
+    assert item["run_count"] == 2
+    assert (item["first_date"], item["last_date"]) == ("2025-08-01", "2025-08-08")
+    assert float(item["best_duration_seconds"]) == 360
+    assert float(item["avg_duration_seconds"]) == 380
+    assert len(item["shape"]) == 1 and len(item["shape"][0]) >= 4
+    assert set(item) == {
+        "id",
+        "run_count",
+        "first_date",
+        "last_date",
+        "median_distance_m",
+        "best_duration_seconds",
+        "avg_duration_seconds",
+        "best_pace_seconds_per_km",
+        "avg_pace_seconds_per_km",
+        "shape",
+    }
+
+
+def test_detail_lists_runs_newest_first_and_other_owners_get_404(clients):  # noqa: F811
+    a, b, _, app = clients
+    quiet(a, b)
+    owner = register(a)
+    register(b)
+    first = add_run(app, owner, ring(), day=date(2025, 9, 1), title="第一次")
+    second = add_run(app, owner, ring(), day=date(2025, 9, 2), title="第二次")
+    fill(app)
+    group = read(a, "/api/v1/routes/groups")["items"][0]["id"]
+    detail = read(a, f"/api/v1/routes/groups/{group}")
+    assert [run["activity_id"] for run in detail["runs"]] == [second, first]
+    assert detail["runs"][0]["title"] == "第二次" and 0 < detail["runs"][0]["coverage"] <= 1
+    response = b.get(f"/api/v1/routes/groups/{group}")
+    assert response.status_code == 404 and response.json()["error"]["code"] == "ROUTE_NOT_FOUND"
+    assert a.get(f"/api/v1/routes/groups/{uuid4()}").status_code == 404
+
+
+def test_listing_pages_sorts_and_flags_unprocessed_runs_as_building(clients):  # noqa: F811
+    a, b, _, app = clients
+    quiet(a, b)
+    owner = register(a)
+    for day in (1, 2, 3):
+        add_run(app, owner, ring(), day=date(2025, 10, day))
+    for day in (4, 5):
+        add_run(app, owner, ring(east_m=900), day=date(2025, 10, day), distance_m=1700)
+    assert read(a, "/api/v1/routes/groups")["building"] is True  # nothing processed yet
+    fill(app)
+    by_count = read(a, "/api/v1/routes/groups?sort=count")["items"]
+    assert [item["run_count"] for item in by_count] == [3, 2]
+    by_distance = read(a, "/api/v1/routes/groups?sort=distance")["items"]
+    assert [item["run_count"] for item in by_distance] == [2, 3]
+    page = read(a, "/api/v1/routes/groups?limit=1&offset=1")
+    assert (page["total"], len(page["items"])) == (2, 1)
+    assert a.get("/api/v1/routes/groups?sort=nope").status_code == 422
+    assert a.get("/api/v1/routes/groups?owner=x").status_code == 422

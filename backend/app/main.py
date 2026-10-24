@@ -21,6 +21,7 @@ from app.modules.gpx.body_limit import GpxBodyLimit
 from app.modules.gpx.router import router as gpx_router
 from app.modules.health.router import router
 from app.modules.mifitness.router import router as mifitness_router
+from app.modules.route_groups.router import router as route_groups_router
 from app.modules.running_goals.router import router as running_goals_router
 from app.modules.sharing.router import router as sharing_router
 from app.modules.showcase.router import named_router as named_showcase_router
@@ -66,6 +67,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(activities_router)
     app.include_router(statistics_router)
     app.include_router(footprints_router)
+    app.include_router(route_groups_router)
     app.include_router(auth_router)
     app.include_router(users_router)
     app.include_router(running_goals_router)
