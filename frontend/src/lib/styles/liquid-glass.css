@@ -174,8 +174,8 @@
   .sport-theme :is(button:where(:not(.wall-card)):not(.history-card):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary) {
     background-color: var(--button-glass-fill) !important;
   }
-  /* Frost only the few primary actions, and only until their own lens takes over.
-     Ordinary controls use the static fill below so WebKit is not asked to blur every button. */
+  /* Pre-enhance frost for primary actions. WebKit must not blur every button; Firefox
+     moves the original blur onto .rn-glass-layer once a control is enhanced. */
   .sport-theme :is(button.bg-primary, .button-primary, button.save, button.apply-button, a.button-primary):not(.history-card):not(.wall-card):not(.rn-glass-control):not(.rn-glass-static) {
     -webkit-backdrop-filter: blur(14px) saturate(1.5);
     backdrop-filter: blur(14px) saturate(1.5);
@@ -231,7 +231,7 @@
 .rn-glass-shadow { box-shadow: inset 0 1px 0 color-mix(in srgb, var(--glass-edge) 45%, transparent), 0 .25rem .75rem color-mix(in srgb, var(--glass-shadow) 65%, transparent); }
 .rn-glass-tint { background: var(--button-glass-fill); transition: background-color var(--transition-control); }
 .rn-glass-control:not(:disabled):not([aria-disabled="true"]):hover > .rn-glass-surface .rn-glass-tint { background: var(--button-glass-hover); }
-/* Non-Blink static glass: an opaque tint plus an inset rim. No backdrop-filter. */
+/* WebKit static glass: an opaque tint plus an inset rim. No backdrop-filter. */
 .rn-glass-static > .rn-glass-surface .rn-glass-layer {
   background: none;
   -webkit-backdrop-filter: none !important;

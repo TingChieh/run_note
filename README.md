@@ -4,7 +4,7 @@
 
 当前采用固定站主展示与受管账号模式：访客无需登录即可浏览站主内容，管理员还可为其他用户开启 `/p/{username}` 完整个人展示。所有启用账号通过 `/admin` 登录本人工作区，只有配置站主能管理账号；注册关闭。现有 PostgreSQL/PostGIS 存储、GPX/TCX/小米运动健康导入、指标计算、地图图表与 AI 汇总保持原有实现。使用与本次验证见[用户管理与个人展示](docs/56-admin-users-personal-showcase.md)，原生部署模板见[部署基础](docs/55-single-owner-showcase.md)。历史阶段文档仅描述当时状态。
 
-浏览器基线是最近两个版本的 Chrome、Firefox 和 Safari，以及 iOS 17 及以上。液态折射只在 Chromium 上启用；Safari 与 Firefox 使用半透明底色和内描边的静态玻璃，避免同屏大量 `backdrop-filter`。iOS 16 及更早没有 Popover API，下拉、日期和底图选择会退回原生控件。
+浏览器基线是最近两个版本的 Chrome、Firefox 和 Safari，以及 iOS 17 及以上。液态折射只在 Chromium 上启用。Safari 使用半透明底色和内描边的静态玻璃，避免同屏大量 `backdrop-filter`；Firefox 保留原来的 `backdrop-filter` 模糊。大卡片不加模糊。iOS 16 及更早没有 Popover API，下拉、日期和底图选择会退回原生控件。
 
 ## 文档导航
 

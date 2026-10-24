@@ -56,10 +56,10 @@ export function liquidGlass(root: HTMLElement) {
       const copy = source ? span('rn-glass-copy') : null;
       if (copy) layer.append(copy);
       const copied = !!copy;
-      // Non-Blink backdrop URL filters do not exist. A blur on every control freezes WebKit,
-      // so only primary actions stay frosted and everything else uses the static CSS rim.
-      const frosted = !copied && engine !== 'blink' && keepsBlur(element);
-      const staticGlass = !copied && engine !== 'blink' && !frosted;
+      // Backdrop URL filters exist only in Chromium. A blur on every control freezes WebKit,
+      // so only its primary actions stay frosted. Firefox keeps the original CSS blur fallback.
+      const staticGlass = engine === 'webkit' && !copied && !keepsBlur(element);
+      const frosted = !copied && engine !== 'blink' && !staticGlass;
       if (staticGlass) element.classList.add('rn-glass-static');
       const glass = createGlass(layer, { mode: copied ? 'content' : 'backdrop', clip: true,
         ...optics(element), chroma: copied ? settings.chroma : 0, mapScale: 1, fallback: frosted ? fallback() : 'none' });
@@ -117,7 +117,7 @@ export function liquidGlass(root: HTMLElement) {
       const update = () => {
         geometry = '';
         if (!copied && engine !== 'blink') {
-          const filter = frosted ? fallback() : 'none';
+          const filter = staticGlass ? 'none' : fallback();
           layer.style.backdropFilter = filter; layer.style.setProperty('-webkit-backdrop-filter', filter);
         }
         if (element.matches(':disabled, [aria-disabled="true"]')) release();

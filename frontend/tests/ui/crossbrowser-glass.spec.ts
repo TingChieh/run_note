@@ -46,10 +46,14 @@ test('history cards stay sharp and thirty frames finish well under a second', as
   for (const card of await cards.all()) await expect(card).toHaveCSS('backdrop-filter', 'none');
   const arrow = page.getByRole('button', { name: '下一条运动记录' });
   await expect(arrow).toBeVisible();
-  if (browserName !== 'chromium') {
+  if (browserName === 'webkit') {
     await expect(arrow).toHaveClass(/rn-glass-static/);
     await expect(arrow.locator('.rn-glass-layer')).toHaveCSS('backdrop-filter', 'none');
     expect(await blurCount(page)).toBeLessThan(8);
+  }
+  if (browserName === 'firefox') {
+    await expect(arrow).not.toHaveClass(/rn-glass-static/);
+    await expect(arrow.locator('.rn-glass-layer')).toHaveCSS('backdrop-filter', /blur\(/);
   }
   if (browserName === 'webkit' && !isMobile) {
     const copy = page.locator('.app-sidebar nav .rn-moving-copy');
@@ -115,7 +119,7 @@ test('an open dialog keeps the page from scrolling underneath', async ({ page, i
   await expect(dialog).toBeHidden();
 });
 
-test('a height-only resize keeps the menu and a width change closes it', async ({ page, isMobile }) => {
+test('a height-only resize keeps the menu and a width change closes it', async ({ page, isMobile, browserName }) => {
   test.skip(isMobile, 'phones keep the platform select');
   await installActivities(page);
   await loginRunner(page);
@@ -126,6 +130,11 @@ test('a height-only resize keeps the menu and a width change closes it', async (
   const menu = page.getByRole('listbox', { name: '文件格式选项' });
   await expect(menu).toBeVisible();
   await expect(menu).toHaveCSS('opacity', '1');
+  if (browserName === 'firefox') await expect(menu).toHaveCSS('backdrop-filter', /blur\(/);
+  if (browserName === 'webkit') {
+    await expect(menu).toHaveClass(/rn-static-glass/);
+    await expect(menu).toHaveCSS('backdrop-filter', 'none');
+  }
   const size = page.viewportSize()!;
   await page.setViewportSize({ width: size.width, height: size.height - 140 });
   await expect(format).toHaveAttribute('aria-expanded', 'true');

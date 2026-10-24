@@ -1,9 +1,9 @@
 import { createGlass, engine } from '../vendor/liquidglass/liquid-glass.js';
 import { glassOptics, type GlassSettings } from './liquid-glass-settings.ts';
 
-/** Chromium refracts the menu. Other engines use the static CSS rim and must not add another blur. */
+/** Chromium refracts the menu. Firefox keeps the CSS blur. WebKit uses the static rim. */
 export function attachMenuGlass(panel: HTMLElement, settings: GlassSettings) {
-  if (engine === 'blink') {
+  if (engine !== 'webkit') {
     return createGlass(panel, {
       mode: 'backdrop', fit: true, radius: 24, ...glassOptics(settings, .7), chroma: 0,
       fallback: `blur(${16 + settings.blur}px) saturate(1.6)`,

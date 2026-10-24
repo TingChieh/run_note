@@ -124,4 +124,4 @@ Badge 有可见性/标签等局部形式，暂不统一状态与装饰。`title`
 
 地图覆盖控件的容器标记 `data-glass-stable`：共享 glass action 保留已有 SVG atlas/裁剪，用同一弹簧缩放已存在的材质表面，避免在 WebGL 背景上按压时逐帧替换 backdrop-filter 地址。按钮原生点击区域与文字不缩放；普通按钮继续使用原来的光学形变。该标记只作用于按钮增强，不改变菜单浮层或地图渲染。
 
-跨浏览器玻璃：`.history-card` 与 `.wall-card` 这类大卡片不加 `backdrop-filter`。Chromium 仍用 `backdrop-filter: url()` 折射；Safari / Firefox 只给主按钮留一层模糊，其余控件用 `.rn-glass-static` / `.rn-static-glass`（半透明底色加 inset 高光）。导航选中胶囊在 WebKit 上用裁切后的底色，不用 `filter: url()`。弹窗打开锁定页面滚动；菜单在视口高度变化时重新定位，只有宽度变化才关闭。触屏（`(hover: none) and (pointer: coarse)`）保留原生 select。不支持 `overflow-clip-margin` 时装饰层改为 `overflow: visible`。支持基线为 iOS 17+；没有 `showPopover` 时日期和底图退回原生控件。
+跨浏览器玻璃：`.history-card` 与 `.wall-card` 这类大卡片不加 `backdrop-filter`。Chromium 仍用 `backdrop-filter: url()` 折射。WebKit 只给主按钮留一层模糊，其余控件用 `.rn-glass-static` / `.rn-static-glass`（半透明底色加 inset 高光）。Firefox 保留原来的 `backdrop-filter` 模糊回退。导航选中胶囊在 WebKit 上用裁切后的底色，不用 `filter: url()`。弹窗打开锁定页面滚动；菜单在视口高度变化时重新定位，只有宽度变化才关闭。触屏（`(hover: none) and (pointer: coarse)`）保留原生 select。不支持 `overflow-clip-margin` 时装饰层改为 `overflow: visible`。支持基线为 iOS 17+；没有 `showPopover` 时日期和底图退回原生控件。
