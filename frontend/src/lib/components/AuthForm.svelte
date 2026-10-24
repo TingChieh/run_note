@@ -22,7 +22,7 @@
 </script>
 <svelte:head><title>{pageTitle(label, page.data.site)}</title></svelte:head>
 <section class="auth-card">
-  <div class="auth-intro"><p class="auth-eyebrow">RUNNOTE · 每一步都有意义</p><h1 class="text-3xl font-semibold">{label}</h1>
+  <div class="auth-intro"><p class="auth-eyebrow">RUNNOTE · 每一步都有意义</p><h1>{label}</h1>
   <p class="auth-lead">使用已启用账号的邮箱和密码登录。</p></div>
   {#if page.url.searchParams.has('next') || page.url.searchParams.get('reason') === 'changed'}
     <div class="mt-4"><FeedbackState kind="empty" title="请登录后继续。会话可能已过期或身份已发生变化。" /></div>
