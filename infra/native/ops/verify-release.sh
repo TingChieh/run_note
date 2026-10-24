@@ -31,14 +31,16 @@ with tarfile.open(sys.argv[1]) as t:
             print(n)
 ' "$tarball")"
 if [ -n "$junk" ]; then
-  fail "release contains macOS metadata files (._* / .DS_Store): $(printf '%s\n' "$junk" | wc -l | tr -d ' ') found, e.g. $(printf '%s\n' "$junk" | head -3 | tr '\n' ' ')"
+  fail "release contains macOS metadata files (._* / .DS_Store): $(printf '%s\n' "$junk" | wc -l | tr -d ' ') found, e.g. $(printf '%s\n' "$junk" | sed -n '1,3p' | tr '\n' ' ')"
 fi
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 tar -xzf "$tarball" -C "$work" --strip-components=1
 
-junk="$(find "$work" \( -name '._*' -o -name '.DS_Store' \) | head -3 | tr '\n' ' ')"
-[ -z "$junk" ] || fail "release contains macOS metadata files (._* / .DS_Store): $junk"
+junk="$(find "$work" \( -name '._*' -o -name '.DS_Store' \) -print | sed "s|^$work/||")" || true
+if [ -n "$junk" ]; then
+  fail "release contains macOS metadata files (._* / .DS_Store): $(printf '%s\n' "$junk" | wc -l | tr -d ' ') found, e.g. $(printf '%s\n' "$junk" | sed -n '1,3p' | tr '\n' ' ')"
+fi
 while IFS= read -r -d '' pyfile; do
   if [ "$(LC_ALL=C tr -d -c '\000' < "$pyfile" | wc -c | tr -d ' ')" -gt 0 ]; then
     fail "Python file contains NUL bytes: ${pyfile#"$work"/}"

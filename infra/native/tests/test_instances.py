@@ -340,9 +340,10 @@ OFFLINE_SCRIPTS = ("site-owner.py", "osm-places.py", "backfill-place-titles.py")
 def make_release_tree(root: Path) -> Path:
     """The layout build-release.sh ships: ops/ at the top, everything else under infra/native/."""
     release = root / "release"
-    shutil.copytree(OPS, release / "ops", ignore=shutil.ignore_patterns("__pycache__"))
+    junk = ("__pycache__", ".DS_Store", "._*")
+    shutil.copytree(OPS, release / "ops", ignore=shutil.ignore_patterns(*junk))
     shutil.copytree(
-        NATIVE, release / "infra" / "native", ignore=shutil.ignore_patterns("__pycache__", "tests")
+        NATIVE, release / "infra" / "native", ignore=shutil.ignore_patterns(*junk, "tests")
     )
     for stub in ("backend/app", "backend/migrations", "frontend/build", "scripts"):
         (release / stub).mkdir(parents=True, exist_ok=True)
@@ -497,12 +498,13 @@ class VerifyRelease(unittest.TestCase):
         self.assertIn("self-contained", result.stderr)
 
     def test_macos_metadata_and_nul_python_are_refused_and_named(self):
+        appledouble = b"\x00\x05\x16\x07" + b"\x00" * 96
         cases = {
-            "appledouble": ("backend/migrations/versions/._0001_x.py", b"\x00\x05\x16\x07" + b"\x00" * 96),
-            "ds_store": ("frontend/build/.DS_Store", b"Bud1"),
-            "nul_python": ("backend/app/broken.py", b"x = 1\x00\n"),
+            "appledouble": ("backend/migrations/versions/._0001_x.py", appledouble, "1 found"),
+            "ds_store": ("frontend/build/.DS_Store", b"Bud1", "1 found"),
+            "nul_python": ("backend/app/broken.py", b"x = 1\x00\n", "NUL bytes"),
         }
-        for name, (rel, data) in cases.items():
+        for name, (rel, data, text) in cases.items():
             with self.subTest(case=name):
                 shutil.rmtree(self.root / "release", ignore_errors=True)
                 release = make_release_tree(self.root)
@@ -510,7 +512,8 @@ class VerifyRelease(unittest.TestCase):
                 (release / rel).write_bytes(data)
                 result = self.verify(self.pack(release))
                 self.assertNotEqual(result.returncode, 0, result.stderr)
-                self.assertIn(Path(rel).name, result.stderr)
+                self.assertIn(rel, result.stderr)
+                self.assertIn(text, result.stderr)
 
     def test_a_clean_tree_with_ordinary_dotfiles_still_passes(self):
         release = make_release_tree(self.root)

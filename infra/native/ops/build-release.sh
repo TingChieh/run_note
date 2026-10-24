@@ -49,11 +49,10 @@ cp frontend/package.json "$root/frontend/"
 cp scripts/site-owner.py scripts/osm-places.py scripts/backfill-place-titles.py "$root/scripts/"
 cp -R infra/native "$root/infra/native"
 cp -R infra/native/ops "$root/ops"
-find "$root" \( -name __pycache__ -o -name '*.pyc' -o -name '.DS_Store' \) -prune -exec rm -rf {} +
+find "$root" \( -name __pycache__ -o -name '*.pyc' -o -name '._*' -o -name '.DS_Store' \) -prune -exec rm -rf {} +
 rm -rf "$root/infra/native/tests"
 # macOS metadata must never ship: AppleDouble companions (`._*`) are mostly NUL bytes and Alembic
-# would try to import `._0001_x.py`. Delete any stray ones (and .DS_Store) from the staged tree.
-find "$root" \( -name '._*' -o -name '.DS_Store' \) -exec rm -rf {} +
+# would try to import `._0001_x.py`; the find above removes them (and .DS_Store) from the staged tree.
 
 cat > "$root/RELEASE" <<META
 id=$id
