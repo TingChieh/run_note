@@ -133,6 +133,40 @@
           {#each activityPosterStyles as preset}
             <label class="poster-style" class:selected={style === preset.id}>
               <input type="radio" name="activity-poster-style" aria-label={preset.name} aria-describedby={`activity-poster-style-${preset.id}`} value={preset.id} bind:group={style} onchange={() => void render()} />
+              <svg viewBox="0 0 96 132" aria-hidden="true" focusable="false">
+                <rect class="mini-background" width="96" height="132" rx="6" />
+                {#if preset.id === 'trace'}
+                  <rect class="mini-primary" x="8" y="10" width="9" height="9" rx="2" /><rect class="mini-muted" x="21" y="13" width="24" height="3" rx="1" />
+                  <rect class="mini-ink" x="8" y="26" width="34" height="5" rx="1" />
+                  <path class="mini-route" d="M14 74 L30 52 L44 62 L60 38 L82 46" /><circle class="mini-start" cx="14" cy="74" r="3" /><circle class="mini-end" cx="82" cy="46" r="3" />
+                  <path class="mini-divider" d="M8 92H88" /><rect class="mini-ink" x="8" y="98" width="48" height="14" rx="1" />
+                  <rect class="mini-muted" x="8" y="120" width="22" height="3" rx="1" /><rect class="mini-muted" x="52" y="120" width="26" height="3" rx="1" />
+                {:else if preset.id === 'sport'}
+                  <rect class="mini-primary" x="0" y="0" width="96" height="86" rx="8" />
+                  <rect class="mini-primary-ink" x="8" y="10" width="26" height="4" rx="1" />
+                  <path class="mini-route-light" d="M18 52 L32 34 L46 42 L60 22 L80 30" />
+                  <rect class="mini-primary-ink" x="8" y="62" width="52" height="16" rx="1" />
+                  <rect class="mini-ink" x="8" y="96" width="40" height="5" rx="1" />
+                  <rect class="mini-muted" x="8" y="112" width="22" height="3" rx="1" /><rect class="mini-muted" x="52" y="112" width="26" height="3" rx="1" />
+                {:else if preset.id === 'ticket'}
+                  <rect class="mini-card" x="10" y="8" width="76" height="116" rx="5" />
+                  <path class="mini-heading" d="M10 13a5 5 0 0 1 5-5h66a5 5 0 0 1 5 5v18H10Z" />
+                  <rect class="mini-heading-ink" x="16" y="16" width="30" height="6" rx="1" />
+                  <path class="mini-route" d="M24 62 L36 46 L48 54 L60 38 L74 44" /><circle class="mini-start" cx="24" cy="62" r="2.5" /><circle class="mini-end" cx="74" cy="44" r="2.5" />
+                  <path class="mini-dash" d="M16 76H80" />
+                  <rect class="mini-ink" x="16" y="84" width="44" height="12" rx="1" />
+                  <rect class="mini-muted" x="16" y="104" width="16" height="3" rx="1" /><rect class="mini-ink" x="58" y="103" width="22" height="4" rx="1" />
+                  <rect class="mini-muted" x="16" y="112" width="16" height="3" rx="1" /><rect class="mini-ink" x="58" y="111" width="22" height="4" rx="1" />
+                {:else}
+                  <rect class="mini-primary" x="8" y="10" width="9" height="9" rx="2" /><rect class="mini-muted" x="21" y="13" width="24" height="3" rx="1" />
+                  <rect class="mini-primary" x="8" y="30" width="34" height="46" rx="2" />
+                  <rect class="mini-ink" x="8" y="82" width="42" height="12" rx="1" />
+                  {#each [0, 1, 2] as index}
+                    <path class="mini-divider" d={`M8 ${100 + index * 11}H88`} />
+                    <rect class="mini-muted" x="8" y={103 + index * 11} width="14" height="3" rx="1" /><rect class="mini-ink" x="58" y={103 + index * 11} width="30" height="4" rx="1" />
+                  {/each}
+                {/if}
+              </svg>
               <span class="poster-style-name">{preset.name}</span>
               <span id={`activity-poster-style-${preset.id}`} class="poster-help">{preset.description}</span>
             </label>
@@ -165,16 +199,17 @@
   @starting-style{dialog[open]{opacity:0;transform:translateY(1rem) scale(.97);}dialog[open]::backdrop{opacity:0;}}
   @media(prefers-reduced-motion:reduce){dialog,dialog::backdrop{transition:none;}}
   .poster-heading{display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);}.poster-heading h2{font-size:1.5rem;font-weight:650;}
-  .poster-workspace{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:var(--space-6);margin-top:var(--space-6);align-items:start;}
+  .poster-workspace{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:var(--space-6);margin-top:var(--space-6);align-items:start;}
   .poster-options{display:grid;gap:var(--space-4);min-width:0;}
   .poster-help,.poster-privacy{font-size:var(--text-small);color:var(--muted-foreground);overflow-wrap:anywhere;}.poster-privacy{padding-top:var(--space-2);border-top:1px solid var(--border);}
   .poster-group{min-width:0;margin:0;padding:0;border:0;}.poster-group legend{margin-bottom:var(--space-2);}
   .poster-appearance-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--space-2);}
   .poster-appearance-options label{display:flex;align-items:center;justify-content:center;gap:var(--space-2);padding:var(--space-2) var(--space-3);border:1px solid var(--border);border-radius:var(--radius-control);font-size:var(--text-small);cursor:pointer;}.poster-appearance-options label.selected{border-color:var(--primary);background:var(--primary-soft);}.poster-appearance-options label:has(input:focus-visible){outline:2px solid var(--ring);outline-offset:2px;}.poster-group:disabled label{opacity:.65;cursor:wait;}.poster-appearance-options input{margin:0;}
   .poster-style-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-2);}
-  .poster-style{position:relative;display:grid;gap:var(--space-1);min-width:0;padding:var(--space-3);padding-right:var(--space-8);border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface);cursor:pointer;}.poster-style.selected{border-color:var(--primary);background:var(--primary-soft);}.poster-style:has(input:focus-visible){outline:2px solid var(--ring);outline-offset:2px;}
-  .poster-style input{position:absolute;right:var(--space-2);top:var(--space-2);width:1rem;height:1rem;margin:0;}.poster-style-name{font-size:var(--text-small);font-weight:650;}
-  .poster-save{display:flex;flex-wrap:wrap;gap:var(--space-3);}.poster-preview{min-width:0;}.poster-preview img{display:block;width:100%;height:auto;border-radius:var(--radius-control);}
+  .poster-style{position:relative;display:grid;gap:var(--space-1);min-width:0;padding:var(--space-3);border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface);cursor:pointer;}.poster-style.selected{border-color:var(--primary);background:var(--primary-soft);}.poster-style:has(input:focus-visible){outline:2px solid var(--ring);outline-offset:2px;}
+  .poster-style input{position:absolute;right:var(--space-2);top:var(--space-2);width:1rem;height:1rem;margin:0;}.poster-style svg{width:100%;height:calc(var(--space-12) * 2);}.poster-style-name{font-size:var(--text-small);font-weight:650;}
+  .mini-background{fill:var(--background);}.mini-heading{fill:var(--sport-yellow);}.mini-heading-ink{fill:var(--sport-heading-ink);}.mini-primary{fill:var(--primary);}.mini-primary-ink{fill:var(--primary-foreground);}.mini-ink{fill:var(--foreground);}.mini-muted{fill:var(--muted-foreground);}.mini-divider{stroke:var(--border);}.mini-card{fill:var(--surface);stroke:var(--border);}.mini-dash{fill:none;stroke:var(--border);stroke-dasharray:3 2;}.mini-route,.mini-route-light{fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}.mini-route{stroke:var(--primary);}.mini-route-light{stroke:var(--sport-yellow);}.mini-start{fill:var(--success);}.mini-end{fill:var(--foreground);}
+  .poster-save{display:flex;flex-wrap:wrap;gap:var(--space-3);}.poster-preview{min-width:0;}.poster-preview{display:flex;justify-content:center;}.poster-preview img{display:block;width:auto;height:auto;max-width:100%;max-height:calc(100svh - 11rem);aspect-ratio:1080/1920;border-radius:var(--radius-control);}
   .poster-placeholder{min-height:24rem;display:flex;align-items:center;justify-content:center;padding:var(--space-6);border:1px dashed var(--border);border-radius:var(--radius-control);color:var(--muted-foreground);}
-  @media(max-width:639px){dialog{padding:var(--space-4);}.poster-workspace{grid-template-columns:minmax(0,1fr);gap:var(--space-4);}.poster-placeholder{min-height:12rem;}.poster-save>button{flex:1;}}
+  @media(max-width:639px){dialog{padding:var(--space-4);}.poster-preview img{max-height:none;}.poster-workspace{grid-template-columns:minmax(0,1fr);gap:var(--space-4);}.poster-placeholder{min-height:12rem;}.poster-save>button{flex:1;}}
 </style>

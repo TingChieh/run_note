@@ -24,6 +24,7 @@ from app.modules.gpx.normalization import derive, prepare_segments
 from app.modules.gpx.queries import edge_distances, line_wkt, route_distance
 from app.modules.gpx.worker import bounded_parse
 from app.modules.mifitness.model import MifitnessImport
+from app.modules.place_titles.queue import enqueue as enqueue_place_title
 from app.modules.tcx.model import TcxImport
 
 
@@ -268,6 +269,8 @@ def import_track(
                 db.add(imported)
                 db.flush()
                 point_count, segment_count = persist_segments(db, activity.id, derived.segments)
+                if not title:
+                    enqueue_place_title(db, owner, activity.id)
                 user.activity_data_version += 1
                 db.flush()
                 response = ImportView(

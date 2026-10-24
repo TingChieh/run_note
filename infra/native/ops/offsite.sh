@@ -3,6 +3,7 @@
 # retrieval check.
 #
 #   RUNNOTE_INSTANCE=NAME offsite.sh setup  [--repository REPO] [--reconfigure] [--no-drill]
+#   RUNNOTE_INSTANCE=NAME offsite.sh finish [--no-drill]
 #   RUNNOTE_INSTANCE=NAME offsite.sh verify [--max-age-hours N] [--no-drill]
 #
 # setup   Interactive, run once as root on the server (use `ssh -t`). Asks for the Cloudflare R2
@@ -13,6 +14,9 @@
 #         --repository REPO  use this restic repository instead of R2 (any S3 endpoint
 #                            "s3:https://host/bucket", or a local path); S3 keys are still asked
 #                            for when it starts with "s3:".
+# finish  Resumes a setup that created the repository but stopped before the first upload and
+#         check completed; also moves a password file left in the root-only config directory to
+#         where the database account can read it. Shows the password at the end.
 # verify  Proves the copy is usable, not merely present: `restic check`, the newest snapshot is
 #         recent, it is restored to a scratch directory, its checksum matches, and unless
 #         --no-drill is given the restored dump goes through restore-drill.sh (a real restore into
@@ -28,7 +32,9 @@ umask 077
 
 OPS_DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_KEYS='RESTIC_REPOSITORY|RESTIC_PASSWORD_FILE|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|AWS_DEFAULT_REGION'
-PASSWORD_FILE="$RUNNOTE_ETC/restic.password"
+# Not under $RUNNOTE_ETC: that directory is closed to the postgres account, which is the account
+# that runs the nightly upload and the retrieval check and must read this file.
+PASSWORD_FILE="$BACKUP_DIR/restic.password"
 
 # ask VAR "prompt" [secret]: read one answer from the terminal (hidden for secrets). Tests feed
 # answers, one per line, from the file named by RUNNOTE_OFFSITE_INPUT.
@@ -61,6 +67,18 @@ load_env() { # re-exec the caller once with backup.env loaded (PGDATABASE, RESTI
   load_backup_env "$0" "$@"
 }
 
+# Run a command as the database account with backup.env loaded. The file is read BEFORE dropping
+# privileges: its directory is root-only, exactly as when systemd loads it for the nightly unit.
+run_with_env_as_pg() {
+  local common=("RUNNOTE_INSTANCE=${RUNNOTE_INSTANCE:-}" RUNNOTE_BACKUP_ENV_LOADED=1
+    "RESTIC_CACHE_DIR=${RESTIC_CACHE_DIR:-$BACKUP_DIR/.restic-cache}")
+  if [ "$(id -u)" -eq 0 ]; then
+    python3 "$OPS_DIR/envfile.py" exec "$BACKUP_ENV" -- runuser -u postgres -- env "${common[@]}" "$@"
+  else
+    python3 "$OPS_DIR/envfile.py" exec "$BACKUP_ENV" -- env "${common[@]}" "$@"
+  fi
+}
+
 restic_env_defaults() {
   export RESTIC_CACHE_DIR="${RESTIC_CACHE_DIR:-$BACKUP_DIR/.restic-cache}"
   mkdir -p "$RESTIC_CACHE_DIR"
@@ -82,8 +100,8 @@ cmd_verify() {
   if [ "$(id -u)" -eq 0 ]; then
     local again=(verify --max-age-hours "$max_age")
     [ "$drill" -eq 1 ] || again+=(--no-drill)
-    exec runuser -u postgres -- env "RUNNOTE_INSTANCE=${RUNNOTE_INSTANCE}" \
-      python3 "$OPS_DIR/envfile.py" exec "$BACKUP_ENV" -- "$0" "${again[@]}"
+    run_with_env_as_pg "$0" "${again[@]}"
+    exit $?
   fi
   load_env verify "$@"
   : "${RESTIC_REPOSITORY:?off-site is not configured (RESTIC_REPOSITORY is empty in backup.env)}"
@@ -205,8 +223,9 @@ cmd_setup() {
     local pw
     pw="$(head -c 48 /dev/urandom | base64 | tr -d '\n=+/' | cut -c1-40)"
     [ "${#pw}" -eq 40 ] || die "could not generate a password"
-    ( umask 037; printf '%s\n' "$pw" > "$PASSWORD_FILE.new" )
-    if [ "$(id -u)" -eq 0 ]; then chown root:postgres "$PASSWORD_FILE.new"; fi
+    mkdir -p "$BACKUP_DIR"
+    ( umask 077; printf '%s\n' "$pw" > "$PASSWORD_FILE.new" )
+    if [ "$(id -u)" -eq 0 ]; then chown postgres "$PASSWORD_FILE.new"; fi
     mv "$PASSWORD_FILE.new" "$PASSWORD_FILE"
     unset pw
   fi
@@ -225,16 +244,20 @@ cmd_setup() {
   write_env "$repo" "$key_id" "$key_secret"
   unset key_id key_secret AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 
-  log "uploading a first backup"
-  as_pg env "RUNNOTE_INSTANCE=${RUNNOTE_INSTANCE:-}" "RESTIC_CACHE_DIR=$RESTIC_CACHE_DIR" \
-    python3 "$OPS_DIR/envfile.py" exec "$BACKUP_ENV" -- "$OPS_DIR/backup.sh" --label pre-offsite \
-    >&2 || die "first backup failed; the repository exists and is configured, rerun: offsite.sh verify"
+  finish_first_upload "$drill_flag"
+}
 
-  "$0" verify $drill_flag
+# First upload, retrieval check, and the one-time display of the password.
+finish_first_upload() { # $1 = "" or --no-drill
+  log "uploading a first backup"
+  run_with_env_as_pg "$OPS_DIR/backup.sh" --label pre-offsite >&2 \
+    || die "first backup failed; the repository is configured, rerun: offsite.sh finish"
+
+  "$0" verify ${1:+"$1"}
 
   if [ -t 2 ]; then
     {
-      printf '\n==== SAVE THIS NOW: the restic encryption password (shown once) ====\n'
+      printf '\n==== SAVE THIS NOW: the restic encryption password ====\n'
       cat "$PASSWORD_FILE"
       printf '==== Without it the off-site backups cannot be read. Store it in a password manager. ====\n'
     } >&2
@@ -245,8 +268,52 @@ cmd_setup() {
   log "off-site backup is configured and verified; nightly backups now upload automatically"
 }
 
+replace_env_key() { # $1 key, $2 value
+  local tmp
+  tmp="$(mktemp "$BACKUP_ENV.XXXXXX")"
+  { grep -Ev "^$1=" "$BACKUP_ENV" || true; } > "$tmp"
+  printf '%s=%s\n' "$1" "$2" >> "$tmp"
+  chmod 0640 "$tmp"
+  if [ "$(id -u)" -eq 0 ]; then chown root:postgres "$tmp"; fi
+  mv -f "$tmp" "$BACKUP_ENV"
+}
+
+# Resume after a setup that created the repository but stopped before the first upload finished
+# (or move an older installation's password file to where the database account can read it).
+cmd_finish() {
+  local drill_flag=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --no-drill) drill_flag="--no-drill" ;;
+      *) die "unknown option: $1" ;;
+    esac
+    shift
+  done
+  [ "$(id -u)" -eq 0 ] || [ -n "${RUNNOTE_OFFSITE_ALLOW_NONROOT:-}" ] || die "run finish as root"
+  [ -f "$BACKUP_ENV" ] || die "$BACKUP_ENV does not exist"
+  grep -Eq '^RESTIC_REPOSITORY=.' "$BACKUP_ENV" || die "off-site is not configured; run setup"
+  open_prompts
+  local current
+  current="$(sed -n 's/^RESTIC_PASSWORD_FILE=//p' "$BACKUP_ENV" | tail -n 1)"
+  if [ -z "$current" ] || [ ! -f "$current" ]; then die "the password file named in backup.env is missing"; fi
+  if [ "$current" != "$PASSWORD_FILE" ]; then
+    [ ! -e "$PASSWORD_FILE" ] || die "$PASSWORD_FILE already exists; not replacing it"
+    mkdir -p "$BACKUP_DIR"
+    ( umask 077; cat "$current" > "$PASSWORD_FILE.new" )
+    if [ "$(id -u)" -eq 0 ]; then chown postgres "$PASSWORD_FILE.new"; fi
+    mv "$PASSWORD_FILE.new" "$PASSWORD_FILE"
+    replace_env_key RESTIC_PASSWORD_FILE "$PASSWORD_FILE"
+    rm -f -- "$current"
+    log "moved the password file to $PASSWORD_FILE"
+  fi
+  mkdir -p "$BACKUP_DIR/.restic-cache"
+  if [ "$(id -u)" -eq 0 ]; then chown -R postgres "$BACKUP_DIR/.restic-cache"; fi
+  finish_first_upload "$drill_flag"
+}
+
 case "${1:-}" in
   setup) shift; cmd_setup "$@" ;;
   verify) shift; cmd_verify "$@" ;;
-  *) die "usage: offsite.sh setup|verify [options] (see the header of this file)" ;;
+  finish) shift; cmd_finish "$@" ;;
+  *) die "usage: offsite.sh setup|finish|verify [options] (see the header of this file)" ;;
 esac

@@ -18,3 +18,9 @@ describe('context resource mapping', () => {
   expect(contextPath(viewContext('/workspace/dashboard', true), '/dashboard')).toBe('/workspace/dashboard');
  });
 });
+describe('routes prefix', () => {
+ it('prefixes the frequent routes pages by context', () => {
+  expect(contextPath(viewContext('/p/runner/routes'), '/routes')).toBe('/p/runner/routes');
+  expect(contextPath(viewContext('/workspace/routes'), '/routes/abc')).toBe('/workspace/routes/abc');
+ });
+});

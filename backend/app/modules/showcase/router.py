@@ -16,6 +16,8 @@ from app.modules.footprints.provinces import province_summary
 from app.modules.footprints.schema import AllFootprintView
 from app.modules.footprints.service import footprints
 from app.modules.footprints.snapshot import read_all_footprints
+from app.modules.route_groups import service as route_groups
+from app.modules.route_groups.schema import RouteGroupDetail, RouteGroupList
 from app.modules.running_goals.schema import GoalsView
 from app.modules.showcase import service
 from app.modules.showcase.schema import (
@@ -191,6 +193,23 @@ def footprint_range(
     return envelope(
         request, service.footprint_view(footprints(db, owner.id, date_from, date_to, mode))
     )
+
+
+@router.get("/routes/groups", response_model=ApiResponse[RouteGroupList])
+def route_groups_listing(
+    request: Request,
+    db: DB,
+    owner: Owner,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0, le=1000000)] = 0,
+    sort: Literal["count", "recent", "distance"] = "count",
+):
+    return envelope(request, route_groups.list_groups(db, owner.id, limit, offset, sort))
+
+
+@router.get("/routes/groups/{identifier}", response_model=ApiResponse[RouteGroupDetail])
+def route_group_detail(identifier: UUID, request: Request, db: DB, owner: Owner):
+    return envelope(request, route_groups.group_detail(db, owner.id, identifier))
 
 
 @router.get("/ai-reports", response_model=ApiResponse[ShowcaseReportList])
