@@ -21,6 +21,25 @@
    - 结束时打印各类别写入数量，以及跳过数量与原因：`too_large`（原始顶点数超过 200,000）、`collapsed`（简化后塌缩）、`invalid`（几何无效或数据错误）、`too_small`（湖面积 < 10,000 m²、公园 < 5,000 m²）。
    - 熔断：已处理至少 100 个要素且无效比例超过 50% 时中止并回滚，避免把损坏的文件写进库。连接中断、超时等系统性错误不会被当作“无效要素”吞掉，而是中止并回滚。
 
+### 在生产服务器上运行
+
+两个脚本随每个发布包交付，位于 `current/scripts/`（与 `site-owner.py` 同处，由 `verify-release.sh` 检查存在、可执行、语法正确），不需要手工拷贝到暂存目录或建符号链接。运行方式与 `site-owner.py` 相同，从发布包根目录用服务账号并注入后端环境变量：
+
+```bash
+cd /opt/run-note-production/current && runuser -u run_note -- backend/.venv/bin/python ops/envfile.py exec /etc/run-note-production/backend.env -- backend/.venv/bin/python scripts/osm-places.py <文件.osm.pbf> --region <标签>
+```
+
+`<文件.osm.pbf>` 必须能被服务账号读取（脚本以该账号运行 osmium，放在 `/root` 下会失败）；导入需要交互终端，会要求键入数据库名确认。需要先在服务器安装 `osmium-tool`；`--apply` 前先备份。
+
+`backfill-place-titles.py` 的预览（不带 `--apply`）命令形式相同，不需要日志目录。**`--apply` 不能照搬预览的命令**：服务账号的 HOME 是实例根目录（`init-instance.sh` 以 `--home-dir` 指向实例根并带 `--no-create-home` 创建，目录归 root、不可写），脚本默认日志目录 `~/.local/state/run_note/place-titles` 无法创建，会在访问数据库前以“无法创建日志目录；未做任何更改”退出。做法：先以 root 在发布包之外建一个只有服务账号可用的日志目录，再用 `--log-dir` 指定（该目录必须已存在且服务账号可写）：
+
+```bash
+install -d -o run_note -g run_note -m 0700 /var/tmp/run-note-osm/place-title-logs
+cd /opt/run-note-production/current && runuser -u run_note -- backend/.venv/bin/python ops/envfile.py exec /etc/run-note-production/backend.env -- backend/.venv/bin/python scripts/backfill-place-titles.py --apply --log-dir /var/tmp/run-note-osm/place-title-logs
+```
+
+JSON 还原日志写在这个目录里；还原时把该目录里的日志文件路径交给 `--revert <日志文件>`（`--revert` 不能与 `--log-dir` 同用）。日志含真实活动 ID 与标题，必须保持私有：目录权限 700、日志文件 600，不要放进仓库。
+
 ### 新导入的跑步
 
 - GPX/TCX/小米运动健康导入时，如果没有用户标题，活动在导入事务内进入命名队列；后台 worker 在足迹快照和常跑路线归类之后给它改名。
@@ -72,6 +91,10 @@ backend/.venv/bin/python scripts/backfill-place-titles.py --revert <日志>
 评审修复后另跑：`test_place_titles.py` 32 passed，`test_route_groups.py`、`test_gpx_import.py`、`test_mifitness_import.py`、`test_footprint_snapshots.py` 合计 99 passed，均 0 failed、0 skipped，运行后无残留后端。`--apply --revert`、`--revert` 与 `--limit`/`--log-dir` 同用、无 tty 的 `--apply` 均在访问数据库前以 1 退出。
 
 上一行整目录的 1 个 skipped 是 `tests/integration/test_migrations.py` 中依赖 `TEST_SNAPSHOT_DATABASE_URL` 的用例（变量未设置），与本功能无关。开发期间还按任务记录过 `PATH` 中没有 osmium 时脚本打印中文提示并以 1 退出、`--apply` 在无 tty 或与 `--revert` 同用时在访问数据库前报错。
+
+### 发布包打包验证（2026-10-24）
+
+在隔离工作树用 `build-release.sh --allow-dirty` 构建发布包，`verify-release.sh` 通过；解压后 `scripts/` 下三个脚本均为可执行，从解压目录运行 `osm-places.py --help`、`backfill-place-titles.py --help` 正常打印用法（用的是主检出里后端虚拟环境的 Python：两个脚本在模块顶层导入 sqlalchemy 与 `app`，所以 `--help` 也需要装有后端依赖的 Python 环境），`backfill-place-titles.py --apply --revert x` 在访问数据库前以 1 退出。`unittest discover -s infra/native/tests` 101 个测试通过；新增的缺失/不可执行/语法错误用例在旧版 `verify-release.sh` 上失败。`ops-e2e.sh` 用临时集群跑完全部步骤。没有在任何服务器上运行这两个脚本。
 
 ### 未运行
 
