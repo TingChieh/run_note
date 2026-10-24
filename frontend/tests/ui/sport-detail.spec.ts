@@ -59,9 +59,12 @@ test('full device metrics and route stay compact on short desktops and narrow ph
   await page.locator('.detail-workspace').screenshot({ path: testInfo.outputPath('compact-detail-desktop.png'), animations: 'disabled' });
   for (const width of [320, 390, 768, 1024]) {
     await page.setViewportSize({ width, height: 900 });
-    const first = await metrics.locator(':scope > div').nth(0).boundingBox();
-    const second = await metrics.locator(':scope > div').nth(1).boundingBox();
-    expect(Math.abs(first!.y - second!.y)).toBeLessThan(2);
+    // The viewport change reflows asynchronously: wait for the first two cards to share a row.
+    await expect.poll(async () => {
+      const first = await metrics.locator(':scope > div').nth(0).boundingBox();
+      const second = await metrics.locator(':scope > div').nth(1).boundingBox();
+      return Math.abs(first!.y - second!.y);
+    }).toBeLessThan(2);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
   await page.setViewportSize({ width: 390, height: 900 });
