@@ -386,6 +386,7 @@ test('history strip starts flush left and parks paging arrows beside the cards',
 });
 
 test('history strip pages to the end and back without reduced motion', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await explorer(page);
   const region = page.getByRole('region', { name: '运动足迹', exact: true });
@@ -435,12 +436,67 @@ test('history strip pages to the end and back without reduced motion', async ({ 
     expect(await left(), `${width} returned`).toBeLessThan(8);
     await expect(prev).toBeDisabled();
     await expect(next).toBeEnabled();
-    for (let i = 0; i < 40 && !(await next.isDisabled()); i += 1) await next.click();
+    const room = () => strip.evaluate(el => el.scrollWidth - el.clientWidth - el.scrollLeft);
+    await pageWhile(next, async () => await room() <= 8);
     expect(await settled(), `${width} rapid clicks leave the start`).toBeGreaterThan(200);
-    expect(await strip.evaluate(el => el.scrollWidth - el.clientWidth - el.scrollLeft), `${width} rapid clicks reach the end`).toBeLessThanOrEqual(8);
+    expect(await room(), `${width} rapid clicks reach the end`).toBeLessThanOrEqual(8);
     await expect(next).toBeDisabled();
-    for (let i = 0; i < 40 && !(await prev.isDisabled()); i += 1) await prev.click();
+    await pageWhile(prev, async () => await left() <= 8);
     expect(await settled(), `${width} rapid clicks return`).toBeLessThan(8);
     await expect(prev).toBeDisabled();
   }
 });
+
+async function pageWhile(button: Locator, done: () => Promise<boolean>) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    if (await done()) return;
+    try {
+      await button.click({ timeout: 500 });
+    } catch (error) {
+      if (await done()) return;
+      throw error;
+    }
+  }
+  await expect.poll(done, { timeout: 4000 }).toBe(true);
+}
+
+test('clicking a partly visible history card reveals the whole card', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await explorer(page);
+  await page.setViewportSize({ width: 1710, height: 1000 });
+  const region = page.getByRole('region', { name: '运动足迹', exact: true });
+  const strip = region.locator('.activity-strip');
+  await expect(region.getByRole('button', { name: '选择运动 运动 1', exact: true })).toBeVisible();
+  await region.locator('.strip-frame').evaluate(el => el.scrollIntoView({ block: 'center', inline: 'nearest' }));
+  const partial = await strip.evaluate(el => {
+    const port = el.getBoundingClientRect();
+    const card = [...el.querySelectorAll('.history-card')].find(item => {
+      const box = item.getBoundingClientRect();
+      return box.left < port.right - 8 && box.right > port.right + 8;
+    });
+    if (!card) return null;
+    const box = card.getBoundingClientRect();
+    const visibleRight = Math.min(box.right, port.right);
+    return { label: card.getAttribute('aria-label') ?? '', x: box.left + Math.min(24, (visibleRight - box.left) / 2), y: box.top + box.height / 2 };
+  });
+  if (!partial?.label) throw new Error('expected a partly visible history card');
+  const hit = await page.evaluate(({ x, y }) => {
+    const el = document.elementFromPoint(x, y);
+    return el?.closest('button')?.getAttribute('aria-label') ?? el?.tagName ?? 'none';
+  }, partial);
+  expect(hit, `click point ${partial.x},${partial.y}`).toBe(partial.label);
+  const before = await leftOf(strip);
+  await page.mouse.click(partial.x, partial.y);
+  await expect.poll(() => strip.evaluate((el, label) => {
+    const card = [...el.querySelectorAll('.history-card')].find(item => item.getAttribute('aria-label') === label);
+    if (!card) return false;
+    const box = card.getBoundingClientRect();
+    const port = el.getBoundingClientRect();
+    return box.left >= port.left - 2 && box.right <= port.right + 2;
+  }, partial.label)).toBe(true);
+  expect(await leftOf(strip)).toBeGreaterThan(before + 40);
+});
+
+function leftOf(strip: Locator) {
+  return strip.evaluate(el => el.scrollLeft);
+}

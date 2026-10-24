@@ -86,13 +86,24 @@
   function revealSelection(force = false) {
     if (!strip) return;
     const button = strip.querySelector<HTMLButtonElement>(`[data-id="${selectedId}"]`);
-    if (!button) return;
-    const card = button.getBoundingClientRect(), viewport = strip.getBoundingClientRect();
-    if (!force && (userScrolling || card.right <= viewport.left + 1 || card.left >= viewport.right - 1)) return;
-    const delta = card.left < viewport.left ? card.left - viewport.left : card.right > viewport.right ? card.right - viewport.right : 0;
-    if (!delta) return;
+    const item = button?.closest('li');
+    if (!item) return;
+    const box = item.getBoundingClientRect(), port = strip.getBoundingClientRect();
+    const outside = box.right <= port.left + 1 || box.left >= port.right - 1;
+    const clipped = box.left < port.left - 1 || box.right > port.right + 1;
+    if (!force && (userScrolling || !clipped || outside)) return;
+    if (!clipped && !outside) return;
+    // A short nudge stays inside the proximity range and snaps back. Land on this card's snap start.
+    const max = Math.max(0, strip.scrollWidth - strip.clientWidth);
+    const target = Math.min(max, Math.max(0, strip.scrollLeft + box.left - port.left));
+    if (Math.abs(strip.scrollLeft - target) < 1) return;
+    scrollTarget = null;
     adjustingSelection = true;
-    strip.scrollLeft += delta;
+    const snap = strip.style.scrollSnapType;
+    strip.style.scrollSnapType = 'none';
+    strip.scrollLeft = target;
+    void strip.offsetWidth;
+    strip.style.scrollSnapType = snap;
     adjustingSelection = false;
   }
   $effect(() => {
