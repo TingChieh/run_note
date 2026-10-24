@@ -228,6 +228,8 @@
   .page-actions { flex-shrink: 0; }
   .app-footer { width: 100%; max-width: var(--content-width); margin-inline: auto; display: flex; flex-wrap: wrap; gap: var(--space-3); padding: var(--space-6) clamp(1rem, 3vw, 3rem); color: var(--muted-foreground); font-size: var(--text-caption); }
   .app-footer span:first-child { font-weight: var(--weight-semibold); }
+  .app-footer-link { margin-inline-start: auto; color: inherit; text-decoration: underline; text-underline-offset: .2em; }
+  .app-footer-link:hover { color: var(--foreground); }
   .public-shell { display: flex; flex-direction: column; min-height: 100dvh; }
   .public-shell .content-column { min-height: 0; flex: 1; }
   .public-header { max-width: var(--content-width); padding: var(--space-6) clamp(1rem, 3vw, 3rem); margin: auto; display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
