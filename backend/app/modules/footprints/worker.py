@@ -12,6 +12,7 @@ from app.modules.footprints.snapshot import (
     REFRESH_INTERVAL,
     build_user_snapshot,
 )
+from app.modules.place_titles.service import fill_place_titles
 from app.modules.route_groups.groups import fill_route_groups
 from app.modules.users.model import User
 
@@ -99,6 +100,11 @@ def run_scan(session_factory, now, expected_revision, *, limit=10, stop_event=No
     except Exception as error:
         # Reads work without it; the next scan retries without leaking details.
         logger.warning("Route group fill unavailable (%s)", type(error).__name__)
+    try:
+        fill_place_titles(session_factory, stop_event=stop_event)
+    except Exception as error:
+        # Titles stay pending and the next scan retries without leaking details.
+        logger.warning("Place title fill unavailable (%s)", type(error).__name__)
     return published
 
 
