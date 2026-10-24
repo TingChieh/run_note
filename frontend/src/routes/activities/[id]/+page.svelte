@@ -89,10 +89,10 @@
   <section class="sport-hero" class:switching data-testid="sport-hero" aria-labelledby="activity-title" aria-busy={switching}>
     {#key activity.id}
     <div class="hero-copy" class:detail-swap={swapped}><p class="hero-kicker"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5 19 5-5 4 3 4-7 M3 8h4 M3 12h2" /><circle cx="15" cy="5" r="2" /></svg>跑步详情</p><h1 id="activity-title">{activity.title || '未命名活动'}</h1><p class="hero-date">{formatDate(activity.activity_date)} <span>· {activity.timezone}</span></p></div>
-    <div class="hero-distance" class:detail-swap={swapped} aria-hidden="true"><span>本次距离</span><strong>{formatDistance(activity.distance_m)}</strong></div>
+    <div class="hero-side"><div class="hero-distance" class:detail-swap={swapped} aria-hidden="true"><span>本次距离</span><strong>{formatDistance(activity.distance_m)}</strong></div>
+      {#if activity.has_route}<ActivityPosterDialog activityId={activity.id} />{/if}</div>
     {/key}
   </section>
-  {#if activity.has_route}<div class="poster-action">{#key activity.id}<ActivityPosterDialog activityId={activity.id} />{/key}</div>{/if}
   {#key activity.id}{#if view.manage}<ActivityActions {activity} onupdated={(value) => { activity = value; }} />{/if}{/key}
   <div class="detail-workspace" class:switching aria-busy={switching}>
     <section class="metric-panel" aria-label="运动指标"><div class="panel-heading"><h2>每一步，都算数</h2><p class="section-caption">本次运动概览</p></div>
@@ -125,14 +125,14 @@
   {#if view.manage}<p class="mt-6 text-sm text-muted-foreground">个人展示站公开全部记录和完整轨迹；以下分享设置仅控制旧版摘要链接。</p>{#key activity.id}<SharePanel {activity} />{/key}{/if}
 {:else if loading}<div class="mt-6"><FeedbackState kind="loading" title="正在读取活动…" /></div>{/if}
 <style>
-  .poster-action { display: flex; justify-content: flex-end; margin-top: var(--space-4); }
+  .hero-side { display: grid; flex-shrink: 0; justify-items: end; gap: var(--space-3); }
   .sport-hero { display: flex; justify-content: space-between; align-items: center; gap: 2rem; background: var(--sport-yellow); border-radius: var(--radius-card); padding: clamp(1.5rem, 3vw, 2rem); margin-top: 1.5rem; color: var(--sport-detail-ink); }
   .hero-copy { min-width: 0; }
   .hero-kicker { display: flex; align-items: center; gap: .5rem; font-size: .875rem; font-weight: 600; }
   .sport-hero h1 { margin-top: .75rem; font-size: clamp(2rem, 3vw, 2.5rem); font-weight: 750; line-height: 1.2; }
   .hero-date { margin-top: 1rem; font-size: .875rem; }
   .hero-date span { opacity: .8; }
-  .hero-distance { display: grid; flex-shrink: 0; gap: .25rem; text-align: right; font-variant-numeric: tabular-nums; }
+  .hero-distance { display: grid; gap: .25rem; text-align: right; font-variant-numeric: tabular-nums; }
   .hero-distance span { font-size: .8125rem; }
   .hero-distance strong { font-size: clamp(2rem, 3vw, 2.75rem); line-height: 1.2; letter-spacing: -.04em; }
   .detail-workspace { --detail-content-height: clamp(20rem, 44svh, 24rem); display: grid; grid-template-columns: 15rem minmax(0, 1fr); gap: var(--space-6); margin-top: var(--space-6); align-items: start; padding: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
@@ -173,5 +173,5 @@
   .quality-details { margin-top: var(--space-6); padding: var(--space-4) var(--space-6); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
   summary { color: var(--foreground); font-size: .9375rem; font-weight: 600; }
   @media (max-width: 1199px) { .detail-workspace { --detail-content-height: clamp(17.5rem, 38svh, 22rem); grid-template-columns: 1fr; } .route-panel { border-left: 0; border-top: 1px solid var(--border); padding-left: 0; padding-top: var(--space-6); } .metric-cards :global(.metrics) { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--space-6); } .metric-cards :global(.metrics > div + div) { border-top: 0; } .metric-cards :global(.metrics > div:nth-child(n + 3)) { border-top: 1px solid var(--border); } }
-  @media (max-width: 639px) { .quality-details { padding: var(--space-4); } .sport-hero { flex-direction: column; align-items: stretch; gap: 1rem; } .hero-distance { text-align: left; border-top: 1px solid var(--sport-heading-border); padding-top: 1rem; } .hero-distance strong { font-size: 2.25rem; } .detail-workspace { padding: var(--space-4); } .metric-cards :global(.metrics) { gap: 0 var(--space-3); } .metric-cards :global(.metrics dt) { padding-left: var(--space-8); } .metric-cards :global(.metrics dd) { padding-left: 0; margin-top: var(--space-3); } .metric-cards :global(.metric-icon) { top: var(--space-1); transform: none; width: var(--space-6); height: var(--space-6); } .metric-cards :global(.metric-icon svg) { width: var(--space-4); height: var(--space-4); } }
+  @media (max-width: 639px) { .quality-details { padding: var(--space-4); } .sport-hero { flex-direction: column; align-items: stretch; gap: 1rem; } .hero-side { justify-items: start; } .hero-distance { text-align: left; border-top: 1px solid var(--sport-heading-border); padding-top: 1rem; } .hero-distance strong { font-size: 2.25rem; } .detail-workspace { padding: var(--space-4); } .metric-cards :global(.metrics) { gap: 0 var(--space-3); } .metric-cards :global(.metrics dt) { padding-left: var(--space-8); } .metric-cards :global(.metrics dd) { padding-left: 0; margin-top: var(--space-3); } .metric-cards :global(.metric-icon) { top: var(--space-1); transform: none; width: var(--space-6); height: var(--space-6); } .metric-cards :global(.metric-icon svg) { width: var(--space-4); height: var(--space-4); } }
 </style>
