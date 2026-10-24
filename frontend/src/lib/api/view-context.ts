@@ -6,7 +6,7 @@ export function viewContext(path: string, admin = false): ViewContext {
   return { kind: 'root', prefix: '', username: null, manage: admin };
 }
 export function contextPath(context: ViewContext, path: string): string {
-  return /^\/(dashboard|activities|footprints|ai|settings)(\/|\?|#|$)/.test(path) ? context.prefix + path : path;
+  return /^\/(dashboard|activities|footprints|routes|ai|settings)(\/|\?|#|$)/.test(path) ? context.prefix + path : path;
 }
 export function contextAPI(context: ViewContext, path: string): string {
   if (!path.startsWith('/api/v1/showcase/')) return path;

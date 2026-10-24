@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_identity, get_session
+from app.api.dependencies import get_read_identity, get_session
 from app.core.responses import ApiResponse
 from app.modules.activities.router import envelope
 from app.modules.statistics import service
@@ -13,7 +13,7 @@ from app.modules.statistics.schema import Calendar, Summary, Trends
 from app.modules.statistics.streaks import read_streaks
 
 router = APIRouter(prefix="/api/v1/statistics", tags=["statistics"])
-Identity = Annotated[tuple, Depends(get_identity)]
+Identity = Annotated[tuple, Depends(get_read_identity)]
 Database = Annotated[Session, Depends(get_session)]
 
 

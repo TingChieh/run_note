@@ -484,6 +484,8 @@ def test_fifty_thousand_distinct_points_persist_in_batches(clients):
     from sqlalchemy import event
 
     client, _, engine, _ = clients
+    # The app's background scan shares the measured engine; its statements are not the request path.
+    client.app.state.footprint_worker.stop()
     owner = register(client)
     start = datetime(2024, 1, 1, tzinfo=UTC)
     points = "".join(

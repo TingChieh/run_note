@@ -42,13 +42,16 @@ def find_session(db, request, now):
     return row if session_valid(row, now) else None
 
 
-def require_identity(db, request, now):
+def require_identity(db, request, now, shared=False):
     row = find_session(db, request, now)
     if row is None or row.user_id is None:
         raise ApiError(401, "AUTH_REQUIRED", "请先登录")
     # Serialize user mutations with login/password changes across workers. Refresh the
     # session after acquiring the user lock so a concurrent revocation cannot be missed.
-    user = db.scalar(select(User).where(User.id == row.user_id).with_for_update())
+    # `shared` takes FOR SHARE: still excluded by every writer (FOR UPDATE), but concurrent
+    # readers of the same user no longer queue behind each other's slow queries.
+    query = select(User).where(User.id == row.user_id)
+    user = db.scalar(query.with_for_update(read=shared))
     if user is None:
         raise ApiError(401, "AUTH_REQUIRED", "请先登录")
     db.refresh(row)

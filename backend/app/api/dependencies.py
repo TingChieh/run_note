@@ -24,6 +24,18 @@ def get_identity(request: Request, session: Annotated[Session, Depends(get_sessi
     return require_identity(session, request, request.app.state.clock())
 
 
+def get_read_identity(request: Request, session: Annotated[Session, Depends(get_session)]):
+    """Identity for routes that only read: a shared lock on the user row.
+
+    Use it only where the handler never locks the users row exclusively afterwards (lock_owner,
+    lock_user, ...): two readers holding FOR SHARE that both upgrade would deadlock.
+    """
+    from app.modules.auth.service import require_identity
+
+    require_auth_config(request)
+    return require_identity(session, request, request.app.state.clock(), shared=True)
+
+
 def require_write(request: Request, identity: Annotated[tuple, Depends(get_identity)]):
     from app.core.security import check_csrf
 

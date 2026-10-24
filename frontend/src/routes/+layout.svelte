@@ -48,7 +48,7 @@
   const site = $derived(page.data.site ?? SITE_DEFAULTS);
   let logoFailed = $state(false);
   $effect(() => { void site.logo_url; logoFailed = false; });
-  const appLayout = $derived(/^\/(dashboard|activities|footprints|ai|settings|admin|p|workspace)(\/|$)/.test(page.url.pathname) && page.url.pathname !== '/admin' || page.url.pathname === '/' || page.status >= 400 && !/^\/admin\/?$/.test(page.url.pathname));
+  const appLayout = $derived(/^\/(dashboard|activities|footprints|routes|ai|settings|admin|p|workspace)(\/|$)/.test(page.url.pathname) && page.url.pathname !== '/admin' || page.url.pathname === '/' || page.status >= 400 && !/^\/admin\/?$/.test(page.url.pathname));
   const privateView = $derived(!!page.data.user || isProtected(page.url.pathname));
   setContext(VIEW_CONTEXT, () => viewContext(page.url.pathname, page.data.user?.is_admin === true));
   const authPage = $derived(/^\/admin\/?$/.test(page.url.pathname));
