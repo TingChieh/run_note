@@ -31,7 +31,7 @@
 | `backend/app/modules/place_titles/model.py` | `PlaceFeature`、`ActivityPlaceName` 映射 |
 | `backend/app/modules/place_titles/rules.py` | 类别词表、阈值、`choose_category`、`default_title`（纯函数，无 DB） |
 | `backend/app/modules/place_titles/queue.py` | `enqueue`（仅依赖 sqlalchemy，供导入服务引用，避免循环导入） |
-| `backend/app/modules/place_titles/service.py` | `place_count`、`measure_shares`、`resolve`、`apply_title`、`fill_place_titles` |
+| `backend/app/modules/place_titles/service.py` | `has_places`、`measure_shares`、`resolve`、`apply_title`、`fill_place_titles` |
 | `backend/app/modules/place_titles/backfill.py` | `collect`、`apply_proposals`、`revert_log`（供脚本与测试调用） |
 | `backend/app/modules/place_titles/osm.py` | OSM 特征 → 类别映射、GeoJSON 行解析、`import_region`（供脚本与测试调用） |
 | `scripts/osm-places.py` | 离线：调用 `osmium` 并导入 `place_features` |
@@ -427,7 +427,7 @@ git commit -m "feat: place title naming rules"
 - Consumes: Task 1 的表；Task 2 的 `rules`。
 - Produces：
   - `queue.enqueue(db, owner: UUID, activity_id: UUID) -> None`（`INSERT … ON CONFLICT DO NOTHING`，`pending`，当前 `ALGORITHM_VERSION`）
-  - `service.place_count(db) -> int`
+  - `service.has_places(db) -> int`
   - `service.measure_shares(db, activity_id: UUID) -> tuple[int, dict[str, int]]`（采样点总数，各类别靠近的采样点数）
   - `service.resolve(db, activity_id: UUID) -> tuple[str, float] | None`（距离不足 `MIN_DISTANCE_M` 返回 `None`）
   - `service.apply_title(db, owner: UUID, activity_id: UUID, new_title: str) -> bool`
@@ -547,7 +547,7 @@ def test_an_empty_place_table_keeps_the_queue_pending(clients):  # noqa: F811
     a, b, _, app = clients
     quiet(a, b)
     with app.state.session_factory() as db:
-        if service.place_count(db):
+        if service.has_places(db):
             pytest.skip("shared test database already holds place features")
     owner = register(a)
     activity = add_run(app, owner, ring(), day=date(2025, 3, 1))
@@ -698,7 +698,7 @@ SELECT (SELECT count(*) FROM samples) AS total,
 )
 
 
-def place_count(db) -> int:
+def has_places(db) -> int:
     return db.scalar(text("SELECT count(*) FROM place_features"))
 
 
@@ -766,7 +766,7 @@ def fill_place_titles(session_factory, *, limit=FILL_BATCH, stop_event=None) -> 
     done = 0
     while stop_event is None or not stop_event.is_set():
         with session_factory() as db:
-            if not place_count(db):
+            if not has_places(db):
                 return done
             db.execute(text("SET LOCAL statement_timeout = '10000ms'"))
             rows = db.execute(
@@ -1410,7 +1410,7 @@ def main():
                 get_expected_revision()
             ]:
                 raise SystemExit("Schema is not current; no changes made")
-            if args.revert is None and not service.place_count(db):
+            if args.revert is None and not service.has_places(db):
                 raise SystemExit("没有已导入的地物数据（先运行 scripts/osm-places.py）；未做任何更改")
             proposals = [] if args.revert else backfill.collect(db, args.limit)
         if args.revert:
