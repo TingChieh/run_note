@@ -29,7 +29,16 @@
 cd /opt/run-note-production/current && runuser -u run_note -- backend/.venv/bin/python ops/envfile.py exec /etc/run-note-production/backend.env -- backend/.venv/bin/python scripts/osm-places.py <文件.osm.pbf> --region <标签>
 ```
 
-`backfill-place-titles.py` 同理。需要先在服务器安装 `osmium-tool`；`--apply` 前先备份。
+`<文件.osm.pbf>` 必须能被服务账号读取（脚本以该账号运行 osmium，放在 `/root` 下会失败）；导入需要交互终端，会要求键入数据库名确认。需要先在服务器安装 `osmium-tool`；`--apply` 前先备份。
+
+`backfill-place-titles.py` 的预览（不带 `--apply`）命令形式相同，不需要日志目录。**`--apply` 不能照搬预览的命令**：服务账号的 HOME 是实例根目录（`init-instance.sh` 以 `--home-dir` 指向实例根并带 `--no-create-home` 创建，目录归 root、不可写），脚本默认日志目录 `~/.local/state/run_note/place-titles` 无法创建，会在访问数据库前以“无法创建日志目录；未做任何更改”退出。做法：先以 root 在发布包之外建一个只有服务账号可用的日志目录，再用 `--log-dir` 指定（该目录必须已存在且服务账号可写）：
+
+```bash
+install -d -o run_note -g run_note -m 0700 /var/tmp/run-note-osm/place-title-logs
+cd /opt/run-note-production/current && runuser -u run_note -- backend/.venv/bin/python ops/envfile.py exec /etc/run-note-production/backend.env -- backend/.venv/bin/python scripts/backfill-place-titles.py --apply --log-dir /var/tmp/run-note-osm/place-title-logs
+```
+
+JSON 还原日志写在这个目录里；还原时把该目录里的日志文件路径交给 `--revert <日志文件>`（`--revert` 不能与 `--log-dir` 同用）。日志含真实活动 ID 与标题，必须保持私有：目录权限 700、日志文件 600，不要放进仓库。
 
 ### 新导入的跑步
 
@@ -85,7 +94,7 @@ backend/.venv/bin/python scripts/backfill-place-titles.py --revert <日志>
 
 ### 发布包打包验证（2026-10-24）
 
-在隔离工作树用 `build-release.sh --allow-dirty` 构建发布包，`verify-release.sh` 通过；解压后 `scripts/` 下三个脚本均为可执行，从解压目录运行 `osm-places.py --help`、`backfill-place-titles.py --help` 正常打印用法，`backfill-place-titles.py --apply --revert x` 在访问数据库前以 1 退出。`unittest discover -s infra/native/tests` 101 个测试通过；新增的缺失/不可执行/语法错误用例在旧版 `verify-release.sh` 上失败。`ops-e2e.sh` 用临时集群跑完全部步骤。没有在任何服务器上运行这两个脚本。
+在隔离工作树用 `build-release.sh --allow-dirty` 构建发布包，`verify-release.sh` 通过；解压后 `scripts/` 下三个脚本均为可执行，从解压目录运行 `osm-places.py --help`、`backfill-place-titles.py --help` 正常打印用法（用的是主检出里后端虚拟环境的 Python：两个脚本在模块顶层导入 sqlalchemy 与 `app`，所以 `--help` 也需要装有后端依赖的 Python 环境），`backfill-place-titles.py --apply --revert x` 在访问数据库前以 1 退出。`unittest discover -s infra/native/tests` 101 个测试通过；新增的缺失/不可执行/语法错误用例在旧版 `verify-release.sh` 上失败。`ops-e2e.sh` 用临时集群跑完全部步骤。没有在任何服务器上运行这两个脚本。
 
 ### 未运行
 

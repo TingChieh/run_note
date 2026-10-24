@@ -139,7 +139,7 @@ Python 虚拟环境**不可重定位**：`bin/uvicorn` 等入口脚本的第一�
 找不到一套**完整**的模板时拒绝，并列出查过的两个位置和缺哪些文件。`init-instance.sh` 在创建任何东西之前先把单元渲染到临时目录（预检），所以损坏的发布包或有问题的实例定义会在没有产生用户、数据库、密钥之前就被发现，而不是半途失败后留下残局。
 
 `ops/verify-release.sh` 是每个发布包的出厂检查，`build-release.sh` 每次构建都会运行，不通过就**删除发布包**并让构建失败：
-1. 部署工具需要的全部文件都在发布包里（`ops/` 全部脚本、`infra/native/` 的 Caddyfile、单元、六个模板、`production.conf.example`、环境示例、`scripts/site-owner.py`、`scripts/osm-places.py`、`scripts/backfill-place-titles.py` 等），`ops/` 的 shell 脚本与这三个 `scripts/` 离线脚本可执行且语法正确（Python 脚本用 `py_compile` 检查，缺失、不可执行、语法错误都会点名拒绝），Caddyfile 含 `(runnote_app)` 与 `sites.d` 导入。
+1. 部署工具需要的全部文件都在发布包里（`ops/` 全部脚本、`infra/native/` 的 Caddyfile、单元、六个模板、`production.conf.example`、环境示例、`scripts/site-owner.py`、`scripts/osm-places.py`、`scripts/backfill-place-titles.py` 等），`ops/` 的八个 shell 脚本（`bash -n`）、`ops/acceptance-check.py` 与这三个 `scripts/` 离线脚本（均用 `py_compile`）可执行且语法正确，缺失、不可执行、语法错误都会点名拒绝，Caddyfile 含 `(runnote_app)` 与 `sites.d` 导入。
 2. 在**空的工作目录**里用发布包自带的 `ops/instance.py` 真实渲染：旧布局渲染结果与发布包里的现有单元逐字节一致；示例 `production.conf` 通过 `check`；production 的 `maintenance` 与 `live` 站点各渲染出完整的 5 个文件。
 
 `set-site-mode.sh` 另有一道前置检查：服务器上的主 Caddyfile 必须就是当前的 Run Note Caddyfile（含 `(runnote_app)` 片段并 `import <sites 目录>/*.caddy`），否则拒绝。旧版（多实例之前）的 Caddyfile 不会导入实例站点，若不拦住，"维护页"会校验通过、重载成功，却什么也不会提供。安装新 Caddyfile 时，把 staging 的 Basic Auth 片段放到 `/etc/caddy/access.d/`，先 `caddy validate` 再重载。
@@ -156,7 +156,7 @@ Python 虚拟环境**不可重定位**：`bin/uvicorn` 等入口脚本的第一�
 8. **上线**：`sudo ops/set-site-mode.sh production live`。站主不存在时该命令会拒绝，域名继续显示维护页。
 9. **退回**：`sudo ops/set-site-mode.sh production maintenance`，即刻回到维护页，不影响数据库与服务。
 
-**离线脚本随发布包交付**：`scripts/osm-places.py`（导入 OSM 地物）与 `scripts/backfill-place-titles.py`（补全已有跑步的地点标题，默认只预览）与 `site-owner.py` 同在 `current/scripts/`，无需手工拷贝或建符号链接。运行方式与 `site-owner.py` 相同（用法与确认提示见 docs/72）：`cd /opt/run-note-production/current && runuser -u run_note -- backend/.venv/bin/python ops/envfile.py exec /etc/run-note-production/backend.env -- backend/.venv/bin/python scripts/osm-places.py <文件.osm.pbf> --region <标签>`。脚本靠 `scripts/` 与 `backend/` 相邻来定位后端代码，因此必须从发布包内运行。
+**离线脚本随发布包交付**：`scripts/osm-places.py`（导入 OSM 地物）与 `scripts/backfill-place-titles.py`（补全已有跑步的地点标题，默认只预览）与 `site-owner.py` 同在 `current/scripts/`，无需手工拷贝或建符号链接。运行方式与 `site-owner.py` 相同（用法与确认提示见 docs/72）：`cd /opt/run-note-production/current && runuser -u run_note -- backend/.venv/bin/python ops/envfile.py exec /etc/run-note-production/backend.env -- backend/.venv/bin/python scripts/osm-places.py <文件.osm.pbf> --region <标签>`。脚本靠 `scripts/` 与 `backend/` 相邻来定位后端代码，因此必须从发布包内运行。注意 `backfill-place-titles.py --apply` 还需要 `--log-dir` 指向服务账号可写的私有目录（服务账号 HOME 不可写，默认日志目录建不出来），做法见 docs/72 的“在生产服务器上运行”。
 
 日常发布、回滚、备份恢复对实例与旧布局的区别只有一个前缀：在命令前加 `RUNNOTE_INSTANCE=production`（备份定时器单元已内置）。
 
