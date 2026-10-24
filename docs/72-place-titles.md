@@ -35,9 +35,10 @@ backend/.venv/bin/python scripts/backfill-place-titles.py --apply      # 写入�
 backend/.venv/bin/python scripts/backfill-place-titles.py --revert <日志>
 ```
 
-- 预览逐行打印 `日期 · 当前标题 → 新标题` 和汇总计数，不写库。
-- `--apply` 前必须先备份；每改一条就把变更原子地写入 JSON 日志（含活动 ID 与日期，注意保管）。
-- `--revert <日志>` 把仍是该标题的活动还原为默认标题。还原后队列行为 skipped，该活动之后会再次出现在预览的候选中。
+- 预览逐行打印 `日期 · 当前标题 → 新标题`，并按原因汇总：命中 / 附近无地物 / 太短 / 标题已被改过 / 测量超时 / 测量出错，不写库。超时与出错的跑步不会被记录，之后可重试；`--apply` 只改命中的，其余只计数。
+- `--apply` 前必须先备份。还原日志默认写到仓库之外的 `~/.local/state/run_note/place-titles/`（遵循 `XDG_STATE_HOME`，目录权限 700，日志文件权限 600，写入时 fsync），`place-titles-*.json*` 另被 `.gitignore` 忽略。日志含真实活动 ID 与标题，请妥善保管。`--log-dir` 指向仓库工作区内时只打印警告，不报错。
+- 结束时打印中文汇总（已改名 / 期间已被修改 / 失败 / 未命中），有失败时以非零状态退出；`--revert` 同理（已还原 / 已跳过 / 失败）。日志写入在已改库后失败时会停止并报出已完成计数与最后改名的活动 ID。
+- `--revert <日志>` 把仍是该标题的活动还原为默认标题；还原按“活动 ID + 标题”更新，不带用户过滤，因此还原日志是受信任的本地输入，请勿使用来源不明的文件。`--revert` 不能与 `--limit`、`--log-dir` 同用。还原后队列行为 skipped，该活动之后会再次出现在预览的候选中。
 - 导入新的区域后可重新运行：此前未匹配的跑步会被重试。
 - 本助手不会运行 `--apply`。对开发库或生产库写数据，以及升级到 `0016_place_titles`，都需要站主明确授权，并按“备份 → 恢复演练 → 受控单次升级 → 复核”的顺序进行。
 
@@ -59,18 +60,21 @@ backend/.venv/bin/python scripts/backfill-place-titles.py --revert <日志>
 
 | 命令 | 结果 |
 | --- | --- |
-| 后端 `.venv/bin/pytest tests/unit -q` | 396 passed |
-| 后端 `.venv/bin/ruff check app migrations tests` | All checks passed |
-| 后端 `.venv/bin/ruff format --check app migrations tests` | 199 files already formatted |
+| 后端 `.venv/bin/pytest tests/unit -q` | 404 passed（评审修复后） |
+| 后端 `.venv/bin/ruff check app migrations tests ../scripts/backfill-place-titles.py ../scripts/osm-places.py` | All checks passed |
+| 后端 `.venv/bin/ruff format --check`（同上范围） | 202 files already formatted |
 | 后端 `.venv/bin/alembic heads`（只读） | `0016_place_titles (head)`，唯一 head |
 | 集成（测试库）`test_place_titles.py`、`test_route_groups.py`、`test_gpx_import.py`、`test_mifitness_import.py`、`test_footprint_snapshots.py`、`test_province_cache.py`、`test_showcase.py` | 136 passed，0 failed，0 skipped，81.34 s |
 | 集成（测试库）整个 `tests/integration` 一次 | 304 passed，1 skipped，0 failed，178.16 s |
 | `scripts/osm-places.py --help`、`scripts/backfill-place-titles.py --help` | 均正常打印用法 |
 
-整目录的 1 个 skipped 是 `tests/integration/test_migrations.py` 中依赖 `TEST_SNAPSHOT_DATABASE_URL` 的用例（变量未设置），与本功能无关。开发期间还按任务记录过 `PATH` 中没有 osmium 时脚本打印中文提示并以 1 退出、`--apply` 在无 tty 或与 `--revert` 同用时在访问数据库前报错。
+评审修复后另跑：`test_place_titles.py` 32 passed，`test_route_groups.py`、`test_gpx_import.py`、`test_mifitness_import.py`、`test_footprint_snapshots.py` 合计 99 passed，均 0 failed、0 skipped，运行后无残留后端。`--apply --revert`、`--revert` 与 `--limit`/`--log-dir` 同用、无 tty 的 `--apply` 均在访问数据库前以 1 退出。
+
+上一行整目录的 1 个 skipped 是 `tests/integration/test_migrations.py` 中依赖 `TEST_SNAPSHOT_DATABASE_URL` 的用例（变量未设置），与本功能无关。开发期间还按任务记录过 `PATH` 中没有 osmium 时脚本打印中文提示并以 1 退出、`--apply` 在无 tty 或与 `--revert` 同用时在访问数据库前报错。
 
 ### 未运行
 
+- 两个脚本的 `--apply`/确认提示/日志权限提示等交互路径从未在终端实际执行（只有函数级测试与参数错误路径）。
 - 真实的 `osmium tags-filter` / `osmium export` 流水线：本机未安装 osmium。
 - `scripts/osm-places.py` 与 `scripts/backfill-place-titles.py` 从未对任何数据库运行过（只运行了 `--help`）；两个脚本在终端中的确认提示没有自动化测试。
 - 真实 OSM 数据与真实用户数据上的效果（阈值、要素丢弃率、命名是否合理）未验证。
@@ -91,8 +95,10 @@ backend/.venv/bin/python scripts/backfill-place-titles.py --revert <日志>
 ### 剩余风险与已知次要问题
 
 - 阈值（200 m、100 m、0.4、1 km、面积下限）和类别映射只在合成样本上验证；真实地物数据可能漏标或误标。
-- 导入脚本引擎没有 `pool_pre_ping`；熔断按已处理的前缀计算；XX000 也会覆盖真正的 PostGIS 缺陷；`sport=running;athletics` 已接受，`cycling` 拒绝。
-- 补全脚本：日志默认写到当前目录，不在 git 忽略范围内且含真实活动 ID 与日期（应改到仓库外或忽略并设 600 权限）；预览把超时/错误并入“未匹配”；有失败时仍以 0 退出并输出原始字典；日志写入无 fsync/OSError 处理；`--revert` 读两遍日志且忽略 `--limit/--log-dir`；队列 upsert 的 ON CONFLICT 分支无测试。
+- 熔断按已处理的前缀计算；XX000 也会覆盖真正的 PostGIS 缺陷；`sport=running;athletics` 已接受，`cycling` 拒绝。
+- 补全脚本已修复（评审后）：日志改到仓库外并设 600 权限、有失败时非零退出并输出中文汇总、预览区分失败原因、日志 fsync 与写入失败处理、`--revert` 拒绝 `--limit/--log-dir`、队列 upsert 分支有测试。仍存在：`--revert` 读两遍日志。
+- 导入脚本：引擎已加 `pool_pre_ping`，并在核对 revision 后立即 `dispose()`，osmium 运行期间不占连接。
+- worker：测量阶段的瞬时错误（语句超时、`OperationalError`/连接失效、SQLSTATE 08 类、死锁 40P01）现在保持 pending 以便重试，其余错误仍标为 skipped。
 - worker：应用步骤出错的行保持 pending 而非 skipped；提交在 try 之外；`_record` 无锁超时；短分段与长分段权重相同；补全使用同包私有函数 `service._measure`。
 - 测试缺口：迁移单测的列检查只是子串匹配、CHECK 值断言不完整；`test_sampling_is_bounded` 只断言常量；未保护 counts > total。
 
