@@ -17,7 +17,7 @@
   import { liquidGlass } from '#lib/styles/liquid-glass.ts';
   import { installDialogScrollLock } from '#lib/styles/dialog-scroll-lock.ts';
   import ThemeToggle from '#lib/components/ThemeToggle.svelte';
-  import { SITE_DEFAULTS, brandInitial } from '#lib/site.ts';
+  import { PROJECT_URL, SITE_DEFAULTS, brandInitial } from '#lib/site.ts';
   import { pageDescription, pageNoindex } from '#lib/seo.ts';
   import { initializeTheme } from '#lib/components/system-theme.ts';
 
@@ -154,7 +154,7 @@
         {#key page.url.pathname}<div class="page-reveal" class:quiet-swap={quietSwap} class:page-enter-up={pageDirection === 1} class:page-enter-down={pageDirection === -1} hidden={routeLoading || checking && privateView} inert={routeLoading || checking && privateView}>{@render children()}</div>{/key}
       {/if}
     </main>
-    <footer class="app-footer"><span>{site.title}</span>{#if site.footer_tagline}<span>{site.footer_tagline}</span>{/if}</footer>
+    <footer class="app-footer"><span>{site.title}</span>{#if site.footer_tagline}<span>{site.footer_tagline}</span>{/if}<a class="app-footer-link" href={PROJECT_URL} target="_blank" rel="noopener noreferrer" aria-label="在 GitHub 上查看项目源码（在新窗口打开）">GitHub 项目</a></footer>
   </div>
   {#if GlassTuner}<GlassTuner />{/if}
 </div>

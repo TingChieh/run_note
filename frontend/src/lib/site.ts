@@ -5,5 +5,6 @@ export const SITE_DEFAULTS: Site = {
   description: '汇总你的跑步数据、活动日历与运动趋势，从这里探索记录、足迹和 AI 分析。',
   default_theme: 'system', favicon_url: null, logo_url: null,
 };
+export const PROJECT_URL = 'https://github.com/TingChieh/run_note';
 export const pageTitle = (name: string, site: Pick<Site, 'title'> | null | undefined) => `${name} · ${site?.title || SITE_DEFAULTS.title}`;
 export const brandInitial = (title: string) => Array.from(title.trim())[0] ?? 'R';

@@ -20,6 +20,10 @@ test('site title, subtitle, footer, tab title and logo follow settings', async (
   await expect(sidebar.locator('.brand-mark')).toHaveText('晨');
   await expect(sidebar.locator('.nav-caption')).toHaveText('每日训练');
   await expect(page.locator('.app-footer')).toContainText('坚持就是胜利');
+  const projectLink = page.locator('.app-footer').getByRole('link', { name: /GitHub/ });
+  await expect(projectLink).toHaveAttribute('href', 'https://github.com/TingChieh/run_note');
+  await expect(projectLink).toHaveAttribute('target', '_blank');
+  await expect(projectLink).toHaveAttribute('rel', 'noopener noreferrer');
   await expect(page).toHaveTitle('数据汇总 · 晨跑站');
   await expect(page.locator('meta[name="description"]')).toHaveCount(1);
   expect((await page.request.put('/api/v1/site/images/logo', { headers: csrf, multipart: { file: { name: 'logo.png', mimeType: 'image/png', buffer: png } } })).status()).toBe(200);
