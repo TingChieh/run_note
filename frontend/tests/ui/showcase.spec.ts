@@ -11,7 +11,7 @@ for (const width of [390, 1440]) {
       const ai = await installAI(page); ai.reports = [report];
       const writes: string[] = [];
       page.on('request', r => { if (new URL(r.url()).pathname.startsWith('/api/') && r.method() !== 'GET') writes.push(r.url()); });
-      for (const [path, heading] of [['/dashboard', '数据汇总'], ['/activities', '跑步记录'], ['/activities/wall', '足迹墙'], ['/footprints', '个人足迹'], ['/ai', 'AI 跑步分析']]) {
+      for (const [path, heading] of [['/', '数据汇总'], ['/activities', '跑步记录'], ['/activities/wall', '足迹墙'], ['/footprints', '个人足迹'], ['/ai', 'AI 跑步分析']]) {
         await page.goto(path);
         await expect(page).toHaveURL(new RegExp(path.replaceAll('/', '\\/') + '(?:\\?.*)?$'));
         await expect(page.getByRole('heading', { name: heading, level: 1, exact: true })).toBeVisible();
