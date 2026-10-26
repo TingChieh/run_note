@@ -359,6 +359,22 @@ CI 暴露的问题与根因（均已修复，且没有跳过、没有加长超�
 | 实测 | restic 默认分组 | 4 个路径各异的快照，`forget --tag … --keep-last 2 --dry-run` 不删任何一份；加 `--group-by host` 后删除最旧 2 份（见"已知边界"） |
 | **未运行** | 真实服务器上的发布、`ops-e2e-instances.sh`、`caddy-instances.sh` | 部署后的只读核对见 PR 说明 |
 
+### 首次真实发布暴露的问题（2026-10-26）与修复
+
+`ship.py` 首次使用 `ship-backup.sh` 发布时，在部署之前的备份步骤失败：`runuser: failed to execute /root/run-note-stage/…/rel/ops/backup.sh: Permission denied`。发布包上传在 root 家目录下（权限 700），脚本以 `postgres` 身份运行其中的 `backup.sh`，进不了该目录。线上未受影响：失败发生在 `deploy.sh` 之前，仍是上一版本，服务 active，数据与迁移版本不变，未产生备份文件。
+
+隔离演练没有发现，因为它的上传目录不在权限 700 的目录下，且不是以 root 切换到另一个账号运行。
+
+修复：`ship-backup.sh` 先把自己所在的 `ops/` 目录复制到 `/var/tmp` 下的私有临时目录（`RUNNOTE_TMPDIR` 可覆盖，供测试使用）并设为可读，再以 `postgres` 运行副本里的 `backup.sh`（`restore-drill.sh`、`lib.sh` 与它在同一目录），结束后删除副本，退出码保持不变。
+
+| 结果 | 检查 | 实测 |
+| --- | --- | --- |
+| PASS | `unittest discover -s infra/native/tests` | 128 tests OK（新增 `ShipBackupAsDatabaseAccount` 3 项：用替身 `runuser` 模拟“其他账号必须能进入路径上每个目录并执行脚本”；覆盖从副本运行、成功后删除副本、失败时删除副本并保留退出码） |
+| 回归敏感性 | 把 `ship-backup.sh` 改回直接运行上传目录里的 `backup.sh` | 3 项全部失败（`Permission denied`） |
+| PASS | `shellcheck -x --source-path=SCRIPTDIR infra/native/ops/*.sh infra/native/tests/*.sh` | 无输出 |
+| PASS | `ops-e2e.sh <发布包>`（修复后的提交 `1e4d133` 构建，临时 PG18 集群） | 全部步骤通过，含 5b：6 次 `ship-backup.sh` 后 nightly 与迁移前备份不变、`ship` 备份被限制为 3 份 |
+| **未运行** | 真实服务器发布（以 root 经 SSH 运行）、`ops-e2e-instances.sh`、`offsite-e2e.sh`、`caddy-instances.sh` | 真实发布后的只读核对见 PR 说明 |
+
 ## 改动范围与保留行为
 
 - 新增/修改（多实例）：`ops/instance.py`、`ops/init-instance.sh`、`ops/set-site-mode.sh`、`templates/`、`instances/`，以及 `lib.sh`/`deploy.sh`/`rollback.sh`/`backup.sh`/`restore-drill.sh`/`envfile.py`/`Caddyfile` 的实例上下文；
