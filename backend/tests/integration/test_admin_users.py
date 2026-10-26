@@ -89,6 +89,7 @@ def test_admin_accounts_sessions_named_isolation_and_legacy_revocation(site, mon
             == 200
         )
         assert visitor.get(named + "/activities").json()["data"]["total"] == 1
+        assert visitor.get(named + "/statistics/records").status_code == 200
         assert visitor.get(resource).status_code == 200
         assert visitor.get(resource + "/route").status_code == 200
         assert visitor.get(f"{named}/activities/{owner_activity['id']}").status_code == 404
@@ -114,6 +115,7 @@ def test_admin_accounts_sessions_named_isolation_and_legacy_revocation(site, mon
             "/running-goals",
             "/footprints/all",
             "/statistics/summary",
+            "/statistics/records",
         ):
             assert visitor.get(named + path).status_code == 404
         assert ordinary.get("/api/v1/me").status_code == 200
