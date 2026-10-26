@@ -11,7 +11,7 @@ export function contextPath(context: ViewContext, path: string): string {
     const rest = path.slice('/dashboard'.length);
     return rest ? `/${rest}` : '/';
   }
-  return /^\/(dashboard|activities|footprints|routes|ai|settings)(\/|\?|#|$)/.test(path) ? context.prefix + path : path;
+  return /^\/(dashboard|activities|footprints|records|routes|ai|settings)(\/|\?|#|$)/.test(path) ? context.prefix + path : path;
 }
 export function contextAPI(context: ViewContext, path: string): string {
   if (!path.startsWith('/api/v1/showcase/')) return path;

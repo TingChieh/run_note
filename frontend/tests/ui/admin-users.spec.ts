@@ -161,7 +161,7 @@ test('ordinary user changes own password and logs in again after all sessions ex
     await own.goto('/workspace/settings');
     await own.getByRole('button', { name: '修改密码', exact: true }).click();
     await own.getByLabel('当前密码', { exact: true }).fill('Synthetic-only-password');
-    await own.getByLabel('新密码', { exact: true }).fill('Replacement-only-password');
+    await own.getByLabel('新密码（至少 12 位）', { exact: true }).fill('Replacement-only-password');
     await own.getByRole('button', { name: '修改密码并重新登录', exact: true }).click();
     await expect(own).toHaveURL(/\/admin\?reason=changed$/);
     await expect(own.locator('input[type=password]')).toHaveValue('');

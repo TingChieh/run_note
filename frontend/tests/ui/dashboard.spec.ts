@@ -6,7 +6,7 @@ async function fixture(page: Page) {
   await installActivities(page);
   const state = { cumulativeFailures: 0, summaryFailures: 0, calendarFailures: 0, trendFailures: 0, dayFailures: 0, expired: false };
   await page.route('**/api/v1/showcase/statistics/**', async route => {
-    const url = new URL(route.request().url()); if (url.pathname.endsWith('/streaks')) return route.fallback(); const year = Number(url.searchParams.get('year') ?? url.searchParams.get('date_from')?.slice(0,4) ?? '2026');
+    const url = new URL(route.request().url()); if (url.pathname.endsWith('/streaks') || url.pathname.endsWith('/records')) return route.fallback(); const year = Number(url.searchParams.get('year') ?? url.searchParams.get('date_from')?.slice(0,4) ?? '2026');
     const summary = year === 2026 ? populated : empty;
     const send = (data: unknown, status = 200) => route.fulfill({ status, json: { data, error: status >= 400 ? { message: '统计暂时不可用' } : null } });
     if (state.expired) return send(null,401);

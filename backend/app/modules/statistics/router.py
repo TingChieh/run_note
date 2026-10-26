@@ -9,7 +9,8 @@ from app.api.dependencies import get_read_identity, get_session
 from app.core.responses import ApiResponse
 from app.modules.activities.router import envelope
 from app.modules.statistics import service
-from app.modules.statistics.schema import Calendar, Summary, Trends
+from app.modules.statistics.records import OptionalYear, build_records
+from app.modules.statistics.schema import Calendar, Records, Summary, Trends
 from app.modules.statistics.streaks import read_streaks
 
 router = APIRouter(prefix="/api/v1/statistics", tags=["statistics"])
@@ -61,5 +62,19 @@ def trends(
     period: Literal["week", "month", "year"] = "week",
 ):
     data = service.trends(db, identity[1].id, date_from, date_to, period)
+    db.commit()
+    return envelope(request, data)
+
+
+@router.get("/records", response_model=ApiResponse[Records])
+def records(
+    request: Request,
+    identity: Identity,
+    db: Database,
+    year: OptionalYear = None,
+    compare_year: OptionalYear = None,
+):
+    today = request.app.state.clock().astimezone(ZoneInfo(identity[1].timezone)).date()
+    data = build_records(db, identity[1].id, today, year, compare_year)
     db.commit()
     return envelope(request, data)

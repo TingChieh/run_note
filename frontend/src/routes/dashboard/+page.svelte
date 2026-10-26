@@ -25,6 +25,7 @@
   import GoalOverview from '#lib/components/GoalOverview.svelte';
   import ProvinceMap from '#lib/components/ProvinceMap.svelte';
   import ActivityExplorer from '#lib/components/ActivityExplorer.svelte';
+  import RecordsSummaryCard from '#lib/components/RecordsSummaryCard.svelte';
   let year = $state(2026), yearInput = $state('2026'), calendarMetric = $state<CalendarMetric>('distance'), period = $state<Trends['period']>('month'), trendMetric = $state<'distance' | 'count' | 'duration' | 'pace'>('distance');
   let annual = $state<Summary | null>(null), cumulative = $state<Summary | null>(null), calendar = $state<Calendar | null>(null), trends = $state<Trends | null>(null), records = $state<ActivityList | null>(null);
   let shownDate = $state<string | null>(null), selectedDate = $state<string | null>(null), loading = $state(true), dayLoading = $state(false), trendLoading = $state(false), message = $state(''), cumulativeMessage = $state(''), yearMessage = $state(''), dayMessage = $state(''), trendMessage = $state('');
@@ -152,6 +153,7 @@
       {#if hasTrendActivities}<TrendChart {trends} metric={trendMetric} enhanced />{:else}<div data-testid="trend-empty"><FeedbackState title="记录一次跑步，让趋势开始生长"><a href={view.href("/activities")}  class="button-primary">查看跑步记录</a></FeedbackState></div>{/if}
     {/if}</div>
   </section>
+  <RecordsSummaryCard />
   <details class="statistics-notes"><summary>统计口径与数据质量</summary><div class="notes-content">
     <p>仅统计你自己的活动。历史日期按活动保存时的当地日期归属，不随当前时区改变。</p>
     {#if annual}<p>年度已知耗时合计 {formatDuration(annual.duration_sum_seconds)}；已知 {annual.known_duration_count} 次，未知 {annual.missing_duration_count} 次。配速按 {annual.pace_eligible_count} 次可靠活动的总耗时 / 总距离计算，覆盖 {dashboardDistance(annual.pace_eligible_distance_m)}。含质量提示 {annual.quality_warning_count} 次。</p>{/if}

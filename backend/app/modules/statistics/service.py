@@ -26,14 +26,22 @@ def validate_range(start, end, *, optional=False):
         raise ApiError(422, "VALIDATION_ERROR", "统计日期支持1900–2100年，单次范围最多5年")
 
 
-def expressions():
-    duration = func.coalesce(A.timer_seconds, A.elapsed_seconds)
-    known = duration.is_not(None)
-    eligible = (
+def duration_expression():
+    return func.coalesce(A.timer_seconds, A.elapsed_seconds)
+
+
+def eligible_expression():
+    return (
         (A.distance_m > 0)
-        & (duration > 0)
+        & (duration_expression() > 0)
         & (A.timer_seconds.is_not(None) | A.temporal_quality.in_(["complete", "manual"]))
     )
+
+
+def expressions():
+    duration = duration_expression()
+    known = duration.is_not(None)
+    eligible = eligible_expression()
     warnings = A.quality_summary["warnings"]
     warning_count = case(
         (func.jsonb_typeof(warnings) == "array", func.jsonb_array_length(warnings)), else_=0
