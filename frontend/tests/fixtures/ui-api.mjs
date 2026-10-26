@@ -20,6 +20,24 @@ const images = new Map();
 const avatars = new Map();
 const version = () => randomUUID().replaceAll('-', '').slice(0, 16);
 const siteFields = ['title', 'subtitle', 'footer_tagline', 'description', 'default_theme'];
+/** @param {number} year @param {number} compare */
+function recordsFixture(year, compare) {
+  const empty = year === 1999;
+  const months = (/** @type {boolean} */ filled) => Array.from({ length: 12 }, (_, i) => ({ month: i + 1, activity_count: filled && i < 6 ? 2 : 0, distance_m: filled && i < 6 ? String(10000 * (i + 1)) : '0', avg_pace_seconds_per_km: filled && i < 6 ? String(330 - i * 5) : null }));
+  const totals = (/** @type {number} */ y, /** @type {boolean} */ filled) => ({ year: y, activity_count: filled ? 12 : 0, distance_m: filled ? '210000' : '0', activity_days: filled ? 10 : 0, avg_pace_seconds_per_km: filled ? '320.000' : null });
+  const base = Date.UTC(2026, 4, 4);
+  return {
+    year, compare_year: compare, cutoff_date: `${year}-12-31`, compare_cutoff_date: `${compare}-12-31`, date_assignment: 'activity_local_date',
+    personal_bests: [
+      { category: '5km', best: empty ? null : { activity_id: '11111111-1111-4111-8111-111111111111', activity_date: '2026-03-05', distance_m: '5000.000', duration_seconds: '1650.000', avg_pace_seconds_per_km: '330.000', qualifying_count: 4 } },
+      { category: '10km', best: null }
+    ],
+    monthly: months(!empty), compare_monthly: months(false),
+    weekly: Array.from({ length: 26 }, (_, i) => ({ week_start: new Date(base + i * 7 * 86400000).toISOString().slice(0, 10), active_days: empty ? 0 : i % 4 })),
+    weekday: Array.from({ length: 7 }, (_, i) => ({ weekday: i, activity_count: empty ? 0 : i })),
+    comparison: { current: totals(year, !empty), previous: totals(compare, false), delta: { activity_count: empty ? 0 : 12, distance_m: empty ? '0' : '210000', activity_days: empty ? 0 : 10, avg_pace_seconds_per_km: null } }
+  };
+}
 createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1');
   const avatarRoute = url.pathname.match(/^\/api\/v1\/showcase(?:\/users\/([a-z0-9_]+))?\/avatar$/);
@@ -187,6 +205,10 @@ createServer(async (req, res) => {
   if (url.pathname.endsWith('/statistics/trends')) {
     const from = url.searchParams.get('date_from'), to = url.searchParams.get('date_to');
     return send({ period: url.searchParams.get('period'), date_from: from, date_to: to, week_start: 'monday', date_assignment: 'activity_local_date', buckets: [{ ...summary, bucket_start: from, bucket_end: to, is_partial: true }] });
+  }
+  if (url.pathname.endsWith('/statistics/records')) {
+    const year = Number(url.searchParams.get('year') ?? 2026), compare = Number(url.searchParams.get('compare_year') ?? year - 1);
+    return send(recordsFixture(year, compare));
   }
   const missingActivity = '00000000-0000-4000-8000-000000000404';
   const activityDetail = url.pathname.match(/^\/api\/v1\/activities\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);

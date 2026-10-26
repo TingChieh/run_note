@@ -24,3 +24,10 @@ describe('routes prefix', () => {
   expect(contextPath(viewContext('/workspace/routes'), '/routes/abc')).toBe('/workspace/routes/abc');
  });
 });
+describe('records path', () => {
+ it('keeps the records page under named and workspace contexts', () => {
+  expect(contextPath(viewContext('/p/alice/records'), '/records')).toBe('/p/alice/records');
+  expect(contextPath(viewContext('/workspace/records'), '/records?year=2024')).toBe('/workspace/records?year=2024');
+  expect(contextPath(viewContext('/records'), '/records')).toBe('/records');
+ });
+});
