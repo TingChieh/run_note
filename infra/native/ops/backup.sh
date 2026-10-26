@@ -2,11 +2,11 @@
 # Logical backup of the Run Note database: dump -> checksum -> (optional) real restore drill
 # -> (optional) encrypted off-site copy -> local retention -> heartbeat.
 #
-#   backup.sh [--label nightly|pre-<release>] [--drill] [--strict-counts] [--no-offsite]
+#   backup.sh [--label nightly|pre-<release>|ship-<release>] [--drill] [--strict-counts] [--no-offsite]
 #
 # Run as a PostgreSQL superuser over the local socket (the systemd unit uses User=postgres).
 # Settings (all optional except PGDATABASE) come from the environment / backup.env:
-#   PGDATABASE, PGHOST, PGPORT, BACKUP_DIR, KEEP_NIGHTLY=14, KEEP_PRE=10,
+#   PGDATABASE, PGHOST, PGPORT, BACKUP_DIR, KEEP_NIGHTLY=14, KEEP_PRE=10, KEEP_SHIP=10,
 #   RESTIC_REPOSITORY + RESTIC_PASSWORD_FILE (off-site), HEALTHCHECK_URL (heartbeat)
 set -euo pipefail
 umask 077
@@ -30,6 +30,7 @@ assert_instance_database
 require_cmd pg_dump pg_restore psql
 KEEP_NIGHTLY="${KEEP_NIGHTLY:-14}"
 KEEP_PRE="${KEEP_PRE:-10}"
+KEEP_SHIP="${KEEP_SHIP:-10}"
 
 ping() {
   [ -n "${HEALTHCHECK_URL:-}" ] || return 0
@@ -63,9 +64,17 @@ fi
 if [ "$offsite" -eq 1 ] && [ -n "${RESTIC_REPOSITORY:-}" ]; then
   require_cmd restic
   log "copying to off-site repository"
-  restic backup --tag "$label" --tag "$PGDATABASE" "$file" "$file.sha256"
+  case "$label" in
+    # Every ship snapshot carries the shared tag "ship" so one policy can find them all.
+    ship-*) restic backup --tag "$label" --tag ship --tag "$PGDATABASE" "$file" "$file.sha256" ;;
+    *) restic backup --tag "$label" --tag "$PGDATABASE" "$file" "$file.sha256" ;;
+  esac
   if [ "$label" = nightly ]; then
     restic forget --tag nightly --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune
+  elif [[ "$label" == ship-* ]]; then
+    # Each snapshot has its own file path, so restic's default grouping (host,paths) would put
+    # every one in a group of its own and keep them all. Group by host only.
+    restic forget --tag "ship,$PGDATABASE" --group-by host --keep-last "$KEEP_SHIP" --prune
   fi
 elif [ "$offsite" -eq 1 ]; then
   log "WARNING: RESTIC_REPOSITORY not set; this backup exists only on this host"
@@ -79,6 +88,11 @@ prune() { # $1 label glob, $2 keep count
   done
 }
 prune nightly "$KEEP_NIGHTLY"
+# Backups taken just before a ship have their own quota so they never push out nightlies.
+{ ls -1t "$BACKUP_DIR"/*-ship-*.dump 2>/dev/null || true; } | awk -v keep="$KEEP_SHIP" 'NR>keep' | while IFS= read -r old; do
+  log "pruning $(basename "$old")"
+  rm -f -- "$old" "$old.sha256" "$old.list"
+done
 # shellcheck disable=SC2012
 { ls -1t "$BACKUP_DIR"/*-pre-*.dump 2>/dev/null || true; } | awk -v keep="$KEEP_PRE" 'NR>keep' | while IFS= read -r old; do
   rm -f -- "$old" "$old.sha256" "$old.list"

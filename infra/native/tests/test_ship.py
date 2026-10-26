@@ -226,7 +226,7 @@ class FakeRemote:
             return self.deployed + "\n"
         if "select (select count(*)" in script:
             return self.counts.pop(0) + "\n"
-        if "systemctl start" in script:
+        if "ship-backup.sh" in script:
             if not self.backup_ok:
                 raise ship.Failed("backup unit failed")
             return ""
@@ -285,7 +285,7 @@ class Orchestration(unittest.TestCase):
 
     def touched_server(self):
         return any(
-            entry in ("PUSH",) or "deploy.sh" in entry or "systemctl start" in entry
+            entry in ("PUSH",) or "deploy.sh" in entry or "ship-backup.sh" in entry
             for entry in self.remote.log
         )
 
@@ -293,7 +293,7 @@ class Orchestration(unittest.TestCase):
         self.assertEqual(self.go(), 0)
         log = self.remote.log
         push = log.index("PUSH")
-        backup = next(i for i, e in enumerate(log) if "systemctl start" in e)
+        backup = next(i for i, e in enumerate(log) if "ship-backup.sh" in e)
         deploy = next(i for i, e in enumerate(log) if "deploy.sh" in e)
         verify = next(i for i, e in enumerate(log) if "echo release=" in e)
         self.assertLess(push, backup)
@@ -304,6 +304,14 @@ class Orchestration(unittest.TestCase):
         self.assertEqual(
             self.remote.pushed[0][0], ("run-note-REL.tar.gz", "run-note-REL.tar.gz.sha256")
         )
+
+    def test_the_pre_deploy_backup_is_a_ship_backup_not_a_nightly(self):
+        self.assertEqual(self.go(), 0)
+        backup = next(e for e in self.remote.log if "ship-backup.sh" in e)
+        self.assertNotIn("systemctl start", backup)
+        self.assertNotIn("nightly", backup)
+        self.assertIn("RUNNOTE_INSTANCE='production'", backup)
+        self.assertIn("/rel/ops/ship-backup.sh' 'REL'", backup)
 
     def test_a_dry_run_builds_but_never_touches_the_server_beyond_reading(self):
         self.assertEqual(self.go(dry_run=True), 0)

@@ -317,8 +317,7 @@ def ship(
     counts = f"sudo -u postgres psql -X -qAt -d '{inst['DB_NAME']}' -c \"select (select count(*) from activities)||' '||(select count(*) from users)||' '||(select version_num from alembic_version)\""
     before = remote.run(counts).strip().splitlines()[-1]
     remote.run(
-        f"set -e; systemctl start '{inst['SERVICE_BACKUP']}.service'; "
-        f"test \"$(systemctl show '{inst['SERVICE_BACKUP']}.service' -p Result --value)\" = success"
+        f"set -e; RUNNOTE_INSTANCE='{instance}' '{remote_dir}/rel/ops/ship-backup.sh' '{release_id}'"
     )
     say(
         f"[6/7] backup with restore drill succeeded; deploying (data before: activities/users/revision = {before})"

@@ -183,7 +183,7 @@ infra/native/ops/ship.py --migrate          # 本次带数据库迁移时才允�
 3. 自已部署的提交以来是否有迁移文件变化：有就必须显式加 `--migrate`，否则拒绝；已部署的提交不是目标的祖先（即这是回退而不是发布）也拒绝。
 4. 构建发布包（`build-release.sh`，自带自包含检查）。
 5. 上传、校验 SHA-256，并在服务器上运行 `verify-release.sh`。
-6. 先做一次**带真实恢复演练的备份**，再用新发布包自带的 `deploy.sh` 部署（`--migrate` 原样传递；`deploy.sh` 自己仍然负责迁移前备份、严格演练和失败保护）。
+6. 先做一次**带真实恢复演练的备份**（直接运行新发布包的 `ops/ship-backup.sh`，标签 `ship-<发布 id>`，**不是** `nightly`，也不触发每晚的心跳），再用新发布包自带的 `deploy.sh` 部署（`--migrate` 原样传递；`deploy.sh` 自己仍然负责迁移前备份、严格演练和失败保护）。
 7. 验证：发布目录有完成标记、两个服务 active、没有旧发布的进程、回环健康检查 200、数据（活动数、用户数）没有减少、公网 HTTPS 的健康检查与页面 200，并打印回滚命令。
 
 **配置在仓库之外，不会提交任何个人信息**：`RUNNOTE_SSH_HOST`（必填，`~/.ssh/config` 里的别名即可）、`RUNNOTE_INSTANCE`（默认 `production`）、`RUNNOTE_STAGE_DIR`（默认 `/root/run-note-stage`）、`RUNNOTE_GITHUB_REPO`（默认从 `origin` 推导），从环境变量读取，其次从 `~/.config/run-note/deploy.env`（`KEY=VALUE`）。域名、端口、路径来自服务器上的 `/etc/run-note-instances/<实例>.conf`。
@@ -227,7 +227,8 @@ python3 ops/acceptance-check.py --loopback-port 3100 --domain run.example.com --
 
 - `runnote-backup.timer` 每晚 03:15（含 15 分钟随机延迟）执行 `backup.sh --label nightly --drill`：`pg_dump -Fc` → sha256 → `pg_restore --list` → **恢复到临时库并比对** → restic 异地（配置后）→ 保留策略 → 心跳（`HEALTHCHECK_URL`）。
 - 恢复演练（`restore-drill.sh`）校验：校验和；`pg_restore --exit-on-error` 完整恢复；revision 与现网一致；`PostGIS_Version()` 可用；表集合与每表索引数一致；逐表行数（`--strict-counts` 时必须相等，部署时服务已停止才使用）；每个几何列可查询。仅 `--list` 不算通过。
-- 异地保留：每日 7、每周 4、每月 6（`restic forget --prune`，只作用于 `nightly` 标签）。本机保留 14 份夜间备份、10 份迁移前备份。
+- 异地保留：每日 7、每周 4、每月 6（`restic forget --prune`，只作用于 `nightly` 标签）。本机保留 14 份夜间备份（`KEEP_NIGHTLY`）、10 份迁移前备份（`KEEP_PRE`）、10 份发布前备份（`KEEP_SHIP`）；三类按标签各自计数，互不挤占。
+- 发布前备份（`ship.py` 触发，标签 `ship-<发布 id>`）：异地快照带共同标签 `ship`，上传后执行 `restic forget --tag ship,<库名> --group-by host --keep-last <KEEP_SHIP> --prune`。必须 `--group-by host`：restic 默认按 `host,paths` 分组，而每个备份的文件路径都含时间戳，默认分组下每个快照自成一组，`--keep-*` 一份都不会删。
 - 手动演练：`sudo -u postgres env PGDATABASE=runnote /opt/run-note/current/ops/restore-drill.sh <dump>`。**至少每季度从异地仓库取回备份、在另一台机器上演练一次**——本机演练证明备份可用，不证明异地副本可取回。
 - 备份包含全部私人数据（含精确轨迹、密码哈希、会话）：目录 0700，异地必须加密，**不得**放入仓库（`.gitignore` 已忽略 `*.dump`）。
 
@@ -258,7 +259,9 @@ sudo RUNNOTE_INSTANCE=production /opt/run-note-production/current/ops/offsite.sh
 
 **已知边界**
 - 服务器持有可写、可删的访问密钥：服务器若被入侵，攻击者可以删除异地副本。R2 的对象锁定/保留策略能否缓解**尚未验证**；重要时刻可再手工下载一份离线保存。
-- 只有 `nightly` 快照按每日 7/每周 4/每月 6 清理；迁移前（`pre-*`）快照不会自动清理，体量很小，需要时用 `restic forget` 手工处理。
+- `nightly` 快照按每日 7/每周 4/每月 6 清理，`ship` 快照保留最近 10 份；迁移前（`pre-*`）快照不会自动清理，体量很小，需要时用 `restic forget` 手工处理。
+- **`nightly` 的异地清理可能没有生效**：它用 restic 默认分组（`host,paths`），而每个备份的路径都不同。在本机用 restic 实测，默认分组下 `forget --keep-last 2` 对 4 个路径各异的快照一份都不删。这个问题早于本次改动，**本次未修改**，需要单独确认（修复会删除异地的一批旧快照）。
+- 切换到 `ship-*` 标签之前（含）已经标成 `nightly` 的部署备份不会被改标签，它们会随每晚备份依次被本机保留策略挤出。
 - 更换密钥或迁移到新桶：用 `setup --reconfigure --repository <新位置>` 指向一个**新的空**仓库；不会读取或改写旧仓库。
 
 ### 配置校验
@@ -341,6 +344,20 @@ CI 暴露的问题与根因（均已修复，且没有跳过、没有加长超�
 - 未验证：真实 R2 上的 restic 上传与取回（`ops/offsite.sh` 在本地 restic 仓库上经 CI 演练，S3/R2 传输与 `AWS_DEFAULT_REGION=auto` 须在首次 `setup` 时实地确认）、`HEALTHCHECK_URL` 心跳、`runnote-backup.timer` 实际触发、真实域名下 HTTPS/Cookie/Origin/CSRF、CSP Report-Only 在真实页面的违规情况、`statement_timeout=3s` 对大 GPX 导入在目标规格上的影响。
 - 本地 `tests/ops-e2e.sh` 用 `postgres` 超级用户和 `DB_OWNER=postgres`；真实服务器上的 `runnote` 角色所有权调整只在脚本里写了，未在真实角色上演练。
 - CI 动作按当时 `v4`/`v5` 标签解析到的 commit SHA 固定（来自 GitHub API），上游已有更新主版本（checkout v7 等），升级需单独评估。
+
+### 发布前备份改用 `ship-*` 标签（验证记录）
+
+背景：`ship.py` 过去启动服务器上的备份服务，其 `ExecStart` 固定为 `--label nightly`，于是每次发布前的备份都占用 14 份夜间备份的名额；实测某天多次发布后，本机 18 份备份里 16 份来自同一天。现在 `ship.py` 直接运行已上传、已校验的新发布包里的 `ops/ship-backup.sh`，不需要改服务器上的单元文件。
+
+| 结果 | 检查 | 实测 |
+| --- | --- | --- |
+| PASS | `unittest discover -s infra/native/tests` | 113 tests OK（新增 `test_backup_retention.py` 9 项与 `test_ship.py` 1 项） |
+| 回归敏感性 | 把旧版 `backup.sh` 放回同一套单元测试 | 3 项失败/出错（25 次发布前备份后夜间备份被挤出；`KEEP_SHIP` 配额不存在；异地快照没有 `ship` 标签与 `--group-by host`） |
+| PASS | `shellcheck -x --source-path=SCRIPTDIR infra/native/ops/*.sh infra/native/tests/*.sh` | 无输出 |
+| PASS | `offsite-e2e.sh`（临时 PG18 集群 + 本地 restic 仓库）新增 5b | 连续 4 次 `ship-*` 上传（`KEEP_SHIP=2`）后异地恰好 2 份 `ship` 快照、最新一份在、`nightly` 快照数不变，随后 `offsite.sh verify` 通过 |
+| PASS | `ops-e2e.sh <发布包>`（临时 PG18 集群，10 步 + 新增 5b） | 5b：先 1 次迁移前备份、2 份 nightly，再做 6 次 `ship-backup.sh`（含真实恢复演练，`KEEP_SHIP=3`）；nightly 与迁移前备份文件清单不变，`ship` 备份恰好 3 份且最新一份保留 |
+| 实测 | restic 默认分组 | 4 个路径各异的快照，`forget --tag … --keep-last 2 --dry-run` 不删任何一份；加 `--group-by host` 后删除最旧 2 份（见"已知边界"） |
+| **未运行** | 真实服务器上的发布、`ops-e2e-instances.sh`、`caddy-instances.sh` | 部署后的只读核对见 PR 说明 |
 
 ## 改动范围与保留行为
 
