@@ -118,9 +118,7 @@ class OffsiteRetention(Harness):
         backup, forget = self.commands()
         self.assertIn("--tag ship-REL1 --tag ship --tag rn_test", backup)
         # restic's default grouping (host,paths) would keep every snapshot: paths always differ.
-        self.assertEqual(
-            forget, "forget --tag ship,rn_test --group-by host --keep-last 7 --prune"
-        )
+        self.assertEqual(forget, "forget --tag ship,rn_test --group-by host --keep-last 7 --prune")
 
     def test_nightly_snapshots_are_not_tagged_ship_and_keep_their_policy(self):
         self.backup("nightly")
@@ -164,6 +162,86 @@ class ShipBackupScript(Harness):
         self.assertNotEqual(self.run_script().returncode, 0)
         self.assertNotEqual(self.run_script("../x; rm").returncode, 0)
         self.assertFalse(self.out.exists())
+
+
+RUNUSER_STUB = """#!/usr/bin/env python3
+# Stand-in for `runuser -u postgres -- CMD`: the database account is a different user, so the
+# command must be executable and every directory on its path must be searchable by "other".
+import os
+import stat
+import sys
+
+args = sys.argv[1:]
+assert args[:3] == ["-u", "postgres", "--"], args
+cmd = args[3:]
+path = os.path.realpath(cmd[0])
+mode = os.stat(path).st_mode
+if not (mode & stat.S_IROTH and mode & stat.S_IXOTH):
+    sys.exit(f"runuser: failed to execute {cmd[0]}: Permission denied")
+# Only the test's own tree is judged, not the machine's private temp directories above it.
+root = os.path.realpath(os.environ["STUB_ROOT"])
+directory = os.path.dirname(path)
+while directory.startswith(root):
+    if not os.stat(directory).st_mode & stat.S_IXOTH:
+        sys.exit(f"runuser: failed to execute {cmd[0]}: Permission denied")
+    directory = os.path.dirname(directory)
+os.execvp(cmd[0], cmd)
+"""
+
+
+class ShipBackupAsDatabaseAccount(Harness):
+    """ship.py uploads the release under root's home (mode 700); the backup runs as postgres."""
+
+    def setUp(self):
+        super().setUp()
+        self.tmp.chmod(0o755)  # mkdtemp makes it private; only the staging directory must be
+        self.stage = self.tmp / "stage"
+        self.stage.mkdir()
+        self.ops = self.stage / "rel" / "ops"
+        self.ops.mkdir(parents=True)
+        self.stage.chmod(0o700)
+        for name in ("ship-backup.sh", "lib.sh", "envfile.py", "instance.py"):
+            shutil.copy(OPS / name, self.ops / name)
+        fake = self.ops / "backup.sh"
+        fake.write_text('#!/bin/sh\necho "$0|$*" > "$OUT"\n')
+        fake.chmod(0o755)
+        (self.bin / "id").write_text(
+            '#!/bin/sh\n[ "$1" = "-u" ] && { echo 0; exit 0; }\nexec /usr/bin/id "$@"\n'
+        )
+        (self.bin / "runuser").write_text(RUNUSER_STUB)
+        for name in ("id", "runuser"):
+            (self.bin / name).chmod(0o755)
+        self.scratch = self.tmp / "scratch"
+        self.scratch.mkdir()
+        self.scratch.chmod(0o755)
+        self.out = self.tmp / "out"
+
+    def run_script(self):
+        return subprocess.run(
+            [str(self.ops / "ship-backup.sh"), "REL1"],
+            env=self.env(
+                OUT=str(self.out), RUNNOTE_TMPDIR=str(self.scratch), STUB_ROOT=str(self.tmp)
+            ),
+            capture_output=True,
+            text=True,
+        )
+
+    def test_the_backup_runs_from_a_copy_the_database_account_can_reach(self):
+        done = self.run_script()
+        self.assertEqual(done.returncode, 0, done.stderr)
+        ran_from, args = self.out.read_text().strip().split("|")
+        self.assertTrue(ran_from.startswith(str(self.scratch)), ran_from)
+        self.assertFalse(ran_from.startswith(str(self.stage)))
+        self.assertEqual(args, "--label ship-REL1 --drill")
+
+    def test_the_copy_is_removed_afterwards(self):
+        self.assertEqual(self.run_script().returncode, 0)
+        self.assertEqual(list(self.scratch.iterdir()), [])
+
+    def test_the_copy_is_removed_and_the_exit_status_kept_when_the_backup_fails(self):
+        (self.ops / "backup.sh").write_text("#!/bin/sh\nexit 7\n")
+        self.assertEqual(self.run_script().returncode, 7)
+        self.assertEqual(list(self.scratch.iterdir()), [])
 
 
 if __name__ == "__main__":
