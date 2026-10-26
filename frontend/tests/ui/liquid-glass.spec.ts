@@ -451,6 +451,8 @@ test('map zoom buttons draw no coloured circle when pressed', async ({ page }) =
     expect(await button.evaluate(el => getComputedStyle(el, '::before').content)).toBe('none');
     await page.mouse.up();
   }
+});
+
 test('glass buttons sample their displacement map at device resolution on high-density phones', async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 851 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
   const page = await context.newPage();
