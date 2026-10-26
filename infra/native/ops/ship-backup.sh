@@ -20,4 +20,15 @@ release_id="${1:?usage: ship-backup.sh RELEASE_ID}"
 # A deploy must not report success to the nightly dead-man's switch.
 unset HEALTHCHECK_URL
 export RESTIC_CACHE_DIR="${RESTIC_CACHE_DIR:-$BACKUP_DIR/.restic-cache}"
-as_pg "$(dirname "$0")/backup.sh" --label "ship-$release_id" --drill
+
+# ship.py stages the release under root's home (mode 700), which the database account cannot enter,
+# so running backup.sh from there fails with "Permission denied". Give it a private, world-readable
+# copy of this directory (backup.sh, restore-drill.sh and lib.sh find each other next to themselves)
+# and remove it afterwards. RUNNOTE_TMPDIR exists for the tests.
+src="$(cd "$(dirname "$0")" && pwd)"
+work="$(mktemp -d "${RUNNOTE_TMPDIR:-/var/tmp}/runnote-ship-backup.XXXXXX")"
+trap 'rm -rf "$work"' EXIT
+cp -R "$src/." "$work/"
+chmod -R a+rX "$work"
+cd /
+as_pg "$work/backup.sh" --label "ship-$release_id" --drill
