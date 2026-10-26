@@ -437,6 +437,20 @@ test('development preview handles corrupt or blocked storage and respects reduce
   await expect.poll(() => submit.locator('.rn-glass-layer').evaluate(el => getComputedStyle(el).backdropFilter)).toMatch(/url/);
 });
 
+test('map zoom buttons draw no coloured circle when pressed', async ({ page }) => {
+  await installActivities(page); await loginRunner(page);
+  await page.goto(`/activities/${sampleActivity.id}`);
+  await expect(page.getByTestId('route-map-ready')).toBeVisible();
+  for (const selector of ['.maplibregl-ctrl-zoom-in', '.maplibregl-ctrl-zoom-out']) {
+    const button = page.locator(selector);
+    await expect(button).toBeVisible();
+    expect(await button.evaluate(el => getComputedStyle(el, '::before').content)).toBe('none');
+    const box = (await button.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    expect(await button.evaluate(el => getComputedStyle(el, '::before').content)).toBe('none');
+    await page.mouse.up();
+  }
 test('glass buttons sample their displacement map at device resolution on high-density phones', async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 851 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
   const page = await context.newPage();
