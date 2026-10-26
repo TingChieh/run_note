@@ -307,7 +307,11 @@
     .auth-content { padding-block: var(--space-8); }
     .page-content form > label { min-width: 0; max-width: 100%; }
   }
-  @media (max-width: 359px) { .mobile-bar .nav-toggle { width: 2.75rem; padding: var(--space-2); } .mobile-bar .nav-toggle span { display: none; } }
+  .mobile-bar .nav-toggle { flex: none; white-space: nowrap; }
+  .mobile-bar .brand { min-width: 0; }
+  .mobile-bar .brand-mark { flex: none; }
+  .mobile-bar .brand-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 479px) { .mobile-bar .nav-toggle { width: 2.75rem; padding: var(--space-2); } .mobile-bar .nav-toggle > span:not(.rn-glass-surface) { display: none; } }
 }
 
 /* State rules must outrank Tailwind background/border utilities. */
@@ -527,6 +531,11 @@
   .save-status { flex: 1 1 10rem; padding: 0; background: none; font-size: var(--text-small); color: var(--muted-foreground); }
   .settings-tabs { display: flex; flex-wrap: wrap; width: max-content; max-width: 100%; overflow-x: clip; gap: .25rem; margin-top: var(--space-4); padding: .25rem; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--surface) 45%, transparent); }
   .settings-tabs :is(a, button) { display: inline-flex; align-items: center; min-height: 2.5rem; padding: .375rem 1.125rem; border-radius: var(--radius-pill); font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--sport-heading-ink); transition: background-color var(--transition-control), color var(--transition-control), box-shadow var(--transition-control); }
+  @media (max-width: 479px) {
+    .settings-tabs { flex-wrap: nowrap; width: 100%; overflow-x: auto; scrollbar-width: none; }
+    .settings-tabs::-webkit-scrollbar { display: none; }
+    .settings-tabs :is(a, button) { flex: 1 0 auto; justify-content: center; padding-inline: .625rem; white-space: nowrap; }
+  }
   .settings-tabs :is(a, button):hover { background: color-mix(in srgb, var(--surface) 70%, transparent); }
   .settings-tabs :is(a[aria-current='page'], button[aria-pressed='true']) { color: var(--primary-foreground); background: var(--primary); box-shadow: 0 .125rem .5rem var(--glass-shadow); }
 }

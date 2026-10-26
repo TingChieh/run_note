@@ -420,3 +420,29 @@ test('AI 分析 navigation entry is shown to logged-in users on desktop and mobi
   await page.getByRole('button', { name: '打开导航' }).click();
   await expect(page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: 'AI 分析', exact: true })).toBeVisible();
 });
+
+for (const width of [320, 358, 361, 375]) {
+  test(`narrow ${width}px: menu button keeps its glass surface and settings tabs stay on one row`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 851 });
+    await login(page);
+    await page.goto('/settings/site');
+    const tabs = page.locator('.settings-tabs');
+    await expect(tabs).toBeVisible();
+    const buttons = page.locator('.mobile-bar button');
+    for (let i = 0; i < 2; i++) await expect.poll(() => buttons.nth(i).locator('.rn-glass-layer').evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(0);
+    const rows = await tabs.locator('a').evaluateAll(items => new Set(items.map(item => Math.round(item.getBoundingClientRect().top))).size);
+    expect(rows).toBe(1);
+    await noOverflow(page);
+  });
+}
+
+test('narrow 361px with enlarged text: menu button is icon-only and the brand never overlaps the header buttons', async ({ page }) => {
+  await page.setViewportSize({ width: 361, height: 851 });
+  await login(page);
+  await page.goto('/settings/site');
+  await page.addStyleTag({ content: 'html { font-size: 25px !important; }' });
+  await expect(page.locator('.mobile-bar .nav-toggle > span:not(.rn-glass-surface)')).toBeHidden();
+  const gap = await page.evaluate(() => document.querySelector('.mobile-actions')!.getBoundingClientRect().left - document.querySelector('.mobile-bar .brand-name')!.getBoundingClientRect().right);
+  expect(gap).toBeGreaterThanOrEqual(0);
+  await noOverflow(page);
+});
