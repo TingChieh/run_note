@@ -276,6 +276,28 @@ step "5. same-schema redeploy (R1 sibling): no migration, no backup"
 before="$(ls "$WORK"/backups/*.dump | wc -l | tr -d ' ')"
 deploy "$r2"
 [ "$(ls "$WORK"/backups/*.dump | wc -l | tr -d ' ')" = "$before" ] || fail "unexpected backup on same-schema deploy"
+step "5b. repeated pre-deploy (ship) backups never push out the nightly or migration backups"
+ship_ops="$(ops_of "$r1")"
+export KEEP_NIGHTLY=2 KEEP_SHIP=3
+"$ship_ops/ship-backup.sh" e2e-ship-seed >/dev/null 2>&1 || fail "first ship backup failed"
+for n in 1 2; do
+  sleep 1
+  python3 "$ship_ops/envfile.py" exec "$WORK/etc/backup.env" -- "$ship_ops/backup.sh" --label nightly >/dev/null 2>&1 \
+    || fail "nightly backup $n failed"
+done
+nightlies_before="$(ls "$WORK"/backups/*-nightly.dump | sort)"
+pre_before="$(ls "$WORK"/backups/*-pre-*.dump | sort)"
+for n in 1 2 3 4 5; do
+  sleep 1
+  "$ship_ops/ship-backup.sh" "e2e-ship-$n" >/dev/null 2>&1 || fail "ship backup $n failed"
+done
+[ "$(ls "$WORK"/backups/*-nightly.dump | sort)" = "$nightlies_before" ] || fail "ship backups changed the nightly backups"
+[ "$(ls "$WORK"/backups/*-pre-*.dump | sort)" = "$pre_before" ] || fail "ship backups changed the migration backups"
+[ "$(ls "$WORK"/backups/*-ship-*.dump | wc -l | tr -d ' ')" = 3 ] || fail "ship backups are not capped at KEEP_SHIP=3"
+ls "$WORK"/backups/*-ship-e2e-ship-5.dump >/dev/null || fail "newest ship backup was pruned"
+unset KEEP_NIGHTLY KEEP_SHIP
+echo "ok: 2 nightlies and $(echo "$pre_before" | wc -l | tr -d ' ') migration backup(s) survived 6 ship backups; ship backups capped at 3" >&2
+
 rollback_to() { "$(ops_of "$r1")/rollback.sh" "$@"; }
 
 step "6. rollback to the previous release (schema matches) just switches"

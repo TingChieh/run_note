@@ -51,7 +51,7 @@ done < <(find "$work" -type f -name '*.py' -print0)
 required=(
   RELEASE backend/alembic.ini backend/requirements.lock frontend/build/index.js
   scripts/site-owner.py scripts/osm-places.py scripts/backfill-place-titles.py
-  ops/lib.sh ops/deploy.sh ops/rollback.sh ops/backup.sh ops/restore-drill.sh
+  ops/lib.sh ops/deploy.sh ops/rollback.sh ops/backup.sh ops/ship-backup.sh ops/restore-drill.sh
   ops/init-instance.sh ops/set-site-mode.sh ops/verify-release.sh ops/offsite.sh
   ops/acceptance-check.py ops/envfile.py ops/instance.py ops/schema_compat.py
   infra/native/Caddyfile infra/native/instances/production.conf.example
@@ -66,7 +66,7 @@ missing=()
 for f in "${required[@]}"; do [ -f "$work/$f" ] || missing+=("$f"); done
 for d in backend/app backend/migrations; do [ -d "$work/$d" ] || missing+=("$d/"); done
 [ "${#missing[@]}" -eq 0 ] || fail "release is missing: ${missing[*]}"
-for f in ops/deploy.sh ops/rollback.sh ops/backup.sh ops/restore-drill.sh ops/init-instance.sh ops/set-site-mode.sh ops/verify-release.sh ops/offsite.sh; do
+for f in ops/deploy.sh ops/rollback.sh ops/backup.sh ops/ship-backup.sh ops/restore-drill.sh ops/init-instance.sh ops/set-site-mode.sh ops/verify-release.sh ops/offsite.sh; do
   [ -x "$work/$f" ] || fail "$f is not executable"
   bash -n "$work/$f" || fail "$f has a syntax error"
 done

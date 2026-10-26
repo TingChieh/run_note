@@ -91,6 +91,22 @@ after="$(RESTIC_PASSWORD_FILE="$WORK/backups/restic.password" restic -r "$repo" 
 [ "$after" -gt "$before" ] || fail "nightly backup did not add a snapshot ($before -> $after)"
 "$ops/offsite.sh" verify || fail "verify failed after the nightly upload"
 
+step "5b. ship (pre-deploy) snapshots are trimmed by their own policy and never touch the nightly ones"
+snap_count() { # $1 = tag
+  RESTIC_PASSWORD_FILE="$WORK/backups/restic.password" restic -r "$repo" snapshots --json --tag "$1" \
+    | python3 -c 'import json,sys;print(len(json.load(sys.stdin) or []))'
+}
+nightly_before="$(snap_count nightly)"
+for n in 1 2 3 4; do
+  sleep 1
+  python3 "$ops/envfile.py" exec "$envfile" -- env RESTIC_CACHE_DIR="$WORK/cache" KEEP_SHIP=2 "$ops/backup.sh" --label "ship-e2e$n" >/dev/null 2>&1 \
+    || fail "ship backup $n with off-site failed"
+done
+[ "$(snap_count ship)" = 2 ] || fail "expected 2 ship snapshots off-site, found $(snap_count ship)"
+[ "$(snap_count ship-e2e4)" = 1 ] || fail "newest ship snapshot was forgotten"
+[ "$(snap_count nightly)" = "$nightly_before" ] || fail "ship snapshots changed the nightly snapshots"
+"$ops/offsite.sh" verify || fail "verify failed after the ship uploads"
+
 step "6. verify catches a damaged copy and a stale or empty repository"
 cp -R "$repo" "$WORK/repo.good"
 chmod -R u+w "$repo"
