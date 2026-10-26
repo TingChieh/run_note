@@ -70,7 +70,9 @@ if [ "$offsite" -eq 1 ] && [ -n "${RESTIC_REPOSITORY:-}" ]; then
     *) restic backup --tag "$label" --tag "$PGDATABASE" "$file" "$file.sha256" ;;
   esac
   if [ "$label" = nightly ]; then
-    restic forget --tag nightly --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune
+    # Group by host only (see the ship branch below): with restic's default grouping every
+    # snapshot is alone in its group and nothing is ever forgotten.
+    restic forget --tag "nightly,$PGDATABASE" --group-by host --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune
   elif [[ "$label" == ship-* ]]; then
     # Each snapshot has its own file path, so restic's default grouping (host,paths) would put
     # every one in a group of its own and keep them all. Group by host only.

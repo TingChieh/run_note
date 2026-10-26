@@ -124,7 +124,11 @@ class OffsiteRetention(Harness):
         self.backup("nightly")
         backup, forget = self.commands()
         self.assertNotIn("--tag ship", backup)
-        self.assertIn("forget --tag nightly --keep-daily 7", forget)
+        self.assertEqual(
+            forget,
+            "forget --tag nightly,rn_test --group-by host"
+            " --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune",
+        )
 
     def test_migration_snapshots_are_not_forgotten_automatically(self):
         self.backup("pre-REL1")

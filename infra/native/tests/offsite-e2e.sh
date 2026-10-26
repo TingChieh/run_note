@@ -107,6 +107,20 @@ done
 [ "$(snap_count nightly)" = "$nightly_before" ] || fail "ship snapshots changed the nightly snapshots"
 "$ops/offsite.sh" verify || fail "verify failed after the ship uploads"
 
+step "5c. the nightly policy really forgets: of three same-day snapshots only the middle one goes"
+# restic keeps the newest snapshot of a period and, in addition, the oldest one.
+for t in "2026-03-01 08:00:00" "2026-03-01 12:00:00" "2026-03-01 20:00:00"; do
+  f="$WORK/backups/rn_offsite-dup-${t//[ :]/}-nightly.dump"; printf '%s\n' "$t" > "$f"
+  python3 "$ops/envfile.py" exec "$envfile" -- env RESTIC_CACHE_DIR="$WORK/cache" \
+    restic backup --time "$t" --tag nightly --tag rn_offsite "$f" >/dev/null 2>&1 || fail "seeding old snapshot failed"
+done
+old_day() { RESTIC_PASSWORD_FILE="$WORK/backups/restic.password" restic -r "$repo" snapshots --json --tag nightly \
+  | python3 -c 'import json,sys;print(" ".join(sorted(s["time"][11:13] for s in json.load(sys.stdin) if s["time"].startswith("2026-03-01"))))'; }
+[ "$(old_day)" = "08 12 20" ] || fail "seeding did not create the 3 same-day snapshots: $(old_day)"
+python3 "$ops/envfile.py" exec "$envfile" -- env RESTIC_CACHE_DIR="$WORK/cache" "$ops/backup.sh" --label nightly >/dev/null 2>&1 \
+  || fail "nightly backup failed"
+[ "$(old_day)" = "08 20" ] || fail "nightly policy left: $(old_day) (expected 08 20: the middle duplicate forgotten)"
+
 step "6. verify catches a damaged copy and a stale or empty repository"
 cp -R "$repo" "$WORK/repo.good"
 chmod -R u+w "$repo"

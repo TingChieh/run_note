@@ -227,7 +227,7 @@ python3 ops/acceptance-check.py --loopback-port 3100 --domain run.example.com --
 
 - `runnote-backup.timer` 每晚 03:15（含 15 分钟随机延迟）执行 `backup.sh --label nightly --drill`：`pg_dump -Fc` → sha256 → `pg_restore --list` → **恢复到临时库并比对** → restic 异地（配置后）→ 保留策略 → 心跳（`HEALTHCHECK_URL`）。
 - 恢复演练（`restore-drill.sh`）校验：校验和；`pg_restore --exit-on-error` 完整恢复；revision 与现网一致；`PostGIS_Version()` 可用；表集合与每表索引数一致；逐表行数（`--strict-counts` 时必须相等，部署时服务已停止才使用）；每个几何列可查询。仅 `--list` 不算通过。
-- 异地保留：每日 7、每周 4、每月 6（`restic forget --prune`，只作用于 `nightly` 标签）。本机保留 14 份夜间备份（`KEEP_NIGHTLY`）、10 份迁移前备份（`KEEP_PRE`）、10 份发布前备份（`KEEP_SHIP`）；三类按标签各自计数，互不挤占。
+- 异地保留：每日 7、每周 4、每月 6（`restic forget --tag nightly,<库名> --group-by host --prune`，只作用于 `nightly` 标签；restic 每个周期除最新一份外还会多留最旧的一份）。本机保留 14 份夜间备份（`KEEP_NIGHTLY`）、10 份迁移前备份（`KEEP_PRE`）、10 份发布前备份（`KEEP_SHIP`）；三类按标签各自计数，互不挤占。
 - 发布前备份（`ship.py` 触发，标签 `ship-<发布 id>`）：异地快照带共同标签 `ship`，上传后执行 `restic forget --tag ship,<库名> --group-by host --keep-last <KEEP_SHIP> --prune`。必须 `--group-by host`：restic 默认按 `host,paths` 分组，而每个备份的文件路径都含时间戳，默认分组下每个快照自成一组，`--keep-*` 一份都不会删。
 - 手动演练：`sudo -u postgres env PGDATABASE=runnote /opt/run-note/current/ops/restore-drill.sh <dump>`。**至少每季度从异地仓库取回备份、在另一台机器上演练一次**——本机演练证明备份可用，不证明异地副本可取回。
 - 备份包含全部私人数据（含精确轨迹、密码哈希、会话）：目录 0700，异地必须加密，**不得**放入仓库（`.gitignore` 已忽略 `*.dump`）。
@@ -260,7 +260,7 @@ sudo RUNNOTE_INSTANCE=production /opt/run-note-production/current/ops/offsite.sh
 **已知边界**
 - 服务器持有可写、可删的访问密钥：服务器若被入侵，攻击者可以删除异地副本。R2 的对象锁定/保留策略能否缓解**尚未验证**；重要时刻可再手工下载一份离线保存。
 - `nightly` 快照按每日 7/每周 4/每月 6 清理，`ship` 快照保留最近 10 份；迁移前（`pre-*`）快照不会自动清理，体量很小，需要时用 `restic forget` 手工处理。
-- **`nightly` 的异地清理可能没有生效**：它用 restic 默认分组（`host,paths`），而每个备份的路径都不同。在本机用 restic 实测，默认分组下 `forget --keep-last 2` 对 4 个路径各异的快照一份都不删。这个问题早于本次改动，**本次未修改**，需要单独确认（修复会删除异地的一批旧快照）。
+- **`nightly` 的异地清理曾经没有生效（已修复）**：旧命令用 restic 默认分组（`host,paths`），而每个备份的路径都含时间戳，每个快照自成一组，`--keep-*` 一份都不删。生产上的 dry-run 实测：12 份 nightly 分成 12 组，保留 12、删除 0；加 `--group-by host` 后保留 3、删除 9（全是 10 月 24、25 日多次发布产生的同日重复）。现已改为 `--group-by host`，上线后的第一次夜间备份会删除这批重复快照。
 - 切换到 `ship-*` 标签之前（含）已经标成 `nightly` 的部署备份不会被改标签，它们会随每晚备份依次被本机保留策略挤出。
 - 更换密钥或迁移到新桶：用 `setup --reconfigure --repository <新位置>` 指向一个**新的空**仓库；不会读取或改写旧仓库。
 
@@ -374,6 +374,18 @@ CI 暴露的问题与根因（均已修复，且没有跳过、没有加长超�
 | PASS | `shellcheck -x --source-path=SCRIPTDIR infra/native/ops/*.sh infra/native/tests/*.sh` | 无输出 |
 | PASS | `ops-e2e.sh <发布包>`（修复后的提交 `1e4d133` 构建，临时 PG18 集群） | 全部步骤通过，含 5b：6 次 `ship-backup.sh` 后 nightly 与迁移前备份不变、`ship` 备份被限制为 3 份 |
 | **未运行** | 真实服务器发布（以 root 经 SSH 运行）、`ops-e2e-instances.sh`、`offsite-e2e.sh`、`caddy-instances.sh` | 真实发布后的只读核对见 PR 说明 |
+
+### 修复 `nightly` 异地清理分组（验证记录）
+
+| 结果 | 检查 | 实测 |
+| --- | --- | --- |
+| 实测（生产，只读 dry-run） | `restic forget --dry-run --tag nightly --keep-daily 7 --keep-weekly 4 --keep-monthly 6` | 12 个分组、保留 12、删除 0（旧策略从未生效） |
+| 实测（生产，只读 dry-run） | 同上加 `--group-by host` | 保留 3、删除 9；被删的 9 份是 10 月 24、25 日同日重复；每天最后一份与最近的夜间备份都在 |
+| PASS | `unittest discover -s infra/native/tests` | 128 tests OK（`test_backup_retention.py` 的 nightly 断言改为精确匹配新命令） |
+| PASS | `shellcheck -x --source-path=SCRIPTDIR infra/native/ops/*.sh infra/native/tests/*.sh` | 无输出 |
+| PASS | `offsite-e2e.sh` 新增 5c（真实 restic 本地仓库） | 同一天 3 份 nightly（08/12/20 点）经夜间备份后剩 08、20 两份（中间一份被删） |
+| 回归敏感性 | 把旧版 `backup.sh` 放回 | `offsite-e2e.sh` 在 5c 失败："left: 08 12 20" |
+| **未运行** | 真实服务器发布、`ops-e2e.sh` 与其余 e2e | 本次只改 forget 命令 |
 
 ## 改动范围与保留行为
 
