@@ -222,6 +222,13 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
 - **只在进程环境注入测试变量，不要修改 `.env`**。既有做法见 `docs/09-phase-two-progress.md` 的"运行测试"小节（在 `backend/` 下就地构造 `TEST_DATABASE_URL` 与 `TEST_DATABASE_ALLOWED_TARGETS` 后以子进程调用 `pytest`）。
 - 未配置这些变量时集成用例会跳过，**跳过不等于通过**。
 
+### CI 与合并节奏
+
+- CI（`.github/workflows/ci.yml`）只在 PR 与 `main` 的 push 上运行（分支有 PR 时不再重复跑一遍），并由 `.github/scripts/changed_areas.py` 按改动路径跳过无关任务：仅文档（`docs/`、`*.md`、`LICENSE`）不跑任何测试任务；仅前端不跑 backend、macOS、infra；仅后端不跑 frontend-ui；改动含迁移、`scripts/`、依赖清单或 `infra/` 时跑 infra；改了 `.github/`、不认识的路径或算不出差异时全部运行。判断逻辑改动须同步改 `infra/native/tests/test_ci_changes.py`；说明见 `docs/74-ci-path-filters.md`。
+- 被跳过的任务显示为 skipped，`ship.py` 视为通过。**不要用 `[skip ci]`、`paths-ignore` 或其它让整个工作流不运行的做法**：`main` 上没有运行时 `ship.py` 会拒绝发布。
+- 小改动（纯文档、文案、样式微调，不涉及后端、迁移、依赖、鉴权、公共接口或部署脚本）：本地跑过相关检查（前端至少 `pnpm check` 与对应的 Playwright 配置）后，经用户明确要求，可以不等 PR 上的 CI 就合并；其余改动一律等 PR 的 CI 全绿再合并。合并仍须用户授权。
+- 无论哪种，部署前都要等 `main` 上该提交的 CI 全绿（`ship.py` 强制检查），这一关不放松。
+
 ### 验证纪律
 
 - 测试必须**真实执行**。无法执行时明确说明原因，**禁止声称测试通过**。

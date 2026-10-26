@@ -1,9 +1,18 @@
 name: Checks
 
 on:
+  # A branch with an open pull request is checked once (pull_request), not twice; main is checked on
+  # every push because ops/ship.py refuses a commit that has no completed run.
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
+
+# A newer push to the same pull request replaces its running check. Runs on main are keyed by commit,
+# so none of them is ever cancelled or replaced while queued (ship.py needs each one to finish).
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -12,8 +21,31 @@ permissions:
 # was written (resolved through the GitHub API); the tag is kept in the comment. Move them
 # deliberately, e.g. with Dependabot, not implicitly.
 jobs:
+  # Decides which areas a change touches (documentation only, frontend, backend, release tooling).
+  # Jobs of untouched areas end as "skipped", which ops/ship.py accepts. Unknown paths, the CI
+  # definition itself and any diff that cannot be computed turn every area on; see
+  # .github/scripts/changed_areas.py and docs/74-ci-path-filters.md.
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      backend: ${{ steps.areas.outputs.backend }}
+      frontend: ${{ steps.areas.outputs.frontend }}
+      infra: ${{ steps.areas.outputs.infra }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - id: areas
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: python3 .github/scripts/changed_areas.py
+
   backend:
     name: backend (Linux, PostgreSQL 18 + PostGIS)
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-24.04
     env:
       APP_ENV: test
@@ -73,7 +105,8 @@ jobs:
   # Developers work on macOS: keep one run of the same suite there, but only for main.
   backend-macos:
     name: backend (macOS parity, main only)
-    if: github.ref == 'refs/heads/main'
+    needs: changes
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.backend == 'true'
     runs-on: macos-latest
     env:
       APP_ENV: test
@@ -110,6 +143,8 @@ jobs:
           fi
 
   frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -129,6 +164,8 @@ jobs:
 
   # Synthetic-API browser tests (no backend, no database). Chrome is preinstalled on the runner.
   frontend-ui:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -156,6 +193,8 @@ jobs:
   # deploy/migrate/rollback/restore rehearsal against a throw-away cluster. Nothing here talks to
   # a real server.
   infra:
+    needs: changes
+    if: needs.changes.outputs.infra == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
