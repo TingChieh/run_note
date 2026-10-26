@@ -452,3 +452,21 @@ test('map zoom buttons draw no coloured circle when pressed', async ({ page }) =
     await page.mouse.up();
   }
 });
+
+test('glass buttons sample their displacement map at device resolution on high-density phones', async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 851 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
+  const page = await context.newPage();
+  await installActivities(page); await loginRunner(page);
+  await page.goto('/activities');
+  const layer = page.locator('.mobile-bar .nav-toggle .rn-glass-layer');
+  await expect.poll(() => layer.evaluate(el => el.style.backdropFilter)).toMatch(/url\("?#lg/);
+  const ratio = await layer.evaluate(async el => {
+    const id = el.style.backdropFilter.match(/#(lg\d+-v\d+)/)![1];
+    const href = document.getElementById(id)!.querySelector('feImage')!.getAttribute('href')!;
+    const image = new Image(); image.src = href; await image.decode();
+    return image.naturalWidth / (el.parentElement!.closest('button')!.clientWidth);
+  });
+  // The map follows devicePixelRatio, capped at 2 pixels per CSS pixel; 1 would look jagged on a 3x screen.
+  expect(ratio).toBeGreaterThanOrEqual(1.9);
+  await context.close();
+});
