@@ -345,6 +345,20 @@ CI 暴露的问题与根因（均已修复，且没有跳过、没有加长超�
 - 本地 `tests/ops-e2e.sh` 用 `postgres` 超级用户和 `DB_OWNER=postgres`；真实服务器上的 `runnote` 角色所有权调整只在脚本里写了，未在真实角色上演练。
 - CI 动作按当时 `v4`/`v5` 标签解析到的 commit SHA 固定（来自 GitHub API），上游已有更新主版本（checkout v7 等），升级需单独评估。
 
+### 发布前备份改用 `ship-*` 标签（验证记录）
+
+背景：`ship.py` 过去启动服务器上的备份服务，其 `ExecStart` 固定为 `--label nightly`，于是每次发布前的备份都占用 14 份夜间备份的名额；实测某天多次发布后，本机 18 份备份里 16 份来自同一天。现在 `ship.py` 直接运行已上传、已校验的新发布包里的 `ops/ship-backup.sh`，不需要改服务器上的单元文件。
+
+| 结果 | 检查 | 实测 |
+| --- | --- | --- |
+| PASS | `unittest discover -s infra/native/tests` | 113 tests OK（新增 `test_backup_retention.py` 9 项与 `test_ship.py` 1 项） |
+| 回归敏感性 | 把旧版 `backup.sh` 放回同一套单元测试 | 3 项失败/出错（25 次发布前备份后夜间备份被挤出；`KEEP_SHIP` 配额不存在；异地快照没有 `ship` 标签与 `--group-by host`） |
+| PASS | `shellcheck -x --source-path=SCRIPTDIR infra/native/ops/*.sh infra/native/tests/*.sh` | 无输出 |
+| PASS | `offsite-e2e.sh`（临时 PG18 集群 + 本地 restic 仓库）新增 5b | 连续 4 次 `ship-*` 上传（`KEEP_SHIP=2`）后异地恰好 2 份 `ship` 快照、最新一份在、`nightly` 快照数不变，随后 `offsite.sh verify` 通过 |
+| PASS | `ops-e2e.sh <发布包>`（临时 PG18 集群，10 步 + 新增 5b） | 5b：先 1 次迁移前备份、2 份 nightly，再做 6 次 `ship-backup.sh`（含真实恢复演练，`KEEP_SHIP=3`）；nightly 与迁移前备份文件清单不变，`ship` 备份恰好 3 份且最新一份保留 |
+| 实测 | restic 默认分组 | 4 个路径各异的快照，`forget --tag … --keep-last 2 --dry-run` 不删任何一份；加 `--group-by host` 后删除最旧 2 份（见"已知边界"） |
+| **未运行** | 真实服务器上的发布、`ops-e2e-instances.sh`、`caddy-instances.sh` | 部署后的只读核对见 PR 说明 |
+
 ## 改动范围与保留行为
 
 - 新增/修改（多实例）：`ops/instance.py`、`ops/init-instance.sh`、`ops/set-site-mode.sh`、`templates/`、`instances/`，以及 `lib.sh`/`deploy.sh`/`rollback.sh`/`backup.sh`/`restore-drill.sh`/`envfile.py`/`Caddyfile` 的实例上下文；
