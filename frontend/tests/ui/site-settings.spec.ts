@@ -24,6 +24,8 @@ test('site title, subtitle, footer, tab title and logo follow settings', async (
   await expect(projectLink).toHaveAttribute('href', 'https://github.com/TingChieh/run_note');
   await expect(projectLink).toHaveAttribute('target', '_blank');
   await expect(projectLink).toHaveAttribute('rel', 'noopener noreferrer');
+  await expect(projectLink).toHaveText('GitHub');
+  await expect(projectLink.locator('svg')).toHaveAttribute('aria-hidden', 'true');
   await expect(page).toHaveTitle('数据汇总 · 晨跑站');
   await expect(page.locator('meta[name="description"]')).toHaveCount(1);
   expect((await page.request.put('/api/v1/site/images/logo', { headers: csrf, multipart: { file: { name: 'logo.png', mimeType: 'image/png', buffer: png } } })).status()).toBe(200);
