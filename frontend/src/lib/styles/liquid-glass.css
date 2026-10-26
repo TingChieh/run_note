@@ -113,26 +113,9 @@
   transform-origin: center;
   transition: background-color var(--transition-control), transform 180ms cubic-bezier(.2, .8, .2, 1);
 }
-.sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-in::before,
-.sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-out::before {
-  position: absolute;
-  inset: 3px;
-  border-radius: 50%;
-  background: var(--glass-surface-hover);
-  content: '';
-  opacity: 0;
-  transform: scale(.82);
-  transition: opacity 120ms ease, transform 180ms cubic-bezier(.2, .8, .2, 1);
-  pointer-events: none;
-}
 .sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-in:active,
 .sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-out:active {
   transform: scale(.94, .9);
-}
-.sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-in:active::before,
-.sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-out:active::before {
-  opacity: 1;
-  transform: scale(1);
 }
 .sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-out {
   border-top: 1px solid color-mix(in srgb, var(--glass-edge) 72%, transparent);
