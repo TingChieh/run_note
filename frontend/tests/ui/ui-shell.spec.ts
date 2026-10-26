@@ -446,3 +446,23 @@ test('narrow 361px with enlarged text: menu button is icon-only and the brand ne
   expect(gap).toBeGreaterThanOrEqual(0);
   await noOverflow(page);
 });
+
+test('touch taps leave no hover colour behind on glass buttons', async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 851 }, isMobile: true, hasTouch: true });
+  const page = await context.newPage();
+  await login(page);
+  await page.goto('/settings/site');
+  const toggle = page.locator('.nav-toggle');
+  const tint = () => toggle.locator('.rn-glass-tint').evaluate(el => getComputedStyle(el).backgroundColor);
+  await expect.poll(() => toggle.locator('.rn-glass-tint').count()).toBe(1);
+  expect(await page.evaluate(() => matchMedia('(hover: none)').matches)).toBe(true);
+  const before = await tint();
+  await toggle.tap();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await toggle.tap();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await page.waitForTimeout(500);
+  expect(await toggle.evaluate(el => el.matches(':hover'))).toBe(true);
+  expect(await tint()).toBe(before);
+  await context.close();
+});

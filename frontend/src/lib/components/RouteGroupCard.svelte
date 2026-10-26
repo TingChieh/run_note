@@ -27,7 +27,7 @@
   h2 a { color: var(--foreground); }
   h2 a::after { content: ''; position: absolute; inset: 0; }
   .route-card { position: relative; transition: border-color .15s, box-shadow .15s; }
-  .route-card:hover { border-color: var(--primary); }
+  @media (hover: hover) { .route-card:hover { border-color: var(--primary); } }
   .route-card:has(a:focus-visible) { outline: 2px solid var(--ring); outline-offset: 3px; }
   /* The card draws the ring through :has(); keep the link's own outline where it is unsupported. */
   @supports selector(:has(*)) { h2 a:focus-visible { outline: none; } }
