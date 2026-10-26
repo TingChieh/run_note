@@ -62,7 +62,7 @@ export function liquidGlass(root: HTMLElement) {
       const frosted = !copied && engine !== 'blink' && !staticGlass;
       if (staticGlass) element.classList.add('rn-glass-static');
       const glass = createGlass(layer, { mode: copied ? 'content' : 'backdrop', clip: true,
-        ...optics(element), chroma: copied ? settings.chroma : 0, mapScale: 1, fallback: frosted ? fallback() : 'none' });
+        ...optics(element), chroma: copied ? settings.chroma : 0, fallback: frosted ? fallback() : 'none' });
       const bleed = 12;
       let press = 0, alive = true, geometry = '';
       const syncCopy = () => {
