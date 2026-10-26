@@ -167,7 +167,7 @@
   .feature-entrances { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--space-4); }
   .feature-entrance { display:flex; align-items:center; gap:.85rem; min-width:0; padding:1.1rem; border:1px solid var(--border); border-radius:var(--radius-card); background:var(--surface); font-size: var(--text-small); font-weight: var(--weight-semibold); }
   .feature-entrance strong { font-size: var(--text-small); font-weight: var(--weight-semibold); }
-  .feature-entrance:hover { border-color:var(--primary); background:var(--muted); }
+  @media (hover: hover) { .feature-entrance:hover { border-color:var(--primary); background:var(--muted); } }
   .feature-icon { display:grid; place-items:center; flex-shrink:0; width:2.5rem; height:2.5rem; border-radius:50%; background:var(--sport-green); color:var(--sport-ink); font-size: var(--text-section); }
   .feature-entrance:nth-child(2) .feature-icon { background:var(--sport-blue); }
   .feature-entrance:nth-child(3) .feature-icon { background:var(--sport-yellow-accent); }
@@ -182,7 +182,7 @@
   .annual-metrics dt { display:flex; align-items:center; }
 
   .button-primary { display: inline-flex; align-items: center; justify-content: center; min-height: 2.75rem; padding: .55rem 1rem; border-radius: var(--radius-control); background: var(--primary); color: var(--primary-foreground); font-weight: var(--weight-semibold); font-size: var(--text-small); }
-  .button-primary:hover { background: var(--primary-hover); color: var(--primary-foreground); }
+  @media (hover: hover) { .button-primary:hover { background: var(--primary-hover); color: var(--primary-foreground); } }
   .dashboard { --dashboard-card-gap:var(--space-4); display: grid; gap: var(--space-6); margin-top: var(--space-6); min-width: 0; }
   .cumulative { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem; font-size: var(--text-small); color: var(--muted-foreground); }
   .cumulative strong { color: var(--foreground); font-weight: var(--weight-semibold); }
@@ -211,7 +211,7 @@
   .day-title { font-size: var(--text-section); font-weight: var(--weight-semibold); }
   .day-activity { display: block; border: 1px solid var(--border); border-radius: var(--radius-control); padding: 1rem; }
   .day-activity { transition: border-color var(--transition-control), background-color var(--transition-control), transform var(--motion-hover); }
-  .day-activity:hover { border-color: var(--primary); background: var(--muted); }
+  @media (hover: hover) { .day-activity:hover { border-color: var(--primary); background: var(--muted); } }
   @media (hover: hover) and (pointer: fine) { .day-activity:hover { transform: translateX(2px); } }
   .day-height { overflow: hidden; padding: 3px; margin: calc(var(--space-4) - 3px) -3px -3px; transition: height 280ms cubic-bezier(.22,.61,.36,1); }
   .day-fade { animation: day-fade 240ms ease-out both; transition: opacity 160ms ease; }

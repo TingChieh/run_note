@@ -47,7 +47,7 @@
 <style>
   .activity-card { min-width: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); color: var(--foreground); }
   .activity-card { transition: border-color var(--transition-control), box-shadow var(--motion-hover), transform var(--motion-hover); }
-  .activity-card:hover { border-color: var(--primary); box-shadow: var(--shadow-popover); }
+  @media (hover: hover) { .activity-card:hover { border-color: var(--primary); box-shadow: var(--shadow-popover); } }
   @media (hover: hover) and (pointer: fine) { .activity-card:hover { transform: translateY(-2px); } }
   @media (prefers-reduced-motion: reduce) { .activity-card:hover { transform: none; } }
   .activity-card.selected { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
@@ -58,7 +58,7 @@
   .card-selection input { width: 1.125rem; height: 1.125rem; accent-color: var(--primary); }
   .card-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-left: auto; }
   .card-actions button { min-height: 2.75rem; padding: .5rem .75rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--surface); color: var(--foreground); font-size: var(--text-small); }
-  .card-actions button:hover:enabled { border-color: var(--primary); color: var(--primary); }
+  @media (hover: hover) { .card-actions button:hover:enabled { border-color: var(--primary); color: var(--primary); } }
   .card-actions button:disabled { opacity: .5; cursor: not-allowed; }
   .record-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); }
   .record-heading :global(.route-thumbnail) { flex-shrink: 0; }

@@ -137,9 +137,11 @@
 .sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-out {
   border-top: 1px solid color-mix(in srgb, var(--glass-edge) 72%, transparent);
 }
-.sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-in:hover,
-.sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-out:hover {
-  background-color: var(--glass-surface-hover) !important;
+@media (hover: hover) {
+  .sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-in:hover,
+  .sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > button.maplibregl-ctrl-zoom-out:hover {
+    background-color: var(--glass-surface-hover) !important;
+  }
 }
 .sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > .rn-glass-surface .rn-glass-shadow {
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--glass-edge) 65%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--glass-reflection) 55%, transparent), 0 .125rem .5rem color-mix(in srgb, var(--glass-shadow) 65%, transparent);
@@ -147,8 +149,10 @@
 .sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in) > .rn-glass-surface .rn-glass-tint {
   background: linear-gradient(145deg, var(--glass-edge) 0%, transparent 38%, color-mix(in srgb, var(--glass-rim) 60%, transparent) 78%, var(--glass-reflection)), var(--button-glass-fill);
 }
-.sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in):not(:disabled):not([aria-disabled="true"]):hover > .rn-glass-surface .rn-glass-tint {
-  background: linear-gradient(145deg, var(--glass-edge) 0%, transparent 38%, color-mix(in srgb, var(--glass-rim) 60%, transparent) 78%, var(--glass-reflection)), var(--button-glass-hover);
+@media (hover: hover) {
+  .sport-theme .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in):not(:disabled):not([aria-disabled="true"]):hover > .rn-glass-surface .rn-glass-tint {
+    background: linear-gradient(145deg, var(--glass-edge) 0%, transparent 38%, color-mix(in srgb, var(--glass-rim) 60%, transparent) 78%, var(--glass-reflection)), var(--button-glass-hover);
+  }
 }
 
 /* Data colours carry meaning; a thin sheen adds glass without washing them out. */
@@ -186,8 +190,10 @@
     backdrop-filter: none;
   }
   /* Enhanced controls paint hover colour on the deforming tint layer only. */
-  .sport-theme :is(button:where(:not(.wall-card)):where(:not(.settings-tabs > button)):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary):where(:not(.rn-glass-control)):not(:disabled):not([aria-disabled="true"]):hover {
-    background-color: var(--button-glass-hover) !important;
+  @media (hover: hover) {
+    .sport-theme :is(button:where(:not(.wall-card)):where(:not(.settings-tabs > button)):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary):where(:not(.rn-glass-control)):not(:disabled):not([aria-disabled="true"]):hover {
+      background-color: var(--button-glass-hover) !important;
+    }
   }
   .sport-theme .maplibregl-ctrl-group {
     background-color: var(--glass-surface) !important;
@@ -208,7 +214,7 @@
   background: linear-gradient(145deg, var(--glass-sheen), transparent 48%, var(--glass-reflection)), var(--glass-surface);
   box-shadow: inset 0 1px 0 var(--glass-edge), inset 0 -1px 0 var(--glass-rim), 0 .125rem .375rem var(--glass-shadow);
 }
-.sport-theme input:not(:disabled)::file-selector-button:hover { background-color: var(--glass-surface-hover); }
+@media (hover: hover) { .sport-theme input:not(:disabled)::file-selector-button:hover { background-color: var(--glass-surface-hover); } }
 
 /* LgButton uses separate shadow, optical and tint layers with 12px of press room. */
 .sport-theme :is(.button-primary, .button-secondary, button.bg-primary, button.save, button.apply-button, .mode-switch, .mode-switch button:not(.rn-menu-option):not(.rn-select-toggle)) {
@@ -230,7 +236,7 @@
 .rn-glass-shadow, .rn-glass-tint { position: absolute; left: 0; top: 0; }
 .rn-glass-shadow { box-shadow: inset 0 1px 0 color-mix(in srgb, var(--glass-edge) 45%, transparent), 0 .25rem .75rem color-mix(in srgb, var(--glass-shadow) 65%, transparent); }
 .rn-glass-tint { background: var(--button-glass-fill); transition: background-color var(--transition-control); }
-.rn-glass-control:not(:disabled):not([aria-disabled="true"]):hover > .rn-glass-surface .rn-glass-tint { background: var(--button-glass-hover); }
+@media (hover: hover) { .rn-glass-control:not(:disabled):not([aria-disabled="true"]):hover > .rn-glass-surface .rn-glass-tint { background: var(--button-glass-hover); } }
 /* WebKit static glass: an opaque tint plus an inset rim. No backdrop-filter. */
 .rn-glass-static > .rn-glass-surface .rn-glass-layer {
   background: none;
@@ -243,16 +249,24 @@
     color-mix(in srgb, var(--button-glass-fallback) 84%, transparent);
   box-shadow: inset 0 1px 0 var(--glass-edge), inset 0 -1px 0 var(--glass-rim);
 }
-.rn-glass-static:not(:disabled):not([aria-disabled="true"]):hover > .rn-glass-surface .rn-glass-tint {
-  background:
-    linear-gradient(155deg, var(--glass-sheen), transparent 42%, var(--glass-reflection)),
-    color-mix(in srgb, var(--button-glass-fallback) 92%, transparent);
+@media (hover: hover) {
+  .rn-glass-static:not(:disabled):not([aria-disabled="true"]):hover > .rn-glass-surface .rn-glass-tint {
+    background:
+      linear-gradient(155deg, var(--glass-sheen), transparent 42%, var(--glass-reflection)),
+      color-mix(in srgb, var(--button-glass-fallback) 92%, transparent);
+  }
 }
-.sport-theme .maplibregl-ctrl-group.rn-glass-static:has(> .maplibregl-ctrl-zoom-in) > .rn-glass-surface .rn-glass-tint,
-.sport-theme .maplibregl-ctrl-group.rn-glass-static:has(> .maplibregl-ctrl-zoom-in):not(:disabled):not([aria-disabled="true"]):hover > .rn-glass-surface .rn-glass-tint {
+.sport-theme .maplibregl-ctrl-group.rn-glass-static:has(> .maplibregl-ctrl-zoom-in) > .rn-glass-surface .rn-glass-tint {
   background:
     linear-gradient(145deg, var(--glass-edge) 0%, transparent 38%, color-mix(in srgb, var(--glass-rim) 55%, transparent) 78%, var(--glass-reflection)),
     color-mix(in srgb, var(--surface) 90%, transparent);
+}
+@media (hover: hover) {
+  .sport-theme .maplibregl-ctrl-group.rn-glass-static:has(> .maplibregl-ctrl-zoom-in):not(:disabled):not([aria-disabled="true"]):hover > .rn-glass-surface .rn-glass-tint {
+    background:
+      linear-gradient(145deg, var(--glass-edge) 0%, transparent 38%, color-mix(in srgb, var(--glass-rim) 55%, transparent) 78%, var(--glass-reflection)),
+      color-mix(in srgb, var(--surface) 90%, transparent);
+  }
 }
 .rn-glass-copy { position: absolute; left: 0; top: 0; display: block; max-width: none; max-height: none; }
 .sport-theme .mode-switch .rn-glass-shadow { box-shadow: inset 0 0 0 1px var(--glass-reflection); }

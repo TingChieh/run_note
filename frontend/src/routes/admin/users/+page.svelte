@@ -226,7 +226,7 @@
   th, td { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); vertical-align: middle; }
   thead th { padding-block: var(--space-2); font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--muted-foreground); white-space: nowrap; }
   tbody tr { transition: background-color var(--transition-control); }
-  tbody tr:hover { background: color-mix(in srgb, var(--muted) 60%, transparent); }
+  @media (hover: hover) { tbody tr:hover { background: color-mix(in srgb, var(--muted) 60%, transparent); } }
   tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
   tbody th { min-width: 14rem; font-weight: inherit; }
   .user-cell { display: flex; align-items: center; gap: var(--space-3); }

@@ -127,7 +127,7 @@
   .running-goal { margin:0; padding:var(--space-2); border-radius:var(--radius-control); background:var(--surface); color:var(--foreground); }
   .goal-heading { display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
   button { min-height:44px; padding:.4rem .5rem; color:var(--primary); font-size: var(--text-small); font-weight: var(--weight-semibold); border-radius:.5rem; }
-  button:hover { background:var(--primary-soft); }
+  @media (hover: hover) { button:hover { background:var(--primary-soft); } }
   select { margin:0 0 var(--space-1); width:100%; min-height:44px; font-size: var(--text-small); color:var(--foreground); }
   .goal-distance { display:flex;align-items:baseline;gap:.25rem; margin:0; min-height:var(--space-8); line-height: var(--line-height-heading); } .goal-distance strong { font-size: var(--text-section); font-variant-numeric:tabular-nums; font-weight: var(--weight-bold);} .goal-distance span { font-size: var(--text-caption); color:var(--muted-foreground); }
   progress { appearance:none; display:block; width:100%; height:var(--space-1); border:0; border-radius:1rem; overflow:hidden; background:var(--primary-soft); color:var(--primary); }

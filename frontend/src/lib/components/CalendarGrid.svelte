@@ -72,7 +72,8 @@
   .days { display: grid; grid-template-rows: repeat(7, 1rem); grid-auto-flow: column; grid-auto-columns: 1rem; gap: 4px; }
   .days button { transition: outline-color var(--motion-hover), outline-offset var(--motion-hover), transform 120ms ease-out; border-radius: 3px; cursor: pointer; width: 1rem; height: 1rem; font-size: var(--text-small); font-weight: var(--weight-semibold); }
   .days button:active { transform: scale(.9); }
-  .days button:hover, .days button:focus-visible, .days button.selected { outline: 2px solid var(--calendar-ring); outline-offset: 1px; }
+  .days button:focus-visible, .days button.selected { outline: 2px solid var(--calendar-ring); outline-offset: 1px; }
+  @media (hover: hover) { .days button:hover { outline: 2px solid var(--calendar-ring); outline-offset: 1px; } }
   .calendar-scroll { max-width: 100%; overflow-x: auto; }
   .enhanced { overflow: visible; }
   .enhanced .months { grid-template-columns: repeat(var(--weeks), minmax(0,1fr)); grid-auto-columns: auto; gap: 3px; width: auto; margin-left: 25px; font-size: var(--text-caption); }
@@ -88,7 +89,8 @@
   .month-days button { min-width: 0; min-height: 20px; aspect-ratio: 1; width: 100%; border-radius: 3px; font-size: var(--text-caption); color: var(--calendar-label); }
   .month-days .day-level-2 { color: var(--calendar-active-label); }
   .month-days :is(.day-level-3, .day-level-4) { color: var(--calendar-strong-label); }
-  .month-days button:hover, .month-days button:focus-visible, .month-days button.selected { outline: 2px solid var(--calendar-ring); outline-offset: 1px; }
+  .month-days button:focus-visible, .month-days button.selected { outline: 2px solid var(--calendar-ring); outline-offset: 1px; }
+  @media (hover: hover) { .month-days button:hover { outline: 2px solid var(--calendar-ring); outline-offset: 1px; } }
   .month-weekday { text-align: center; font-size: var(--text-caption); color: var(--muted-foreground); }
   .scroll-hint { font-size: var(--text-caption); color: var(--muted-foreground); margin-top: .75rem; }
 </style>

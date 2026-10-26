@@ -172,30 +172,33 @@
     .calendar-trigger { display: none; }
   }
   .calendar-trigger { display: grid; place-items: center; flex-shrink: 0; width: 2.75rem; height: 2.75rem; border-radius: .65rem; color: var(--primary); }
-  .calendar-trigger:hover, .calendar-trigger[aria-expanded='true'] { background: var(--primary-soft); }
+  .calendar-trigger[aria-expanded='true'] { background: var(--primary-soft); }
+  @media (hover: hover) { .calendar-trigger:hover { background: var(--primary-soft); } }
   .date-popover { position: fixed; inset: auto; margin: 0; width: 20rem; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); color: var(--foreground); box-shadow: var(--shadow-popover); }
   .calendar-header { display: flex; align-items: center; gap: .25rem; margin-bottom: .75rem; }
   .month-selectors { display: flex; flex: 1; min-width: 0; gap: var(--space-2); }
   select { min-width: 0; min-height: 2.5rem; border: 0; background: var(--surface); color: var(--foreground); padding: .25rem; font-size: var(--text-body); font-weight: var(--weight-semibold); }
   .month-step { flex-shrink: 0; width: 2.5rem; height: 2.5rem; border-radius: .65rem; font-size: var(--text-stat); color: var(--primary); }
-  .month-step:hover:not(:disabled) { background: var(--primary-soft); }
+  @media (hover: hover) { .month-step:hover:not(:disabled) { background: var(--primary-soft); } }
   .weekdays, .calendar-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .25rem; text-align: center; }
   .weekdays { color: var(--muted-foreground); font-size: var(--text-caption); margin-bottom: .5rem; }
   .calendar-months { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .375rem; }
   .calendar-months button { min-height: 2.75rem; border-radius: .65rem; font-size: var(--text-body); }
-  .calendar-months button:hover:not(:disabled) { background: var(--primary-soft); color: var(--primary); }
+  @media (hover: hover) { .calendar-months button:hover:not(:disabled) { background: var(--primary-soft); color: var(--primary); } }
   .calendar-months .today { box-shadow: inset 0 0 0 1px var(--primary); }
-  .calendar-months button[aria-pressed='true'], .calendar-months button[aria-pressed='true']:hover { background: var(--primary); color: var(--primary-foreground); font-weight: var(--weight-bold); }
+  .calendar-months button[aria-pressed='true'] { background: var(--primary); color: var(--primary-foreground); font-weight: var(--weight-bold); }
+  @media (hover: hover) { .calendar-months button[aria-pressed='true']:hover { background: var(--primary); color: var(--primary-foreground); font-weight: var(--weight-bold); } }
   .calendar-months button:focus-visible { outline-offset: 1px; }
   .calendar-days button { min-height: 2.25rem; border-radius: .65rem; font-size: var(--text-small); }
-  .calendar-days button:hover:not(:disabled) { background: var(--primary-soft); color: var(--primary); }
+  @media (hover: hover) { .calendar-days button:hover:not(:disabled) { background: var(--primary-soft); color: var(--primary); } }
   .calendar-days .outside { color: var(--muted-foreground); }
   .calendar-days .today { box-shadow: inset 0 0 0 1px var(--primary); }
-  .calendar-days button[aria-pressed='true'], .calendar-days button[aria-pressed='true']:hover { background: var(--primary); color: var(--primary-foreground); font-weight: var(--weight-bold); }
+  .calendar-days button[aria-pressed='true'] { background: var(--primary); color: var(--primary-foreground); font-weight: var(--weight-bold); }
+  @media (hover: hover) { .calendar-days button[aria-pressed='true']:hover { background: var(--primary); color: var(--primary-foreground); font-weight: var(--weight-bold); } }
   .calendar-days button:focus-visible { outline-offset: 1px; }
   .calendar-footer { display: flex; justify-content: space-between; margin-top: .75rem; padding-top: .5rem; border-top: 1px solid var(--border); }
   .calendar-footer button { min-height: 2.5rem; padding: .25rem .75rem; border-radius: .65rem; color: var(--primary); font-weight: var(--weight-semibold); }
-  .calendar-footer button:hover:not(:disabled) { background: var(--primary-soft); }
+  @media (hover: hover) { .calendar-footer button:hover:not(:disabled) { background: var(--primary-soft); } }
   .calendar-help { text-align: center; color: var(--muted-foreground); font-size: var(--text-caption); margin-top: .25rem; }
   .month-announcement { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   @media (max-width: 767px) { .date-control { width: 100%; } }

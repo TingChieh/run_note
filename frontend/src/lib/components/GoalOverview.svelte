@@ -141,7 +141,7 @@
   h2{display:flex;align-items:center;gap:.6rem;flex-shrink:0;white-space:nowrap;color:var(--muted-foreground);font-size: var(--text-section);font-weight: var(--weight-semibold);}
   h2>span{font-size: var(--text-stat);color:var(--primary);}
   .goal-edit{min-height:44px;color:var(--primary);font-size: var(--text-small);font-weight: var(--weight-semibold);padding:.35rem .65rem;border-radius:var(--radius-pill);}
-  .goal-edit:hover{background:var(--primary-soft);}
+  @media (hover: hover) { .goal-edit:hover {background:var(--primary-soft);} }
   .goal-value{display:flex;align-items:baseline;flex-wrap:nowrap;gap:.5rem;margin:.8rem 0 1rem;font-variant-numeric:tabular-nums;}
   .goal-value strong{font-size: var(--text-title);font-weight: var(--weight-bold);line-height: var(--line-height-tight);letter-spacing: 0;}
   .goal-value>span{font-size: var(--text-body);color:var(--muted-foreground);}
