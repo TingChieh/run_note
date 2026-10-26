@@ -44,7 +44,7 @@
 </script>
 <svelte:window onkeydown={close} />
 <div class="mobile-bar">
-  <a href={view.href("/dashboard")} class="brand" aria-label={`${site.title} 数据汇总`}>{#if site.logo_url && !logoFailed}<img class="brand-mark brand-logo" src={site.logo_url} alt="" width="32" height="32" onerror={() => { logoFailed = true; }} />{:else}<span class="brand-mark" aria-hidden="true">{brandInitial(site.title)}</span>{/if}{site.title}</a>
+  <a href={view.href("/dashboard")} class="brand" aria-label={`${site.title} 数据汇总`}>{#if site.logo_url && !logoFailed}<img class="brand-mark brand-logo" src={site.logo_url} alt="" width="32" height="32" onerror={() => { logoFailed = true; }} />{:else}<span class="brand-mark" aria-hidden="true">{brandInitial(site.title)}</span>{/if}<span class="brand-name">{site.title}</span></a>
   <div class="mobile-actions"><ThemeToggle compact />
   <button bind:this={toggle} type="button" class="nav-toggle" aria-expanded={open} aria-controls="app-navigation" aria-label={open ? '关闭导航' : '打开导航'} onclick={() => { open = !open; }}>
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d={open ? 'm6 6 12 12 M6 18 18 6' : 'M4 6h16 M4 12h16 M4 18h16'} /></svg><span>导航</span>
