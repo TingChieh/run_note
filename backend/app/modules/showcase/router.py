@@ -28,7 +28,7 @@ from app.modules.showcase.schema import (
     ShowcaseReportList,
 )
 from app.modules.statistics import service as statistics
-from app.modules.statistics.records import OptionalYear, build_records
+from app.modules.statistics.records import build_records
 from app.modules.statistics.schema import Calendar, Records, Summary, Trends
 from app.modules.statistics.streaks import read_streaks
 from app.modules.users.model import User
@@ -156,11 +156,9 @@ def records(
     request: Request,
     db: DB,
     owner: Owner,
-    year: OptionalYear = None,
-    compare_year: OptionalYear = None,
 ):
     today = request.app.state.clock().astimezone(ZoneInfo(owner.timezone)).date()
-    return envelope(request, build_records(db, owner.id, today, year, compare_year))
+    return envelope(request, build_records(db, owner.id, today))
 
 
 @router.get("/statistics/streaks", response_model=ApiResponse[dict])

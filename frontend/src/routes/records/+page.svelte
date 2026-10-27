@@ -6,111 +6,261 @@
   import PageHeader from '#lib/components/PageHeader.svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import PageSkeleton from '#lib/components/PageSkeleton.svelte';
-  import PersonalBests from '#lib/components/PersonalBests.svelte';
+  import RecordsBanner from '#lib/components/RecordsBanner.svelte';
   import RecordsChart from '#lib/components/RecordsChart.svelte';
-  import { nullAfterCutoff, type ChartSpec } from '#lib/components/records-chart.ts';
-  import { ActivityError, formatDistance, formatPace } from '#lib/api/activities.ts';
+  import type { MonthlyMetric } from '#lib/components/records-chart.ts';
+  import { ActivityError, formatPace } from '#lib/api/activities.ts';
   import { dashboardDistance } from '#lib/api/dashboard-format.ts';
-  import { readRecords as scoped_readRecords, paceDelta, signedDistance, type Records } from '#lib/api/records.ts';
+  import { currentYear } from '#lib/api/statistics.ts';
+  import { readRecords as scoped_readRecords, paceDelta, recordDate, signedDistance, type Records, type YearRow } from '#lib/api/records.ts';
   const view = useViewContext();
-  const readRecords = view.bind(scoped_readRecords, 2);
+  const readRecords = view.bind(scoped_readRecords, 0);
 
   let data = $state<Records | null>(null), loading = $state(true), message = $state('');
-  let yearInput = $state(''), compareInput = $state(''), inputMessage = $state('');
+  let metric = $state<MonthlyMetric>('distance');
   let disposed = false, token = 0;
+  const year = $derived(currentYear(page.data.showcase?.timezone ?? 'UTC'));
 
-  async function load(year?: number, compareYear?: number) {
-    const mine = ++token; loading = true; message = ''; data = null;
+  async function load() {
+    const mine = ++token; loading = true; message = '';
     try {
-      const result = await readRecords(year, compareYear);
+      const result = await readRecords();
       if (disposed || mine !== token) return;
-      data = result; yearInput = String(result.year); compareInput = String(result.compare_year);
+      data = result;
     } catch (cause) {
       if (disposed || mine !== token) return;
-      if (cause instanceof ActivityError && cause.status === 401) { disposed = true; data = null; window.location.replace(`/admin?reason=expired&next=${encodeURIComponent(window.location.pathname)}`); return; }
-      message = cause instanceof Error ? cause.message : '读取失败，请稍后重试';
+      if (cause instanceof ActivityError && cause.status === 401) { disposed = true; token++; data = null; window.location.replace('/admin?reason=expired&next=' + encodeURIComponent(window.location.pathname)); return; }
+      data = null; message = cause instanceof Error ? cause.message : '读取失败，请稍后重试';
     } finally { if (!disposed && mine === token) loading = false; }
   }
-  function apply() {
-    const year = Number(yearInput), compare = Number(compareInput);
-    if (!/^\d{4}$/.test(yearInput) || !/^\d{4}$/.test(compareInput) || year < 1900 || year > 2100 || compare < 1900 || compare > 2100) { inputMessage = '请输入 1900–2100 年'; return; }
-    if (year === compare) { inputMessage = '对比年份不能与年份相同'; return; }
-    inputMessage = ''; void load(year, compare);
-  }
-  onMount(() => { void load(); return () => { disposed = true; }; });
+  onMount(() => { void load(); return () => { disposed = true; token++; data = null; }; });
 
-  const km = (value: number) => `${new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1 }).format(value)} km`;
-  const metres = (value: string | number | null) => value === null ? null : Number(value) / 1000;
-  const months = Array.from({ length: 12 }, (_, i) => `${i + 1} 月`);
   const weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-  const cutoffMonth = (date: string) => { const month = Number(date.slice(5, 7)); return Number.isInteger(month) && month >= 1 && month <= 12 ? month : 12; };
-  const empty = $derived(!!data && data.personal_bests.every(item => !item.best) && data.monthly.every(m => m.activity_count === 0) && data.compare_monthly.every(m => m.activity_count === 0) && data.weekly.every(w => w.active_days === 0));
+  const empty = $derived(!!data && data.totals.activity_count === 0);
+  const current = $derived(data?.yearly.find(row => row.is_partial) ?? null);
 
-  const monthlySpec = $derived<ChartSpec | null>(data && { labels: months, series: [{ name: `${data.year} 年`, type: 'bar', color: 'primary', data: data.monthly.map(m => metres(m.distance_m)) }], yName: '里程（km）', format: km, zeroBased: true });
-  const paceSpec = $derived<ChartSpec | null>(data && { labels: months, series: [{ name: `${data.year} 年`, type: 'line', color: 'primary', data: data.monthly.map(m => m.avg_pace_seconds_per_km === null ? null : Number(m.avg_pace_seconds_per_km)) }], yName: '配速（越低越快）', format: value => formatPace(value), zeroBased: false });
-  const weeklySpec = $derived<ChartSpec | null>(data && { labels: data.weekly.map(w => w.week_start.slice(5)), series: [{ name: '每周训练天数', type: 'bar', color: 'primary', data: data.weekly.map(w => w.active_days) }], yName: '训练天数', format: value => `${value} 天`, zeroBased: true });
-  const weekdaySpec = $derived<ChartSpec | null>(data && { labels: weekdays, series: [{ name: `${data.year} 年`, type: 'bar', color: 'primary', data: data.weekday.map(d => d.activity_count) }], yName: '活动次数', format: value => `${value} 次`, zeroBased: true });
-  const compareSpec = $derived<ChartSpec | null>(data && { labels: months, series: [
-    { name: `${data.year} 年`, type: 'line', color: 'primary', data: nullAfterCutoff(data.monthly.map(m => metres(m.distance_m)), data.cutoff_date) },
-    { name: `${data.compare_year} 年`, type: 'line', color: 'secondary', data: nullAfterCutoff(data.compare_monthly.map(m => metres(m.distance_m)), data.compare_cutoff_date) }
-  ], yName: '月里程（km）', format: km, zeroBased: true });
+  /** Plain words first: this year's distance against the same period last year (both from the server). */
+  const summary = $derived.by(() => {
+    if (!data) return '';
+    if (data.totals.activity_count === 0) return '还没有跑步记录。跑完第一次，这里会画出你的每个月、每一年。';
+    if (!current || current.activity_count === 0) return '今年还没有跑步，出发吧。';
+    const sentence = `今年已跑 ${dashboardDistance(current.distance_m)}`;
+    if (!current.delta || current.delta_basis !== 'previous_year_same_period') return sentence;
+    const delta = Number(current.delta.distance_m);
+    if (!Number.isFinite(delta)) return sentence;
+    return delta === 0 ? `${sentence}，和去年同期持平` : `${sentence}，比去年同期${delta > 0 ? '多' : '少'} ${dashboardDistance(Math.abs(delta))}`;
+  });
 
-  const monthRows = $derived(data ? data.monthly.map((m, i) => [months[i], String(m.activity_count), formatDistance(m.distance_m), formatPace(m.avg_pace_seconds_per_km)]) : []);
-  const paceRows = $derived(data ? data.monthly.map((m, i) => [months[i], formatPace(m.avg_pace_seconds_per_km), String(m.activity_count)]) : []);
-  const weekRows = $derived(data ? data.weekly.map(w => [w.week_start, `${w.active_days} 天`]) : []);
-  const weekdayRows = $derived(data ? data.weekday.map(d => [weekdays[d.weekday], `${d.activity_count} 次`]) : []);
-  const compareRows = $derived(data ? data.monthly.map((m, i) => [months[i], i + 1 > cutoffMonth(data!.cutoff_date) ? '—' : formatDistance(m.distance_m), i + 1 > cutoffMonth(data!.compare_cutoff_date) ? '—' : formatDistance(data!.compare_monthly[i].distance_m)]) : []);
+  // Yearly review: latest year first; bar length is that year's distance against the longest year.
+  const years = $derived(data ? [...data.yearly].reverse() : []);
+  const longest = $derived(Math.max(0, ...years.map(row => Number(row.distance_m))));
+  const share = (row: YearRow) => longest > 0 ? Number(row.distance_m) / longest : 0;
+  const change = (row: YearRow) => !row.delta ? '' : `${row.delta_basis === 'previous_year_same_period' ? '较去年同期' : '较上一年'} ${signedDistance(row.delta.distance_m)}`;
+  const direction = (row: YearRow) => !row.delta ? '' : Number(row.delta.distance_m) > 0 ? 'up' : Number(row.delta.distance_m) < 0 ? 'down' : 'flat';
+
+  // Training rhythm: four levels of active days per week, and the weekday spread.
+  const level = (days: number) => days === 0 ? 0 : days <= 2 ? 1 : days <= 4 ? 2 : 3;
+  const weekWords = (start: string, days: number) => `${recordDate(start, year)}起的一周：${days ? `跑了 ${days} 天` : '没有跑步'}`;
+  const weeksRun = $derived(data ? data.weekly.filter(week => week.active_days > 0).length : 0);
+  const busiest = $derived(data ? Math.max(0, ...data.weekday.map(day => day.activity_count)) : 0);
+  // Name the favourite weekday only when it stands out: one day, or two tied days; more ties say nothing.
+  const favourite = $derived.by(() => {
+    const top = data && busiest > 0 ? data.weekday.filter(day => day.activity_count === busiest) : [];
+    return top.length >= 1 && top.length <= 2 ? top.map(day => weekdays[day.weekday]).join('、') : '';
+  });
 </script>
+
 <svelte:head><title>{pageTitle('个人记录', page.data.site)}</title></svelte:head>
-<PageHeader title="个人记录" description="5K / 10K 最佳成绩、月度里程、配速进步、训练频率与同期对比。" />
-<div class="records-page">
-  <form class="year-form" onsubmit={event => { event.preventDefault(); apply(); }} aria-label="选择对比年份">
-    <label class="block-field year-field">年份 <input class="text-field" type="number" min="1900" max="2100" inputmode="numeric" bind:value={yearInput} aria-describedby="records-year-message" /></label>
-    <label class="block-field year-field">对比年份 <input class="text-field" type="number" min="1900" max="2100" inputmode="numeric" bind:value={compareInput} aria-describedby="records-year-message" /></label>
-    <button class="button-secondary" type="submit" disabled={loading}>查看</button>
-    <p id="records-year-message" class="year-message" class:is-empty={!inputMessage} role="status" data-testid="records-year-message">{inputMessage}</p>
-  </form>
-  {#if loading}<PageSkeleton />{/if}
-  {#if message}<div data-testid="records-error"><FeedbackState kind="error" title={message}><button class="button-secondary" onclick={() => { void load(Number(yearInput) || undefined, Number(compareInput) || undefined); }}>重新读取</button></FeedbackState></div>{/if}
-  {#if data && empty}
-    <div data-testid="records-empty"><FeedbackState title="记录一次跑步，让纪录开始积累"><a href={view.href('/activities')} class="button-primary">查看跑步记录</a></FeedbackState></div>
-  {:else if data && monthlySpec && paceSpec && weeklySpec && weekdaySpec && compareSpec}
-    <div class="records-sections" data-testid="records-ready">
-      <section aria-labelledby="bests-title"><h2 id="bests-title">最佳成绩</h2><PersonalBests bests={data.personal_bests} /></section>
-      <section class="records-card" aria-labelledby="monthly-title"><h2 id="monthly-title">{data.year} 年月度里程</h2>
-        <RecordsChart spec={monthlySpec} label="月度里程" columns={['月份', '次数', '里程', '可靠配速']} rows={monthRows} testid="records-chart-monthly" /></section>
-      <section class="records-card" aria-labelledby="pace-title"><h2 id="pace-title">配速进步趋势</h2>
-        <p class="hint">每月所有可靠跑步的平均配速，不区分距离；缺少可靠用时的月份留空。</p>
-        <RecordsChart spec={paceSpec} label="月度配速" columns={['月份', '可靠配速', '活动次数']} rows={paceRows} testid="records-chart-pace" /></section>
-      <section class="records-card" aria-labelledby="frequency-title"><h2 id="frequency-title">训练频率</h2>
-        <h3>最近 26 周每周训练天数</h3>
-        <RecordsChart spec={weeklySpec} label="每周训练天数" columns={['周起始（周一）', '训练天数']} rows={weekRows} testid="records-chart-weekly" />
-        <h3>{data.year} 年周内分布</h3>
-        <RecordsChart spec={weekdaySpec} label="周内分布" columns={['星期', '活动次数']} rows={weekdayRows} testid="records-chart-weekday" /></section>
-      <section class="records-card" aria-labelledby="compare-title"><h2 id="compare-title">{data.year} 年 vs {data.compare_year} 年同期</h2>
-        <p class="hint">统计截至 {data.cutoff_date}（对比年为 {data.compare_cutoff_date}）。</p>
-        <dl class="compare-metrics">
-          <div><dt>累计里程</dt><dd data-testid="records-compare-distance">{dashboardDistance(data.comparison.current.distance_m)}<small>{data.compare_year} 年 {dashboardDistance(data.comparison.previous.distance_m)} · {signedDistance(data.comparison.delta.distance_m)}</small></dd></div>
-          <div><dt>活动次数</dt><dd data-testid="records-compare-count">{data.comparison.current.activity_count} 次<small>{data.compare_year} 年 {data.comparison.previous.activity_count} 次 · {data.comparison.delta.activity_count > 0 ? '+' : data.comparison.delta.activity_count < 0 ? '−' : ''}{Math.abs(data.comparison.delta.activity_count)} 次</small></dd></div>
-          <div><dt>平均配速</dt><dd data-testid="records-compare-pace">{formatPace(data.comparison.current.avg_pace_seconds_per_km)}<small>{data.compare_year} 年 {formatPace(data.comparison.previous.avg_pace_seconds_per_km)} · {paceDelta(data.comparison.delta.avg_pace_seconds_per_km)}</small>{#if data.comparison.current.avg_pace_seconds_per_km === null || data.comparison.previous.avg_pace_seconds_per_km === null}<span class="sr-only">（缺失或无法可靠计算）</span>{/if}</dd></div>
-        </dl>
-        <RecordsChart spec={compareSpec} label="月里程对比" columns={['月份', `${data.year} 年`, `${data.compare_year} 年`]} rows={compareRows} testid="records-chart-compare" /></section>
+<PageHeader title="个人记录" description="全部历史的最佳成绩、每个月的里程与配速、逐年变化和训练规律。" />
+<div class="records-page" data-testid={data ? (empty ? 'records-empty' : 'records-ready') : undefined}>
+  {#if loading && !data}<PageSkeleton title="正在读取个人记录…" />{/if}
+  {#if message}
+    <div data-testid="records-error"><FeedbackState kind="error" title={message}><button type="button" class="button-secondary retry" onclick={() => { void load(); }} aria-label="重试读取个人记录">重试</button></FeedbackState></div>
+  {/if}
+  {#if data}
+    <div class="lead">
+      <RecordsBanner bests={data.personal_bests} totals={data.totals} variant="hero" {year} />
+      <!-- Phrases stay whole so Chinese lines break after a comma, not mid-word. -->
+      <p class="summary" data-testid="records-summary">{#each summary.split(/(?<=，|。)/) as phrase, i (i)}<span class="phrase">{phrase}</span>{/each}</p>
+      {#if empty}<p><a class="button-secondary" href={view.href('/activities')}>查看跑步记录</a></p>{/if}
     </div>
+
+    {#if !empty}
+      <section class="records-card" aria-labelledby="monthly-title" data-testid="records-monthly">
+        <div class="card-heading">
+          <div><p class="eyebrow">每个月</p><h2 id="monthly-title">月度里程与配速</h2></div>
+          <div class="settings-tabs metric-switch" role="group" aria-label="月度指标">
+            <button type="button" aria-pressed={metric === 'distance'} onclick={() => { metric = 'distance'; }}>里程</button>
+            <button type="button" aria-pressed={metric === 'pace'} onclick={() => { metric = 'pace'; }}>配速</button>
+          </div>
+        </div>
+        <p class="hint">{metric === 'distance' ? '每根柱子是一个月的总里程，最深的是跑得最多的月份。' : '每月可靠跑步的平均配速，越高越快；缺少可靠用时的月份留空。'}</p>
+        <RecordsChart monthly={data.monthly} {metric} />
+      </section>
+
+      <div class="records-pair"><div class="pair-grid">
+        <section class="records-card" aria-labelledby="years-title" data-testid="records-years">
+          <div class="card-heading"><div><p class="eyebrow">一年一年看</p><h2 id="years-title">逐年回顾</h2></div></div>
+          <ol class="year-list">
+            {#each years as row (row.year)}
+              {@const words = change(row)}
+              <li class="year-row" class:partial={row.is_partial} data-testid={`records-year-${row.year}`}>
+                <span class="year">{row.year}</span>
+                <span class="track" aria-hidden="true"><span class="fill" style:--share={share(row)}></span></span>
+                <span class="km">{dashboardDistance(row.distance_m)}</span>
+                {#if row.is_partial || words}
+                  <p class="year-note">
+                    {#if row.is_partial}<span class="tag">进行中</span>{/if}
+                    {#if words}<span class="delta" data-direction={direction(row)}>{words}</span>{/if}
+                  </p>
+                {/if}
+              </li>
+            {/each}
+          </ol>
+          <details class="data-table">
+            <summary>查看逐年数据</summary>
+            <div class="table-scroll">
+              <table>
+                <caption class="sr-only">逐年次数、里程、活动天数、平均配速与变化</caption>
+                <thead><tr><th scope="col">年份</th><th scope="col">次数</th><th scope="col">里程</th><th scope="col">活动天数</th><th scope="col">平均配速</th><th scope="col">变化</th></tr></thead>
+                <tbody>
+                  {#each years as row (row.year)}
+                    <tr>
+                      <th scope="row">{row.year}{row.is_partial ? '（进行中）' : ''}</th>
+                      <td>{row.activity_count} 次</td>
+                      <td>{dashboardDistance(row.distance_m)}</td>
+                      <td>{row.activity_days} 天</td>
+                      <td>{formatPace(row.avg_pace_seconds_per_km)}{#if row.avg_pace_seconds_per_km === null}<span class="sr-only">（无可靠配速）</span>{/if}</td>
+                      <td>{#if row.delta}{change(row)} · 配速 {paceDelta(row.delta.avg_pace_seconds_per_km)}{#if row.delta.avg_pace_seconds_per_km === null}<span class="sr-only">（配速变化缺失：其中一年没有可靠配速）</span>{/if}{:else}—<span class="sr-only">（第一年，没有可比较的上一年）</span>{/if}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        </section>
+
+        <section class="records-card" aria-labelledby="rhythm-title" data-testid="records-rhythm">
+          <div class="card-heading"><div><p class="eyebrow">跑得有多勤</p><h2 id="rhythm-title">训练规律</h2></div></div>
+          <p class="hint">{weeksRun ? `最近 26 周里，有 ${weeksRun} 周出门跑过${favourite ? `；${favourite}跑得最多` : ''}。` : '最近 26 周还没有跑步。'}</p>
+          <h3 class="sub">最近 26 周 · 每周跑步天数</h3>
+          <ol class="weeks" aria-label="最近 26 周每周跑步天数">
+            {#each data.weekly as week (week.week_start)}
+              {@const words = weekWords(week.week_start, week.active_days)}
+              <li><span class="dot" data-level={level(week.active_days)} role="img" title={words} aria-label={words} data-testid="records-week-dot"></span></li>
+            {/each}
+          </ol>
+          <div class="weeks-foot">
+            <span>{recordDate(data.weekly[0].week_start, year)}</span>
+            <span class="legend" aria-hidden="true"><span class="dot" data-level="0"></span>0<span class="dot" data-level="1"></span>1–2<span class="dot" data-level="2"></span>3–4<span class="dot" data-level="3"></span>5+ 天</span>
+            <span>本周</span>
+          </div>
+          <h3 class="sub">周内分布 · 全部历史</h3>
+          <ol class="weekday-bars" aria-label="周一到周日的跑步次数">
+            {#each data.weekday as day (day.weekday)}
+              {@const peak = busiest > 0 && day.activity_count === busiest}
+              <li class="weekday">
+                <span class="count" aria-hidden="true">{day.activity_count}</span>
+                <span class="column" aria-hidden="true"><span class="bar" class:peak style:--share={busiest > 0 ? day.activity_count / busiest : 0}></span></span>
+                <span class="day" aria-hidden="true">{weekdays[day.weekday].slice(1)}</span>
+                <span class="hit" role="img" title={`${weekdays[day.weekday]} 跑了 ${day.activity_count} 次`} aria-label={`${weekdays[day.weekday]} 跑了 ${day.activity_count} 次`} data-peak={peak ? 'true' : 'false'} data-testid="records-weekday-bar"></span>
+              </li>
+            {/each}
+          </ol>
+          <details class="data-table">
+            <summary>查看训练规律数据</summary>
+            <div class="table-scroll">
+              <table>
+                <caption class="sr-only">最近 26 周每周跑步天数</caption>
+                <thead><tr><th scope="col">周起始（周一）</th><th scope="col">跑步天数</th></tr></thead>
+                <tbody>{#each data.weekly as week (week.week_start)}<tr><th scope="row">{week.week_start}</th><td>{week.active_days} 天</td></tr>{/each}</tbody>
+              </table>
+              <table>
+                <caption class="sr-only">周内分布：全部历史每个星期几的跑步次数</caption>
+                <thead><tr><th scope="col">星期</th><th scope="col">跑步次数</th></tr></thead>
+                <tbody>{#each data.weekday as day (day.weekday)}<tr><th scope="row">{weekdays[day.weekday]}</th><td>{day.activity_count} 次</td></tr>{/each}</tbody>
+              </table>
+            </div>
+          </details>
+        </section>
+      </div></div>
+    {/if}
   {/if}
 </div>
+
 <style>
-  .records-page, .records-sections { display: grid; gap: var(--space-4); min-width: 0; }
+  /* Flat cards, same as the dashboard: surface, hairline border, card radius; muted eyebrow + section title. */
+  .records-page { display: grid; gap: var(--space-6); min-width: 0; margin-top: var(--space-6); }
+  .lead { display: grid; gap: var(--space-4); min-width: 0; }
+  .summary { color: var(--foreground); font-size: var(--text-body); line-height: var(--line-height-body); }
+  .phrase { display: inline-block; }
+  .retry { margin-top: var(--space-3); }
   .records-card { min-width: 0; padding: var(--space-6); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
-  .records-card h3 { margin-top: var(--space-4); color: var(--muted-foreground); font-size: var(--text-small); font-weight: var(--weight-semibold); }
-  .hint { color: var(--muted-foreground); font-size: var(--text-small); }
-  .year-form { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3); }
-  .year-field { width: 7rem; }
-  .year-form .text-field { width: 7rem; min-height: 2.75rem; }
-  .year-message { flex-basis: 100%; color: var(--error); font-size: var(--text-small); }
-  .year-message.is-empty { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); border: 0; background: transparent; white-space: nowrap; }
-  .compare-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); margin: var(--space-4) 0; }
-  .compare-metrics dt { color: var(--muted-foreground); font-size: var(--text-small); }
-  .compare-metrics dd { font-weight: var(--weight-semibold); }
-  .compare-metrics small { display: block; color: var(--muted-foreground); font-weight: normal; }
-  @media (max-width: 640px) { .compare-metrics { grid-template-columns: minmax(0, 1fr); } }
+  .card-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-4); }
+  .eyebrow { margin-bottom: var(--space-1); color: var(--muted-foreground); font-size: var(--text-caption); }
+  h2 { font-size: var(--text-section); font-weight: var(--weight-semibold); letter-spacing: 0; }
+  .hint { margin-top: var(--space-2); color: var(--muted-foreground); font-size: var(--text-small); line-height: var(--line-height-body); }
+  .sub { margin-top: var(--space-6); color: var(--muted-foreground); font-size: var(--text-caption); font-weight: var(--weight-medium); }
+
+  /* The header segmented control, placed on a surface card instead of the yellow page header. */
+  .records-card .metric-switch { width: max-content; margin-top: 0; background: var(--muted); }
+  .records-card .metric-switch > button { color: var(--muted-foreground); }
+  .records-card .metric-switch > button[aria-pressed='true'] { color: var(--primary-foreground); }
+
+  /* Side by side only when each card gets at least 28rem (by the row's own width, so the sidebar counts). */
+  .records-pair { container-type: inline-size; min-width: 0; }
+  .pair-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
+  @container (min-width: 57rem) { .pair-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  /* Yearly review: one row per year, bar length against the longest year. */
+  .year-list { display: grid; gap: var(--space-4); margin-top: var(--space-6); }
+  .year-row { display: grid; grid-template-columns: 3.25rem minmax(0, 1fr) auto; align-items: center; column-gap: var(--space-3); row-gap: var(--space-1); }
+  .year { font-size: var(--text-small); font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
+  .track { display: block; height: .75rem; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--border) 45%, var(--surface)); }
+  .fill { display: block; width: calc(var(--share) * 100%); min-width: 0; height: 100%; border-radius: inherit; background: var(--primary); transform-origin: left center; animation: grow 700ms cubic-bezier(.22, .61, .36, 1) both; }
+  /* An unfinished year: same colour, lighter and striped. */
+  .partial .fill { background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--primary) 70%, var(--surface)) 0 .3rem, color-mix(in srgb, var(--primary) 40%, var(--surface)) .3rem .6rem); }
+  .km { min-width: 4.5rem; text-align: right; font-size: var(--text-small); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; }
+  .year-note { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--muted-foreground); font-size: var(--text-caption); font-variant-numeric: tabular-nums; }
+  .tag { padding: 0 var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-pill); color: var(--foreground); line-height: var(--line-height-heading); }
+  .delta[data-direction='up'] { color: var(--primary); font-weight: var(--weight-semibold); }
+
+  /* Training rhythm: one dot per week in four levels of the primary colour; 0 is an empty ring. */
+  .weeks { display: grid; grid-template-columns: repeat(26, minmax(0, 1fr)); gap: var(--space-1); margin-top: var(--space-3); }
+  .dot { display: block; aspect-ratio: 1; width: 100%; max-width: 1.25rem; border-radius: 50%; background: var(--primary); }
+  .dot[data-level='0'] { background: transparent; box-shadow: inset 0 0 0 1.5px var(--border); }
+  .dot[data-level='1'] { background: color-mix(in srgb, var(--primary) 38%, var(--surface)); }
+  .dot[data-level='2'] { background: color-mix(in srgb, var(--primary) 68%, var(--surface)); }
+  .weeks-foot { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); color: var(--muted-foreground); font-size: var(--text-caption); }
+  .legend { display: inline-flex; align-items: center; gap: var(--space-1); }
+  .legend .dot { width: .625rem; margin-left: var(--space-1); }
+  .weekday-bars { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--space-2); margin-top: var(--space-3); }
+  .weekday { position: relative; display: grid; justify-items: center; gap: var(--space-1); }
+  .count { color: var(--muted-foreground); font-size: var(--text-caption); font-variant-numeric: tabular-nums; }
+  .column { display: flex; align-items: flex-end; width: 100%; max-width: 2.25rem; height: 4.5rem; }
+  .bar { display: block; width: 100%; height: calc(var(--share) * 100%); min-height: 3px; border-radius: .375rem .375rem 2px 2px; background: color-mix(in srgb, var(--primary) 35%, var(--surface)); transform-origin: bottom; animation: rise 600ms cubic-bezier(.22, .61, .36, 1) both; }
+  .bar.peak { background: var(--primary); }
+  .day { color: var(--muted-foreground); font-size: var(--text-caption); }
+  .hit { position: absolute; inset: 0; }
+  @keyframes grow { from { transform: scaleX(0); } }
+  @keyframes rise { from { transform: scaleY(0); } }
+  @media (prefers-reduced-motion: reduce) { .fill, .bar { animation: none; } }
+
+  /* Data tables under each chart. */
+  .records-page :global(.data-table) { margin-top: var(--space-4); font-size: var(--text-small); }
+  .records-page :global(.data-table summary) { cursor: pointer; color: var(--primary); font-weight: var(--weight-medium); }
+  /* position: relative keeps the sr-only notes inside wide tables from widening the page. */
+  .records-page :global(.table-scroll) { position: relative; display: grid; gap: var(--space-4); max-height: 20rem; margin-top: var(--space-3); overflow: auto; }
+  .records-page :global(.data-table table) { width: 100%; border-collapse: collapse; text-align: left; font-variant-numeric: tabular-nums; }
+  .records-page :global(.data-table :is(th, td)) { padding: var(--space-1) var(--space-3) var(--space-1) 0; border-top: 1px solid var(--border); white-space: nowrap; }
+  .records-page :global(.data-table thead th) { border-top: 0; color: var(--muted-foreground); font-weight: var(--weight-medium); }
+  .records-page :global(.data-table tbody th) { font-weight: var(--weight-medium); }
+
+  @media (max-width: 767px) {
+    .records-card { padding: var(--space-4); }
+    .records-page { gap: var(--space-4); }
+  }
+  @media (max-width: 639px) {
+    .weeks { grid-template-columns: repeat(13, minmax(0, 1fr)); row-gap: var(--space-2); }
+  }
 </style>

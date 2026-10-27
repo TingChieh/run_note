@@ -44,7 +44,7 @@ async function capture(page: Page, name: string) {
   await page.evaluate(async () => { (document.activeElement as HTMLElement)?.blur(); window.scrollTo(0,0); await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); });
   await page.screenshot({path:`test-results/dashboard-${name}.png`,fullPage:false});
 }
-test('home opens data summary, preserves filters and exposes all feature entrances', async ({ page, request }) => {
+test('home opens data summary, preserves filters and reaches every section from the main navigation', async ({ page, request }) => {
   const home = await request.get('/?year=2026&metric=count', { maxRedirects: 0 });
   expect(home.status()).toBe(200);
   const redirect = await request.get('/dashboard?year=2026&metric=count', { maxRedirects: 0 });
@@ -67,11 +67,12 @@ test('home opens data summary, preserves filters and exposes all feature entranc
   const nav = page.getByRole('navigation', { name: '主要导航' });
   await expect(nav.getByRole('link', { name: '数据汇总', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(nav.getByRole('link', { name: '项目概览' })).toHaveCount(0);
-  const features = page.getByRole('navigation', { name: '功能入口' });
+  // The dashboard no longer repeats the sidebar as a "功能入口" card grid; the main navigation carries these links.
+  await expect(page.getByRole('navigation', { name: '功能入口' })).toHaveCount(0);
   for (const [name, href] of [['跑步记录', '/activities'], ['个人足迹', '/footprints'], ['AI 分析', '/ai'], ['设置', '/settings']]) {
-    await expect(features.getByRole('link', { name: new RegExp(name) })).toHaveAttribute('href', href);
+    await expect(nav.getByRole('link', { name, exact: true })).toHaveAttribute('href', href);
   }
-  await features.getByRole('link', { name: /个人足迹/ }).focus();
+  await nav.getByRole('link', { name: '个人足迹', exact: true }).focus();
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/\/footprints\?mode=tracks$/);
   await page.getByRole('link', { name: 'RunNote 数据汇总', exact: true }).click();
@@ -81,7 +82,7 @@ test('home opens data summary, preserves filters and exposes all feature entranc
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 1000 });
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await expect(features).toBeVisible();
+    await expect(page.getByTestId('records-banner')).toBeVisible();
     if (width === 390 || width === 1440) await capture(page, `home-${width}`);
   }
 });

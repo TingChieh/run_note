@@ -25,7 +25,7 @@
   import GoalOverview from '#lib/components/GoalOverview.svelte';
   import ProvinceMap from '#lib/components/ProvinceMap.svelte';
   import ActivityExplorer from '#lib/components/ActivityExplorer.svelte';
-  import RecordsSummaryCard from '#lib/components/RecordsSummaryCard.svelte';
+  import RecordsBannerLoader from '#lib/components/RecordsBannerLoader.svelte';
   let year = $state(2026), yearInput = $state('2026'), calendarMetric = $state<CalendarMetric>('distance'), period = $state<Trends['period']>('month'), trendMetric = $state<'distance' | 'count' | 'duration' | 'pace'>('distance');
   let annual = $state<Summary | null>(null), cumulative = $state<Summary | null>(null), calendar = $state<Calendar | null>(null), trends = $state<Trends | null>(null), records = $state<ActivityList | null>(null);
   let shownDate = $state<string | null>(null), selectedDate = $state<string | null>(null), loading = $state(true), dayLoading = $state(false), trendLoading = $state(false), message = $state(''), cumulativeMessage = $state(''), yearMessage = $state(''), dayMessage = $state(''), trendMessage = $state('');
@@ -107,21 +107,7 @@
     </div>
     <p class="goal-explanation">当前周期截至今天，同期按相同日历进度比较；连续记录按活动当地日期计算，今日/本周尚未结束时保留昨日/上周延续。</p>
   </div>
-  <nav class="feature-entrances" aria-label="功能入口">
-    {#each [
-      { href: '/activities', title: '跑步记录', description: '查看跑步活动与完整路线', icon: '↗' },
-      { href: '/footprints', title: '个人足迹', description: '探索跑过的路线与运动热力图', icon: '◎' },
-      { href: '/activities/wall', title: '足迹墙', description: '每次跑步一张卡片，回顾全部足迹', icon: '▧' },
-      { href: '/ai', title: 'AI 分析', description: '回顾运动数据，查看已有分析', icon: '✦' },
-      { href: '/settings', title: '设置', description: '管理账号资料与公开个人主页', icon: '⚙' }
-    ].filter(feature => (feature.href !== '/settings' || view.manage) && (feature.href !== '/ai' || !!page.data.user)) as feature}
-      <a href={view.href(feature.href)} class="feature-entrance">
-        <span class="feature-icon" aria-hidden="true">{feature.icon}</span>
-        <span class="min-w-0"><strong>{feature.title}</strong><span class="feature-description">{feature.description}</span></span>
-        <span class="feature-arrow" aria-hidden="true">→</span>
-      </a>
-    {/each}
-  </nav>
+  <RecordsBannerLoader />
   <ActivityExplorer />
   <section class="dashboard-card calendar-card" aria-labelledby="calendar-title" aria-busy={loading}>
     <div class="card-heading"><div><p class="eyebrow">每一天，都算数</p><h2 id="calendar-title">{year} 年运动日历</h2></div>
@@ -153,7 +139,6 @@
       {#if hasTrendActivities}<TrendChart {trends} metric={trendMetric} enhanced />{:else}<div data-testid="trend-empty"><FeedbackState title="记录一次跑步，让趋势开始生长"><a href={view.href("/activities")}  class="button-primary">查看跑步记录</a></FeedbackState></div>{/if}
     {/if}</div>
   </section>
-  <RecordsSummaryCard />
   <details class="statistics-notes"><summary>统计口径与数据质量</summary><div class="notes-content">
     <p>仅统计你自己的活动。历史日期按活动保存时的当地日期归属，不随当前时区改变。</p>
     {#if annual}<p>年度已知耗时合计 {formatDuration(annual.duration_sum_seconds)}；已知 {annual.known_duration_count} 次，未知 {annual.missing_duration_count} 次。配速按 {annual.pace_eligible_count} 次可靠活动的总耗时 / 总距离计算，覆盖 {dashboardDistance(annual.pace_eligible_distance_m)}。含质量提示 {annual.quality_warning_count} 次。</p>{/if}
@@ -166,17 +151,6 @@
   .milestone-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--dashboard-card-gap);align-items:stretch;}
   .goal-explanation{font-size: var(--text-caption);line-height: var(--line-height-body);color:var(--muted-foreground);}
   @media(max-width:1199px){.milestone-layout{grid-template-columns:1fr;}}
-  .feature-entrances { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--space-4); }
-  .feature-entrance { display:flex; align-items:center; gap:.85rem; min-width:0; padding:1.1rem; border:1px solid var(--border); border-radius:var(--radius-card); background:var(--surface); font-size: var(--text-small); font-weight: var(--weight-semibold); }
-  .feature-entrance strong { font-size: var(--text-small); font-weight: var(--weight-semibold); }
-  @media (hover: hover) { .feature-entrance:hover { border-color:var(--primary); background:var(--muted); } }
-  .feature-icon { display:grid; place-items:center; flex-shrink:0; width:2.5rem; height:2.5rem; border-radius:50%; background:var(--sport-green); color:var(--sport-ink); font-size: var(--text-section); }
-  .feature-entrance:nth-child(2) .feature-icon { background:var(--sport-blue); }
-  .feature-entrance:nth-child(3) .feature-icon { background:var(--sport-yellow-accent); }
-  .feature-entrance:nth-child(4) .feature-icon { background:var(--sport-coral); }
-  .feature-description { display:block; margin-top:.25rem; font-size: var(--text-caption); color:var(--muted-foreground); }
-  .feature-arrow { margin-left:auto; color:var(--primary); }
-  @media (max-width:639px) { .feature-entrances { grid-template-columns:1fr; } }
   .annual-icon { display:inline-grid; place-items:center; width:2.5rem; height:2.5rem; flex-shrink:0; margin-right:.65rem; border-radius:50%; font-size: var(--text-section); font-weight: var(--weight-bold); background:var(--sport-green); color:var(--sport-ink); }
   .annual-metrics > div:nth-child(2) .annual-icon { background:var(--sport-blue); }
   .annual-metrics > div:nth-child(3) .annual-icon { background:var(--sport-yellow-accent); }
@@ -188,8 +162,12 @@
   .dashboard { --dashboard-card-gap:var(--space-4); display: grid; gap: var(--space-6); margin-top: var(--space-6); min-width: 0; }
   .cumulative { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem; font-size: var(--text-small); color: var(--muted-foreground); }
   .cumulative strong { color: var(--foreground); font-weight: var(--weight-semibold); }
-  .annual-metrics { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: var(--dashboard-card-gap); }
-  .annual-metrics > div { min-width: 0; padding: var(--space-6); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
+  /* A summary strip: one card, hairline-separated columns (same language as RecordsBanner). */
+  .annual-metrics { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); padding: var(--space-6); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
+  .annual-metrics > div { min-width: 0; padding-inline: var(--space-6); }
+  .annual-metrics > div:first-child { padding-left: 0; }
+  .annual-metrics > div:last-child { padding-right: 0; }
+  .annual-metrics > div + div { border-left: 1px solid var(--border); }
   dt { font-size: var(--text-small); color: var(--muted-foreground); }
   dd { margin-top: .75rem; font-size: var(--text-stat); line-height: var(--line-height-tight); font-weight: var(--weight-bold); letter-spacing: 0; font-variant-numeric: tabular-nums; }
   .annual-metrics > div:first-child dd { color: var(--primary); }
@@ -220,6 +198,6 @@
   .day-fade.stale { opacity: .55; }
   @keyframes day-fade { from { opacity: 0; } to { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { .day-fade { animation: none; } }
-  @media (max-width: 767px) { .dashboard { --dashboard-card-gap:.75rem; } .annual-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); } .annual-metrics > div { padding: 1rem; } .dashboard-card { padding: 1rem; } dd { font-size: var(--text-stat); font-weight: var(--weight-bold);} .calendar-card { display: none; } .keyboard-hint { display: none; } }
+  @media (max-width: 767px) { .dashboard { --dashboard-card-gap:.75rem; } .annual-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 1rem 0; padding: 1rem; } .annual-metrics > div { padding-inline: .75rem; } .annual-metrics > div:nth-child(odd) { padding-left: 0; border-left: 0; } .annual-metrics > div:nth-child(even) { padding-right: 0; } .annual-metrics > div:nth-child(n+3) { padding-top: 1rem; border-top: 1px solid var(--border); } .dashboard-card { padding: 1rem; } dd { font-size: var(--text-stat); font-weight: var(--weight-bold);} .calendar-card { display: none; } .keyboard-hint { display: none; } }
   @media (max-width: 359px) { dd { font-size: var(--text-stat); font-weight: var(--weight-bold);} }
 </style>

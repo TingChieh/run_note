@@ -9,6 +9,8 @@
   import type { BasemapPreference } from '../../../src/lib/api/map-style.ts';
   import ThemeToggle from '../../../src/lib/components/ThemeToggle.svelte';
   import SaveBar from '../../../src/lib/components/SaveBar.svelte';
+  import RecordsBanner from '../../../src/lib/components/RecordsBanner.svelte';
+  import type { CategoryBest, Totals } from '../../../src/lib/api/records.ts';
   import { liquidGlass } from '../../../src/lib/styles/liquid-glass.ts';
 
   let basemap = $state<BasemapPreference>('auto');
@@ -18,6 +20,14 @@
   let saved = $state(false);
   let publicProfile = $state(false), saved0 = $state(false), segment = $state('all'), draftTitle = $state('RunNote');
   const barDirty = $derived(publicProfile !== saved0 || draftTitle !== 'RunNote');
+  // Synthetic personal records: invented IDs, dates and paces; no real runs.
+  const run = (n: number, date: string, distance: string, duration: string, pace: string) => ({ activity_id: `${String(n).repeat(8)}-0000-4000-8000-000000000000`, activity_date: date, distance_m: distance, duration_seconds: duration, avg_pace_seconds_per_km: pace });
+  const none = (category: '5km' | '10km'): CategoryBest => ({ category, best: null, first: null, pace_gain_seconds_per_km: null });
+  const five: CategoryBest = { category: '5km', best: { ...run(1, '2026-03-05', '5000.000', '1650.000', '330.000'), qualifying_count: 4 }, first: run(2, '2025-01-12', '5000.000', '1860.000', '372.000'), pace_gain_seconds_per_km: '42.000' };
+  const ten: CategoryBest = { category: '10km', best: { ...run(3, '2025-09-20', '10050.000', '3467.000', '345.000'), qualifying_count: 6 }, first: run(4, '2025-04-06', '10000.000', '3960.000', '396.000'), pace_gain_seconds_per_km: '51.000' };
+  const once: CategoryBest = { category: '10km', best: { ...run(5, '2026-08-16', '10200.000', '3672.000', '360.000'), qualifying_count: 1 }, first: run(5, '2026-08-16', '10200.000', '3672.000', '360.000'), pace_gain_seconds_per_km: null };
+  const totals: Totals = { activity_count: 44, distance_m: '451000.000', activity_days: 42, avg_pace_seconds_per_km: '347.000', first_activity_date: '2025-01-12' };
+  const noTotals: Totals = { activity_count: 0, distance_m: '0', activity_days: 0, avg_pace_seconds_per_km: null, first_activity_date: null };
   const metrics = [
     { label: '距离', value: '12.34 km', icon: 'distance' as const },
     { label: '计时用时', value: '01:08:30', icon: 'duration' as const },
@@ -102,6 +112,16 @@
       </div>
     </section>
 
+    <section id="records-banner" aria-labelledby="records-banner-title" class="example-stack">
+      <h2 id="records-banner-title">个人记录横幅</h2>
+      <p class="description">RecordsBanner：5K、10K 与跑步总览三栏，数据汇总用 compact，/records 用 hero。先讲人话再给数字；进步线只是示意，长度随提升幅度变化。</p>
+      <h3>两项都有（链接到全部记录）</h3><RecordsBanner bests={[five, ten]} {totals} href="#records-banner" year={2026} />
+      <h3>仅 5K；10K 只跑过一次</h3><RecordsBanner bests={[five, once]} {totals} year={2026} />
+      <h3>还没有任何跑步</h3><RecordsBanner bests={[none('5km'), none('10km')]} totals={noTotals} year={2026} />
+      <h3>hero</h3><RecordsBanner bests={[five, none('10km')]} {totals} variant="hero" year={2026} />
+      <h3>手机宽度（390px 容器）</h3><div class="phone-frame"><RecordsBanner bests={[five, ten]} {totals} href="#records-banner" year={2026} /></div>
+    </section>
+
     <section aria-labelledby="metrics-title" class="example-stack">
       <h2 id="metrics-title">指标变体</h2>
       <h3>default：中性表面</h3><MetricSummary items={metrics} appearance="default" />
@@ -137,6 +157,7 @@
   .field-grid > *, input, textarea, select { min-width: 0; max-width: 100%; }
   .control-row { margin-top: var(--space-4); }
   .choice { display: inline-flex; align-items: center; gap: var(--space-2); }
+  .phone-frame { max-width: 390px; }
   fieldset { display: flex; flex-wrap: wrap; gap: var(--space-4); }
   @media (max-width: 639px) { .reference-states, .pattern-grid, .field-grid { grid-template-columns: 1fr; } }
 </style>

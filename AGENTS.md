@@ -168,7 +168,7 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
 ### 账号与入口
 
 - 唯一站主由后端 `SITE_OWNER_EMAIL` 指定（默认值见 `backend/app/core/config.py`；生产必须显式设置），账号缺失时展示接口返回 503，不回退到任意用户。唯一管理员由配置邮箱计算，不依赖可编辑角色字段。
-- 匿名展示页面为 `/dashboard`、`/activities`（含详情和 wall）、`/footprints`、`/ai`；只在 `/admin` 提供管理员登录，旧 `/login` 与 `/register` 返回 404，注册 API 禁用。写操作仍由认证依赖与 CSRF/Origin 双重保护。导航项“AI 分析”仅对已登录用户显示（含桌面侧栏、手机菜单与数据汇总的功能入口），`/ai` 路由本身仍可直接访问。
+- 匿名展示页面为 `/dashboard`、`/activities`（含详情和 wall）、`/footprints`、`/ai`；只在 `/admin` 提供管理员登录，旧 `/login` 与 `/register` 返回 404，注册 API 禁用。写操作仍由认证依赖与 CSRF/Origin 双重保护。导航项“AI 分析”仅对已登录用户显示（含桌面侧栏与手机菜单），`/ai` 路由本身仍可直接访问。
 - 用户管理页 `/admin/users` 在导航中归属"设置"（与 `/settings`、`/settings/site` 同组，使用 `settings-header.svelte.ts` 共享头部），仅站主可管理账号；普通启用用户在 `/workspace/*` 管理本人，公开 `/p/{username}/*` 始终只读。历史普通账号默认停用且不公开，显式启用后可登录本人工作区。
 - 禁用账号会撤销会话并关闭展示，重新启用不恢复旧状态；修改邮箱或重置密码撤销全部会话。站主的邮箱/启用/展示状态受保护。
 - 空库初始化用离线 `scripts/site-owner.py`，不可重开注册或自动重置密码。

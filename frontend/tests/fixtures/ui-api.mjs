@@ -20,22 +20,44 @@ const images = new Map();
 const avatars = new Map();
 const version = () => randomUUID().replaceAll('-', '').slice(0, 16);
 const siteFields = ['title', 'subtitle', 'footer_tagline', 'description', 'default_theme'];
-/** @param {number} year @param {number} compare */
-function recordsFixture(year, compare) {
-  const empty = year === 1999;
-  const months = (/** @type {boolean} */ filled) => Array.from({ length: 12 }, (_, i) => ({ month: i + 1, activity_count: filled && i < 6 ? 2 : 0, distance_m: filled && i < 6 ? String(10000 * (i + 1)) : '0', avg_pace_seconds_per_km: filled && i < 6 ? String(330 - i * 5) : null }));
-  const totals = (/** @type {number} */ y, /** @type {boolean} */ filled) => ({ year: y, activity_count: filled ? 12 : 0, distance_m: filled ? '210000' : '0', activity_days: filled ? 10 : 0, avg_pace_seconds_per_km: filled ? '320.000' : null });
+/**
+ * Personal records, v2 (whole-history overview). `empty` mimics an account without any activity;
+ * only this synthetic API recognises `?empty=1` on the records URL.
+ * @param {boolean} empty
+ */
+function recordsFixture(empty) {
+  // 22 months, 2025-01 .. 2026-10; two runs a month, distance grows and pace gets faster.
+  const monthly = empty ? [] : Array.from({ length: 22 }, (_, i) => ({
+    month_start: `${2025 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}-01`,
+    activity_count: 2, distance_m: String(10000 + i * 1000), avg_pace_seconds_per_km: String(372 - i * 2)
+  }));
+  const sum = (/** @type {number} */ year) => monthly.filter(m => m.month_start.startsWith(`${year}-`)).reduce((t, m) => ({ n: t.n + m.activity_count, d: t.d + Number(m.distance_m) }), { n: 0, d: 0 });
+  const y25 = sum(2025), y26 = sum(2026);
+  const yearly = empty ? [] : [
+    { year: 2025, activity_count: y25.n, distance_m: `${y25.d}.000`, activity_days: y25.n, avg_pace_seconds_per_km: '360.000', is_partial: false, delta: null, delta_basis: null },
+    { year: 2026, activity_count: y26.n, distance_m: `${y26.d}.000`, activity_days: y26.n - 2, avg_pace_seconds_per_km: '335.000', is_partial: true,
+      delta: { activity_count: 4, distance_m: '52000.000', avg_pace_seconds_per_km: '-18.000' }, delta_basis: 'previous_year_same_period' }
+  ];
+  // 26 weeks from 2026-05-04; active days cycle 0..3 and the latest week has 5, so every dot level appears.
   const base = Date.UTC(2026, 4, 4);
   return {
-    year, compare_year: compare, cutoff_date: `${year}-12-31`, compare_cutoff_date: `${compare}-12-31`, date_assignment: 'activity_local_date',
+    date_assignment: 'activity_local_date',
     personal_bests: [
-      { category: '5km', best: empty ? null : { activity_id: '11111111-1111-4111-8111-111111111111', activity_date: '2026-03-05', distance_m: '5000.000', duration_seconds: '1650.000', avg_pace_seconds_per_km: '330.000', qualifying_count: 4 } },
-      { category: '10km', best: null }
+      empty ? { category: '5km', best: null, first: null, pace_gain_seconds_per_km: null }
+        : {
+          category: '5km',
+          best: { activity_id: '11111111-1111-4111-8111-111111111111', activity_date: '2026-03-05', distance_m: '5000.000', duration_seconds: '1650.000', avg_pace_seconds_per_km: '330.000', qualifying_count: 4 },
+          first: { activity_id: '22222222-2222-4222-8222-222222222222', activity_date: '2025-01-12', distance_m: '5000.000', duration_seconds: '1860.000', avg_pace_seconds_per_km: '372.000' },
+          pace_gain_seconds_per_km: '42.000'
+        },
+      { category: '10km', best: null, first: null, pace_gain_seconds_per_km: null }
     ],
-    monthly: months(!empty), compare_monthly: months(false),
-    weekly: Array.from({ length: 26 }, (_, i) => ({ week_start: new Date(base + i * 7 * 86400000).toISOString().slice(0, 10), active_days: empty ? 0 : i % 4 })),
+    totals: empty ? { activity_count: 0, distance_m: '0', activity_days: 0, avg_pace_seconds_per_km: null, first_activity_date: null }
+      : { activity_count: y25.n + y26.n, distance_m: `${y25.d + y26.d}.000`, activity_days: y25.n + y26.n - 2, avg_pace_seconds_per_km: '347.000', first_activity_date: '2025-01-12' },
+    monthly,
+    weekly: Array.from({ length: 26 }, (_, i) => ({ week_start: new Date(base + i * 7 * 86400000).toISOString().slice(0, 10), active_days: empty ? 0 : i === 25 ? 5 : i % 4 })),
     weekday: Array.from({ length: 7 }, (_, i) => ({ weekday: i, activity_count: empty ? 0 : i })),
-    comparison: { current: totals(year, !empty), previous: totals(compare, false), delta: { activity_count: empty ? 0 : 12, distance_m: empty ? '0' : '210000', activity_days: empty ? 0 : 10, avg_pace_seconds_per_km: null } }
+    yearly
   };
 }
 createServer(async (req, res) => {
@@ -206,10 +228,7 @@ createServer(async (req, res) => {
     const from = url.searchParams.get('date_from'), to = url.searchParams.get('date_to');
     return send({ period: url.searchParams.get('period'), date_from: from, date_to: to, week_start: 'monday', date_assignment: 'activity_local_date', buckets: [{ ...summary, bucket_start: from, bucket_end: to, is_partial: true }] });
   }
-  if (url.pathname.endsWith('/statistics/records')) {
-    const year = Number(url.searchParams.get('year') ?? 2026), compare = Number(url.searchParams.get('compare_year') ?? year - 1);
-    return send(recordsFixture(year, compare));
-  }
+  if (url.pathname.endsWith('/statistics/records')) return send(recordsFixture(url.searchParams.get('empty') === '1'));
   const missingActivity = '00000000-0000-4000-8000-000000000404';
   const activityDetail = url.pathname.match(/^\/api\/v1\/activities\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
   if (activityDetail && req.method === 'GET' && activityDetail[1].toLowerCase() === missingActivity) return send(null, 404, '活动不存在');
