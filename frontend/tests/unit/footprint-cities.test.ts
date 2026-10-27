@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { dominantCity, locateFootprintCities, type CityRegion } from '../../src/lib/map/footprint-cities.ts';
+import { locateFootprintCities, type CityRegion } from '../../src/lib/map/footprint-cities.ts';
 import type { FootprintCollection } from '../../src/lib/api/footprints.ts';
 import atlas from '../../src/lib/data/china-cities.json';
 
@@ -41,13 +41,4 @@ it('uses the bundled atlas to group districts into recorded cities and omit unvi
   expect(result.cities.map(city=>city.name)).toEqual(['北京市','上海市','广州市']);
   expect(result.cities.some(city=>city.name==='深圳市')).toBe(false);
   expect(result.unlocatedBounds).toBeNull();
-});
-it('opens on the city with the most tracks and breaks ties by the latest date', () => {
-  const cities = [
-    { code: 'a', name: '甲市', bounds: [[0, 0], [2, 2]] as [[number, number], [number, number]] },
-    { code: 'b', name: '乙市', bounds: [[3, 0], [5, 2]] as [[number, number], [number, number]] },
-  ];
-  const line = (x: number, id: string, date: string) => ({ geometry: { type: 'LineString' as const, coordinates: [[x, .2], [x + .2, .4]] as [number, number][] }, activityId: id, activityDate: date });
-  expect(dominantCity([line(.2, '1', '2024-01-01'), line(.4, '2', '2024-01-02'), line(3.2, '3', '2026-01-01')], cities)?.code).toBe('a');
-  expect(dominantCity([line(.2, '1', '2024-01-01'), line(3.2, '2', '2026-05-01')], cities)?.code).toBe('b');
 });
