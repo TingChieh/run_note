@@ -127,3 +127,29 @@ test('switch, segmented control and save bar keep native semantics', async ({ pa
   await expect(group.getByRole('button', { name: '已启用', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(group.getByRole('button', { name: '全部', exact: true })).toHaveAttribute('aria-pressed', 'false');
 });
+
+test('records banner showcase: compact, hero and phone-width variants', async ({ page }) => {
+  await page.goto('/');
+  const section = page.locator('#records-banner');
+  const banners = section.getByTestId('records-banner');
+  await expect(banners).toHaveCount(5);
+  // Each banner is named by its own visible heading (unique ids per instance).
+  const ids = await section.locator('h2[id]').evaluateAll(items => items.map(item => item.id));
+  expect(new Set(ids).size).toBe(ids.length);
+  const hero = banners.filter({ has: page.getByRole('heading', { name: '最佳成绩' }) });
+  await expect(hero).toHaveCount(1);
+  await expect(hero).toHaveAccessibleName('最佳成绩');
+  // One flat card like the dashboard cards (24px padding, hairline-separated columns, no tinted blocks inside).
+  await expect(hero).toHaveCSS('padding-top', '24px');
+  await expect(banners.first()).toHaveCSS('padding-top', '24px');
+  await expect(banners.first().getByTestId('records-banner-10km')).toHaveCSS('border-left-width', '1px');
+  await expect(banners.first().getByTestId('records-banner-5km')).toHaveCSS('background-image', 'none');
+  await expect(hero.getByTestId('records-banner-10km')).toContainText('还没有 10K 记录');
+  // Desktop compact: three columns in one row; inside the 390px frame they stack.
+  const row = await Promise.all(['5km', '10km', 'total'].map(id => banners.first().getByTestId(`records-banner-${id}`).boundingBox()));
+  expect(new Set(row.map(item => Math.round(item!.y))).size).toBe(1);
+  const phone = section.locator('.phone-frame').getByTestId('records-banner');
+  const stack = await Promise.all(['5km', '10km', 'total'].map(id => phone.getByTestId(`records-banner-${id}`).boundingBox()));
+  expect(stack[1]!.y).toBeGreaterThan(stack[0]!.y + stack[0]!.height - 1);
+  expect(stack[2]!.y).toBeGreaterThan(stack[1]!.y + stack[1]!.height - 1);
+});

@@ -37,6 +37,30 @@ MetricSummary 的 icon 枚举：`distance/duration/elapsed/pace/count/days/heart
 
 这里的重试必须是读取操作；删除/付费生成不能复用普通读失败重试。
 
+## 个人记录横幅 RecordsBanner
+
+[RecordsBanner](../../frontend/src/lib/components/RecordsBanner.svelte) 是页面的“主角”横幅：整行宽，一张与数据汇总其它卡片同款的平面卡片，内部三列——5K 最佳、10K 最佳、跑步总览——每列一个圆形运动色徽章、一个大数字加几句人话，不做成表格。它只负责呈现，所有数字来自服务端 `personal_bests` 与 `totals`；取数、加载与失败由调用方负责（数据汇总用 [RecordsBannerLoader](../../frontend/src/lib/components/RecordsBannerLoader.svelte)）。
+
+| 项 | 契约 |
+| --- | --- |
+| API | `bests: CategoryBest[]`（固定 5km、10km 两项）；`totals: Totals`；`variant?: 'compact' \| 'hero'`，默认 compact；`href?: string`，有值时标题行右侧出现玻璃胶囊“查看全部 →”（`a.button-secondary`，由根 liquidGlass 增强；无障碍名称“查看全部个人记录”）；`year?: number`，当前年份，记录日期不在这一年时才带出年份 |
+| 外框 | `<section aria-labelledby>` 指向自身标题（`$props.id()` 生成，页面上多个横幅互不冲突）：与 `.dashboard-card` 相同的 `--surface` 底、`--border` 描边、`--radius-card`、`--space-6` 内边距；标题沿用“弱色 eyebrow（`--text-caption`）+ `--text-section` 标题”的写法，不加图标 |
+| 分栏 | 三列等宽，列间只画 `--border` 发丝线，不再嵌套带底色的块（避免卡片套卡片）。每列的运动色只出现在左上角 2.5rem 圆形徽章上（`--sport-green`、`--sport-blue`、`--sport-yellow-accent`，与年度指标卡的图标同款），徽章内为“5K”“10K”“累计”，文字 `--sport-ink` |
+| 数字 | 大数字用 `--text-stat`（hero 用 `--text-display`），`--foreground`；单位、标签与说明为 `--muted-foreground`；进步线与“比第一次快了…”用 `--primary`，首次点空心、最佳点实心。没有渐变、水印或背景涂鸦，装饰完全交给版式和留白 |
+| 5K / 10K | 圆形徽章（“5K”“10K”）+ 弱色“最佳配速”→ 配速大数字（`--text-stat` 粗体等宽；hero `--text-display`；手机 `--text-title`）→ 弱色人话两行（“3 月 5 日，5.0 km，用了 27:30”“共跑过 4 次 5K 级”）→ 进步轨道与“比第一次快了 42 秒 / km”。配速是服务端的 `avg_pace_seconds_per_km`，前端不计算
+| 进步轨道 | 仅当 `first` 与 `pace_gain_seconds_per_km` 都有时出现：`--border` 底轨 + `--primary` 圆头实线；首次为空心点，最佳为实心点加柔和外圈。长度为 `progressSpan × 16rem`（`pace_gain / first.pace`，提升 25% 即满长，下限 20%），并限制在 10rem 到栏宽之间。纯表现，不产生新指标；`role="img"` + 中文 `aria-label`（“首次配速 6:12，最佳配速 5:30，快了 42 秒每公里”） |
+| 总览 | 标签“累计 · 全部里程”→ 累计里程大数字 + `km` → “共 44 次 · 42 个活动日”“从 2025 年 1 月开始”“平均配速 5:47 /km”（无可靠配速时省略）。三栏时数字在上、事实沉到底部并以一条发丝线分隔，与旁边较高的 5K/10K 平衡；宽度不足 54rem 时变为 5K/10K 下方的整行横条，事实连成一行；手机上收为两行 |
+| 空状态 | 徽章变为 `--tone` 描边的空心圆，标签为“等你来跑”，大数字位置为“还没有 5K 记录”（`--text-card`），下方“跑一次 4.0–7.5 km 的整次跑步，就会出现在这里”（按逗号分成两个不拆开的短语，避免中文在词中间折行）；总览无活动时为“还没有跑步记录 / 第一次跑步之后，这里会开始累计你的里程”。三块始终存在。只有一次合格记录时提示“再跑一次 5K，就能和这次比一比”；最快仍是第一次时提示“最快的一次仍是第一次” |
+| 布局 | 容器查询（按横幅自身宽度）：≥54rem 三列等宽等高、列间发丝线；36–54rem 两列并排 + 总览横条（上方发丝线）；<36rem 三段堆叠，段间发丝线 |
+| 动效 | 最终值是默认状态：SSR、无 JS、`prefers-reduced-motion: reduce`、无 IntersectionObserver、打印（`beforeprint` 立即结束，`@media print` 取消轨道动画）以及动画以外的任何时刻都显示服务端数值。横幅任意部分进入视口（threshold 0；挂载时已在视口内则在首帧前开始）才播放一次：配速从首次配速数到最佳、累计里程从 0 数到总数、轨道从左向右画出、最佳点最后出现（约 1.1s，ease-out）；1.6s 兜底计时器保证后台标签页暂停 rAF 时也不会停在中间值。读屏始终读 `sr-only` 中的最终值，动画数字 `aria-hidden` |
+| 对比度 | 正文、标签均落在 `--surface` 上，沿用全站令牌的对比度；徽章 `--sport-ink` 在三种运动色上 ≥4.9:1（琥珀 6.75） |
+| hero | 用于 `/records` 顶部：标题改为“最佳成绩”，大数字升为 `--text-display`，其余与 compact 相同 |
+| 测试标识 | `records-banner`、`records-banner-5km`、`records-banner-10km`、`records-banner-total`、`records-banner-gain-5km` / `-10km`；Loader 的占位与错误为 `records-banner-slot`；播放中根元素带 `play` 类。合成 UI：`tests/ui/records-banner.spec.ts`；showcase 变体：`tests/ui/design-system.spec.ts`（`playwright.design-system.config.ts`） |
+
+RecordsBannerLoader：`onMount` 读取 `readRecords()`，保留 `disposed` 与请求令牌；加载中显示与横幅同框、近似同高的 `FeedbackState kind="loading"`（桌面 18rem、手机 34rem；与横幅同为 `--surface` 外框）防止下方跳动；失败时在横幅位置显示 `FeedbackState kind="error"`（“个人记录暂时读不到”+ 原因 + 重试），其余数据汇总内容不受影响；401 清空并跳转 `/admin?reason=expired&next=%2Fdashboard`。
+
+独立展示见 showcase 的“个人记录横幅”区块（两项都有、仅 5K 且 10K 只跑过一次、还没有任何跑步、hero、手机宽度）。
+
 ## 原生控件与共享类
 
 | 审计范围 | 当前入口 | 必须保留的契约 |

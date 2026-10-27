@@ -9,7 +9,7 @@ from app.api.dependencies import get_read_identity, get_session
 from app.core.responses import ApiResponse
 from app.modules.activities.router import envelope
 from app.modules.statistics import service
-from app.modules.statistics.records import OptionalYear, build_records
+from app.modules.statistics.records import build_records
 from app.modules.statistics.schema import Calendar, Records, Summary, Trends
 from app.modules.statistics.streaks import read_streaks
 
@@ -71,10 +71,8 @@ def records(
     request: Request,
     identity: Identity,
     db: Database,
-    year: OptionalYear = None,
-    compare_year: OptionalYear = None,
 ):
     today = request.app.state.clock().astimezone(ZoneInfo(identity[1].timezone)).date()
-    data = build_records(db, identity[1].id, today, year, compare_year)
+    data = build_records(db, identity[1].id, today)
     db.commit()
     return envelope(request, data)

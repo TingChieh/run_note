@@ -4,7 +4,7 @@
 
 ## 1. 仪表盘
 
-适用：个人跑步总览。参考 [dashboard](../../frontend/src/routes/dashboard/+page.svelte)。结构：PageHeader → 累计/年度指标 dl → GoalOverview 与 ProvinceMap → 功能入口 → ActivityExplorer → CalendarGrid/TrendChart。
+适用：个人跑步总览。参考 [dashboard](../../frontend/src/routes/dashboard/+page.svelte)。结构：PageHeader → 累计/年度指标 dl → GoalOverview 与 ProvinceMap → RecordsBanner（个人记录横幅）→ ActivityExplorer → CalendarGrid/TrendChart。数据汇总里的“概览条”（年度指标、个人记录横幅）统一为同一种写法：一张平面卡片 + 等宽列 + 列间 `--border` 发丝线，运动色只出现在圆形徽章上；不要在卡片里再嵌带底色的块，也不要把一排指标拆成各自带边框的小卡片。各页面入口只在侧栏与手机菜单出现，数据汇总不再重复一组“功能入口”卡片。
 
 每区独立 loading/error/retry，保留已成功内容；年份只影响对应统计，不能重置累计省份。保留 URL 选中项与页面位置。摘要用彩色指标锚点和表面卡片，不把所有信息压成后台表格。
 
@@ -54,6 +54,8 @@ busy 时防重复提交，失败保留草稿，字段错误与输入关联。写
 适用：趋势、日历、地图、AI 汇总。参考 [TrendChart](../../frontend/src/lib/components/TrendChart.svelte)、[RouteMap](../../frontend/src/lib/components/RouteMap.svelte)、[footprints](../../frontend/src/routes/footprints/+page.svelte)、[AI](../../frontend/src/routes/ai/+page.svelte)。结构：标题与范围 → 图表/地图 → 完整数据表或统计说明 → 独立降级提示。
 
 聚合指标以服务端为准。canvas/WebGL 只在 onMount 动态导入，watchSystemTheme 更新 paint/option 并清理订阅；切换外观保留选择、相机与实例。地图底图可关，失败不阻断本地轨迹；数据表 details 提供无图形兜底。AI 生成是显式动作，展示不发供应商请求。
+
+个人记录页 [/records](../../frontend/src/routes/records/+page.svelte) 是“先讲人话，再给数字”的样本：PageHeader → RecordsBanner（hero）→ 一句无边框总结（今年里程与去年同期，数字取服务端 `yearly`）→ 月度卡片（标题右侧 `.settings-tabs` 按钮组切换里程/配速，图表去掉网格线与纵轴，只给最大月份或最快月份标数值，其余柱为 `--primary` 的柔和透明度）→ 逐年回顾与训练规律两张卡并排（每张卡不足 28rem（按该行自身宽度）时上下堆叠）。逐年横条与周点、周内小柱都是页面私有的 CSS 图形，用 `--primary` 的 `color-mix` 档位表达强弱，进行中的年份用同色斜纹，正负变化用文字与符号表达。连续卡片不超过三层，每个图形下都有 `<details>` 数据表。
 
 反例：浏览器重算权威距离/配速；主题切换重建地图；用空数据/错误截图冒充非空图表成功；把真实轨迹放进 fixture。
 

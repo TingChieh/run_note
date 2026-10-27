@@ -1,47 +1,34 @@
-"""Personal bests and same-period comparisons built from activity summaries only."""
+"""Personal bests, first runs and all-history overviews built from activity summaries only."""
 
+from collections.abc import Mapping
 from datetime import date, timedelta
 from decimal import ROUND_HALF_EVEN, Decimal
-from typing import Annotated
 
-from fastapi import Query
-from sqlalchemy import func, select
+from sqlalchemy import DateTime, cast, extract, func, select
 
-from app.core.errors import ApiError
 from app.modules.activities.classify import DISTANCE_BANDS
 from app.modules.activities.model import Activity as A
 from app.modules.statistics import service
 from app.modules.statistics.schema import (
     CategoryBest,
-    ComparisonDelta,
+    FirstRun,
     MonthPoint,
     PersonalBest,
     Records,
-    Trends,
+    Summary,
+    Totals,
     WeekdayPoint,
     WeekPoint,
-    YearComparison,
-    YearTotals,
+    YearDelta,
+    YearRow,
 )
 
-OptionalYear = Annotated[int | None, Query(ge=1900, le=2100)]
 BEST_CATEGORIES = ("5km", "10km")
 BEST_BANDS: dict[str, tuple[Decimal, Decimal]] = {
     label: (low, high) for label, low, high in DISTANCE_BANDS if label in BEST_CATEGORIES
 }
 WEEKS = 26
-
-
-def resolve_years(today: date, year: int | None, compare_year: int | None) -> tuple[int, int]:
-    year = today.year if year is None else year
-    compare_year = year - 1 if compare_year is None else compare_year
-    if compare_year < 1900 or compare_year == year:
-        raise ApiError(422, "VALIDATION_ERROR", "请选择不同且在 1900–2100 年内的对比年份")
-    return year, compare_year
-
-
-def year_cutoff(year: int, today: date) -> date:
-    return today if year == today.year else date(year, 12, 31)
+PACE_STEP = Decimal(".001")
 
 
 def shift_to_year(day: date, year: int) -> date:
@@ -49,19 +36,6 @@ def shift_to_year(day: date, year: int) -> date:
         return day.replace(year=year)
     except ValueError:  # February 29 in a non-leap target year
         return day.replace(year=year, day=28)
-
-
-def resolve_cutoffs(today: date, year: int, compare_year: int) -> tuple[date, date]:
-    """Inclusive cutoff days for `year` and `compare_year`.
-
-    A year that is the current year is cut at today. When only the comparison year is the
-    current one, both sides are cut at the same calendar day so a partial year is never
-    compared with a full one; otherwise a past year runs to December 31.
-    """
-    if compare_year == today.year and year != today.year:
-        return shift_to_year(today, year), today
-    cutoff = year_cutoff(year, today)
-    return cutoff, shift_to_year(cutoff, compare_year)
 
 
 def weekly_active_days(activity_dates, today: date, weeks: int = WEEKS) -> list[WeekPoint]:
@@ -82,60 +56,10 @@ def weekday_counts(daily) -> list[WeekdayPoint]:
     return [WeekdayPoint(weekday=i, activity_count=n) for i, n in enumerate(counts)]
 
 
-def month_points(trends: Trends) -> list[MonthPoint]:
-    return [
-        MonthPoint(
-            month=bucket.bucket_start.month,
-            activity_count=bucket.activity_count,
-            distance_m=bucket.distance_m,
-            avg_pace_seconds_per_km=bucket.avg_pace_seconds_per_km,
-        )
-        for bucket in trends.buckets
-    ]
-
-
-def padded_month_points(trends: Trends) -> list[MonthPoint]:
-    """Month points for a range that may end mid-year, zero-filled up to 12 entries."""
-    points = month_points(trends)
-    seen = {point.month for point in points}
-    points += [
-        MonthPoint(
-            month=month, activity_count=0, distance_m=Decimal(0), avg_pace_seconds_per_km=None
-        )
-        for month in range(1, 13)
-        if month not in seen
-    ]
-    return sorted(points, key=lambda point: point.month)
-
-
-def comparison_delta(current: YearTotals, previous: YearTotals) -> ComparisonDelta:
-    missing = current.avg_pace_seconds_per_km is None or previous.avg_pace_seconds_per_km is None
-    return ComparisonDelta(
-        activity_count=current.activity_count - previous.activity_count,
-        distance_m=current.distance_m - previous.distance_m,
-        activity_days=current.activity_days - previous.activity_days,
-        avg_pace_seconds_per_km=None
-        if missing
-        else current.avg_pace_seconds_per_km - previous.avg_pace_seconds_per_km,
-    )
-
-
-def year_totals(db, owner, year: int, cutoff: date) -> YearTotals:
-    summary = service.summary(db, owner, date(year, 1, 1), cutoff + timedelta(days=1))
-    return YearTotals(
-        year=year,
-        activity_count=summary.activity_count,
-        distance_m=summary.distance_m,
-        activity_days=summary.activity_days,
-        avg_pace_seconds_per_km=summary.avg_pace_seconds_per_km,
-    )
-
-
-def personal_best(db, owner, low: Decimal, high: Decimal) -> PersonalBest | None:
-    """Fastest reliable whole activity within [low, high]; ties go to the earlier date."""
+def pick_run(db, owner, low: Decimal, high: Decimal, *order):
+    """First reliable whole activity within [low, high] for the given ordering, with its count."""
     duration = service.duration_expression()
-    pace = duration * 1000 / A.distance_m
-    row = db.execute(
+    return db.execute(
         select(
             A.id,
             A.activity_date,
@@ -149,36 +73,188 @@ def personal_best(db, owner, low: Decimal, high: Decimal) -> PersonalBest | None
             A.distance_m >= low,
             A.distance_m <= high,
         )
-        .order_by(pace.asc(), A.activity_date.asc(), A.id.asc())
+        .order_by(*order)
         .limit(1)
     ).one_or_none()
+
+
+def run_values(row) -> dict:
+    distance, seconds = Decimal(row.distance_m), Decimal(row.duration_seconds)
+    return {
+        "activity_id": row.id,
+        "activity_date": row.activity_date,
+        "distance_m": distance,
+        "duration_seconds": seconds,
+        "avg_pace_seconds_per_km": (seconds * 1000 / distance).quantize(
+            PACE_STEP, rounding=ROUND_HALF_EVEN
+        ),
+    }
+
+
+def personal_best(db, owner, low: Decimal, high: Decimal) -> PersonalBest | None:
+    """Fastest reliable whole activity within [low, high]; ties go to the earlier date."""
+    pace = service.duration_expression() * 1000 / A.distance_m
+    row = pick_run(db, owner, low, high, pace.asc(), A.activity_date.asc(), A.id.asc())
     if row is None:
         return None
-    distance, seconds = Decimal(row.distance_m), Decimal(row.duration_seconds)
-    return PersonalBest(
-        activity_id=row.id,
-        activity_date=row.activity_date,
-        distance_m=distance,
-        duration_seconds=seconds,
-        avg_pace_seconds_per_km=(seconds * 1000 / distance).quantize(
-            Decimal(".001"), rounding=ROUND_HALF_EVEN
-        ),
-        qualifying_count=row.qualifying_count,
+    return PersonalBest(**run_values(row), qualifying_count=row.qualifying_count)
+
+
+def first_run(db, owner, low: Decimal, high: Decimal) -> FirstRun | None:
+    """Earliest reliable whole activity within [low, high], under the same rules as the best."""
+    row = pick_run(
+        db, owner, low, high, A.activity_date.asc(), A.started_at.asc().nulls_last(), A.id.asc()
+    )
+    return None if row is None else FirstRun(**run_values(row))
+
+
+def pace_gain(best: PersonalBest | None, first: FirstRun | None) -> Decimal | None:
+    """Seconds per km the best is faster than the first run; None unless it is a real gain."""
+    if best is None or first is None or best.activity_id == first.activity_id:
+        return None
+    gain = (first.avg_pace_seconds_per_km - best.avg_pace_seconds_per_km).quantize(
+        PACE_STEP, rounding=ROUND_HALF_EVEN
+    )
+    return gain if gain > 0 else None
+
+
+def month_after(day: date) -> date:
+    return date(day.year + (day.month == 12), day.month % 12 + 1, 1)
+
+
+def fill_months(points: list[MonthPoint], today: date) -> list[MonthPoint]:
+    """Continuous month timeline from the first month with data to the current month."""
+    if not points:
+        return []
+    known = {point.month_start: point for point in points}
+    cursor = min(known)
+    end = max(max(known), today.replace(day=1))
+    filled = []
+    while cursor <= end:
+        filled.append(
+            known.get(cursor)
+            or MonthPoint(
+                month_start=cursor,
+                activity_count=0,
+                distance_m=Decimal(0),
+                avg_pace_seconds_per_km=None,
+            )
+        )
+        cursor = month_after(cursor)
+    return filled
+
+
+def monthly_series(db, owner, today: date) -> list[MonthPoint]:
+    # group/order by the output label: a repeated expression would bind "month" twice and
+    # PostgreSQL then cannot prove the select list matches GROUP BY.
+    month = func.date_trunc("month", cast(A.activity_date, DateTime)).label("m")
+    rows = (
+        db.execute(
+            select(month, *service.expressions())
+            .where(A.user_id == owner)
+            .group_by(month)
+            .order_by(month)
+        )
+        .mappings()
+        .all()
+    )
+    points = []
+    for row in rows:
+        total = service.finalize(row)
+        points.append(
+            MonthPoint(
+                month_start=row["m"].date(),
+                activity_count=total.activity_count,
+                distance_m=total.distance_m,
+                avg_pace_seconds_per_km=total.avg_pace_seconds_per_km,
+            )
+        )
+    return fill_months(points, today)
+
+
+def year_delta(current: Summary, previous: Summary) -> YearDelta:
+    missing = current.avg_pace_seconds_per_km is None or previous.avg_pace_seconds_per_km is None
+    return YearDelta(
+        activity_count=current.activity_count - previous.activity_count,
+        distance_m=current.distance_m - previous.distance_m,
+        avg_pace_seconds_per_km=None
+        if missing
+        else current.avg_pace_seconds_per_km - previous.avg_pace_seconds_per_km,
     )
 
 
-def build_records(
-    db, owner, today: date, year: int | None = None, compare_year: int | None = None
-) -> Records:
-    year, compare_year = resolve_years(today, year, compare_year)
-    cutoff, compare_cutoff = resolve_cutoffs(today, year, compare_year)
-    first, following = date(year, 1, 1), date(year + 1, 1, 1)
-    monthly = service.trends(db, owner, first, following, "month")
-    # Same period: the comparison series ends at its own cutoff; later months are zero.
-    compare_monthly = service.trends(
-        db, owner, date(compare_year, 1, 1), compare_cutoff + timedelta(days=1), "month"
+def build_year_rows(
+    totals: Mapping[int, Summary], today: date, same_period_previous: Summary | None
+) -> list[YearRow]:
+    """Ascending yearly rows from the first year to the current one, empty years included.
+
+    The current year is partial: it is compared with `same_period_previous` (last year up to
+    the same calendar day) instead of a full previous year.
+    """
+    if not totals:
+        return []
+    empty = service.finalize({})
+    rows = []
+    for year in range(min(totals), max(max(totals), today.year) + 1):
+        current = totals.get(year, empty)
+        delta, basis = None, None
+        if year > min(totals):
+            if year == today.year:
+                previous, basis = same_period_previous or empty, "previous_year_same_period"
+            else:
+                previous, basis = totals.get(year - 1, empty), "previous_year"
+            delta = year_delta(current, previous)
+        rows.append(
+            YearRow(
+                year=year,
+                activity_count=current.activity_count,
+                distance_m=current.distance_m,
+                activity_days=current.activity_days,
+                avg_pace_seconds_per_km=current.avg_pace_seconds_per_km,
+                is_partial=year == today.year,
+                delta=delta,
+                delta_basis=basis,
+            )
+        )
+    return rows
+
+
+def yearly_rows(db, owner, today: date) -> list[YearRow]:
+    year = extract("year", A.activity_date)
+    grouped = db.execute(
+        select(year.label("y"), *service.expressions())
+        .where(A.user_id == owner)
+        .group_by(year)
+        .order_by(year)
+    ).mappings()
+    totals = {int(row["y"]): service.finalize(row) for row in grouped}
+    same_period = None
+    if totals and today.year > min(totals):
+        end = shift_to_year(today, today.year - 1) + timedelta(days=1)
+        same_period = service.summary(db, owner, date(today.year - 1, 1, 1), end)
+    return build_year_rows(totals, today, same_period)
+
+
+def all_time_totals(db, owner) -> Totals:
+    total = service.finalize(service.query(db, owner)[0])
+    return Totals(
+        activity_count=total.activity_count,
+        distance_m=total.distance_m,
+        activity_days=total.activity_days,
+        avg_pace_seconds_per_km=total.avg_pace_seconds_per_km,
+        first_activity_date=db.scalar(select(func.min(A.activity_date)).where(A.user_id == owner)),
     )
-    daily = service.query(db, owner, first, following, daily=True)
+
+
+def category_best(db, owner, label: str, low: Decimal, high: Decimal) -> CategoryBest:
+    best, first = personal_best(db, owner, low, high), first_run(db, owner, low, high)
+    return CategoryBest(
+        category=label, best=best, first=first, pace_gain_seconds_per_km=pace_gain(best, first)
+    )
+
+
+def build_records(db, owner, today: date) -> Records:
+    daily = service.query(db, owner, daily=True)
     current_week = today - timedelta(days=today.weekday())
     week_dates = db.scalars(
         select(A.activity_date)
@@ -189,22 +265,13 @@ def build_records(
         )
         .distinct()
     ).all()
-    current = year_totals(db, owner, year, cutoff)
-    previous = year_totals(db, owner, compare_year, compare_cutoff)
     return Records(
-        year=year,
-        compare_year=compare_year,
-        cutoff_date=cutoff,
-        compare_cutoff_date=compare_cutoff,
         personal_bests=[
-            CategoryBest(category=label, best=personal_best(db, owner, low, high))
-            for label, (low, high) in BEST_BANDS.items()
+            category_best(db, owner, label, low, high) for label, (low, high) in BEST_BANDS.items()
         ],
-        monthly=month_points(monthly),
-        compare_monthly=padded_month_points(compare_monthly),
+        totals=all_time_totals(db, owner),
+        monthly=monthly_series(db, owner, today),
         weekly=weekly_active_days(week_dates, today),
         weekday=weekday_counts((row["date"], row["activity_count"]) for row in daily),
-        comparison=YearComparison(
-            current=current, previous=previous, delta=comparison_delta(current, previous)
-        ),
+        yearly=yearly_rows(db, owner, today),
     )

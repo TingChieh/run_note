@@ -1,33 +1,36 @@
 # 75 个人记录
 
-日期：2026-10-26。设计与计划见 `docs/superpowers/specs/2026-10-26-personal-records-design.md` 与 `docs/superpowers/plans/2026-10-26-personal-records.md`。
+日期：2026-10-26 上线（PR #37），2026-10-27 改版。设计与计划见 `docs/superpowers/specs/2026-10-26-personal-records-overview-design.md` 与 `docs/superpowers/plans/2026-10-26-personal-records-overview.md`；#37 的初版设计见同目录 `2026-10-26-personal-records-design.md`。
+
+> **本次改版是对 #37 的修订：个人记录改为“全部历史总览”。** 去掉年份与对比年份（查询参数、输入框、两年叠加曲线、截止日规则全部移除）；5K / 10K 最佳成绩加入“比第一次快了多少”；数据汇总页（`/dashboard`）的摘要卡换成整行的 `RecordsBanner`，`/records` 用同一套扁平卡片语言重做。接口响应结构随之变化（见下），前端是唯一使用方，前后端在同一个 PR 发布。无数据库变更、无迁移。
 
 ## 使用方式
 
-- 入口：根展示 `/records`（匿名可访问）、本人工作区 `/workspace/records`、具名展示 `/p/{username}/records`。导航在“数据汇总”之后新增“个人记录”。`/records` 需要应用外壳，所以 `frontend/src/routes/+layout.svelte` 的 `appLayout` 正则加入了 `records`。
-- 页面区块：
-  - **5K / 10K 最佳成绩**：两张卡，显示配速、用时、距离、日期，以及该档位符合条件的跑步次数；“查看这次跑步”跳到对应活动详情。没有符合条件的记录时显示“还没有符合条件的 5K / 10K 记录”。
-  - **月度里程**与**配速趋势**：所选年份 12 个月。没有可靠配速的月份显示断点，不插值。
-  - **每周训练天数**：最近 26 周（周一起算，含本周），缺失周补 0。
-  - **周内分布**：所选年份内周一至周日各自的活动次数。
-  - **同期对比**：所选年份与对比年份的累计里程、活动次数、平均配速及差值，附月里程叠加折线图。每张图下方都有 `<details>` 完整数据表，缺失值显示“—”并附 `sr-only` 说明。
-- 年份与对比年份输入：两个 4 位数字输入框，范围 1900–2100，两者不能相同；默认年份为站主时区的当前年，对比年份默认为前一年。输入不合法时在表单下方提示，不发请求。
-- dashboard 摘要卡：`/dashboard` 末尾追加一张卡，显示 5K / 10K 最佳配速、本月里程和较对比年同期的里程差；卡片头部的“查看全部”链接按钮跳到 `/records`（不用整卡链接，避免嵌套链接的可访问性问题）。dashboard 既有内容未改。摘要卡请求不带 `year`，由服务端决定当前年。
-- `/records` 刻意不在 `SITEMAP_PATHS` 中（与 `/routes` 一致），`seo.ts` 只为它增加了页面描述。
-- 最佳成绩口径：
-  - 统计**全部历史**，不受所选年份影响。
-  - 只看**整次活动**，不做轨迹滑窗；长跑途中最快的 5 km / 10 km 不计入。
+- 入口：根展示 `/records`（匿名可访问）、本人工作区 `/workspace/records`、具名展示 `/p/{username}/records`；导航在“数据汇总”之后有“个人记录”。`/records` 需要应用外壳，所以 `frontend/src/routes/+layout.svelte` 的 `appLayout` 正则含 `records`；它刻意不在 `SITEMAP_PATHS` 中（与 `/routes` 一致），`seo.ts` 只为它提供页面描述。
+- **数据汇总（`/dashboard`）**：一条通栏的 `RecordsBanner`（compact），由 `RecordsBannerLoader` 读取接口，位于目标 / 足迹地图区块之后、活动浏览之前。三列以发丝线分隔：**5K 最佳**、**10K 最佳**、**累计**（累计里程、次数、活动日、起始月份、平均配速）。右上角“查看全部”跳到 `/records`。读取失败时只在横幅位置显示错误与“重试”，页面其余部分不受影响；401 清空私人状态并跳转登录；加载中的占位与横幅等高，页面不跳动。同时调整：年度指标改为一张横条卡（四个指标，同样用发丝线分隔），并删除了与侧栏 / 手机菜单重复的“功能入口”区块。
+- **`/records`**，自上而下：
+  1. 页头；
+  2. 顶部 `RecordsBanner`（hero，同样三列）；
+  3. 一句人话总结，例如“今年已跑 X km，比去年同期多 Y km”；无活动时是鼓励文案并给出“查看跑步记录”入口；
+  4. **月度卡**：“里程 | 配速”分段切换的同一张图，横轴是从第一次跑步所在月到当前月的连续月份；去掉网格线与纵轴刻度，柱子圆角，最大月份用强调色；配速为折线、纵轴反向（越高越快），没有可靠配速的月份留空断开、不插值；
+  5. **逐年回顾**与**训练规律**两张卡并排（容器查询：每张至少 28rem 才并排，否则上下叠放）：
+     - 逐年回顾：最新年份在前的排行列表，横条长度是该年里程相对最长一年的比例；进行中的年份标“进行中”，涨跌写“较去年同期”，其余年份写“较上一年”；首年没有涨跌；
+     - 训练规律：最近 26 周每周跑步天数的圆点（0、1–2、3–4、5+ 天四档，语义令牌配色）+ 周内分布 7 根小柱（全部历史），并给出最常跑的星期（仅在一天或并列两天时才点名）。
+  6. 图与卡片下方的 `<details>` 保留完整数据表，缺失值显示“—”并附 `sr-only` 说明。
+- 最佳成绩口径（5K / 10K，未改动）：
+  - 统计**全部历史**；只看**整次活动**，不做轨迹滑窗，长跑途中最快的 5 km / 10 km 不计入。
   - 距离档取自 `activities/classify.py` 的 `DISTANCE_BANDS`：5km 档 4.0–7.5 km，10km 档 9.0–12.0 km（含边界）。
   - 活动必须满足统计模块既有的“可靠”条件（距离 > 0、用时 > 0、有计时器或时间质量为 complete/manual）。
-  - 按**平均配速**升序排名，并列取日期较早者，再按 id 保证确定性。不按总用时排序，否则 4 km 短跑会胜过 5 km。不做距离外推，展示的是该次活动的实际距离与用时。
-- 同期对比的截止日：所选年份是站主时区的当前年时，截止到今天；所选年份是过去的年份时取全年。对比年份的截止日是同一月日平移到对比年份（2 月 29 日在非闰年按 2 月 28 日）。页面标注“统计截至 …（对比年为 …）”。
-- 对比年份是当前年而所选年份不是（如 `year=2025&compare_year=2026`）时，两边使用同一个日历日：对比年截止到今天，所选年截止到今天平移到该年，不拿过去的整年去比当前年的未完成部分（由纯函数 `resolve_cutoffs` 推导）。
-- `compare_monthly` 是“同期”序列：按对比年的截止日截断（截止月只含截止日及之前的活动），其后的月份补 0（次数 0、里程 0、配速 `null`），仍恒为 12 项；过去年份的行为不变。`monthly`（所选年份）保持完整日历年。
-- 月里程叠加图在各序列自己的截止月之后留空（截止月本身完整显示），数据表对应单元格显示“—”，所以当前年尚未到来的月份不会被画成 0。
+  - 按**平均配速**升序排名，并列取日期较早者，再按 id 保证确定性；不按总用时排序，否则 4 km 短跑会胜过 5 km；不做距离外推。
+- **比首次快多少**：`first` 是该档位最早的一次可靠跑步（同一档位与可靠条件，按日期、开始时间（缺失排后）、id 升序取第一）。`pace_gain_seconds_per_km = first 配速 − best 配速`，量化到 0.001 秒。最佳与首次是同一次活动、任一侧缺失、或差值不为正时为 `null`，页面不显示对比：只跑过一次时提示“再跑一次，就能和这次比一比”，多次但最快的仍是第一次时提示“最快的一次仍是第一次”；进步不足 0.5 秒/km（四舍五入后为 0）时提示“和第一次几乎一样快”。横幅里的进度线只是示意（首次与最佳两点，线段长度按进步幅度映射，介于 20 % 与 100 %），数值以服务端为准。
+- 月度时间线：从第一次活动所在月到当前月（含）连续，没有活动的月份补 0 / 配速 `null`；当前月即便没有活动也包含。没有任何活动时为空数组。若有未来日期的活动，时间线会延伸到该月，不报错。
+- 逐年行：从首次活动年到当前年升序，中间没有活动的年份补零；`is_partial = (year == 当前年)`。非当前年的 `delta` 对比上一年全年（`delta_basis = "previous_year"`）；当前年对比上一年**截至今天同月日**的同期汇总（`"previous_year_same_period"`，2 月 29 日在非闰年按 2 月 28 日）；首年 `delta` 与 `delta_basis` 为 `null`。配速差任一侧缺失时为 `null`，负值表示更快。
+- 动效：横幅首次进入视口时配速从首次值回落到最佳值、累计里程从 0 数到总数、进度线绘出（约 1.1 秒）。默认状态就是最终值（SSR、减少动态效果、打印、无 `IntersectionObserver` 时都直接显示最终值），读屏始终读最终值。
+- 已知的小遗留（未处理）：当前年的那一行按全年统计，包含日期晚于今天的活动（未来日期的跑步）；而它的“较去年同期”涨跌截止到今天，所以两者在存在未来日期活动时口径不同。真实数据中几乎不会出现，若要处理需让当前年的汇总也截止到今天。
 
 ## 接口与隐私
 
-三组只读 GET 端点，查询参数相同：
+三组只读 GET 端点，**没有查询参数**（多余的参数被忽略，不再校验）：
 
 | 范围 | 路径 |
 | --- | --- |
@@ -35,70 +38,54 @@
 | 根展示（站主） | `/api/v1/showcase/statistics/records` |
 | 具名展示 | `/api/v1/showcase/users/{username}/statistics/records` |
 
-- 查询参数：`year`、`compare_year`，均 `ge=1900, le=2100`；`year` 缺省为站主时区的当前年，`compare_year` 缺省为 `year - 1`；两者相同返回 422 `VALIDATION_ERROR`。
-- 响应信封 `{data, error, meta.request_id}`，`data` 字段：
-  - `year`、`compare_year`、`cutoff_date`、`compare_cutoff_date`、`date_assignment`（固定为 `activity_local_date`，日期按活动本地日期归属）；
-  - `personal_bests`：有序列表 `[{category: "5km", best}, {category: "10km", best}]`，`best` 为 `null` 或 `{activity_id, activity_date, distance_m, duration_seconds, avg_pace_seconds_per_km, qualifying_count}`；
-  - `monthly`、`compare_monthly`：各 12 项 `{month, activity_count, distance_m, avg_pace_seconds_per_km}`；
-  - `weekly`：26 项 `{week_start, active_days}`；`weekday`：7 项 `{weekday, activity_count}`，周一为 0；
-  - `comparison`：`{current, previous, delta}`，分别对应 `year`、`compare_year` 和二者之差（`year` 减 `compare_year`），任一侧配速缺失时配速差值为 `null`。
-- 指标全部在服务端 SQL 中计算，复用统计模块的 `eligible` 判定与 `trends`/`summary` 查询；前端只呈现，不计算权威运动指标。“当前日”取 `request.app.state.clock()` 转站主时区。
-- 响应只含汇总数字和活动 ID，不含标题、备注、文件名、坐标、轨迹、邮箱。三个端点的返回字段相同。
+- 响应信封 `{data, error, meta.request_id}`，`data`（以 `backend/app/modules/statistics/schema.py` 的 `Records` 为准）：
+  - `personal_bests`：固定 `[5km, 10km]`，每项 `{category, best, first, pace_gain_seconds_per_km}`；`best` 为 `null` 或 `{activity_id, activity_date, distance_m, duration_seconds, avg_pace_seconds_per_km, qualifying_count}`；`first` 为 `null` 或 `{activity_id, activity_date, distance_m, duration_seconds, avg_pace_seconds_per_km}`；
+  - `totals`：`{activity_count, distance_m, activity_days, avg_pace_seconds_per_km, first_activity_date}`，全部历史，后两项可为 `null`；
+  - `monthly`：`[{month_start (YYYY-MM-01), activity_count, distance_m, avg_pace_seconds_per_km}]`，连续、升序，无活动时 `[]`；
+  - `weekly`：最近 26 周（周一起算，含本周）`[{week_start, active_days}]`，缺失周补 0；`weekday`：7 项 `[{weekday, activity_count}]`，周一为 0，全部历史；
+  - `yearly`：`[{year, activity_count, distance_m, activity_days, avg_pace_seconds_per_km, is_partial, delta, delta_basis}]`，`delta` 为 `{activity_count, distance_m, avg_pace_seconds_per_km}`（可为负）；
+  - `date_assignment`：固定 `activity_local_date`，日期按活动本地日期归属。
+- 与 #37 相比：删除了 `year`、`compare_year`、`cutoff_date`、`compare_cutoff_date`、`compare_monthly`、`comparison`；`monthly` 项的 `month` 改为 `month_start` 且不再固定 12 项；新增 `totals`、`yearly`，`personal_bests` 项新增 `first` 与 `pace_gain_seconds_per_km`。
+- 指标全部在服务端 SQL 中计算，复用统计模块的 `eligible` 判定与 `expressions()` / `finalize()`；月度序列用按月分组的 SQL，不受 `validate_range` 的 5 年上限影响，缺失月份在 Python 中补零。前端 `lib/api/records.ts` 做运行时校验（`monthly` 连续性、`yearly` 升序等），失败抛 `ActivityError`；前端只呈现，不计算权威运动指标。“当前日”取 `request.app.state.clock()` 转所属用户时区。
+- **隐私边界不变**：响应只含汇总数字、日期与活动 ID，不含标题、备注、文件名、坐标、轨迹、邮箱。三个端点的返回字段相同。
 - 展示端点沿用 `reject_owner_override`，由 SQL 固定 subject（根展示固定为 `SITE_OWNER_EMAIL` 对应的站主，具名展示限站主或同时 `is_active AND showcase_enabled` 的用户），不接受客户端传入的 owner；本人端点只读本人数据。
-- 无数据库变更、无迁移、无新后端模块；实现位于 `backend/app/modules/statistics/records.py`，路由挂在既有 `statistics` 与 `showcase` router 上。
+- 无数据库变更、无迁移、无新后端模块；实现位于 `backend/app/modules/statistics/records.py`，路由挂在既有 `statistics` 与 `showcase` router 上。前端合成 API（`frontend/tests/fixtures/ui-api.mjs`）已同步新结构。
 
 ## 验证记录
 
-后端集成测试使用测试库 `running_note_phase_one_test`；环境变量只在 Python 子进程中注入，未修改 `.env`，未运行 alembic 迁移，未触碰开发库。
+后端集成测试使用测试库 `running_note_phase_one_test`；环境变量只在 pytest 子进程中注入，未修改 `.env`，未运行 alembic 迁移，未触碰开发库。下表只列 2026-10-27 文档任务中实际运行的命令。
 
-### 实际运行（2026-10-26，最终修复轮之后）
+### 实际运行（2026-10-27）
 
 | 命令 | 结果 |
 | --- | --- |
-| 后端 `.venv/bin/pytest tests/unit -q` | 424 passed |
+| 后端 `.venv/bin/pytest tests/unit -q` | 430 passed（24.03 s） |
 | 后端 `.venv/bin/ruff check app migrations tests` | All checks passed |
 | 后端 `.venv/bin/ruff format --check app migrations tests` | 204 files already formatted |
-| 集成（测试库）`test_records.py`、`test_statistics.py`、`test_showcase.py`、`test_admin_users.py` | 22 passed |
-| 集成（测试库）整个 `tests/integration` | 322 passed，1 skipped，用时 195.41 s |
-| 前端 `pnpm test` | 38 个文件，223 passed |
-| 前端 `pnpm check` | 636 FILES，0 errors，0 warnings |
+| 后端 `.venv/bin/alembic heads`（只读） | 唯一 head：`0016_place_titles` |
+| 后端整个 `tests/integration`（测试库，环境变量只注入 pytest 子进程） | 328 passed，1 skipped，用时 326.78 s |
+| 前端 `pnpm test` | 229 passed（229） |
+| 前端 `pnpm check` | 637 FILES，0 errors，0 warnings |
 | 前端 `pnpm build` | 成功（既有大体积 chunk 警告属已知状态） |
-| `playwright.ui.config.ts` 仅 `records.spec.ts` + `dashboard.spec.ts` | 12 passed |
-| `playwright.showcase.config.ts` | 6 passed（修正 `showcase.spec.ts` 过时的 `/dashboard` 期望后；修正前 2 passed，4 failed） |
-| `playwright.showcase-build.config.ts`（先 `pnpm build`） | 6 passed（同上） |
-| `playwright.admin-users.config.ts` | 8 passed（修正 `admin-users.spec.ts` 的过时标签后；修正前单独运行 7 passed，1 failed，并行时另有一次 `:106` 偶发失败） |
-| `playwright.admin-users-build.config.ts` | 8 passed（同上） |
-| `playwright.ui.config.ts` 全套 | 第一次：200 passed，1 failed，3 skipped（6.7 min）；第二次：199 passed，2 failed，3 skipped（10.0 min） |
+| `playwright.ui.config.ts` 完整运行 | 212 passed，3 skipped，0 failed（7.5 min） |
+| `playwright.showcase.config.ts` / `playwright.showcase-build.config.ts` | 各 6 passed |
+| `playwright.admin-users.config.ts` / `playwright.admin-users-build.config.ts` | 各 8 passed |
+| `playwright.design-system.config.ts` | 6 passed，2 failed（见下） |
 | `git diff --check` | 无输出，退出码 0 |
 
-整目录集成运行中的 1 个 skipped 是 `tests/integration/test_migrations.py`，需要 `TEST_SNAPSHOT_DATABASE_URL`（未设置），与本功能无关。后端集成测试使用测试库，环境变量只在 pytest 子进程中注入。
-
-最终修复轮新增的后端覆盖：当前年 `compare_monthly` 在对比截止日截断且补 0 到 12 项；`year` 为过去年、`compare_year` 为当前年时两边同截止日；无活动年份与无任何活动用户的空形状，且 `comparison.current` 与 `/statistics/summary` 一致；两年相同返回 `VALIDATION_ERROR`；具名展示启用时 `/statistics/records` 返回 200，关闭展示后返回 404（`test_admin_users.py`）；`resolve_cutoffs` 的单元测试。
-
-**顺手修复的两处既有过时用例（与本功能无关，#13 之后未跟进）：**
-
-- `showcase.spec.ts:7`：页面清单里的 `/dashboard` 改为 `/`（`src/routes/dashboard/+page.server.ts` 自 #13 起 308 重定向到 `/`，原断言 URL 以 `/dashboard` 结尾）。
-- `admin-users.spec.ts:164`：`getByLabel('新密码', { exact: true })` 改为 `getByLabel('新密码（至少 12 位）', { exact: true })`，与设置页现有标签一致。
-- 两处各是一行断言修改，修后上述四套配置（dev 与 build）均全部通过；未改动被测页面。
-
-**全套 UI 运行中的偶发失败：** 第一次的 `dashboard-explorer.spec.ts:202`（390px）几何位置不等，之前一轮在 1440px 也出现过；该用例单独重复 24 次全过，整个文件也通过。第二次整套耗时 10 min，`activities.spec.ts:24` 与 `:63` 在 30 s 超时，`activities.spec.ts` 单独运行 16 passed。判断为整套并行运行下的负载型不稳定，但没有做根因调查，也不能完全排除摘要卡加载带来的布局影响。
+- 集成运行中的 1 个 skipped 是 `tests/integration/test_migrations.py`，需要 `TEST_SNAPSHOT_DATABASE_URL`（未设置），与本功能无关。
+- `design-system.config.ts` 的 2 个失败是浅色 / 深色 `composition` 快照：期望 1290×408 px，实际 1290×398 px。这两个失败在本次文档任务之前就已存在，再次运行结果相同，没有新增失败；基线截图未更新。
+- 完整 UI 运行的 3 个 skipped 为用例自身的 skip 标记，未逐一核对来源。
 
 ### 未运行
 
-- 对真实后端的 e2e（`*-e2e.config.ts`）、`design-system.config.ts`（像素截图对比）、`basemaps-live.config.ts`（访问真实底图网络）。
-- 视觉检查：只看过合成 API 下浅色/深色 × 桌面/390px 的截图以及输入框焦点环；键盘操作和真实数据下的视觉未检查。ECharts 画布本身未做像素断言。
-- 开发库未升级，也未做任何读写；新接口未在运行中的开发实例上验证（开发服务未重启）。
-- 真实用户数据上的纪录结果未验证（只用合成数据）。
-- `docs/design-system` 与独立 showcase 未更新：本次没有新增通用组件。
-- CI（GitHub Actions）未运行；改动只涉及 backend 与 frontend，不触及迁移、`scripts/`、依赖清单、`infra/`，所以不需要改 `infra/native/tests/test_ci_changes.py`。
+- 对真实后端的 e2e（`*-e2e.config.ts`）、`basemaps-live.config.ts`（访问真实底图网络）。
+- `backend/.venv/bin/python -m unittest discover -s infra/native/tests` 与其它 `infra/` 自检：本次不涉及 `infra/`、迁移、`scripts/`、依赖清单，未运行。
+- 视觉检查：本次文档任务未做新的人工截图检查（深浅色、桌面 / 手机宽度、真实数据）；ECharts 画布未做像素断言。
+- 开发库未升级，也未做任何读写；新接口未在运行中的开发实例上验证（开发服务未重启）；真实用户数据上的记录结果未验证（只用合成数据）。
+- CI（GitHub Actions）未运行；改动涉及 backend 与 frontend，不触及迁移、`scripts/`、依赖清单、`infra/`，因此不需要改 `infra/native/tests/test_ci_changes.py`。
 
-### 实现中超出原计划的改动
-
-- `frontend/src/routes/+layout.svelte`：`appLayout` 正则加入 `records`，否则 `/records` 没有应用外壳。
-- `frontend/tests/ui/dashboard.spec.ts`：该文件对 `**/api/v1/showcase/statistics/**` 的 mock 会把 `/streaks` 之外的请求都当作趋势请求，新增的 `/records` 请求会被误当 `/trends`；现在对 `/records` 与 `/streaks` 一样 `route.fallback()`，交给 `ui-api.mjs` 的合成端点。
-- 同期对比图的截止月之后置空（见“使用方式”）。
-- 最终审查后的修复：`compare_monthly` 按对比截止日截断；`compare_year` 为当前年时两边同截止日；摘要卡不再自带年份；`PersonalBests` 去掉冗余 `role="region"`（页面区块 `aria-labelledby="bests-title"` 已提供名称）。
 
 ## 未受影响的部分
 
-既有 `summary`、`trends`、`streaks` 等统计接口的响应结构与数字、旧版摘要分享、足迹、常跑路线的接口与行为未改动；dashboard 既有内容未改；无数据库 Schema 变化。
+既有 `summary`、`trends`、`streaks` 等统计接口的响应结构与数字、旧版摘要分享、足迹、常跑路线的接口与行为未改动；5K / 10K 最佳成绩的口径未改动；无数据库 Schema 变化。

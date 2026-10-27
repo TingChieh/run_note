@@ -62,13 +62,31 @@ class PersonalBest(BaseModel):
     qualifying_count: int
 
 
+class FirstRun(BaseModel):
+    activity_id: UUID
+    activity_date: date
+    distance_m: Decimal
+    duration_seconds: Decimal
+    avg_pace_seconds_per_km: Decimal
+
+
 class CategoryBest(BaseModel):
     category: Literal["5km", "10km"]
     best: PersonalBest | None
+    first: FirstRun | None
+    pace_gain_seconds_per_km: Decimal | None
+
+
+class Totals(BaseModel):
+    activity_count: int
+    distance_m: Decimal
+    activity_days: int
+    avg_pace_seconds_per_km: Decimal | None
+    first_activity_date: date | None
 
 
 class MonthPoint(BaseModel):
-    month: int
+    month_start: date
     activity_count: int
     distance_m: Decimal
     avg_pace_seconds_per_km: Decimal | None
@@ -84,36 +102,28 @@ class WeekdayPoint(BaseModel):
     activity_count: int
 
 
-class YearTotals(BaseModel):
+class YearDelta(BaseModel):
+    activity_count: int
+    distance_m: Decimal
+    avg_pace_seconds_per_km: Decimal | None
+
+
+class YearRow(BaseModel):
     year: int
     activity_count: int
     distance_m: Decimal
     activity_days: int
     avg_pace_seconds_per_km: Decimal | None
-
-
-class ComparisonDelta(BaseModel):
-    activity_count: int
-    distance_m: Decimal
-    activity_days: int
-    avg_pace_seconds_per_km: Decimal | None
-
-
-class YearComparison(BaseModel):
-    current: YearTotals
-    previous: YearTotals
-    delta: ComparisonDelta
+    is_partial: bool
+    delta: YearDelta | None
+    delta_basis: Literal["previous_year", "previous_year_same_period"] | None
 
 
 class Records(BaseModel):
-    year: int
-    compare_year: int
-    cutoff_date: date
-    compare_cutoff_date: date
     personal_bests: list[CategoryBest]
+    totals: Totals
     monthly: list[MonthPoint]
-    compare_monthly: list[MonthPoint]
     weekly: list[WeekPoint]
     weekday: list[WeekdayPoint]
-    comparison: YearComparison
+    yearly: list[YearRow]
     date_assignment: Literal["activity_local_date"] = "activity_local_date"

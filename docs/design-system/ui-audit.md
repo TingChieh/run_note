@@ -31,7 +31,8 @@ RunNote 已形成自己的设计语言：绿色运动空间导航、黄色内容
 | 路由 | 当前组合 | 设计角色与保留点 |
 | --- | --- | --- |
 | `/` | `+page.server.ts` 重定向 `/dashboard`；`+page.svelte` 为占位 | 延续入口、查询参数和鉴权行为，不建立第二个首页 |
-| `/dashboard` | PageHeader、GoalOverview、ProvinceMap、ActivityExplorer、CalendarGrid、TrendChart、FeedbackState、PageSkeleton | 最完整的品牌样本：年度指标、目标、省份图、功能入口、路线浏览、日历与趋势 |
+| `/dashboard` | PageHeader、GoalOverview、ProvinceMap、RecordsBanner、ActivityExplorer、CalendarGrid、TrendChart、FeedbackState、PageSkeleton | 最完整的品牌样本：年度指标、目标、省份图、个人记录横幅、路线浏览、日历与趋势 |
+| `/records` | PageHeader、RecordsBanner（hero）、RecordsChart、页面私有的逐年横条/周点/周内小柱、FeedbackState、PageSkeleton | 全部历史总览：横幅 → 一句话总结 → 月度里程/配速 → 逐年回顾与训练规律并排；扁平卡片、不超过三层，`/workspace/records` 与 `/p/{username}/records` 复用同一页面 |
 | `/activities` | PageHeader、ActivityCard、ActivityEditor、MifitnessImport、反馈/骨架、原生 dialog | 导入与活动管理；不能把业务事务抽到 Button 或 Card |
 | `/activities/[id]` | 专用 sport-hero、ActivityActions、MetricSummary、RouteMap、DeviceMetrics、WallCard、SharePanel | 有意采用“指标 + 大路线”详情布局，保留专用 hero，不强塞进通用页头 |
 | `/activities/wall` | PageHeader → FootprintWall → WallCard → RouteThumbnail | 足迹画廊；当前工作区新增 compact 与容器查询，需单独稳定基线 |
@@ -171,7 +172,7 @@ public activity / shared → PublicActivityPage → MetricSummary
 
 | 模式 / 适用场景 | 布局与组件组合 | 交互规则 | 反例 |
 | --- | --- | --- | --- |
-| 仪表盘 / 个人运动总览 | PageHeader → 累计与年度 dl → 目标/省份 → 功能入口 → ActivityExplorer → 日历/趋势 | 每区独立 loading/error/retry；日历年份不改变累计省份；保留 URL 选择 | 将所有内容改为密集管理后台表格，或一个失败隐藏全部模块 |
+| 仪表盘 / 个人运动总览 | PageHeader → 累计与年度 dl → 目标/省份 → 个人记录横幅 → ActivityExplorer → 日历/趋势 | 每区独立 loading/error/retry；日历年份不改变累计省份；保留 URL 选择 | 将所有内容改为密集管理后台表格，或一个失败隐藏全部模块 |
 | 列表、筛选 / 管理与浏览记录 | 页头操作 → 导入/筛选 → 状态 → 卡片列表 → 分页；展示墙可采用容器栅格 | 不隐藏未保存导入草稿；筛选与翻页保留既有范围，批量选择仅本页 | 为统一 toolbar 增加不存在的搜索接口；卡片链接内嵌按钮 |
 | 详情 / 活动指标与路线 | 返回链接 → 黄色业务 hero → 管理区 → 指标/路线 workspace → 设备/质量/足迹/分享 | 地图失败不隐藏指标，删除需确认；大屏左右布局、小屏纵向 | 用通用 Panel 接管活动读取/删除，或公开详情直接复用私人整页 |
 | 创建、编辑 / 导入与资料修改 | 原生 form → label/input + help → 可选 details → 操作区 → FeedbackState | busy 防重复提交；失败保留草稿；字段错误关联输入；Dialog 关闭恢复焦点 | 保存失败清空输入；只靠颜色提示错误；Button 自己发业务请求 |
