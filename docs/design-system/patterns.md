@@ -4,7 +4,7 @@
 
 ## 1. 仪表盘
 
-适用：个人跑步总览。参考 [dashboard](../../frontend/src/routes/dashboard/+page.svelte)。结构：PageHeader → 累计/年度指标 dl → GoalOverview 与 ProvinceMap → RecordsBanner（个人记录横幅）→ ActivityExplorer → CalendarGrid/TrendChart。数据汇总里的“概览条”（年度指标、个人记录横幅）统一为同一种写法：一张平面卡片 + 等宽列 + 列间 `--border` 发丝线，运动色只出现在圆形徽章上；不要在卡片里再嵌带底色的块，也不要把一排指标拆成各自带边框的小卡片。各页面入口只在侧栏与手机菜单出现，数据汇总不再重复一组“功能入口”卡片。
+适用：个人跑步总览。参考 [dashboard](../../frontend/src/routes/dashboard/+page.svelte)。结构：PageHeader → 累计/年度指标 dl → GoalOverview 与 ProvinceMap → RecordsBanner（个人记录横幅）→ ActivityExplorer → CalendarGrid/TrendChart。数据汇总里的“概览条”（年度指标、个人记录横幅）统一为同一种写法：一张平面卡片 + 等宽列 + 列间 `--border` 发丝线，运动色只出现在圆形徽章上；不要在卡片里再嵌带底色的块，也不要把一排指标拆成各自带边框的小卡片。各页面入口只在侧栏与手机菜单出现，数据汇总不再重复一组“功能入口”卡片。目标卡（年度/月度/周目标与连续记录）在桌面上等宽等高，进度与对比贴卡底，卡下不再加口径小字（口径统一放在页尾“统计口径与数据质量”）。“运动趋势”与个人记录的月度图同一种图表语言（`trend-chart.ts` 复用 `records-chart.ts` 的高亮规则）：小号说明 + 标题，周期与指标用分段按钮，图表不画网格线和数值轴，柱子圆角、最高一期全色并标数值，配速为反向纵轴的折线，下方 `<details>` 完整数据表。
 
 每区独立 loading/error/retry，保留已成功内容；年份只影响对应统计，不能重置累计省份。保留 URL 选中项与页面位置。摘要用彩色指标锚点和表面卡片，不把所有信息压成后台表格。
 

@@ -211,6 +211,20 @@ test('home has real period goals, streaks, province lighting and a private wall 
   await expect(map.getByRole('link',{name:'探索详细路线'})).toHaveAttribute('href','/footprints');
 });
 
+test('the four goal cards share one size on desktop and the page carries no footnote under them', async ({page}) => {
+  await installMilestones(page); await loginRunner(page);
+  await page.setViewportSize({width:1440,height:1000});
+  await page.goto('/dashboard');
+  const goals = page.getByRole('region',{name:'运动目标'});
+  await expect(goals.getByRole('progressbar')).toHaveCount(3);
+  await expect(goals.getByRole('region',{name:'连续记录'})).toContainText('最长 5 天 / 7 周');
+  const sizes = await goals.locator('.goal-card').evaluateAll(cards => cards.map(card => { const box = card.getBoundingClientRect(); return [Math.round(box.width), Math.round(box.height)]; }));
+  expect(sizes).toHaveLength(4);
+  expect(new Set(sizes.map(size => size[0])).size).toBe(1);
+  expect(new Set(sizes.map(size => size[1])).size).toBe(1);
+  await expect(page.locator('.milestone-section')).not.toContainText('当前周期截至今天');
+});
+
 test('goals sync with sidebar and province/streak failures can retry independently', async ({page}) => {
   const state=await installMilestones(page); state.provinceFailures=1;state.streakFailures=1;
   await loginRunner(page);await page.goto('/dashboard');

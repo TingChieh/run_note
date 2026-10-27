@@ -105,11 +105,15 @@ test('populated dashboard: hierarchy, disclosure, calendar keyboard, date and ch
   await expect(page).toHaveURL(/metric=count/);
   await expect(day).toHaveAttribute('aria-pressed','true');
   await expect(page.getByRole('region',{name:'运动趋势',exact:true}).locator('canvas')).toBeVisible();
-  await page.getByLabel('趋势周期').selectOption('week'); await expect(page.getByRole('region',{name:'运动趋势',exact:true}).locator('canvas')).toBeVisible();
-  await page.getByLabel('趋势指标').selectOption('pace');
+  const trendPeriod = page.getByRole('group',{name:'趋势周期'}), trendMetric = page.getByRole('group',{name:'趋势指标'});
+  await trendPeriod.getByRole('button',{name:'周',exact:true}).click(); await expect(page.getByRole('region',{name:'运动趋势',exact:true}).locator('canvas')).toBeVisible();
+  await expect(page).toHaveURL(/period=week/);
+  await trendMetric.getByRole('button',{name:'配速',exact:true}).click();
+  await expect(trendMetric.getByRole('button',{name:'配速',exact:true})).toHaveAttribute('aria-pressed','true');
   await expect(page.getByRole('region',{name:'运动趋势',exact:true}).locator('canvas')).toBeVisible();
-  await page.getByLabel('趋势周期').selectOption('month');
-  await page.getByLabel('趋势指标').selectOption('distance');
+  await trendPeriod.getByRole('button',{name:'月',exact:true}).click();
+  await trendMetric.getByRole('button',{name:'距离',exact:true}).click();
+  await expect(page.getByText('查看每月数据')).toBeVisible();
   await page.getByRole('button',{name:'收起当天记录'}).click();
   await page.setViewportSize({width:1440,height:1380}); await capture(page,'desktop-data');
   const email = page.getByTestId('current-user');
@@ -155,7 +159,7 @@ test('statistics and date errors have independent retries; session expiry redire
   // The day card animates its height; it must settle on the full content height, not clip the last card.
   await page.waitForTimeout(600); // let the height transition settle
   expect(await page.locator('.day-height').evaluate(el => { const card = el.querySelector('.day-activity')!.getBoundingClientRect(); return card.bottom - el.getBoundingClientRect().bottom; })).toBeLessThanOrEqual(0);
-  state.trendFailures=1; await page.getByLabel('趋势周期').selectOption('week');
+  state.trendFailures=1; await page.getByRole('group',{name:'趋势周期'}).getByRole('button',{name:'周',exact:true}).click();
   await page.getByRole('button',{name:'重新读取趋势'}).click(); await expect(page.getByRole('region',{name:'运动趋势',exact:true}).locator('canvas')).toBeVisible();
   state.expired=true; await page.getByRole('button',{name:'上一年',exact:true}).click(); await expect(page).toHaveURL(/admin\?reason=expired/);
 });
@@ -165,7 +169,7 @@ test('year input, boundaries, URL date restore and slow previous-year response',
   await page.goto('/dashboard?year=2026&day=2026-10-13&metric=count&period=week');
   await expect(page.locator('.day-activity').filter({hasText:'河畔晨跑'})).toBeVisible();
   await expect(page.getByLabel('日历维度')).toHaveValue('count');
-  await expect(page.getByLabel('趋势周期')).toHaveValue('week');
+  await expect(page.getByRole('group',{name:'趋势周期'}).getByRole('button',{name:'周',exact:true})).toHaveAttribute('aria-pressed','true');
   await page.getByLabel('年份',{exact:true}).fill('abc');
   await expect(page.locator('#year-error')).toContainText('1900–2100');
   await page.getByLabel('年份',{exact:true}).fill('1900');
