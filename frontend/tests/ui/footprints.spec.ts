@@ -51,6 +51,23 @@ test('page loading skeleton follows the real request and respects reduced motion
     expect(await page.locator('.page-reveal').evaluate(el=>getComputedStyle(el).animationName)).toBe('none');
   } finally {release();}
 });
+test('opens on every footprint rather than one city, also after city lookup finishes',async({page})=>{
+  const state=await fixture(page);state.multipleCities=true;await loginRunner(page);
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.goto('/footprints?mode=tracks');await ready(page);
+  await page.getByRole('button',{name:'关闭底图',exact:true}).click();
+  await expect(page.getByRole('group',{name:'有记录的城市',exact:true}).getByRole('button')).toHaveCount(2);
+  const style='.glass-tuner, .maplibregl-control-container { visibility: hidden !important; }';
+  const canvas=page.locator('.maplibregl-canvas');
+  const shot=async()=>{
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    const box=(await canvas.boundingBox())!;
+    return page.screenshot({style,clip:{x:box.x+4,y:box.y+4,width:box.width-8,height:box.height-8}});
+  };
+  const opened=await shot();
+  await page.getByRole('button',{name:'回到全部足迹',exact:true}).click();
+  expect((await shot()).equals(opened)).toBe(true);
+});
 for(const mode of ['tracks','heatmap'])test(`city locator moves and restores the real map without filtering ${mode}`,async({page})=>{
   const state=await fixture(page);state.multipleCities=true;await loginRunner(page);
   await page.emulateMedia({reducedMotion:mode==='tracks'?'reduce':'no-preference',colorScheme:'dark'});

@@ -8,7 +8,7 @@
   import type { Map as LibreMap, GeoJSONSource } from 'maplibre-gl';
   import type { FootprintCollection } from '#lib/api/footprints.ts';
   import { geometryBounds, displayFootprints } from '#lib/api/footprints.ts';
-  import { dominantCity, type CityLocations, type FootprintCity } from '#lib/map/footprint-cities.ts';
+  import type { CityLocations, FootprintCity } from '#lib/map/footprint-cities.ts';
   import { colorFootprintFeatures } from '#lib/map/footprint-colors.ts';
   import { createRouteMapStyle, applyMapTheme, type BasemapPreference, type BasemapStyle } from '#lib/api/map-style.ts';
   import BasemapPicker from './BasemapPicker.svelte';
@@ -45,20 +45,11 @@
   function frame(bounds: [[number,number],[number,number]] | null) {
     framing = 'free'; selectedCity = ''; fit(bounds);
   }
-  function preferredBounds() {
-    if (data.mode !== 'tracks' || !cities.length) return allBounds;
-    return dominantCity(displayData.features.map(feature => ({
-      geometry: feature.geometry,
-      activityId: typeof feature.properties?.activity_id === 'string' ? feature.properties.activity_id : undefined,
-      activityDate: typeof feature.properties?.activity_date === 'string' ? feature.properties.activity_date : undefined,
-    })), cities)?.bounds ?? allBounds;
-  }
+  // Opens on every footprint; city lookup only adds shortcuts and never moves the initial camera.
   function frameInitial() {
     if (!map || framing === 'free') return;
-    if (framing === 'all') { fit(allBounds); return; }
     if (framing === 'picked' && selectedCity) { locateCity(selectedCity, false); return; }
-    if (data.mode === 'tracks' && cityLookup === 'loading') return;
-    fit(preferredBounds());
+    fit(allBounds);
   }
   function sizeCanvas() {
     if (!frameEl) return;
@@ -122,8 +113,9 @@
   onMount(()=>{loadCities();sizeCanvas();window.addEventListener('resize', onWindowResize);stopTheme=watchSystemTheme(value=>{dark=value;if(map && !disposed && !basemapController)applyMapTheme(map,dark);});void(async()=>{
     try {
       const lib=await import('maplibre-gl'); if(disposed)return;
-      const center: [number, number] = allBounds ? [(allBounds[0][0] + allBounds[1][0]) / 2, (allBounds[0][1] + allBounds[1][1]) / 2] : [0, 0];
-      map=new lib.Map({container,fadeDuration:0,locale:{'NavigationControl.ZoomIn':'放大地图','NavigationControl.ZoomOut':'缩小地图','Map.Title':'足迹地图'},style:createRouteMapStyle(dark),center,zoom:data.mode==='tracks'?12:4,maxZoom:19,attributionControl:false});
+      // Start on the overview so no high-zoom tiles load before the first fit.
+      const camera = allBounds ? { bounds: allBounds, fitBoundsOptions: { padding: cameraPadding } } : { center: [0, 0] as [number, number], zoom: 4 };
+      map=new lib.Map({container,fadeDuration:0,locale:{'NavigationControl.ZoomIn':'放大地图','NavigationControl.ZoomOut':'缩小地图','Map.Title':'足迹地图'},style:createRouteMapStyle(dark),...camera,maxZoom:19,attributionControl:false});
       map.addControl(new lib.AttributionControl({compact:true}),'bottom-right');
       map.addControl(new lib.NavigationControl({showCompass:false}),'top-right');
       map.on('dragstart',()=>{selectedCity='';framing='free';});
