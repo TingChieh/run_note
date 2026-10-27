@@ -22,6 +22,7 @@
   import { currentYear, readSummary as scoped_readSummary, readCalendar as scoped_readCalendar, readTrends as scoped_readTrends, type Summary, type Calendar, type Trends, type CalendarMetric } from '#lib/api/statistics.ts';
   import CalendarGrid from '#lib/components/CalendarGrid.svelte';
   import TrendChart from '#lib/components/TrendChart.svelte';
+  import type { TrendMetric } from '#lib/components/trend-chart.ts';
   import GoalOverview from '#lib/components/GoalOverview.svelte';
   import ProvinceMap from '#lib/components/ProvinceMap.svelte';
   import ActivityExplorer from '#lib/components/ActivityExplorer.svelte';
@@ -84,7 +85,10 @@
     yearMessage = ''; year = next; yearInput = String(next); selectedDate = null; saveSelection(); void loadYear();
   }
   function changeYear(value: string) { yearInput = value; const next = Number(value); if (!/^\d{4}$/.test(value) || next < 1900 || next > 2100) { yearMessage = '请输入 1900–2100 年'; return; } yearMessage = ''; if (next !== year) setYear(next); }
-  let hasTrendActivities = $derived(trends?.buckets.some(bucket => bucket.activity_count > 0) ?? false);
+  let trendHint = $derived(trendMetric === 'pace'
+    ? `每${period === 'week' ? '周' : '月'}可靠跑步的平均配速，越高越快；缺少可靠用时的${period === 'week' ? '周' : '月'}留空。`
+    : `每根柱子是一${period === 'week' ? '周' : '个月'}的${trendMetric === 'distance' ? '总里程' : trendMetric === 'count' ? '活动次数' : '已知耗时'}，最深的是最多的那${period === 'week' ? '周' : '个月'}。`);
+  let hasTrendActivities =$derived(trends?.buckets.some(bucket => bucket.activity_count > 0) ?? false);
   onMount(() => { const selection = dashboardSelection(new URL(window.location.href).searchParams, currentYear(page.data.showcase?.timezone ?? 'UTC')); year = selection.year; calendarMetric = selection.metric; period = selection.period; yearInput = String(year); selectedDate = selection.day; saveSelection(); void loadYear(selection.day); void loadCumulative(); return () => { disposed = true; yearRequest++; dayRequest++; trendRequest++; annual = null; cumulative = null; calendar = null; trends = null; records = null; }; });
 </script>
 <svelte:head><title>{pageTitle('数据汇总', page.data.site)}</title></svelte:head>
@@ -105,7 +109,6 @@
       {#if page.data.showcase}<GoalOverview user={page.data.showcase} readonly={!view.manage} />{/if}
       <ProvinceMap />
     </div>
-    <p class="goal-explanation">当前周期截至今天，同期按相同日历进度比较；连续记录按活动当地日期计算，今日/本周尚未结束时保留昨日/上周延续。</p>
   </div>
   <RecordsBannerLoader />
   <ActivityExplorer />
@@ -134,13 +137,19 @@
   </section></div>{/if}
   </section>
   <section class="dashboard-card" aria-labelledby="trend-title" aria-busy={trendLoading}>
-    <div class="card-heading"><h2 id="trend-title">运动趋势</h2><div class="trend-controls"><label>周期 <select aria-label="趋势周期" bind:value={period} onchange={() => { saveSelection(); void loadTrend(); }}><option value="week">周</option><option value="month">月</option></select></label><label>指标 <select aria-label="趋势指标" bind:value={trendMetric}><option value="distance">距离</option><option value="count">次数</option><option value="duration">已知耗时</option><option value="pace">可靠配速</option></select></label></div></div>
-    <div class="mt-4">{#if trendLoading}<FeedbackState kind="loading" title="正在读取趋势…" />{:else if trendMessage}<FeedbackState kind="error" title={trendMessage}><button onclick={() => { void loadTrend(); }} class="button-secondary">重新读取趋势</button></FeedbackState>{:else if trends}
-      {#if hasTrendActivities}<TrendChart {trends} metric={trendMetric} enhanced />{:else}<div data-testid="trend-empty"><FeedbackState title="记录一次跑步，让趋势开始生长"><a href={view.href("/activities")}  class="button-primary">查看跑步记录</a></FeedbackState></div>{/if}
+    <div class="card-heading"><div><p class="eyebrow">{year} 年的节奏</p><h2 id="trend-title">运动趋势</h2></div>
+      <div class="trend-controls">
+        <div class="settings-tabs metric-switch" role="group" aria-label="趋势周期">{#each [['week','周'],['month','月']] as [value, text] (value)}<button type="button" aria-pressed={period === value} onclick={() => { if (period === value) return; period = value as Trends['period']; saveSelection(); void loadTrend(); }}>{text}</button>{/each}</div>
+        <div class="settings-tabs metric-switch" role="group" aria-label="趋势指标">{#each [['distance','距离'],['count','次数'],['duration','耗时'],['pace','配速']] as [value, text] (value)}<button type="button" aria-pressed={trendMetric === value} onclick={() => { trendMetric = value as TrendMetric; }}>{text}</button>{/each}</div>
+      </div></div>
+    <p class="hint">{trendHint}</p>
+    <div>{#if trendLoading}<div class="mt-4"><FeedbackState kind="loading" title="正在读取趋势…" /></div>{:else if trendMessage}<div class="mt-4"><FeedbackState kind="error" title={trendMessage}><button onclick={() => { void loadTrend(); }} class="button-secondary">重新读取趋势</button></FeedbackState></div>{:else if trends}
+      {#if hasTrendActivities}<TrendChart {trends} metric={trendMetric} />{:else}<div data-testid="trend-empty"><FeedbackState title="记录一次跑步，让趋势开始生长"><a href={view.href("/activities")}  class="button-primary">查看跑步记录</a></FeedbackState></div>{/if}
     {/if}</div>
   </section>
   <details class="statistics-notes"><summary>统计口径与数据质量</summary><div class="notes-content">
     <p>仅统计你自己的活动。历史日期按活动保存时的当地日期归属，不随当前时区改变。</p>
+    <p>目标卡的当前周期截至今天，同期按相同日历进度比较；连续记录按活动当地日期计算，今日/本周尚未结束时保留昨日/上周延续。</p>
     {#if annual}<p>年度已知耗时合计 {formatDuration(annual.duration_sum_seconds)}；已知 {annual.known_duration_count} 次，未知 {annual.missing_duration_count} 次。配速按 {annual.pace_eligible_count} 次可靠活动的总耗时 / 总距离计算，覆盖 {dashboardDistance(annual.pace_eligible_distance_m)}。含质量提示 {annual.quality_warning_count} 次。</p>{/if}
     {#if cumulative}<p>累计已知耗时 {formatDuration(cumulative.duration_sum_seconds)}（已知 {cumulative.known_duration_count} 次 / 未知 {cumulative.missing_duration_count} 次）；累计可靠配速 {formatPace(cumulative.avg_pace_seconds_per_km)}（有效 {cumulative.pace_eligible_count} 次，覆盖 {dashboardDistance(cumulative.pace_eligible_distance_m)}）；累计含质量提示 {cumulative.quality_warning_count} 次。</p>{/if}
     <p>日历按本年最大值分为四档；零距离活动用浅绿，灰色为无记录。自然周从周一开始；范围不足完整周期时标记“部分”。未知耗时与配速留空。距离显示保留最多一位小数，不改变统计计算精度。</p>
@@ -149,7 +158,6 @@
 <style>
   .milestone-section{display:grid;gap:var(--dashboard-card-gap);min-width:0;}
   .milestone-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--dashboard-card-gap);align-items:stretch;}
-  .goal-explanation{font-size: var(--text-caption);line-height: var(--line-height-body);color:var(--muted-foreground);}
   @media(max-width:1199px){.milestone-layout{grid-template-columns:1fr;}}
   .annual-icon { display:inline-grid; place-items:center; width:2.5rem; height:2.5rem; flex-shrink:0; margin-right:.65rem; border-radius:50%; font-size: var(--text-section); font-weight: var(--weight-bold); background:var(--sport-green); color:var(--sport-ink); }
   .annual-metrics > div:nth-child(2) .annual-icon { background:var(--sport-blue); }
@@ -182,7 +190,12 @@
   .calendar-toolbar { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem; margin-top: var(--space-6); font-size: var(--text-small); }
   .calendar-toolbar p { color: var(--muted-foreground); align-self: center; }
   select { border: 1px solid var(--border); border-radius: var(--radius-control); padding: .45rem .5rem; margin-left: .3rem; background: var(--surface); }
-  .trend-controls { display: flex; flex-wrap: wrap; gap: .75rem; font-size: var(--text-small); }
+  .trend-controls { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .hint { margin-top: var(--space-2); color: var(--muted-foreground); font-size: var(--text-small); line-height: var(--line-height-body); }
+  /* The header segmented control on a surface card, same as the records monthly chart. */
+  .dashboard-card .metric-switch { width: max-content; margin-top: 0; background: var(--muted); }
+  .dashboard-card .metric-switch > button { color: var(--muted-foreground); }
+  .dashboard-card .metric-switch > button[aria-pressed='true'] { color: var(--primary-foreground); }
   .statistics-notes { border-top: 1px solid var(--border); padding-top: var(--space-4); color: var(--muted-foreground); font-size: var(--text-small); }
   summary { cursor: pointer; color: var(--primary); font-weight: var(--weight-medium); }
   .notes-content { display: grid; gap: .75rem; margin-top: 1rem; line-height: var(--line-height-body); }

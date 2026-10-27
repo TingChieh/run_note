@@ -138,21 +138,23 @@ test('trend axes redraw for the device theme and preserve the selected metric', 
   });
   await loginRunner(page); await page.goto('/dashboard?year=2026'); await dark(page);
   const canvas = page.locator('canvas'); await expect(canvas).toBeVisible();
-  await page.getByLabel('趋势指标').selectOption('pace');
-  await expect(page.getByLabel('趋势指标')).toHaveValue('pace');
-  // Axis labels in the bottom margin must actually render with light ink.
+  const pace = page.getByRole('group', { name: '趋势指标' }).getByRole('button', { name: '配速', exact: true });
+  await pace.click();
+  await expect(pace).toHaveAttribute('aria-pressed', 'true');
+  // Axis labels in the bottom margin must actually render with light ink. Only the label band below the
+  // axis line is sampled: the pace dots carry a surface-coloured ring that is light in the light theme.
   const lightAxisPixels = () => canvas.evaluate(el => {
     const canvas = el as HTMLCanvasElement, context = canvas.getContext('2d')!;
-    const pixels = context.getImageData(0, Math.round(canvas.height * .83), canvas.width, Math.floor(canvas.height * .17)).data;
+    const pixels = context.getImageData(0, Math.round(canvas.height * .92), canvas.width, Math.floor(canvas.height * .08)).data;
     let count = 0;
     for (let i = 0; i < pixels.length; i += 4) if (pixels[i + 3] > 150 && pixels[i] > 140 && pixels[i + 1] > 140 && pixels[i + 2] > 140) count++;
     return count;
   });
-  await expect.poll(lightAxisPixels).toBeGreaterThan(10);
+  await expect.poll(lightAxisPixels).toBeGreaterThan(4);
   await page.emulateMedia({ colorScheme: 'light' });
-  await expect.poll(lightAxisPixels).toBeLessThan(10);
-  await page.emulateMedia({ colorScheme: 'dark' }); await expect.poll(lightAxisPixels).toBeGreaterThan(10);
-  await expect(page.getByLabel('趋势指标')).toHaveValue('pace');
+  await expect.poll(lightAxisPixels).toBeLessThan(4);
+  await page.emulateMedia({ colorScheme: 'dark' }); await expect.poll(lightAxisPixels).toBeGreaterThan(4);
+  await expect(pace).toHaveAttribute('aria-pressed', 'true');
   await canvas.scrollIntoViewIfNeeded(); await page.screenshot({ path: 'test-results/theme-trend-dark.png' });
 });
 

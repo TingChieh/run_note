@@ -92,7 +92,7 @@
   });
 </script>
 
-<section aria-label="运动目标" class="goal-overview">
+<section aria-label="运动目标" class="goal-overview" class:even={!goalError}>
   {#if goalError}<FeedbackState kind="error" title={goalError}><button class="button-secondary" onclick={()=>void readTargets()}>重试目标设置</button></FeedbackState>{/if}
   {#each cards as card (card.period)}
     {@const totals = card.current ? goalTotals(card.current,card.target) : null}
@@ -136,7 +136,8 @@
 
 <style>
   .goal-overview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--dashboard-card-gap,1rem);min-width:0;}
-  .goal-card{min-width:0;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);padding:var(--space-4);}
+  .goal-overview.even{grid-auto-rows:1fr;}
+  .goal-card{display:flex;flex-direction:column;min-width:0;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);padding:var(--space-4);}
   .goal-heading{display:flex;align-items:center;justify-content:space-between;gap:.5rem;}
   h2{display:flex;align-items:center;gap:.6rem;flex-shrink:0;white-space:nowrap;color:var(--muted-foreground);font-size: var(--text-section);font-weight: var(--weight-semibold);}
   h2>span{font-size: var(--text-stat);color:var(--primary);}
@@ -145,11 +146,11 @@
   .goal-value{display:flex;align-items:baseline;flex-wrap:nowrap;gap:.5rem;margin:.8rem 0 1rem;font-variant-numeric:tabular-nums;}
   .goal-value strong{font-size: var(--text-title);font-weight: var(--weight-bold);line-height: var(--line-height-tight);letter-spacing: 0;}
   .goal-value>span{font-size: var(--text-body);color:var(--muted-foreground);}
-  progress{appearance:none;display:block;width:100%;height:.55rem;border:0;border-radius:99px;overflow:hidden;background:var(--muted);color:var(--sport-green);}
+  progress{appearance:none;display:block;margin-top:auto;width:100%;height:.55rem;border:0;border-radius:99px;overflow:hidden;background:var(--muted);color:var(--sport-green);}
   progress::-webkit-progress-bar{background:var(--muted);border-radius:99px;}progress::-webkit-progress-value{background:var(--sport-green);border-radius:99px;}progress::-moz-progress-bar{background:var(--sport-green);border-radius:99px;}
   .goal-facts{display:flex;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-top:1rem;color:var(--muted-foreground);font-size: var(--text-small);}.goal-facts span[aria-hidden]{color:var(--primary);font-size: var(--text-section);}
   .goal-comparison{margin-top:.5rem;color:var(--primary);font-size: var(--text-small);}.goal-comparison.down{color:var(--comparison-down);}
-  form{margin:0;min-width:0;}.goal-actions{display:flex;align-items:center;gap:0;flex-shrink:0;}
+  form{display:flex;flex:1;flex-direction:column;margin:0;min-width:0;}.goal-actions{display:flex;align-items:center;gap:0;flex-shrink:0;}
   .goal-save-clip .goal-edit{min-width:3rem;white-space:nowrap;}
   .goal-value>.goal-target{display:flex;align-items:baseline;gap:.35rem;min-width:0;white-space:nowrap;}
   .goal-target input{width:7ch;min-width:0;min-height:0;height:1.65rem;padding:.1rem .35rem;font:inherit;line-height: var(--line-height-heading);border:1px solid var(--control-hover-border);border-radius:var(--radius-control);background:color-mix(in srgb,var(--primary-soft) 55%,var(--surface));color:var(--foreground);}
@@ -158,6 +159,6 @@
   .week-strip{display:flex;gap:.5rem;align-items:center;margin:1rem 0;}.week-strip ol{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:.2rem;flex:1;min-width:0;}.week-strip li{display:grid;grid-template-columns:minmax(0,1fr);justify-items:center;gap:.35rem;min-width:0;font-size: var(--text-caption);color:var(--muted-foreground);}
   .week-day{display:grid;place-items:center;width:100%;max-width:2rem;aspect-ratio:1;border-radius:50%;font-variant-numeric:tabular-nums;}.week-day.active{background:var(--sport-green);color:var(--sport-ink);font-weight: var(--weight-bold);}.week-day.today{outline:2px solid var(--primary);outline-offset:2px;}
   .week-flame{display:grid;justify-items:center;color:var(--muted-foreground);font-size: var(--text-caption);min-width:1.5rem;}.week-flame>span:first-child{color:#f68721;font-size: var(--text-stat);}.week-flame strong{color:var(--foreground);}
-  .streak-best{color:var(--muted-foreground);font-size: var(--text-small);}.streak-best span{color:var(--primary);}
-  @media(max-width:639px){.goal-overview{grid-template-columns:1fr;}.goal-card{padding:1.15rem;}.week-strip{gap:.5rem;}.week-day{max-width:1.8rem;}}
+  .streak-best{margin-top:auto;color:var(--muted-foreground);font-size: var(--text-small);}.streak-best span{color:var(--primary);}
+  @media(max-width:639px){.goal-overview{grid-template-columns:1fr;}.goal-overview.even{grid-auto-rows:auto;}.goal-card{padding:1.15rem;}.week-strip{gap:.5rem;}.week-day{max-width:1.8rem;}}
 </style>
