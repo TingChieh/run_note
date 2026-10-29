@@ -1,6 +1,7 @@
 // Browser UI contract fixture: no database, no production auth bypass.
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { createWellbeing } from './ui-wellbeing.mjs';
 /** @type {Record<string, any>} */
 const user = { id: '00000000-0000-4000-8000-000000000001', email: 'runner.with.a.long.email.address@example.com', username: 'runner', display_name: '晨跑者', timezone: 'Asia/Shanghai', created_at: '2026-01-01T00:00:00Z', bio: '', profile_is_public: false, is_admin: true, is_active: true, showcase_enabled: true };
 /** @type {Record<string, any>[]} */
@@ -11,6 +12,8 @@ const clean = account => Object.fromEntries(Object.entries(account).filter(([key
 const summary = { activity_count: 0, distance_m: 0, duration_sum_seconds: null, known_duration_count: 0, missing_duration_count: 0, activity_days: 0, pace_eligible_count: 0, pace_eligible_distance_m: 0, avg_pace_seconds_per_km: null, quality_warning_count: 0, date_assignment: 'activity_local_date' };
 /** @type {Record<string, number | null>} */
 const goals = {week:null,month:null,year:null};
+// Private wellbeing journal (synthetic, in memory); cleared whenever the owner signs in so each test starts empty.
+const wellbeing = createWellbeing(() => user);
 /** @type {Record<string, any>} */
 const site = { title: 'RunNote', subtitle: '跑步与足迹', footer_tagline: '记录每一步，看见你的进步。', description: '汇总你的跑步数据、活动日历与运动趋势，从这里探索记录、足迹和 AI 分析。', default_theme: 'system', favicon_url: null, logo_url: null };
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
@@ -89,7 +92,7 @@ createServer(async (req, res) => {
     const payload = JSON.parse(body);
     const found = accounts.find(item => item.email === payload.email || item.is_admin && payload.email === 'runner@example.com');
     if (!found?.is_active || !found.is_admin && found.password !== payload.password) return send(null,401,'邮箱或密码不正确');
-    if (found.is_admin) { Object.assign(user, {display_name:'晨跑者',bio:'',profile_is_public:false}); Object.assign(found,user); Object.assign(goals,{week:null,month:null,year:null}); }
+    if (found.is_admin) { Object.assign(user, {display_name:'晨跑者',bio:'',profile_is_public:false}); Object.assign(found,user); Object.assign(goals,{week:null,month:null,year:null}); wellbeing.reset(); }
     const session = found.is_admin ? 'ui-runner' : randomUUID(); sessions.set(session, found.id);
     res.setHeader('Set-Cookie', `run_session=${session}; Path=/; HttpOnly; SameSite=Lax`); return send({ user: clean(found) });
   }
@@ -194,6 +197,7 @@ createServer(async (req, res) => {
     for (const [key,id] of sessions) if (id === current.id) sessions.delete(key);
     return send({password_changed:true});
   }
+  if (url.pathname.startsWith('/api/v1/me/wellbeing')) return signedIn ? wellbeing.handle(req, url, res) : send(null, 401);
   if (url.pathname === '/api/v1/me/running-goals') return send(goals);
   if (url.pathname.startsWith('/api/v1/me/running-goals/') && req.method === 'PUT') {
     const period = url.pathname.split('/').at(-1);

@@ -22,6 +22,8 @@ export const handle: Handle = async ({ event, resolve }) => {
   try {
     if (event.cookies.get('run_session') || event.cookies.get('__Host-run_session')) event.locals.user = await readSession(async () => backendRequest('/api/v1/auth/session', event.request));
   } catch (cause) { event.locals.authError = cause instanceof Error ? cause.message : '认证服务暂不可用'; }
+  // The diary is the signed-in person's own workspace page: only the site owner uses the root address.
+  if (/^\/wellbeing\/?$/.test(event.url.pathname) && event.locals.user && !event.locals.user.is_admin) return new Response(null, { status: 303, headers: { Location: `/workspace/wellbeing${event.url.search}`, 'Cache-Control': 'no-store' } });
   const context = viewContext(event.url.pathname, event.locals.user?.is_admin === true);
   const profilePath = context.kind === 'public' ? `/api/v1/showcase/users/${encodeURIComponent(context.username!)}/profile` : '/api/v1/showcase/profile';
   if (context.kind === 'workspace' && event.locals.user) event.locals.showcase = { display_name: event.locals.user.display_name, timezone: event.locals.user.timezone, avatar_url: event.locals.user.avatar_url ?? null };

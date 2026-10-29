@@ -31,6 +31,7 @@ from app.modules.site_settings.router import router as site_router
 from app.modules.statistics.router import router as statistics_router
 from app.modules.tcx.router import router as tcx_router
 from app.modules.users.router import router as users_router
+from app.modules.wellbeing.router import router as wellbeing_router
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -77,4 +78,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(named_showcase_router)
     app.include_router(admin_users_router)
     app.include_router(site_router)
+    app.include_router(wellbeing_router)
     return app

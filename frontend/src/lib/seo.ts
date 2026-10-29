@@ -22,12 +22,12 @@ export function pageDescription(pathname: string, status: number, fallback: stri
 }
 
 export function pageNoindex(pathname: string, status: number): boolean {
-  return status >= 400 || /^\/(admin|workspace|settings)(\/|$)/.test(pathname);
+  return status >= 400 || /^\/(admin|workspace|settings|wellbeing)(\/|$)/.test(pathname);
 }
 
 export const SITEMAP_PATHS = ['/', '/activities', '/activities/wall', '/footprints', '/ai'] as const;
 
-const ROBOTS_DISALLOW = ['/admin', '/workspace', '/settings', '/api', '/shared', '/public'] as const;
+const ROBOTS_DISALLOW = ['/admin', '/workspace', '/settings', '/wellbeing', '/api', '/shared', '/public'] as const;
 
 export function robotsTxt(origin: string): string {
   const rules = ROBOTS_DISALLOW.map(path => `Disallow: ${path}`).join('\n');

@@ -18,6 +18,14 @@ from app.modules.sharing.model import ActivityShareLink
 from app.modules.site_settings.model import SiteImage, SiteSettings
 from app.modules.tcx.model import TcxImport
 from app.modules.users.model import User, UserAvatar
+from app.modules.wellbeing.model import (
+    DailyEntry,
+    DoseEvent,
+    Medication,
+    StockMovement,
+    SymptomEvent,
+    SymptomName,
+)
 
 __all__ = [
     "Base",
@@ -44,4 +52,10 @@ __all__ = [
     "RouteGroupMember",
     "ActivityPlaceName",
     "PlaceFeature",
+    "DailyEntry",
+    "DoseEvent",
+    "SymptomEvent",
+    "Medication",
+    "SymptomName",
+    "StockMovement",
 ]

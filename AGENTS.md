@@ -41,7 +41,7 @@ infra/native/      原生部署资产：systemd 单元、Caddyfile、env 模板�
 docs/              设计与验收记录（中文）；docs/design-system/ 为 UI 规范
 ```
 
-后端功能模块以 `backend/app/modules/` 目录为准（现有 activities、admin_users、ai_reports、auth、footprints、gpx、health、mifitness、running_goals、sharing、showcase、site_settings、statistics、tcx、users）；新增模块须按第 4 节注册。每个模块按自己的 `router/schema/service/model` 组织。**不要为每张表建立空壳 Repository/Manager/Factory**，简单查询直接写在模块 service 中；只有空间查询或确需复用的复杂查询才拆出 `queries.py`。
+后端功能模块以 `backend/app/modules/` 目录为准（现有 activities、admin_users、ai_reports、auth、footprints、gpx、health、mifitness、running_goals、sharing、showcase、site_settings、statistics、tcx、users、wellbeing）；新增模块须按第 4 节注册。每个模块按自己的 `router/schema/service/model` 组织。**不要为每张表建立空壳 Repository/Manager/Factory**，简单查询直接写在模块 service 中；只有空间查询或确需复用的复杂查询才拆出 `queries.py`。
 
 ## 3. 架构边界
 
@@ -185,6 +185,7 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
 
 ### 私人数据边界
 
+- `wellbeing`（身心健康日记，`/api/v1/me/wellbeing`，见 `docs/76`）是纯私人数据：任何展示、分享、海报、公开主页、AI 上下文与日志都**不得**读取或输出药物、症状、评分与备注；不要为它新增公开接口，也不要在其写入路径调用 `lock_owner`。
 - 邮箱、账户用户名字段、备注、文件名、原始 GPX/TCX **不得**出现在公开响应、分享响应、外部地图 URL 或 AI 供应商请求中（具名展示 URL 中的 username 是公开标识，属例外）。
 - 坐标与精确起终点不得扩展到旧版摘要分享、外部地图 URL 或 AI 请求。
 - 底图只向 OpenFreeMap 请求公开样式、字体、sprite 与当前视口瓦片；轨迹 GeoJSON 始终留在浏览器内，不进入任何第三方请求。

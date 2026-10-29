@@ -78,6 +78,17 @@
   --province-sea: #a8b3a2;
   --comparison-down: #c33e52;
   --chart-series: #27815c;
+  /* Wellbeing journal: one hue per measure, so a dial is recognised by colour as well as by icon. Hue never says good or bad. */
+  --well-mood: #7a6bd6;
+  --well-anxiety: #d9692f;
+  --well-energy: #c99700;
+  --well-focus: #2b8cc4;
+  --well-function: #2e9e63;
+  --well-sleep: #178f93;
+  --well-sleep-quality: #4a67d8;
+  --well-effect: #c2485a;
+  --well-note: #b8508c;
+  --well-dose: #6f8f1c;
   --space-1: .25rem;
   --space-2: .5rem;
   --space-3: .75rem;
@@ -479,6 +490,16 @@
   --province-sea: #749781;
   --comparison-down: #ffadb1;
   --chart-series: #77d4ac;
+  --well-mood: #b3a8ff;
+  --well-anxiety: #ffab80;
+  --well-energy: #ffd75e;
+  --well-focus: #7cc7f2;
+  --well-function: #7fdba5;
+  --well-sleep: #6fe0dc;
+  --well-sleep-quality: #9db1ff;
+  --well-effect: #ff9aa8;
+  --well-note: #f2a1c8;
+  --well-dose: #c3e66b;
   --glass-surface: #263e3266;
   --glass-surface-hover: #35544099;
   --glass-edge: #ffffff40;

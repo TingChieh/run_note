@@ -52,7 +52,7 @@ export function safeNext(value: string | null): string {
   if (/^\/(login|register|api|admin)(\/|$)/.test(path)) return '/';
   return value;
 }
-export function isProtected(path: string): boolean { return /^\/(settings|workspace|admin\/users)(\/|$)/.test(path); }
+export function isProtected(path: string): boolean { return /^\/(settings|workspace|wellbeing|admin\/users)(\/|$)/.test(path); }
 
 export function parseUser(value: unknown): User {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new AuthError('认证身份无效',502,'INVALID_RESPONSE');
