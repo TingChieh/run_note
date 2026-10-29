@@ -989,7 +989,10 @@ def test_batch_back_fill_creates_each_time_on_each_day_once(clients):  # noqa: F
         times=["23:59"],
     )
     now_local = datetime.now(ZoneInfo("Asia/Shanghai"))
-    if now_local.hour * 60 + now_local.minute < 23 * 60 + 49:
+    # In the last ten minutes of the day 23:59 is no longer "future" (the same slack as a single
+    # dose), so it is recorded instead of skipped.
+    late = now_local.hour * 60 + now_local.minute >= 23 * 60 + 49
+    if not late:
         assert future.json()["data"] == {"created": 0, "skipped_existing": 0, "skipped_future": 1}
     # Limits and ownership.
     assert post(a, "/doses/batch", **{**body, "end_date": "2999-01-01"}).status_code == 422
@@ -1026,7 +1029,8 @@ def test_batch_back_fill_creates_each_time_on_each_day_once(clients):  # noqa: F
         u=UUID(owner),
         m=UUID(med["id"]),
     )
-    assert total == [(21,)]
+    # The 23:59 dose from above is among them only in that last ten minutes of the day.
+    assert total == [(21 + (1 if late else 0),)]
 
 
 def test_report_and_csv_carry_pill_counts(clients):  # noqa: F811
