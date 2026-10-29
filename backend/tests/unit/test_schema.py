@@ -4,7 +4,7 @@ import pytest
 def test_release_head_follows_complete_chain():
     from app.db.schema import get_expected_revision
 
-    assert get_expected_revision() == "0016_place_titles"
+    assert get_expected_revision() == "0024_wellbeing_severity_null"
 
 
 @pytest.mark.parametrize("revisions", [[], [("a", None), ("b", None)]])
@@ -49,6 +49,12 @@ def test_model_registry_and_autogenerate_preserve_unmanaged_tables():
         "route_group_members",
         "place_features",
         "activity_place_names",
+        "wellbeing_daily_entries",
+        "wellbeing_dose_events",
+        "wellbeing_symptom_events",
+        "wellbeing_medications",
+        "wellbeing_symptom_names",
+        "wellbeing_stock_movements",
     }
     assert set(models.Base.metadata.tables) == expected
     assert include_name("users", "table", {})
@@ -62,4 +68,4 @@ def test_revision_discovery_does_not_depend_on_working_directory(tmp_path, monke
     from app.db.schema import get_expected_revision
 
     monkeypatch.chdir(tmp_path)
-    assert get_expected_revision() == "0016_place_titles"
+    assert get_expected_revision() == "0024_wellbeing_severity_null"

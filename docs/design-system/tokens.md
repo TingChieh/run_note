@@ -47,6 +47,8 @@
 
 装饰色 `--sport-green` #86a912、`--sport-blue` #4bb6df、`--sport-coral` #f06373、`--sport-yellow-accent` #f5c519、`--sport-ink` #20332b 保持稳定；不是状态色，也不是深色页头色。
 
+身心健康小组件色 `--well-mood/anxiety/energy/focus/function/sleep/sleep-quality/effects/note/dose`（浅 #7a6bd6/#d9692f/#c99700/#2b8cc4/#2e9e63/#178f93/#4a67d8/#c2485a/#b8508c/#6f8f1c，深 #b3a8ff/#ffab80/#ffd75e/#7cc7f2/#7fdba5/#6fe0dc/#9db1ff/#ff9aa8/#f2a1c8/#c3e66b）：每个小组件一种色，用作拨盘、图标圆盘与强调，仅 `WellbeingTile` 系列使用，不是状态色。
+
 数据颜色：`--calendar-0..4`（浅 #edf0ed/#8dcc9c/#4ca76a/#227b49/#105332，深 #26342c/#347247/#60aa72/#90cc96/#c7edb5）、`--calendar-ring/label/active-label/strong-label`、`--chart-series`（#27815c/#77d4ac）、`--route-thumbnail`、`--province-unvisited/sea`、`--comparison-down`。计数色阶、轨迹区分色、未知区域颜色各有含义，不能统一替换为主色；当前地图专项色板见 `src/lib/map/footprint-colors.ts`。
 
 ## Typography
