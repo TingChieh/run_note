@@ -32,7 +32,7 @@ async function addDose(page: Page, { pills = '1', time = '08:00', name = '示例
     await form.getByLabel('药物名称').fill(name);
   }
   await form.getByLabel(/^吃了几/).fill(pills);
-  await form.getByLabel('实际服药时间').fill(`${today()}T${time}`);
+  await form.getByLabel('实际服药时间', { exact: true }).fill(time);
   await form.getByRole('button', { name: '保存服药' }).click();
   await expect(form).toHaveCount(0);
 }
@@ -378,6 +378,278 @@ test('a day with a dose can be saved even when no state is answered, and a note 
   await page.getByRole('textbox', { name: '当日备注' }).fill('只写一句');
   await page.getByRole('button', { name: '保存今日状态' }).click();
   await expect(page.getByTestId('wellbeing-status')).toContainText('1/8');
+});
+
+test('the words of every chip sit in the middle of it, the open-ended "其他药物" too', async ({ page }) => {
+  await open(page);
+  await page.evaluate(async () => {
+    const csrf = (await (await fetch('/api/v1/auth/csrf')).json()).data.csrf_token;
+    for (const name of ['甲药', '乙药']) await fetch('/api/v1/me/wellbeing/medications', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify({ name, count_unit: '颗', pills_per_box: 28, default_pills: 1, regimen: 'scheduled', side_effects: [] }) });
+  });
+  await page.reload();
+  await expect(page.getByTestId('wellbeing-editor')).toBeVisible();
+  await settled(page);
+  await page.getByTestId('wellbeing-add-dose').click();
+  const chips = page.getByTestId('wellbeing-dose-form').locator('.chip-button');
+  await expect(chips.first()).toBeVisible();
+  await settled(page);
+  const off = await chips.evaluateAll(els => els.map(el => { const box = el.getBoundingClientRect(), range = document.createRange(); range.selectNodeContents(el); const text = range.getBoundingClientRect(); return { name: el.textContent?.trim(), off: Math.abs((text.left + text.width / 2) - (box.left + box.width / 2)) }; }));
+  expect(off.length).toBeGreaterThan(3);
+  expect(off.find(item => item.name === '其他药物')).toBeTruthy();
+  for (const item of off) expect(item.off, `${item.name}`).toBeLessThanOrEqual(2);
+  // Opened into a field, "其他药物" keeps the pill shape of the chips (fully rounded ends), not a rectangle with small corners.
+  await page.getByTestId('wellbeing-dose-form').getByRole('button', { name: '其他药物' }).click();
+  await settled(page);
+  const input = page.getByTestId('wellbeing-dose-form').getByLabel('药物名称');
+  const shape = await input.evaluate(el => { const box = el.getBoundingClientRect(), radius = parseFloat(getComputedStyle(el).borderTopLeftRadius); return { height: Math.round(box.height), pill: radius >= box.height / 2 - 1 }; });
+  expect(shape.pill).toBe(true);
+});
+
+test('the dose dialog: a header with the day, the pill count with + and − in halves, a two-way switch for the kind, and an inline "other" for side effects', async ({ page }) => {
+  await open(page);
+  await page.getByTestId('wellbeing-add-dose').click();
+  const dialog = page.locator('dialog[open]'), form = page.getByTestId('wellbeing-dose-form');
+  // The header names the thing and the day it is for, with the round medication badge.
+  await expect(dialog.locator('.dlg-badge')).toBeVisible();
+  await expect(dialog.getByRole('heading', { name: '添加服药记录' })).toBeVisible();
+  await expect(dialog.locator('.dlg-day')).toContainText('记在');
+  // The pill count has a − and a + that move it in halves, never below a half.
+  await form.getByLabel('药物名称').fill('示例药物');
+  const pills = form.getByLabel(/^吃了几/);
+  await form.getByRole('button', { name: /^多半/ }).click();
+  await expect(pills).toHaveValue('0.5');
+  await form.getByRole('button', { name: /^多半/ }).click();
+  await expect(pills).toHaveValue('1');
+  await form.getByRole('button', { name: /^多半/ }).click();
+  await expect(pills).toHaveValue('1.5');
+  await form.getByRole('button', { name: /^少半/ }).click();
+  await form.getByRole('button', { name: /^少半/ }).click();
+  await form.getByRole('button', { name: /^少半/ }).click();
+  await expect(pills).toHaveValue('0.5');
+  await pills.fill('2');
+  await form.getByRole('button', { name: /^多半/ }).click();
+  await expect(pills).toHaveValue('2.5');
+  // The kind is a two-way switch (radios), the one in use filled.
+  const scheduled = form.getByRole('radio', { name: '常规用药' }), asNeeded = form.getByRole('radio', { name: '按需用药' });
+  await expect(scheduled).toBeChecked();
+  await asNeeded.check({ force: true });
+  await expect(asNeeded).toBeChecked();
+  await expect(scheduled).not.toBeChecked();
+  const fills = await form.locator('.seg-option').evaluateAll(els => els.map(el => getComputedStyle(el).backgroundColor));
+  expect(fills[0]).not.toBe(fills[1]);
+  // "Other" side effect sits in the row of chips as a dashed pill.
+  const other = form.getByLabel('其他副作用（可选）');
+  expect(await other.evaluate(el => getComputedStyle(el).borderTopStyle)).toBe('dashed');
+  await other.fill('耳鸣');
+  await form.getByRole('button', { name: '保存服药' }).click();
+  await expect(form).toHaveCount(0);
+  await expect(page.getByTestId('wellbeing-dose')).toContainText('2.5 颗');
+  await expect(page.getByTestId('wellbeing-dose')).toContainText('按需');
+  await expect(page.getByTestId('wellbeing-symptom')).toHaveText('耳鸣');
+});
+
+test('a dose asks only for its time of day: the day is the one being edited, there is no date picker', async ({ page }) => {
+  await open(page);
+  await page.getByTestId('wellbeing-add-dose').click();
+  const form = page.getByTestId('wellbeing-dose-form');
+  const field = form.getByLabel('实际服药时间', { exact: true });
+  await expect(field).toHaveAttribute('type', 'text'); // the same 24-hour digits in every browser, with no clock button of the browser's own
+  await expect(field).toHaveAttribute('inputmode', 'numeric');
+  await expect(field).toHaveValue(/^\d{2}:\d{2}$/);
+  await expect(page.locator('dialog[open]').getByText(/只需选时间/)).toBeVisible();
+  // A time later than now is refused for today, in words.
+  await form.getByLabel('药物名称').fill('示例药物');
+  await form.getByLabel(/^吃了几/).fill('1');
+  await field.fill('23:59');
+  const nowHm = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
+  if (nowHm < '23:59') {
+    await form.getByRole('button', { name: '保存服药' }).click();
+    await expect(page.getByTestId('wellbeing-event-error')).toContainText('不能晚于现在');
+  }
+  await field.fill('00:00');
+  await form.getByRole('button', { name: '保存服药' }).click();
+  await expect(form).toHaveCount(0);
+  // Editing it shows the same time of day, and saving keeps it on the same day.
+  await page.getByRole('button', { name: '编辑 示例药物 服药记录' }).click();
+  await expect(form.getByLabel('实际服药时间', { exact: true })).toHaveValue('00:00');
+  await form.getByLabel('实际服药时间', { exact: true }).fill('00:30');
+  await form.getByRole('button', { name: '保存修改' }).click();
+  await expect(form).toHaveCount(0);
+  await expect(page.getByTestId('wellbeing-dose')).toContainText('00:30');
+  await expect(page.getByTestId('wellbeing-dose')).toHaveCount(1);
+});
+
+test('the time picker is a small popover with an hour column and a minute column, in the look of the calendar picker', async ({ page }) => {
+  await open(page);
+  await page.getByTestId('wellbeing-add-dose').click();
+  const form = page.getByTestId('wellbeing-dose-form');
+  const field = form.getByLabel('实际服药时间', { exact: true });
+  await page.getByRole('button', { name: '选择实际服药时间' }).click();
+  const popover = page.getByRole('dialog', { name: '选择实际服药时间' });
+  await expect(popover).toBeVisible();
+  await settled(page);
+  // A plain solid popover, not glass: an opaque surface, no blur, and no glass layer on any of its buttons or on the clock button.
+  const flat = await popover.evaluate(el => { const style = getComputedStyle(el); return { opaque: style.backgroundColor !== 'rgba(0, 0, 0, 0)' && !/rgba\(.*, 0(\.\d+)?\)$/.test(style.backgroundColor), blur: style.backdropFilter, glass: el.querySelectorAll('.rn-glass-surface').length }; });
+  expect(flat).toEqual({ opaque: true, blur: 'none', glass: 0 });
+  // Nothing in the picker or on its clock button carries the glass sheen: no gradient, no inset highlight, no backdrop blur.
+  const sheen = await page.locator('.time-field').evaluate(root => [root, ...root.querySelectorAll('*')].filter(el => { const style = getComputedStyle(el); return style.backgroundImage !== 'none' || /inset/.test(style.boxShadow) || style.backdropFilter !== 'none'; }).map(el => `${el.tagName}.${(el as HTMLElement).className}`));
+  expect(sheen).toEqual([]);
+  await expect(page.getByRole('button', { name: '选择实际服药时间' }).locator('.rn-glass-surface')).toHaveCount(0);
+  // Two columns of choices.
+  await expect(popover.getByTestId('time-hours').getByRole('option')).toHaveCount(24);
+  await expect(popover.getByTestId('time-minutes').getByRole('option')).toHaveCount(60);
+  // The time being set is shown big, and the chosen hour and minute are filled in.
+  const shown = await field.inputValue();
+  await expect(popover.locator('.preview')).toContainText(shown.slice(0, 2));
+  await expect(popover.locator('.preview')).toContainText(shown.slice(3));
+  await expect(popover.locator('[aria-selected="true"]')).toHaveCount(2);
+  // The chosen time is fixed in the middle of each column, under a band in the main colour; the column scrolls beneath it.
+  for (const column of [popover.getByTestId('time-hours'), popover.getByTestId('time-minutes')]) {
+    const band = column.locator('xpath=preceding-sibling::span[contains(@class, "band")]');
+    expect(await band.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
+    await expect.poll(() => column.evaluate(el => { const box = el.getBoundingClientRect(), chosen = el.querySelector('[aria-selected="true"]')!.getBoundingClientRect(); return Math.abs((chosen.top + chosen.height / 2) - (box.top + box.height / 2)); })).toBeLessThanOrEqual(2);
+    // The band itself sits in the middle of the column and never moves.
+    expect(await column.evaluate(el => { const band = el.previousElementSibling!.getBoundingClientRect(), box = el.getBoundingClientRect(); return Math.abs((band.top + band.height / 2) - (box.top + box.height / 2)); })).toBeLessThanOrEqual(2);
+  }
+  // Choosing an hour and a minute writes them into the field.
+  await popover.getByTestId('time-hours').getByRole('option', { name: '00', exact: true }).click();
+  await popover.getByTestId('time-minutes').getByRole('option', { name: '07', exact: true }).click();
+  await expect(field).toHaveValue('00:07');
+  await expect(popover.locator('.preview')).toContainText('00');
+  await expect(popover.locator('.preview')).toContainText('07');
+  // Times after now are greyed out and cannot be chosen today.
+  const nowH = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Shanghai', hour: '2-digit', hourCycle: 'h23' }).format(new Date()));
+  if (nowH < 23) {
+    await expect(popover.locator('[data-hour="23"]')).toBeDisabled();
+  }
+  // The keyboard moves the selection a step at a time.
+  await popover.getByTestId('time-minutes').locator('[aria-selected="true"]').focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(field).toHaveValue('00:08');
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowUp');
+  await expect(field).toHaveValue('00:06');
+  // Scrolling is choosing: whatever a column comes to rest on becomes the value, with no button to press.
+  const pitchOf = (column: import('@playwright/test').Locator) => column.evaluate(el => (el.children[1] as HTMLElement).offsetTop - (el.children[0] as HTMLElement).offsetTop);
+  const minutes = popover.getByTestId('time-minutes'), hours = popover.getByTestId('time-hours');
+  await minutes.evaluate((el, p) => { el.scrollTop = 30 * p; }, await pitchOf(minutes));
+  await expect(field).toHaveValue('00:30');
+  await expect(popover.locator('.preview')).toContainText('30');
+  if (nowH >= 2) {
+    await hours.evaluate((el, p) => { el.scrollTop = 1 * p; }, await pitchOf(hours));
+    await expect(field).toHaveValue('01:30');
+    // It comes to rest on a whole choice, the chosen one sitting in the middle of its column.
+    await expect.poll(() => hours.evaluate(el => { const box = el.getBoundingClientRect(), mid = el.querySelector('[aria-selected="true"]')!.getBoundingClientRect(); return Math.abs((mid.top + mid.height / 2) - (box.top + box.height / 2)) <= 2; })).toBe(true);
+  }
+  // Scrolling past now does not choose the future: the column gives way to the latest time allowed.
+  if (nowH < 23) {
+    await hours.evaluate((el, p) => { el.scrollTop = 23 * p; }, await pitchOf(hours));
+    await expect.poll(async () => (await field.inputValue()).slice(0, 2)).toBe(String(nowH).padStart(2, '0'));
+    await expect(popover.locator('[data-hour="23"]')).toBeDisabled();
+  }
+  // Nothing is written under it: no hint line.
+  await expect(popover).not.toContainText('Esc 关闭');
+  await expect(popover.locator('.help')).toHaveCount(0);
+  // "现在" sets the present time; Escape closes and the dialog stays.
+  await popover.getByRole('button', { name: '现在' }).click();
+  const filled = await field.inputValue();
+  expect(filled).toMatch(/^\d{2}:\d{2}$/);
+  await page.keyboard.press('Escape');
+  await expect(popover).toBeHidden();
+  await expect(form).toBeVisible();
+  // Typing: digits get their colon, short forms are completed on leaving, nonsense goes back to the last good time.
+  await field.fill('');
+  await field.pressSequentially('0930');
+  await expect(field).toHaveValue('09:30');
+  await field.fill('7');
+  await field.blur();
+  await expect(field).toHaveValue('07:00');
+  await field.fill('815');
+  await field.blur();
+  await expect(field).toHaveValue('08:15');
+  await field.fill('2599');
+  await field.blur();
+  await expect(field).toHaveValue('08:15');
+  // Typing in the field itself still works and the picker follows it.
+  await field.fill('00:20');
+  await page.getByRole('button', { name: '选择实际服药时间' }).click();
+  await expect(popover.getByTestId('time-minutes').locator('[aria-selected="true"]')).toHaveText('20');
+  await popover.getByRole('button', { name: '完成' }).click();
+  await expect(popover).toBeHidden();
+});
+
+test('a chosen side-effect chip is a solid fill with a tick, clearly apart from the ones not chosen, and choosing it is animated', async ({ page }) => {
+  await open(page);
+  await page.getByTestId('wellbeing-add-dose').click();
+  const chips = page.getByTestId('wellbeing-dose-form').getByTestId('wellbeing-effect-chips');
+  const chosen = chips.getByRole('button', { name: '头晕' }), other = chips.getByRole('button', { name: '恶心' });
+  // The fill is a layer of its own that is closed to nothing until the chip is chosen, then runs in.
+  const motion = (chip: import('@playwright/test').Locator) => chip.evaluate(el => { const layer = getComputedStyle(el, '::after'), tick = getComputedStyle(el, '::before'); return { fillScale: layer.scale, fillTime: layer.transitionDuration, tickTime: tick.transitionDuration, tickWidth: tick.width }; });
+  const before = await motion(chosen);
+  expect(before.fillScale).toMatch(/^0/);
+  expect(before.tickWidth).toBe('0px');
+  await chosen.click();
+  await expect(chosen).toHaveAttribute('aria-pressed', 'true');
+  // It springs (a class that restarts the keyframes) and its fill and tick are set to transition rather than jump.
+  await expect(chosen).toHaveClass(/\bpop\b/);
+  expect(parseFloat((await motion(chosen)).fillTime)).toBeGreaterThan(0.2);
+  expect(parseFloat((await motion(chosen)).tickTime)).toBeGreaterThan(0.1);
+  expect(await chosen.evaluate(el => getComputedStyle(el).animationName)).toContain('chip-pop');
+  await settled(page);
+  await expect.poll(async () => (await motion(chosen)).fillScale).toMatch(/^1/);
+  const look = (chip: import('@playwright/test').Locator) => chip.evaluate(el => { const s = getComputedStyle(el), fill = getComputedStyle(el, '::after'), tick = getComputedStyle(el, '::before'); return { fill: fill.backgroundColor, ink: s.color, tickShown: tick.opacity === '1' && tick.width !== '0px' }; });
+  // The chips are flat: no glass sheen (gradient or inset highlight) on the chosen or the other ones.
+  for (const chip of [chosen, other]) expect(await chip.evaluate(el => { const style = getComputedStyle(el); return { image: style.backgroundImage, inset: /inset/.test(style.boxShadow) }; })).toEqual({ image: 'none', inset: false });
+  const on = await look(chosen), off = await look(other);
+  expect(on.fill).not.toBe('rgba(0, 0, 0, 0)');
+  expect(on.ink).not.toBe(off.ink);
+  expect(on.tickShown).toBe(true);
+  expect(off.tickShown).toBe(false);
+  // ...but the tick is not part of the button's name (a screen reader hears "头晕, pressed").
+  await expect(chips.getByRole('button', { name: '头晕', exact: true })).toHaveCount(1);
+  // The fill and the white text are far enough apart to read (not white on white).
+  const [r, g, b] = on.fill.match(/\d+/g)!.map(Number);
+  expect(r + g + b).toBeLessThan(450);
+  // Choosing it again takes it back.
+  await chosen.click();
+  await expect(chosen).toHaveAttribute('aria-pressed', 'false');
+  await expect.poll(async () => (await motion(chosen)).fillScale).toMatch(/^0/);
+  await expect.poll(async () => (await look(chosen)).tickShown).toBe(false);
+});
+
+test('the calendar picker has no hint line under it', async ({ page }) => {
+  await open(page);
+  await page.getByTestId('wellbeing-tab-report').click();
+  await page.getByRole('group', { name: '总结范围' }).getByRole('button', { name: '自定义' }).click();
+  await page.getByRole('button', { name: '选择开始日期' }).click();
+  const calendar = page.getByRole('dialog', { name: '选择开始日期' });
+  await expect(calendar).toBeVisible();
+  await expect(calendar).not.toContainText('Esc 关闭');
+  await expect(calendar.locator('.calendar-help')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(calendar).toBeHidden();
+});
+
+test('back-filling a dose on a past day asks for the time only and records it on that day', async ({ page }) => {
+  await open(page);
+  await page.getByTestId('wellbeing-tab-history').click();
+  const past = new Date(Date.now() - 2 * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
+  if (await page.locator(`[data-testid="wellbeing-day"][data-date="${past}"]`).count() === 0) await page.getByRole('button', { name: '上个月' }).click();
+  await page.locator(`[data-testid="wellbeing-day"][data-date="${past}"]`).click();
+  await expect(page.getByTestId('wellbeing-editor')).toHaveAttribute('data-day', past);
+  await settled(page);
+  await page.getByTestId('wellbeing-add-dose').click();
+  const form = page.getByTestId('wellbeing-dose-form');
+  // Another day starts at 08:00 (not "now") and names the day it is for.
+  await expect(form.getByLabel('实际服药时间', { exact: true })).toHaveValue('08:00');
+  await expect(page.locator('dialog[open]').getByText(/只需选时间/)).toContainText(String(+past.slice(8)));
+  await form.getByLabel('药物名称').fill('示例药物');
+  await form.getByLabel(/^吃了几/).fill('1');
+  await form.getByLabel('实际服药时间', { exact: true }).fill('21:15');
+  await form.getByRole('button', { name: '保存服药' }).click();
+  await expect(form).toHaveCount(0);
+  await expect(page.getByTestId('wellbeing-dose')).toContainText('21:15');
+  await expect(page.locator(`[data-testid="wellbeing-day"][data-date="${past}"]`)).toHaveAttribute('aria-label', /1 次服药/);
 });
 
 test('history: calendar marks, back-filling a past day, and deleting only the state record', async ({ page }) => {
@@ -939,6 +1211,41 @@ test('summary: the day panel is filled: the answers as bars, the doses as a time
   await expect(panel.locator('.states .boxed')).toContainText('这天没有状态记录');
 });
 
+test('summary: a day with every answer and many side effects never overlaps: the answers scroll inside their own box like the doses', async ({ page }) => {
+  await open(page);
+  await page.evaluate(async () => {
+    const csrf = (await (await fetch('/api/v1/auth/csrf')).json()).data.csrf_token;
+    const call = async (method: string, path: string, body: unknown) => (await (await fetch(`/api/v1/me/wellbeing${path}`, { method, headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify(body) })).json()).data;
+    const date = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
+    await call('PUT', `/days/${date}/entry`, { mood: 5, anxiety: 5, energy: 4, focus: 7, functioning: 7, sleep_hours: 6.8, sleep_quality: 8 });
+    const dose = await call('POST', '/doses', { medication_name: '甲药', pills: 1, taken_at: `${date}T07:35:00+08:00`, regimen: 'scheduled' });
+    for (const name of ['困倦、嗜睡', '协调力下降', '头晕', '乏力', '恶心', '头痛', '心悸', '出汗', '失眠', '食欲变化', '坐立不安', '口干', '耳鸣', '胸闷']) await call('POST', '/symptoms', { entry_date: date, dose_id: dose.id, symptom: name, onset_at: null, duration_minutes: null, affects_daily_life: null });
+  });
+  await page.getByTestId('wellbeing-tab-report').click();
+  await page.getByRole('button', { name: '近 7 天' }).click();
+  const chart = page.getByTestId('wellbeing-report-timeline');
+  await chart.locator('.wheel .slice').nth(5).click();
+  await settled(page);
+  for (const width of [1440, 1100, 1000, 800, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await settled(page);
+    const geo = await chart.evaluate(el => {
+      const box = (node: Element) => node.getBoundingClientRect(), pane = el.querySelector('.pane')!, list = el.querySelector('[data-testid="wellbeing-report-state-list"]')!;
+      const parts = [...pane.querySelectorAll('.cols > section, .effects-box, .when')].map(node => box(node));
+      const overlap = (a: DOMRect, b: DOMRect) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+      const rows = [...list.querySelectorAll('li')].map(node => box(node)), inList = box(list);
+      return { scrolls: getComputedStyle(list).overflowY === 'auto', contained: pane.scrollHeight <= pane.clientHeight + 1, noSpill: parts.every((a, i) => parts.slice(i + 1).every(b => !overlap(a, b))), listInside: rows.length === 7 && inList.bottom <= box(el.querySelector('.effects-box')!).top + 1 };
+    });
+    expect(geo, `at ${width}px`).toEqual({ scrolls: true, contained: true, noSpill: true, listInside: true });
+  }
+  // Scrolled to the end, the last answer is reachable.
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await settled(page);
+  const list = page.getByTestId('wellbeing-report-state-list');
+  await list.evaluate(el => { el.scrollTop = el.scrollHeight; });
+  expect(await list.evaluate(el => { const box = el.getBoundingClientRect(), last = el.querySelector('li:last-child')!.getBoundingClientRect(); return last.bottom <= box.bottom + 1 && last.top >= box.top; })).toBe(true);
+});
+
 test('summary: "剂量变化" is always on its own line under the text of its dose, starting in the same place', async ({ page }) => {
   await open(page);
   // One medicine taken yesterday with different amounts, so some doses differ from the one before.
@@ -1241,7 +1548,7 @@ test('a medicine is set up once with box size, strength and pills per dose, and 
   await expect(dose.getByTestId('wellbeing-dose-meds').getByRole('button', { name: '米那普仑' })).toHaveAttribute('aria-pressed', 'true');
   await expect(dose.getByLabel('药物名称')).toHaveAttribute('inert', ''); // nothing to type
   await expect(dose.getByLabel(/^吃了几/)).toHaveValue('1');
-  await expect(dose.getByLabel('类型')).toHaveValue('scheduled');
+  await expect(dose.getByRole('radio', { name: '常规用药' })).toBeChecked();
   await expect(page.getByTestId('wellbeing-dose-converted')).toContainText('约合 12.5 mg');
   await dose.getByLabel(/^吃了几/).fill('1.5');
   await expect(page.getByTestId('wellbeing-dose-converted')).toContainText('约合 18.75 mg');
@@ -1249,7 +1556,7 @@ test('a medicine is set up once with box size, strength and pills per dose, and 
   await expect(page.getByTestId('wellbeing-dose')).toContainText('米那普仑 · 1.5 颗（18.75 mg）');
   await page.getByTestId('wellbeing-add-dose').click();
   await dose.getByTestId('wellbeing-dose-meds').getByRole('button', { name: '奥沙西泮', exact: true }).click();
-  await expect(dose.getByLabel('类型')).toHaveValue('as_needed');
+  await expect(dose.getByRole('radio', { name: '按需用药' })).toBeChecked();
   await expect(dose.getByLabel(/^吃了几/)).toHaveValue('1'); // the form's default "pills per dose"
   await expect(page.getByTestId('wellbeing-dose-converted')).not.toContainText('约合'); // no strength set, so no milligrams
   await dose.getByRole('button', { name: '取消' }).click();

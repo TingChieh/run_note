@@ -110,7 +110,7 @@
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>
     </button>
   </div>
-  <div id={`${id}-calendar`} class="date-popover" bind:this={panel} popover="auto" role="dialog" aria-label={`选择${label}`} aria-describedby={`${id}-help`}
+  <div id={`${id}-calendar`} class="date-popover" bind:this={panel} popover="auto" role="dialog" aria-label={`选择${label}`}
     style:left={`${left}px`} style:top={`${top}px`} ontoggle={event => { opened = event.newState === 'open'; }}>
     {#if monthly}
     <div class="calendar-header">
@@ -132,7 +132,6 @@
       {/each}
     </div>
     <div class="calendar-footer"><button type="button" onclick={() => choose('')}>清除</button><button type="button" disabled={!monthAllowed(today().slice(0, 7))} onclick={() => choose(today().slice(0, 7))}>本月</button></div>
-    <p id={`${id}-help`} class="calendar-help">方向键选择月份，Esc 关闭</p>
     {:else}
     <div class="calendar-header">
       <div class="month-selectors">
@@ -156,7 +155,6 @@
       {/each}
     </div>
     <div class="calendar-footer"><button type="button" onclick={() => choose('')}>清除</button><button type="button" disabled={!allowed(today())} onclick={() => choose(today())}>今天</button></div>
-    <p id={`${id}-help`} class="calendar-help">方向键选择日期，Esc 关闭</p>
     {/if}
   </div>
 </div>
@@ -199,7 +197,6 @@
   .calendar-footer { display: flex; justify-content: space-between; margin-top: .75rem; padding-top: .5rem; border-top: 1px solid var(--border); }
   .calendar-footer button { min-height: 2.5rem; padding: .25rem .75rem; border-radius: .65rem; color: var(--primary); font-weight: var(--weight-semibold); }
   @media (hover: hover) { .calendar-footer button:hover:not(:disabled) { background: var(--primary-soft); } }
-  .calendar-help { text-align: center; color: var(--muted-foreground); font-size: var(--text-caption); margin-top: .25rem; }
   .month-announcement { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   @media (max-width: 767px) { .date-control { width: 100%; } }
 </style>

@@ -153,7 +153,9 @@
         <div class="cols">
           <section class="states" aria-label="状态">
             <h5>状态</h5>
-            {#if values.length}<ul class="rows">{#each values as item (item.key)}<li style:--tone={`var(${COLORS[item.key]})`}><span class="name">{item.label}</span><strong>{item.text}</strong><span class="meter" aria-hidden="true"><span style:width={`${Math.max(4, item.ratio * 100)}%`}></span></span></li>{/each}</ul>
+            {#if values.length}
+              <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+              <div class="scroller" role="region" aria-label="这天的各项状态" tabindex="0" data-testid="wellbeing-report-state-list"><ul class="rows">{#each values as item (item.key)}<li style:--tone={`var(${COLORS[item.key]})`}><span class="name">{item.label}</span><strong>{item.text}</strong><span class="meter" aria-hidden="true"><span style:width={`${Math.max(4, item.ratio * 100)}%`}></span></span></li>{/each}</ul></div>
             {:else}<p class="none boxed">这天没有{lack.has(day.date) ? '状态' : '评分'}记录。</p>{/if}
           </section>
           <section class="doses" aria-label="服药">
