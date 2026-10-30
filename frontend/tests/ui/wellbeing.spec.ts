@@ -437,14 +437,20 @@ test('the dose dialog: a header with the day, the pill count with + and − in h
   await asNeeded.click();
   await expect(asNeeded).toHaveAttribute('aria-pressed', 'true');
   await expect(scheduled).toHaveAttribute('aria-pressed', 'false');
-  // The glass lens is there and sits under the one chosen; it follows the pointer onto the other and swells while pressed.
+  // The glass lens is there and sits under the one chosen; it does not follow the pointer or the focus onto the other (that would hide which one is chosen), and it swells while pressed.
   await expect(kind).toHaveClass(/rn-liquid-navigation/);
   await settled(page);
   const lens = kind.locator('.rn-moving-outline');
   const under = async (button: import('@playwright/test').Locator) => { const l = (await lens.boundingBox())!, b = (await button.boundingBox())!; return Math.abs((l.x + l.width / 2) - (b.x + b.width / 2)); };
   await expect.poll(() => under(asNeeded)).toBeLessThanOrEqual(6);
   await scheduled.hover();
-  await expect.poll(() => under(scheduled)).toBeLessThanOrEqual(6); // follows the pointer
+  await page.waitForTimeout(400); // longer than the glide, so a lens that did follow would be there by now
+  expect(await under(asNeeded)).toBeLessThanOrEqual(6);
+  expect(await under(scheduled)).toBeGreaterThan(20);
+  await scheduled.focus();
+  await page.waitForTimeout(400);
+  expect(await under(asNeeded)).toBeLessThanOrEqual(6);
+  await scheduled.hover();
   // The lens has left the chosen one, so its own label must stay dark (white on the pale track would not read).
   const ink = async (button: import('@playwright/test').Locator) => (await button.evaluate(el => getComputedStyle(el).color)).match(/\d+/g)!.slice(0, 3).map(Number).reduce((a, b) => a + b, 0);
   expect(await ink(asNeeded)).toBeLessThan(450);
@@ -454,6 +460,7 @@ test('the dose dialog: a header with the day, the pill count with + and − in h
   await expect.poll(async () => (await lens.boundingBox())!.height).toBeGreaterThan(rest.height + 1); // swells while pressed
   await page.mouse.up();
   await expect(scheduled).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => under(scheduled)).toBeLessThanOrEqual(6); // it moves when the choice changes
   await asNeeded.click();
   await expect(asNeeded).toHaveAttribute('aria-pressed', 'true');
   // "Other" side effect sits in the row of chips as a dashed pill.
@@ -602,10 +609,11 @@ test('a chosen side-effect chip is a solid fill with a tick, clearly apart from 
   await page.getByTestId('wellbeing-add-dose').click();
   const chips = page.getByTestId('wellbeing-dose-form').getByTestId('wellbeing-effect-chips');
   const chosen = chips.getByRole('button', { name: '头晕' }), other = chips.getByRole('button', { name: '恶心' });
-  // The fill is a layer of its own that is closed to nothing until the chip is chosen, then runs in.
-  const motion = (chip: import('@playwright/test').Locator) => chip.evaluate(el => { const layer = getComputedStyle(el, '::after'), tick = getComputedStyle(el, '::before'); return { fillScale: layer.scale, fillTime: layer.transitionDuration, tickTime: tick.transitionDuration, tickWidth: tick.width }; });
+  // The fill is a layer of its own that is closed to nothing until the chip is chosen, then spreads out as a circle (clipped to the pill, never scaled into a bar).
+  const motion = (chip: import('@playwright/test').Locator) => chip.evaluate(el => { const layer = getComputedStyle(el, '::after'), tick = getComputedStyle(el, '::before'); return { fillClip: layer.clipPath, fillScale: layer.scale, fillTime: layer.transitionDuration, tickTime: tick.transitionDuration, tickWidth: tick.width }; });
   const before = await motion(chosen);
-  expect(before.fillScale).toMatch(/^0/);
+  expect(before.fillClip).toMatch(/^circle\(0(px|%)/);
+  expect(before.fillScale).toBe('none');
   expect(before.tickWidth).toBe('0px');
   await chosen.click();
   await expect(chosen).toHaveAttribute('aria-pressed', 'true');
@@ -615,7 +623,7 @@ test('a chosen side-effect chip is a solid fill with a tick, clearly apart from 
   expect(parseFloat((await motion(chosen)).tickTime)).toBeGreaterThan(0.1);
   expect(await chosen.evaluate(el => getComputedStyle(el).animationName)).toContain('chip-pop');
   await settled(page);
-  await expect.poll(async () => (await motion(chosen)).fillScale).toMatch(/^1/);
+  await expect.poll(async () => (await motion(chosen)).fillClip).toMatch(/^circle\(150%/);
   const look = (chip: import('@playwright/test').Locator) => chip.evaluate(el => { const s = getComputedStyle(el), fill = getComputedStyle(el, '::after'), tick = getComputedStyle(el, '::before'); return { fill: fill.backgroundColor, ink: s.color, tickShown: tick.opacity === '1' && tick.width !== '0px' }; });
   // No pale rim round a chosen chip: its own background is transparent (a white one shows at the seam) and the fill reaches under its border.
   expect(await chosen.evaluate(el => ({ own: getComputedStyle(el).backgroundColor, inset: getComputedStyle(el, '::after').top, border: getComputedStyle(el).borderTopColor, fill: getComputedStyle(el, '::after').backgroundColor }))).toEqual({ own: 'rgba(0, 0, 0, 0)', inset: '-1px', border: expect.any(String), fill: expect.any(String) });
@@ -635,9 +643,39 @@ test('a chosen side-effect chip is a solid fill with a tick, clearly apart from 
   // Choosing it again takes it back.
   await chosen.click();
   await expect(chosen).toHaveAttribute('aria-pressed', 'false');
-  await expect.poll(async () => (await motion(chosen)).fillScale).toMatch(/^0/);
+  await expect.poll(async () => (await motion(chosen)).fillClip).toMatch(/^circle\(0(px|%)/);
   await expect.poll(async () => (await look(chosen)).tickShown).toBe(false);
 });
+
+test('a chip fills from the point that was pressed and stays inside its rounded outline all the way', async ({ page }) => {
+  await open(page);
+  await page.getByTestId('wellbeing-add-dose').click();
+  const chip = page.getByTestId('wellbeing-dose-form').getByTestId('wellbeing-effect-chips').getByRole('button', { name: '头晕' });
+  await settled(page);
+  const box = (await chip.boundingBox())!;
+  // Held part-way through its run (the transition is paused at 90ms), the fill is a circle round the pressed point: a pointer press near the right end opens there, not at the left edge.
+  const frame = () => chip.evaluate(el => {
+    const run = document.getAnimations().find(a => (a as CSSTransition).transitionProperty === '--chip-reach' && (a.effect as KeyframeEffect).target === el);
+    run?.pause(); if (run) run.currentTime = 90;
+    return { running: !!run, clip: getComputedStyle(el, '::after').clipPath, width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height };
+  });
+  await chip.click({ position: { x: box.width - 12, y: box.height / 2 } });
+  const pointer = await frame();
+  expect(pointer.running).toBe(true);
+  const [, radius, atX] = pointer.clip.match(/^circle\(([\d.]+)(?:px|%) at ([\d.]+)(?:px|%)/)!.map(Number);
+  expect(radius).toBeGreaterThan(0);
+  expect(atX).toBeGreaterThan(box.width * 0.8);
+  // The layer itself is never squeezed: it keeps the chip's full size and rounded shape, only the circle reveals it.
+  expect(await chip.evaluate(el => { const layer = getComputedStyle(el, '::after'); return { scale: layer.scale, transform: layer.transform, radius: layer.borderTopLeftRadius === getComputedStyle(el).borderTopLeftRadius }; })).toEqual({ scale: 'none', transform: 'none', radius: true });
+  await chip.evaluate(() => document.getAnimations().forEach(animation => animation.play()));
+  await settled(page);
+  // Reached by keyboard there is no pointer, so it opens from the middle.
+  await chip.focus();
+  await page.keyboard.press('Space');
+  await expect(chip).toHaveAttribute('aria-pressed', 'false');
+  expect(await chip.evaluate(el => [el.style.getPropertyValue('--wx'), el.style.getPropertyValue('--wy')])).toEqual(['50%', '50%']);
+});
+
 
 test('the calendar picker has no hint line under it', async ({ page }) => {
   await open(page);

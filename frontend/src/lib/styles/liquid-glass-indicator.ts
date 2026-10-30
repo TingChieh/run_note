@@ -78,10 +78,12 @@ export function enhanceNavigation(nav: HTMLElement, settings: GlassSettings) {
 function build(nav: HTMLElement, links: HTMLAnchorElement[], settings: GlassSettings) {
   const indicator = createIndicator(nav, links, settings);
   nav.classList.add('rn-liquid-navigation');
-  const currentIndex = () => Math.max(0, links.findIndex(link => link.getAttribute('aria-current') === 'page'));
-  const restore = () => { indicator.press(0); indicator.move(currentIndex()); };
+  const currentIndex = () => links.findIndex(link => link.getAttribute('aria-current') === 'page');
+  // On a page that has no link here (e.g. settings, reached from the account row) the lens rests hidden instead of on the first link.
+  const rest = (immediate = false) => { const index = currentIndex(); nav.toggleAttribute('data-idle', index < 0); indicator.move(Math.max(0, index), immediate); };
+  const restore = () => { indicator.press(0); rest(); };
   const handlers = links.map((link, index) => {
-    const move = () => indicator.move(index);
+    const move = () => { nav.removeAttribute('data-idle'); indicator.move(index); };
     const down = () => indicator.press(1);
     link.addEventListener('pointerenter', move); link.addEventListener('focus', move); link.addEventListener('pointerdown', down);
     return () => { link.removeEventListener('pointerenter', move); link.removeEventListener('focus', move); link.removeEventListener('pointerdown', down); };
@@ -92,9 +94,9 @@ function build(nav: HTMLElement, links: HTMLAnchorElement[], settings: GlassSett
   links.forEach(link => observer.observe(link, { attributes: true, attributeFilter: ['aria-current'] }));
   nav.addEventListener('pointerleave', restore); nav.addEventListener('focusout', focusOut);
   window.addEventListener('pointerup', release); window.addEventListener('pointercancel', release); window.addEventListener('blur', restore);
-  indicator.move(currentIndex(), true);
+  rest(true);
   return { update: indicator.update, destroy() {
-    observer.disconnect(); handlers.forEach(remove => remove()); indicator.destroy(); nav.classList.remove('rn-liquid-navigation');
+    observer.disconnect(); handlers.forEach(remove => remove()); indicator.destroy(); nav.classList.remove('rn-liquid-navigation'); nav.removeAttribute('data-idle');
     nav.removeEventListener('pointerleave', restore); nav.removeEventListener('focusout', focusOut);
     window.removeEventListener('pointerup', release); window.removeEventListener('pointercancel', release); window.removeEventListener('blur', restore);
   } };
@@ -128,10 +130,13 @@ function buildSegmented(group: HTMLElement, items: HTMLElement[], settings: Glas
   const restore = () => { indicator.press(0); go(pending >= 0 ? pending : currentIndex()); };
   const settle = () => { pending = -1; restore(); };
   const release = () => indicator.press(0);
+  // `data-lens="fixed"`: the lens stays on the chosen item and only moves when the choice changes, so a pointer or focus passing over the others cannot be mistaken for the choice.
+  const fixed = group.dataset.lens === 'fixed';
   const handlers = items.map((item, index) => {
     const move = () => go(index), down = () => indicator.press(1);
     const click = () => { pending = index; clearTimeout(pendingTimer); pendingTimer = setTimeout(settle, 2500); };
-    item.addEventListener('pointerenter', move); item.addEventListener('focus', move); item.addEventListener('pointerdown', down); item.addEventListener('click', click);
+    if (!fixed) { item.addEventListener('pointerenter', move); item.addEventListener('focus', move); }
+    item.addEventListener('pointerdown', down); item.addEventListener('click', click);
     return () => { item.removeEventListener('pointerenter', move); item.removeEventListener('focus', move); item.removeEventListener('pointerdown', down); item.removeEventListener('click', click); };
   });
   const focusOut = (event: FocusEvent) => { if (!group.contains(event.relatedTarget as Node | null)) restore(); };
