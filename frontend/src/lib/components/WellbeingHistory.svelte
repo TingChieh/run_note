@@ -167,7 +167,7 @@
   h2 { font-size: var(--text-card); font-weight: var(--weight-semibold); letter-spacing: 0; }
   .card .settings-tabs { background: var(--muted); }
   .card .settings-tabs > button { color: var(--muted-foreground); }
-  .card .settings-tabs > button[aria-pressed='true'] { color: var(--primary-foreground); }
+  .card .settings-tabs:not(:global(.rn-liquid-navigation)) > button[aria-pressed='true'] { color: var(--primary-foreground); } /* with the glass lens the chosen label stays dark when the lens moves away (the lens carries the white copy) */
   .month-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
   .step { display: grid; place-items: center; width: 2.25rem; height: 2.25rem; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--foreground); font-size: var(--text-card); cursor: pointer; }
   .step:disabled { opacity: .4; cursor: not-allowed; }

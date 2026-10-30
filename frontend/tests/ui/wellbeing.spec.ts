@@ -429,14 +429,33 @@ test('the dose dialog: a header with the day, the pill count with + and − in h
   await pills.fill('2');
   await form.getByRole('button', { name: /^多半/ }).click();
   await expect(pills).toHaveValue('2.5');
-  // The kind is a two-way switch (radios), the one in use filled.
-  const scheduled = form.getByRole('radio', { name: '常规用药' }), asNeeded = form.getByRole('radio', { name: '按需用药' });
-  await expect(scheduled).toBeChecked();
-  await asNeeded.check({ force: true });
-  await expect(asNeeded).toBeChecked();
-  await expect(scheduled).not.toBeChecked();
-  const fills = await form.locator('.seg-option').evaluateAll(els => els.map(el => getComputedStyle(el).backgroundColor));
-  expect(fills[0]).not.toBe(fills[1]);
+  // The kind is a two-way switch (the app's range switch, with its glass lens), the one in use pressed.
+  const kind = form.getByRole('group', { name: '类型' });
+  await expect(kind).toHaveClass(/settings-tabs/);
+  const scheduled = kind.getByRole('button', { name: '常规用药' }), asNeeded = kind.getByRole('button', { name: '按需用药' });
+  await expect(scheduled).toHaveAttribute('aria-pressed', 'true');
+  await asNeeded.click();
+  await expect(asNeeded).toHaveAttribute('aria-pressed', 'true');
+  await expect(scheduled).toHaveAttribute('aria-pressed', 'false');
+  // The glass lens is there and sits under the one chosen; it follows the pointer onto the other and swells while pressed.
+  await expect(kind).toHaveClass(/rn-liquid-navigation/);
+  await settled(page);
+  const lens = kind.locator('.rn-moving-outline');
+  const under = async (button: import('@playwright/test').Locator) => { const l = (await lens.boundingBox())!, b = (await button.boundingBox())!; return Math.abs((l.x + l.width / 2) - (b.x + b.width / 2)); };
+  await expect.poll(() => under(asNeeded)).toBeLessThanOrEqual(6);
+  await scheduled.hover();
+  await expect.poll(() => under(scheduled)).toBeLessThanOrEqual(6); // follows the pointer
+  // The lens has left the chosen one, so its own label must stay dark (white on the pale track would not read).
+  const ink = async (button: import('@playwright/test').Locator) => (await button.evaluate(el => getComputedStyle(el).color)).match(/\d+/g)!.slice(0, 3).map(Number).reduce((a, b) => a + b, 0);
+  expect(await ink(asNeeded)).toBeLessThan(450);
+  expect(await ink(scheduled)).toBeLessThan(450);
+  const rest = (await lens.boundingBox())!;
+  await page.mouse.down();
+  await expect.poll(async () => (await lens.boundingBox())!.height).toBeGreaterThan(rest.height + 1); // swells while pressed
+  await page.mouse.up();
+  await expect(scheduled).toHaveAttribute('aria-pressed', 'true');
+  await asNeeded.click();
+  await expect(asNeeded).toHaveAttribute('aria-pressed', 'true');
   // "Other" side effect sits in the row of chips as a dashed pill.
   const other = form.getByLabel('其他副作用（可选）');
   expect(await other.evaluate(el => getComputedStyle(el).borderTopStyle)).toBe('dashed');
@@ -598,6 +617,9 @@ test('a chosen side-effect chip is a solid fill with a tick, clearly apart from 
   await settled(page);
   await expect.poll(async () => (await motion(chosen)).fillScale).toMatch(/^1/);
   const look = (chip: import('@playwright/test').Locator) => chip.evaluate(el => { const s = getComputedStyle(el), fill = getComputedStyle(el, '::after'), tick = getComputedStyle(el, '::before'); return { fill: fill.backgroundColor, ink: s.color, tickShown: tick.opacity === '1' && tick.width !== '0px' }; });
+  // No pale rim round a chosen chip: its own background is transparent (a white one shows at the seam) and the fill reaches under its border.
+  expect(await chosen.evaluate(el => ({ own: getComputedStyle(el).backgroundColor, inset: getComputedStyle(el, '::after').top, border: getComputedStyle(el).borderTopColor, fill: getComputedStyle(el, '::after').backgroundColor }))).toEqual({ own: 'rgba(0, 0, 0, 0)', inset: '-1px', border: expect.any(String), fill: expect.any(String) });
+  expect(await chosen.evaluate(el => getComputedStyle(el).borderTopColor === getComputedStyle(el, '::after').backgroundColor)).toBe(true);
   // The chips are flat: no glass sheen (gradient or inset highlight) on the chosen or the other ones.
   for (const chip of [chosen, other]) expect(await chip.evaluate(el => { const style = getComputedStyle(el); return { image: style.backgroundImage, inset: /inset/.test(style.boxShadow) }; })).toEqual({ image: 'none', inset: false });
   const on = await look(chosen), off = await look(other);
@@ -1548,7 +1570,7 @@ test('a medicine is set up once with box size, strength and pills per dose, and 
   await expect(dose.getByTestId('wellbeing-dose-meds').getByRole('button', { name: '米那普仑' })).toHaveAttribute('aria-pressed', 'true');
   await expect(dose.getByLabel('药物名称')).toHaveAttribute('inert', ''); // nothing to type
   await expect(dose.getByLabel(/^吃了几/)).toHaveValue('1');
-  await expect(dose.getByRole('radio', { name: '常规用药' })).toBeChecked();
+  await expect(dose.getByRole('button', { name: '常规用药' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('wellbeing-dose-converted')).toContainText('约合 12.5 mg');
   await dose.getByLabel(/^吃了几/).fill('1.5');
   await expect(page.getByTestId('wellbeing-dose-converted')).toContainText('约合 18.75 mg');
@@ -1556,7 +1578,7 @@ test('a medicine is set up once with box size, strength and pills per dose, and 
   await expect(page.getByTestId('wellbeing-dose')).toContainText('米那普仑 · 1.5 颗（18.75 mg）');
   await page.getByTestId('wellbeing-add-dose').click();
   await dose.getByTestId('wellbeing-dose-meds').getByRole('button', { name: '奥沙西泮', exact: true }).click();
-  await expect(dose.getByRole('radio', { name: '按需用药' })).toBeChecked();
+  await expect(dose.getByRole('button', { name: '按需用药' })).toHaveAttribute('aria-pressed', 'true');
   await expect(dose.getByLabel(/^吃了几/)).toHaveValue('1'); // the form's default "pills per dose"
   await expect(page.getByTestId('wellbeing-dose-converted')).not.toContainText('约合'); // no strength set, so no milligrams
   await dose.getByRole('button', { name: '取消' }).click();

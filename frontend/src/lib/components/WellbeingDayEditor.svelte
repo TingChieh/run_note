@@ -376,11 +376,11 @@
             {/if}
             <div class="field"><TimePicker label="实际服药时间" bind:value={form.time} max={data && data.date === data.today ? localInput(new Date(), timezone).slice(11) : ''} now={data && data.date === data.today ? localInput(new Date(), timezone).slice(11) : '08:00'} disabled={eventBusy} required /></div>
           </div>
-          <fieldset class="seg" disabled={eventBusy}>
-            <legend>类型</legend>
-            <label class="seg-option"><input type="radio" name="regimen" value="scheduled" checked={form.regimen === 'scheduled'} onchange={() => { form.regimen = 'scheduled'; }} /><span>常规用药</span></label>
-            <label class="seg-option"><input type="radio" name="regimen" value="as_needed" checked={form.regimen === 'as_needed'} onchange={() => { form.regimen = 'as_needed'; }} /><span>按需用药</span></label>
-          </fieldset>
+          <!-- The kind of dose: a two-way switch with the app's glass lens, which glides to the one chosen, follows the pointer over it and swells when pressed (the same as the range switches). -->
+          <div class="settings-tabs seg" role="group" aria-label="类型">
+            <button type="button" aria-pressed={form.regimen === 'scheduled'} disabled={eventBusy} onclick={() => { form.regimen = 'scheduled'; }}>常规用药</button>
+            <button type="button" aria-pressed={form.regimen === 'as_needed'} disabled={eventBusy} onclick={() => { form.regimen = 'as_needed'; }}>按需用药</button>
+          </div>
         </div>
         {#if form.keepAmount}<p class="hint">这条是早先按“剂量 + 单位”记下的（{doseText({ dose_amount: form.keepAmount.amount, dose_unit: form.keepAmount.unit })}），保持不变；可以改时间、类型或备注。</p>{/if}
         <section class="part"><fieldset class="chips" disabled={eventBusy} data-testid="wellbeing-effect-chips">
@@ -517,14 +517,13 @@
   @media (hover: hover) { .stepper .step:not(:disabled):hover { background-color: var(--primary-soft); } }
   .stepper .step:disabled { opacity: .4; cursor: not-allowed; }
   .stepper .step:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
-  /* The kind of dose is a two-way switch: the one in use is filled. */
-  .seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); margin: 0; padding: var(--space-1); border: 0; border-radius: var(--radius-pill); background: var(--muted); min-width: 0; }
-  .seg legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  .seg-option { position: relative; display: grid; place-items: center; min-height: 2.5rem; border-radius: var(--radius-pill); color: var(--muted-foreground); font-size: var(--text-small); font-weight: var(--weight-semibold); cursor: pointer; transition: background-color .22s ease, color .22s ease; }
-  .seg-option input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-  .seg-option:has(input:checked) { background-color: var(--surface); color: var(--primary); box-shadow: 0 1px 4px var(--shadow-popover-color, rgba(0, 0, 0, .14)); }
-  .seg-option:has(input:focus-visible) { outline: 2px solid var(--ring); outline-offset: 2px; }
-  .seg:disabled { opacity: .6; }
+  /* The kind of dose is the app's range switch (.settings-tabs) stretched across the form; its glass lens does the rest. */
+  .dialog-form .seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; max-width: none; margin-top: 0; background: var(--muted); }
+  .dialog-form .seg > button { justify-content: center; color: var(--muted-foreground); }
+  /* With the glass lens, the chosen label stays dark when the lens moves away under the pointer (the lens carries the white copy); white only when there is no lens. */
+  .dialog-form .seg:not(:global(.rn-liquid-navigation)) > button[aria-pressed='true'] { color: var(--primary-foreground); }
+  /* The lens carries a copy of each label; with the buttons stretched, the copies are centred like the buttons' own text. */
+  .dialog-form .seg :global(.rn-moving-label) { justify-content: center; }
   /* "其他药物" and "其他副作用" are open-ended, so they are dashed. */
   .chip-button.add { border-style: dashed; color: var(--muted-foreground); }
   .effect-other { flex: 0 1 auto; width: 6.5rem; min-height: 2.5rem; padding: 0 var(--space-3); border: 1px dashed var(--border); border-radius: var(--radius-pill); background: transparent; color: var(--foreground); font-size: var(--text-small); transition: width .26s cubic-bezier(.22, 1, .36, 1), border-color .2s ease; }
@@ -536,8 +535,9 @@
   .chips legend { width: 100%; margin-bottom: var(--space-2); font-size: var(--text-small); font-weight: var(--weight-semibold); }
   /* A chip that is chosen is a solid fill with white text and a tick, so it reads apart from the white ones at a glance. The chips carry data-date, which keeps liquid glass off them (as for calendar days): its material would paint over the fill and leave only green text.
      Choosing is animated: the fill runs in from the left (a layer of its own, because liquid glass keeps the button's own background-image), the tick opens up and pops, and the whole chip gives a little spring; pressing it dips. */
-  .chip-button { position: relative; isolation: isolate; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; min-height: 2.5rem; padding: 0 var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-pill); background-color: var(--surface); font-size: var(--text-small); cursor: pointer; transition: color .14s ease .1s, border-color .22s ease, scale .18s ease; }
-  .chip-button::after { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--primary); transform-origin: left center; scale: 0 1; transition: scale .34s cubic-bezier(.22, 1, .36, 1); }
+  .chip-button { position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center; min-height: 2.5rem; padding: 0 var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-pill); background-color: transparent; font-size: var(--text-small); cursor: pointer; transition: color .14s ease .1s, border-color .22s ease, scale .18s ease; }
+  /* The chip's own background is transparent and the fill reaches under the border: otherwise a thin pale rim shows where the fill meets the border. */
+  .chip-button::after { content: ''; position: absolute; inset: -1px; z-index: -1; border-radius: inherit; background: var(--primary); transform-origin: left center; scale: 0 1; transition: scale .34s cubic-bezier(.22, 1, .36, 1); }
   /* The global sheen on every button[data-date] (a gradient and inset highlights) is switched off: the chips are flat. */
   .chip-button[data-date] { background-image: none !important; box-shadow: none !important; }
   .chip-button:active { scale: .94; }
