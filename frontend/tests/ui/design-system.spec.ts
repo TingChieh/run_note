@@ -49,6 +49,45 @@ test('date keyboard selection respects bounds, Escape restores focus and layouts
   await expect(page.getByLabel('禁用日期', { exact: true })).toBeDisabled();
 });
 
+test('time picker types 24-hour digits, greys out later times, and keeps focus and bounds', async ({ page }) => {
+  await page.goto('/');
+  await page.setViewportSize({ width: 320, height: 800 });
+  const field = page.getByLabel('服药时间', { exact: true });
+  await expect(field).toHaveValue('09:30');
+  // A colon is added while typing; a short entry is completed when the field is left.
+  await field.fill('');
+  await field.pressSequentially('1245');
+  await expect(field).toHaveValue('12:45');
+  await field.fill('830');
+  await field.blur();
+  await expect(field).toHaveValue('08:30');
+  await field.fill('2575');
+  await field.blur();
+  await expect(field).toHaveValue('08:30');
+  const trigger = page.getByRole('button', { name: '选择服药时间', exact: true });
+  await trigger.click();
+  const dialog = page.getByRole('dialog', { name: '选择服药时间', exact: true });
+  await expect(dialog).toBeVisible();
+  const box = await dialog.boundingBox();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(320);
+  // Times after max (18:30) cannot be chosen; the nearest allowed one is used instead.
+  const hours = dialog.getByTestId('time-hours'), minutes = dialog.getByTestId('time-minutes');
+  await expect(hours.getByRole('option', { name: '19', exact: true })).toBeDisabled();
+  await hours.getByRole('option', { name: '18', exact: true }).click();
+  await expect(field).toHaveValue(/^18:/);
+  await expect(minutes.getByRole('option', { name: '31', exact: true })).toBeDisabled();
+  await dialog.getByRole('button', { name: '现在', exact: true }).click();
+  await expect(field).toHaveValue('18:30');
+  await expect(hours.getByRole('option', { name: '18', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('Escape');
+  await expect(dialog).not.toBeVisible();
+  await expect(trigger).toBeFocused();
+  await expect(page.getByLabel('禁用时间', { exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '选择禁用时间', exact: true })).toBeDisabled();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
 for (const theme of ['light', 'dark'] as const) {
   test(`${theme} component composition keeps readable tokens and visual baseline`, async ({ page }) => {
     await page.clock.install({ time: new Date('2026-10-16T12:00:00Z') });

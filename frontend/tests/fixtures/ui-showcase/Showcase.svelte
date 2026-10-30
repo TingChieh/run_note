@@ -4,6 +4,7 @@
   import PageSkeleton from '../../../src/lib/components/PageSkeleton.svelte';
   import MetricSummary from '../../../src/lib/components/MetricSummary.svelte';
   import DatePicker from '../../../src/lib/components/DatePicker.svelte';
+  import TimePicker from '../../../src/lib/components/TimePicker.svelte';
   import ImageUpload from '../../../src/lib/components/ImageUpload.svelte';
   import BasemapPicker from '../../../src/lib/components/BasemapPicker.svelte';
   import type { BasemapPreference } from '../../../src/lib/api/map-style.ts';
@@ -16,6 +17,7 @@
   let basemap = $state<BasemapPreference>('auto');
   let name = $state('轻松跑示例');
   let date = $state('2026-10-16');
+  let time = $state('09:30');
   let recovered = $state(false);
   let saved = $state(false);
   let publicProfile = $state(false), saved0 = $state(false), segment = $state('all'), draftTitle = $state('RunNote');
@@ -69,6 +71,8 @@
           <label>禁用输入<input class="border px-3 py-2" value="不可编辑" disabled /></label>
           <DatePicker label="训练日期" bind:value={date} min="2026-10-10" max="2026-10-20" required />
           <DatePicker label="禁用日期" value="2026-10-16" disabled />
+          <TimePicker label="服药时间" bind:value={time} max="18:30" now="18:30" required />
+          <TimePicker label="禁用时间" value="09:30" disabled />
         </div>
         <div class="control-row">
           <label class="choice"><input type="checkbox" /> 包含恢复训练</label>

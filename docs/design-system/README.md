@@ -40,7 +40,7 @@ node tests/fixtures/check-showcase-isolation.mjs
 
 隔离脚本先要求已有生产 build，再使用 8191 内存 API 和 5194 adapter-node 检查四个路径 404、产物无展示标识，结束关闭本次进程。端口被占用时拒绝运行，不复用或停止已有服务。不要与占用 8191 的业务 UI 测试同时执行。
 
-展示包含 PageHeader、FeedbackState、PageSkeleton、MetricSummary、DatePicker、ThemeToggle、原生表单和布局组合。依赖 `$app/state`、接口或私有数据的组件通过既有 `playwright.ui.config.ts` 合成路由夹具测试，不在独立入口中伪造运行环境。
+展示包含 PageHeader、FeedbackState、PageSkeleton、MetricSummary、DatePicker、TimePicker、ThemeToggle、原生表单和布局组合。依赖 `$app/state`、接口或私有数据的组件通过既有 `playwright.ui.config.ts` 合成路由夹具测试，不在独立入口中伪造运行环境。
 
 视觉基线使用固定时间、UTC、合成数据、默认玻璃参数、真实 light/dark 根主题及 reduced-motion。需要更新快照时先查看差异和实际页面；`--update-snapshots` 不能替代设计审阅。首次基线只建立今后的对照点，不证明历史页面完全无差异。
 
