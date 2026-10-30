@@ -128,10 +128,13 @@ function buildSegmented(group: HTMLElement, items: HTMLElement[], settings: Glas
   const restore = () => { indicator.press(0); go(pending >= 0 ? pending : currentIndex()); };
   const settle = () => { pending = -1; restore(); };
   const release = () => indicator.press(0);
+  // `data-lens="fixed"`: the lens stays on the chosen item and only moves when the choice changes, so a pointer or focus passing over the others cannot be mistaken for the choice.
+  const fixed = group.dataset.lens === 'fixed';
   const handlers = items.map((item, index) => {
     const move = () => go(index), down = () => indicator.press(1);
     const click = () => { pending = index; clearTimeout(pendingTimer); pendingTimer = setTimeout(settle, 2500); };
-    item.addEventListener('pointerenter', move); item.addEventListener('focus', move); item.addEventListener('pointerdown', down); item.addEventListener('click', click);
+    if (!fixed) { item.addEventListener('pointerenter', move); item.addEventListener('focus', move); }
+    item.addEventListener('pointerdown', down); item.addEventListener('click', click);
     return () => { item.removeEventListener('pointerenter', move); item.removeEventListener('focus', move); item.removeEventListener('pointerdown', down); item.removeEventListener('click', click); };
   });
   const focusOut = (event: FocusEvent) => { if (!group.contains(event.relatedTarget as Node | null)) restore(); };

@@ -185,7 +185,14 @@
   }
   const pillsId = `${id}-pills`;
   /** Restarts the little spring of a chip that was just clicked. */
-  function pop(event: Event) { const el = event.currentTarget as HTMLElement; el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
+  /** The chip's fill spreads out from where it was pressed (from the middle when it was reached by keyboard). */
+  function pop(event: Event) {
+    const el = event.currentTarget as HTMLElement, rect = el.getBoundingClientRect();
+    const pointer = event instanceof MouseEvent && event.detail > 0 && rect.width > 0 && rect.height > 0;
+    el.style.setProperty('--wx', pointer ? `${Math.round(Math.min(100, Math.max(0, (event.clientX - rect.left) / rect.width * 100)))}%` : '50%');
+    el.style.setProperty('--wy', pointer ? `${Math.round(Math.min(100, Math.max(0, (event.clientY - rect.top) / rect.height * 100)))}%` : '50%');
+    el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
+  }
   function pickMed(form: DoseForm, med: Medication) {
     form.custom = false; form.medicationId = med.id; form.name = med.name;
     if (!form.id) { form.pills = med.default_pills === null ? '' : String(+med.default_pills.toFixed(2)); form.regimen = med.regimen; }
@@ -377,7 +384,7 @@
             <div class="field"><TimePicker label="实际服药时间" bind:value={form.time} max={data && data.date === data.today ? localInput(new Date(), timezone).slice(11) : ''} now={data && data.date === data.today ? localInput(new Date(), timezone).slice(11) : '08:00'} disabled={eventBusy} required /></div>
           </div>
           <!-- The kind of dose: a two-way switch with the app's glass lens, which glides to the one chosen, follows the pointer over it and swells when pressed (the same as the range switches). -->
-          <div class="settings-tabs seg" role="group" aria-label="类型">
+          <div class="settings-tabs seg" role="group" aria-label="类型" data-lens="fixed">
             <button type="button" aria-pressed={form.regimen === 'scheduled'} disabled={eventBusy} onclick={() => { form.regimen = 'scheduled'; }}>常规用药</button>
             <button type="button" aria-pressed={form.regimen === 'as_needed'} disabled={eventBusy} onclick={() => { form.regimen = 'as_needed'; }}>按需用药</button>
           </div>
@@ -537,12 +544,15 @@
      Choosing is animated: the fill runs in from the left (a layer of its own, because liquid glass keeps the button's own background-image), the tick opens up and pops, and the whole chip gives a little spring; pressing it dips. */
   .chip-button { position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center; min-height: 2.5rem; padding: 0 var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-pill); background-color: transparent; font-size: var(--text-small); cursor: pointer; transition: color .14s ease .1s, border-color .22s ease, scale .18s ease; }
   /* The chip's own background is transparent and the fill reaches under the border: otherwise a thin pale rim shows where the fill meets the border. */
-  .chip-button::after { content: ''; position: absolute; inset: -1px; z-index: -1; border-radius: inherit; background: var(--primary); transform-origin: left center; scale: 0 1; transition: scale .34s cubic-bezier(.22, 1, .36, 1); }
+  /* The fill is always the whole pill; a circle growing from the pressed point reveals it, so nothing sticks out past the rounded outline. 150% reaches the far corner from any point.
+     Only the radius is animated (a registered property): the centre is simply where it was pressed, so it never glides over from the last press. */
+  @property --chip-reach { syntax: '<percentage>'; inherits: false; initial-value: 0%; }
+  .chip-button::after { content: ''; position: absolute; inset: -1px; z-index: -1; border-radius: inherit; background: var(--primary); --chip-reach: 0%; clip-path: circle(var(--chip-reach) at var(--wx, 50%) var(--wy, 50%)); transition: --chip-reach .4s cubic-bezier(.22, 1, .36, 1); }
   /* The global sheen on every button[data-date] (a gradient and inset highlights) is switched off: the chips are flat. */
   .chip-button[data-date] { background-image: none !important; box-shadow: none !important; }
   .chip-button:active { scale: .94; }
   .chip-button[aria-pressed='true'] { border-color: var(--primary); color: var(--primary-foreground); font-weight: var(--weight-semibold); }
-  .chip-button[aria-pressed='true']::after { scale: 1 1; }
+  .chip-button[aria-pressed='true']::after { --chip-reach: 150%; }
   /* The tick is decoration: the empty alt text after the slash keeps it out of the button's accessible name ("pressed" already says it). It is always there, closed to no width until the chip is chosen. */
   .chip-button::before { content: '✓'; content: '✓' / ''; display: inline-block; width: 0; margin-right: 0; overflow: hidden; opacity: 0; transform: scale(.3) rotate(-30deg); font-weight: var(--weight-bold); transition: width .3s cubic-bezier(.22, 1, .36, 1), margin-right .3s cubic-bezier(.22, 1, .36, 1), opacity .2s ease, transform .38s cubic-bezier(.34, 1.56, .64, 1); }
   .chip-button[aria-pressed='true']::before { width: 1em; margin-right: var(--space-1); opacity: 1; transform: none; }
