@@ -222,7 +222,7 @@
   .summary { color: var(--foreground); font-size: var(--text-small); line-height: var(--line-height-body); }
   .card .settings-tabs { background: var(--muted); }
   .card .settings-tabs > button { color: var(--muted-foreground); }
-  .card .settings-tabs > button[aria-pressed='true'] { color: var(--primary-foreground); }
+  .card .settings-tabs:not(:global(.rn-liquid-navigation)) > button[aria-pressed='true'] { color: var(--primary-foreground); } /* with the glass lens the chosen label stays dark when the lens moves away (the lens carries the white copy) */
   .range { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-4); }
   /* The print button and the three files, each with a line on what it holds, in even columns. */
   .export { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: var(--space-4); }

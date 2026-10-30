@@ -61,7 +61,7 @@
   .summary { color: var(--foreground); }
   .card .settings-tabs { background: var(--muted); }
   .card .settings-tabs > button { color: var(--muted-foreground); }
-  .card .settings-tabs > button[aria-pressed='true'] { color: var(--primary-foreground); }
+  .card .settings-tabs:not(:global(.rn-liquid-navigation)) > button[aria-pressed='true'] { color: var(--primary-foreground); } /* with the glass lens the chosen label stays dark when the lens moves away (the lens carries the white copy) */
   @media (max-width: 767px) { .card { padding: var(--space-4); } }
   @media (min-width: 1100px) { .charts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>
