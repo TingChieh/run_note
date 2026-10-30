@@ -340,5 +340,8 @@
   .times { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
   .time { display: inline-flex; align-items: center; gap: var(--space-1); }
   .time .text-field { width: 7.5rem; }
-  .x { min-width: 2rem; min-height: 2rem; border: 0; background: none; color: var(--muted-foreground); cursor: pointer; }
+  /* The × inside a tag or time: a small round button that sits inside the pill, not a glass square (the global glass material would paint a white disc with a shadow, so its layer is hidden). */
+  .x { display: grid; flex: none; place-items: center; width: 2rem; min-width: 0; height: 2rem; min-height: 0; padding: 0; border: 0 !important; border-radius: 50% !important; background: none !important; box-shadow: none !important; color: var(--muted-foreground); transition: none !important; cursor: pointer; }
+  .x::before, .x::after, .x > :global(.rn-glass-surface) { display: none !important; }
+  @media (hover: hover) { .x:not(:disabled):hover { background: color-mix(in srgb, var(--foreground) 10%, transparent) !important; color: var(--foreground); } }
 </style>

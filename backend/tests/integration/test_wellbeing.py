@@ -315,6 +315,56 @@ def test_symptoms_create_edit_clear_optional_fields_and_delete(clients):  # noqa
     assert a.get(f"{BASE}/days/2026-10-10").json()["data"]["symptoms"] == []
 
 
+def test_side_effects_belong_to_their_dose_follow_its_day_and_go_with_it(clients):  # noqa: F811
+    a, b, _, _ = clients
+    register(a)
+    register(b)
+    dose = post(a, "/doses", **dose_body()).json()["data"]
+    other = post(b, "/doses", **dose_body()).json()["data"]
+    made = post(a, "/symptoms", entry_date="2026-10-10", symptom="恶心", dose_id=dose["id"])
+    assert made.status_code == 201, made.text
+    assert made.json()["data"]["dose_id"] == dose["id"]
+    assert (
+        post(a, "/symptoms", entry_date="2026-10-10", symptom="头晕").json()["data"]["dose_id"]
+        is None
+    )
+    # Someone else's dose is a 404; a dose of another day does not take the side effect.
+    assert (
+        post(
+            a, "/symptoms", entry_date="2026-10-10", symptom="恶心", dose_id=other["id"]
+        ).status_code
+        == 404
+    )
+    assert (
+        post(
+            a, "/symptoms", entry_date="2026-10-09", symptom="恶心", dose_id=dose["id"]
+        ).status_code
+        == 422
+    )
+    day = a.get(f"{BASE}/days/2026-10-10").json()["data"]
+    assert sorted((s["symptom"], s["dose_id"]) for s in day["symptoms"]) == [
+        ("头晕", None),
+        ("恶心", dose["id"]),
+    ]
+    # Moving the dose to another day takes its side effects along.
+    moved = a.patch(
+        f"{BASE}/doses/{dose['id']}",
+        headers=headers(a),
+        json={"taken_at": "2026-10-09T08:00:00+08:00"},
+    )
+    assert moved.status_code == 200, moved.text
+    assert [s["symptom"] for s in a.get(f"{BASE}/days/2026-10-09").json()["data"]["symptoms"]] == [
+        "恶心"
+    ]
+    assert [s["symptom"] for s in a.get(f"{BASE}/days/2026-10-10").json()["data"]["symptoms"]] == [
+        "头晕"
+    ]
+    # Deleting the dose deletes the side effects noted for it, and only those.
+    assert a.delete(f"{BASE}/doses/{dose['id']}", headers=headers(a)).status_code == 200
+    assert a.get(f"{BASE}/days/2026-10-09").json()["data"]["symptoms"] == []
+    assert len(a.get(f"{BASE}/days/2026-10-10").json()["data"]["symptoms"]) == 1
+
+
 def test_users_cannot_read_or_change_each_others_records_and_get_404_not_403(clients):  # noqa: F811
     a, b, _, _ = clients
     register(a)
@@ -462,6 +512,11 @@ def test_report_summarises_only_what_was_logged_and_reports_the_gaps(clients):  
         affects_daily_life=True,
     )
     report = a.get(f"{BASE}/report?from=2026-10-01&to=2026-10-07").json()["data"]
+    # One point per day of the range, gaps kept as None: the charts are drawn from this.
+    series = report["series"]
+    assert [d["date"] for d in series] == [f"2026-10-0{i}" for i in range(1, 8)]
+    assert series[0]["mood"] == 6 and series[2]["mood"] is None and series[2]["dose_count"] == 2
+    assert series[2]["symptom_count"] == 1 and series[1]["anxiety"] is None
     coverage = report["coverage"]
     assert coverage["days_in_range"] == 7 and coverage["days_with_entry"] == 3
     assert coverage["missing_dates"] == ["2026-10-03", "2026-10-04", "2026-10-06", "2026-10-07"]

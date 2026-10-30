@@ -112,6 +112,7 @@ def symptom_view(row: SymptomEvent) -> SymptomView:
     return SymptomView(
         id=row.id,
         entry_date=row.entry_date,
+        dose_id=row.dose_id,
         symptom=row.symptom,
         severity=row.severity,
         onset_at=row.onset_at,
@@ -265,6 +266,10 @@ def owned_symptom(db, owner: UUID, identifier: UUID) -> SymptomEvent:
 def create_symptom(db, user, payload: SymptomInput, now: datetime) -> SymptomView:
     check_day(payload.entry_date, today_for(user, now))
     check_instant(payload.onset_at, now)
+    if payload.dose_id is not None:
+        dose = owned_dose(db, user.id, payload.dose_id)  # someone else's dose is a 404
+        if dose.entry_date != payload.entry_date:
+            raise ApiError(422, "SYMPTOM_DOSE_DAY", "副作用需记在对应服药的当天")
     row = SymptomEvent(user_id=user.id, **payload.model_dump())
     db.add(row)
     db.flush()
@@ -277,6 +282,8 @@ def update_symptom(db, user, identifier: UUID, payload: SymptomPatch, now: datet
     changes = payload.model_dump(exclude_unset=True)
     if "entry_date" in changes:
         check_day(changes["entry_date"], today_for(user, now))
+        if row.dose_id is not None and changes["entry_date"] != row.entry_date:
+            raise ApiError(422, "SYMPTOM_DOSE_DAY", "副作用需记在对应服药的当天")
     if "onset_at" in changes:
         check_instant(changes["onset_at"], now)
     for name, value in changes.items():
@@ -389,12 +396,14 @@ def range_entries(db, owner: UUID, start: date, end: date) -> list[DailyEntry]:
     )
 
 
-def trends(db, user, days: int, now: datetime) -> Trends:
-    """Daily series for the last ``days`` account-local days. Unanswered fields stay None."""
-    end = today_for(user, now)
-    start = end - timedelta(days=days - 1)
-    entries = {row.entry_date: row for row in range_entries(db, user.id, start, end)}
-    doses, symptoms = range_events(db, user.id, start, end)
+def daily_series(
+    entries: dict[date, DailyEntry],
+    doses: list[DoseEvent],
+    symptoms: list[SymptomEvent],
+    start: date,
+    days: int,
+) -> list[TrendDay]:
+    """One point per account-local day from ``start``; unanswered fields stay None."""
     dose_counts: dict[date, int] = {}
     for dose in doses:
         dose_counts[dose.entry_date] = dose_counts.get(dose.entry_date, 0) + 1
@@ -418,6 +427,16 @@ def trends(db, user, days: int, now: datetime) -> Trends:
                 ),
             )
         )
+    return series
+
+
+def trends(db, user, days: int, now: datetime) -> Trends:
+    """Daily series for the last ``days`` account-local days. Unanswered fields stay None."""
+    end = today_for(user, now)
+    start = end - timedelta(days=days - 1)
+    entries = {row.entry_date: row for row in range_entries(db, user.id, start, end)}
+    doses, symptoms = range_events(db, user.id, start, end)
+    series = daily_series(entries, doses, symptoms, start, days)
     return Trends(
         days=days,
         start=start,

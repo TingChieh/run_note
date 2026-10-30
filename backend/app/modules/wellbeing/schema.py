@@ -219,6 +219,7 @@ class BatchDoseResult(BaseModel):
 
 class SymptomInput(_Texts):
     entry_date: Day
+    dose_id: Ident | None = None
     symptom: Symptom
     severity: Rating | None = None
     onset_at: Instant | None = None
@@ -273,6 +274,7 @@ class DoseView(BaseModel):
 class SymptomView(BaseModel):
     id: UUID
     entry_date: date
+    dose_id: UUID | None
     symptom: str
     severity: int | None
     onset_at: datetime | None

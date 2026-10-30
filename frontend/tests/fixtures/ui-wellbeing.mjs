@@ -20,7 +20,7 @@ export function createWellbeing(getUser) {
   const dosesOn = (/** @type {string} */ date) => doses.filter(d => d.entry_date === date).sort((a, b) => Date.parse(a.taken_at) - Date.parse(b.taken_at));
   const between = (/** @type {any[]} */ rows, /** @type {string} */ from, /** @type {string} */ to) => rows.filter(r => r.entry_date >= from && r.entry_date <= to);
   const DOSE_FIELDS = new Set(['medication_name', 'medication_id', 'pills', 'dose_amount', 'dose_unit', 'taken_at', 'regimen', 'note']);
-  const SYMPTOM_FIELDS = new Set(['entry_date', 'symptom', 'severity', 'onset_at', 'duration_minutes', 'affects_daily_life']);
+  const SYMPTOM_FIELDS = new Set(['entry_date', 'dose_id', 'symptom', 'severity', 'onset_at', 'duration_minutes', 'affects_daily_life']);
   /** @param {string} date */
   const view = date => ({ date, today: day(new Date()), timezone: zone(), entry: entries.get(date) ?? null, doses: dosesOn(date), symptoms: symptoms.filter(s => s.entry_date === date) });
   const stats = (/** @type {any[]} */ rows) => {
@@ -185,20 +185,23 @@ export function createWellbeing(getUser) {
     if ((m = path.match(/^\/doses\/([0-9a-f-]{36})$/))) {
       const dose = doses.find(d => d.id === m[1]);
       if (!dose) return json(404, null, 'RESOURCE_NOT_FOUND', '记录不存在');
-      if (req.method === 'DELETE') { doses = doses.filter(d => d !== dose); return json(200, { deleted: true }); }
+      if (req.method === 'DELETE') { doses = doses.filter(d => d !== dose); symptoms = symptoms.filter(s => s.dose_id !== dose.id); return json(200, { deleted: true }); }
       if (req.method === 'PATCH') {
         // Like the real API (extra="forbid"): a field it does not know is refused, so a client that sends one fails here too.
         if (Object.keys(body).some(key => !DOSE_FIELDS.has(key))) return json(422, null, 'VALIDATION_ERROR', '请求参数不合法');
         Object.assign(dose, body);
         if (body.pills != null && body.dose_amount == null) { const med = meds.find(x => x.id === dose.medication_id); dose.dose_amount = med && med.strength_amount !== null ? Math.round(body.pills * med.strength_amount * 1000) / 1000 : null; dose.dose_unit = dose.dose_amount === null ? null : med.strength_unit; }
-        if (body.taken_at) { dose.taken_at = new Date(body.taken_at).toISOString(); dose.entry_date = day(dose.taken_at); }
+        if (body.taken_at) { dose.taken_at = new Date(body.taken_at).toISOString(); dose.entry_date = day(dose.taken_at); for (const s of symptoms) if (s.dose_id === dose.id) s.entry_date = dose.entry_date; }
         return json(200, dose);
       }
     }
     if (path === '/symptoms' && req.method === 'POST') {
       if (Object.keys(body).some(key => !SYMPTOM_FIELDS.has(key))) return json(422, null, 'VALIDATION_ERROR', '请求参数不合法');
       if (!body.symptom?.trim() || (body.severity != null && (!Number.isInteger(body.severity) || body.severity < 0 || body.severity > 10)) || !/^\d{4}-\d{2}-\d{2}$/.test(body.entry_date ?? '')) return json(422, null, 'VALIDATION_ERROR', '请求参数不合法');
-      const symptom = { id: randomUUID(), entry_date: body.entry_date, symptom: body.symptom.trim(), severity: body.severity ?? null, onset_at: body.onset_at ?? null, duration_minutes: body.duration_minutes ?? null, affects_daily_life: body.affects_daily_life ?? null };
+      const owner = body.dose_id == null ? null : doses.find(d => d.id === body.dose_id);
+      if (body.dose_id != null && !owner) return json(404, null, 'RESOURCE_NOT_FOUND', '记录不存在');
+      if (owner && owner.entry_date !== body.entry_date) return json(422, null, 'SYMPTOM_DOSE_DAY', '副作用需记在对应服药的当天');
+      const symptom = { id: randomUUID(), entry_date: body.entry_date, dose_id: body.dose_id ?? null, symptom: body.symptom.trim(), severity: body.severity ?? null, onset_at: body.onset_at ?? null, duration_minutes: body.duration_minutes ?? null, affects_daily_life: body.affects_daily_life ?? null };
       symptoms.push(symptom);
       if (!names.some(n => n.name.toLowerCase() === symptom.symptom.toLowerCase())) names.push({ id: randomUUID(), name: symptom.symptom });
       return json(201, symptom);
@@ -243,6 +246,7 @@ export function createWellbeing(getUser) {
       const hours = rows.filter(r => r.sleep_hours !== null).map(r => r.sleep_hours), quality = rows.filter(r => r.sleep_quality !== null).map(r => r.sleep_quality);
       return json(200, {
         start: from, end: to, timezone: zone(), generated_on: today,
+        series: span.map(date => { const e = entries.get(date), events = symptoms.filter(x => x.entry_date === date); return { date, ...Object.fromEntries(RATINGS.map(k => [k, e?.[k] ?? null])), sleep_hours: e?.sleep_hours ?? null, dose_count: dosesOn(date).length, symptom_count: events.length, symptom_max_severity: null }; }),
         coverage: { days_in_range: span.length, days_with_entry: rows.length, days_without_entry: missing.length, missing_dates: missing, unanswered: Object.fromEntries([...RATINGS, 'sleep_hours'].map(k => [k, rows.filter(r => r[k] === null).length])) },
         ratings: RATINGS.map(key => { const v = rows.map(r => r[key]).filter(x => x !== null); return { key, answered_days: v.length, mean: mean(v), min: v.length ? Math.min(...v) : null, max: v.length ? Math.max(...v) : null, first: v[0] ?? null, last: v.at(-1) ?? null }; }),
         weekly: [], sleep: { answered_days: hours.length, mean_hours: mean(hours), min_hours: hours.length ? Math.min(...hours) : null, max_hours: hours.length ? Math.max(...hours) : null, quality_answered_days: quality.length, mean_quality: mean(quality) },
