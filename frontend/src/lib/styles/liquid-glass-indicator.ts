@@ -78,12 +78,10 @@ export function enhanceNavigation(nav: HTMLElement, settings: GlassSettings) {
 function build(nav: HTMLElement, links: HTMLAnchorElement[], settings: GlassSettings) {
   const indicator = createIndicator(nav, links, settings);
   nav.classList.add('rn-liquid-navigation');
-  const currentIndex = () => links.findIndex(link => link.getAttribute('aria-current') === 'page');
-  // On a page that has no link here (e.g. settings, reached from the account row) the lens rests hidden instead of on the first link.
-  const rest = (immediate = false) => { const index = currentIndex(); nav.toggleAttribute('data-idle', index < 0); indicator.move(Math.max(0, index), immediate); };
-  const restore = () => { indicator.press(0); rest(); };
+  const currentIndex = () => Math.max(0, links.findIndex(link => link.getAttribute('aria-current') === 'page'));
+  const restore = () => { indicator.press(0); indicator.move(currentIndex()); };
   const handlers = links.map((link, index) => {
-    const move = () => { nav.removeAttribute('data-idle'); indicator.move(index); };
+    const move = () => indicator.move(index);
     const down = () => indicator.press(1);
     link.addEventListener('pointerenter', move); link.addEventListener('focus', move); link.addEventListener('pointerdown', down);
     return () => { link.removeEventListener('pointerenter', move); link.removeEventListener('focus', move); link.removeEventListener('pointerdown', down); };
@@ -94,9 +92,9 @@ function build(nav: HTMLElement, links: HTMLAnchorElement[], settings: GlassSett
   links.forEach(link => observer.observe(link, { attributes: true, attributeFilter: ['aria-current'] }));
   nav.addEventListener('pointerleave', restore); nav.addEventListener('focusout', focusOut);
   window.addEventListener('pointerup', release); window.addEventListener('pointercancel', release); window.addEventListener('blur', restore);
-  rest(true);
+  indicator.move(currentIndex(), true);
   return { update: indicator.update, destroy() {
-    observer.disconnect(); handlers.forEach(remove => remove()); indicator.destroy(); nav.classList.remove('rn-liquid-navigation'); nav.removeAttribute('data-idle');
+    observer.disconnect(); handlers.forEach(remove => remove()); indicator.destroy(); nav.classList.remove('rn-liquid-navigation');
     nav.removeEventListener('pointerleave', restore); nav.removeEventListener('focusout', focusOut);
     window.removeEventListener('pointerup', release); window.removeEventListener('pointercancel', release); window.removeEventListener('blur', restore);
   } };
