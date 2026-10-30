@@ -12,11 +12,12 @@ from typing import Literal
 from pydantic import BaseModel
 
 from app.modules.wellbeing.model import DailyEntry, DoseEvent, SymptomEvent
-from app.modules.wellbeing.schema import DoseView, SymptomStat, SymptomView
+from app.modules.wellbeing.schema import DoseView, SymptomStat, SymptomView, TrendDay
 from app.modules.wellbeing.service import (
     RATING_FIELDS,
     account_zone,
     check_range,
+    daily_series,
     dose_view,
     range_entries,
     range_events,
@@ -103,6 +104,7 @@ class Report(BaseModel):
     timezone: str
     generated_on: date
     coverage: Coverage
+    series: list[TrendDay]
     ratings: list[RatingStat]
     weekly: list[WeekStat]
     sleep: SleepStat
@@ -245,6 +247,9 @@ def build_report(db, user, start: date, end: date, now: datetime) -> Report:
             days_without_entry=len(missing),
             missing_dates=missing,
             unanswered=unanswered,
+        ),
+        series=daily_series(
+            {row.entry_date: row for row in entries}, doses, symptoms, start, len(span)
         ),
         ratings=_rating_stats(entries),
         weekly=_weekly(entries),

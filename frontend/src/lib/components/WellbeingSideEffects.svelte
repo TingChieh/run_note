@@ -3,13 +3,14 @@
   import { cubicIn, cubicOut } from 'svelte/easing';
   import { fly } from 'svelte/transition';
   import WellbeingTile from './WellbeingTile.svelte';
+  import { OUTER, centre, polar, slice } from './wellbeing-wheel.ts';
   import { ActivityError } from '#lib/api/activities.ts';
   import { readDay, type TrendDay } from '#lib/api/wellbeing.ts';
-  // A wide widget: on the left the days of the chosen range (7, 14 or 30) as the history calendar's small rings, on the right what was recorded on the chosen day (names only, no counts).
+  // A wide widget: on the left the days of the chosen range (7 or 14 as one big circle of slices, 30 as the history calendar's small rings), on the right what was recorded on the chosen day (names only, no counts).
   let { series }: { series: TrendDay[] } = $props();
   const week = $derived(series);
   /** Empty cells before the first day, so each day sits under its weekday (weeks start on Monday, like the history calendar). */
-  const withWeekdays = $derived(week.length > 7); // a single week needs no weekday header; longer ranges line the days up under theirs
+  const withWeekdays = $derived(week.length > 14); // a week or a fortnight is one big circle and needs no weekday header; longer ranges line the days up under theirs
   const lead = $derived(withWeekdays && week.length ? (new Date(`${week[0].date}T00:00:00Z`).getUTCDay() + 6) % 7 : 0);
   const WEEKDAY_HEAD = ['一', '二', '三', '四', '五', '六', '日'];
   const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
@@ -35,17 +36,6 @@
   // A day's names are read once per set of data: new data (another range, a save elsewhere) starts again, and the chosen day is read again.
   $effect(() => { void series; const date = selected; untrack(() => { names = {}; if (date) void load(date); }); });
   const list = $derived(selected ? names[selected] : undefined);
-  /** The week as one big circle of slices: the shape of slice `index` of `count` (a ring segment with a small gap on either side), clockwise from the top. */
-  const OUTER = 45, INNER = 30, GAP = 1.6;
-  const polar = (radius: number, degrees: number) => [50 + radius * Math.cos(degrees * Math.PI / 180), 50 + radius * Math.sin(degrees * Math.PI / 180)];
-  function slice(index: number, count: number): string {
-    const step = 360 / count, from = -90 + index * step + GAP / 2, to = -90 + (index + 1) * step - GAP / 2;
-    const [x0, y0] = polar(OUTER, from), [x1, y1] = polar(OUTER, to), [x2, y2] = polar(INNER, to), [x3, y3] = polar(INNER, from);
-    const large = to - from > 180 ? 1 : 0;
-    return `M${x0} ${y0}A${OUTER} ${OUTER} 0 ${large} 1 ${x1} ${y1}L${x2} ${y2}A${INNER} ${INNER} 0 ${large} 0 ${x3} ${y3}Z`;
-  }
-  /** The middle of a slice, in percent of the wheel: where its number goes. */
-  const centre = (index: number, count: number) => polar((OUTER + INNER) / 2, -90 + (index + 0.5) * (360 / count));
   // Choosing a later day slides its record in from the right, an earlier one from the left; reduced motion skips it.
   let direction = $state(1);
   const motionMs = (ms: number) => matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : ms;
@@ -70,7 +60,7 @@
   </button>
 {/snippet}
 
-<!-- One widget: the days of the range on the left (a week as a circle, longer ranges as the history calendar's rings), what was recorded on the chosen day on the right. -->
+<!-- One widget: the days of the range on the left (a week or a fortnight as a circle, longer ranges as the history calendar's rings), what was recorded on the chosen day on the right. -->
 <WellbeingTile metric="effects" title="副作用" testid="wellbeing-side-effects">
   <div class="layout">
     {#if withWeekdays}
@@ -80,7 +70,7 @@
         {#each week as day (day.date)}{@render dayButton(day)}{/each}
       </div>
     {:else}
-      <!-- A week is one big circle cut into seven slices (the oldest day at the top, going clockwise): choose a day by its slice, the chosen day is named in the middle. -->
+      <!-- A week or a fortnight is one big circle cut into seven or fourteen slices (the oldest day at the top, going clockwise): choose a day by its slice, the chosen day is named in the middle. -->
       <div class="wheel" role="group" aria-label={`近 ${week.length} 天，选一天查看那天的副作用`}>
         <svg class="slices" viewBox="0 0 100 100">
           {#each week as day, index (day.date)}
@@ -120,12 +110,12 @@
 </WellbeingTile>
 
 <style>
-  /* The widget is one cell of the grid, as big as the charts beside it: the calendar (the 7, 14 or 30 days of the range) is on the left and what was recorded on the chosen day is written on the right; only a very narrow widget stacks them. */
+  /* The widget is one cell of the grid, as big as the charts beside it: the days of the range (7 or 14 as a circle, 30 as a calendar) are on the left and what was recorded on the chosen day is written on the right; only a very narrow widget stacks them. */
   .layout { display: grid; gap: var(--space-4) var(--space-6); min-width: 0; align-items: start; }
   @container (min-width: 26rem) { .layout { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); } }
   .calendar { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); justify-items: center; row-gap: var(--space-1); }
-  /* The week as one big circle of seven slices. Grey: nothing recorded; tinted: side effects that day; green: the chosen day. */
-  .wheel { position: relative; width: min(100%, 15rem); aspect-ratio: 1; margin-inline: auto; }
+  /* The week (or fortnight) as one big circle of slices. Grey: nothing recorded; tinted: side effects that day; green: the chosen day. */
+  .wheel { position: relative; width: min(100%, 16rem); aspect-ratio: 1; margin-inline: auto; }
   .slices { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; box-shadow: none; }
   .slice { --slice: color-mix(in srgb, var(--border) 85%, var(--surface)); cursor: pointer; outline: none; }
   .slice path { fill: var(--slice); stroke: var(--slice); stroke-width: 1.2; stroke-linejoin: round; transition: fill var(--transition-control), stroke var(--transition-control), transform 300ms var(--motion-popover-enter-ease); transform-box: fill-box; transform-origin: 50% 50%; }

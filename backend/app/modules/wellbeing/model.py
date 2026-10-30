@@ -104,6 +104,7 @@ class SymptomEvent(Base):
     __tablename__ = "wellbeing_symptom_events"
     __table_args__ = (
         Index("ix_wellbeing_symptom_events_user_date", "user_id", "entry_date"),
+        Index("ix_wellbeing_symptom_events_dose", "dose_id"),
         CheckConstraint("char_length(symptom) >= 1", name="symptom_present"),
         CheckConstraint("severity BETWEEN 0 AND 10", name="severity_range"),
         CheckConstraint(
@@ -115,6 +116,10 @@ class SymptomEvent(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     entry_date: Mapped[date] = mapped_column(Date)
+    # The dose this side effect was noted for; deleting the dose takes its side effects with it.
+    dose_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("wellbeing_dose_events.id", ondelete="CASCADE")
+    )
     symptom: Mapped[str] = mapped_column(String(40))
     severity: Mapped[int | None] = mapped_column(SmallInteger)
     onset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

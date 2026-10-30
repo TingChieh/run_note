@@ -9,12 +9,12 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 
 from app.core.errors import ApiError
-from app.modules.wellbeing.model import DoseEvent, Medication, StockMovement
+from app.modules.wellbeing.model import DoseEvent, Medication, StockMovement, SymptomEvent
 from app.modules.wellbeing.schema import (
     BatchDoseInput,
     BatchDoseResult,
@@ -312,6 +312,12 @@ def update_dose(db, user, identifier: UUID, payload: DosePatch, now: datetime) -
     if "taken_at" in changes:
         check_instant(row.taken_at, now)
         row.entry_date = row.taken_at.astimezone(account_zone(user)).date()
+        # Side effects noted for this dose move to the dose's new day with it.
+        db.execute(
+            update(SymptomEvent)
+            .where(SymptomEvent.dose_id == row.id)
+            .values(entry_date=row.entry_date)
+        )
     db.flush()
     db.refresh(row)
     return dose_view(row)

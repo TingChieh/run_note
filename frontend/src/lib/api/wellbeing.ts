@@ -10,7 +10,7 @@ export type TrendDays = 7 | 14 | 30;
 export interface Entry { entry_date: string; mood: number | null; anxiety: number | null; energy: number | null; focus: number | null; functioning: number | null; sleep_hours: number | null; sleep_quality: number | null; note: string | null; updated_at: string }
 /** One intake: a pill count (the usual way), and/or an amount with a unit (derived from the strength of one pill, or typed). */
 export interface Dose { id: string; entry_date: string; medication_name: string; medication_id: string | null; pills: number | null; dose_amount: number | null; dose_unit: string | null; taken_at: string; regimen: Regimen; note: string | null }
-export interface Symptom { id: string; entry_date: string; symptom: string; severity: number | null; onset_at: string | null; duration_minutes: number | null; affects_daily_life: boolean | null }
+export interface Symptom { id: string; entry_date: string; dose_id: string | null; symptom: string; severity: number | null; onset_at: string | null; duration_minutes: number | null; affects_daily_life: boolean | null }
 export interface DayData { date: string; today: string; timezone: string; entry: Entry | null; doses: Dose[]; symptoms: Symptom[] }
 export interface DayMark { date: string; has_entry: boolean; dose_count: number; symptom_count: number }
 export interface EntryList { items: Entry[]; total: number; limit: number; offset: number }
@@ -32,6 +32,7 @@ export interface PrecedingDose { medication_name: string; minutes_before: number
 export interface SymptomEvent extends Symptom { preceding_dose: PrecedingDose | null }
 export interface Report {
   start: string; end: string; timezone: string; generated_on: string;
+  series: TrendDay[];
   coverage: { days_in_range: number; days_with_entry: number; days_without_entry: number; missing_dates: string[]; unanswered: Record<string, number> };
   ratings: RatingStat[];
   weekly: { week_start: string; entries: number; mood_mean: number | null; anxiety_mean: number | null }[];
@@ -42,7 +43,7 @@ export interface Report {
 /** The answers of one day's form. `null` means unanswered and is saved as NULL, never 0. */
 export type EntryDraft = Pick<Entry, RatingKey | 'sleep_hours' | 'note'>;
 export interface DoseDraft { medication_name: string; medication_id?: string | null; pills?: number | null; dose_amount?: number | null; dose_unit?: string | null; taken_at: string; regimen: Regimen; note: string | null }
-export interface SymptomDraft { entry_date: string; symptom: string; severity?: number | null; onset_at: string | null; duration_minutes: number | null; affects_daily_life: boolean | null }
+export interface SymptomDraft { entry_date: string; dose_id?: string | null; symptom: string; severity?: number | null; onset_at: string | null; duration_minutes: number | null; affects_daily_life: boolean | null }
 
 export const RATING_LABELS: Record<RatingKey, { name: string; direction: 'worse' | 'better'; hint: string; low: string; high: string }> = {
   mood: { name: '开心程度', direction: 'better', hint: '越高越开心', low: '很不开心', high: '非常开心' },
@@ -86,7 +87,7 @@ export function parseDose(v: unknown): Dose {
   return v as unknown as Dose;
 }
 export function parseSymptom(v: unknown): Symptom {
-  if (!object(v) || typeof v.id !== 'string' || !uuid.test(v.id) || !isoDate(v.entry_date) || !text(v.symptom, 40) || !(v.symptom as string).length || !rating(v.severity)
+  if (!object(v) || typeof v.id !== 'string' || !uuid.test(v.id) || !isoDate(v.entry_date) || !(v.dose_id === null || (typeof v.dose_id === 'string' && uuid.test(v.dose_id))) || !text(v.symptom, 40) || !(v.symptom as string).length || !rating(v.severity)
     || !(v.onset_at === null || instant(v.onset_at)) || !(v.duration_minutes === null || (count(v.duration_minutes) && Number(v.duration_minutes) >= 1 && Number(v.duration_minutes) <= 10080))
     || !(v.affects_daily_life === null || typeof v.affects_daily_life === 'boolean')) invalid();
   return v as unknown as Symptom;
@@ -131,13 +132,17 @@ const parseStat = (v: unknown): SymptomStat => {
   if (!object(v) || !text(v.symptom, 40) || !count(v.count) || !count(v.days) || !finite(v.avg_severity, true) || !rating(v.max_severity) || !count(v.affects_daily_life_count)) invalid();
   return v as unknown as SymptomStat;
 };
-export function parseTrends(v: unknown, days: TrendDays): Trends {
-  if (!object(v) || v.days !== days || !isoDate(v.start) || !isoDate(v.end) || typeof v.timezone !== 'string' || !count(v.recorded_days) || !Array.isArray(v.series) || v.series.length !== days) invalid();
-  const series = (v.series as unknown[]).map((item, i) => {
+/** The daily points of a range: one per day in order, each rating a whole number 0–10 or null (a gap, never 0). */
+function parseSeries(items: unknown[]): TrendDay[] {
+  return items.map((item, i) => {
     if (!object(item) || !isoDate(item.date) || !RATING_KEYS.every(k => rating(item[k])) || !finite(item.sleep_hours, true) || !count(item.dose_count) || !count(item.symptom_count) || !rating(item.symptom_max_severity)) invalid();
-    if (i > 0 && Date.parse(`${item.date}T00:00:00Z`) - Date.parse(`${(v.series as { date: string }[])[i - 1].date}T00:00:00Z`) !== 86400000) invalid();
+    if (i > 0 && Date.parse(`${item.date}T00:00:00Z`) - Date.parse(`${(items[i - 1] as { date: string }).date}T00:00:00Z`) !== 86400000) invalid();
     return item as unknown as TrendDay;
   });
+}
+export function parseTrends(v: unknown, days: TrendDays): Trends {
+  if (!object(v) || v.days !== days || !isoDate(v.start) || !isoDate(v.end) || typeof v.timezone !== 'string' || !count(v.recorded_days) || !Array.isArray(v.series) || v.series.length !== days) invalid();
+  const series = parseSeries(v.series as unknown[]);
   if (series[0].date !== v.start || series[days - 1].date !== v.end) invalid();
   return { days, start: v.start as string, end: v.end as string, timezone: v.timezone as string, recorded_days: v.recorded_days as number, series, symptoms: list(v.symptoms, parseStat) };
 }
@@ -145,7 +150,10 @@ function parseReport(v: unknown): Report {
   if (!object(v) || !isoDate(v.start) || !isoDate(v.end) || !isoDate(v.generated_on) || typeof v.timezone !== 'string') invalid();
   const r = v as Record<string, unknown>;
   const c = r.coverage;
+  if (!Array.isArray(r.series)) invalid();
+  const series = parseSeries(r.series);
   if (!object(c) || !count(c.days_in_range) || !count(c.days_with_entry) || !count(c.days_without_entry) || !Array.isArray(c.missing_dates) || !c.missing_dates.every(isoDate) || !object(c.unanswered)) invalid();
+  if (!object(c) || series.length !== c.days_in_range || series[0].date !== v.start || series[series.length - 1].date !== v.end) invalid();
   if (!Array.isArray(r.ratings) || r.ratings.length !== RATING_KEYS.length || !r.ratings.every((item, i) => object(item) && item.key === RATING_KEYS[i] && count(item.answered_days) && finite(item.mean, true) && rating(item.min) && rating(item.max) && rating(item.first) && rating(item.last))) invalid();
   if (!Array.isArray(r.weekly) || !r.weekly.every(w => object(w) && isoDate(w.week_start) && count(w.entries) && finite(w.mood_mean, true) && finite(w.anxiety_mean, true))) invalid();
   const s = r.sleep;
@@ -159,7 +167,7 @@ function parseReport(v: unknown): Report {
     return { ...symptom, preceding_dose: p as PrecedingDose | null };
   });
   if (!Array.isArray(r.notes) || !r.notes.every(n => object(n) && isoDate(n.date) && text(n.note, 2000))) invalid();
-  return { ...(r as unknown as Report), doses: list(r.doses, parseDose), symptoms: list(r.symptoms, parseStat), symptom_events: events };
+  return { ...(r as unknown as Report), series, doses: list(r.doses, parseDose), symptoms: list(r.symptoms, parseStat), symptom_events: events };
 }
 
 const BASE = '/api/v1/me/wellbeing';

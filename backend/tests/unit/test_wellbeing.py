@@ -45,7 +45,7 @@ def test_migration_ddl_matches_models_and_downgrade_refuses_real_data(monkeypatc
     with Operations.context(context):
         module.upgrade()
     sql = output.getvalue()
-    later = {"pills", "medication_id", "mood"}  # added or renamed by a later migration
+    later = {"pills", "medication_id", "mood", "dose_id"}  # added or renamed by a later migration
     for name in module.TABLES:
         assert f"CREATE TABLE {name}" in sql
         columns = Base.metadata.tables[name].columns
@@ -534,6 +534,24 @@ def test_severity_migration_is_linear_short_and_refuses_to_invent_scores():
     assert len(module.revision) <= 32  # alembic_version.version_num is varchar(32)
     text = source.read_text()
     assert "RuntimeError" in text and "severity IS NULL" in text
+
+
+def test_effect_dose_migration_backfills_only_unambiguous_days():
+    source = Path(__file__).parents[2] / "migrations/versions/0025_wellbeing_effect_dose.py"
+    spec = importlib.util.spec_from_file_location("wellbeing_effect_dose_migration", source)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.down_revision == "0024_wellbeing_severity_null"
+    assert len(module.revision) <= 32  # alembic_version.version_num is varchar(32)
+    text = source.read_text()
+    assert ") = 1" in text  # only a day with exactly one dose is linked automatically
+    assert "RuntimeError" in text and "dose_id IS NOT NULL" in text
+
+
+def test_symptom_input_may_name_its_dose():
+    assert (
+        SymptomInput.model_validate({"entry_date": "2026-10-29", "symptom": "头晕"}).dose_id is None
+    )
 
 
 def test_mood_migration_renames_and_flips_the_scale_and_downgrade_flips_it_back():

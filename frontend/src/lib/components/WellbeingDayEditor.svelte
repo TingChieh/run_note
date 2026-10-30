@@ -46,10 +46,10 @@
   const progress = $derived(answeredCount(data?.entry ?? null));
   const status = $derived(!data ? '' : !data.entry && !doses.length && !symptoms.length ? (isToday ? '今天还没有记录' : '这一天还没有记录') : `已记录 ${progress.answered}/${progress.total} 项状态 · ${doses.length} 次服药 · ${symptoms.length} 条副作用`);
   /** One-tap side effects for the dose being written: the ones noted for that medicine first, then the built-in common ones, then the user's own; each once (any case). */
-  function effectChoices(form: { medicationId: string | null; name: string }) {
+  function effectChoices(form: { medicationId: string | null; name: string; effects?: string[] }) {
     const own = (medications.find(m => m.id === form.medicationId) ?? known(form.name))?.side_effects ?? [];
     const seen = new Set<string>();
-    return [...own, ...COMMON_SYMPTOMS, ...symptomNames.map(item => item.name)].filter(name => { const key = name.toLowerCase(); if (seen.has(key)) return false; seen.add(key); return true; });
+    return [...own, ...COMMON_SYMPTOMS, ...symptomNames.map(item => item.name), ...(form.effects ?? [])].filter(name => { const key = name.toLowerCase(); if (seen.has(key)) return false; seen.add(key); return true; });
   }
   const refreshLists = () => {
     void readMedications().then(list => { if (!disposed) medications = list; }).catch(() => { /* Shortcuts are optional. */ });
@@ -80,7 +80,22 @@
     if (saving || !data) return;
     const clean = normalizeDraft(draft);
     saveError = ''; saved = ''; conflict = false;
-    if (draftEmpty(clean)) { saveError = '请至少填写一项，再保存'; return; }
+    if (draftEmpty(clean)) {
+      // A day that already has a dose (or a side effect) needs no state row: emptying the answers just removes it.
+      if (!doses.length && !symptoms.length) { saveError = '请至少填写一项状态、写点备注或记录一次服药，再保存'; return; }
+      saving = true;
+      const mine = token;
+      try {
+        if (data.entry) await deleteEntry(data.date);
+        if (disposed || mine !== token) return;
+        data = { ...data, entry: null }; draft = emptyDraft(); base = emptyDraft(); basedOn = null; saved = '已保存'; onchanged?.();
+      } catch (cause) {
+        if (disposed || mine !== token) return;
+        if (cause instanceof ActivityError && cause.status === 401) { fail401(); return; }
+        saveError = cause instanceof Error ? cause.message : '保存失败，请重试';
+      } finally { if (!disposed && mine === token) saving = false; }
+      return;
+    }
     if (clean.sleep_hours !== null && (clean.sleep_hours < 0 || clean.sleep_hours > 24)) { saveError = '睡眠时长需在 0 到 24 小时之间'; return; }
     saving = true;
     const mine = token;
@@ -114,13 +129,40 @@
   const reload = () => { void load(day); };
   const motionMs = (ms: number) => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : ms;
 
+  /** Keeps one dose's side-effect tags on a single line: the tags that do not fit are hidden whole and a "+N" tag says how many (a lone long tag is cut inside its own pill). */
+  function fitTags(node: HTMLElement, _names: string) {
+    const fit = () => {
+      const tags = [...node.querySelectorAll<HTMLElement>('.tag:not(.more)')], more = node.querySelector<HTMLElement>('.more');
+      if (!more || !tags.length) return;
+      node.dataset.measuring = '';
+      for (const tag of tags) tag.hidden = false;
+      more.hidden = true;
+      const over = () => node.scrollWidth > node.clientWidth + 1;
+      if (over()) {
+        more.hidden = false;
+        let shown = tags.length;
+        while (shown > 1) { shown--; tags[shown].hidden = true; more.textContent = `+${tags.length - shown}`; if (!over()) break; }
+        if (shown === 1) more.textContent = `+${tags.length - 1}`;
+      }
+      delete node.dataset.measuring;
+    };
+    fit();
+    const watch = typeof ResizeObserver === 'function' ? new ResizeObserver(fit) : null;
+    watch?.observe(node);
+    return { update: () => { requestAnimationFrame(fit); }, destroy: () => { watch?.disconnect(); } };
+  }
+
   // ---- doses ----
+  /** The side effects noted for one dose; they are shown in its capsule and edited in its dialog. */
+  const effectsOf = (doseId: string) => symptoms.filter(s => s.dose_id === doseId);
+  /** Side effects of earlier days' records that were never tied to a dose (only old data). */
+  const loose = $derived(symptoms.filter(s => s.dose_id === null || !doses.some(d => d.id === s.dose_id)));
   const defaultTime = () => data && data.date === data.today ? localInput(new Date(), timezone) : `${data?.date ?? day}T08:00`;
   function openDose(dose?: Dose) {
     const trim = (n: number) => String(+n.toFixed(2));
     doseForm = dose
       // An old dose given only as an amount and unit keeps them; one with a pill count is edited by pills.
-      ? { id: dose.id, medicationId: dose.medication_id, name: dose.medication_name, custom: !medications.some(m => m.id === dose.medication_id), pills: dose.pills === null ? '' : trim(dose.pills), keepAmount: dose.pills === null && dose.dose_amount !== null && dose.dose_unit ? { amount: dose.dose_amount, unit: dose.dose_unit } : null, time: localInput(dose.taken_at, timezone), regimen: dose.regimen, note: dose.note ?? '', effects: [], other: '' }
+      ? { id: dose.id, medicationId: dose.medication_id, name: dose.medication_name, custom: !medications.some(m => m.id === dose.medication_id), pills: dose.pills === null ? '' : trim(dose.pills), keepAmount: dose.pills === null && dose.dose_amount !== null && dose.dose_unit ? { amount: dose.dose_amount, unit: dose.dose_unit } : null, time: localInput(dose.taken_at, timezone), regimen: dose.regimen, note: dose.note ?? '', effects: effectsOf(dose.id).map(s => s.symptom), other: '' }
       : { id: null, medicationId: null, name: '', custom: false, pills: '', keepAmount: null, time: defaultTime(), regimen: 'scheduled', note: '', effects: [], other: '' };
     doseSnapshot = JSON.stringify(doseForm); eventError = '';
   }
@@ -161,13 +203,22 @@
       doses = (form.id ? doses.map(d => d.id === result.id ? result : d) : [...doses, result]).filter(d => d.entry_date === data!.date).sort((a, b) => Date.parse(a.taken_at) - Date.parse(b.taken_at));
       doseForm = null; onchanged?.();
       refreshLists();
-      // The side effects written with the dose are recorded for the day, each on its own.
-      for (const name of names) {
-        const symptom = await createSymptom({ entry_date: data.date, symptom: name, onset_at: null, duration_minutes: null, affects_daily_life: null });
+      // The side effects belong to this dose: the ones no longer ticked are removed, the new ones are added, each on its own.
+      const has = (list: string[], name: string) => list.some(n => n.toLowerCase() === name.toLowerCase());
+      const kept = form.id ? effectsOf(result.id) : [];
+      const gone = kept.filter(s => !has(names, s.symptom));
+      const added = names.filter(name => !kept.some(s => s.symptom.toLowerCase() === name.toLowerCase()));
+      for (const symptom of gone) {
+        await deleteSymptom(symptom.id);
+        if (disposed || mine !== token) return;
+        symptoms = symptoms.filter(s => s.id !== symptom.id);
+      }
+      for (const name of added) {
+        const symptom = await createSymptom({ entry_date: data.date, dose_id: result.id, symptom: name, onset_at: null, duration_minutes: null, affects_daily_life: null });
         if (disposed || mine !== token) return;
         symptoms = [...symptoms, symptom];
       }
-      if (names.length) onchanged?.();
+      if (gone.length || added.length) onchanged?.();
     } catch (cause) {
       if (disposed || mine !== token) return;
       if (cause instanceof ActivityError && cause.status === 401) { fail401(); return; }
@@ -179,7 +230,7 @@
     if (confirming !== dose.id) { confirming = dose.id; return; }
     eventBusy = true; eventError = '';
     const mine = token;
-    try { await deleteDose(dose.id); if (disposed || mine !== token) return; doses = doses.filter(d => d.id !== dose.id); confirming = ''; onchanged?.(); }
+    try { await deleteDose(dose.id); if (disposed || mine !== token) return; doses = doses.filter(d => d.id !== dose.id); symptoms = symptoms.filter(s => s.dose_id !== dose.id); confirming = ''; onchanged?.(); }
     catch (cause) { if (!disposed && mine === token) { if (cause instanceof ActivityError && cause.status === 401) { fail401(); return; } eventError = cause instanceof Error ? cause.message : '删除失败，请重试'; } }
     finally { if (!disposed && mine === token) eventBusy = false; }
   }
@@ -230,13 +281,14 @@
               <ul class="rows">
                 {#each doses as dose (dose.id)}
                   {@const unit = medications.find(m => m.id === dose.medication_id)?.count_unit ?? '颗'}
-                  <li class="row-item" data-testid="wellbeing-dose">
+                  <li class="row-item" class:with-effects={effectsOf(dose.id).length > 0} data-testid="wellbeing-dose">
                     <!-- Read aloud as one sentence; the columns beside it are for the eyes. -->
-                    <span class="sr-only">{dose.medication_name} · {doseText(dose, unit)} · {dose.regimen === 'scheduled' ? '常规' : '按需'} · {timeLabel(dose.taken_at, timezone)}{#if dose.note} · {dose.note}{/if}</span>
+                    <span class="sr-only">{dose.medication_name} · {doseText(dose, unit)} · {dose.regimen === 'scheduled' ? '常规' : '按需'} · {timeLabel(dose.taken_at, timezone)}{#if dose.note} · {dose.note}{/if}{#if effectsOf(dose.id).length} · 副作用：{effectsOf(dose.id).map(s => s.symptom).join('、')}{/if}</span>
                     <div class="dose" aria-hidden="true">
                       <div class="main">
                         <p class="line1"><strong>{dose.medication_name}</strong> <span class="amount">{dose.pills !== null ? `${+dose.pills.toFixed(2)} ${unit}` : `${dose.dose_amount} ${dose.dose_unit}`}</span></p>
                         <p class="line2"><span class="time">{timeLabel(dose.taken_at, timezone)}</span> · {#if dose.pills !== null && dose.dose_amount !== null}{+dose.dose_amount.toFixed(3)} {dose.dose_unit} · {/if}{dose.regimen === 'scheduled' ? '常规' : '按需'}{#if dose.note} · {dose.note}{/if}</p>
+                        {#if effectsOf(dose.id).length}<p class="line3" data-testid="wellbeing-symptoms" use:fitTags={effectsOf(dose.id).map(s => s.symptom).join('、')} title={effectsOf(dose.id).map(s => s.symptom).join('、')}>{#each effectsOf(dose.id) as symptom (symptom.id)}<span class="tag" data-testid="wellbeing-symptom">{symptom.symptom}</span>{/each}<span class="tag more" data-testid="wellbeing-symptom-more" hidden></span></p>{/if}
                       </div>
                     </div>
                     <div class="row-actions">
@@ -252,10 +304,10 @@
                 {/each}
               </ul>
             {:else}<p class="empty">这一天还没有服药记录，点标题右边的 + 添加。</p>{/if}
-            {#if symptoms.length}
-              <ul class="effects" aria-label="这一天记录的副作用" data-testid="wellbeing-symptoms">
-                {#each symptoms as symptom (symptom.id)}
-                  <li class="effect" data-testid="wellbeing-symptom"><span>{symptom.symptom}</span>
+            {#if loose.length}
+              <ul class="effects" aria-label="没有关联到某次服药的副作用" data-testid="wellbeing-loose-symptoms">
+                {#each loose as symptom (symptom.id)}
+                  <li class="effect" data-testid="wellbeing-loose-symptom"><span>{symptom.symptom}</span>
                     {#if confirming === symptom.id}
                       <button type="button" class="mini danger-fill" disabled={eventBusy} onclick={() => { void removeSymptom(symptom); }} aria-label={`确认删除 ${symptom.symptom} 记录`}>确认删除</button>
                       <button type="button" class="mini" onclick={() => { confirming = ''; }} aria-label="取消删除">取消</button>
@@ -365,6 +417,14 @@
   .dose .line1 strong { font-size: var(--text-body); font-weight: var(--weight-semibold); }
   .dose .line1 .amount { font-size: var(--text-body); font-variant-numeric: tabular-nums; }
   .dose .line2 { color: var(--muted-foreground); font-size: var(--text-caption); }
+  /* The side effects noted for this dose, in the capsule under it, in the side-effect colour. */
+  /* One row of tags: the whole tags that fit, then "+N"; only the first may shrink (and be cut) when even one does not fit. */
+  .dose .main p.line3 { display: flex; gap: var(--space-1); margin-top: var(--space-1); }
+  .dose .tag { flex: none; }
+  .dose .line3:not([data-measuring]) .tag:first-child { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* A capsule with side effects is taller, so it is a rounded card-shaped capsule with more room before the text, not a full pill whose curve crowds it. */
+  .row-item.with-effects { padding-block: var(--space-2); padding-left: calc(var(--space-4) + var(--space-1)); border-radius: 1.75rem; }
+  .dose .tag { padding: 0 var(--space-2); border-radius: var(--radius-pill); background: color-mix(in srgb, var(--well-effect) 16%, var(--surface)); color: var(--well-effect); font-size: var(--text-caption); font-weight: var(--weight-semibold); }
   .row-item .icon, .row-item .mini { height: 2rem; }
   .row-item .icon { width: 2rem; }
   .row-actions { display: flex; flex: none; align-items: center; gap: var(--space-1); }

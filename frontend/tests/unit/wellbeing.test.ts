@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   batchDoses, countMedication, restockMedication, addDays, answeredCount, hoursText, createDose, dateLabel, deleteEntry, downloadCsv, draftChanged, draftEmpty, draftOf, durationLabel, emptyDraft, gapLabel, instantFromLocal, localInput, monthBounds,
-  normalizeDraft, parseDay, parseDose, parseEntry, parseMedication, parseSymptomName, doseText, pillsText, stockText, supplyText, parseTrends, precedingDose, readDay, readTrends, saveEntry, shiftMonth, todayIn, type Dose
+  normalizeDraft, parseDay, parseDose, parseEntry, parseMedication, parseSymptom, parseSymptomName, doseText, pillsText, stockText, supplyText, parseTrends, precedingDose, readDay, readTrends, saveEntry, shiftMonth, todayIn, type Dose
 } from '../../src/lib/api/wellbeing';
 import { ActivityError } from '../../src/lib/api/activities';
 import { isProtected } from '../../src/lib/api/auth';
@@ -187,6 +187,15 @@ describe('time helpers', () => {
     expect(durationLabel(90)).toBe('1 小时 30 分钟');
     expect(gapLabel(45)).toBe('45 分钟前');
     expect(gapLabel(120)).toBe('2 小时前');
+  });
+});
+
+describe('a side effect names its dose', () => {
+  const symptom = (over: Record<string, unknown> = {}) => ({ id: ID, entry_date: '2026-10-10', dose_id: null, symptom: '头晕', severity: null, onset_at: null, duration_minutes: null, affects_daily_life: null, ...over });
+  it('accepts a dose id or none, and rejects anything else', () => {
+    expect(parseSymptom(symptom()).dose_id).toBeNull();
+    expect(parseSymptom(symptom({ dose_id: ID })).dose_id).toBe(ID);
+    for (const bad of [symptom({ dose_id: 'x' }), symptom({ dose_id: 3 }), (({ dose_id, ...rest }) => rest)(symptom())]) expect(() => parseSymptom(bad)).toThrow(ActivityError);
   });
 });
 

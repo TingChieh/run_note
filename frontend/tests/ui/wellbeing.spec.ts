@@ -45,6 +45,22 @@ async function ringPoint(locator: Locator, fraction: number, radius = 38) {
 }
 const pick = (page: Page, name: string, value: number) => slider(page, name).fill(String(value));
 
+/** Fills the synthetic account through its own API (as the page would): `days` back from today, with state answers, two medicines and a few side effects tied to doses. */
+async function seed(page: Page, days: number) {
+  await page.evaluate(async (count) => {
+    const csrf = (await (await fetch('/api/v1/auth/csrf')).json()).data.csrf_token;
+    const call = async (method: string, path: string, body: unknown) => (await (await fetch(`/api/v1/me/wellbeing${path}`, { method, headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify(body) })).json()).data;
+    const shift = (n: number) => new Date(Date.now() - n * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
+    for (let i = count - 1; i >= 0; i--) {
+      const date = shift(i), k = count - 1 - i;
+      if (k % 5 !== 4) await call('PUT', `/days/${date}/entry`, { mood: 4 + (k % 5), anxiety: 7 - (k % 4), energy: 3 + (k % 6), sleep_hours: 6 + (k % 3) * 0.5, sleep_quality: 5, note: k % 4 === 0 ? (k === 28 ? '短备注' : `第 ${k} 天的备注，比较长的一段文字用来测试展开和收起的效果，需要写得足够长，长到在电脑宽屏上也会排满两行以上，所以这里反复多写一些内容：睡得不太好，早上起来有点头晕，下午好一些，晚上又有些焦虑，但整体比前几天平稳，继续观察。第二天起来精神还可以，中午午睡了一会儿，傍晚散步半小时，回来之后吃了药，晚饭后没有再出现不舒服，睡前读了一会儿书，十一点前就睡着了，总体来说是平静的一天。`) : null });
+      const first = await call('POST', '/doses', { medication_name: '甲药', pills: k < count / 2 ? 1 : 2, taken_at: `${date}T00:05:00+08:00`, regimen: 'scheduled' });
+      if (k % 3 === 0) await call('POST', '/doses', { medication_name: '乙药', pills: 1, taken_at: `${date}T00:06:00+08:00`, regimen: 'as_needed' });
+      if (k % 4 === 1) await call('POST', '/symptoms', { entry_date: date, dose_id: first.id, symptom: k % 8 === 1 ? '头晕' : '恶心', onset_at: null, duration_minutes: null, affects_daily_life: null });
+    }
+  }, days);
+}
+
 test('anonymous visitors are sent to the sign-in page, never shown the diary', async ({ page }) => {
   const response = await page.goto('/wellbeing');
   await expect(page).toHaveURL(/\/admin\?next=%2Fwellbeing/);
@@ -207,7 +223,7 @@ test('many doses scroll inside the medication widget; it never grows taller than
   await open(page);
   const tile = page.locator('[data-metric="dose"]'), note = page.locator('[data-metric="note"]');
   const before = (await tile.boundingBox())!.height;
-  for (const time of ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00']) await addDose(page, { time });
+  for (const time of ['00:00', '00:01', '00:02', '00:03', '00:04', '00:05']) await addDose(page, { time });
   await expect(page.getByTestId('wellbeing-dose')).toHaveCount(6);
   const after = (await tile.boundingBox())!.height, list = page.getByTestId('wellbeing-dose-list');
   expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
@@ -270,10 +286,98 @@ test('side effects are written in the dose editor and listed in the same medicat
   await expect(page.getByTestId('wellbeing-doses').getByTestId('wellbeing-symptoms')).toBeVisible();
   await expect(page.getByTestId('wellbeing-add-symptom')).toHaveCount(0);
   await expect(page.locator('[data-metric="dose"]')).toHaveCount(1);
-  // Deleting takes two taps.
-  await page.getByRole('button', { name: '删除 头晕 记录' }).click();
-  await page.getByRole('button', { name: '确认删除 头晕 记录' }).click();
+  // Taking one off in the dose's own dialog removes it from the day.
+  await page.getByRole('button', { name: '编辑 示例药物 服药记录' }).click();
+  await expect(form.getByRole('button', { name: '头晕' })).toHaveAttribute('aria-pressed', 'true');
+  await form.getByRole('button', { name: '头晕' }).click();
+  await form.getByRole('button', { name: '保存修改' }).click();
+  await expect(form).toHaveCount(0);
   await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toHaveText('耳鸣');
+});
+
+test('every side effect sits inside the capsule of the dose it was written for, not in a list below', async ({ page }) => {
+  await open(page);
+  const add = async (name: string, effect: string) => {
+    await page.getByTestId('wellbeing-add-dose').click();
+    const form = page.getByTestId('wellbeing-dose-form');
+    const picker = form.getByTestId('wellbeing-dose-meds');
+    if (await picker.count()) await picker.getByRole('button', { name: '其他药物' }).click();
+    await form.getByLabel('药物名称').fill(name);
+    await form.getByLabel(/^吃了几/).fill('1');
+    await form.getByRole('button', { name: effect }).click();
+    await form.getByRole('button', { name: '保存服药' }).click();
+    await expect(form).toHaveCount(0);
+  };
+  await add('甲药', '恶心');
+  await add('乙药', '头晕');
+  const capsules = page.getByTestId('wellbeing-dose');
+  await expect(capsules).toHaveCount(2);
+  const first = capsules.filter({ hasText: '甲药' }), second = capsules.filter({ hasText: '乙药' });
+  await expect(first.getByTestId('wellbeing-symptom')).toHaveText('恶心');
+  await expect(second.getByTestId('wellbeing-symptom')).toHaveText('头晕');
+  // Nothing is listed outside a capsule, and the screen reader hears the side effect with its dose.
+  await expect(page.getByTestId('wellbeing-loose-symptoms')).toHaveCount(0);
+  await expect(first.locator('.sr-only')).toContainText('副作用：恶心');
+  const outside = await page.getByTestId('wellbeing-symptom').evaluateAll(els => els.filter(el => !el.closest('[data-testid="wellbeing-dose"]')).length);
+  expect(outside).toBe(0);
+  // Opening that dose again shows its side effects ticked, and deleting the dose takes them with it.
+  await page.getByRole('button', { name: '编辑 甲药 服药记录' }).click();
+  await expect(page.getByTestId('wellbeing-dose-form').getByRole('button', { name: '恶心' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('wellbeing-dose-form').getByRole('button', { name: '头晕' })).toHaveAttribute('aria-pressed', 'false');
+  await page.getByTestId('wellbeing-dose-form').getByRole('button', { name: '取消' }).click();
+  await page.getByRole('button', { name: '删除 甲药 服药记录' }).click();
+  await page.getByRole('button', { name: '确认删除 甲药 服药记录' }).click();
+  await expect(capsules).toHaveCount(1);
+  await expect(page.getByTestId('wellbeing-symptom')).toHaveCount(1);
+  await page.reload();
+  await expect(page.getByTestId('wellbeing-symptom')).toHaveText('头晕');
+});
+
+test('many side effects stay on one line in the capsule: whole tags that fit, then "+N", never a tag cut in half', async ({ page }) => {
+  await open(page);
+  await page.getByTestId('wellbeing-add-dose').click();
+  const form = page.getByTestId('wellbeing-dose-form');
+  await form.getByLabel('药物名称').fill('示例药物');
+  await form.getByLabel(/^吃了几/).fill('1');
+  for (const name of ['困倦、嗜睡', '恶心', '头痛', '心悸', '出汗', '失眠', '食欲变化', '坐立不安']) await form.getByRole('button', { name }).click();
+  await form.getByRole('button', { name: '保存服药' }).click();
+  await expect(form).toHaveCount(0);
+  await settled(page);
+  const line = page.getByTestId('wellbeing-symptoms');
+  const look = await line.evaluate(el => {
+    const box = el.getBoundingClientRect(), tags = [...el.querySelectorAll<HTMLElement>('.tag')].filter(t => !t.hidden), rects = tags.map(t => t.getBoundingClientRect());
+    return { rows: new Set(rects.map(r => Math.round(r.top))).size, inside: rects.every(r => r.right <= box.right + 1), shown: tags.length, more: el.querySelector('.more:not([hidden])')?.textContent ?? '', last: tags.at(-1)?.classList.contains('more') ?? false };
+  });
+  expect(look.rows).toBe(1);
+  expect(look.inside).toBe(true);
+  expect(look.last).toBe(true);
+  const hidden = 8 - (look.shown - 1);
+  expect(hidden).toBeGreaterThan(0);
+  expect(look.more).toBe(`+${hidden}`);
+  await expect(line).toHaveAttribute('title', /困倦、嗜睡、恶心/);
+  // The capsule with side effects is not a full pill: its corners leave room for the text.
+  const capsule = page.getByTestId('wellbeing-dose');
+  expect(await capsule.evaluate(el => parseFloat(getComputedStyle(el).borderTopLeftRadius))).toBeLessThan(40);
+});
+
+test('a day with a dose can be saved even when no state is answered, and a note alone is enough', async ({ page }) => {
+  await open(page);
+  // Nothing at all: an answer is asked for.
+  await pick(page, '开心程度', 5);
+  await page.getByRole('button', { name: '保存今日状态' }).click();
+  await expect(page.getByTestId('wellbeing-status')).toContainText('1/8');
+  await addDose(page);
+  // Clearing the only answer, with a dose on the day, saves.
+  await page.getByRole('button', { name: '清除开心程度' }).click();
+  await page.getByRole('button', { name: '保存今日状态' }).click();
+  await expect(page.getByTestId('wellbeing-status')).toContainText('0/8');
+  await expect(page.getByText('请至少填写')).toHaveCount(0);
+  await expect(page.getByTestId('wellbeing-dose')).toHaveCount(1);
+  // A note alone is enough too.
+  await page.getByRole('textbox', { name: '当日备注' }).fill('只写一句');
+  await page.getByRole('button', { name: '保存今日状态' }).click();
+  await expect(page.getByTestId('wellbeing-status')).toContainText('1/8');
 });
 
 test('history: calendar marks, back-filling a past day, and deleting only the state record', async ({ page }) => {
@@ -489,9 +593,16 @@ test('trends: side effects are a week as a circle of slices (or a calendar for l
   await expect(days.first()).toHaveAttribute('aria-pressed', 'true');
   await expect(list).toContainText('没有记录副作用');
   await expect(days.first()).not.toHaveClass(/marked/);
-  // The calendar follows the chosen range: 7, 14 or 30 days, the latest day always last.
+  // The days follow the chosen range: 7 or 14 days are a circle of slices, 30 a calendar, the latest day always last.
   await page.getByRole('button', { name: '近 14 天' }).click();
   await expect(days).toHaveCount(14);
+  await expect(card.locator('.wheel svg.slices .slice')).toHaveCount(14);
+  await expect(card.locator('.calendar')).toHaveCount(0);
+  // Fourteen numbers fit round the circle without touching: each sits in its own slice.
+  const numbers = await card.locator('.wheel .n').evaluateAll(els => els.map(el => el.getBoundingClientRect()));
+  for (const [i, a] of numbers.entries()) for (const b of numbers.slice(i + 1)) expect(a.right <= b.left + 1 || b.right <= a.left + 1 || a.bottom <= b.top + 1 || b.bottom <= a.top + 1).toBe(true);
+  await days.last().dispatchEvent('click');
+  await expect(card.locator('.wheel .core')).toContainText('周');
   await page.getByRole('button', { name: '近 30 天' }).click();
   await expect(days).toHaveCount(30);
   await days.last().dispatchEvent('click');
@@ -534,7 +645,7 @@ test('trends: six charts say which way is better, missing days stay empty, and e
   await expect(page.getByTestId('wellbeing-trend-summary')).toContainText('14 天中有 1 天');
 });
 
-test('report: summary of what was logged, coverage gaps, and CSV download', async ({ page }) => {
+test('report: the page is charts and cards with no tables; the print report is a separate paper layout; CSV download', async ({ page }) => {
   await open(page);
   await pick(page, '开心程度', 4);
   await pick(page, '焦虑', 2);
@@ -545,22 +656,453 @@ test('report: summary of what was logged, coverage gaps, and CSV download', asyn
   await expect(page.getByTestId('wellbeing-dose')).toHaveCount(1);
   await page.getByTestId('wellbeing-tab-report').click();
   const report = page.getByTestId('wellbeing-report');
-  await expect(report).toContainText('不构成诊断');
-  await expect(page.getByTestId('report-coverage')).toContainText('30 天中有 1 天填写了状态记录，29 天没有');
-  await expect(page.getByTestId('report-medication')).toContainText('示例药物');
-  await expect(page.getByTestId('report-ratings')).toContainText('开心程度');
-  await expect(page.getByTestId('report-sleep')).toContainText('平均 6 小时 30 分');
-  await expect(report).not.toContainText('建议调整');
+  const dashboard = page.getByTestId('wellbeing-report-dashboard');
+  await expect(dashboard).toBeVisible();
+  // On screen there is no wall of text and no table: the paper report is not shown, and nothing on the page is a table apart from the chart's own data table.
+  await expect(report).toBeHidden();
+  await expect(page.getByTestId('report-toggle-text')).toHaveCount(0);
+  await expect(dashboard.locator('table:visible')).toHaveCount(0);
+  await expect(page.getByTestId('wellbeing-export')).toContainText('一份专门排好的报告');
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: '状态记录 CSV' }).click();
   const file = await download;
   expect(file.suggestedFilename()).toMatch(/^wellbeing-entries-\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}\.csv$/);
-  // Print view hides the application chrome and the form controls.
+  // Printing: the application chrome, the charts and the form controls go; the paper report appears, as boxes rather than tables.
   await page.emulateMedia({ media: 'print' });
   await expect(page.locator('.app-sidebar')).toBeHidden();
   await expect(page.getByTestId('wellbeing-export')).toBeHidden();
+  await expect(dashboard).toBeHidden();
   await expect(report).toBeVisible();
+  await expect(report).toContainText('不构成诊断');
+  await expect(page.getByTestId('report-coverage')).toContainText('7 天中有 1 天填写了状态记录，6 天没有');
+  await expect(page.getByTestId('report-medication')).toContainText('示例药物');
+  await expect(page.getByTestId('report-ratings')).toContainText('开心程度');
+  await expect(page.getByTestId('report-sleep')).toContainText('平均 6 小时 30 分');
+  await expect(report).not.toContainText('建议调整');
+  await expect(report.locator('table')).toHaveCount(0);
   await page.emulateMedia({ media: 'screen' });
+  await expect(report).toBeHidden();
+});
+
+test('summary: each medicine is a card: how many times, a strip of the days it was taken, and how the dose changed', async ({ page }) => {
+  await open(page);
+  await seed(page, 14);
+  await page.evaluate(async () => {
+    const csrf = (await (await fetch('/api/v1/auth/csrf')).json()).data.csrf_token;
+    const date = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
+    // 丙药 changes amount on this day (2 instead of 1); 甲药 changed once earlier in the seed; 乙药 never.
+    await fetch('/api/v1/me/wellbeing/doses', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify({ medication_name: '丙药', pills: 1, taken_at: `${date}T07:00:00+08:00`, regimen: 'scheduled' }) });
+    await fetch('/api/v1/me/wellbeing/doses', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify({ medication_name: '丙药', pills: 2, taken_at: `${date}T19:00:00+08:00`, regimen: 'scheduled' }) });
+  });
+  await page.getByTestId('wellbeing-tab-report').click();
+  await page.getByRole('button', { name: '近 14 天' }).click();
+  const cards = page.getByTestId('wellbeing-report-medicines').getByTestId('wellbeing-report-medicine');
+  await expect(cards).toHaveCount(3);
+  const a = page.locator('[data-medicine="甲药"]');
+  await expect(a.locator('.big strong')).toHaveText('14');
+  // A strip of the 14 days, lit where it was taken (every day for this one).
+  await expect(a.locator('.strip .day')).toHaveCount(14);
+  await expect(a.locator('.strip .day.lit')).toHaveCount(14);
+  // The one that changed says from-what-to-what; the one that did not says so.
+  const c = page.locator('[data-medicine="丙药"]');
+  await expect(c.locator('.strip .day.changed')).toHaveCount(1);
+  await expect(c.locator('.changes')).toContainText('→');
+  await expect(page.locator('[data-medicine="乙药"] .changes')).toContainText('剂量没有变化');
+  // One card holds them (heading and all); each medicine is a card inside it with a round badge, the name, a big figure and how it moved against the stretch before.
+  await expect(page.getByTestId('wellbeing-report-medicines').locator('#meds-title')).toHaveText('服药');
+  await expect(a.locator('.badge')).toBeVisible();
+  await expect(a.locator('.delta')).toBeVisible();
+  await expect(a.locator('.strip.dots')).toBeVisible();
+  // A day it was taken and a day it was not look clearly apart: the first a big solid dot, the other a small pale one.
+  const bQ = page.locator('[data-medicine="乙药"] .strip .day');
+  const sizes = await bQ.evaluateAll(els => ({ on: Math.max(...els.filter(el => el.classList.contains('lit')).map(el => el.getBoundingClientRect().width)), off: Math.max(...els.filter(el => !el.classList.contains('lit')).map(el => el.getBoundingClientRect().width)) }));
+  expect(sizes.on).toBeGreaterThanOrEqual(sizes.off * 2);
+  const fills = await bQ.evaluateAll(els => ({ on: getComputedStyle(els.find(el => el.classList.contains('lit'))!).backgroundColor, off: getComputedStyle(els.find(el => !el.classList.contains('lit'))!).backgroundColor }));
+  expect(fills.on).not.toBe(fills.off);
+  await expect(page.getByTestId('wellbeing-report-medicines')).toContainText('这天没服药');
+  // All the cards are the same width, three to a row on a wide screen, and have no table inside.
+  const widths = await cards.evaluateAll(els => els.map(el => Math.round(el.getBoundingClientRect().width)));
+  expect(new Set(widths).size).toBe(1);
+  const tops = await cards.evaluateAll(els => els.map(el => Math.round(el.getBoundingClientRect().top)));
+  expect(new Set(tops).size).toBe(1);
+});
+
+test('summary: 7 / 14 / 30 days or a custom range, charts first, the text folded away', async ({ page }) => {
+  await open(page);
+  await seed(page, 45);
+  await page.getByTestId('wellbeing-tab-report').click();
+  const tabs = page.getByRole('group', { name: '总结范围' });
+  await expect(tabs.getByRole('button')).toHaveText(['近 7 天', '近 14 天', '近 30 天', '自定义']);
+  await expect(tabs.getByRole('button', { name: '近 7 天' })).toHaveAttribute('aria-pressed', 'true');
+  const dashboard = page.getByTestId('wellbeing-report-dashboard');
+  await expect(page.getByTestId('wellbeing-report-summary')).toContainText('（7 天，');
+  const cells = page.getByTestId('wellbeing-report-timeline').getByTestId('wellbeing-report-day');
+  await expect(cells).toHaveCount(7);
+  for (const [name, days] of [['近 14 天', 14], ['近 30 天', 30]] as const) {
+    await tabs.getByRole('button', { name }).click();
+    await expect(page.getByTestId('wellbeing-report-summary')).toContainText(`（${days} 天，`);
+    await expect(cells).toHaveCount(days);
+  }
+  // A custom range asks for its two dates and is only fetched when applied.
+  await tabs.getByRole('button', { name: '自定义' }).click();
+  await expect(page.getByRole('button', { name: '查看', exact: true })).toBeVisible();
+  await expect(cells).toHaveCount(30);
+  await page.getByRole('button', { name: '查看', exact: true }).click();
+  await expect(page.getByTestId('wellbeing-report-summary')).toContainText('（30 天，');
+  await expect(dashboard).toBeVisible();
+  // No more than one long text wall: the sheet stays folded.
+  await expect(page.getByTestId('wellbeing-report')).toBeHidden();
+});
+
+test('summary: each measure is a widget with its figure, a small line and the move against the stretch before', async ({ page }) => {
+  await open(page);
+  await seed(page, 14);
+  await page.getByTestId('wellbeing-tab-report').click();
+  const measures = page.getByTestId('report-measures');
+  // Six widgets: sleep hours and sleep quality are one widget, so the rows fill up exactly (3 + 3, 2 + 2 + 2 or one by one) at any width.
+  await expect(measures.locator('[data-metric]')).toHaveCount(6);
+  const sleepTile = page.getByTestId('report-measure-sleep');
+  await expect(sleepTile).toContainText('小时');
+  await expect(sleepTile.getByTestId('report-sleep-quality')).toContainText('睡眠质量');
+  await expect(page.getByTestId('report-measure-sleep_hours')).toHaveCount(0);
+  await expect(page.getByTestId('report-measure-sleep_quality')).toHaveCount(0);
+  for (const width of [1440, 1100, 900, 700, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await settled(page);
+    const rows = await measures.locator('[data-metric]').evaluateAll(els => { const tops = els.map(el => Math.round(el.getBoundingClientRect().top)); return [...new Set(tops)].map(top => tops.filter(t => t === top).length); });
+    expect(new Set(rows).size, `rows at ${width}px: ${rows}`).toBe(1);
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const mood = page.getByTestId('report-measure-mood');
+  await expect(mood.locator('.big strong')).toHaveText(/^\d(\.\d)?$/);
+  await expect(mood.locator('svg.spark')).toBeVisible();
+  await expect(mood.locator('.delta')).toBeVisible();
+  // A measure nobody answered shows a dash and says so, not a 0.
+  await expect(page.getByTestId('report-measure-focus').locator('.big strong')).toHaveText('—');
+  await expect(page.getByTestId('report-measure-focus')).toContainText('没有注意力记录');
+  await expect(page.getByTestId('report-stat-doses')).toContainText('甲药');
+  await expect(page.getByTestId('report-stat-effects').locator('.big strong')).not.toHaveText('0');
+  // Anxiety says which way is worse.
+  await expect(page.getByTestId('report-measure-anxiety')).toContainText('越高越严重');
+});
+
+test('summary: a month-long range is a calendar of rings like the history page, and choosing a day shows its record beside it', async ({ page }) => {
+  await open(page);
+  await seed(page, 14);
+  await page.getByTestId('wellbeing-tab-report').click();
+  await page.getByRole('button', { name: '近 30 天' }).click();
+  const chart = page.getByTestId('wellbeing-report-timeline');
+  const days = chart.getByTestId('wellbeing-report-day');
+  await expect(days).toHaveCount(30);
+  // Each day is a round button with a ring of three parts: state, medication, side effect.
+  const first = days.first();
+  await expect(first.locator('circle.part')).toHaveCount(3);
+  expect(await first.evaluate(el => getComputedStyle(el).borderRadius)).toBe('50%');
+  const colours = await first.locator('circle.part').evaluateAll(parts => parts.map(part => (part as SVGElement).style.getPropertyValue('--part')));
+  expect(colours).toEqual(['var(--well-mood)', 'var(--well-dose)', 'var(--well-effect)']);
+  // The ring is lit where that kind of record exists: seeded doses every day, state on most days, side effects on some.
+  await expect(chart.locator('[data-part="dose"].lit')).toHaveCount(14);
+  const effectDays = await chart.locator('[data-part="symptom"].lit').count();
+  expect(effectDays).toBeGreaterThan(0);
+  expect(effectDays).toBeLessThan(14);
+  // A day without a state record has that part of its ring dark.
+  expect(await chart.locator('[data-part="entry"]:not(.lit)').count()).toBeGreaterThan(0);
+  // The newest recorded day is chosen to begin with; its record is written beside the calendar.
+  const detail = page.getByTestId('wellbeing-report-day-detail');
+  await expect(days.last()).toHaveAttribute('aria-pressed', 'true');
+  await expect(detail).toContainText('甲药');
+  // Choosing a day with a side effect names it, with the medicine it was written under.
+  const withEffect = chart.locator('[data-testid="wellbeing-report-day"]:has([data-part="symptom"].lit)').first();
+  await withEffect.click();
+  await expect(withEffect).toHaveAttribute('aria-pressed', 'true');
+  await settled(page);
+  await expect(detail).toContainText('副作用');
+  await expect(detail.locator('.effects li')).toContainText(/恶心|头晕/);
+  await expect(detail.locator('.effects li')).toContainText('甲药');
+  // A day nobody answered says so rather than showing zeros.
+  const empty = chart.locator('[data-testid="wellbeing-report-day"]:has([data-part="entry"]:not(.lit))').first();
+  await empty.click();
+  await settled(page);
+  await expect(detail).toContainText('这天没有状态记录');
+  // Every chart has its data table.
+  await chart.getByText('查看这张图的逐日数据表').click();
+  await expect(chart.locator('tbody tr')).toHaveCount(30);
+});
+
+test('summary: a week or a fortnight is one big circle of slices, the chosen day rolling in its middle', async ({ page }) => {
+  await open(page);
+  await seed(page, 14);
+  await page.getByTestId('wellbeing-tab-report').click();
+  const chart = page.getByTestId('wellbeing-report-timeline');
+  const detail = page.getByTestId('wellbeing-report-day-detail');
+  for (const [name, count] of [['近 7 天', 7], ['近 14 天', 14]] as const) {
+    await page.getByRole('button', { name }).click();
+    const slices = chart.locator('.wheel .slice');
+    await expect(slices).toHaveCount(count);
+    await expect(chart.locator('.calendar')).toHaveCount(0);
+    // Every slice carries the three marks (state, medication, side effect), lit where that record exists.
+    await expect(slices.first().locator('circle.part')).toHaveCount(3);
+    await expect(chart.locator('.wheel [data-part="dose"].lit')).toHaveCount(count);
+    // The newest recorded day is chosen to begin with and named in the middle of the circle.
+    await expect(slices.last()).toHaveAttribute('aria-pressed', 'true');
+    await settled(page);
+    const day = await slices.last().getAttribute('data-date');
+    await expect(chart.locator('.core')).toContainText(String(+day!.slice(8)));
+    // Choosing another slice rolls the middle to it and changes the record beside the circle; the keyboard works too.
+    const other = slices.first();
+    await other.focus();
+    await page.keyboard.press('Enter');
+    await expect(other).toHaveAttribute('aria-pressed', 'true');
+    await expect(slices.last()).toHaveAttribute('aria-pressed', 'false');
+    await settled(page);
+    const date = await other.getAttribute('data-date');
+    await expect(chart.locator('.core')).toContainText(String(+date!.slice(8)));
+    await expect(detail).toContainText(`${+date!.slice(5, 7)} 月 ${+date!.slice(8)} 日`);
+    // The slices are laid out round the middle, not in a row, and the numbers sit inside their slices.
+    const spread = await chart.locator('.wheel .n').evaluateAll(els => { const rects = els.map(el => el.getBoundingClientRect()); return { xs: new Set(rects.map(r => Math.round(r.left / 8))).size, ys: new Set(rects.map(r => Math.round(r.top / 8))).size }; });
+    expect(spread.xs).toBeGreaterThan(2);
+    expect(spread.ys).toBeGreaterThan(2);
+  }
+  // A month goes back to calendars.
+  await page.getByRole('button', { name: '近 30 天' }).click();
+  await expect(chart.locator('.wheel')).toHaveCount(0);
+  await expect(chart.locator('.calendar')).toHaveCount(1);
+});
+
+test('summary: the day panel keeps its size however many doses a day holds; the doses are a timeline that scrolls inside', async ({ page }) => {
+  await open(page);
+  await seed(page, 14);
+  // Two dozen more doses on yesterday, one every few minutes: more than the panel can show at once.
+  await page.evaluate(async () => {
+    const csrf = (await (await fetch('/api/v1/auth/csrf')).json()).data.csrf_token;
+    const date = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
+    for (let i = 0; i < 24; i++) await fetch('/api/v1/me/wellbeing/doses', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify({ medication_name: `乙药${i}`, pills: 1, taken_at: `${date}T12:${String(10 + i).padStart(2, '0')}:00+08:00`, regimen: 'as_needed' }) });
+  });
+  await page.getByTestId('wellbeing-tab-report').click();
+  await page.getByRole('button', { name: '近 14 天' }).click();
+  const chart = page.getByTestId('wellbeing-report-timeline');
+  const panel = page.getByTestId('wellbeing-report-day-detail');
+  const slices = chart.locator('.wheel .slice');
+  await slices.first().click();
+  await settled(page);
+  const small = (await panel.boundingBox())!;
+  await slices.nth(12).click();
+  await settled(page);
+  const timeline = page.getByTestId('wellbeing-report-dose-timeline');
+  await expect(timeline.getByTestId('wellbeing-report-dose').nth(10)).toBeVisible();
+  expect(await timeline.getByTestId('wellbeing-report-dose').count()).toBeGreaterThanOrEqual(11);
+  const big = (await panel.boundingBox())!;
+  // Same panel, same size: the long list scrolls inside its own section.
+  expect(Math.abs(big.height - small.height)).toBeLessThanOrEqual(1);
+  expect(Math.abs(big.width - small.width)).toBeLessThanOrEqual(1);
+  expect(await timeline.evaluate(el => ({ over: el.scrollHeight > el.clientHeight + 4, overflow: getComputedStyle(el).overflowY }))).toEqual({ over: true, overflow: 'auto' });
+  expect(await panel.evaluate(el => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+  // In time order, each on the line: the times only go up.
+  const times = await timeline.locator('.time').allTextContents();
+  expect([...times].sort()).toEqual(times);
+  await expect(timeline.locator('.node').first()).toBeVisible();
+  await timeline.evaluate(el => { el.scrollTop = el.scrollHeight; });
+  expect(await timeline.evaluate(el => { const box = el.getBoundingClientRect(), last = el.querySelector('li:last-child')!.getBoundingClientRect(); return last.bottom <= box.bottom + 1 && last.top >= box.top; })).toBe(true);
+  // Narrow screens stack the panel under the circle at a fixed height too.
+  await page.setViewportSize({ width: 390, height: 900 });
+  await settled(page);
+  const stacked = (await panel.boundingBox())!;
+  await slices.first().click();
+  await settled(page);
+  expect(Math.abs((await panel.boundingBox())!.height - stacked.height)).toBeLessThanOrEqual(1);
+});
+
+test('summary: the day panel is filled: the answers as bars, the doses as a timeline beside them, side effects underneath', async ({ page }) => {
+  await open(page);
+  await seed(page, 14);
+  await page.getByTestId('wellbeing-tab-report').click();
+  await page.getByRole('button', { name: '近 14 天' }).click();
+  const panel = page.getByTestId('wellbeing-report-day-detail');
+  await settled(page);
+  // A day with answers: one bar per answer, in that answer's colour, as long as its value.
+  const rows = panel.locator('.rows li');
+  await expect(rows.first()).toBeVisible();
+  const widths = await rows.evaluateAll(els => els.map(el => { const meter = el.querySelector('.meter')!.getBoundingClientRect(), fill = el.querySelector('.meter > span')!.getBoundingClientRect(); return fill.width / meter.width; }));
+  expect(widths.every(w => w > 0 && w <= 1.001)).toBe(true);
+  // The head says in the ring's three colours what the day holds.
+  await expect(panel.locator('.tally li')).toHaveCount(3);
+  await expect(panel.locator('.tally')).toContainText('服药');
+  // Wide: the answers and the timeline sit side by side and the side effects under both; nothing is left over to the right.
+  const boxes = await panel.evaluate(el => { const box = (sel: string) => el.querySelector(sel)!.getBoundingClientRect(), pane = box('.pane'), states = box('.states'), doses = box('.doses'), effects = box('.effects-box'); return { sideBySide: states.right <= doses.left + 1 && Math.abs(states.top - doses.top) < 2, below: effects.top >= Math.max(states.bottom, doses.bottom) - 1, spread: doses.right > pane.right - 40 }; });
+  expect(boxes).toEqual({ sideBySide: true, below: true, spread: true });
+  // A day without answers says so inside the bars' place.
+  await page.getByRole('button', { name: '近 30 天' }).click();
+  await settled(page);
+  const empty = page.getByTestId('wellbeing-report-timeline').locator('[data-testid="wellbeing-report-day"]:has([data-part="entry"]:not(.lit))').first();
+  await empty.click();
+  await settled(page);
+  await expect(panel.locator('.states .boxed')).toContainText('这天没有状态记录');
+});
+
+test('summary: "剂量变化" is always on its own line under the text of its dose, starting in the same place', async ({ page }) => {
+  await open(page);
+  // One medicine taken yesterday with different amounts, so some doses differ from the one before.
+  await page.evaluate(async () => {
+    const csrf = (await (await fetch('/api/v1/auth/csrf')).json()).data.csrf_token;
+    const call = async (path: string, body: unknown) => (await (await fetch(`/api/v1/me/wellbeing${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify(body) })).json()).data;
+    const date = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
+    const rows: [string, number, string][] = [['甲药', 1, '08:00'], ['乙药很长很长的名字用来把一行撑长', 1, '09:00'], ['乙药很长很长的名字用来把一行撑长', 2, '10:00'], ['乙药很长很长的名字用来把一行撑长', 1, '11:00'], ['甲药', 1, '12:00']];
+    for (const [name, pills, at] of rows) await call('/doses', { medication_name: name, pills, taken_at: `${date}T${at}:00+08:00`, regimen: 'scheduled' });
+  });
+  await page.getByTestId('wellbeing-tab-report').click();
+  await page.getByRole('button', { name: '近 7 天' }).click();
+  const chart = page.getByTestId('wellbeing-report-timeline');
+  await chart.locator('.wheel .slice').nth(5).click();
+  await settled(page);
+  const tags = chart.getByTestId('wellbeing-report-dose-timeline').locator('.tag');
+  await expect(tags).toHaveCount(2);
+  await expect(tags.first()).toHaveText('剂量变化');
+  // The same left edge in every row, and below the line of text, never beside it.
+  const placed = await tags.evaluateAll(els => els.map(el => { const row = el.closest('li')!, text = row.querySelector('strong')!.getBoundingClientRect(), tag = el.getBoundingClientRect(); return { left: Math.round(tag.left), below: tag.top >= text.bottom - 1, height: tag.height }; }));
+  expect(new Set(placed.map(item => item.left)).size).toBe(1);
+  expect(placed.every(item => item.below && item.height < 26)).toBe(true);
+});
+
+test('summary: at every width the circle stays in its own space, the record never covers it, and nothing in the panel spills over another', async ({ page }) => {
+  await open(page);
+  await seed(page, 14);
+  await page.getByTestId('wellbeing-tab-report').click();
+  await page.getByRole('button', { name: '近 14 天' }).click();
+  const chart = page.getByTestId('wellbeing-report-timeline');
+  for (const width of [1680, 1440, 1280, 1100, 1000, 900, 800, 700, 600, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await settled(page);
+    const geo = await chart.evaluate(el => {
+      const box = (node: Element | null) => node!.getBoundingClientRect(), side = box(el.querySelector('.side')), wheel = box(el.querySelector('.wheel')), panel = box(el.querySelector('.detail')), pane = el.querySelector('.pane')!, parts = [...pane.querySelectorAll('.cols > section, .effects-box, .when')].map(node => box(node));
+      const overlap = (a: DOMRect, b: DOMRect) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+      return {
+        wheelInside: wheel.left >= side.left - 1 && wheel.right <= side.right + 1,
+        apart: !overlap(wheel, panel),
+        panelClean: pane.scrollHeight <= pane.clientHeight + 1,
+        noSpill: parts.every((a, i) => parts.slice(i + 1).every(b => !overlap(a, b)))
+      };
+    });
+    expect(geo, `at ${width}px`).toEqual({ wheelInside: true, apart: true, panelClean: true, noSpill: true });
+  }
+});
+
+test('summary: a custom range of several months shows one month at a time and turns by swiping or the arrows', async ({ page }) => {
+  await open(page);
+  await seed(page, 45);
+  await page.getByTestId('wellbeing-tab-report').click();
+  const day = (offset: number) => new Date(Date.now() - offset * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
+  await page.getByRole('group', { name: '总结范围' }).getByRole('button', { name: '自定义' }).click();
+  await page.getByLabel('开始日期', { exact: true }).fill(day(60));
+  await page.getByLabel('结束日期', { exact: true }).fill(day(0));
+  await page.getByRole('button', { name: '查看', exact: true }).click();
+  const chart = page.getByTestId('wellbeing-report-timeline');
+  await expect(chart.getByTestId('wellbeing-report-day')).toHaveCount(61);
+  const pager = chart.locator('.pager');
+  await expect(pager).toHaveClass(/paged/);
+  expect(await pager.evaluate(el => getComputedStyle(el).overflowX)).toBe('auto');
+  const months = await chart.locator('.month').count();
+  expect(months).toBeGreaterThanOrEqual(3);
+  // It opens on the newest month, with the arrow back enabled and the one forward not.
+  const label = chart.getByTestId('wellbeing-report-month');
+  const newest = await label.textContent();
+  await expect(chart.getByTestId('wellbeing-report-next')).toBeDisabled();
+  await expect(chart.getByTestId('wellbeing-report-prev')).toBeEnabled();
+  const width = await pager.evaluate(el => el.clientWidth);
+  expect(await pager.evaluate(el => Math.round(el.scrollLeft))).toBe((months - 1) * width);
+  // The arrow turns a page; so does a swipe (a scroll of the row), snapping to a whole month.
+  await chart.getByTestId('wellbeing-report-prev').click();
+  await expect(label).not.toHaveText(newest!);
+  await expect(chart.getByTestId('wellbeing-report-next')).toBeEnabled();
+  await pager.evaluate((el, w) => { el.scrollTo({ left: 0, behavior: 'instant' }); void w; }, width);
+  await expect(chart.getByTestId('wellbeing-report-prev')).toBeDisabled();
+  await expect(label).not.toHaveText(newest!);
+  // A day of an earlier month can be chosen and shows its record beside the calendar.
+  await chart.locator('.month').first().getByTestId('wellbeing-report-day').last().click();
+  await settled(page);
+  await expect(page.getByTestId('wellbeing-report-day-detail')).toContainText('状态');
+});
+
+test('summary: the range is drawn as one calendar per month it touches', async ({ page }) => {
+  await open(page);
+  await seed(page, 45);
+  await page.getByTestId('wellbeing-tab-report').click();
+  await page.getByRole('button', { name: '近 30 天' }).click();
+  const chart = page.getByTestId('wellbeing-report-timeline');
+  await expect(chart.getByTestId('wellbeing-report-day')).toHaveCount(30);
+  const spanned = new Set(Array.from({ length: 30 }, (_, i) => new Date(Date.now() - i * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' }).slice(0, 7))).size;
+  await expect(chart.locator('.month')).toHaveCount(spanned);
+  // Weeks start on Monday, like the history calendar.
+  await expect(chart.locator('.weekday').first()).toHaveText('一');
+});
+
+test('summary: each side effect is one card of the same shape: its days as a bar, and the medicines it was written under', async ({ page }) => {
+  await open(page);
+  await seed(page, 14);
+  await page.getByTestId('wellbeing-tab-report').click();
+  await page.getByRole('button', { name: '近 14 天' }).click();
+  const rows = page.getByTestId('wellbeing-effect-ranking').getByTestId('wellbeing-effect-row');
+  // Most days first.
+  await expect(rows.first()).toContainText('恶心');
+  await expect(rows.first()).toContainText('天');
+  await expect(rows.first().locator('.fill')).toBeVisible();
+  // Under it, the medicine it was written for, with how often.
+  await expect(rows.first().locator('.under .chip')).toContainText('甲药');
+  await expect(rows.first().locator('.under .chip strong')).toContainText('×');
+  // All the cards are the same width and their text the same size, so the list reads evenly.
+  const look = await rows.evaluateAll(els => els.map(el => ({ width: Math.round(el.getBoundingClientRect().width), name: getComputedStyle(el.querySelector('.name')!).fontSize, chip: getComputedStyle(el.querySelector('.chip')!).fontSize })));
+  expect(new Set(look.map(item => item.width)).size).toBe(1);
+  expect(new Set(look.map(item => item.name)).size).toBe(1);
+  expect(new Set(look.map(item => item.chip)).size).toBe(1);
+  // Three to a row on a wide screen (the first three share one line), and the cards are not stretched wider than a third.
+  const tops = await rows.evaluateAll(els => els.map(el => Math.round(el.getBoundingClientRect().top)));
+  expect(tops.slice(0, 3).every(top => top === tops[0])).toBe(true);
+  // It is only the order of what was written, and the page says so.
+  await expect(page.getByTestId('wellbeing-report-effects')).toContainText('不代表是这种药引起的');
+});
+
+test('summary: side effects and notes share one row when there is room (side effects wider), and stack when there is not', async ({ page }) => {
+  await open(page);
+  await seed(page, 14);
+  await page.getByTestId('wellbeing-tab-report').click();
+  await page.getByRole('button', { name: '近 14 天' }).click();
+  const effects = page.getByTestId('wellbeing-report-effects'), notes = page.getByTestId('report-notes');
+  await expect(notes).toBeVisible();
+  await settled(page);
+  const rects = async () => ({ effects: (await effects.boundingBox())!, notes: (await notes.boundingBox())! });
+  let { effects: e, notes: n } = await rects();
+  expect(Math.abs(e.y - n.y)).toBeLessThanOrEqual(1); // the same row
+  expect(e.x + e.width).toBeLessThanOrEqual(n.x + 1);   // side effects on the left
+  expect(e.width).toBeGreaterThan(n.width);              // and the wider
+  expect(Math.abs(e.height - n.height)).toBeLessThanOrEqual(1); // as tall as each other
+  // Both have a heading of the same size as the other sections'.
+  const sizes = await page.evaluate(() => ['#effects-title', '#notes-title', '#meds-title'].map(sel => getComputedStyle(document.querySelector(sel)!).fontSize));
+  expect(new Set(sizes).size).toBe(1);
+  // Too narrow for two columns: one under the other.
+  await page.setViewportSize({ width: 900, height: 1000 });
+  await settled(page);
+  ({ effects: e, notes: n } = await rects());
+  expect(n.y).toBeGreaterThanOrEqual(e.y + e.height - 1);
+  expect(Math.abs(e.x - n.x)).toBeLessThanOrEqual(1);
+});
+
+test('summary: notes are a dated list, newest first, long ones fold and unfold', async ({ page }) => {
+  await open(page);
+  await seed(page, 30);
+  await page.getByTestId('wellbeing-tab-report').click();
+  await page.getByRole('button', { name: '近 30 天' }).click();
+  const notes = page.getByTestId('report-notes');
+  await expect(notes.locator('li')).toHaveCount(4);
+  await expect(notes.getByRole('button', { name: '显示全部 6 条' })).toBeVisible();
+  // The newest note is the short one and has nothing to unfold; the long one next to it does.
+  await expect(notes.locator('li').first()).toContainText('短备注');
+  await expect(notes.locator('li').first().getByRole('button')).toHaveCount(0);
+  const second = notes.locator('li').nth(1).locator('p');
+  expect(await second.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+  await notes.locator('li').nth(1).getByRole('button', { name: '展开' }).click();
+  expect(await second.evaluate(el => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+  await notes.locator('li').nth(1).getByRole('button', { name: '收起' }).click();
+  await notes.getByRole('button', { name: '显示全部 6 条' }).click();
+  await expect(notes.locator('li')).toHaveCount(6);
 });
 
 test('the diary never writes to browser storage', async ({ page }) => {
@@ -829,6 +1371,9 @@ test('side effects belong to the medicine and are offered first in its dose edit
   await form.getByLabel('添加副作用').fill('口干 ');
   await form.getByLabel('添加副作用').press('Enter');
   await expect(form.getByTestId('wellbeing-effect-tag')).toHaveCount(2);
+  // The × sits inside the tag as a plain round button: no glass disc or shadow of its own.
+  const cross = form.getByTestId('wellbeing-effect-tag').first().getByRole('button');
+  expect(await cross.evaluate(el => { const s = getComputedStyle(el), layer = el.querySelector('.rn-glass-surface'); return { bg: s.backgroundColor, shadow: s.boxShadow, round: s.borderRadius, layer: layer ? getComputedStyle(layer).display : 'none' }; })).toEqual({ bg: 'rgba(0, 0, 0, 0)', shadow: 'none', round: '50%', layer: 'none' });
   await expect(form.getByRole('button', { name: '+ 出汗' })).toHaveCount(0); // already added
   await form.getByRole('button', { name: '去掉副作用 出汗' }).click();
   await form.getByLabel('添加副作用').fill('夜里口渴');  // still being typed when saving: it is kept
