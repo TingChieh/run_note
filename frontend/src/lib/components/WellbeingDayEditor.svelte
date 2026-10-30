@@ -3,6 +3,8 @@
   import { fade } from 'svelte/transition';
   import FeedbackState from './FeedbackState.svelte';
   import SaveBar from './SaveBar.svelte';
+  import TimePicker from './TimePicker.svelte';
+  import { TONES } from './wellbeing-tones.ts';
   import WellbeingDialog from './WellbeingDialog.svelte';
   import WellbeingScale from './WellbeingScale.svelte';
   import WellbeingSleep from './WellbeingSleep.svelte';
@@ -157,12 +159,13 @@
   const effectsOf = (doseId: string) => symptoms.filter(s => s.dose_id === doseId);
   /** Side effects of earlier days' records that were never tied to a dose (only old data). */
   const loose = $derived(symptoms.filter(s => s.dose_id === null || !doses.some(d => d.id === s.dose_id)));
-  const defaultTime = () => data && data.date === data.today ? localInput(new Date(), timezone) : `${data?.date ?? day}T08:00`;
+  /** A dose is written for the day being edited, so only its time of day is asked for: now for today, 08:00 for another day. */
+  const defaultTime = () => data && data.date === data.today ? localInput(new Date(), timezone).slice(11) : '08:00';
   function openDose(dose?: Dose) {
     const trim = (n: number) => String(+n.toFixed(2));
     doseForm = dose
       // An old dose given only as an amount and unit keeps them; one with a pill count is edited by pills.
-      ? { id: dose.id, medicationId: dose.medication_id, name: dose.medication_name, custom: !medications.some(m => m.id === dose.medication_id), pills: dose.pills === null ? '' : trim(dose.pills), keepAmount: dose.pills === null && dose.dose_amount !== null && dose.dose_unit ? { amount: dose.dose_amount, unit: dose.dose_unit } : null, time: localInput(dose.taken_at, timezone), regimen: dose.regimen, note: dose.note ?? '', effects: effectsOf(dose.id).map(s => s.symptom), other: '' }
+      ? { id: dose.id, medicationId: dose.medication_id, name: dose.medication_name, custom: !medications.some(m => m.id === dose.medication_id), pills: dose.pills === null ? '' : trim(dose.pills), keepAmount: dose.pills === null && dose.dose_amount !== null && dose.dose_unit ? { amount: dose.dose_amount, unit: dose.dose_unit } : null, time: localInput(dose.taken_at, timezone).slice(11), regimen: dose.regimen, note: dose.note ?? '', effects: effectsOf(dose.id).map(s => s.symptom), other: '' }
       : { id: null, medicationId: null, name: '', custom: false, pills: '', keepAmount: null, time: defaultTime(), regimen: 'scheduled', note: '', effects: [], other: '' };
     doseSnapshot = JSON.stringify(doseForm); eventError = '';
   }
@@ -175,6 +178,14 @@
     if (med && !doseForm.pills && med.default_pills !== null) { doseForm.pills = String(med.default_pills); doseForm.regimen = med.regimen; }
   }
   /** Choosing a listed medicine fills in its name, its usual pills and type (a new dose only). */
+  /** The pill count moves in halves (a half is the smallest usual split), never below a half. */
+  function bump(form: DoseForm, delta: number) {
+    const now = Number(form.pills), base = Number.isFinite(now) && now > 0 ? now : delta > 0 ? 0 : 1;
+    form.pills = String(+Math.min(1000, Math.max(0.5, Math.round((base + delta) * 2) / 2)).toFixed(2));
+  }
+  const pillsId = `${id}-pills`;
+  /** Restarts the little spring of a chip that was just clicked. */
+  function pop(event: Event) { const el = event.currentTarget as HTMLElement; el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
   function pickMed(form: DoseForm, med: Medication) {
     form.custom = false; form.medicationId = med.id; form.name = med.name;
     if (!form.id) { form.pills = med.default_pills === null ? '' : String(+med.default_pills.toFixed(2)); form.regimen = med.regimen; }
@@ -191,13 +202,14 @@
     const form = doseForm, pills = Number(form.pills);
     if (!form.name.trim()) { eventError = medications.length && !form.custom ? '请先选择药物' : '请填写药物名称'; return; }
     if (!form.keepAmount && (!form.pills.trim() || !Number.isFinite(pills) || pills <= 0 || pills > 1000 || !/^\d+(\.\d{1,2})?$/.test(form.pills.trim()))) { eventError = `请填写吃了几${countUnit(form)}（大于 0，最多 2 位小数，半${countUnit(form)}填 0.5）`; return; }
-    if (!form.time.startsWith(data.date)) { eventError = `服药时间需在 ${data.date} 当天`; return; }
+    if (!/^\d{2}:\d{2}$/.test(form.time)) { eventError = '请填写服药时间'; return; }
+    if (data.date === data.today && form.time > localInput(new Date(), timezone).slice(11)) { eventError = '服药时间不能晚于现在'; return; }
     const other = form.other.trim(), names = [...form.effects, ...(other && !form.effects.some(n => n.toLowerCase() === other.toLowerCase()) ? [other] : [])];
     if (names.some(name => [...name].length > 40)) { eventError = '副作用名称最多 40 字'; return; }
     eventBusy = true; eventError = '';
     const mine = token;
     try {
-      const draftDose = { medication_name: form.name.trim(), medication_id: form.medicationId, ...(form.keepAmount ? {} : { pills }), taken_at: instantFromLocal(form.time, timezone), regimen: form.regimen, note: form.note.trim() || null };
+      const draftDose = { medication_name: form.name.trim(), medication_id: form.medicationId, ...(form.keepAmount ? {} : { pills }), taken_at: instantFromLocal(`${data.date}T${form.time}`, timezone), regimen: form.regimen, note: form.note.trim() || null };
       const result = form.id ? await updateDose(form.id, draftDose) : await createDose(draftDose);
       if (disposed || mine !== token) return;
       doses = (form.id ? doses.map(d => d.id === result.id ? result : d) : [...doses, result]).filter(d => d.entry_date === data!.date).sort((a, b) => Date.parse(a.taken_at) - Date.parse(b.taken_at));
@@ -333,42 +345,61 @@
     {#snippet doseEditor(form: DoseForm)}
       <form class="subform dialog-form" onsubmit={submitDose} aria-label={form.id ? '编辑服药记录' : '添加服药记录'} novalidate data-testid="wellbeing-dose-form">
         {#if medications.length}
-          <fieldset class="chips" disabled={eventBusy} data-testid="wellbeing-dose-meds">
+          <section class="part"><fieldset class="chips" disabled={eventBusy} data-testid="wellbeing-dose-meds">
             <legend>选择药物</legend>
             {#each medications as med (med.id)}
-              <button type="button" class="chip-button" aria-pressed={!form.custom && form.medicationId === med.id} onclick={() => pickMed(form, med)}>{med.name}</button>
+              <button type="button" class="chip-button" data-date={med.id} aria-pressed={!form.custom && form.medicationId === med.id} onclick={event => { pop(event); pickMed(form, med); }}>{med.name}</button>
             {/each}
             <span class="other" class:open={form.custom}>
-              <button type="button" class="chip-button" inert={form.custom} onclick={() => { void openOther(form); }}>其他药物</button>
+              <button type="button" class="chip-button add" data-date="other" inert={form.custom} onclick={() => { void openOther(form); }}>其他药物</button>
               <input bind:this={otherInput} class="text-field other-input" name="medication_name" aria-label="药物名称" placeholder="药物名称" maxlength="80" bind:value={form.name} onchange={suggest} onblur={() => { if (!form.name.trim()) form.custom = false; }} disabled={eventBusy} inert={!form.custom} required autocomplete="off" />
             </span>
-          </fieldset>
+          </fieldset></section>
+        {:else}
+          <div class="part">
+            <p class="hint">还没有药物清单？到“药物”标签里添加一次，之后这里点选就行；现在可以直接输入药名。</p>
+            <label class="field">药物名称<input class="text-field" name="medication_name" maxlength="80" bind:value={form.name} onchange={suggest} disabled={eventBusy} required autocomplete="off" /></label>
+          </div>
         {/if}
-        <div class="grid">
-          {#if !medications.length}<p class="hint wide">还没有药物清单？到“药物”标签里添加一次，之后这里点选就行；现在可以直接输入药名。</p><label class="field wide">药物名称<input class="text-field" name="medication_name" maxlength="80" bind:value={form.name} onchange={suggest} disabled={eventBusy} required autocomplete="off" /></label>{/if}
-          {#if !form.keepAmount}
-            <label class="field"><span>吃了几{countUnit(form)}<span class="dim" data-testid="wellbeing-dose-converted">{#if converted(form)} · 约合 {converted(form)}{/if}</span></span><input class="text-field" name="pills" inputmode="decimal" bind:value={form.pills} disabled={eventBusy} required placeholder="例如 1，半{countUnit(form)}填 0.5" /></label>
-          {/if}
-          <label class="field">类型<select class="text-field" name="regimen" bind:value={form.regimen} disabled={eventBusy}><option value="scheduled">常规用药</option><option value="as_needed">按需用药</option></select></label>
-          <label class="field wide">实际服药时间<input class="text-field" type="datetime-local" name="taken_at" min={`${data?.date}T00:00`} max={`${data?.date}T23:59`} bind:value={form.time} disabled={eventBusy} required /></label>
-          <label class="field wide">备注（可选）<input class="text-field" name="note" maxlength="500" bind:value={form.note} disabled={eventBusy} /></label>
+        <!-- How much and when: the pill count with its + and − (in halves) beside the time, then the kind as a two-way switch. -->
+        <div class="part">
+          <div class="pair">
+            {#if !form.keepAmount}
+              <div class="field">
+                <label for={pillsId}>吃了几{countUnit(form)}<span class="dim" data-testid="wellbeing-dose-converted">{#if converted(form)} · 约合 {converted(form)}{/if}</span></label>
+                <div class="stepper">
+                  <button type="button" class="step" data-date="less" aria-label={`少半${countUnit(form)}`} disabled={eventBusy} onclick={() => bump(form, -0.5)}>−</button>
+                  <input id={pillsId} class="text-field" name="pills" inputmode="decimal" bind:value={form.pills} disabled={eventBusy} required placeholder={`半${countUnit(form)}填 0.5`} autocomplete="off" />
+                  <button type="button" class="step" data-date="more" aria-label={`多半${countUnit(form)}`} disabled={eventBusy} onclick={() => bump(form, 0.5)}>＋</button>
+                </div>
+              </div>
+            {/if}
+            <div class="field"><TimePicker label="实际服药时间" bind:value={form.time} max={data && data.date === data.today ? localInput(new Date(), timezone).slice(11) : ''} now={data && data.date === data.today ? localInput(new Date(), timezone).slice(11) : '08:00'} disabled={eventBusy} required /></div>
+          </div>
+          <fieldset class="seg" disabled={eventBusy}>
+            <legend>类型</legend>
+            <label class="seg-option"><input type="radio" name="regimen" value="scheduled" checked={form.regimen === 'scheduled'} onchange={() => { form.regimen = 'scheduled'; }} /><span>常规用药</span></label>
+            <label class="seg-option"><input type="radio" name="regimen" value="as_needed" checked={form.regimen === 'as_needed'} onchange={() => { form.regimen = 'as_needed'; }} /><span>按需用药</span></label>
+          </fieldset>
         </div>
         {#if form.keepAmount}<p class="hint">这条是早先按“剂量 + 单位”记下的（{doseText({ dose_amount: form.keepAmount.amount, dose_unit: form.keepAmount.unit })}），保持不变；可以改时间、类型或备注。</p>{/if}
-        <fieldset class="chips" disabled={eventBusy} data-testid="wellbeing-effect-chips">
+        <section class="part"><fieldset class="chips" disabled={eventBusy} data-testid="wellbeing-effect-chips">
           <legend>副作用（可选，点选）</legend>
           {#each effectChoices(form) as name (name)}
-            <button type="button" class="chip-button" aria-pressed={form.effects.includes(name)} onclick={() => { form.effects = form.effects.includes(name) ? form.effects.filter(n => n !== name) : [...form.effects, name]; }}>{name}</button>
+            <button type="button" class="chip-button" data-date={name} aria-pressed={form.effects.includes(name)} onclick={event => { pop(event); form.effects = form.effects.includes(name) ? form.effects.filter(n => n !== name) : [...form.effects, name]; }}>{name}</button>
           {/each}
-        </fieldset>
-        <div class="grid">
-          <label class="field wide">其他副作用（可选）<input class="text-field" name="other_effect" maxlength="40" bind:value={form.other} disabled={eventBusy} autocomplete="off" /></label>
-        </div>
-        <div class="buttons"><button type="submit" class="button-primary" disabled={eventBusy}>{eventBusy ? '保存中…' : form.id ? '保存修改' : '保存服药'}</button><button type="button" class="button-secondary" disabled={eventBusy} onclick={() => { doseForm = null; eventError = ''; }}>取消</button></div>
+          <input class="effect-other" name="other_effect" aria-label="其他副作用（可选）" placeholder="＋ 其他" maxlength="40" bind:value={form.other} disabled={eventBusy} autocomplete="off" />
+        </fieldset></section>
+        <label class="part field">备注（可选）<input class="text-field" name="note" maxlength="500" placeholder="例如：饭后服用" bind:value={form.note} disabled={eventBusy} /></label>
+        <div class="buttons foot"><button type="submit" class="button-primary" disabled={eventBusy}>{eventBusy ? '保存中…' : form.id ? '保存修改' : '保存服药'}</button><button type="button" class="button-secondary" disabled={eventBusy} onclick={() => { doseForm = null; eventError = ''; }}>取消</button></div>
       </form>
     {/snippet}
     <WellbeingDialog open={!!doseForm} labelledby={`${id}-dose-title`} busy={eventBusy} onclose={() => { if (doseForm) { doseForm = null; eventError = ''; } }}>
       {#if dialogForm}
-        <h2 id={`${id}-dose-title`} class="dialog-title">{dialogForm.id ? '编辑服药记录' : '添加服药记录'}</h2>
+        <header class="dlg-head">
+          <span class="dlg-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d={TONES.dose.icon} /></svg></span>
+          <div><h2 id={`${id}-dose-title`} class="dialog-title">{dialogForm.id ? '编辑服药记录' : '添加服药记录'}</h2><p class="dlg-day">记在 {data ? dateLabel(data.date) : ''}，只需选时间</p></div>
+        </header>
         {@render doseEditor(dialogForm)}
         {#if eventError}<div data-testid="wellbeing-event-error"><FeedbackState kind="error" title={eventError} /></div>{/if}
       {/if}
@@ -448,10 +479,6 @@
   @media (min-width: 480px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (min-width: 900px) { .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); } }
   .field { display: grid; gap: var(--space-1); min-width: 0; font-size: var(--text-small); font-weight: var(--weight-semibold); }
-  /* The dose form packs its fields into one grid: name and note are wide, the rest sit beside each other. */
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(7.75rem, 1fr)); gap: var(--space-2) var(--space-3); align-items: end; }
-  .grid .wide { grid-column: span 2; }
-  @media (max-width: 400px) { .grid { grid-template-columns: minmax(0, 1fr); } .grid .wide { grid-column: 1 / -1; } }
   .link { padding: 0; border: 0; background: none; color: var(--primary); font-size: var(--text-small); text-decoration: underline; cursor: pointer; }
   .empty { color: var(--muted-foreground); font-size: var(--text-small); }
   /* "其他药物" widens to the right into a text field where the chip stood, and shrinks back into the chip. */
@@ -459,17 +486,69 @@
   .other.open { width: 13rem; transition-duration: var(--motion-popover-enter-duration); transition-timing-function: var(--motion-popover-enter-ease); }
   .other > * { grid-area: 1 / 1; min-width: 0; transition: opacity 160ms ease; }
   .other > .chip-button { width: 100%; padding-inline: 0; }
-  .other > .other-input { min-height: 2.5rem; }
+  /* Opened, the field keeps the chip's shape: a pill, not a rectangle. */
+  .other > .other-input { min-height: 2.5rem; padding-inline: var(--space-3); border-radius: var(--radius-pill); }
   .other:not(.open) > .other-input, .other.open > .chip-button { opacity: 0; pointer-events: none; }
   @media (prefers-reduced-motion: reduce) { .other, .other > * { transition: none; } }
-  .dialog-title { margin-bottom: var(--space-3); font-size: var(--text-section); font-weight: var(--weight-semibold); }
-  .subform.dialog-form { padding: 0; border: 0; background: none; }
+  .dlg-head { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
+  /* The same round badge as the medication widgets. */
+  .dlg-badge { display: grid; place-items: center; flex: none; width: 3rem; height: 3rem; border-radius: 50%; background: color-mix(in srgb, var(--well-dose) 62%, white); color: var(--sport-ink, #20332b); }
+  .dialog-title { font-size: var(--text-section); font-weight: var(--weight-semibold); line-height: var(--line-height-heading); }
+  .dlg-day { color: var(--muted-foreground); font-size: var(--text-small); }
+  .subform.dialog-form { display: grid; gap: var(--space-4); padding: 0; border: 0; background: none; }
+  /* Each part of the form is a block of its own with a small caption, set apart by a thin rule. */
+  .dialog-form fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+  .dialog-form .part { display: grid; gap: var(--space-3); }
+  .dialog-form .part + .part { padding-top: var(--space-4); border-top: 1px solid var(--border); }
+  .dialog-form legend, .dialog-form .field > label { padding: 0; margin-bottom: var(--space-2); color: var(--muted-foreground); font-size: var(--text-small); font-weight: var(--weight-medium); }
+  .dialog-form .field { display: grid; align-content: start; gap: 0; }
+  /* All the captions alike: the time picker's own label and the note's, like the others. */
+  .dialog-form .field :global(.time-field > label), .dialog-form label.field { color: var(--muted-foreground); font-size: var(--text-small); font-weight: var(--weight-medium); }
+  .dialog-form .field :global(.time-field) { gap: var(--space-2); }
+  .dialog-form label.field { gap: var(--space-2); }
+  .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3) var(--space-4); align-items: start; }
+  @media (max-width: 479px) { .pair { grid-template-columns: minmax(0, 1fr); } }
+  /* The pill count: a − and a + (in halves) either side of the number. */
+  .stepper { display: grid; grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem; align-items: stretch; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); }
+  .stepper:focus-within { border-color: var(--primary); }
+  .stepper .text-field { min-width: 0; border: 0; border-radius: 0; background: transparent; text-align: center; font-size: var(--text-body); font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; box-shadow: none; }
+  .stepper .step { display: grid; place-items: center; min-height: 2.75rem; padding: 0; border: 0; border-radius: var(--radius-control); background-color: transparent; color: var(--primary); font-size: var(--text-card); font-weight: var(--weight-bold); cursor: pointer; }
+  .stepper .step[data-date] { background-image: none !important; box-shadow: none !important; }
+  @media (hover: hover) { .stepper .step:not(:disabled):hover { background-color: var(--primary-soft); } }
+  .stepper .step:disabled { opacity: .4; cursor: not-allowed; }
+  .stepper .step:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+  /* The kind of dose is a two-way switch: the one in use is filled. */
+  .seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); margin: 0; padding: var(--space-1); border: 0; border-radius: var(--radius-pill); background: var(--muted); min-width: 0; }
+  .seg legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .seg-option { position: relative; display: grid; place-items: center; min-height: 2.5rem; border-radius: var(--radius-pill); color: var(--muted-foreground); font-size: var(--text-small); font-weight: var(--weight-semibold); cursor: pointer; transition: background-color .22s ease, color .22s ease; }
+  .seg-option input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .seg-option:has(input:checked) { background-color: var(--surface); color: var(--primary); box-shadow: 0 1px 4px var(--shadow-popover-color, rgba(0, 0, 0, .14)); }
+  .seg-option:has(input:focus-visible) { outline: 2px solid var(--ring); outline-offset: 2px; }
+  .seg:disabled { opacity: .6; }
+  /* "其他药物" and "其他副作用" are open-ended, so they are dashed. */
+  .chip-button.add { border-style: dashed; color: var(--muted-foreground); }
+  .effect-other { flex: 0 1 auto; width: 6.5rem; min-height: 2.5rem; padding: 0 var(--space-3); border: 1px dashed var(--border); border-radius: var(--radius-pill); background: transparent; color: var(--foreground); font-size: var(--text-small); transition: width .26s cubic-bezier(.22, 1, .36, 1), border-color .2s ease; }
+  .effect-other::placeholder { color: var(--muted-foreground); }
+  .effect-other:focus { width: 11rem; border-style: solid; border-color: var(--primary); outline: none; }
+  .foot { margin-top: var(--space-1); padding-top: var(--space-4); border-top: 1px solid var(--border); }
   .subform { display: grid; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--muted); }
   .chips { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; border: 0; }
   .chips legend { width: 100%; margin-bottom: var(--space-2); font-size: var(--text-small); font-weight: var(--weight-semibold); }
-  .chip-button { min-height: 2.5rem; padding: 0 var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface); font-size: var(--text-small); cursor: pointer; }
-  /* The global glass button material would wash a filled state out, so the chosen chip is marked by an outline and a tint that win over it. */
-  .chip-button[aria-pressed='true'] { border-color: var(--primary); background: var(--primary-soft) !important; color: var(--primary) !important; box-shadow: inset 0 0 0 1.5px var(--primary) !important; font-weight: var(--weight-semibold); }
+  /* A chip that is chosen is a solid fill with white text and a tick, so it reads apart from the white ones at a glance. The chips carry data-date, which keeps liquid glass off them (as for calendar days): its material would paint over the fill and leave only green text.
+     Choosing is animated: the fill runs in from the left (a layer of its own, because liquid glass keeps the button's own background-image), the tick opens up and pops, and the whole chip gives a little spring; pressing it dips. */
+  .chip-button { position: relative; isolation: isolate; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; min-height: 2.5rem; padding: 0 var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-pill); background-color: var(--surface); font-size: var(--text-small); cursor: pointer; transition: color .14s ease .1s, border-color .22s ease, scale .18s ease; }
+  .chip-button::after { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--primary); transform-origin: left center; scale: 0 1; transition: scale .34s cubic-bezier(.22, 1, .36, 1); }
+  /* The global sheen on every button[data-date] (a gradient and inset highlights) is switched off: the chips are flat. */
+  .chip-button[data-date] { background-image: none !important; box-shadow: none !important; }
+  .chip-button:active { scale: .94; }
+  .chip-button[aria-pressed='true'] { border-color: var(--primary); color: var(--primary-foreground); font-weight: var(--weight-semibold); }
+  .chip-button[aria-pressed='true']::after { scale: 1 1; }
+  /* The tick is decoration: the empty alt text after the slash keeps it out of the button's accessible name ("pressed" already says it). It is always there, closed to no width until the chip is chosen. */
+  .chip-button::before { content: '✓'; content: '✓' / ''; display: inline-block; width: 0; margin-right: 0; overflow: hidden; opacity: 0; transform: scale(.3) rotate(-30deg); font-weight: var(--weight-bold); transition: width .3s cubic-bezier(.22, 1, .36, 1), margin-right .3s cubic-bezier(.22, 1, .36, 1), opacity .2s ease, transform .38s cubic-bezier(.34, 1.56, .64, 1); }
+  .chip-button[aria-pressed='true']::before { width: 1em; margin-right: var(--space-1); opacity: 1; transform: none; }
+  .chip-button:global(.pop) { animation: chip-pop .42s cubic-bezier(.34, 1.56, .64, 1); }
+  @keyframes chip-pop { 0% { scale: .9; } 55% { scale: 1.07; } 100% { scale: 1; } }
+  @media (prefers-reduced-motion: reduce) { .chip-button, .chip-button::before, .chip-button::after { transition: none; } .chip-button:global(.pop) { animation: none; } .chip-button:active { scale: 1; } }
   .chip-button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
   .buttons { display: flex; flex-wrap: wrap; gap: var(--space-3); }
   .dim { color: var(--muted-foreground); font-weight: var(--weight-regular); }
