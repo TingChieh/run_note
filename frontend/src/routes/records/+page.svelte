@@ -253,6 +253,8 @@
   .records-page :global(.table-scroll) { position: relative; display: grid; gap: var(--space-4); max-height: 20rem; margin-top: var(--space-3); overflow: auto; }
   .records-page :global(.data-table table) { width: 100%; border-collapse: collapse; text-align: left; font-variant-numeric: tabular-nums; }
   .records-page :global(.data-table :is(th, td)) { padding: var(--space-1) var(--space-3) var(--space-1) 0; border-top: 1px solid var(--border); white-space: nowrap; }
+  /* The last column (the change against the year before) may wrap, so the yearly table fits its card on a desktop instead of scrolling sideways by a few pixels. */
+  .records-page :global(.data-table :is(th, td):last-child) { white-space: normal; }
   .records-page :global(.data-table thead th) { border-top: 0; color: var(--muted-foreground); font-weight: var(--weight-medium); }
   .records-page :global(.data-table tbody th) { font-weight: var(--weight-medium); }
 

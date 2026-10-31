@@ -14,7 +14,9 @@ export async function loginRunner(page: Page) {
   await page.getByLabel('邮箱', { exact: true }).fill('runner@example.com');
   await page.getByLabel('密码', { exact: true }).fill('Synthetic-ui-password-2026');
   await page.getByRole('button', { name: '登录', exact: true }).click();
-  await expect(page).toHaveURL(/\/settings$/);
+  // The redirect compiles the settings route first on a cold dev server; and the next goto() must not abort the hydration that follows it.
+  await expect(page).toHaveURL(/\/settings$/, { timeout: 15_000 });
+  await expect(page.locator('header')).toHaveAttribute('data-auth-ready', 'true');
 }
 export async function installActivities(page: Page) {
   const state = {

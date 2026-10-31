@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_GLASS_SETTINGS, normalizeGlassSettings } from '../../src/lib/styles/liquid-glass-settings.ts';
+import { DEFAULT_GLASS_SETTINGS, contentOptics, glassOptics, normalizeGlassSettings, switchOptics } from '../../src/lib/styles/liquid-glass-settings.ts';
 
 describe('glass preview settings', () => {
   it('bounds optics before they reach displacement-map generation', () => {
@@ -17,11 +17,17 @@ describe('glass preview settings', () => {
     const settings = normalizeGlassSettings({ transparency: 90, refraction: 28, blur: 4, highlight: .4,
       ior: NaN, bezel: Infinity, lightAngle: '-90' });
     expect(settings).toMatchObject({ transparency: 90, refraction: 28, blur: 4, highlight: .4,
-      bezel: .8, curvature: 3, ior: 1.5, chroma: .12, specularWidth: 1.5, lightAngle: -120 });
+      bezel: .3, curvature: 3, ior: 1.5, chroma: .12, specularWidth: 2, lightAngle: -120 });
   });
   it('ignores corrupt, non-finite and unknown stored values', () => {
     for (const value of [null, [], 'broken', { transparency: '90', refraction: Infinity, blur: NaN, highlight: null, unexpected: 1 }]) {
       expect(normalizeGlassSettings(value)).toEqual(DEFAULT_GLASS_SETTINGS);
     }
+  });
+  it('keeps backdrop blur out of lenses that filter their own copy', () => {
+    const settings = { ...DEFAULT_GLASS_SETTINGS, blur: 5 };
+    expect(glassOptics(settings, .55).blur).toBe(5);
+    expect(contentOptics(settings, .55)).toEqual({ ...glassOptics(settings, .55), blur: 0 });
+    expect(switchOptics(settings).blur).toBe(0);
   });
 });

@@ -33,7 +33,7 @@
   $effect(() => {
     if (!glass || !floating || !bar) return;
     if (matchMedia('(prefers-reduced-transparency: reduce)').matches || matchMedia('(forced-colors: active)').matches) return;
-    // The same optics as the glass buttons (full refraction, no extra blur), so it reads like them rather than like frosted glass.
+    // The same optics as the glass buttons (full refraction and the default 2px backdrop blur), so it reads like them rather than like frosted glass.
     const optics = (value: ReturnType<typeof readGlassSettings>) => ({ ...glassOptics(value, 1), chroma: 0 });
     const initial = readGlassSettings();
     const handle = attachMenuGlass(bar, initial);

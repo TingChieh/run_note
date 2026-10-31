@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { installActivities, loginRunner, sampleActivity } from '../fixtures/activities.ts';
 import { installAI, report } from '../fixtures/p2.ts';
+import { openAccountMenu } from '../fixtures/top-navigation.ts';
 
 for (const width of [390, 1440]) {
   for (const theme of ['light', 'dark']) {
@@ -49,7 +50,7 @@ test('admin entry authenticates, enables mutations, and logout returns to public
   await expect(page.getByRole('dialog', { name: '编辑跑步记录' })).toBeVisible();
   await page.getByRole('button', { name: '取消编辑', exact: true }).click();
   await page.getByRole('button', { name: '完成', exact: true }).click();
-  await page.getByRole('button', { name: '退出登录', exact: true }).click();
+  await (await openAccountMenu(page)).getByRole('button', { name: '退出登录', exact: true }).click();
   await expect(page).toHaveURL(/\/activities$/);
   await expect(page.getByTestId('current-user')).toContainText('个人跑步展示');
   await page.goto('/activities');

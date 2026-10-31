@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { installActivities, loginRunner, sampleActivity } from '../fixtures/activities';
+import { openGoalPanel } from '../fixtures/top-navigation';
+import { DEFAULT_GLASS_SETTINGS } from '../../src/lib/styles/liquid-glass-settings.ts';
 
 test('file format select ignores empty space to the right of its label', async ({ page }) => {
   await installActivities(page); await loginRunner(page); await page.goto('/activities');
@@ -116,6 +118,7 @@ test('pressing a glass preview button deforms its sampled backdrop and restores 
 
 test('select menus animate both ways and a second trigger click dismisses without reopening', async ({ page }) => {
   await loginRunner(page);
+  await openGoalPanel(page);
   const select = page.locator('.app-sidebar select').first();
   await expect(select).toHaveClass(/rn-liquid-select/);
   await select.click();
@@ -135,25 +138,80 @@ test('select menus animate both ways and a second trigger click dismisses withou
   expect(await menu.evaluate(el => getComputedStyle(el).transitionDuration)).toBe('0s');
 });
 
-test('liquid navigation follows hover then returns to the current vertical route', async ({ page }) => {
+test('liquid navigation follows hover then returns to the current route along the x axis', async ({ page }) => {
   await loginRunner(page);
   const nav = page.getByRole('navigation', { name: '主要导航' });
   const indicator = nav.locator('.rn-moving-outline');
-  const current = nav.getByRole('link', { name: '设置', exact: true });
+  // Settings is not in the navigation: its current-page marker is the avatar's ring, and the lens stays idle.
+  await expect(page.locator('.account-menu-host .account-avatar')).toHaveAttribute('data-current', '');
+  await expect(nav).toHaveAttribute('data-idle', '');
+  await expect(indicator).toHaveCSS('opacity', '0');
+  await nav.getByRole('link', { name: '数据汇总', exact: true }).click();
+  const current = nav.getByRole('link', { name: '数据汇总', exact: true });
+  await expect(current).toHaveAttribute('aria-current', 'page');
+  await expect(nav).not.toHaveAttribute('data-idle');
   const footprint = nav.getByRole('link', { name: '个人足迹', exact: true });
   await expect(indicator).toBeVisible();
-  const position = () => indicator.evaluate(el => el.getBoundingClientRect().y);
-  await expect.poll(position).toBeCloseTo((await current.boundingBox())!.y, 0);
+  const position = () => indicator.evaluate(el => el.getBoundingClientRect().x);
+  await expect.poll(position).toBeCloseTo((await current.boundingBox())!.x, 0);
   await footprint.hover();
-  await expect.poll(position).toBeCloseTo((await footprint.boundingBox())!.y, 0);
+  await expect.poll(position).toBeCloseTo((await footprint.boundingBox())!.x, 0);
   await expect(current).toHaveAttribute('aria-current', 'page');
   await page.getByRole('heading', { level: 1 }).hover();
-  await expect.poll(position).toBeCloseTo((await current.boundingBox())!.y, 0);
+  await expect.poll(position).toBeCloseTo((await current.boundingBox())!.x, 0);
   const dimensions = await indicator.evaluate(el => ({ radius: parseFloat(getComputedStyle(el).borderRadius), height: el.getBoundingClientRect().height }));
   expect(dimensions.radius).toBeCloseTo(dimensions.height / 2, 0);
   await page.emulateMedia({ forcedColors: 'active' });
   await expect(indicator).toHaveCount(0);
   await expect(current).toHaveAttribute('aria-current', 'page');
+});
+
+test('navigation edge capsules stay inside their paint surface while pressed', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'no-preference' });
+  await installActivities(page); await loginRunner(page); await page.goto('/dashboard');
+  const nav = page.getByRole('navigation', { name: '主要导航' });
+  const outline = nav.locator('.rn-moving-outline'), copy = nav.locator('.rn-moving-copy');
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    if (width < 800) await page.getByRole('button', { name: '打开导航' }).click();
+    await expect(nav).toHaveAttribute('data-axis', width < 800 ? 'y' : 'x');
+    const links = nav.getByRole('link');
+    for (const index of [0, await links.count() - 1, 0]) {
+      const link = links.nth(index);
+      // Release outside to avoid navigation, without starting a native link drag that suppresses subsequent WebKit pointerdown events.
+      await link.evaluate(el => el.setAttribute('draggable', 'false'));
+      await link.hover();
+      const movingClearance = await nav.evaluate(async el => {
+        let smallest = Infinity;
+        for (let frame = 0; frame < 30; frame++) {
+          await new Promise(requestAnimationFrame);
+          const lens = el.querySelector('.rn-moving-outline')!.getBoundingClientRect(), surface = el.querySelector('.rn-moving-copy')!.getBoundingClientRect();
+          smallest = Math.min(smallest, lens.left - surface.left, lens.top - surface.top, surface.right - lens.right, surface.bottom - lens.bottom);
+        }
+        return smallest;
+      });
+      expect(movingClearance, 'spring stretch must also stay inside the paint surface').toBeGreaterThanOrEqual(-.5);
+      await expect.poll(async () => {
+        const a = (await outline.boundingBox())!, b = (await link.boundingBox())!;
+        return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+      }).toBeLessThan(1);
+      const original = (await link.boundingBox())!;
+      const label = (await copy.locator('.rn-moving-label').nth(index).boundingBox())!;
+      expect(label.x).toBeCloseTo(original.x, 0);
+      expect(label.y).toBeCloseTo(original.y, 0);
+      await page.mouse.down();
+      try {
+        await expect.poll(async () => (await outline.boundingBox())!.height).toBeGreaterThan(original.height + 4);
+        await page.screenshot({ path: test.info().outputPath(`nav-${width}-edge-${index}-pressed.png`) });
+        const lens = (await outline.boundingBox())!, surface = (await copy.boundingBox())!;
+        const clearance = Math.min(lens.x - surface.x, lens.y - surface.y, surface.x + surface.width - lens.x - lens.width, surface.y + surface.height - lens.y - lens.height);
+        expect(clearance, `the capsule at ${width}px must not cross the filter's rectangular paint boundary`).toBeGreaterThanOrEqual(-.5);
+      } finally {
+        await page.mouse.move(0, 0); await page.mouse.up();
+      }
+    }
+    expect(await nav.evaluate(el => { const aside = el.closest('.app-sidebar')!; return aside.scrollWidth - aside.clientWidth; }), 'the extra paint area must not add a horizontal scrollbar').toBeLessThanOrEqual(0);
+  }
 });
 
 test('liquid select preserves native values, keyboard selection and Escape focus', async ({ page }) => {
@@ -215,7 +273,7 @@ test('liquid slider squishes its thumb while retaining native range geometry and
   await expect(page.getByRole('slider', { name: '折射率', exact: true })).toHaveValue('1.5');
 });
 
-test('non-Blink fallback remains frosted with zero optical blur', async ({ page }) => {
+test('non-Blink fallback stays frosted: 16px base plus the optical blur (its default)', async ({ page }) => {
   // Exercise the engine's fallback branch in Chrome; this is not a real Firefox rendering test.
   await page.addInitScript(() => {
     Object.defineProperty(navigator, 'userAgentData', { value: undefined, configurable: true });
@@ -223,7 +281,7 @@ test('non-Blink fallback remains frosted with zero optical blur', async ({ page 
   });
   await page.goto('/admin');
   const layer = page.getByRole('button', { name: '登录', exact: true }).locator('.rn-glass-layer');
-  await expect(layer).toHaveCSS('backdrop-filter', 'blur(16px) saturate(1.6)');
+  await expect(layer).toHaveCSS('backdrop-filter', `blur(${16 + DEFAULT_GLASS_SETTINGS.blur}px) saturate(1.6)`);
   await expect(page.locator('body > svg defs filter')).toHaveCount(0);
   await page.getByRole('button', { name: '玻璃调节', exact: true }).click();
   await page.getByRole('slider', { name: '模糊程度', exact: true }).fill('8');
@@ -405,7 +463,7 @@ test('development tuner previews live optics, remembers choices and restores def
   await expect(panel.getByRole('slider', { name: '透明度', exact: true })).toHaveValue('90');
   await expect(refraction).toHaveValue('27');
   await panel.getByRole('button', { name: '恢复默认', exact: true }).click();
-  await expect(panel.getByRole('slider', { name: '透明度', exact: true })).toHaveValue('86');
+  await expect(panel.getByRole('slider', { name: '透明度', exact: true })).toHaveValue('88');
   await expect(refraction).toHaveValue('14');
   for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 844 });
@@ -424,7 +482,7 @@ test('development preview handles corrupt or blocked storage and respects reduce
   await page.goto('/admin');
   await page.getByRole('button', { name: '玻璃调节', exact: true }).click();
   const panel = page.getByRole('region', { name: 'Liquid Glass 调节' });
-  await expect(panel.getByRole('slider', { name: '透明度', exact: true })).toHaveValue('86');
+  await expect(panel.getByRole('slider', { name: '透明度', exact: true })).toHaveValue('88');
   await panel.getByRole('slider', { name: '透明度', exact: true }).fill('95');
   await expect.poll(() => page.locator('.sport-theme').evaluate(el => Number(getComputedStyle(el).getPropertyValue('--glass-opacity')))).toBeCloseTo(.05);
   const cdp = await page.context().newCDPSession(page);

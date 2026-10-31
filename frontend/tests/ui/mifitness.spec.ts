@@ -4,7 +4,7 @@ const source = (time=1791763200,track=false) => ({source_time:time,has_downloade
 const preview = {activity_date:'2026-10-12',timezone:'Asia/Shanghai',started_at:'2026-10-12T00:00:00Z',ended_at:'2026-10-12T00:20:00Z',distance_m:'3000',timer_seconds:'1200',elapsed_seconds:'1200',calories_kcal:null,steps:null,avg_heart_rate_bpm:null,max_heart_rate_bpm:180,min_heart_rate_bpm:null,avg_cadence_spm:'170',max_cadence_spm:null,vo2_max_ml_kg_min:'45',training_load:null,aerobic_training_effect:'0',anaerobic_training_effect:null,has_route:false,point_count:0,segment_count:0,warnings:['MIFITNESS_MAX_CADENCE_INVALID'],suspected_activity_ids:[]};
 const jsonFile=(records:unknown[])=>({name:'running_summaries.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({records}))});
 const region=(page:Page)=>page.getByRole('region',{name:'Mi Fitness 跑步导入',exact:true});
-async function setup(page:Page){await installActivities(page);await loginRunner(page);await page.goto('/activities');}
+async function setup(page:Page){await installActivities(page);await loginRunner(page);await page.goto('/activities');await expect(region(page).getByLabel(/running_summaries\.json/)).toBeEnabled();}
 test('preview precedes serial summary-only saves and shows server device warnings on desktop and mobile',async({page})=>{
   const events:string[]=[];let active=0,max=0;
   await page.route('**/api/v1/mifitness-imports**',async route=>{
@@ -12,7 +12,7 @@ test('preview precedes serial summary-only saves and shows server device warning
     const isPreview=route.request().url().includes('preview=true');events.push(isPreview?'preview':'save');await new Promise(resolve=>setTimeout(resolve,30));active--;
     await route.fulfill({status:isPreview?200:201,json:{data:isPreview?preview:{activity:{...sampleActivity,...preview},warnings:[]}}});
   });
-  await setup(page);const box=region(page);await box.getByLabel('跑步汇总 JSON').setInputFiles(jsonFile([source(),source(1791849600)]));
+  await setup(page);const box=region(page);await box.getByLabel(/running_summaries\.json/).setInputFiles(jsonFile([source(),source(1791849600)]));
   await box.getByRole('button',{name:'预览所选记录'}).click();await expect(box.getByText('最大步频异常，已留空')).toHaveCount(2);expect(events).toEqual(['preview','preview']);
   await expect(box.getByText('设备估计')).toHaveCount(2);await expect(box.getByText('仅汇总（无轨迹）',{exact:true})).toHaveCount(2);
   await page.getByRole('button',{name:'导入预览成功的记录'}).focus();
@@ -27,8 +27,8 @@ test('matching failure is visible and duplicate enrichment requires an explicit 
     writes.push(route.request().postData()??'');if(writes.at(-1)?.includes('enrich_activity_id'))return route.fulfill({status:201,json:{data:{activity:{...sampleActivity,...preview},warnings:[]}}});
     return route.fulfill({status:409,json:{error:{code:'MIFITNESS_DUPLICATE',message:'记录已存在',details:[{existing_activity_id:sampleActivity.id,duplicate_kind:'record'}]}}});
   });
-  await setup(page);const box=region(page);await box.getByLabel('跑步汇总 JSON').setInputFiles(jsonFile([source(undefined,true)]));await box.getByRole('button',{name:'预览所选记录'}).click();await expect(box.getByRole('alert')).toContainText('缺少');expect(writes).toHaveLength(0);
-  await box.getByLabel('跑步汇总 JSON').setInputFiles(jsonFile([source()]));await box.getByRole('button',{name:'预览所选记录'}).click();await expect(box.getByRole('link',{name:'查看已有活动'})).toHaveAttribute('href',`/activities/${sampleActivity.id}`);expect(writes).toHaveLength(1);
+  await setup(page);const box=region(page);await box.getByLabel(/running_summaries\.json/).setInputFiles(jsonFile([source(undefined,true)]));await box.getByRole('button',{name:'预览所选记录'}).click();await expect(box.getByRole('alert')).toContainText('缺少');expect(writes).toHaveLength(0);
+  await box.getByLabel(/running_summaries\.json/).setInputFiles(jsonFile([source()]));await box.getByRole('button',{name:'预览所选记录'}).click();await expect(box.getByRole('link',{name:'查看已有活动'})).toHaveAttribute('href',`/activities/${sampleActivity.id}`);expect(writes).toHaveLength(1);
   await box.getByRole('button',{name:'仅补充已有记录缺失指标'}).click();await expect(box.getByText('成功 · 仅汇总')).toBeVisible();expect(writes).toHaveLength(2);
 });
 test('similar records need individual confirmation and only failed records are retried',async({page})=>{
@@ -39,11 +39,11 @@ test('similar records need individual confirmation and only failed records are r
    saves++;if(saves===1)return route.fulfill({status:503,json:{error:{message:'暂时无法保存'}}});
    expect(body).toContain('confirm_similar');return route.fulfill({status:201,json:{data:{activity:{...sampleActivity,...preview},warnings:[]}}});
  });
- await setup(page);const box=region(page);await box.getByLabel('跑步汇总 JSON').setInputFiles(jsonFile([source()]));await box.getByRole('button',{name:'预览所选记录'}).click();await expect(box.getByText('疑似重复，请逐条确认')).toBeVisible();expect(saves).toBe(0);
+ await setup(page);const box=region(page);await box.getByLabel(/running_summaries\.json/).setInputFiles(jsonFile([source()]));await box.getByRole('button',{name:'预览所选记录'}).click();await expect(box.getByText('疑似重复，请逐条确认')).toBeVisible();expect(saves).toBe(0);
  await box.getByRole('button',{name:'仍要导入此条记录'}).click();await expect(box.getByText('暂时无法保存')).toBeVisible();await box.getByRole('button',{name:'仅重试失败记录'}).click();await expect(box.getByText('成功 · 仅汇总')).toBeVisible();expect(previews).toBe(1);expect(saves).toBe(2);
 });
 test('401 clears selected private summaries and returns to login',async({page})=>{
- await page.route('**/api/v1/mifitness-imports**',route=>route.fulfill({status:401,json:{error:{message:'expired'}}}));await setup(page);const box=region(page);await box.getByLabel('跑步汇总 JSON').setInputFiles(jsonFile([source()]));await box.getByRole('button',{name:'预览所选记录'}).click();await expect(page).toHaveURL(/\/admin\?reason=expired/);await expect(page.getByText('1791763200')).toHaveCount(0);
+ await page.route('**/api/v1/mifitness-imports**',route=>route.fulfill({status:401,json:{error:{message:'expired'}}}));await setup(page);const box=region(page);await box.getByLabel(/running_summaries\.json/).setInputFiles(jsonFile([source()]));await box.getByRole('button',{name:'预览所选记录'}).click();await expect(page).toHaveURL(/\/admin\?reason=expired/);await expect(page.getByText('1791763200')).toHaveCount(0);
 });
 test('exact track uploads retain the filename; failed enrichment retry keeps its explicit target',async({page})=>{
  const bodies:string[]=[];
@@ -55,7 +55,7 @@ test('exact track uploads retain the filename; failed enrichment retry keeps its
   if(bodies.length===2)return route.fulfill({status:503,json:{error:{message:'补充暂时失败'}}});
   return route.fulfill({status:201,json:{data:{activity:{...sampleActivity,...preview,has_route:true},warnings:[]}}});
  });
- await setup(page);const box=region(page);await box.getByLabel('跑步汇总 JSON').setInputFiles(jsonFile([source(undefined,true)]));
+ await setup(page);const box=region(page);await box.getByLabel(/running_summaries\.json/).setInputFiles(jsonFile([source(undefined,true)]));
  await box.getByLabel('匹配的 GPX 文件').setInputFiles({name:'running_1791763200.gpx',mimeType:'application/gpx+xml',buffer:Buffer.from('<gpx version="1.1" creator="synthetic"/>')});
  await box.getByRole('button',{name:'预览所选记录'}).click();await box.getByRole('button',{name:'仅补充已有记录缺失指标'}).click();await expect(box.getByText('补充暂时失败')).toBeVisible();
  await box.getByRole('button',{name:'仅重试失败记录'}).click();await expect(box.getByText('成功',{exact:true})).toBeVisible();expect(bodies).toHaveLength(3);
@@ -72,7 +72,7 @@ test('busy controls prevent another submission and leaving the page discards the
  let release!:()=>void,entered!:()=>void,calls=0;
  const held=new Promise<void>(resolve=>{release=resolve;});const started=new Promise<void>(resolve=>{entered=resolve;});
  await page.route('**/api/v1/mifitness-imports**',async route=>{calls++;entered();await held;await route.fulfill({json:{data:preview}}).catch(()=>{});});
- await setup(page);const box=region(page);await box.getByLabel('跑步汇总 JSON').setInputFiles(jsonFile([source(),source(1791849600)]));await box.getByRole('button',{name:'预览所选记录'}).click();await started;
- await expect(box.getByRole('button',{name:'预览所选记录'})).toBeDisabled();await expect(box.getByLabel('跑步汇总 JSON')).toBeDisabled();await expect(box.getByLabel('匹配的 GPX 文件')).toBeDisabled();await expect(page.getByRole('button',{name:'导入 GPX',exact:true})).toBeDisabled();
+ await setup(page);const box=region(page);await box.getByLabel(/running_summaries\.json/).setInputFiles(jsonFile([source(),source(1791849600)]));await box.getByRole('button',{name:'预览所选记录'}).click();await started;
+ await expect(box.getByRole('button',{name:'预览所选记录'})).toBeDisabled();await expect(box.getByLabel(/running_summaries\.json/)).toBeDisabled();await expect(box.getByLabel('匹配的 GPX 文件')).toBeDisabled();await expect(page.getByRole('button',{name:'导入 GPX',exact:true})).toBeDisabled();
  await page.goto('/settings');release();await expect(page.getByRole('heading',{name:'设置',exact:true})).toBeVisible();expect(calls).toBe(1);await expect(page.getByText('2026-10-12',{exact:true})).toHaveCount(0);
 });
