@@ -94,6 +94,33 @@ test('on a phone the goal stays inline in the menu and the ring is hidden', asyn
   await expect(page.getByRole('region', { name: '跑量目标' })).toBeVisible();
 });
 
+test('the open phone menu exposes only one theme switch and one automatic control', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
+  await installActivities(page); await loginRunner(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/dashboard');
+  await expect(page.locator('header[data-auth-ready="true"]')).toHaveCount(1);
+  await page.getByRole('button', { name: '打开导航' }).click();
+  const themeSwitch = page.getByRole('button', { name: /^切换到(浅|深)色模式$/ });
+  const automatic = page.getByRole('button', { name: '跟随系统外观', exact: true });
+  await expect(themeSwitch).toHaveCount(1);
+  await themeSwitch.click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  for (const width of [320, 799, 800, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect(themeSwitch).toHaveCount(1);
+    await expect(automatic).toHaveCount(1);
+  }
+  await expect(page.locator('.nav-account .appearance-row')).toBeHidden();
+  await page.screenshot({ path: test.info().outputPath('phone-theme-controls-dark.png') });
+  await automatic.click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await expect(automatic).toHaveCount(0);
+  await page.setViewportSize({ width: 800, height: 844 });
+  await expect(page.locator('.nav-account .appearance-row')).toBeVisible();
+  await expect(themeSwitch).toHaveCount(1);
+});
+
 test('resizing below the desktop breakpoint with the goal panel open leaves no stale popover state', async ({ page }) => {
   await installActivities(page); await loginRunner(page);
   await page.setViewportSize({ width: 1440, height: 900 });

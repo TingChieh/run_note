@@ -166,6 +166,54 @@ test('liquid navigation follows hover then returns to the current route along th
   await expect(current).toHaveAttribute('aria-current', 'page');
 });
 
+test('navigation edge capsules stay inside their paint surface while pressed', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'no-preference' });
+  await installActivities(page); await loginRunner(page); await page.goto('/dashboard');
+  const nav = page.getByRole('navigation', { name: '主要导航' });
+  const outline = nav.locator('.rn-moving-outline'), copy = nav.locator('.rn-moving-copy');
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    if (width < 800) await page.getByRole('button', { name: '打开导航' }).click();
+    await expect(nav).toHaveAttribute('data-axis', width < 800 ? 'y' : 'x');
+    const links = nav.getByRole('link');
+    for (const index of [0, await links.count() - 1, 0]) {
+      const link = links.nth(index);
+      // Release outside to avoid navigation, without starting a native link drag that suppresses subsequent WebKit pointerdown events.
+      await link.evaluate(el => el.setAttribute('draggable', 'false'));
+      await link.hover();
+      const movingClearance = await nav.evaluate(async el => {
+        let smallest = Infinity;
+        for (let frame = 0; frame < 30; frame++) {
+          await new Promise(requestAnimationFrame);
+          const lens = el.querySelector('.rn-moving-outline')!.getBoundingClientRect(), surface = el.querySelector('.rn-moving-copy')!.getBoundingClientRect();
+          smallest = Math.min(smallest, lens.left - surface.left, lens.top - surface.top, surface.right - lens.right, surface.bottom - lens.bottom);
+        }
+        return smallest;
+      });
+      expect(movingClearance, 'spring stretch must also stay inside the paint surface').toBeGreaterThanOrEqual(-.5);
+      await expect.poll(async () => {
+        const a = (await outline.boundingBox())!, b = (await link.boundingBox())!;
+        return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+      }).toBeLessThan(1);
+      const original = (await link.boundingBox())!;
+      const label = (await copy.locator('.rn-moving-label').nth(index).boundingBox())!;
+      expect(label.x).toBeCloseTo(original.x, 0);
+      expect(label.y).toBeCloseTo(original.y, 0);
+      await page.mouse.down();
+      try {
+        await expect.poll(async () => (await outline.boundingBox())!.height).toBeGreaterThan(original.height + 4);
+        await page.screenshot({ path: test.info().outputPath(`nav-${width}-edge-${index}-pressed.png`) });
+        const lens = (await outline.boundingBox())!, surface = (await copy.boundingBox())!;
+        const clearance = Math.min(lens.x - surface.x, lens.y - surface.y, surface.x + surface.width - lens.x - lens.width, surface.y + surface.height - lens.y - lens.height);
+        expect(clearance, `the capsule at ${width}px must not cross the filter's rectangular paint boundary`).toBeGreaterThanOrEqual(-.5);
+      } finally {
+        await page.mouse.move(0, 0); await page.mouse.up();
+      }
+    }
+    expect(await nav.evaluate(el => { const aside = el.closest('.app-sidebar')!; return aside.scrollWidth - aside.clientWidth; }), 'the extra paint area must not add a horizontal scrollbar').toBeLessThanOrEqual(0);
+  }
+});
+
 test('liquid select preserves native values, keyboard selection and Escape focus', async ({ page }) => {
   await loginRunner(page); await page.goto('/dashboard');
   const select = page.getByLabel('日历维度', { exact: true });

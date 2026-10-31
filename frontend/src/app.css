@@ -327,6 +327,7 @@
     @media (prefers-reduced-motion: reduce) { .app-sidebar { transition: none; transform: none; } }
     .sidebar-brand, .desktop-brand, .nav-caption { display: none; }
     .nav-account { margin-top: var(--space-4); padding-top: var(--space-4); }
+    .nav-account .appearance-row { display: none; }
     .account-menu-host, .account-avatar-slot { display: none; }
     .app-shell .content-column { margin-left: 0; min-height: calc(100dvh - 69px); }
     .app-shell .navigation-progress { left: 0; }

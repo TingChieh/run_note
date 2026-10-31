@@ -2,10 +2,11 @@ import { createGlass, createSpring, engine } from '../vendor/liquidglass/liquid-
 import { contentOptics, type GlassSettings } from './liquid-glass-settings.ts';
 
 /** Decorative copy of known navigation/option labels; never copies arbitrary page content. */
-export function createIndicator(host: HTMLElement, items: HTMLElement[], initial: GlassSettings, axis: 'x' | 'y' = 'y', start = 0) {
+export function createIndicator(host: HTMLElement, items: HTMLElement[], initial: GlassSettings, axis: 'x' | 'y' = 'y', start = 0, bleed = 0) {
   const horizontal = axis === 'x';
   const copy = document.createElement('span'), outline = document.createElement('span');
   copy.className = 'rn-moving-copy'; outline.className = 'rn-moving-outline';
+  if (bleed) copy.style.maxWidth = 'none';
   for (const node of [copy, outline]) node.setAttribute('aria-hidden', 'true');
   const labels = items.map(item => {
     const label = document.createElement('span'); label.className = 'rn-moving-label';
@@ -32,9 +33,9 @@ export function createIndicator(host: HTMLElement, items: HTMLElement[], initial
     const height = item.offsetHeight + (horizontal ? 0 : stretch) + 6 * press;
     const x = horizontal ? pos - stretch / 2 + 2 * press : item.offsetLeft + 2 * press;
     const top = horizontal ? item.offsetTop - 3 * press : pos - stretch / 2 - 3 * press;
-    const lensY = top - host.scrollTop;
-    if (glass) glass.update({ x, y: lensY, width, height, radius: height / 2 });
-    else clipCopy(x, lensY, width, height, height / 2);
+    const lensX = x + bleed, lensY = top - host.scrollTop + bleed;
+    if (glass) glass.update({ x: lensX, y: lensY, width, height, radius: height / 2 });
+    else clipCopy(lensX, lensY, width, height, height / 2);
     Object.assign(outline.style, { width: `${width}px`, height: `${height}px`, borderRadius: `${height / 2}px`, transform: `translate(${x}px, ${top}px)` });
   }
   const spring = createSpring(0, (value, speed) => { pos = value; velocity = speed; render(); }, { stiffness: 380, damping: 30 });
@@ -44,11 +45,11 @@ export function createIndicator(host: HTMLElement, items: HTMLElement[], initial
     index = next; spring.set(horizontal ? items[next].offsetLeft : items[next].offsetTop, { immediate: immediate || motion.matches });
   }
   function refresh() {
-    // Keep the filtered copy viewport-sized, even for a scrolling 201-year menu.
-    Object.assign(copy.style, { height: `${host.clientHeight}px`, width: `${host.clientWidth}px`, transform: `translateY(${host.scrollTop}px)` });
+    // Navigation needs room for squish/stretch beyond its first/last item. Scrolling menus keep bleed=0 and stay viewport-sized.
+    Object.assign(copy.style, { height: `${host.clientHeight + 2 * bleed}px`, width: `${host.clientWidth + 2 * bleed}px`, transform: `translate(${-bleed}px, ${host.scrollTop - bleed}px)` });
     items.forEach((item, i) => {
       const style = getComputedStyle(item);
-      Object.assign(labels[i].style, { left: `${item.offsetLeft}px`, top: `${item.offsetTop - host.scrollTop}px`, width: `${item.offsetWidth}px`, height: `${item.offsetHeight}px`, padding: style.padding, gap: style.gap, font: style.font, letterSpacing: style.letterSpacing });
+      Object.assign(labels[i].style, { left: `${item.offsetLeft + bleed}px`, top: `${item.offsetTop - host.scrollTop + bleed}px`, width: `${item.offsetWidth}px`, height: `${item.offsetHeight}px`, padding: style.padding, gap: style.gap, font: style.font, letterSpacing: style.letterSpacing });
     });
     move(index, true);
   }
@@ -82,7 +83,7 @@ export function enhanceNavigation(nav: HTMLElement, settings: GlassSettings) {
 }
 
 function build(nav: HTMLElement, links: HTMLAnchorElement[], settings: GlassSettings, axis: 'x' | 'y') {
-  const indicator = createIndicator(nav, links, settings, axis);
+  const indicator = createIndicator(nav, links, settings, axis, 0, 16);
   nav.classList.add('rn-liquid-navigation'); nav.dataset.axis = axis;
   const currentIndex = () => links.findIndex(link => link.getAttribute('aria-current') === 'page');
   // On a page that has no link here (e.g. settings, reached from the account row) the lens rests hidden instead of on the first link.

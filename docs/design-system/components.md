@@ -12,7 +12,7 @@
 | [MetricSummary](../../frontend/src/lib/components/MetricSummary.svelte) | `items:{label:string,value:string,testId?:string,icon?:…}[]`；`compact=false`；`appearance='sport'`（可选 default）；`stacked=false` | dl/dt/dd，value 已格式化；不计算指标。`—` 附缺失说明。compact 无卡片外框；stacked 作用于 sport。ActivityCard、详情、公开详情复用 |
 | [DatePicker](../../frontend/src/lib/components/DatePicker.svelte) | `label:string`；`value=$bindable('')`；`min='1900-01-01'`；`max='2100-12-31'`；`timezone='UTC'`；`required=false`；`disabled=false`；`granularity='date'|'month'`；`onselect?(value)` | 原生 date/month + Popover；month 模式值为 `YYYY-MM`，3×4 月份格、年份选择与上/下一年，方向键按月/行，Home/End 行首尾，PageUp/Down 按年，底部清除/本月，label/controls/expanded/dialog。方向键按日/周，Home/End 按周，PageUp/Down 按月，Enter 选择，Escape 回触发器。AI 日期范围、分享图统计月份使用；日期解释与验证仍由领域调用方负责 |
 | [TimePicker](../../frontend/src/lib/components/TimePicker.svelte) | `label:string`；`value=$bindable('')`（`HH:mm`）；`max=''`（`HH:mm`，其后的时间置灰不可选）；`now=''`（“现在”按钮用）；`required=false`；`disabled=false`；`onselect?(value)` | 与 DatePicker 同一套：输入框是纯文本的 24 小时输入（键入数字时自动补冒号，不用浏览器自带的时间框——各浏览器样子不同，Firefox 还会多出自己的时钟图标；可直接键入、读屏），时钟按钮打开 Popover（**纯色实底、不用玻璃材质**；弹出/收回动效照搬日历弹层、定位复用 `popover-motion`，面板里的按钮都带 `data-date` 不被液态玻璃接管）。弹层里上方是大号的当前时间，下面“时/分”两列滚轮：选中的时间固定在每列正中间（一条主色的横带），列表在它下面上下滚动，**滚到哪一项就选中哪一项**（滚动中实时更新、停下后吸附到整行；比 `max` 晚的项置灰，滚过头会退回到允许的最晚时间），也可以点某一项让它滑到中间；底部“现在/完成”，没有额外的提示小字；选项带 `data-date` 以免液态玻璃洗掉填充；上下键逐项、PageUp/Down 跳 5、Home/End 首尾，Esc 关闭回触发器。身心健康里的服药时间使用（日期固定为所在日，只选时间）；时区与“不能晚于现在”的业务判断仍由调用方负责 |
-| [ThemeToggle](../../frontend/src/lib/components/ThemeToggle.svelte) | `compact=false` | 挂载前禁用，手动浅深色与“自动”；恢复自动把焦点留在切换按钮。偏好仅本机；不接受服务器用户主题配置 |
+| [ThemeToggle](../../frontend/src/lib/components/ThemeToggle.svelte) | `compact=false` | 挂载前禁用，手动浅深色与“自动”；恢复自动把焦点留在切换按钮。私人导航中，手机只显示顶部栏的紧凑入口，展开菜单不重复显示；桌面使用账户区入口。偏好仅本机；不接受服务器用户主题配置 |
 | [ImageUpload](../../frontend/src/lib/components/ImageUpload.svelte) | `label:string`；`src:string\|null`；`fallback:string`；`shape?:'circle'\|'square'`（默认 square）；`busy=false`；`error=''`；`hint=''`；`onselect(file)`；`onremove()` | 头像/站内标志/浏览器图标上传。原生 file input + label；accept 仅 png/jpeg/webp；预览失败回退字符；移除/恢复默认按钮；错误 role=alert；busy 禁用；挂载前禁用，隐藏 input 获得焦点时在 label 显示焦点环。设置页（账户、站点）消费，校验与裁剪由服务端负责 |
 
 `SettingsTabs`（`current:'account'|'site'`）用于账户设置与站点设置之间的分区切换，遵循“模式切换用链接组 + `aria-current`，不加 `role=tab`”；站点设置链接仅管理员可见，固定指向 `/settings/site`，账户链接随工作区上下文。
@@ -116,6 +116,8 @@ RecordsBannerLoader：`onMount` 读取 `readRecords()`，保留 `disposed` 与�
 根布局已调用 [liquidGlass](../../frontend/src/lib/styles/liquid-glass.ts)。独立展示在根 `.sport-theme` 调用一次；嵌套组件不要再增强一次。保留 `.button-primary`、`button.bg-primary`、`.save`、`.apply-button`、`.delete-confirm`、`.mode-switch button[aria-pressed]` 等识别规则。危险按钮用现有危险确认语义；红色文字示例本身不承担真实删除。
 
 动态增强不能移动 Svelte 拥有的标签/图标 DOM，不能复制私人 DOM；action 负责清理 observer、监听器与光学实例。无折射能力或偏好减少透明度时保留可操作的原生语义与回退。参数调试继续用现有 LiquidGlassTuner，不另写参数系统。
+
+导航滑块的标签副本在四周预留 16px 绘制空间，滤镜、WebKit 遮罩与文字坐标同步偏移，避免首尾按钮按压或弹性移动时被副本的矩形边界裁切。分段标签与滚动下拉菜单保持视口大小的副本，不增加这圈空间。
 
 ## 顶部导航与锚定弹层
 
