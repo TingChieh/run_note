@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import text
 
 from app.db.schema import get_expected_revision
-from tests.integration.test_gpx_import import clients, register  # noqa: F401
+from tests.conftest import clients, register  # noqa: F401
 from tests.integration.test_migrations import assert_downgrade_guard
 from tests.integration.test_tcx_import import upload_tcx
 

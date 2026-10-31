@@ -10,7 +10,7 @@ from sqlalchemy.exc import OperationalError
 
 from app.modules.footprints import router
 from app.modules.users.model import User
-from tests.integration.test_gpx_import import clients, register  # noqa: F401
+from tests.conftest import clients, register  # noqa: F401
 
 pytestmark = pytest.mark.integration
 

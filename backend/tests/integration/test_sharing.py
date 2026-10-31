@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.integration.test_gpx_import import clients, headers, register, upload  # noqa: F401
+from tests.conftest import clients, headers, register, upload  # noqa: F401
 
 pytestmark = pytest.mark.integration
 

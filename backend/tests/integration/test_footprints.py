@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import text
 
 from app.modules.activities.model import Activity
-from tests.integration.test_gpx_import import clients, register  # noqa: F401
+from tests.conftest import clients, register  # noqa: F401
 
 pytestmark = pytest.mark.integration
 PATH = "/api/v1/footprints?date_from=2024-01-01&date_to=2025-01-01&mode="

@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.modules.activities.model import Activity
-from tests.integration.test_gpx_import import clients, register  # noqa: F401
+from tests.conftest import clients, register  # noqa: F401
 
 pytestmark = pytest.mark.integration
 

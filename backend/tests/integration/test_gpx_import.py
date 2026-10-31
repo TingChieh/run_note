@@ -1,98 +1,19 @@
 """Existing isolated schema only; synthetic inserts, no migration or cleanup."""
 
 import json
-import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
-from app.core.config import Settings
-from app.db.schema import get_expected_revision
-from app.main import create_app
+from tests.conftest import headers, register, upload
 
 pytestmark = pytest.mark.integration
 FIXTURES = Path(__file__).parents[1] / "fixtures/gpx"
 CASES = [c for c in json.loads((FIXTURES / "manifest.json").read_text())["cases"] if "file" in c]
-ORIGIN = "http://127.0.0.1:5183"
-
-
-@pytest.fixture
-def clients():
-    url = os.environ.get("TEST_DATABASE_URL")
-    if not url:
-        pytest.skip("Explicit isolated test database required")
-    engine = create_engine(url, hide_parameters=True)
-    with engine.connect() as c:
-        assert c.execute(text("SELECT version_num FROM alembic_version")).scalars().all() == [
-            get_expected_revision()
-        ]
-    settings = Settings(
-        database_url=url, site_origin=ORIGIN, auth_rate_hash_key=uuid4().hex, _env_file=None
-    )
-    a, b = create_app(settings.model_copy()), create_app(settings.model_copy())
-    with TestClient(a, base_url=ORIGIN) as ca, TestClient(b, base_url=ORIGIN) as cb:
-        yield ca, cb, engine, a
-    engine.dispose()
-
-
-def headers(client):
-    r = client.get("/api/v1/auth/csrf")
-    assert r.status_code == 200
-    return {"Origin": ORIGIN, "X-CSRF-Token": r.json()["data"]["csrf_token"]}
-
-
-def register(client):
-    """Provision a synthetic owner offline; the public registration API is closed.
-
-    Each client represents a separate site configuration for ownership regression tests.
-    No production dependency or permission bypass is installed.
-    """
-    from app.core.security import hash_password
-    from app.modules.users.model import User
-
-    unique = uuid4().hex[:20]
-    email = f"{unique}@example.com"
-    password = "Synthetic-password-2026"
-    client.app.state.settings.site_owner_email = email
-    with client.app.state.session_factory() as db:
-        user = User(
-            email_normalized=email,
-            username=f"u_{unique}",
-            display_name="Synthetic runner",
-            password_hash=hash_password(password),
-            is_active=True,
-            timezone="Asia/Shanghai",
-        )
-        db.add(user)
-        db.commit()
-        owner = str(user.id)
-    response = client.post(
-        "/api/v1/auth/login",
-        headers=headers(client),
-        json={"email": email, "password": password},
-    )
-    assert response.status_code == 200, response.text
-    return owner
-
-
-def upload(client, file="equator-six.gpx", fields=None, raw=None, extra_headers=None):
-    return client.post(
-        "/api/v1/gpx-imports",
-        headers={**headers(client), **(extra_headers or {})},
-        files={
-            "file": (
-                file,
-                raw if raw is not None else (FIXTURES / file).read_bytes(),
-                "application/gpx+xml",
-            )
-        },
-        data={"timezone": "UTC", **(fields or {})},
-    )
 
 
 def test_import_requires_identity_and_source_before_parsing(clients):

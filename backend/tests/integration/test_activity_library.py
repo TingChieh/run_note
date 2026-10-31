@@ -7,8 +7,8 @@ import pytest
 from sqlalchemy import text
 
 from app.db.schema import get_expected_revision
+from tests.conftest import clients, headers, register, upload  # noqa: F401
 from tests.integration.test_activity_management import version
-from tests.integration.test_gpx_import import clients, headers, register, upload  # noqa: F401
 from tests.integration.test_tcx_import import upload_tcx
 
 pytestmark = pytest.mark.integration

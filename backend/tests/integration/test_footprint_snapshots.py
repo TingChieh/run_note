@@ -7,8 +7,8 @@ from uuid import UUID
 import pytest
 from sqlalchemy import event, select
 
+from tests.conftest import clients, headers, register, upload  # noqa: F401
 from tests.integration.test_footprints import add_activity
-from tests.integration.test_gpx_import import clients, headers, register, upload  # noqa: F401
 
 pytestmark = pytest.mark.integration
 PATH = "/api/v1/footprints/all?mode="

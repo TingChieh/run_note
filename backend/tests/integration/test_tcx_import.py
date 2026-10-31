@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import text
 
-from tests.integration.test_gpx_import import clients, headers, register, upload  # noqa: F401
+from tests.conftest import clients, headers, register, upload  # noqa: F401
 from tests.unit.test_tcx_parser import lap, tcx
 
 pytestmark = pytest.mark.integration

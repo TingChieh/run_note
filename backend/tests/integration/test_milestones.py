@@ -7,7 +7,7 @@ from geoalchemy2.elements import WKTElement
 
 from app.modules.activities.model import Activity
 from app.modules.gpx.model import ActivityPoint, ActivitySegment
-from tests.integration.test_gpx_import import clients, register  # noqa: F401
+from tests.conftest import clients, register  # noqa: F401
 
 pytestmark = pytest.mark.integration
 

@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import text
 
 from app.db.schema import get_expected_revision
-from tests.integration.test_gpx_import import clients, headers, register, upload  # noqa: F401
+from tests.conftest import clients, headers, register, upload  # noqa: F401
 
 pytestmark = pytest.mark.integration
 PATH = "/api/v1/mifitness-imports"

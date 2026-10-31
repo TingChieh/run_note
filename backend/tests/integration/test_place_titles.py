@@ -13,7 +13,7 @@ from sqlalchemy.exc import DBAPIError, OperationalError
 
 from app.modules.activities.model import Activity
 from app.modules.place_titles import queue, rules, service
-from tests.integration.test_gpx_import import clients, register, upload  # noqa: F401
+from tests.conftest import clients, register, upload  # noqa: F401
 from tests.integration.test_mifitness_import import record, send, track
 
 pytestmark = pytest.mark.integration  # clients is requested by name

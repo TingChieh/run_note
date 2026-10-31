@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from sqlalchemy import text
 
-from tests.integration.test_gpx_import import ORIGIN, clients, headers, register  # noqa: F401
+from tests.conftest import ORIGIN, clients, headers, register  # noqa: F401
 
 pytestmark = pytest.mark.integration
 BASE = "/api/v1/me/wellbeing"
