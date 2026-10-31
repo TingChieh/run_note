@@ -15,7 +15,7 @@ from app.main import create_app
 from app.modules.activities.model import Activity
 from app.modules.ai_reports.model import AIReport
 from app.modules.users.model import User
-from tests.integration.test_gpx_import import headers, register
+from tests.conftest import headers, register
 
 pytestmark = pytest.mark.integration
 PAYLOAD = {"date_from": "2024-01-01", "date_to": "2024-01-29", "consent_to_send_summary": True}

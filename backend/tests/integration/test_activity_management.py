@@ -6,8 +6,8 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
+from tests.conftest import clients, headers, register, upload  # noqa: F401
 from tests.integration.test_ai_reports import ai_clients, post, seed  # noqa: F401
-from tests.integration.test_gpx_import import clients, headers, register, upload  # noqa: F401
 from tests.integration.test_tcx_import import upload_tcx
 
 pytestmark = pytest.mark.integration

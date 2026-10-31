@@ -4,7 +4,7 @@ from uuid import UUID
 import pytest
 from sqlalchemy import text
 
-from tests.integration.test_gpx_import import clients, headers, register  # noqa: F401
+from tests.conftest import clients, headers, register  # noqa: F401
 
 pytestmark = pytest.mark.integration
 PATH = "/api/v1/me/running-goals"

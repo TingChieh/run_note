@@ -7,8 +7,8 @@ import pytest
 from sqlalchemy import text
 
 from app.modules.footprints import provinces as module
+from tests.conftest import clients, register  # noqa: F401
 from tests.integration.test_footprints import add_activity
-from tests.integration.test_gpx_import import clients, register  # noqa: F401
 
 pytestmark = pytest.mark.integration  # clients is requested by name
 

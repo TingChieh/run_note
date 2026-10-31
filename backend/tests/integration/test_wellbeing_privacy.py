@@ -1,12 +1,15 @@
 import csv
 import io
+import json
+from datetime import date, timedelta
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 from sqlalchemy import text
 
-from tests.integration.test_gpx_import import (  # noqa: F401
+from tests.conftest import (  # noqa: F401
     ORIGIN,
     clients,
     headers,
@@ -132,7 +135,11 @@ def seed(client, label):
 def test_anonymous_journal_routes_are_denied(clients, method, path, body):  # noqa: F811
     client, _, _, _ = clients
     response = client.request(method, BASE + path, **({} if body is None else {"json": body}))
-    assert response.status_code in (401, 403, 404), (method, path, response.text)
+    assert response.status_code in ((401,) if method == "get" else (401, 403)), (
+        method,
+        path,
+        response.text,
+    )
 
 
 def test_other_user_cannot_read_or_change_journal_by_date_or_id(clients):  # noqa: F811
@@ -186,7 +193,7 @@ def test_csv_exports_only_current_users_rows(clients, kind, index):  # noqa: F81
     b_markers, *_ = seed(b, "owner-b")
     path = f"{BASE}/report.csv?{QUERY}&kind={kind}"
     with TestClient(a.app, base_url=ORIGIN) as anonymous:
-        assert anonymous.get(path).status_code in (401, 403, 404)
+        assert anonymous.get(path).status_code == 401
     for client, own, other, foreign_id in (
         (a, a_markers, b_markers, owner_b),
         (b, b_markers, a_markers, owner_a),
@@ -205,6 +212,7 @@ def test_csv_exports_only_current_users_rows(clients, kind, index):  # noqa: F81
 
 
 def test_admin_deleting_user_cascades_wellbeing_without_affecting_other_user(clients):  # noqa: F811
+    # There is no user self-deletion API; account removal uses admin batch-delete.
     admin, victim, engine, _ = clients
     admin_id = register(admin)
     victim_id = register(victim)
@@ -300,8 +308,48 @@ def test_public_sharing_showcase_poster_sources_and_ai_exclude_journal(clients):
         for path in public:
             response = anonymous.get(path)
             assert response.status_code == 200, (path, response.text)
+            if path in (
+                "/api/v1/showcase/activities",
+                f"/api/v1/showcase/users/{username}/activities",
+            ):
+                assert any(item["id"] == identifier for item in response.json()["data"]["items"])
             assert all(marker not in response.text for marker in markers), path
             assert_private_absent(response.json(), markers)
+    # Both report generation and the context endpoint call ai_reports.service.build_snapshot.
+    from app.modules.ai_reports.provider import request_body
+
+    sent = []
+
+    class MockProvider:
+        def generate(self, snapshot, settings):
+            sent.append(request_body(snapshot, settings.ai_model))
+            return {
+                "analysis": {
+                    "trend_summary": "记录覆盖有限，暂时无法判断趋势。",
+                    "recommendations": ["结合恢复情况保持轻松活动。"],
+                    "limitations": "分析仅依据已知汇总，建议仅供参考，不构成医疗建议。",
+                }
+            }
+
+    app.state.settings.ai_base_url = "http://127.0.0.1:1/v1"
+    app.state.settings.ai_model = "mock-only"
+    app.state.settings.ai_api_key = SecretStr("test-only")
+    app.state.ai_provider = MockProvider()
+    activity_day = date.fromisoformat(activity["activity_date"])
+    week_start = activity_day - timedelta(days=activity_day.weekday())
+    generated = a.post(
+        "/api/v1/ai-reports",
+        headers={**headers(a), "Idempotency-Key": str(uuid4())},
+        json={
+            "date_from": week_start.isoformat(),
+            "date_to": (week_start + timedelta(days=7)).isoformat(),
+            "consent_to_send_summary": True,
+        },
+    )
+    assert generated.status_code == 201, generated.text
+    assert len(sent) == 1
+    assert_private_absent(json.loads(sent[0]["messages"][1]["content"]), markers)
+    assert all(marker not in json.dumps(sent[0], ensure_ascii=False) for marker in markers)
     # Poster data are built in the browser from these authenticated activity/route/statistics APIs.
     for path in (
         "/api/v1/activities",
@@ -315,3 +363,31 @@ def test_public_sharing_showcase_poster_sources_and_ai_exclude_journal(clients):
         assert response.status_code == 200, (path, response.text)
         assert all(marker not in response.text for marker in markers), path
         assert_private_absent(response.json(), markers)
+
+
+def test_other_user_cannot_change_medication_stock_or_symptom_names(clients):  # noqa: F811
+    a, b, _, _ = clients
+    register(a)
+    register(b)
+    medication = a.post(f"{BASE}/medications", headers=headers(a), json={"name": "owner-a-med"})
+    assert medication.status_code == 201, medication.text
+    med_id = medication.json()["data"]["id"]
+    added = a.post(f"{BASE}/medications/{med_id}/stock", headers=headers(a), json={"pills": 5})
+    assert added.status_code == 200, added.text
+    symptom = a.post(f"{BASE}/symptom-names", headers=headers(a), json={"name": "owner-a-symptom"})
+    assert symptom.status_code == 201, symptom.text
+    symptom_id = symptom.json()["data"]["id"]
+    paths = ("/medications", "/symptom-names")
+    before = [a.get(BASE + path).json()["data"] for path in paths]
+    for method, path, body in (
+        ("patch", f"/medications/{med_id}", {"name": "tampered"}),
+        ("delete", f"/medications/{med_id}", None),
+        ("post", f"/medications/{med_id}/stock", {"pills": 3}),
+        ("post", f"/medications/{med_id}/stock/count", {"pills": 0}),
+        ("delete", f"/symptom-names/{symptom_id}", None),
+    ):
+        response = b.request(
+            method, BASE + path, headers=headers(b), **({} if body is None else {"json": body})
+        )
+        assert response.status_code == 404, (method, path, response.text)
+        assert [a.get(BASE + p).json()["data"] for p in paths] == before
