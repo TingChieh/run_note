@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { installActivities, loginRunner, sampleActivity, incompleteActivity } from '../fixtures/activities';
+import { openAccountMenu, openGoalPanel } from '../fixtures/top-navigation';
 
 async function installMilestones(page: import('@playwright/test').Page) {
   const state = { provinceFailures: 0, streakFailures: 0, year: null as number | null };
@@ -26,7 +27,7 @@ test('goal save actions pop from the edit button and fold back with reduced-moti
   await installMilestones(page); await loginRunner(page); await page.goto('/dashboard');
   await expect(page.getByTestId('year-km')).toHaveText('10.2');
   for (const overview of [true, false]) {
-    const widget = page.getByRole('region', {name:overview?'运动目标':'跑量目标'});
+    const widget = overview ? page.getByRole('region', {name:'运动目标'}) : await openGoalPanel(page);
     const actions = overview ? widget.locator('.goal-card').first().locator('.goal-actions') : widget.locator('.goal-actions');
     const reveal = actions.locator('.goal-save-reveal');
     await expect(reveal).toHaveCount(1);
@@ -129,7 +130,7 @@ test('goal editors replace the target in place without growing cards and Escape 
   }
   expect(writes).toHaveLength(0);
   await page.setViewportSize({ width: 1440, height: 1000 });
-  const sidebar = page.getByRole('region', { name: '跑量目标' });
+  const sidebar = await openGoalPanel(page);
   await expect(sidebar.locator('.goal-distance')).toBeVisible();
   const before = (await sidebar.boundingBox())!;
   await sidebar.getByRole('button', { name: '设置', exact: true }).click();
@@ -158,7 +159,7 @@ for (const area of ['overview', 'sidebar'] as const) {
     try {
       await loginRunner(page); await page.goto('/dashboard');
       const overview = area === 'overview';
-      const widget = page.getByRole('region', {name:overview?'运动目标':'跑量目标'});
+      const widget = overview ? page.getByRole('region', {name:'运动目标'}) : await openGoalPanel(page);
       await widget.getByRole('button', {name:overview?'设置年度目标':'设置',exact:true}).click();
       const input = widget.getByLabel(overview?'年度目标距离（km）':'目标距离（km）', {exact:true});
       await expect(input).toBeFocused(); await input.fill('22');
@@ -232,7 +233,7 @@ test('goals sync with sidebar and province/streak failures can retry independent
   await expect(page.getByTestId('province-count')).toHaveText('2 / 34');
   await page.getByRole('button',{name:'重试连续记录'}).click();
   await expect(page.getByRole('region',{name:'连续记录'})).toContainText('最长 5 天 / 7 周');
-  const sidebar=page.getByRole('region',{name:'跑量目标'});
+  const sidebar=await openGoalPanel(page);
   await sidebar.getByRole('button',{name:'设置',exact:true}).click();
   await sidebar.getByLabel('目标距离（km）').fill('35');
   await sidebar.getByRole('button',{name:'保存',exact:true}).click();
@@ -241,13 +242,14 @@ test('goals sync with sidebar and province/streak failures can retry independent
   await expect(page.getByText(/目标已保存|仅保存在此浏览器/)).toHaveCount(0);
   await page.evaluate(()=>localStorage.clear());
   await page.reload();
+  await openGoalPanel(page);
   await expect(sidebar).toContainText('/ 35 km');
   await expect(page.getByRole('region',{name:'运动目标'})).toContainText('/ 35 km');
 });
 
 test('failed goal saves preserve the confirmed target and input until a successful retry', async ({page}) => {
   await installMilestones(page); await loginRunner(page); await page.goto('/dashboard');
-  const sidebar=page.getByRole('region',{name:'跑量目标'});
+  const sidebar=await openGoalPanel(page);
   await sidebar.getByRole('button',{name:'设置',exact:true}).click();
   await sidebar.getByLabel('目标距离（km）').fill('5');
   await sidebar.getByRole('button',{name:'保存',exact:true}).click();
@@ -269,12 +271,14 @@ test('failed goal saves preserve the confirmed target and input until a successf
   await goals.getByRole('button',{name:'调整周目标'}).click();
   await goals.getByLabel('周目标距离（km）').fill('20');
   await goals.getByRole('button',{name:'保存周目标'}).click();
+  await openGoalPanel(page);
   await expect(sidebar).toContainText('/ 20 km');
   await expect(goals.locator('.goal-feedback')).toHaveCount(0);
   for(const width of [320,390,768,1440]) {
     await page.setViewportSize({width,height:1000});
     await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   }
+  await openGoalPanel(page);
   await sidebar.screenshot({path:'test-results/running-goals-backend.png'});
 });
 
@@ -288,7 +292,7 @@ test('statistics retry cannot discard a goal draft while saving', async ({page})
     await route.fulfill({status:503,json:{error:{message:'目标暂时无法保存'}}});
   });
   await loginRunner(page); await page.goto('/dashboard');
-  const sidebar=page.getByRole('region',{name:'跑量目标'});
+  const sidebar=await openGoalPanel(page);
   await sidebar.getByRole('button',{name:'设置',exact:true}).click();
   await sidebar.getByLabel('目标距离（km）').fill('15');
   await sidebar.getByRole('button',{name:'保存',exact:true}).click();
@@ -310,7 +314,7 @@ test('wall fills every row, keeps missing routes honest and paginates all histor
   await expect(page.getByRole('heading',{name:'足迹墙',exact:true})).toBeVisible();
   await expect(page.locator('.wall-card')).toHaveCount(24);
   await expect(page.getByText('没有路线',{exact:true})).toBeVisible();
-  for(const [width,columns] of [[320,1],[390,1],[480,2],[640,3],[768,3],[1024,3],[1440,4],[1920,6]]) {
+  for(const [width,columns] of [[320,1],[390,1],[480,2],[640,3],[768,3],[1024,4],[1440,6],[1920,6]]) {
     await page.setViewportSize({width,height:1000});
     await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     const lastRow=await page.locator('.wall-grid > li').evaluateAll(items=>{
@@ -341,7 +345,7 @@ test('wall fills every row, keeps missing routes honest and paginates all histor
   await expect(page.getByRole('link',{name:/晨跑 50 /})).toBeVisible();
   await expect(page.getByRole('button',{name:'下一页',exact:true})).toBeDisabled();
   await page.getByRole('button',{name:'上一页',exact:true}).click();await expect(page.locator('.wall-card')).toHaveCount(24);
-  await page.getByRole('button',{name:'退出登录',exact:true}).click();
+  await (await openAccountMenu(page)).getByRole('button',{name:'退出登录',exact:true}).click();
   await expect(page.getByRole('button',{name:'退出登录',exact:true})).toHaveCount(0);
   await expect(page).toHaveURL(/\/activities\/wall$/);
   await page.goto('/activities/wall');await expect(page).toHaveURL(/\/activities\/wall$/);await expect(page.getByRole('button',{name:'退出登录',exact:true})).toHaveCount(0);
@@ -350,7 +354,7 @@ test('wall fills every row, keeps missing routes honest and paginates all histor
 
 test('sidebar and home goals exclude future records consistently', async ({page}) => {
   await installMilestones(page);await loginRunner(page);await page.goto('/dashboard');
-  const sidebar=page.getByRole('region',{name:'跑量目标'});
+  const sidebar=await openGoalPanel(page);
   for(const period of ['week','month','year']) {
     await sidebar.getByLabel('目标周期').selectOption(period);
     await expect(sidebar.locator('.goal-distance strong')).toHaveText('10.2 km');

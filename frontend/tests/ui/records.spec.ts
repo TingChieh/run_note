@@ -104,8 +104,8 @@ test('the yearly and rhythm cards sit side by side only when each gets at least 
   const [years, rhythm] = [await box(page.getByTestId('records-years')), await box(page.getByTestId('records-rhythm'))];
   expect(Math.abs(years.y - rhythm.y)).toBeLessThanOrEqual(1);
   expect(rhythm.x).toBeGreaterThan(years.x + years.width - 1);
-  // 1100px with the sidebar leaves the row too narrow for two 28rem cards.
-  await page.setViewportSize({ width: 1100, height: 900 });
+  // There is no sidebar column any more, so the row is only too narrow for two 28rem cards below roughly 940px.
+  await page.setViewportSize({ width: 900, height: 900 });
   await expect.poll(async () => (await box(page.getByTestId('records-rhythm'))).y).toBeGreaterThan((await box(page.getByTestId('records-years'))).y + 10);
 });
 

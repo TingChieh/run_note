@@ -219,21 +219,126 @@ test('the medication widget lists doses from the top down, each as a capsule', a
   expect(radius).toBeGreaterThanOrEqual(first.height / 2 - 1);
 });
 
-test('many doses scroll inside the medication widget; it never grows taller than the widgets beside it', async ({ page }) => {
+test('many doses are all listed in the widget: it grows with them, in the page flow, with no scrollbar of its own', async ({ page }) => {
   await open(page);
   const tile = page.locator('[data-metric="dose"]'), note = page.locator('[data-metric="note"]');
   const before = (await tile.boundingBox())!.height;
   for (const time of ['00:00', '00:01', '00:02', '00:03', '00:04', '00:05']) await addDose(page, { time });
   await expect(page.getByTestId('wellbeing-dose')).toHaveCount(6);
   const after = (await tile.boundingBox())!.height, list = page.getByTestId('wellbeing-dose-list');
-  expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
+  // The widget grows to hold every dose (no inner scroll box caps it); the widget beside it in the row stretches to match.
+  expect(after).toBeGreaterThan(before + 100);
   expect(Math.abs(after - (await note.boundingBox())!.height)).toBeLessThanOrEqual(1);
-  const scrolls = await list.evaluate(el => ({ over: el.scrollHeight > el.clientHeight + 4, overflow: getComputedStyle(el).overflowY }));
-  expect(scrolls).toEqual({ over: true, overflow: 'auto' });
-  await tile.scrollIntoViewIfNeeded();
-  await list.evaluate(el => { el.scrollTop = el.scrollHeight; });
+  await expect(list).not.toHaveAttribute('tabindex', /.*/);
+  expect(await list.evaluate(el => ({ over: el.scrollHeight > el.clientHeight + 4, overflow: getComputedStyle(el).overflowY }))).toEqual({ over: false, overflow: 'visible' });
+  // Every capsule lies fully inside the card (nothing is hidden below a fold inside the widget); the page scrolls, not the widget.
+  const box = (await tile.boundingBox())!;
+  for (const row of await page.getByTestId('wellbeing-dose').all()) {
+    const r = (await row.boundingBox())!;
+    expect(r.y).toBeGreaterThanOrEqual(box.y);
+    expect(r.y + r.height).toBeLessThanOrEqual(box.y + box.height);
+  }
+  await page.getByTestId('wellbeing-dose').last().scrollIntoViewIfNeeded();
   await expect(page.getByTestId('wellbeing-dose').last()).toBeInViewport();
 });
+
+/** Doses with long names, long notes and many side effects for today, written through the synthetic API (a pill count at an explicit time), then the page is reloaded. */
+async function seedHeavyDoses(page: Page) {
+  await page.evaluate(async (day) => {
+    const csrf = (await (await fetch('/api/v1/auth/csrf')).json()).data.csrf_token;
+    const call = async (path: string, body: unknown) => (await (await fetch(`/api/v1/me/wellbeing${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify(body) })).json()).data;
+    const names = ['盐酸米那普仑', '盐酸米那普仑缓释片非常非常长的药名用来测试省略号是否生效', '乙药', '丙药', 'Averyveryverylongunbrokenmedicinenamewithoutanyspacesatall123456789', '戊药'];
+    for (let i = 0; i < 6; i++) {
+      const dose = await call('/doses', { medication_name: names[i], pills: 1.5, taken_at: `${day}T00:0${i}:00+08:00`, regimen: i % 2 ? 'as_needed' : 'scheduled', note: i === 2 ? '很长的备注'.repeat(20) : null });
+      if (i % 2 === 0) for (const symptom of ['恶心', '头晕', '口干', '食欲变化', '很长很长很长的副作用名称很长很长很长很长']) await call('/symptoms', { entry_date: day, dose_id: dose.id, symptom, onset_at: null, duration_minutes: null, affects_daily_life: null });
+    }
+  }, today());
+  await page.reload();
+  await expect(page.getByTestId('wellbeing-dose')).toHaveCount(6);
+  await settled(page);
+}
+/** The element and every ancestor up to <html>: any that scrolls sideways when pushed (scrollLeft takes) or has content wider than its box that it would let you drag to. */
+const swipeable = (locator: Locator) => locator.evaluate(el => {
+  const found: string[] = [];
+  for (let node: Element | null = el; node; node = node.parentElement) {
+    const h = node as HTMLElement;
+    h.scrollLeft = 80;
+    const moved = h.scrollLeft !== 0;
+    h.scrollLeft = 0;
+    if (moved || (h.scrollWidth > h.clientWidth && !['hidden', 'clip', 'visible'].includes(getComputedStyle(h).overflowX))) found.push(`${h.tagName.toLowerCase()}.${h.className} scrollWidth=${h.scrollWidth} clientWidth=${h.clientWidth}`);
+    else if (h.scrollWidth > h.clientWidth) found.push(`${h.tagName.toLowerCase()}.${h.className} wider than its box: scrollWidth=${h.scrollWidth} clientWidth=${h.clientWidth}`);
+  }
+  return found;
+});
+
+for (const width of [361, 1440]) {
+  test(`the medication widget never scrolls, up or sideways, at ${width}px: many doses, long names and notes, many side effects`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await open(page);
+    await seedHeavyDoses(page);
+    const list = page.getByTestId('wellbeing-dose-list'), tile = page.locator('[data-metric="dose"]');
+    // The list is a plain labelled group in the flow: no scroll box, not a keyboard stop. (The glass of the round buttons paints a few pixels past its capsule; that is ink, and with no scroll box around it there is nothing to drag.)
+    await expect(list).not.toHaveAttribute('tabindex', /.*/);
+    await expect(list).not.toHaveAttribute('role', 'region');
+    await expect(list).toHaveAttribute('aria-label', '今天的服药与副作用记录');
+    // Exposed to assistive technology as a named group (a bare div cannot carry a name), holding the list of capsules.
+    await expect(page.getByRole('group', { name: '今天的服药与副作用记录' })).toHaveCount(1);
+    await expect(list).toHaveAttribute('role', 'group');
+    await expect(list.getByRole('list')).toHaveCount(1);
+    await expect(list.getByRole('listitem')).toHaveCount(6);
+    expect(await list.evaluate(el => { const cs = getComputedStyle(el); return { y: cs.overflowY, x: cs.overflowX }; })).toEqual({ y: 'visible', x: 'visible' });
+    // The widget and every ancestor to <html>: no sideways scrolling, no content wider than the box, however it is pushed.
+    expect(await swipeable(tile)).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    // A real sideways swipe over the widget moves nothing: neither the widget nor the page.
+    const box = (await tile.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + Math.min(box.height / 2, 200));
+    await page.mouse.wheel(120, 0);
+    await settled(page);
+    expect(await page.evaluate(() => window.scrollX)).toBe(0);
+    expect(await list.evaluate(el => el.scrollLeft)).toBe(0);
+    // Each capsule stays inside the widget's width: long names are cut with an ellipsis, not allowed to push anything out.
+    const tileBox = (await tile.boundingBox())!;
+    for (const row of await page.getByTestId('wellbeing-dose').all()) {
+      const r = (await row.boundingBox())!;
+      expect(r.x).toBeGreaterThanOrEqual(tileBox.x);
+      expect(r.x + r.width).toBeLessThanOrEqual(tileBox.x + tileBox.width);
+    }
+  });
+
+  test(`no widget of the journal can be swiped sideways at ${width}px, on the day page or in the summary`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await open(page);
+    await seedHeavyDoses(page);
+    await seed(page, 21);
+    await page.reload();
+    await expect(page.getByTestId('wellbeing-editor')).toBeVisible();
+    await expect(page.getByTestId('wellbeing-status')).toBeVisible();
+    await settled(page);
+    // Intentionally sideways: the month pager of a long range and a data table (inside the "data table" fold) that is wider than its card.
+    const allowed = ['pager', 'table-scroll'];
+    const offenders = async () => (await page.locator('[data-testid="wellbeing-editor"], main').first().evaluate(root => {
+      const found: string[] = [];
+      for (const h of [root, ...root.querySelectorAll<HTMLElement>('*')] as HTMLElement[]) {
+        h.scrollLeft = 80;
+        const moved = h.scrollLeft !== 0 && ['auto', 'scroll'].includes(getComputedStyle(h).overflowX);
+        h.scrollLeft = 0;
+        if (moved) found.push(String(h.className));
+      }
+      return found;
+    })).filter(name => !allowed.some(word => name.split(' ').includes(word)));
+    for (const tile of await page.locator('.tiles > *').all()) expect(await swipeable(tile)).toEqual([]);
+    expect(await offenders()).toEqual([]);
+    await page.getByTestId('wellbeing-tab-report').click();
+    for (const range of ['近 7 天', '近 14 天', '近 30 天']) {
+      await page.getByRole('button', { name: range }).click();
+      await settled(page);
+      expect(await offenders()).toEqual([]);
+      for (const card of await page.getByTestId('wellbeing-report-medicine').all()) expect(await swipeable(card)).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    }
+  });
+}
 
 test('an existing dose can be edited with a side effect added, and the edit is accepted', async ({ page }) => {
   await open(page);
@@ -770,8 +875,10 @@ test('history: no separate date picker, and the calendar stays in view while the
   await expect(page.getByTestId('wellbeing-status')).toBeVisible();
   await expect.poll(async () => Math.abs((await card.boundingBox())!.y - (await page.locator('[data-metric="mood"]').boundingBox())!.y)).toBeLessThanOrEqual(2);
   await page.evaluate(() => window.scrollTo(0, 700));
-  await expect.poll(async () => Math.round((await card.boundingBox())!.y)).toBeLessThanOrEqual(24);
-  expect((await card.boundingBox())!.y).toBeGreaterThanOrEqual(0);
+  // The fixed top bar (14px + 4rem) sits above the page: the card sticks 1rem below it, never under it.
+  const bar = (await page.locator('.app-sidebar').boundingBox())!, barBottom = bar.y + bar.height;
+  await expect.poll(async () => Math.round((await card.boundingBox())!.y)).toBeLessThanOrEqual(barBottom + 24);
+  expect((await card.boundingBox())!.y).toBeGreaterThanOrEqual(barBottom);
   await expect(page.locator(`[data-testid="wellbeing-day"][data-date="${past}"]`)).toBeInViewport();
 });
 
@@ -1355,15 +1462,16 @@ test('summary: at every width the circle stays in its own space, the record neve
 
 test('summary: a custom range of several months shows one month at a time and turns by swiping or the arrows', async ({ page }) => {
   await open(page);
-  await seed(page, 45);
+  await seed(page, 91);
   await page.getByTestId('wellbeing-tab-report').click();
   const day = (offset: number) => new Date(Date.now() - offset * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
   await page.getByRole('group', { name: '总结范围' }).getByRole('button', { name: '自定义' }).click();
-  await page.getByLabel('开始日期', { exact: true }).fill(day(60));
+  // A 91-day range always touches at least three calendar months, unlike 61 days.
+  await page.getByLabel('开始日期', { exact: true }).fill(day(90));
   await page.getByLabel('结束日期', { exact: true }).fill(day(0));
   await page.getByRole('button', { name: '查看', exact: true }).click();
   const chart = page.getByTestId('wellbeing-report-timeline');
-  await expect(chart.getByTestId('wellbeing-report-day')).toHaveCount(61);
+  await expect(chart.getByTestId('wellbeing-report-day')).toHaveCount(91);
   const pager = chart.locator('.pager');
   await expect(pager).toHaveClass(/paged/);
   expect(await pager.evaluate(el => getComputedStyle(el).overflowX)).toBe('auto');

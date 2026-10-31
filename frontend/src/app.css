@@ -54,6 +54,8 @@
   --muted-foreground: #596b63;
   --border: #dbe4df;
   --ring: #17745c;
+  --scrollbar-thumb: color-mix(in srgb, var(--muted-foreground) 42%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--muted-foreground) 70%, transparent);
   --error: #a52b32;
   --error-soft: #fff1f1;
   --success: #176448;
@@ -100,12 +102,15 @@
   --radius-field: .625rem;
   --swatch-light-bg: #f6f7f4;
   --swatch-light-fg: #202d23;
-  --swatch-dark-bg: #101a16;
-  --swatch-dark-fg: #e4eee7;
+  --swatch-dark-bg: #292725;
+  --swatch-dark-fg: #f2f0ee;
   --radius-pill: 9999px;
   --radius-card: 1.5rem;
   --content-width: 86rem;
   --sidebar-width: 15rem;
+  --top-navigation-offset: 14px;
+  --top-navigation-height: 4rem;
+  --z-top-navigation: 30;
   --font-body: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   --text-caption: .75rem;
   --text-small: .875rem;
@@ -159,7 +164,7 @@
   --glass-shadow: #182b2424;
   --glass-tint-sheen: #ffffff1f;
   --glass-danger-foreground: #ffffff;
-  --glass-opacity: .14;
+  --glass-opacity: .12;
   --glass-fill-base: #ffffff;
   --glass-light-fill: #ffffff;
   --glass-light-foreground: #10251b;
@@ -172,6 +177,15 @@
 }
 
 @layer base {
+  /* One thin scrollbar for every scroll box and the page itself. The standard properties are not inherited by the scrollbar of a box, so they are set on every element; this layer sits below the components, so a box that hides its own scrollbar (scrollbar-width: none) still wins. */
+  * { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
+  /* Browsers without the standard properties (older WebKit) get the same look: a slim round thumb on a transparent track. Chrome and Safari that support them ignore ::-webkit-scrollbar once the standard ones are set, so the two never both apply. */
+  @supports not (scrollbar-width: thin) {
+    ::-webkit-scrollbar { width: .5rem; height: .5rem; }
+    ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+    ::-webkit-scrollbar-thumb { border-radius: var(--radius-pill); background: var(--scrollbar-thumb); }
+    ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+  }
   body { margin: 0; min-width: 0; background: var(--background); color: var(--foreground); font-family: var(--font-body); font-size: var(--text-body); line-height: var(--line-height-body); -webkit-font-smoothing: antialiased; }
   h1 { font-size: var(--text-title); line-height: var(--line-height-title); letter-spacing: var(--tracking-title); font-weight: var(--weight-title); overflow-wrap: anywhere; }
   h2 { font-size: var(--text-section); line-height: var(--line-height-heading); letter-spacing: var(--tracking-heading); font-weight: var(--weight-semibold); }
@@ -232,6 +246,10 @@
   @keyframes page-reveal { from { opacity: 0; } to { opacity: 1; } }
   @keyframes page-enter-up { from { transform: translate3d(0, 1.5rem, 0); } to { transform: translate3d(0, 0, 0); } }
   @keyframes page-enter-down { from { transform: translate3d(0, -1.5rem, 0); } to { transform: translate3d(0, 0, 0); } }
+  @media (min-width: 800px) {
+    @keyframes page-enter-up { from { transform: translate3d(1.5rem, 0, 0); } to { transform: translate3d(0, 0, 0); } }
+    @keyframes page-enter-down { from { transform: translate3d(-1.5rem, 0, 0); } to { transform: translate3d(0, 0, 0); } }
+  }
   .page-reveal.quiet-swap, .page-reveal.quiet-swap.page-enter-up, .page-reveal.quiet-swap.page-enter-down { animation: none; }
   @media (prefers-reduced-motion: reduce) { .page-reveal, .content-reveal { animation: none; } }
   .page-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-4); min-width: 0; }
@@ -299,7 +317,7 @@
       opacity: 1 !important; animation: none !important; transition: none !important; transform: none !important; translate: 0 0; scale: 1;
     }
   }
-  @media (max-width: 1023px) {
+  @media (max-width: 799px) {
     .mobile-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) var(--space-4); background: var(--surface); border-bottom: 1px solid var(--border); }
     .app-sidebar { display: none; position: static; width: 100%; padding: var(--space-4); border-right: 0; border-bottom: 1px solid var(--border); }
     .app-sidebar.nav-open { display: flex; }
@@ -309,6 +327,7 @@
     @media (prefers-reduced-motion: reduce) { .app-sidebar { transition: none; transform: none; } }
     .sidebar-brand, .desktop-brand, .nav-caption { display: none; }
     .nav-account { margin-top: var(--space-4); padding-top: var(--space-4); }
+    .account-menu-host, .account-avatar-slot { display: none; }
     .app-shell .content-column { margin-left: 0; min-height: calc(100dvh - 69px); }
     .app-shell .navigation-progress { left: 0; }
     .page-content { padding-block: var(--space-8); }
@@ -365,6 +384,7 @@
     --sport-coral: #f06373;
     --sport-ink: #20332b;
     --sport-sidebar: #218538;
+    --sport-brand: #218538;
     --sport-nav-hover: #0000000a;
     --sport-nav-active: #e8f6df;
     --sport-nav-active-ink: #18592a;
@@ -387,35 +407,99 @@
     background: var(--background);
     font-size: var(--text-body);
   }
-  .sport-theme .app-sidebar { background: var(--sport-sidebar); border-right: 0; color: white; }
-  .sport-theme .app-sidebar .brand { color: white; }
-  .sport-theme .app-sidebar .brand-mark { color: var(--sport-sidebar); background: white; }
-  .sport-theme .nav-caption, .sport-theme .account-email { color: white; }
+  .sport-theme .app-sidebar { background: var(--surface); border-right: 0; color: var(--foreground); }
+  .sport-theme .app-sidebar .brand { color: var(--foreground); }
+  .sport-theme .app-sidebar .brand-mark { color: white; background: var(--sport-brand); }
+  .sport-theme .nav-caption, .sport-theme .account-email { color: var(--foreground); }
   .sport-theme .app-sidebar nav { gap: .25rem; flex: 0 0 auto; }
   .sport-theme .sidebar-brand, .sport-theme .app-sidebar nav, .sport-theme .nav-account { flex-shrink: 0; }
-  .sport-theme .nav-link { color: white; background: transparent; box-sizing: border-box; height: 3.5rem; min-height: 3.5rem; padding: .5rem .75rem; border-radius: .75rem; font-size: var(--text-body); }
+  .sport-theme .nav-link { color: var(--muted-foreground); background: transparent; box-sizing: border-box; height: 3.5rem; min-height: 3.5rem; padding: .5rem .75rem; border-radius: .75rem; font-size: var(--text-body); }
   @media (hover: hover) { .sport-theme .nav-link:hover { background: var(--sport-nav-hover); } }
   .sport-theme .nav-link[aria-current="page"] { color: var(--sport-nav-active-ink); background: var(--sport-nav-active); box-shadow: none; font-weight: var(--weight-semibold); }
-  .sport-theme .nav-account { border-color: #ffffff40; }
+  .sport-theme .nav-account { border-color: var(--border); }
   .sport-theme .nav-account .running-goal { margin: 0; }
+  .account-inline { display: contents; }
   .sport-theme .runner-identity { display: flex; align-items: center; gap: .75rem; }
   .sport-theme .runner-identity-text { flex: 1; min-width: 0; }
   .sport-theme .runner-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sport-theme .runner-avatar { display: grid; place-items: center; flex-shrink: 0; width: 3rem; height: 3rem; border-radius: 50%; background: var(--sport-nav-active); color: var(--sport-nav-active-ink); font-size: var(--text-stat); font-weight: var(--weight-bold); }
-  .sport-theme .app-sidebar :focus-visible { outline-color: white; }
-  .sport-theme .app-sidebar .nav-link:focus-visible { outline-color: white; outline-offset: -4px; }
+  .sport-theme .app-sidebar :focus-visible { outline-color: var(--ring); }
+  .sport-theme .app-sidebar .nav-link:focus-visible { outline-color: var(--ring); outline-offset: -4px; }
   .sport-theme .app-sidebar .nav-link[aria-current="page"]:focus-visible { outline-color: var(--sport-nav-active-ink); }
   .sport-theme .running-goal :focus-visible { outline-color: var(--ring); }
-  .sport-theme .nav-account .button-secondary { background: transparent; color: white; border-color: #ffffff80; }
+  .sport-theme .nav-account .button-secondary { background: transparent; color: var(--foreground); border-color: var(--border); }
   @media (hover: hover) { .sport-theme .nav-account .button-secondary:hover { background: var(--sport-nav-hover); } }
+  /* Glass controls paint their own tint, so the current-page state tints the glass instead of setting a background. */
+  .sport-theme .nav-account .settings-link[aria-current="page"] { color: var(--sport-nav-active-ink); --button-glass-fill: color-mix(in srgb, var(--sport-nav-active) calc((.75 + var(--glass-opacity) * .25) * 100%), var(--surface)); --button-glass-hover: var(--button-glass-fill); }
+  .sport-theme .nav-account .settings-link:focus-visible { outline-color: var(--ring); }
+  .sport-theme .nav-account .settings-link[aria-current="page"]:focus-visible { outline-color: var(--sport-nav-active-ink); }
   .sport-theme .page-content { padding-top: 2rem; }
   .sport-theme .share-card { border-radius: var(--radius-card); }
-  .sport-theme .mobile-bar { background: var(--sport-sidebar); border-bottom: 0; color: white; }
-  .sport-theme .mobile-bar .brand { color: white; }
-  .sport-theme .mobile-bar .brand-mark { color: var(--sport-sidebar); background: white; }
-  .sport-theme .nav-toggle { background: transparent; color: white; border: 0; }
-  @media (hover: hover) { .sport-theme .nav-toggle:hover { background: var(--sport-nav-hover); color: white; } }
-  .sport-theme .mobile-bar :focus-visible { outline-color: white; }
+  .sport-theme .mobile-bar { background: var(--surface); border-bottom: 1px solid var(--border); color: var(--foreground); }
+  .sport-theme .mobile-bar .brand { color: var(--foreground); }
+  .sport-theme .mobile-bar .brand-mark { color: white; background: var(--sport-brand); }
+  .sport-theme .mobile-bar :focus-visible { outline-color: var(--ring); }
+
+  /* Desktop top navigation: the same <aside> becomes a floating glass bar. Below 800px the mobile bar and menu take over, in the same surface/border/foreground colours. 800px is the shell breakpoint: keep it in sync with the other @media (min-width: 800px) blocks here, liquid-glass-controls.css, enhanceNavigation in liquid-glass-indicator.ts and the matchMedia in AppNavigation.svelte. */
+  @media (min-width: 800px) {
+    .sport-theme.app-shell .app-sidebar {
+      inset: var(--top-navigation-offset) var(--top-navigation-offset) auto; z-index: var(--z-top-navigation);
+      width: min(calc(100% - 2 * var(--top-navigation-offset)), var(--content-width)); height: var(--top-navigation-height); margin-inline: auto;
+      flex-direction: row; align-items: center; gap: var(--space-4); padding: 0 var(--space-3) 0 var(--space-4); overflow: visible;
+      border: 1px solid var(--border); border-radius: var(--radius-pill); color: var(--foreground);
+    }
+    /* Docked: nothing under the bar, so a plain card. Floating (data-floating): clear liquid glass, the same recipe as the wellbeing save bar. */
+    .sport-theme.app-shell .app-sidebar { background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; transition: background-color var(--transition-control), border-color var(--transition-control), box-shadow var(--transition-control); }
+    .sport-theme.app-shell .app-sidebar[data-floating] { border-color: var(--glass-edge); background: color-mix(in srgb, var(--glass-fill-base, var(--surface)) calc(var(--glass-opacity, .12) * 100% * .75), transparent); box-shadow: inset 0 1px var(--glass-sheen), 0 .5rem 1.5rem var(--glass-shadow); }
+    /* WebKit (no refraction): frosted glass, a real backdrop blur with a low fill, so what is underneath is blurred rather than ghosting through. The rim and the soft shadow come from the floating rule above. */
+    .sport-theme.app-shell .app-sidebar[data-floating].rn-frosted-glass { -webkit-backdrop-filter: blur(14px) saturate(1.5); backdrop-filter: blur(14px) saturate(1.5); background: color-mix(in srgb, var(--surface) calc((.5 + var(--glass-opacity, .12) * .8) * 100%), transparent); }
+    @media (prefers-reduced-transparency: reduce), (forced-colors: active) { .sport-theme.app-shell .app-sidebar[data-floating], .sport-theme.app-shell .app-sidebar[data-floating].rn-frosted-glass { background: var(--surface); border-color: var(--border); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; } }
+    .sport-theme.app-shell .app-sidebar .brand { color: var(--foreground); }
+    .sport-theme.app-shell .app-sidebar .brand-mark { background: var(--sport-brand); color: white; }
+    .sport-theme.app-shell .sidebar-brand { margin: 0 var(--space-4) 0 0; flex-shrink: 0; }
+    .sport-theme.app-shell .nav-caption { display: none; }
+    .sport-theme.app-shell .app-sidebar nav { display: flex; flex: 0 1 auto; gap: .15rem; min-width: 0; }
+    .sport-theme.app-shell .app-sidebar .nav-link { height: 2.5rem; min-height: 2.5rem; padding: 0 .8rem; gap: .45rem; border-radius: var(--radius-pill); color: var(--muted-foreground); font-size: var(--text-small); white-space: nowrap; }
+    /* Hover and current plates are the no-lens fallback (before the lens script runs, forced colours, reduced transparency); once the lens is built it is the only highlight. */
+    @media (hover: hover) { .sport-theme.app-shell .app-sidebar .nav-link:hover { background: var(--muted); } }
+    /* The same floating colour for the no-lens fallback (the lens version, which has to be unlayered, is in liquid-glass-controls.css). */
+    .sport-theme.app-shell .app-sidebar[data-floating] .nav-link:not([aria-current="page"]) { color: var(--foreground); }
+    .sport-theme.app-shell .app-sidebar .nav-link[aria-current="page"] { background: var(--sport-nav-active); color: var(--sport-nav-active-ink); }
+    .sport-theme.app-shell .app-sidebar :focus-visible, .sport-theme.app-shell .app-sidebar .nav-link:focus-visible { outline-color: var(--ring); outline-offset: 2px; }
+    .sport-theme.app-shell .nav-account .goal-container { order: -1; }
+    .sport-theme.app-shell .nav-account .goal-container .anchored-trigger { color: var(--primary); }
+    .sport-theme.app-shell .nav-account { flex-direction: row; align-items: center; gap: var(--space-2); margin: 0 0 0 auto; padding: 0; border: 0; }
+    .sport-theme.app-shell .nav-account .button-secondary { color: var(--foreground); border-color: var(--border); }
+    .sport-theme.app-shell .nav-account .theme-toggle { width: 2.75rem; padding: 0; }
+    .sport-theme.app-shell .nav-account .theme-toggle > span:not(.rn-glass-surface) { display: none; }
+    /* The avatar menu replaces the inline account block (name, mode, logout, settings), which only the phone menu shows. */
+    .sport-theme.app-shell .account-inline { display: none; }
+    /* Without a menu (anonymous or confirming identity) the avatar is a plain identity in the same 2.75rem footprint as the menu trigger, so nothing shifts when the identity resolves. */
+    .sport-theme.app-shell .account-avatar-slot { display: grid; place-items: center; flex-shrink: 0; width: 2.75rem; height: 2.75rem; }
+    .sport-theme.app-shell .account-avatar { width: 2.25rem; height: 2.25rem; overflow: hidden; font-size: var(--text-body); }
+    /* Follows the glass press (liquid-glass.ts publishes --glass-press on the control): the glass is 10px wider and 4px flatter at full press, i.e. 10/44 and 4/44 of the 2.75rem trigger. */
+    .sport-theme.app-shell .account-avatar { transform: scale(calc(1 + .227 * var(--glass-press, 0)), calc(1 - .091 * var(--glass-press, 0))); }
+    .sport-theme.app-shell .account-menu .account-menu-id { padding: var(--space-2) var(--space-3); }
+    .sport-theme.app-shell .account-menu .account-email { margin: 0; color: var(--muted-foreground); white-space: normal; }
+    /* The glass trigger paints its own surface, so the current-page ring sits on the avatar inside it. */
+    .sport-theme.app-shell .account-avatar[data-current] { box-shadow: 0 0 0 2px var(--primary); }
+    .app-shell .content-column { margin-left: 0; padding-top: 5rem; overflow-x: clip; }
+    .app-shell .navigation-progress { left: 0; }
+    /* Tab focus, the skip link and scrollIntoView stop below the fixed bar instead of behind it. */
+    html:has(.app-shell .app-sidebar) { scroll-padding-top: calc(var(--top-navigation-offset) + var(--top-navigation-height) + var(--space-2)); }
+  }
+
+  /* 800-1359px: icon-only links. Text is removed from layout, so the accessible name comes from aria-label/title. */
+  @media (min-width: 800px) and (max-width: 1359px) {
+    .sport-theme.app-shell .app-sidebar nav .nav-link { padding-inline: .7rem; }
+    .sport-theme.app-shell .app-sidebar nav .nav-link > span, .sport-theme.app-shell .app-sidebar nav .rn-moving-label > span { display: none; }
+    .sport-theme.app-shell .desktop-brand .brand-name { display: none; }
+  }
+  /* Nine links (an ordinary account also gets its workspace entry) never fit labelled next to the account row: stay icon-only at every desktop width. Below 1360px the block above already does it. */
+  @media (min-width: 1360px) {
+    .sport-theme.app-shell .app-sidebar[data-dense] nav .nav-link { padding-inline: .7rem; }
+    .sport-theme.app-shell .app-sidebar[data-dense] nav .nav-link > span, .sport-theme.app-shell .app-sidebar[data-dense] nav .rn-moving-label > span { display: none; }
+  }
 }
 
 @layer components {
@@ -423,7 +507,7 @@
   .sport-theme .page-header h1 { font-size: var(--text-sport-title); font-weight: var(--weight-sport-title); }
   .sport-theme .page-description { color: var(--sport-heading-ink); max-width: 48rem; }
   .sport-theme .public-header { background: var(--surface); }
-  .sport-theme .public-header .brand-mark { background: var(--sport-sidebar); }
+  .sport-theme .public-header .brand-mark { background: var(--sport-brand); }
   .sport-theme .public-header .brand { color: var(--foreground); }
   .sport-theme .button-primary { font-weight: var(--weight-semibold); padding: .75rem 1.25rem; }
   .sport-theme .button-secondary { font-weight: var(--weight-semibold); }
@@ -447,47 +531,50 @@
 :root[data-theme="dark"], :root[data-theme="dark"] .sport-theme:not([data-poster-theme="light"] .sport-theme),
 [data-poster-theme="dark"], [data-poster-theme="dark"] .sport-theme {
   color-scheme: dark;
-  --background: #101a16;
-  --surface: #1b2922;
-  --foreground: #e4eee7;
+  --background: #292725;
+  --surface: #33312f;
+  --foreground: #f2f0ee;
   --primary: #77d4ac;
   --primary-hover: #9ce4c3;
-  --primary-soft: #233e30;
+  --primary-soft: #2c3a32;
   --primary-foreground: #10251b;
-  --muted: #26362d;
-  --muted-foreground: #b1c3b6;
-  --border: #405348;
+  --muted: #3e3b39;
+  --muted-foreground: #b1aca6;
+  --border: #46433f;
   --ring: #9ce4c3;
+  --scrollbar-thumb: color-mix(in srgb, var(--muted-foreground) 46%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--muted-foreground) 75%, transparent);
   --error: #ffadb1;
   --error-soft: #40252a;
   --error-border: #91525c;
   --success: #9fe1b6;
-  --success-soft: #203d2c;
+  --success-soft: #24392d;
   --success-border: #4c8362;
   --warning: #f5d391;
   --warning-soft: #3a3020;
   --warning-border: #806b41;
-  --control-hover-border: #8da996;
-  --sport-sidebar: #173c2b;
+  --control-hover-border: #8b8680;
+  --sport-sidebar: #34322f;
+  --sport-brand: #1f5a3a;
   --sport-nav-hover: #ffffff12;
-  --sport-nav-active: #2a5138;
-  --sport-nav-active-ink: #daf3c8;
-  --sport-yellow: #58471e;
+  --sport-nav-active: #4d4644;
+  --sport-nav-active-ink: #f2f0ee;
+  --sport-yellow: #54451d;
   --sport-heading-ink: #ffe9a5;
   --sport-detail-ink: #ffe9a5;
   --sport-heading-border: #9c884f;
-  --calendar-0: #26342c;
+  --calendar-0: #3e3b39;
   --calendar-1: #347247;
   --calendar-2: #60aa72;
   --calendar-3: #90cc96;
   --calendar-4: #c7edb5;
-  --calendar-ring: #e4eee7;
-  --calendar-label: #e4eee7;
+  --calendar-ring: #f2f0ee;
+  --calendar-label: #f2f0ee;
   --calendar-active-label: #10231c;
   --calendar-strong-label: #10231c;
-  --route-thumbnail: #273d2b;
-  --province-unvisited: #354a3d;
-  --province-sea: #749781;
+  --route-thumbnail: #2c3a31;
+  --province-unvisited: #45423e;
+  --province-sea: #6f7a74;
   --comparison-down: #ffadb1;
   --chart-series: #77d4ac;
   --well-mood: #b3a8ff;
@@ -500,8 +587,8 @@
   --well-effect: #ff9aa8;
   --well-note: #f2a1c8;
   --well-dose: #c3e66b;
-  --glass-surface: #263e3266;
-  --glass-surface-hover: #35544099;
+  --glass-surface: #47454466;
+  --glass-surface-hover: #47454499;
   --glass-edge: #ffffff40;
   --glass-sheen: #ffffff2e;
   --glass-reflection: #ffffff05;
@@ -509,9 +596,9 @@
   --glass-shadow: #00000047;
   --glass-tint-sheen: #ffffff14;
   --glass-danger-foreground: #301318;
-  --glass-fill-base: #263e32;
+  --glass-fill-base: #474544;
   --glass-action-tint-factor: .65;
-  --glass-action-foreground: #e4eee7;
+  --glass-action-foreground: #f2f0ee;
   --glass-danger-ink: #ffebed;
   --glass-preview-a: #203f55;
   --glass-preview-b: #5c4326;
@@ -580,7 +667,7 @@
 @layer components {
   .site-layout { display: grid; gap: var(--space-6); margin-top: var(--space-6); align-items: start; }
   .site-layout > .site-save { grid-column: 1 / -1; }
-  @media (min-width: 1024px) { .site-layout { grid-template-columns: minmax(0, 1fr) 21rem; } .site-layout > aside { position: sticky; top: var(--space-6); } }
+  @media (min-width: 1024px) { .site-layout { grid-template-columns: minmax(0, 1fr) 21rem; } .site-layout > aside { position: sticky; top: calc(var(--top-navigation-offset) + var(--top-navigation-height) + var(--space-4)); } } /* below the fixed top bar (the bar is fixed from 800px up, this block starts at 1024px) */
   .site-layout > form, .site-layout > aside { margin-top: 0; }
   .block-pair { display: grid; gap: var(--space-4); }
   @media (min-width: 640px) { .block-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -600,11 +687,12 @@
   .swatch-system i:first-child { background: var(--swatch-light-bg); }
   .swatch-system i:last-child { background: var(--swatch-dark-bg); }
   .site-preview { display: grid; gap: var(--space-3); padding: var(--space-4); border-radius: var(--radius-control); background: var(--muted); }
-  .preview-side { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-radius: var(--radius-control); background: var(--sport-sidebar); color: #fff; }
-  .preview-mark { display: grid; place-items: center; flex: none; width: 2.25rem; height: 2.25rem; overflow: hidden; border-radius: .625rem; background: #fff; color: var(--sport-sidebar); font-weight: var(--weight-bold); }
+  /* A small sample of the top navigation bar: a surface card with a border, the green logo tile and the site name in the foreground colour. */
+  .preview-side { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-4) var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface); color: var(--foreground); }
+  .preview-mark { display: grid; place-items: center; flex: none; width: 2rem; height: 2rem; overflow: hidden; border-radius: .625rem; background: var(--sport-brand); color: white; font-weight: var(--weight-bold); }
   .preview-mark img { width: 100%; height: 100%; object-fit: cover; }
   .preview-title { display: block; font-weight: var(--weight-bold); overflow-wrap: anywhere; }
-  .preview-sub { display: block; font-size: var(--text-caption); opacity: .8; overflow-wrap: anywhere; }
+  .preview-sub { display: block; font-size: var(--text-caption); color: var(--muted-foreground); overflow-wrap: anywhere; }
   .preview-foot { font-size: var(--text-caption); color: var(--muted-foreground); overflow-wrap: anywhere; }
 }
 

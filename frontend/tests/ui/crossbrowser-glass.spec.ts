@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { installActivities, loginRunner, sampleActivity } from '../fixtures/activities';
+import { openGoalPanel } from '../fixtures/top-navigation';
+import { DEFAULT_GLASS_SETTINGS } from '../../src/lib/styles/liquid-glass-settings.ts';
 
 /** Sixteen synthetic cards recreate the backdrop-filter strip that stalled WebKit. */
 async function seedStrip(page: Page) {
@@ -160,7 +162,8 @@ test('engines without overflow-clip-margin let the glass rim paint', async ({ pa
   test.skip(browserName !== 'webkit', 'the fallback is for engines that lack overflow-clip-margin');
   await page.goto('/admin');
   const layer = page.getByRole('button', { name: '登录', exact: true }).locator('.rn-glass-layer');
-  await expect(layer).toHaveCSS('backdrop-filter', /blur\(16px\) saturate\(1\.6\)/);
+  // The non-refracting fallback is a 16px base plus the optical blur, whose default is a setting (not a literal).
+  await expect(layer).toHaveCSS('backdrop-filter', `blur(${16 + DEFAULT_GLASS_SETTINGS.blur}px) saturate(1.6)`);
   const surface = page.locator('.rn-glass-surface').first();
   await expect(surface).toBeAttached();
   const supported = await page.evaluate(() => CSS.supports('overflow-clip-margin: 1px'));
@@ -185,7 +188,7 @@ test('goal titles stay on one line and the progress bar drops the native chrome'
   const title = page.getByRole('heading', { name: '年度目标', exact: true });
   await expect(title).toBeVisible();
   await expect(title).toHaveCSS('white-space', 'nowrap');
-  const goal = page.getByRole('region', { name: '跑量目标' });
+  const goal = await openGoalPanel(page);
   await goal.getByRole('button', { name: /^(设置|调整)$/ }).click();
   await goal.getByLabel('目标距离（km）', { exact: true }).fill('20');
   await goal.getByRole('button', { name: '保存', exact: true }).click();
@@ -235,5 +238,35 @@ test('a browser without showPopover keeps the native select', async ({ page }) =
   const format = page.getByLabel('文件格式', { exact: true });
   await expect(format).toBeVisible();
   await expect(format).not.toHaveClass(/rn-liquid-select/);
-  await expect(page.locator('.rn-glass-menu')).toHaveCount(0);
+  // The select menu, not the goal and account popovers of the top bar (those are anchored panels).
+  await expect(page.locator('.rn-glass-menu:not(.anchored-panel)')).toHaveCount(0);
+});
+
+// WebKit cannot refract. A near-opaque static rim there let the content under the floating top bar ghost through unblurred ("two stacked cards"),
+// so the floating bar is frosted glass instead: a real backdrop blur and a clearly lower fill. Docked it stays a solid card.
+test('in WebKit the floating top bar is frosted glass, not a near-opaque card with ghosting content', async ({ page, browserName, isMobile }) => {
+  test.skip(browserName !== 'webkit' || isMobile, 'the WebKit desktop fallback of the floating bar');
+  await seedStrip(page);
+  await loginRunner(page);
+  await page.goto('/dashboard');
+  const bar = page.locator('.app-sidebar');
+  await expect(bar).toBeVisible();
+  const state = () => bar.evaluate(element => {
+    const style = getComputedStyle(element);
+    const match = style.backgroundColor.match(/\/\s*([\d.]+)\s*\)|rgba\([^)]*,\s*([\d.]+)\)/);
+    return { alpha: match ? Number(match[1] ?? match[2]) : 1, blur: style.backdropFilter || style.getPropertyValue('-webkit-backdrop-filter') || 'none' };
+  });
+  await expect(bar).not.toHaveAttribute('data-floating');
+  expect((await state()).alpha).toBe(1);
+  await page.evaluate(() => window.scrollTo(0, 600));
+  await expect(bar).toHaveAttribute('data-floating', '');
+  await expect(bar).toHaveClass(/rn-frosted-glass/);
+  await expect(bar).not.toHaveClass(/rn-static-glass/);
+  await expect.poll(async () => (await state()).blur).toMatch(/blur\(/);
+  await expect.poll(async () => (await state()).alpha).toBeLessThan(0.8);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(bar).not.toHaveAttribute('data-floating');
+  await expect(bar).not.toHaveClass(/rn-frosted-glass/);
+  await expect.poll(async () => (await state()).blur).toBe('none');
+  await expect.poll(async () => (await state()).alpha).toBe(1);
 });

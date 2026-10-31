@@ -50,10 +50,13 @@ test('site default theme applies before local choice and local choice wins', asy
 test('sidebar shows the subject avatar and falls back to the initial', async ({ page }) => {
   await loginRunner(page);
   await page.goto('/dashboard');
-  await expect(page.locator('.runner-avatar')).toHaveText('晨');
+  // Desktop shows the avatar-menu trigger, the phone menu the inline identity block: both fall back to the initial.
+  await expect(page.locator('.runner-avatar.account-avatar')).toHaveText('晨');
+  await expect(page.locator('.runner-avatar:not(.account-avatar)')).toHaveText('晨');
   expect((await page.request.put('/api/v1/me/avatar', { headers: csrf, multipart: { file: { name: 'a.png', mimeType: 'image/png', buffer: png } } })).status()).toBe(200);
   await page.reload();
-  await expect(page.locator('.runner-avatar img')).toHaveAttribute('alt', '晨跑者的头像');
+  await expect(page.locator('.runner-avatar:not(.account-avatar) img')).toHaveAttribute('alt', '晨跑者的头像');
+  await expect(page.locator('.runner-avatar.account-avatar img')).toBeVisible();
   await page.request.delete('/api/v1/me/avatar', { headers: csrf });
 });
 
@@ -130,7 +133,7 @@ test('account settings upload and remove the avatar', async ({ page }) => {
   await page.goto('/settings');
   await expect(page.getByLabel('上传头像')).toBeEnabled();
   await page.getByLabel('上传头像').setInputFiles({ name: 'a.png', mimeType: 'image/png', buffer: png });
-  await expect(page.locator('.runner-avatar img')).toBeVisible();
+  await expect(page.locator('.runner-avatar.account-avatar img')).toBeVisible();
   await page.getByRole('button', { name: '移除头像', exact: true }).click();
   await expect(page.locator('.runner-avatar img')).toHaveCount(0);
 });

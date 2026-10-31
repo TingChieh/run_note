@@ -117,6 +117,25 @@ RecordsBannerLoader：`onMount` 读取 `readRecords()`，保留 `disposed` 与�
 
 动态增强不能移动 Svelte 拥有的标签/图标 DOM，不能复制私人 DOM；action 负责清理 observer、监听器与光学实例。无折射能力或偏好减少透明度时保留可操作的原生语义与回退。参数调试继续用现有 LiquidGlassTuner，不另写参数系统。
 
+## 顶部导航与锚定弹层
+
+私人页面的导航是 [AppNavigation](../../frontend/src/lib/components/AppNavigation.svelte) 里的同一个 `<aside class="app-sidebar" id="app-navigation">`：≥800px 样式成悬浮顶部条，<800px 是手机栏加文档流菜单。类名与 id 沿用旧侧栏，只改样式与结构。设计与实测见 [top-navigation 设计](../superpowers/specs/2026-10-30-top-navigation-design.md)，验收见 [78-top-navigation](../78-top-navigation.md)。
+
+| 名称 | 入口 | 契约 |
+| --- | --- | --- |
+| AnchoredPanel | [AnchoredPanel](../../frontend/src/lib/components/AnchoredPanel.svelte)：`label:string`（触发按钮的 `aria-label` 与 `title`）；`panelLabel:string`（弹层 `role="group"` 的名称）；`inline=false`；`trigger:Snippet`；`children:Snippet`；对外方法 `close()` | 触发按钮加玻璃弹层：2.75rem 圆形 `.button-secondary`，弹层是原生 `popover="auto"`（宽 20rem，不超出视口），带 `rn-glass-menu` 与 `attachMenuGlass`（`glassOptics(.7)`、色散 0）。定位、展开与收回复用 `popover-motion.ts`、`visualViewportBox`，与 `BasemapPicker` 同一套配方，不另写动画；区别是 `BasemapPicker` 内容固定为底图选项加滑块，`AnchoredPanel` 放任意内容，弹层与触发按钮右缘对齐、空间不够翻到上方并贴边。触发按钮外层容器带 `data-glass-stable`，按压时玻璃不逐帧换 backdrop 地址。Escape、点外部由原生 Popover 关闭并把焦点还给触发按钮（`popovertarget`）；`aria-expanded` 跟随 `toggle` 事件；弹层开合时才创建、收回后 240ms 释放玻璃。`inline` 退化为普通块：不加 `popover` 属性，触发按钮隐藏，内容按文档流显示（手机菜单里的跑量目标卡用它），从弹层切到 inline 会立即复位 `expanded` 并释放玻璃。没有 Popover 支持时不弹出（暂无退化）。消费者：顶部条的进度环弹层（`label` 随目标状态变，如“跑量目标，本周已完成 62%”）与头像菜单（`label="账户菜单"`） |
+| GoalRing | [GoalRing](../../frontend/src/lib/components/GoalRing.svelte)：`progress:number\|null` | 28px 进度环，装饰性（`aria-hidden`，名称由外层触发按钮提供），颜色取 `currentColor`（顶部条里设为 `--primary`）。`null` 是虚线空环加“+”（未设置目标），数字按 0–100 截断画实弧，0 是空环（不画实弧，否则圆角端点会在起点留一个小点）。只显示传入值，不计算目标；展示见 showcase“锚定弹层与进度环” |
+| 顶部条 | `.app-sidebar`（≥800px，`app.css` 的 `@media (min-width: 800px)`） | 圆角胶囊，距视口顶部与左右 `--top-navigation-offset`，高 `--top-navigation-height`，宽对齐 `--content-width`；左 Logo 加站点名，中导航项，右账户区。站点副标题只在手机菜单里显示 |
+| docked / floating | `aside` 的 `data-floating` 属性（`AppNavigation.svelte` 按 `#main` 内容首行是否已滚到条的下边缘计算，监听 scroll/resize） | docked：不透明 `--surface` 卡片，无模糊无阴影。floating：与身心健康 `SaveBar` 同一玻璃配方——`--glass-edge` 亮边、`--glass-fill-base` 约 9% 的淡底色（`--glass-opacity` × 75%，默认 .12）、`--glass-sheen` 内高光、`--glass-shadow` 轻阴影，加 `attachFloatingGlass` 折射；**不加文字光晕**（会在字形边缘留白边）。悬浮时未选中的标签与图标用 `--foreground`（灰色在黄色页头上太弱），docked 仍是灰色；当前项保持 `--sport-nav-active-ink`。WebKit 无法折射，`attachFloatingGlass` 在 WebKit 里只给条加 `.rn-frosted-glass`（`app.css`：`backdrop-filter: blur(14px) saturate(1.5)` 的真实背景模糊，底色约 60% 的 `--surface`，即 `.5 + --glass-opacity × .8`，亮边与较轻的阴影沿用），内容被模糊而不是透出重影；Chromium 保持折射（淡底色约 9%），Firefox 保留模糊回退；Safari 比 Chromium 不够清透，这是已接受的取舍，且只在 Playwright 的 WebKit 引擎里验证过，没有真机 Safari；`prefers-reduced-transparency` 与 `forced-colors` 保持实心卡片 |
+| 三档响应式 | `app.css`；`aside` 的 `data-dense` | ≥1360px 图标加文字；800–1359px 只有图标（每项带 `title` 与 `aria-label`，滑块克隆图标与文字，所以不做“当前项展开文字”）；<800px 手机栏加菜单。入口达到 9 个（普通账户多“本人工作区”）时所有桌面宽度都是图标版（`data-dense`）。壳层断点 B=800px 在 CSS、`enhanceNavigation` 与 `matchMedia` 里各写一份，改动要一起改，`top-navigation.spec.ts` 的 shell breakpoint 用 799/800/801/1023/1024 守住一致。跨 800/1360px 时销毁并重建横向滑块 |
+| 账户区 | 顶部条右侧：进度环 → 主题切换（图标）→ 头像 | 进度环弹层复用 `RunningGoal`（只读展示视图 `readonly`，只显示不可改）；身份确认中（`checking`）隐藏进度环，头像区显示占位；头像菜单是玻璃弹层：姓名与模式（管理员模式 / 本人工作区 / 个人跑步展示）、设置（仅 `view.manage`，保持 `aria-current` 与同路径点击不重复导航）、退出登录。当前在设置或用户管理页时头像带主色描边 |
+| 头像按压跟随 | `liquid-glass.ts` 的 `render()` 在玻璃控件上发布 `--glass-press`（0–1，弹簧值，销毁时移除）；`app.css` 里 `.account-avatar` 用它缩放 | 玻璃按压只形变玻璃层（宽 +10px、高 −4px），里面的实心内容不会动；头像用同比例缩放（`1 + .227 × press`、`1 − .091 × press`）跟着变形。文字与线条图标不需要。`--glass-press` 现在每个玻璃控件上都有初始值 0.000 |
+| 手机栏与菜单 | `.mobile-bar`、`.app-sidebar.nav-open`（<800px） | 结构、动画、焦点管理与 `inert` 不变；配色与顶部条统一：`--surface` 底、`--border` 边、`--foreground` 文字，Logo 方块用 `--sport-brand` 加白字，不再整块绿色。菜单里保留内联账户块（`.account-inline`：姓名、模式、退出登录、设置），桌面隐藏 |
+| `attachFloatingGlass` | [menu-glass.ts](../../frontend/src/lib/styles/menu-glass.ts)：`attachFloatingGlass(node): () => void` | 悬浮外壳的玻璃挂载：`attachMenuGlass` 加 `glassOptics(设置, 1)`（与玻璃按钮同一光学，色散 0，模糊取玻璃设置，默认 2），随 `watchGlassSettings` 更新，返回清理函数；WebKit 分支不调用 `attachMenuGlass`，只加/去 `.rn-frosted-glass` 类（样式由 `app.css` 决定，不写行内 `backdrop-filter`）；降低透明度与强制色下不挂。顶部条使用。`SaveBar` 里有一份相似的挂载逻辑（`glass` 模式的 `$effect`），后续可让 `SaveBar` 改用它，这次未动 |
+| `contentOptics` | [liquid-glass-settings.ts](../../frontend/src/lib/styles/liquid-glass-settings.ts)：`contentOptics(settings, scale = 1)` | 只作用于滤镜自身内容的玻璃（标签副本、滑块轨道、开关轨道、旋钮）：`glassOptics` 且 `blur` 恒为 0，因为光学模糊是给背景打霜的，用在副本上会把副本自己糊掉。滑块、旋钮、导航滑块（`createIndicator`）与开关（`switchOptics`）用它；背景玻璃（弹层、顶部条、保存条）用 `glassOptics` |
+
+不要在业务页面里另写顶部栏、账户菜单或弹层：新的锚定弹层复用 `AnchoredPanel`，导航入口放进 `AppNavigation` 的 `navigation` 列表。公开页面（`/p/{username}/*`、匿名展示）有自己独立的顶部导航，与这里无关。
+
 ## 业务组件保留原职责
 
 | 实现组 | 保留理由 |
@@ -152,4 +171,4 @@ Badge 有可见性/标签等局部形式，暂不统一状态与装饰。`title`
 
 地图覆盖控件的容器标记 `data-glass-stable`：共享 glass action 保留已有 SVG atlas/裁剪，用同一弹簧缩放已存在的材质表面，避免在 WebGL 背景上按压时逐帧替换 backdrop-filter 地址。按钮原生点击区域与文字不缩放；普通按钮继续使用原来的光学形变。该标记只作用于按钮增强，不改变菜单浮层或地图渲染。
 
-跨浏览器玻璃：`.history-card` 与 `.wall-card` 这类大卡片不加 `backdrop-filter`。Chromium 仍用 `backdrop-filter: url()` 折射。WebKit 只给主按钮留一层模糊，其余控件用 `.rn-glass-static` / `.rn-static-glass`（半透明底色加 inset 高光）。Firefox 保留原来的 `backdrop-filter` 模糊回退。导航选中胶囊在 WebKit 上用裁切后的底色，不用 `filter: url()`。弹窗打开锁定页面滚动；菜单在视口高度变化时重新定位，只有宽度变化才关闭。触屏（`(hover: none) and (pointer: coarse)`）保留原生 select。不支持 `overflow-clip-margin` 时装饰层改为 `overflow: visible`。支持基线为 iOS 17+；没有 `showPopover` 时日期和底图退回原生控件。
+跨浏览器玻璃：`.history-card` 与 `.wall-card` 这类大卡片不加 `backdrop-filter`。Chromium 仍用 `backdrop-filter: url()` 折射。WebKit 只给主按钮留一层模糊，其余控件（菜单、弹层等）用 `.rn-glass-static` / `.rn-static-glass`（半透明底色加 inset 高光）；桌面顶部悬浮条是例外：WebKit 下它用 `.rn-frosted-glass`（真实 `backdrop-filter: blur(14px) saturate(1.5)` 加约 60% 的 `--surface` 底色），因为近乎不透明的静态边缘会让下面未模糊的内容像重影一样透出来。Firefox 保留原来的 `backdrop-filter` 模糊回退。导航选中胶囊在 WebKit 上用裁切后的底色，不用 `filter: url()`。弹窗打开锁定页面滚动；菜单在视口高度变化时重新定位，只有宽度变化才关闭。触屏（`(hover: none) and (pointer: coarse)`）保留原生 select。不支持 `overflow-clip-margin` 时装饰层改为 `overflow: visible`。支持基线为 iOS 17+；没有 `showPopover` 时日期和底图退回原生控件。

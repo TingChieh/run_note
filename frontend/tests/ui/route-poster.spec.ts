@@ -382,7 +382,7 @@ test('poster appearance can be fixed to day or night independently of the site t
     return {background:at(0,0), surface:at(60,700), heading:at(1000,140)};
   });
   const day = {background:'246,247,244', surface:'255,255,255', heading:'245,197,25'};
-  const night = {background:'16,26,22', surface:'27,41,34', heading:'88,71,30'};
+  const night = {background:'41,39,37', surface:'51,49,47', heading:'84,69,29'};
   await expect.poll(colors).toEqual(day);
   const requests = [...state.urls];
   const choose = async (name: string) => {

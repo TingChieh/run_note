@@ -87,14 +87,17 @@ export function prepareBasemapStyle(value: unknown, prefix: string): StyleSpecif
 }
 export const BASEMAP_TIMEOUT_MS = 8000;
 
+// One local background for both the initial style and later theme switches.
+const routeMapBackground = (dark: boolean) => (dark ? '#302e2c' : '#edf3ef');
+
 // Start locally: external tile availability must never gate the route's load event.
 export function createRouteMapStyle(dark = false): StyleSpecification {
-  return { version: 8, sources: {}, layers: [{ id: 'background', type: 'background', paint: { 'background-color': dark ? '#19271f' : '#edf3ef' } }] };
+  return { version: 8, sources: {}, layers: [{ id: 'background', type: 'background', paint: { 'background-color': routeMapBackground(dark) } }] };
 }
 
 // Change paint only: retain the camera, loaded GeoJSON, selection and tile source.
 export function applyMapTheme(map: MapLibreMap, dark: boolean): void {
-  if (map.getLayer('background')) map.setPaintProperty('background', 'background-color', dark ? '#19271f' : '#edf3ef');
+  if (map.getLayer('background')) map.setPaintProperty('background', 'background-color', routeMapBackground(dark));
   if (map.getLayer('route-lines')) map.setPaintProperty('route-lines', 'line-color', dark ? '#77d4ac' : '#14785b');
   if (map.getLayer('route-points')) map.setPaintProperty('route-points', 'circle-color', dark ? '#77d4ac' : '#14785b');
   // Keep each route's identity, making all six hues readable on the dark map.

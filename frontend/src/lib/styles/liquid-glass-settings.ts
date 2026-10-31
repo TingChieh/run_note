@@ -3,8 +3,8 @@ export type GlassSettings = {
   chroma: number; blur: number; highlight: number; specularWidth: number; lightAngle: number;
 };
 export const DEFAULT_GLASS_SETTINGS: Readonly<GlassSettings> = Object.freeze({
-  transparency: 86, refraction: 14, bezel: .8, curvature: 3, ior: 1.5, chroma: .12,
-  blur: 0, highlight: .6, specularWidth: 1.5, lightAngle: -120
+  transparency: 88, refraction: 14, bezel: .3, curvature: 3, ior: 1.5, chroma: .12,
+  blur: 2, highlight: .7, specularWidth: 2, lightAngle: -120
 });
 export const GLASS_RANGES = {
   transparency: { min: 45, max: 95, step: 1 },
@@ -27,6 +27,15 @@ export function glassOptics(settings: GlassSettings, scale = 1) {
     curvature: settings.curvature, ior: settings.ior, chroma: settings.chroma,
     blur: settings.blur, specular: settings.highlight, specularWidth: settings.specularWidth,
     lightAngle: settings.lightAngle };
+}
+
+/**
+ * Lenses that filter their own content (a copy of the label, the slider track, the switch
+ * track) must stay crisp: the optical blur frosts a BACKDROP, and on a copy it smears the
+ * copy itself. Use this for those lenses and `glassOptics` for backdrop glass.
+ */
+export function contentOptics(settings: GlassSettings, scale = 1) {
+  return { ...glassOptics(settings, scale), blur: 0 };
 }
 
 export function normalizeGlassSettings(value: unknown): GlassSettings {
@@ -69,5 +78,5 @@ export function watchGlassSettings(update: (settings: GlassSettings) => void): (
 
 /** Switch recipe: gentle refraction like the slider lens, with the chromatic rim kept visible. */
 export function switchOptics(settings: GlassSettings) {
-  return { ...glassOptics(settings, .43), chroma: Math.max(settings.chroma, .12) };
+  return { ...contentOptics(settings, .43), chroma: Math.max(settings.chroma, .12) };
 }

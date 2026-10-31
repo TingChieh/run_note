@@ -12,7 +12,7 @@
   import { comparisonWindow } from '#lib/api/milestones.ts';
   import type { ShowcaseProfile } from '#lib/api/showcase.ts';
   import { goalInputPop } from '#lib/styles/goal-input-transition.ts';
-  let { user, readonly = false }: { user: ShowcaseProfile; readonly?: boolean } = $props();
+  let { user, readonly = false, onprogress }: { user: ShowcaseProfile; readonly?: boolean; onprogress?: (value: { progress: number | null; period: GoalPeriod; loading: boolean }) => void } = $props();
   let period = $state<GoalPeriod>('week'), input = $state('');
   let goals = $state<RunningGoals>({week:null,month:null,year:null});
   let target = $derived(goals[period]);
@@ -24,6 +24,7 @@
   const timezone = $derived(user.timezone); // value-deduped: a refreshed profile object with the same timezone must not refetch
   const labels = { week: '本周', month: '本月', year: '今年' };
   let progress = $derived(target && distance !== null ? Math.min(100, distance / 1000 / target * 100) : 0);
+  $effect(() => { onprogress?.({ progress: target !== null && distance !== null ? progress : null, period, loading: loading || goalLoading }); });
   $effect(() => {
     const selected = period, zone = timezone; refresh;
     // Only period, refresh and timezone may refetch; view.fetch reads the route reactively, so navigation must not be tracked.

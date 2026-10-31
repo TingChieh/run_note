@@ -125,22 +125,26 @@ test('the entrance count-up never leaves wrong values: final before it plays, af
   await expect(banner.getByTestId('records-banner-gain-5km').locator('.segment')).toHaveCSS('transform', 'none');
 });
 
-test('at a mid-width viewport 5K and 10K sit side by side above a full-width totals strip', async ({ page }) => {
-  await page.setViewportSize({ width: 1100, height: 900 });
-  await page.goto('/');
-  const five = page.getByTestId('records-banner-5km'), ten = page.getByTestId('records-banner-10km'), total = page.getByTestId('records-banner-total');
-  await expect(total).toBeVisible();
-  const [a, b, c] = [await box(five), await box(ten), await box(total)];
-  expect(Math.abs(a.y - b.y)).toBeLessThanOrEqual(1);
-  expect(Math.abs(a.width - b.width)).toBeLessThanOrEqual(1);
-  expect(c.y).toBeGreaterThanOrEqual(a.y + a.height - 1);
-  expect(Math.abs(c.x - a.x)).toBeLessThanOrEqual(1);
-  expect(Math.abs(c.x + c.width - (b.x + b.width))).toBeLessThanOrEqual(1);
-  // The strip keeps every fact on one line next to the figure.
-  await expect(total).toContainText('共 44 次 · 42 个活动日');
-  expect(c.height).toBeLessThan(a.height);
-  await noOverflow(page);
-});
+// The banner switches layout by its own width (container query, 54rem of content width), not by the viewport. With the left sidebar gone (top navigation, shell breakpoint 800px) the content column is the viewport minus
+// two page paddings, so the two-column-plus-strip layout now covers roughly 700-980px viewports; measured: 1000px and wider already give three columns (tested at 1440 above), 640px stacks.
+for (const width of [800, 900, 960]) {
+  test(`at a mid-width viewport (${width}px) 5K and 10K sit side by side above a full-width totals strip`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/');
+    const five = page.getByTestId('records-banner-5km'), ten = page.getByTestId('records-banner-10km'), total = page.getByTestId('records-banner-total');
+    await expect(total).toBeVisible();
+    const [a, b, c] = [await box(five), await box(ten), await box(total)];
+    expect(Math.abs(a.y - b.y)).toBeLessThanOrEqual(1);
+    expect(Math.abs(a.width - b.width)).toBeLessThanOrEqual(1);
+    expect(c.y).toBeGreaterThanOrEqual(a.y + a.height - 1);
+    expect(Math.abs(c.x - a.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(c.x + c.width - (b.x + b.width))).toBeLessThanOrEqual(1);
+    // The strip keeps every fact on one line next to the figure.
+    await expect(total).toContainText('共 44 次 · 42 个活动日');
+    expect(c.height).toBeLessThan(a.height);
+    await noOverflow(page);
+  });
+}
 
 test('a gain smaller than half a second says "almost as fast", not "still the first run"', async ({ page }) => {
   await page.route('**/api/v1/showcase/statistics/records**', async route => {

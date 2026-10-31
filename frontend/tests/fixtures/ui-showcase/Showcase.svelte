@@ -10,6 +10,8 @@
   import type { BasemapPreference } from '../../../src/lib/api/map-style.ts';
   import ThemeToggle from '../../../src/lib/components/ThemeToggle.svelte';
   import SaveBar from '../../../src/lib/components/SaveBar.svelte';
+  import AnchoredPanel from '../../../src/lib/components/AnchoredPanel.svelte';
+  import GoalRing from '../../../src/lib/components/GoalRing.svelte';
   import RecordsBanner from '../../../src/lib/components/RecordsBanner.svelte';
   import type { CategoryBest, Totals } from '../../../src/lib/api/records.ts';
   import { liquidGlass } from '../../../src/lib/styles/liquid-glass.ts';
@@ -87,6 +89,28 @@
       <h2 id="basemap-title">底图选择</h2><p class="description">菜单从图层按钮展开，选择、Esc 或点击外部时收回；日期与下拉选项复用相同动效。此处仅展示控件，不加载地图资源。</p>
       <div style="position:relative;height:5rem"><BasemapPicker preference={basemap} style={basemap === 'auto' ? 'positron' : basemap} status="ready" onselect={value => { basemap = value; }} /></div>
     </section>
+    <section id="anchored" class="aux-panel" aria-labelledby="anchored-title">
+      <h2 id="anchored-title">锚定弹层与进度环</h2>
+      <p class="description">AnchoredPanel 是顶部导航里目标弹层与账户菜单共用的触发按钮加玻璃弹层（原生 Popover，Escape 关闭并回到触发按钮）；inline 时退化为普通块，手机菜单里的目标卡就是这种形态。GoalRing 只画传入的百分比：null 为虚线空环加“+”，0 为空环，62 与 100 为实弧。此处全部是合成文字与数值。</p>
+      <div class="control-row">
+        <AnchoredPanel label="示例目标" panelLabel="示例目标面板">
+          {#snippet trigger()}<GoalRing progress={62} />{/snippet}
+          <div class="anchored-sample"><p>本周已完成 62%</p><p class="description">合成示例文字，不读取任何目标数据。</p></div>
+        </AnchoredPanel>
+        <span class="description">点击进度环打开弹层</span>
+      </div>
+      <div class="inline-sample" data-testid="anchored-inline">
+        <AnchoredPanel label="内联示例" panelLabel="内联示例面板" inline>
+          {#snippet trigger()}<GoalRing progress={62} />{/snippet}
+          <div class="anchored-sample"><p>inline 示例</p><p class="description">没有触发按钮与弹层，内容按文档流显示。</p></div>
+        </AnchoredPanel>
+      </div>
+      <div class="control-row" data-testid="goal-ring-states">
+        {#each [[null, '未设置'], [0, '0%'], [62, '62%'], [100, '100%']] as [value, label]}
+          <figure class="ring-sample"><span class="ring-face"><GoalRing progress={value as number | null} /></span><figcaption class="description">{label}</figcaption></figure>
+        {/each}
+      </div>
+    </section>
     <section id="switches" class="aux-panel" aria-labelledby="switches-title">
       <h2 id="switches-title">开关、分段与紧凑文本框</h2>
       <p class="description">开关是立即生效的布尔值（`.rn-switch`，折射滑块头由 enhanceSwitch 增强）；分段控件用 `.compact-switch` 与 aria-pressed，玻璃块跟随指针；文本框用 `.text-field`。保存条只在有草稿时出现。</p>
@@ -162,6 +186,10 @@
   .control-row { margin-top: var(--space-4); }
   .choice { display: inline-flex; align-items: center; gap: var(--space-2); }
   .phone-frame { max-width: 390px; }
+  .anchored-sample { display: grid; gap: var(--space-1); padding: var(--space-2) var(--space-3); }
+  .inline-sample { margin-top: var(--space-4); border: 1px dashed var(--border); border-radius: var(--radius-control); }
+  .ring-sample { display: grid; justify-items: center; gap: var(--space-1); margin: 0; }
+  .ring-face, .control-row :global(.anchored-trigger) { color: var(--primary); }
   fieldset { display: flex; flex-wrap: wrap; gap: var(--space-4); }
   @media (max-width: 639px) { .reference-states, .pattern-grid, .field-grid { grid-template-columns: 1fr; } }
 </style>

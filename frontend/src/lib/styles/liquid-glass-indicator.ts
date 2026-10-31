@@ -1,5 +1,5 @@
 import { createGlass, createSpring, engine } from '../vendor/liquidglass/liquid-glass.js';
-import { glassOptics, type GlassSettings } from './liquid-glass-settings.ts';
+import { contentOptics, type GlassSettings } from './liquid-glass-settings.ts';
 
 /** Decorative copy of known navigation/option labels; never copies arbitrary page content. */
 export function createIndicator(host: HTMLElement, items: HTMLElement[], initial: GlassSettings, axis: 'x' | 'y' = 'y', start = 0) {
@@ -17,7 +17,7 @@ export function createIndicator(host: HTMLElement, items: HTMLElement[], initial
   const motion = matchMedia('(prefers-reduced-motion: reduce)');
   // WebKit applies filter:url() before the displacement image has painted, so the capsule
   // is an empty outline. Clip the already-coloured copy instead of filtering it.
-  const glass = engine === 'webkit' ? null : createGlass(copy, { clip: true, ...glassOptics(initial, .55), chroma: 0 });
+  const glass = engine === 'webkit' ? null : createGlass(copy, { clip: true, ...contentOptics(initial, .55), chroma: 0 });
   const clipCopy = (x: number, y: number, width: number, height: number, radius: number) => {
     const boxWidth = copy.clientWidth, boxHeight = copy.clientHeight;
     if (boxWidth < 1 || boxHeight < 1) return;
@@ -58,30 +58,38 @@ export function createIndicator(host: HTMLElement, items: HTMLElement[], initial
   host.addEventListener('scroll', refresh, { passive: true });
   refresh();
   return { move, refresh, press(value: number) { pressure.set(motion.matches ? 0 : value); },
-    update(settings: GlassSettings) { glass?.update({ ...glassOptics(settings, .55), chroma: 0 }); },
+    update(settings: GlassSettings) { glass?.update({ ...contentOptics(settings, .55), chroma: 0 }); },
     destroy() { alive = false; resize.disconnect(); host.removeEventListener('scroll', refresh); motion.removeEventListener('change', changedMotion); spring.stop(); pressure.stop(); glass?.destroy(); copy.style.clipPath = ''; copy.remove(); outline.remove(); }
   };
 }
 
 export function enhanceNavigation(nav: HTMLElement, settings: GlassSettings) {
   const read = () => [...nav.querySelectorAll<HTMLAnchorElement>(':scope > .nav-link')];
-  let current = settings, links = read(), stop = build(nav, links, settings);
+  // Desktop (>=800px) lays the links out in a row; the mobile menu keeps the column. Keep 800 in sync with the shell breakpoint in app.css. The icon-only step at 1360px changes link widths too.
+  const queries = [matchMedia('(min-width: 800px)'), matchMedia('(min-width: 1360px)')];
+  const axis = () => (queries[0].matches ? 'x' : 'y');
+  let current = settings, links = read(), stop = build(nav, links, settings, axis()), alive = true, frame = 0;
   // Links appear after the session resolves (e.g. the admin entry), so a stale link list must be rebuilt.
   const sameLinks = () => { const next = read(); return next.length === links.length && next.every((link, i) => link === links[i]); };
+  const rebuild = () => { stop.destroy(); links = read(); stop = build(nav, links, current, axis()); };
+  const onQuery = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => { if (alive) rebuild(); }); };
+  queries.forEach(query => query.addEventListener('change', onQuery));
   return { update(next: GlassSettings) {
     current = next;
     if (sameLinks()) { stop.update(next); return; }
-    stop.destroy(); links = read(); stop = build(nav, links, current);
-  }, destroy() { stop.destroy(); } };
+    rebuild();
+  }, destroy() { alive = false; cancelAnimationFrame(frame); queries.forEach(query => query.removeEventListener('change', onQuery)); stop.destroy(); } };
 }
 
-function build(nav: HTMLElement, links: HTMLAnchorElement[], settings: GlassSettings) {
-  const indicator = createIndicator(nav, links, settings);
-  nav.classList.add('rn-liquid-navigation');
-  const currentIndex = () => Math.max(0, links.findIndex(link => link.getAttribute('aria-current') === 'page'));
-  const restore = () => { indicator.press(0); indicator.move(currentIndex()); };
+function build(nav: HTMLElement, links: HTMLAnchorElement[], settings: GlassSettings, axis: 'x' | 'y') {
+  const indicator = createIndicator(nav, links, settings, axis);
+  nav.classList.add('rn-liquid-navigation'); nav.dataset.axis = axis;
+  const currentIndex = () => links.findIndex(link => link.getAttribute('aria-current') === 'page');
+  // On a page that has no link here (e.g. settings, reached from the account row) the lens rests hidden instead of on the first link.
+  const rest = (immediate = false) => { const index = currentIndex(); nav.toggleAttribute('data-idle', index < 0); indicator.move(Math.max(0, index), immediate); };
+  const restore = () => { indicator.press(0); rest(); };
   const handlers = links.map((link, index) => {
-    const move = () => indicator.move(index);
+    const move = () => { nav.removeAttribute('data-idle'); indicator.move(index); };
     const down = () => indicator.press(1);
     link.addEventListener('pointerenter', move); link.addEventListener('focus', move); link.addEventListener('pointerdown', down);
     return () => { link.removeEventListener('pointerenter', move); link.removeEventListener('focus', move); link.removeEventListener('pointerdown', down); };
@@ -92,9 +100,9 @@ function build(nav: HTMLElement, links: HTMLAnchorElement[], settings: GlassSett
   links.forEach(link => observer.observe(link, { attributes: true, attributeFilter: ['aria-current'] }));
   nav.addEventListener('pointerleave', restore); nav.addEventListener('focusout', focusOut);
   window.addEventListener('pointerup', release); window.addEventListener('pointercancel', release); window.addEventListener('blur', restore);
-  indicator.move(currentIndex(), true);
+  rest(true);
   return { update: indicator.update, destroy() {
-    observer.disconnect(); handlers.forEach(remove => remove()); indicator.destroy(); nav.classList.remove('rn-liquid-navigation');
+    observer.disconnect(); handlers.forEach(remove => remove()); indicator.destroy(); nav.classList.remove('rn-liquid-navigation'); nav.removeAttribute('data-idle'); nav.removeAttribute('data-axis');
     nav.removeEventListener('pointerleave', restore); nav.removeEventListener('focusout', focusOut);
     window.removeEventListener('pointerup', release); window.removeEventListener('pointercancel', release); window.removeEventListener('blur', restore);
   } };
