@@ -14,42 +14,46 @@
 
 | Token | light | dark | 用途 |
 | --- | --- | --- | --- |
-| `--background` | #f6f7f4 | #101a16 | 页面底色 |
-| `--surface` | #ffffff | #1b2922 | 卡片、字段、浮层基础 |
-| `--foreground` | #202d23 | #e4eee7 | 正文 |
-| `--muted-foreground` | #5c695e | #b1c3b6 | 次级文字 |
-| `--muted` | #eff2e9 | #26362d | 次级区域 |
-| `--border` | #e0e6da | #405348 | 分界与边框 |
+| `--background` | #f6f7f4 | #292725 | 页面底色 |
+| `--surface` | #ffffff | #33312f | 卡片、字段、浮层基础 |
+| `--foreground` | #202d23 | #f2f0ee | 正文 |
+| `--muted-foreground` | #5c695e | #b1aca6 | 次级文字 |
+| `--muted` | #eff2e9 | #3e3b39 | 次级区域 |
+| `--border` | #e0e6da | #46433f | 分界与边框 |
 | `--primary` | #17745c | #77d4ac | 主操作、选择 |
 | `--primary-hover` | #105d49 | #9ce4c3 | hover |
-| `--primary-soft` | #e8f6df | #233e30 | 轻选择表面 |
+| `--primary-soft` | #e8f6df | #2c3a32 | 轻选择表面 |
 | `--swatch-light-bg` / `--swatch-light-fg` | #f6f7f4 / #202d23 | 同左（不随主题变化） | 站点设置“默认外观”卡片里的浅色迷你预览 |
-| `--swatch-dark-bg` / `--swatch-dark-fg` | #101a16 / #e4eee7 | 同左（不随主题变化） | 同上，深色迷你预览 |
+| `--swatch-dark-bg` / `--swatch-dark-fg` | #292725 / #f2f0ee | 同左（不随主题变化） | 同上，深色迷你预览 |
 | `--primary-foreground` | #ffffff | #10251b | 主操作文字 |
 | `--ring` | #17745c | #9ce4c3 | 可见焦点 |
-| `--control-hover-border` | #91aca0 | #8da996 | 字段 hover |
-| `--sport-sidebar` | #218538 | #173c2b | 导航 |
+| `--control-hover-border` | #91aca0 | #8b8680 | 字段 hover |
+| `--scrollbar-thumb` / `--scrollbar-thumb-hover` | `--muted-foreground` 42% / 70% 透明混合 | `--muted-foreground` 46% / 75% 透明混合 | 全站统一的细滚动条滑块；`app.css` 的 `@layer base` 用 `scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent` 作用于所有元素（含页面根），hover 色只用于不支持标准属性的旧 WebKit 后备（`@supports not (scrollbar-width: thin)` 下的 `::-webkit-scrollbar`，8px、圆角滑块、透明轨道）。不要在组件里另写滚动条颜色 |
+| `--sport-sidebar` | #218538 | #34322f | 目前没有样式读取（原绿色侧栏与站点设置预览都已改走 `--surface` / `--border` / `--sport-brand` / `--foreground`）；令牌保留 |
+| `--sport-brand` | #218538 | #1f5a3a | Logo 方块底色（桌面顶部条、公开页顶部导航）；原先借用 `--sport-sidebar`，深色改成中性后单独拆出 |
 | `--sport-nav-hover` | #0000000a | #ffffff12 | 导航 hover |
-| `--sport-nav-active` | #e8f6df | #2a5138 | 当前导航 |
-| `--sport-nav-active-ink` | #18592a | #daf3c8 | 当前导航文字 |
-| `--sport-yellow` | #f5c519 | #58471e | 页头表面 |
+| `--sport-nav-active` | #e8f6df | #4d4644 | 当前导航 |
+| `--sport-nav-active-ink` | #18592a | #f2f0ee | 当前导航文字 |
+| `--sport-yellow` | #f5c519 | #54451d | 页头表面 |
 | `--sport-heading-ink` | #20332b | #ffe9a5 | 页头文字 |
 | `--sport-detail-ink` | #263120 | #ffe9a5 | 详情文字 |
 | `--sport-heading-border` | #b5a43d | #9c884f | 业务标题边界 |
+
+深色外观是中性偏暖的炭灰（背景 #292725、卡片 #33312f，越悬浮越浅），薄荷绿与黄色只用于强调；表面、边框、文字、玻璃、`--calendar-0`、`--calendar-ring/label`、`--route-thumbnail`、`--province-unvisited/sea` 随之换成暖灰。**深色里的数据色不变**：日历色阶 `--calendar-1..4`、`--chart-series`、轨迹区分色、`--well-*` 与状态色前景/边框保持原值。深色令牌块同时服务 `[data-poster-theme="dark"]`，路线海报的深色主题随之换色；本地路线地图的深色背景（`lib/api/map-style.ts`）取 #302e2c，路线线条仍是 #77d4ac。
 
 非运动根元素的正文 #1e302b、次级文字 #596b63、muted #eef2f0、border #dbe4df、primary-soft #e7f3ed；不要把根值误写为所有页面现值。
 
 | 状态组（foreground / soft / border） | light | dark |
 | --- | --- | --- |
 | `--error / --error-soft / --error-border` | #a52b32 / #fff1f1 / #efc9cc | #ffadb1 / #40252a / #91525c |
-| `--success / --success-soft / --success-border` | #176448 / #ecf7ef / #bcdcca | #9fe1b6 / #203d2c / #4c8362 |
+| `--success / --success-soft / --success-border` | #176448 / #ecf7ef / #bcdcca | #9fe1b6 / #24392d / #4c8362 |
 | `--warning / --warning-soft / --warning-border` | #805412 / #fff8e9 / #ead7b3 | #f5d391 / #3a3020 / #806b41 |
 
 装饰色 `--sport-green` #86a912、`--sport-blue` #4bb6df、`--sport-coral` #f06373、`--sport-yellow-accent` #f5c519、`--sport-ink` #20332b 保持稳定；不是状态色，也不是深色页头色。
 
 身心健康小组件色 `--well-mood/anxiety/energy/focus/function/sleep/sleep-quality/effects/note/dose`（浅 #7a6bd6/#d9692f/#c99700/#2b8cc4/#2e9e63/#178f93/#4a67d8/#c2485a/#b8508c/#6f8f1c，深 #b3a8ff/#ffab80/#ffd75e/#7cc7f2/#7fdba5/#6fe0dc/#9db1ff/#ff9aa8/#f2a1c8/#c3e66b）：每个小组件一种色，用作拨盘、图标圆盘与强调，仅 `WellbeingTile` 系列使用，不是状态色。
 
-数据颜色：`--calendar-0..4`（浅 #edf0ed/#8dcc9c/#4ca76a/#227b49/#105332，深 #26342c/#347247/#60aa72/#90cc96/#c7edb5）、`--calendar-ring/label/active-label/strong-label`、`--chart-series`（#27815c/#77d4ac）、`--route-thumbnail`、`--province-unvisited/sea`、`--comparison-down`。计数色阶、轨迹区分色、未知区域颜色各有含义，不能统一替换为主色；当前地图专项色板见 `src/lib/map/footprint-colors.ts`。
+数据颜色：`--calendar-0..4`（浅 #edf0ed/#8dcc9c/#4ca76a/#227b49/#105332，深 #3e3b39/#347247/#60aa72/#90cc96/#c7edb5）、`--calendar-ring/label/active-label/strong-label`、`--chart-series`（#27815c/#77d4ac）、`--route-thumbnail`（深 #2c3a31）、`--province-unvisited/sea`（深 #45423e/#6f7a74）、`--comparison-down`。计数色阶、轨迹区分色、未知区域颜色各有含义，不能统一替换为主色；当前地图专项色板见 `src/lib/map/footprint-colors.ts`。
 
 ## Typography
 
@@ -88,7 +92,9 @@
 | `--radius-card` | 1.5rem | 内容卡片、页头 |
 | `--radius-pill` | 9999px | 胶囊与材质控件 |
 | `--radius-glass-control/panel` | 引用 pill/card | 材质 CSS 中的最终几何 |
-| `--sidebar-width` | 15rem | 桌面导航 |
+| `--sidebar-width` | 15rem | 旧侧栏宽度。顶部条（≥800px）与手机菜单（<800px）都已覆盖它，不再生效；`app.css` 里的基础规则仍引用，后续可连同旧侧栏规则一起清理，新代码不要使用 |
+| `--top-navigation-offset` | 14px | 桌面顶部条距视口顶部与左右的间距（`.app-sidebar` 的 `inset`） |
+| `--top-navigation-height` | 4rem | 桌面顶部条高度；内容区 `padding-top: 5rem` 为它留位 |
 | `--content-width` | 86rem | 内容最大宽度 |
 
 常用控件最小高度 2.75rem（44px）；页面水平 padding 为 clamp(1rem,3vw,3rem)。`.aux-panel` 的 padding 为 clamp(1rem,3vw,1.5rem)。不为 .7rem、1.4rem 等业务光学值自动取整。
@@ -97,9 +103,9 @@
 
 普通表面：surface + border + radius-card；浮层在此基础上加阴影。`--surface-backdrop: rgb(0 0 0 / .5)` 与 `--shadow-popover: 0 12px 40px var(--shadow-popover-color)` 为本批语义角色；颜色 `--shadow-popover-color:#1e302b26` 保留 DatePicker 原值，本批不更改深色阴影强度。既有 dialog 尚未迁移至 backdrop 角色。
 
-玻璃：`--glass-surface/hover`、`--glass-edge/sheen/reflection/rim/shadow`、`--glass-fill-base`、`--glass-action-tint-factor/foreground`、`--glass-danger-foreground/ink` 均已有浅深色定义。运动壳层还通过 color-mix 组合实际材质，不能只看 root 的半透明静态值。完整阴影几何保持在材质 CSS，不为“一致”合并不同层。
+玻璃（深色：`--glass-fill-base` #474544、`--glass-surface` #47454466、`--glass-surface-hover` #47454499、`--glass-action-foreground` #f2f0ee）：`--glass-surface/hover`、`--glass-edge/sheen/reflection/rim/shadow`、`--glass-fill-base`、`--glass-action-tint-factor/foreground`、`--glass-danger-foreground/ink` 均已有浅深色定义。运动壳层还通过 color-mix 组合实际材质，不能只看 root 的半透明静态值。完整阴影几何保持在材质 CSS，不为“一致”合并不同层。
 
-`--glass-opacity` 默认 .14；其余折射/弹簧参数继续由 `DEFAULT_GLASS_SETTINGS` 管理。普通卡片不使用折射；reduced-transparency/forced-colors 回退沿用现有 CSS/action。
+`--glass-opacity` 默认 .12。默认玻璃参数取 macOS“Clear”的观感，由 `DEFAULT_GLASS_SETTINGS`（`liquid-glass-settings.ts`）管理：透明度 88、弯折带宽（bezel）.3、模糊 2、折射 14、高光 .7、高光宽度 2；曲率 3、折射率 1.5、色散 .12、光照角 -120 不变。顶部条悬浮态的淡底色取 `--glass-opacity` 的 75%（默认约 9%），与折射、亮边共同成形。普通卡片不使用折射；reduced-transparency/forced-colors 回退沿用现有 CSS/action。
 
 ## Motion
 
@@ -124,18 +130,18 @@
 
 | 边界 | 现有用途 |
 | --- | --- |
-| 360px | 极窄导航文案收起 |
+| 479px 以下 | 手机栏“导航”按钮收起文字，只留图标（`app.css`）；359px 以下仪表盘指标数字另行收小（`routes/dashboard/+page.svelte`） |
 | 480px | 骨架与局部密度 |
 | 640px | 表单/页头动作换行、指标纵排、公开导航收敛 |
 | 768px | DatePicker 全宽及局部布局 |
-| 1024px | 私人侧栏/手机展开导航切换 |
+| 800px | 壳层断点 B：≥800px 为私人悬浮顶部条，<800px 为手机栏加展开菜单（见 [top-navigation 设计文档](../superpowers/specs/2026-10-30-top-navigation-design.md)；`app.css`、`liquid-glass-controls.css`、`enhanceNavigation` 与 `AppNavigation.svelte` 的 `matchMedia` 各写一份，注释互相指向，要改一起改）；`.site-layout` 等页面内布局仍以 1024px 为界 |
 | 1200px | 指标图标横排恢复 |
-| 桌面高度 ≤900px | 侧栏密度降低以保留账户区域 |
+| 1360px | 顶部条图标加文字的下限：800–1359px 只有图标，≥1360px 带文字（实测 8 个带文字入口在 1280–1339px 会压到账户区）；入口达到 9 个（普通账户多一个“本人工作区”）时所有桌面宽度都是图标版，`aside` 带 `data-dense` |
 
 足迹墙采用自己的容器查询；不以 viewport 断点替代。验证边界两侧，不只验证一台手机。
 
-本批全局角色：`--z-navigation-progress:40`、`--z-dev-tools:50`、`--z-skip-link:100`，与原值相同。前两种导航/跳转层已在 app.css 等值使用；dev-tools 用于既有 tuner。玻璃内部 -1/1/2/3/4/5 是局部层叠，不参加全局排序。原生 dialog/popover 属 top layer，不能通过增大 z-index 修复其焦点或覆盖问题。
+本批全局角色：`--z-top-navigation:30`（桌面顶部条）、`--z-navigation-progress:40`、`--z-dev-tools:50`、`--z-skip-link:100`；后三者与原值相同。前两种导航/跳转层已在 app.css 等值使用；dev-tools 用于既有 tuner。玻璃内部 -1/1/2/3/4/5 是局部层叠，不参加全局排序。原生 dialog/popover 属 top layer，不能通过增大 z-index 修复其焦点或覆盖问题。
 
 ## 可访问性与变更规则
 
-保留 2px 可见焦点和 3px offset；侧栏、密集日历和地图有专用焦点规则。新文字与表面组合目标 ≥4.5:1，关键图形/焦点按适用标准核对；玻璃需检查实际背景合成，不能只计算主色值。审计记录的部分不透明色对通过不代表全站认证。没有授权不更改现有品牌颜色来“修复”未定位的问题。
+保留 2px 可见焦点和 3px offset；顶部导航条、密集日历和地图有专用焦点规则。新文字与表面组合目标 ≥4.5:1，关键图形/焦点按适用标准核对；玻璃需检查实际背景合成，不能只计算主色值。审计记录的部分不透明色对通过不代表全站认证。没有授权不更改现有品牌颜色来“修复”未定位的问题。

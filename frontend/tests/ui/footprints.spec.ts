@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { loginRunner, installActivities, sampleActivity, incompleteActivity } from '../fixtures/activities';
 import { installAI } from '../fixtures/p2';
+import { settingsLink } from '../fixtures/top-navigation';
 import { installBasemaps } from '../fixtures/basemaps';
 import { blockGlassModules, expectEnhancedLook, expectUnenhancedFallback, reduceTransparency } from '../fixtures/segmented';
 import type { FootprintCollection } from '../../src/lib/api/footprints.ts';
@@ -284,7 +285,7 @@ test('pending polls until ready, then stops; failures and refresh-in-progress re
 test('pending polling stops after leaving the page and expired polling clears private data',async({page})=>{
   const state=await fixture(page);state.status='pending';await loginRunner(page);await page.clock.install();await page.goto('/footprints');
   await expect(page.getByRole('status').filter({hasText:'正在生成全部足迹'})).toBeVisible();
-  await page.getByRole('link',{name:'设置',exact:true}).click();await expect(page).toHaveURL(/\/settings$/);const count=state.requests.length;await page.clock.fastForward(15000);expect(state.requests).toHaveLength(count);
+  await (await settingsLink(page)).click();await expect(page).toHaveURL(/\/settings$/);const count=state.requests.length;await page.clock.fastForward(15000);expect(state.requests).toHaveLength(count);
   await page.getByRole('link',{name:'个人足迹',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'正在生成全部足迹'})).toBeVisible();
   state.expired=true;await page.clock.fastForward(5100);await expect(page).toHaveURL(/admin\?reason=changed/);
   await expect(page.getByTestId('footprint-summary')).toHaveCount(0);

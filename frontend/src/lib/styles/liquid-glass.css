@@ -10,14 +10,7 @@
   --button-glass-selection: inset 0 0 0 0 transparent;
 }
 
-.sport-theme :is(.app-sidebar, .mobile-bar) {
-  --button-glass-fill: color-mix(in srgb, var(--sport-sidebar) calc(var(--glass-opacity) * 100%), transparent);
-  --button-glass-hover: color-mix(in srgb, var(--sport-sidebar) calc((var(--glass-opacity) + .12) * 100%), transparent);
-  --button-glass-sheen: var(--glass-tint-sheen);
-  --button-glass-fallback: var(--sport-sidebar);
-}
-
-/* The goal editor is a light/dark card within the coloured sidebar. */
+/* The goal editor is a light/dark card within the navigation (the phone menu; on desktop it lives in the popover). */
 .sport-theme .running-goal {
   --button-glass-fill: var(--glass-surface);
   --button-glass-hover: var(--glass-surface-hover);

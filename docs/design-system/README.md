@@ -4,10 +4,10 @@
 
 ## 视觉不变量
 
-- 绿色运动导航、黄色页头、暖浅色背景、绿色系深色外观、24px 内容卡片与胶囊控件。
+- 顶部悬浮玻璃导航（绿色用于 Logo 与当前项）、黄色页头、暖浅色背景、暖炭灰深色外观（强调色仍是薄荷绿）、24px 内容卡片与胶囊控件。
 - 系统字体，舒展的中文正文，指标用等宽数字；彩色圆形图标是信息锚点，不能把数据色、状态色与品牌色混用。
 - 普通表面使用边框与留白，控件保留既有 Liquid Glass 材质和弹性反馈；不将所有容器玻璃化。
-- 私人侧栏与公开顶部导航分开；详情 hero 保持业务布局；手机导航沿文档流展开。
+- 私人顶部玻璃条与公开顶部导航分开；详情 hero 保持业务布局；手机导航沿文档流展开。
 - 外观支持系统、手动浅色/深色及恢复自动。沿用 `runnote-theme` 和 `watchSystemTheme`，不引入新偏好体系。
 
 ## Agent 必须遵循的流程
@@ -38,9 +38,9 @@ node tests/fixtures/check-showcase-isolation.mjs
 
 请在服务启动后访问上述 HTTP 地址；不要双击源码 `index.html` 或通过 `file://` 打开。源码依赖 Vite 编译，文件方式只显示启动说明与展示链接。
 
-隔离脚本先要求已有生产 build，再使用 8191 内存 API 和 5194 adapter-node 检查四个路径 404、产物无展示标识，结束关闭本次进程。端口被占用时拒绝运行，不复用或停止已有服务。不要与占用 8191 的业务 UI 测试同时执行。
+隔离脚本先要求已有生产 build，检查产物无展示标识，再使用 8191 内存 API 和 5194 adapter-node（就绪探测等 `/admin` 返回 200）检查 `/showcase`、`/ui-showcase`、`/tests/fixtures/ui-showcase/`、`/main.ts` 与已下线的 `/login` 均为 404，结束关闭本次进程。端口被占用时拒绝运行，不复用或停止已有服务。不要与占用 8191 的业务 UI 测试同时执行。
 
-展示包含 PageHeader、FeedbackState、PageSkeleton、MetricSummary、DatePicker、TimePicker、ThemeToggle、原生表单和布局组合。依赖 `$app/state`、接口或私有数据的组件通过既有 `playwright.ui.config.ts` 合成路由夹具测试，不在独立入口中伪造运行环境。
+展示包含 PageHeader、FeedbackState、PageSkeleton、MetricSummary、DatePicker、TimePicker、AnchoredPanel 与 GoalRing、ThemeToggle、原生表单和布局组合。依赖 `$app/state`、接口或私有数据的组件通过既有 `playwright.ui.config.ts` 合成路由夹具测试，不在独立入口中伪造运行环境。
 
 视觉基线使用固定时间、UTC、合成数据、默认玻璃参数、真实 light/dark 根主题及 reduced-motion。需要更新快照时先查看差异和实际页面；`--update-snapshots` 不能替代设计审阅。首次基线只建立今后的对照点，不证明历史页面完全无差异。
 

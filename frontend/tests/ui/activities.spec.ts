@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { installActivities, loginRunner, sampleActivity, incompleteActivity } from '../fixtures/activities';
+import { openGoalPanel } from '../fixtures/top-navigation';
 const file = { name: 'morning.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from('<gpx version="1.1" creator="synthetic"></gpx>') };
 async function noOverflow(page: Page) { await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); }
 async function capture(page: Page, path: string) {
@@ -158,7 +159,7 @@ test('successful imports update the persistent sidebar distance while keeping a 
     return route.fulfill({ json: { data: { distance_m: state.uploadCount ? '8000' : '5000' }, error: null } });
   });
   await loginRunner(page);
-  const goal = page.getByRole('region', { name: '跑量目标' });
+  const goal = await openGoalPanel(page);
   await expect(goal.locator('.goal-distance strong')).toHaveText('5 km');
   await goal.getByRole('button', { name: '设置', exact: true }).click();
   await goal.getByLabel('目标距离（km）', { exact: true }).fill('42');
@@ -168,6 +169,7 @@ test('successful imports update the persistent sidebar distance while keeping a 
   await page.locator('input[type=file][name=file]').setInputFiles(file);
   await page.getByRole('button', { name: '导入 GPX', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: '导入成功。' })).toBeVisible();
+  await openGoalPanel(page);
   await expect(goal.locator('.goal-distance strong')).toHaveText('8 km');
   await expect(goal.getByLabel('目标距离（km）', { exact: true })).toHaveValue('42');
   expect(summaryReads).toBe(2);

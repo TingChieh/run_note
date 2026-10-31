@@ -293,9 +293,8 @@
             {#snippet actions()}
               <button type="button" class="icon add-dose" onclick={() => openDose()} data-testid="wellbeing-add-dose" aria-label="添加服药" title="添加服药"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg></button>
             {/snippet}
-            <!-- A fixed-height list: more doses scroll inside the widget instead of making it taller than its neighbours. -->
-            <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-            <div class="scroller" role="region" aria-label="今天的服药与副作用记录" tabindex="0" data-testid="wellbeing-dose-list">
+            <!-- The list grows with the day's doses and the page scrolls; the widget has no scroll box of its own. -->
+            <div class="doses" role="group" aria-label="今天的服药与副作用记录" data-testid="wellbeing-dose-list">
             {#if doses.length}
               <ul class="rows">
                 {#each doses as dose (dose.id)}
@@ -444,8 +443,7 @@
   .rows, .effects { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
   /* The medication widget lists its doses from the top down, each one a capsule: a tinted pill with the time, medicine, amount and type, and the edit and delete buttons at its end. */
   .tiles :global([data-metric='dose']) { align-content: start; }
-  .scroller { display: grid; align-content: start; gap: var(--space-2); max-height: 10.5rem; overflow-y: auto; overscroll-behavior: contain; padding: 1px; margin: -1px; }
-  .scroller:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: var(--radius-control); }
+  .doses { display: grid; align-content: start; gap: var(--space-2); min-width: 0; }
   .row-item { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-width: 0; padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4); border: 1px solid color-mix(in srgb, var(--tone) 40%, var(--border)); border-radius: var(--radius-pill); background: color-mix(in srgb, var(--tone) 14%, var(--surface)); }
   /* Time, then the medicine and amount on one line and the details beneath, each cut with an ellipsis rather than wrapping: the capsule stays slim in a narrow widget. */
   .dose { display: grid; flex: 1; min-width: 0; }

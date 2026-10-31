@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { installActivities, loginRunner, sampleActivity } from '../fixtures/activities';
+import { settingsLink } from '../fixtures/top-navigation';
 const empty = { activity_count: 0, distance_m: 0, duration_sum_seconds: null, known_duration_count: 0, missing_duration_count: 0, activity_days: 0, pace_eligible_count: 0, pace_eligible_distance_m: 0, avg_pace_seconds_per_km: null, quality_warning_count: 0, date_assignment: 'activity_local_date' };
 const populated = { ...empty, activity_count: 2, distance_m: '10246.912', duration_sum_seconds: 1800, known_duration_count: 1, missing_duration_count: 1, activity_days: 2, pace_eligible_count: 1, pace_eligible_distance_m: '5123.456', avg_pace_seconds_per_km: '351.3', quality_warning_count: 1 };
 async function fixture(page: Page) {
@@ -69,9 +70,12 @@ test('home opens data summary, preserves filters and reaches every section from 
   await expect(nav.getByRole('link', { name: '项目概览' })).toHaveCount(0);
   // The dashboard no longer repeats the sidebar as a "功能入口" card grid; the main navigation carries these links.
   await expect(page.getByRole('navigation', { name: '功能入口' })).toHaveCount(0);
-  for (const [name, href] of [['跑步记录', '/activities'], ['个人足迹', '/footprints'], ['AI 分析', '/ai'], ['设置', '/settings']]) {
+  for (const [name, href] of [['跑步记录', '/activities'], ['个人足迹', '/footprints'], ['AI 分析', '/ai']]) {
     await expect(nav.getByRole('link', { name, exact: true })).toHaveAttribute('href', href);
   }
+  // In the top bar the settings entry belongs to the avatar menu, not to the main navigation.
+  await expect(await settingsLink(page)).toHaveAttribute('href', '/settings');
+  await page.keyboard.press('Escape');
   await nav.getByRole('link', { name: '个人足迹', exact: true }).focus();
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/\/footprints\?mode=tracks$/);

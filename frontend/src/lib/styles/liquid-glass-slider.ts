@@ -1,5 +1,5 @@
 import { createGlass, createSpring } from '../vendor/liquidglass/liquid-glass.js';
-import { glassOptics, type GlassSettings } from './liquid-glass-settings.ts';
+import { contentOptics, type GlassSettings } from './liquid-glass-settings.ts';
 
 export function enhanceSlider(input: HTMLInputElement, settings: GlassSettings) {
   const host = input.parentElement!;
@@ -14,7 +14,7 @@ export function enhanceSlider(input: HTMLInputElement, settings: GlassSettings) 
   const motion = matchMedia('(prefers-reduced-motion: reduce)');
   const fraction = () => Math.min(1, Math.max(0, (input.valueAsNumber - Number(input.min || 0)) / (Number(input.max || 100) - Number(input.min || 0) || 1)));
   let t = fraction(), velocity = 0, press = 0;
-  const glass = createGlass(layer, { clip: true, ...glassOptics(settings, .43) });
+  const glass = createGlass(layer, { clip: true, ...contentOptics(settings, .43) });
   function render() {
     const width = host.clientWidth, bleed = 16;
     if (!width) return;
@@ -37,7 +37,7 @@ export function enhanceSlider(input: HTMLInputElement, settings: GlassSettings) 
   for (const type of ['pointerup', 'pointercancel', 'blur', 'keyup']) input.addEventListener(type, release);
   window.addEventListener('pointerup', release); window.addEventListener('blur', release); motion.addEventListener('change', release);
   const resize = new ResizeObserver(render); resize.observe(host); render();
-  return { update(next: GlassSettings) { glass.update(glassOptics(next, .43)); sync(); if (input.disabled) release(); }, destroy() {
+  return { update(next: GlassSettings) { glass.update(contentOptics(next, .43)); sync(); if (input.disabled) release(); }, destroy() {
     resize.disconnect(); position.stop(); pressure.stop(); glass.destroy(); decoration.remove(); host.classList.remove('rn-slider-ready'); host.style.removeProperty('--slider-fraction');
     input.removeEventListener('input', sync); input.removeEventListener('change', sync); input.removeEventListener('pointerdown', down); input.removeEventListener('keydown', keyDown);
     for (const type of ['pointerup', 'pointercancel', 'blur', 'keyup']) input.removeEventListener(type, release);
