@@ -63,8 +63,9 @@ try {
     HOST: '127.0.0.1', PORT: '5194', ORIGIN: 'http://127.0.0.1:5194',
     INTERNAL_API_BASE_URL: 'http://127.0.0.1:8191'
   });
-  await ready('http://127.0.0.1:5194/login', app);
-  for (const path of ['/showcase', '/ui-showcase', '/tests/fixtures/ui-showcase/', '/main.ts']) {
+  // /admin (the owner sign-in page) answers 200 without a session. Do not probe /login: the old sign-in and registration routes now return 404 on purpose, so waiting for a 200 there never succeeds.
+  await ready('http://127.0.0.1:5194/admin', app);
+  for (const path of ['/showcase', '/ui-showcase', '/tests/fixtures/ui-showcase/', '/main.ts', '/login']) {
     const response = await fetch(`http://127.0.0.1:5194${path}`, { redirect: 'manual' });
     assert.equal(response.status, 404, `Unexpected production route: ${path}`);
     console.log(`PASS production ${path}: 404`);

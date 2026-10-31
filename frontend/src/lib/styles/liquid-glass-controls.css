@@ -3,12 +3,14 @@
 .sport-theme :is(.nav-link, .rn-liquid-select, .calendar-trigger, .nav-toggle) { border-radius: var(--radius-glass-control); }
 .rn-liquid-navigation { position: relative; isolation: isolate; }
 .sport-theme .rn-liquid-navigation .nav-link { position: relative; z-index: 2; background: transparent; }
-.sport-theme .rn-liquid-navigation .nav-link[aria-current="page"] { color: white; background: transparent; }
+.sport-theme .rn-liquid-navigation .nav-link[aria-current="page"] { color: var(--sport-nav-active-ink); background: transparent; }
 .rn-moving-copy { position: absolute; inset: 0; z-index: 4; max-width: 100%; pointer-events: none; overflow: hidden; }
 .rn-moving-label { position: absolute; display: flex; align-items: center; border-radius: var(--radius-glass-control); white-space: nowrap; }
 .rn-moving-label > svg { width: 1.25rem; height: 1.25rem; flex-shrink: 0; fill: none; stroke: currentColor; }
-.rn-liquid-navigation > .rn-moving-copy { color: var(--sport-nav-active-ink); background: color-mix(in srgb, var(--sport-nav-active) calc((.75 + var(--glass-opacity) * .25) * 100%), var(--sport-sidebar)); }
+.rn-liquid-navigation > .rn-moving-copy { color: var(--sport-nav-active-ink); background: color-mix(in srgb, var(--sport-nav-active) calc((.75 + var(--glass-opacity) * .25) * 100%), var(--surface)); }
 .rn-liquid-navigation .rn-moving-label { font-weight: var(--weight-semibold) !important; }
+/* No current link (settings lives in the account row): hide the lens until a link is hovered or focused. */
+.rn-liquid-navigation[data-idle] > :is(.rn-moving-outline, .rn-moving-copy) { opacity: 0; }
 /* Tabs and segments keep the primary-coloured lens; only the sidebar uses the light nav tint above. */
 .settings-tabs.rn-liquid-navigation > .rn-moving-copy, .compact-switch.rn-liquid-navigation > .rn-moving-copy { color: var(--primary-foreground); background: var(--primary); }
 /* The lens is the only highlight: no hover plate, sheen or shadow behind tabs and segments, and the real active label stays dark when the lens moves away. */
@@ -128,4 +130,13 @@
   .rn-slider-decoration,
   .rn-switch-decoration,
   .rn-goal-actions .goal-save-clip { overflow: visible; }
+}
+
+/* Top navigation: the lens runs along x on a light glass bar instead of the old green column. Keep 800px in sync with the shell breakpoint in app.css. */
+@media (min-width: 800px) {
+  .sport-theme.app-shell .app-sidebar nav.rn-liquid-navigation > .rn-moving-copy { color: var(--sport-nav-active-ink); background: color-mix(in srgb, var(--sport-nav-active) calc((.75 + var(--glass-opacity) * .25) * 100%), var(--surface)); }
+  .sport-theme.app-shell .app-sidebar .rn-liquid-navigation .nav-link { color: var(--muted-foreground); }
+  .sport-theme.app-shell .app-sidebar .rn-liquid-navigation .nav-link[aria-current="page"] { color: var(--sport-nav-active-ink); background: transparent; }
+  /* Floating over content: inactive labels and icons read in the full foreground colour (muted grey was too weak over the yellow header). Docked keeps the muted grey. Lives here, unlayered, because it has to beat the rule above. */
+  .sport-theme.app-shell .app-sidebar[data-floating] .rn-liquid-navigation .nav-link:not([aria-current="page"]) { color: var(--foreground); }
 }

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { installActivities, loginRunner, sampleActivity, incompleteActivity } from '../fixtures/activities';
+import { openGoalPanel } from '../fixtures/top-navigation';
 test.beforeEach(async ({page}) => {
   await page.route('**/api/v1/showcase/statistics/summary?**', route => route.fulfill({json:{data:{distance_m:12500},error:null}}));
 });
@@ -18,11 +19,14 @@ test('detail keeps a compact overview beside a spacious route and stays consiste
   const cards = page.locator('.metric-panel .metrics'), routeCanvas = page.locator('.route-map');
   const cardBounds = await cards.boundingBox(), canvasBounds = await routeCanvas.boundingBox();
   expect(Math.abs(cardBounds!.y-canvasBounds!.y)).toBeLessThan(2);expect(cardBounds!.height).toBeLessThanOrEqual(canvasBounds!.height);
-  const sidebar=page.locator('.app-sidebar'),color=await sidebar.evaluate(el=>getComputedStyle(el).backgroundColor);expect(color).toBe('rgb(33, 133, 56)');
+  const sidebar=page.locator('.app-sidebar');expect(await sidebar.evaluate(el=>getComputedStyle(el).position)).toBe('fixed');
+  // The bar's material depends on what is under it: compare like with like. Docked (scrolled to the top) it is a plain card; floating over the content it is the glass surface (the backdrop filter).
+  await page.evaluate(()=>window.scrollTo(0,0));await expect(sidebar).not.toHaveAttribute('data-floating');const color=await sidebar.evaluate(el=>getComputedStyle(el).backgroundColor);
+  await page.evaluate(()=>window.scrollTo(0,400));await expect(sidebar).toHaveAttribute('data-floating','');await expect.poll(()=>sidebar.evaluate(el=>getComputedStyle(el).backdropFilter)).not.toBe('none');await page.evaluate(()=>window.scrollTo(0,0));await expect(sidebar).not.toHaveAttribute('data-floating');
   const active=page.getByRole('navigation',{name:'主要导航'}).getByRole('link',{name:'跑步记录',exact:true});await expect(active).toHaveAttribute('aria-current','page');await active.focus();expect(await active.evaluate(el=>getComputedStyle(el).outlineStyle)).toBe('solid');
   await capture(page,'desktop');await page.getByText('数据质量与指标说明',{exact:true}).focus();await page.keyboard.press('Enter');await expect(page.getByText('有效轨迹点',{exact:true})).toBeVisible();await page.keyboard.press('Enter');
   await page.getByRole('button',{name:'关闭底图',exact:true}).click();await page.getByRole('button',{name:'开启底图',exact:true}).click();await ready(page);
-  await active.click();await expect(page).toHaveURL(/\/activities$/);await expect(page.locator('.sport-theme')).toHaveCount(1);expect(await sidebar.evaluate(el=>getComputedStyle(el).backgroundColor)).toBe('rgb(33, 133, 56)');
+  await active.click();await expect(page).toHaveURL(/\/activities$/);await expect(page.locator('.sport-theme')).toHaveCount(1);await page.evaluate(()=>window.scrollTo(0,0));await expect(sidebar).not.toHaveAttribute('data-floating');await expect.poll(()=>sidebar.evaluate(el=>getComputedStyle(el).backgroundColor)).toBe(color);
 });
 test('sports detail fits phones with usable map, navigation and existing privacy controls',async({page})=>{
   await installActivities(page);await loginRunner(page);await page.goto(`/activities/${sampleActivity.id}`);await ready(page);
@@ -89,7 +93,7 @@ test('capture sample with OpenFreeMap basemap or its visible fallback',async({pa
   await loginRunner(page);await page.goto(`/activities/${sampleActivity.id}`);await ready(page);
   await page.evaluate(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);});
   await expect(page.getByRole('status').filter({hasText:'正在加载底图'})).toHaveCount(0,{timeout:15000});
-  const goal = page.getByRole('region',{name:'跑量目标'});
+  const goal = await openGoalPanel(page);
   await goal.getByRole('button',{name:'设置',exact:true}).click(); await goal.getByLabel('目标距离（km）').fill('50'); await goal.getByRole('button',{name:'保存',exact:true}).click();
   await expect(goal).toContainText('已完成 25%');
   await page.waitForLoadState('networkidle',{timeout:12000}).catch(()=>{});await page.waitForTimeout(700);await capture(page,'desktop-basemap');
@@ -100,7 +104,7 @@ test('capture sample with OpenFreeMap basemap or its visible fallback',async({pa
 test('sidebar goals save separate periods, survive reload, reject invalid input and retry statistics', async ({page}) => {
   await page.clock.install({time:new Date('2026-10-14T03:00:00Z')});
   await installActivities(page); await loginRunner(page); await page.goto(`/activities/${sampleActivity.id}`); await ready(page);
-  const widget = page.getByRole('region',{name:'跑量目标'});
+  const widget = await openGoalPanel(page);
   await expect(widget).toContainText('12.5 km');
   await widget.getByRole('button',{name:'设置',exact:true}).click();
   await widget.getByLabel('目标距离（km）').fill('0'); await widget.getByRole('button',{name:'保存',exact:true}).click();
@@ -115,7 +119,7 @@ test('sidebar goals save separate periods, survive reload, reject invalid input 
   await widget.getByRole('button',{name:'设置',exact:true}).click(); await widget.getByLabel('目标距离（km）').fill('100'); await widget.getByRole('button',{name:'保存',exact:true}).click();
   await widget.getByLabel('目标周期').selectOption('year'); await expect(widget).toContainText('未设目标');
   await widget.getByText('今年 · 统计范围').click(); await expect(widget).toContainText('2026-01-01 至 2026-10-15');
-  await page.reload(); await ready(page); await expect(widget).toContainText('已完成 25%');
+  await page.reload(); await ready(page); await openGoalPanel(page); await expect(widget).toContainText('已完成 25%');
   await widget.getByLabel('目标周期').selectOption('month'); await expect(widget).toContainText('已完成 13%');
   await page.route('**/api/v1/showcase/statistics/summary?**',route=>route.fulfill({status:503,json:{error:{message:'统计失败'}}}));
   await widget.getByLabel('目标周期').selectOption('year'); await expect(widget.getByRole('alert')).toContainText('暂时无法读取');

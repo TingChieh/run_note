@@ -75,8 +75,12 @@ export function liquidGlass(root: HTMLElement) {
           transformOrigin: `${element.getBoundingClientRect().left + element.clientWidth / 2 - rect.left}px ${element.getBoundingClientRect().top + element.clientHeight / 2 - rect.top}px`,
           transform: `translate(${rect.left - lr.left}px, ${rect.top - lr.top}px) scale(${1 + .06 * press}, ${1 - .025 * press})` });
       };
+      let published = '';
       function render() {
         if (!alive) return;
+        // Publish the spring so filled content (an avatar) can deform with the glass; text and line icons hide that. Only a changed value touches the style.
+        const pressed = press.toFixed(3);
+        if (pressed !== published) { published = pressed; element.style.setProperty('--glass-press', pressed); }
         const W = element.clientWidth, H = element.clientHeight;
         if (!W || !H) return;
         // Bleed is visual only; controls resting on a viewport edge must not widen the page.
@@ -128,7 +132,7 @@ export function liquidGlass(root: HTMLElement) {
       }
       resize.observe(element); update();
       return { surface, update, render, release, destroy() {
-        alive = false; spring.stop(); glass.destroy(); resize.unobserve(element); aligners.delete(syncCopy);
+        alive = false; spring.stop(); element.style.removeProperty('--glass-press'); glass.destroy(); resize.unobserve(element); aligners.delete(syncCopy);
         if (source) {
           const remaining = (backdrops.get(source) ?? 1) - 1;
           if (remaining) backdrops.set(source, remaining); else { backdrops.delete(source); resize.unobserve(source); }

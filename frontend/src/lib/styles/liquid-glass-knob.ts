@@ -1,5 +1,5 @@
 import { createGlass, createSpring } from '../vendor/liquidglass/liquid-glass.js';
-import { glassOptics, type GlassSettings } from './liquid-glass-settings.ts';
+import { contentOptics, type GlassSettings } from './liquid-glass-settings.ts';
 
 /**
  * A liquid glass knob for a round slider: the same lens, rim and spring press as the project's linear glass slider (`enhanceSlider`),
@@ -12,7 +12,7 @@ export function attachKnobGlass(host: HTMLElement, source: () => SVGSVGElement |
   const decoration = span('rn-slider-decoration'); decoration.setAttribute('aria-hidden', 'true');
   const layer = span('rn-slider-lens'), shadow = span('rn-slider-shadow'), thumb = span('rn-slider-thumb');
   decoration.append(layer, shadow, thumb); host.append(decoration);
-  const glass = createGlass(layer, { clip: true, ...glassOptics(settings, .43) });
+  const glass = createGlass(layer, { clip: true, ...contentOptics(settings, .43) });
   const motion = matchMedia('(prefers-reduced-motion: reduce)');
   let x = 0, y = 0, press = 0, shown = false;
   function render() {
@@ -38,7 +38,7 @@ export function attachKnobGlass(host: HTMLElement, source: () => SVGSVGElement |
     move(cx: number, cy: number, visible = true) { x = cx; y = cy; shown = visible; render(); },
     press(on: boolean) { pressure.set(on && !motion.matches ? 1 : 0, { immediate: motion.matches }); },
     sync,
-    update(next: GlassSettings) { glass.update(glassOptics(next, .43)); render(); },
+    update(next: GlassSettings) { glass.update(contentOptics(next, .43)); render(); },
     destroy() { pressure.stop(); glass.destroy(); decoration.remove(); }
   };
 }

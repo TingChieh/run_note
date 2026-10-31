@@ -98,7 +98,7 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(reference.locator('.sr-only')).toHaveCSS('position', 'absolute');
     await expect(page.locator('.rn-glass-control').first()).toBeAttached();
     await expect(reference).toHaveScreenshot(`composition-${theme}.png`);
-    await expect(page.getByTestId('surface-mapping')).toHaveCSS('background-color', theme === 'dark' ? 'rgb(27, 41, 34)' : 'rgb(255, 255, 255)');
+    await expect(page.getByTestId('surface-mapping')).toHaveCSS('background-color', theme === 'dark' ? 'rgb(51, 49, 47)' : 'rgb(255, 255, 255)');
     const contrast = await page.getByTestId('surface-mapping').evaluate(element => {
       const style = getComputedStyle(element);
       const luminance = (color: string) => {

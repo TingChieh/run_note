@@ -217,3 +217,40 @@ test('all-record footprint map preserves selection while adapting to theme chang
   for (const width of [320, 390]) { await page.setViewportSize({ width, height: 900 }); await fits(page); }
   await page.screenshot({ path: 'test-results/theme-footprints-mobile.png' });
 });
+
+test('dark theme is a neutral warm charcoal, not green, and stays legible', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+  await installActivities(page); await loginRunner(page); await page.goto('/dashboard?year=2026'); await dark(page);
+  // Resolve each token through a probe element so color-mix() and hex values both become rgb.
+  const read = (token: string) => page.evaluate(name => {
+    const el = document.querySelector('.sport-theme') as HTMLElement;
+    const probe = document.createElement('i'); probe.style.color = `var(${name})`; el.append(probe);
+    const computed = getComputedStyle(probe).color, scale = computed.startsWith('color(') ? 255 : 1;
+    const [r, g, b] = computed.match(/\d+(\.\d+)?/g)!.slice(0, 3).map(n => Number(n) * scale); probe.remove();
+    return [r, g, b];
+  }, token);
+  const luminance = ([r, g, b]: number[]) => { const f = (v: number) => { const s = v / 255; return s <= .03928 ? s / 12.92 : ((s + .055) / 1.055) ** 2.4; }; return .2126 * f(r) + .7152 * f(g) + .0722 * f(b); };
+  const contrast = (a: number[], b: number[]) => { const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x); return (hi + .05) / (lo + .05); };
+  const background = await read('--background'), surface = await read('--surface');
+  for (const color of [background, surface]) expect(Math.max(...color) - Math.min(...color), 'no green cast').toBeLessThanOrEqual(8);
+  expect(contrast(await read('--foreground'), background)).toBeGreaterThanOrEqual(4.5);
+  expect(contrast(await read('--foreground'), surface)).toBeGreaterThanOrEqual(4.5);
+  expect(contrast(await read('--muted-foreground'), surface)).toBeGreaterThanOrEqual(4.5);
+  expect(contrast(await read('--primary'), surface)).toBeGreaterThanOrEqual(4.5);
+});
+
+test('glass buttons in the desktop top bar are neutral, not green', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await installActivities(page); await loginRunner(page); await page.goto('/dashboard?year=2026'); await dark(page);
+  const toggle = page.locator('.app-sidebar .theme-toggle');
+  await expect(toggle).toBeVisible();
+  // --button-glass-fill is a color-mix() expression: let a probe element resolve it to real channels.
+  const [r, g, b] = await page.locator('.app-sidebar').evaluate(el => {
+    const probe = document.createElement('i'); probe.style.color = getComputedStyle(el).getPropertyValue('--button-glass-fill'); el.append(probe);
+    // color-mix() computes to color(srgb 0..1 ...); plain colours compute to rgb(0..255 ...).
+    const computed = getComputedStyle(probe).color, scale = computed.startsWith('color(') ? 255 : 1;
+    const channels = computed.match(/\d+(\.\d+)?/g)!.slice(0, 3).map(n => Number(n) * scale); probe.remove(); return channels;
+  });
+  expect(g - r, `not greener than red (rgb ${r},${g},${b})`).toBeLessThanOrEqual(8);
+});

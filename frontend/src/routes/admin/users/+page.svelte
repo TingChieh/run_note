@@ -221,7 +221,8 @@
   </form>
 </dialog>
 <style>
-  .table-scroll { max-width: 100%; overflow-x: auto; }
+  /* The glass of the row buttons paints up to 12px past them; the padding (taken back by the margin) keeps that ink inside the box, so a sideways-only scroller never grows a vertical scrollbar. */
+  .table-scroll { max-width: 100%; overflow-x: auto; padding-bottom: var(--space-3); margin-bottom: calc(-1 * var(--space-3)); }
   table { width: 100%; border-collapse: collapse; text-align: left; }
   th, td { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); vertical-align: middle; }
   thead th { padding-block: var(--space-2); font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--muted-foreground); white-space: nowrap; }
