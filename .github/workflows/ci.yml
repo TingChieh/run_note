@@ -178,6 +178,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
+      - run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
       - run: pnpm install --frozen-lockfile
       # `github` reporter adds per-failure annotations (readable without log access).
       - run: pnpm exec playwright test --config playwright.ui.config.ts --reporter=list,github
