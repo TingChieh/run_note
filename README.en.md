@@ -101,7 +101,7 @@ Requirements: macOS or Linux, PostgreSQL 18 + PostGIS 3.6, Python 3.12, Node.js 
 
 ```bash
 # 1. Configure (edit .env: database URL, etc.)
-cp .env.example .env
+test -e .env || cp .env.example .env
 
 # 2. Database: create it, enable PostGIS, then migrate
 cd backend

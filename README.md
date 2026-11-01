@@ -99,7 +99,7 @@
 
 ```bash
 # 1. 配置（编辑 .env，填入数据库连接串等）
-cp .env.example .env
+test -e .env || cp .env.example .env
 
 # 2. 数据库：创建库并启用 PostGIS，然后迁移
 cd backend
