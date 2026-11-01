@@ -4,6 +4,8 @@ import { loginRunner } from '../fixtures/activities.ts';
 // The synthetic API has a few clock-dependent responses; pin those as well as the browser clock.
 const today = '2026-10-15';
 test.use({ browserName: 'chromium', reducedMotion: 'reduce', timezoneId: 'Asia/Shanghai' });
+// Baselines are rendered on Linux CI; font rendering differs elsewhere (e.g. macOS).
+test.skip(process.platform !== 'linux', 'visual baselines are Linux-only');
 
 for (const theme of ['light', 'dark'] as const) {
   for (const device of ['desktop', 'mobile'] as const) {
