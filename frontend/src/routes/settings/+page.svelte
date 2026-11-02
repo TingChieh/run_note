@@ -10,15 +10,15 @@
   import { page } from '$app/state';
   import { invalidateAll } from '$app/navigation';
   import { sharingWrite } from '#lib/api/sharing.ts';
-  import { AuthError, changePassword, changeUsername, usernameAvailableAt } from '#lib/api/auth.ts';
+  import { AuthError, changePassword, changeUsername, parseUser, usernameAvailableAt } from '#lib/api/auth.ts';
   import WellbeingDialog from '#lib/components/WellbeingDialog.svelte';
   import { onMount } from 'svelte';
   import { unfoldBar } from '#lib/styles/reveal-from-left.ts';
   import SaveBar from '#lib/components/SaveBar.svelte';
-  import type { User } from '#lib/api/auth.ts';
   import { ActivityError } from '#lib/api/activities.ts';
   let name=$state(page.data.user?.display_name ?? ''), bio=$state(page.data.user?.bio ?? ''), enabled=$state(page.data.user?.profile_is_public ?? false), busy=$state(false), message=$state(''), error=$state('');
-  let baseline = $state({name: page.data.user?.display_name ?? '', bio: page.data.user?.bio ?? '', enabled: page.data.user?.profile_is_public ?? false});
+  let wellbeing = $state(page.data.user?.wellbeing_enabled ?? false);
+  let baseline = $state({wellbeing: page.data.user?.wellbeing_enabled ?? false, name: page.data.user?.display_name ?? '', bio: page.data.user?.bio ?? '', enabled: page.data.user?.profile_is_public ?? false});
   let currentPassword=$state(''), newPassword=$state(''), passwordBusy=$state(false), passwordError=$state(''), passwordReady=$state(false), disposed=false;
   let avatarUrl = $state<string | null>(page.data.user?.avatar_url ?? null), avatarBusy = $state(false), avatarError = $state('');
   let username = $state(page.data.user?.username ?? ''), usernameOpen = $state(false), usernameBusy = $state(false), usernameError = $state(''), usernameMessage = $state('');
@@ -62,10 +62,10 @@
     finally { if(!disposed) passwordBusy=false; }
   }
   let passwordOpen = $state(false), messageTimer: ReturnType<typeof setTimeout> | undefined;
-  const dirty = $derived(name !== baseline.name || bio !== baseline.bio || enabled !== baseline.enabled);
-  function discard() { name = baseline.name; bio = baseline.bio; enabled = baseline.enabled; error = ''; }
+  const dirty = $derived(name !== baseline.name || bio !== baseline.bio || enabled !== baseline.enabled || wellbeing !== baseline.wellbeing);
+  function discard() { name = baseline.name; bio = baseline.bio; enabled = baseline.enabled; wellbeing = baseline.wellbeing; error = ''; }
   $effect(() => { if (dirty) message = ''; });
-  async function save() { if(busy) return;busy=true;message='';error='';clearTimeout(messageTimer);try { const saved=await sharingWrite<User>('/api/v1/me','PATCH',{display_name:name,bio,profile_is_public:enabled});name=saved.display_name;bio=saved.bio;enabled=saved.profile_is_public;baseline={name,bio,enabled};await invalidateAll();message=saved.profile_is_public?'资料已保存，主页已开启。仅公开记录进入主页。':'资料已保存，主页已关闭。独立记录分享仍需单独撤销。'; } catch(cause) { error=cause instanceof Error?cause.message:'保存失败，请重试';if(cause instanceof ActivityError && cause.status===401) window.location.replace('/admin?reason=expired'); } finally { busy=false; if (message) messageTimer = setTimeout(() => { message = ''; }, 6000); } }
+  async function save() { if(busy) return;busy=true;message='';error='';clearTimeout(messageTimer);try { const saved=parseUser(await sharingWrite<unknown>('/api/v1/me','PATCH',{display_name:name,bio,profile_is_public:enabled,wellbeing_enabled:wellbeing}));if(disposed) return;name=saved.display_name;bio=saved.bio;enabled=saved.profile_is_public;wellbeing=saved.wellbeing_enabled;baseline={name,bio,enabled,wellbeing};await invalidateAll();message=saved.profile_is_public?'资料已保存，主页已开启。仅公开记录进入主页。':'资料已保存，主页已关闭。独立记录分享仍需单独撤销。'; } catch(cause) { error=cause instanceof Error?cause.message:'保存失败，请重试';if(cause instanceof ActivityError && cause.status===401) window.location.replace('/admin?reason=expired'); } finally { busy=false; if (message) messageTimer = setTimeout(() => { message = ''; }, 6000); } }
 </script>
 <svelte:head><title>{pageTitle('设置', page.data.site)}</title></svelte:head>
 {#if view.manage}
@@ -90,6 +90,10 @@
       <p class="block-hint">昵称和简介会出现在个人展示页。</p>
       <label class="block-field" for="profile-name">昵称<input class="text-field" id="profile-name" required maxlength="80" bind:value={name} disabled={busy} /></label>
       <label class="block-field" for="profile-bio">个人简介<textarea class="text-field" id="profile-bio" maxlength="500" bind:value={bio} disabled={busy} rows="4"></textarea></label>
+      <div class="block-title-row">
+        <div><h3 id="wellbeing-label">身心健康</h3><p class="block-hint">关闭后隐藏入口，记录会保留</p>{#if !page.data.user.wellbeing_allowed}<p class="block-hint">已被管理员关闭</p>{/if}</div>
+        <button type="button" role="switch" class="rn-switch" aria-checked={wellbeing} aria-labelledby="wellbeing-label" disabled={busy || !page.data.user.wellbeing_allowed} onclick={() => wellbeing = !wellbeing}><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span></button>
+      </div>
     </section>
     <section class="aux-panel settings-block" aria-labelledby="public-profile-label">
       <div class="block-title-row">
