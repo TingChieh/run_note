@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Annotated
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -21,6 +22,7 @@ class UserView(BaseModel):
     id: UUID
     email: str
     username: str
+    username_changed_at: datetime | None = None
     display_name: str
     timezone: str
     bio: str
@@ -54,6 +56,13 @@ class ProfileUpdate(StrictInput):
         if not self.model_fields_set:
             raise ValueError("At least one allowed field required")
         return self
+
+
+Username = Annotated[str, Field(min_length=3, max_length=30, pattern=r"^[a-z0-9_]+$")]
+
+
+class UsernameUpdate(StrictInput):
+    username: Username
 
 
 class PasswordUpdate(StrictInput):

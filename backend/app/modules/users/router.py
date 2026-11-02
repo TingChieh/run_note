@@ -15,6 +15,7 @@ from app.modules.users.schema import (
     PasswordUpdate,
     ProfileUpdate,
     StrictInput,
+    UsernameUpdate,
     UserView,
 )
 
@@ -47,6 +48,20 @@ def update_me(
 
     user = lock_owner(db, identity[1].id)
     data = service.update_profile(user, payload, request.app.state.settings)
+    db.commit()
+    return envelope(request, data)
+
+
+@router.patch("/username", response_model=ApiResponse[UserView])
+def username(
+    payload: UsernameUpdate,
+    request: Request,
+    identity: Annotated[tuple, Depends(require_write)],
+    db: Annotated[Session, Depends(get_session)],
+):
+    data = service.change_username(
+        db, identity[1], payload.username, request.app.state.clock(), request.app.state.settings
+    )
     db.commit()
     return envelope(request, data)
 

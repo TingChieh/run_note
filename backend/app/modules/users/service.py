@@ -1,4 +1,7 @@
+from datetime import timedelta
+
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 
 from app.core.errors import ApiError
 from app.core.security import hash_password, verify_password
@@ -26,6 +29,7 @@ def view(user, settings):
         wellbeing_enabled=user.wellbeing_enabled,
         email=user.email_normalized,
         username=user.username,
+        username_changed_at=getattr(user, "username_changed_at", None),
         display_name=user.display_name,
         timezone=user.timezone,
         created_at=user.created_at,
@@ -42,6 +46,31 @@ def view(user, settings):
 def update_profile(user, payload, settings):
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(user, key, value)
+    return view(user, settings)
+
+
+def change_username(db, user, username, now, settings):
+    if username == user.username:
+        return view(user, settings)
+    changed_at = user.username_changed_at
+    if changed_at is not None and now < changed_at + timedelta(days=30):
+        available_at = changed_at + timedelta(days=30)
+        raise ApiError(
+            409,
+            "USERNAME_COOLDOWN",
+            f"用户名暂不可修改，可于 {available_at.isoformat()} 后再次修改",
+            details=[{"available_at": available_at.isoformat()}],
+        )
+    user.username = username
+    user.username_changed_at = now
+    try:
+        db.flush()
+    except IntegrityError as error:
+        from app.modules.auth.service import raise_username_conflict
+
+        db.rollback()
+        raise_username_conflict(error)
+        raise
     return view(user, settings)
 
 

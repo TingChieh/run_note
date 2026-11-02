@@ -20,7 +20,14 @@ class ApiError(Exception):
         retry_after: int | None = None,
         details: list[dict[str, str]] | None = None,
     ):
-        allowed = {"field", "reason", "existing_activity_id", "duplicate_kind", "report_id"}
+        allowed = {
+            "field",
+            "reason",
+            "existing_activity_id",
+            "duplicate_kind",
+            "report_id",
+            "available_at",
+        }
         self.details = [
             {k: v for k, v in item.items() if k in allowed and isinstance(v, str) and len(v) <= 200}
             for item in (details or [])

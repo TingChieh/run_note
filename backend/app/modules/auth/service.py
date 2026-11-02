@@ -92,6 +92,12 @@ def rotate(db, old, user, now):
     return row, token
 
 
+def raise_username_conflict(error):
+    constraint = getattr(getattr(error.orig, "diag", None), "constraint_name", "")
+    if constraint == "uq_users_username":
+        raise ApiError(409, "USERNAME_EXISTS", "用户名已被注册") from None
+
+
 def register(db, old, payload, now):
     user = User(
         email_normalized=payload.email,
@@ -110,8 +116,7 @@ def register(db, old, payload, now):
         db.rollback()
         if constraint == "uq_users_email_normalized":
             raise ApiError(409, "EMAIL_EXISTS", "邮箱已被注册") from None
-        if constraint == "uq_users_username":
-            raise ApiError(409, "USERNAME_EXISTS", "用户名已被注册") from None
+        raise_username_conflict(error)
         raise
     row, token = rotate(db, old, user, now)
     return user, row, token

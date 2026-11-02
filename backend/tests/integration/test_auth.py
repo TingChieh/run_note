@@ -5,7 +5,7 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -170,6 +170,7 @@ def test_register_rotation_storage_and_identity_isolation(workers):
         "wellbeing_allowed",
         "wellbeing_enabled",
         "avatar_url",
+        "username_changed_at",
     }
     engine.dispose()
 
@@ -609,3 +610,54 @@ def test_anonymous_and_preauth_cannot_access_identity(workers, method, path, pay
         r = a.request(method, path, json=payload, headers=headers)
         assert r.status_code == 401
     engine.dispose()
+
+
+def test_self_service_username_change(workers):
+    a, b, _ = workers
+    _, first = register(a)
+    _, second = register(b)
+    headers = csrf(a)
+    now = a.app.state.clock()
+    for invalid in ("ABc", "ab", "a" * 31, "bad-name"):
+        assert (
+            a.patch("/api/v1/me/username", headers=headers, json={"username": invalid}).status_code
+            == 422
+        )
+    conflict = a.patch(
+        "/api/v1/me/username", headers=headers, json={"username": second["username"]}
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "USERNAME_EXISTS"
+    same = a.patch("/api/v1/me/username", headers=headers, json={"username": first["username"]})
+    assert same.status_code == 200 and same.json()["data"]["username_changed_at"] is None
+    new_name = "new_" + uuid4().hex[:20]
+    changed = a.patch("/api/v1/me/username", headers=headers, json={"username": new_name})
+    assert changed.status_code == 200
+    changed_at = datetime.fromisoformat(
+        changed.json()["data"]["username_changed_at"].replace("Z", "+00:00")
+    )
+    same = a.patch("/api/v1/me/username", headers=headers, json={"username": new_name})
+    assert (
+        datetime.fromisoformat(same.json()["data"]["username_changed_at"].replace("Z", "+00:00"))
+        == changed_at
+    )
+    next_name = "next_" + uuid4().hex[:20]
+    blocked = a.patch("/api/v1/me/username", headers=headers, json={"username": next_name})
+    assert blocked.status_code == 409
+    assert (
+        blocked.json()["error"]["details"][0]["available_at"]
+        == (changed_at + timedelta(days=30)).isoformat()
+    )
+    # Keep the session valid while advancing the application clock to the exact boundary.
+    with a.app.state.session_factory() as db:
+        db.execute(
+            update(AuthSession)
+            .where(AuthSession.user_id == UUID(changed.json()["data"]["id"]))
+            .values(
+                expires_at=now + timedelta(days=40), last_seen_at=changed_at + timedelta(days=30)
+            )
+        )
+        db.commit()
+    a.app.state.clock = lambda: changed_at + timedelta(days=30)
+    again = a.patch("/api/v1/me/username", headers=headers, json={"username": next_name})
+    assert again.status_code == 200 and again.json()["data"]["username"] == next_name
