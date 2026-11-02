@@ -22,6 +22,8 @@ def view(user, settings):
         is_admin=is_admin(user, settings),
         showcase_enabled=is_admin(user, settings)
         or (bool(user.is_active) and bool(user.showcase_enabled)),
+        wellbeing_allowed=user.wellbeing_allowed,
+        wellbeing_enabled=user.wellbeing_enabled,
         email=user.email_normalized,
         username=user.username,
         display_name=user.display_name,

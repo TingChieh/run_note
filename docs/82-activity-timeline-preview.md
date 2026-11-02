@@ -1,6 +1,6 @@
-# 81 跑步记录：时间线列表与桌面预览栏
+# 82 跑步记录：时间线列表与桌面预览栏
 
-日期：2026-11-02。设计与取舍见 [spec](superpowers/specs/2026-11-02-activity-master-detail-design.md)。接 [80](80-activities-views.md)：“足迹墙”并入“跑步记录”之后，原来的活动卡片（约 255px 高、两列）太大，改成下面的样子。
+日期：2026-11-02。设计与取舍见 [spec](superpowers/specs/2026-11-02-activity-master-detail-design.md)。接 [81](81-activities-views.md)：“足迹墙”并入“跑步记录”之后，原来的活动卡片（约 255px 高、两列）太大，改成下面的样子。
 
 ## 使用方式
 
@@ -28,4 +28,4 @@
 
 - 右栏会多读一次选中项的路线（缩略图自己读一次），暂不共享缓存。
 - 地址里的 `?id=` 指向别的页的记录时回退到第一条，不为此单独请求。
-- `FootprintWall`、`WallCard` 仍在（足迹墙页与活动详情页的预览在用），按 [80](80-activities-views.md) 的计划之后再删。
+- `FootprintWall`、`WallCard` 仍在（足迹墙页与活动详情页的预览在用），按 [81](81-activities-views.md) 的计划之后再删。

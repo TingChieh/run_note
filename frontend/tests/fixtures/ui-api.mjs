@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { createWellbeing } from './ui-wellbeing.mjs';
 /** @type {Record<string, any>} */
-const user = { id: '00000000-0000-4000-8000-000000000001', email: 'runner.with.a.long.email.address@example.com', username: 'runner', display_name: '晨跑者', timezone: 'Asia/Shanghai', created_at: '2026-01-01T00:00:00Z', bio: '', profile_is_public: false, is_admin: true, is_active: true, showcase_enabled: true };
+const user = { id: '00000000-0000-4000-8000-000000000001', email: 'runner.with.a.long.email.address@example.com', username: 'runner', display_name: '晨跑者', timezone: 'Asia/Shanghai', created_at: '2026-01-01T00:00:00Z', bio: '', profile_is_public: false, is_admin: true, is_active: true, showcase_enabled: true, wellbeing_allowed: true, wellbeing_enabled: true };
 /** @type {Record<string, any>[]} */
 const accounts = [{ ...user, password: 'Synthetic-ui-password-2026' }];
 const sessions = new Map([['ui-runner', user.id]]);
@@ -92,7 +92,7 @@ createServer(async (req, res) => {
     const payload = JSON.parse(body);
     const found = accounts.find(item => item.email === payload.email || item.is_admin && payload.email === 'runner@example.com');
     if (!found?.is_active || !found.is_admin && found.password !== payload.password) return send(null,401,'邮箱或密码不正确');
-    if (found.is_admin) { Object.assign(user, {display_name:'晨跑者',bio:'',profile_is_public:false}); Object.assign(found,user); Object.assign(goals,{week:null,month:null,year:null}); wellbeing.reset(); }
+    if (found.is_admin) { Object.assign(user, {display_name:'晨跑者',bio:'',profile_is_public:false,wellbeing_allowed:true,wellbeing_enabled:true}); Object.assign(found,user); Object.assign(goals,{week:null,month:null,year:null}); wellbeing.reset(); }
     const session = found.is_admin ? 'ui-runner' : randomUUID(); sessions.set(session, found.id);
     res.setHeader('Set-Cookie', `run_session=${session}; Path=/; HttpOnly; SameSite=Lax`); return send({ user: clean(found) });
   }
@@ -157,7 +157,7 @@ createServer(async (req, res) => {
     const payload = JSON.parse(body);
     if (req.method === 'POST' && url.pathname === '/api/v1/admin/users') {
       if (accounts.some(item => item.email === payload.email || item.username === payload.username)) return send(null,409,'邮箱或用户名已存在');
-      const account = {...payload,id:randomUUID(),email:payload.email.toLowerCase(),bio:'',profile_is_public:false,is_admin:false,created_at:'2026-10-16T00:00:00Z'};
+      const account = {...payload,id:randomUUID(),email:payload.email.toLowerCase(),bio:'',profile_is_public:false,is_admin:false,wellbeing_allowed:true,wellbeing_enabled:true,created_at:'2026-10-16T00:00:00Z'};
       accounts.push(account); return send(clean(account),201);
     }
     if (req.method === 'POST' && url.pathname === '/api/v1/admin/users/batch-delete') {
@@ -197,7 +197,7 @@ createServer(async (req, res) => {
     for (const [key,id] of sessions) if (id === current.id) sessions.delete(key);
     return send({password_changed:true});
   }
-  if (url.pathname.startsWith('/api/v1/me/wellbeing')) return signedIn ? wellbeing.handle(req, url, res) : send(null, 401);
+  if (url.pathname.startsWith('/api/v1/me/wellbeing')) return !signedIn ? send(null, 401) : !current.wellbeing_allowed || !current.wellbeing_enabled ? send(null, 404) : wellbeing.handle(req, url, res);
   if (url.pathname === '/api/v1/me/running-goals') return send(goals);
   if (url.pathname.startsWith('/api/v1/me/running-goals/') && req.method === 'PUT') {
     const period = url.pathname.split('/').at(-1);

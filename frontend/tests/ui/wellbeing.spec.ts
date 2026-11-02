@@ -2233,3 +2233,51 @@ test('the sleep ring takes a typed time in a small box: 7:25, 7.5 or 7h25m; some
   await page.keyboard.press('Escape');
   await expect(value).toHaveText('6 小时 5 分');
 });
+
+
+test('disabled wellbeing hides navigation and redirects both private addresses', async ({ page }) => {
+  await loginRunner(page);
+  for (const field of ['wellbeing_enabled', 'wellbeing_allowed'] as const) {
+    await page.evaluate(async field => {
+      const csrf = (await (await fetch('/api/v1/auth/csrf')).json()).data.csrf_token;
+      const session = (await (await fetch('/api/v1/auth/session')).json()).data.user;
+      const path = field === 'wellbeing_allowed' ? `/api/v1/admin/users/${session.id}` : '/api/v1/me';
+      await fetch(path, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify({ [field]: false }) });
+    }, field);
+    await page.goto('/dashboard');
+    await expect(page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: '身心健康' })).toHaveCount(0);
+    const redirect = await page.request.get('/wellbeing', { maxRedirects: 0 });
+    expect(redirect.status()).toBe(303);
+    expect(redirect.headers().location).toBe('/dashboard');
+    await page.goto('/wellbeing');
+    await expect(page).toHaveURL(/^http:\/\/127\.0\.0\.1:5191\/([?].*)?$/);
+    await page.goto('/workspace/wellbeing');
+    await expect(page).toHaveURL(/\/workspace\/dashboard$/);
+    await page.evaluate(async field => {
+      const csrf = (await (await fetch('/api/v1/auth/csrf')).json()).data.csrf_token;
+      const session = (await (await fetch('/api/v1/auth/session')).json()).data.user;
+      const path = field === 'wellbeing_allowed' ? `/api/v1/admin/users/${session.id}` : '/api/v1/me';
+      await fetch(path, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify({ [field]: true }) });
+    }, field);
+  }
+});
+
+test('personal setting saves the preference and reports administrator restrictions', async ({ page }) => {
+  await loginRunner(page);
+  const toggle = page.getByRole('switch', { name: '身心健康' });
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  await toggle.click();
+  await page.getByRole('button', { name: '保存公开设置' }).click();
+  await expect(page.getByRole('status').filter({ hasText: '资料已保存' })).toBeVisible();
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await page.reload();
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await page.evaluate(async () => {
+    const csrf = (await (await fetch('/api/v1/auth/csrf')).json()).data.csrf_token;
+    const user = (await (await fetch('/api/v1/auth/session')).json()).data.user;
+    await fetch(`/api/v1/admin/users/${user.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify({ wellbeing_allowed: false }) });
+  });
+  await page.reload();
+  await expect(toggle).toBeDisabled();
+  await expect(page.getByText('已被管理员关闭')).toBeVisible();
+});

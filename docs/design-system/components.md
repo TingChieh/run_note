@@ -75,7 +75,7 @@ RecordsBannerLoader：`onMount` 读取 `readRecords()`，保留 `disposed` 与�
 | Stack / Grid / Container / Section / Divider | `.aux-stack`、`.page-content`、原生 section、grid/flex、border | 使用语义区域/标题与 min-width:0；无需一个类包装一个 Svelte 组件 |
 | Dialog / Popover / Dropdown | 原生 dialog；DatePicker Popover；select 增强 | dialog 标题/描述、Escape、取消、焦点恢复、失败留草稿；top layer 不靠 z-index；不要复制菜单引擎 |
 | Tabs / 分段控件 | 设置分区用 `.settings-tabs`（链接，`aria-current="page"`）；页面级的模式/排序切换（个人足迹的轨迹/热力图、常跑路线的排序）同样放进 `PageHeader` 的 `footer` 插槽，容器写 `<div class="settings-tabs" role="group" aria-label="…">`，子项为 `type="button"` + `aria-pressed`；表格工具栏内的列表筛选用 `.mode-switch.compact-switch`（按钮，`aria-pressed`）；两者共用玻璃指示器，见下文“玻璃分段” | 没有 tabpanel 与方向键协议时不能加 role=tab；当前项靠 aria-current / aria-pressed 表达，不靠颜色 |
-| [ActivityViews](../../frontend/src/lib/components/ActivityViews.svelte) | `current:'list'\|'wall'` | 跑步记录的“列表 / 足迹墙”视图切换：`PageHeader` 的 `footer` 里的 `.settings-tabs` 链接组（`aria-label="跑步记录视图"`，`aria-current`），`/activities` 与 `/activities/wall`（含公开主页、工作区同名路由）共用；足迹墙不再占主导航入口，见 [80](../80-activities-views.md) |
+| [ActivityViews](../../frontend/src/lib/components/ActivityViews.svelte) | `current:'list'\|'wall'` | 跑步记录的“列表 / 足迹墙”视图切换：`PageHeader` 的 `footer` 里的 `.settings-tabs` 链接组（`aria-label="跑步记录视图"`，`aria-current`），`/activities` 与 `/activities/wall`（含公开主页、工作区同名路由）共用；足迹墙不再占主导航入口，见 [81](../81-activities-views.md) |
 | Pagination | 页面局部实现（用户管理用 `.user-pager` + `.button-compact`） | 保留 limit/offset/total、pending 和既有分页大小；页空后回退属于业务；不在通用控件内 fetch |
 | DataTable | 原生 table + 局部 overflow；图表 details 数据兜底 | caption/列头/scope、缺失值；横向滚动只限容器 |
 

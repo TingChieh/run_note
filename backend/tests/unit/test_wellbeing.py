@@ -249,9 +249,9 @@ def test_wellbeing_routes_are_private_and_nothing_else_reads_the_journal():
     assert all(path.startswith("/api/v1/me/wellbeing") for path in mine)
     for route in router.routes:
         names = {d.call.__name__ for d in route.dependant.dependencies}
-        assert names & {"get_read_identity", "require_write"}, route.path
+        assert names & {"read_enabled", "write_enabled"}, route.path
         if route.methods - {"GET", "HEAD"}:
-            assert "require_write" in names, route.path
+            assert "write_enabled" in names, route.path
     allowed = {"wellbeing", "models", "main.py"}
     for source in APP.rglob("*.py"):
         relative = source.relative_to(APP)
@@ -259,7 +259,7 @@ def test_wellbeing_routes_are_private_and_nothing_else_reads_the_journal():
             continue
         if relative.parts[0] in allowed or relative.name in allowed:
             continue
-        assert "wellbeing" not in source.read_text(), relative
+        assert "app.modules.wellbeing" not in source.read_text(), relative
 
 
 def test_medication_migration_matches_model_and_refuses_to_drop_the_list(monkeypatch):
