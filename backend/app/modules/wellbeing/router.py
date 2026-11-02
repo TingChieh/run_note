@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_read_identity, get_session, require_auth_config, require_write
+from app.core.errors import ApiError
 from app.core.responses import ApiResponse
 from app.modules.auth.router import envelope
 from app.modules.wellbeing import medications as meds
@@ -43,8 +44,23 @@ router = APIRouter(
     dependencies=[Depends(require_auth_config)],
 )
 
-Read = Annotated[tuple, Depends(get_read_identity)]
-Write = Annotated[tuple, Depends(require_write)]
+
+def check_enabled(identity: tuple):
+    if not identity[1].wellbeing_allowed or not identity[1].wellbeing_enabled:
+        raise ApiError(404, "RESOURCE_NOT_FOUND", "资源不存在")
+    return identity
+
+
+def read_enabled(identity: Annotated[tuple, Depends(get_read_identity)]):
+    return check_enabled(identity)
+
+
+def write_enabled(identity: Annotated[tuple, Depends(require_write)]):
+    return check_enabled(identity)
+
+
+Read = Annotated[tuple, Depends(read_enabled)]
+Write = Annotated[tuple, Depends(write_enabled)]
 DB = Annotated[Session, Depends(get_session)]
 Start = Annotated[date, Query(alias="from")]
 End = Annotated[date, Query(alias="to")]

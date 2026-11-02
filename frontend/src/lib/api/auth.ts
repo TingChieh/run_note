@@ -3,6 +3,8 @@ import { safeImagePath } from './site.ts';
 export interface User {
   is_admin: boolean;
   showcase_enabled: boolean;
+  wellbeing_allowed: boolean;
+  wellbeing_enabled: boolean;
   id: string;
   email: string;
   username: string;
@@ -57,7 +59,7 @@ export function isProtected(path: string): boolean { return /^\/(settings|worksp
 export function parseUser(value: unknown): User {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new AuthError('认证身份无效',502,'INVALID_RESPONSE');
   const v = value as Record<string, unknown>;
-  if (['id','email','username','display_name','timezone','created_at','bio'].some(k => typeof v[k] !== 'string') || ['is_admin','showcase_enabled','profile_is_public'].some(k => typeof v[k] !== 'boolean')) throw new AuthError('认证身份无效',502,'INVALID_RESPONSE');
+  if (['id','email','username','display_name','timezone','created_at','bio'].some(k => typeof v[k] !== 'string') || ['is_admin','showcase_enabled','profile_is_public','wellbeing_allowed','wellbeing_enabled'].some(k => typeof v[k] !== 'boolean')) throw new AuthError('认证身份无效',502,'INVALID_RESPONSE');
   return { ...(v as unknown as User), avatar_url: safeImagePath(v.avatar_url) };
 }
 export async function changePassword(current_password: string, new_password: string, fetcher: typeof fetch = fetch): Promise<void> {

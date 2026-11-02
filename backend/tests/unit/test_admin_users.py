@@ -25,6 +25,8 @@ def user():
         created_at=datetime(2026, 1, 1, tzinfo=UTC),
         is_active=False,
         showcase_enabled=False,
+        wellbeing_allowed=True,
+        wellbeing_enabled=True,
         password_hash="hash",
         avatar_version=None,
     )
