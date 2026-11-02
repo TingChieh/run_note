@@ -33,6 +33,8 @@ class User(Base):
     profile_is_public: Mapped[bool] = mapped_column(Boolean, server_default="false")
     is_active: Mapped[bool] = mapped_column(Boolean, server_default="false")
     showcase_enabled: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    wellbeing_allowed: Mapped[bool] = mapped_column(Boolean, server_default="true")
+    wellbeing_enabled: Mapped[bool] = mapped_column(Boolean, server_default="true")
     bio: Mapped[str] = mapped_column(String(500), server_default="")
     activity_data_version: Mapped[int] = mapped_column(BigInteger, server_default="0")
     avatar_version: Mapped[str | None] = mapped_column(String(16), nullable=True)

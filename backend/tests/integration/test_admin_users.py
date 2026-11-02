@@ -268,3 +268,67 @@ def test_batch_delete_cascades_protects_owner_and_requires_admin(site, monkeypat
             count = db.scalar(select(func.count()).select_from(model).where(column.in_(removed)))
             assert count == 0, model.__name__
         assert db.get(User, UUID(owner_id)) is not None
+
+
+def test_wellbeing_switches_preserve_private_records(site):  # noqa: F811
+    admin, _, _, admin_headers, _, _, _, settings, _ = site
+    suffix = uuid4().hex[:18]
+    payload = dict(
+        email=f"switch-{suffix}@example.com",
+        username=f"s_{suffix}",
+        display_name="合成用户",
+        timezone="UTC",
+        password=PASSWORD,
+    )
+    account = admin.post("/api/v1/admin/users", json=payload, headers=admin_headers).json()["data"]
+    assert account["wellbeing_allowed"] and account["wellbeing_enabled"]
+    endpoint = f"/api/v1/admin/users/{account['id']}"
+    with TestClient(create_app(settings.model_copy()), base_url=ORIGIN) as user:
+        user_headers = write_headers(login(user, payload["email"]))
+        day = "2020-01-01"
+        entry = f"/api/v1/me/wellbeing/days/{day}/entry"
+        assert user.put(entry, headers=user_headers, json={"mood": 5}).status_code == 200
+        assert (
+            user.patch(
+                endpoint, headers=user_headers, json={"wellbeing_allowed": False}
+            ).status_code
+            == 403
+        )
+        assert (
+            user.patch(
+                "/api/v1/me", headers=user_headers, json={"wellbeing_allowed": False}
+            ).status_code
+            == 422
+        )
+        assert (
+            user.patch(
+                "/api/v1/me", headers=user_headers, json={"wellbeing_enabled": False}
+            ).status_code
+            == 200
+        )
+        assert user.get("/api/v1/me/wellbeing/entries").status_code == 404
+        assert user.put(entry, headers=user_headers, json={"mood": 1}).status_code == 404
+        assert (
+            user.patch(
+                "/api/v1/me", headers=user_headers, json={"wellbeing_enabled": True}
+            ).status_code
+            == 200
+        )
+        assert (
+            admin.patch(
+                endpoint, headers=admin_headers, json={"wellbeing_allowed": False}
+            ).status_code
+            == 200
+        )
+        assert user.get("/api/v1/me/wellbeing/entries").status_code == 404
+        assert (
+            admin.patch(
+                endpoint,
+                headers=admin_headers,
+                json={"wellbeing_allowed": True, "wellbeing_enabled": True},
+            ).status_code
+            == 200
+        )
+        response = user.get(f"/api/v1/me/wellbeing/days/{day}")
+        assert response.status_code == 200
+        assert response.json()["data"]["entry"]["mood"] == 5

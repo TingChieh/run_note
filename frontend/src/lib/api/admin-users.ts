@@ -7,7 +7,7 @@ export interface AdminUserCreate {
   email: string; username: string; password: string; display_name: string; timezone: string;
   is_active: boolean; showcase_enabled: boolean;
 }
-export type AdminUserUpdate = Partial<Pick<AdminUser, 'email' | 'display_name' | 'timezone' | 'bio' | 'is_active' | 'showcase_enabled'>>;
+export type AdminUserUpdate = Partial<Pick<AdminUser, 'email' | 'display_name' | 'timezone' | 'bio' | 'is_active' | 'showcase_enabled' | 'wellbeing_allowed' | 'wellbeing_enabled'>>;
 export class AdminUserError extends Error {
   constructor(message: string, public status = 502, public code = 'INVALID_RESPONSE') { super(message); }
 }
@@ -22,6 +22,7 @@ function parseUser(value: unknown): AdminUser {
     typeof value.timezone !== 'string' || typeof value.bio !== 'string' || value.bio.length > 500 ||
     typeof value.created_at !== 'string' || !Number.isFinite(Date.parse(value.created_at)) ||
     typeof value.profile_is_public !== 'boolean' || typeof value.is_admin !== 'boolean' ||
+    typeof value.wellbeing_allowed !== 'boolean' || typeof value.wellbeing_enabled !== 'boolean' ||
     typeof value.is_active !== 'boolean' || typeof value.showcase_enabled !== 'boolean') invalid();
   try { new Intl.DateTimeFormat('zh-CN', { timeZone: value.timezone }); } catch { invalid(); }
   return {
@@ -29,6 +30,7 @@ function parseUser(value: unknown): AdminUser {
     timezone: value.timezone, bio: value.bio, created_at: value.created_at,
     profile_is_public: value.profile_is_public, is_admin: value.is_admin,
     is_active: value.is_active, showcase_enabled: value.showcase_enabled,
+    wellbeing_allowed: value.wellbeing_allowed, wellbeing_enabled: value.wellbeing_enabled,
   };
 }
 async function read(path: string, init: RequestInit, fetcher: typeof fetch): Promise<unknown> {

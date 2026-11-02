@@ -82,6 +82,8 @@ def person(version):
         profile_is_public=False,
         is_active=True,
         showcase_enabled=False,
+        wellbeing_allowed=True,
+        wellbeing_enabled=True,
         created_at=datetime(2026, 1, 1, tzinfo=UTC),
         avatar_version=version,
     )

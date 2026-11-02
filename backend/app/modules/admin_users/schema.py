@@ -25,6 +25,8 @@ class UserCreate(RegisterInput):
 
 
 class UserPatch(StrictInput):
+    wellbeing_allowed: bool = Field(default=None)
+    wellbeing_enabled: bool = Field(default=None)
     email: str = Field(default=None, max_length=254)
     display_name: str = Field(default=None, min_length=1, max_length=80)
     timezone: str = Field(default=None, min_length=1, max_length=64)
