@@ -6,6 +6,7 @@ export interface User {
   id: string;
   email: string;
   username: string;
+  username_changed_at?: string | null;
   display_name: string;
   timezone: string;
   created_at: string;
@@ -58,6 +59,7 @@ export function parseUser(value: unknown): User {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new AuthError('认证身份无效',502,'INVALID_RESPONSE');
   const v = value as Record<string, unknown>;
   if (['id','email','username','display_name','timezone','created_at','bio'].some(k => typeof v[k] !== 'string') || ['is_admin','showcase_enabled','profile_is_public'].some(k => typeof v[k] !== 'boolean')) throw new AuthError('认证身份无效',502,'INVALID_RESPONSE');
+  if (v.username_changed_at != null && (typeof v.username_changed_at !== 'string' || !Number.isFinite(Date.parse(v.username_changed_at)))) throw new AuthError('认证身份无效',502,'INVALID_RESPONSE');
   return { ...(v as unknown as User), avatar_url: safeImagePath(v.avatar_url) };
 }
 export async function changePassword(current_password: string, new_password: string, fetcher: typeof fetch = fetch): Promise<void> {
@@ -65,4 +67,15 @@ export async function changePassword(current_password: string, new_password: str
   if (typeof csrf_token !== 'string' || !csrf_token) throw new AuthError('认证令牌无效', 502, 'INVALID_RESPONSE');
   const result = await request<{password_changed: boolean}>('/api/v1/me/password', { method: 'PATCH', headers: {'Content-Type':'application/json', 'X-CSRF-Token':csrf_token}, body: JSON.stringify({current_password,new_password}) }, fetcher);
   if (result.password_changed !== true) throw new AuthError('密码修改响应无效', 502, 'INVALID_RESPONSE');
+}
+
+export function usernameAvailableAt(changed: string | null | undefined): number | null {
+  if (!changed) return null;
+  const timestamp = Date.parse(changed);
+  return Number.isFinite(timestamp) ? timestamp + 30 * 86400000 : null;
+}
+export async function changeUsername(username: string, fetcher: typeof fetch = fetch): Promise<User> {
+  const { csrf_token } = await request<{csrf_token: string}>('/api/v1/auth/csrf', {}, fetcher);
+  if (typeof csrf_token !== 'string' || !csrf_token) throw new AuthError('认证令牌无效', 502, 'INVALID_RESPONSE');
+  return parseUser(await request<unknown>('/api/v1/me/username', { method: 'PATCH', headers: {'Content-Type':'application/json', 'X-CSRF-Token':csrf_token}, body: JSON.stringify({username}) }, fetcher));
 }

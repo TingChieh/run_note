@@ -27,6 +27,9 @@ class User(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     email_normalized: Mapped[str] = mapped_column(String(254), unique=True)
     username: Mapped[str] = mapped_column(String(30), unique=True)
+    username_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     password_hash: Mapped[str] = mapped_column(Text)
     display_name: Mapped[str] = mapped_column(String(80))
     timezone: Mapped[str] = mapped_column(String(64), server_default="Asia/Shanghai")

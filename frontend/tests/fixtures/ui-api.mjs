@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { createWellbeing } from './ui-wellbeing.mjs';
 /** @type {Record<string, any>} */
-const user = { id: '00000000-0000-4000-8000-000000000001', email: 'runner.with.a.long.email.address@example.com', username: 'runner', display_name: '晨跑者', timezone: 'Asia/Shanghai', created_at: '2026-01-01T00:00:00Z', bio: '', profile_is_public: false, is_admin: true, is_active: true, showcase_enabled: true };
+const user = { id: '00000000-0000-4000-8000-000000000001', email: 'runner.with.a.long.email.address@example.com', username: 'runner', username_changed_at: null, display_name: '晨跑者', timezone: 'Asia/Shanghai', created_at: '2026-01-01T00:00:00Z', bio: '', profile_is_public: false, is_admin: true, is_active: true, showcase_enabled: true };
 /** @type {Record<string, any>[]} */
 const accounts = [{ ...user, password: 'Synthetic-ui-password-2026' }];
 const sessions = new Map([['ui-runner', user.id]]);
@@ -188,6 +188,16 @@ createServer(async (req, res) => {
   const publicRead = req.method === 'GET' && (url.pathname.startsWith('/api/v1/public/') || url.pathname.startsWith('/api/v1/shared/'));
   if (!signedIn && !showcase && !publicRead) return send(null, 401);
   if (url.pathname === '/api/v1/me' && req.method === 'GET') return send(current?.is_admin ? user : clean(current ?? user));
+  if (url.pathname === '/api/v1/me/username' && req.method === 'PATCH') {
+    if (!current) return send(null,401);
+    if (req.headers['x-csrf-token'] !== 'ui-csrf') return send(null,403,'请求校验失败');
+    let body = ''; for await (const chunk of req) body += chunk;
+    const payload = JSON.parse(body);
+    if (!/^[a-z0-9_]{3,30}$/.test(payload.username)) return send(null,422,'用户名格式不合法');
+    if (accounts.some(account => account.id !== current.id && account.username === payload.username)) return send(null,409,'用户名已被注册');
+    if (payload.username !== current.username) { current.username = payload.username; current.username_changed_at = new Date().toISOString(); if (current.is_admin) Object.assign(user, clean(current)); }
+    return send(current.is_admin ? user : clean(current));
+  }
   if (url.pathname === '/api/v1/me/password' && req.method === 'PATCH') {
     if (req.headers['x-csrf-token'] !== 'ui-csrf') return send(null,403,'请求校验失败');
     let body = ''; for await (const chunk of req) body += chunk;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { authWrite, readSession, safeNext, changePassword } from '../../src/lib/api/auth';
+import { authWrite, readSession, safeNext, changePassword, changeUsername, usernameAvailableAt } from '../../src/lib/api/auth';
 
 const envelope = (data: unknown) => Response.json({ data, error: null, meta: { request_id: 'test' } });
 describe('authentication boundary', () => {
@@ -48,3 +48,21 @@ describe('authentication boundary', () => {
 });
 
 describe('own password change', () => { it('uses CSRF and rejects invalid confirmation', async () => { const calls: string[]=[]; await expect(changePassword('current-long-pass','new-long-password',async (input,init)=>{ calls.push(String(input)); if(String(input).endsWith('/csrf')) return envelope({csrf_token:'fresh'}); expect(init?.method).toBe('PATCH'); expect(new Headers(init?.headers).get('X-CSRF-Token')).toBe('fresh'); return envelope({password_changed:false}); })).rejects.toThrow(); expect(calls).toEqual(['/api/v1/auth/csrf','/api/v1/me/password']); }); });
+
+describe('username change', () => {
+  it('calculates the 30 day boundary', () => {
+    expect(usernameAvailableAt('2026-01-01T00:00:00Z')).toBe(Date.parse('2026-01-31T00:00:00Z'));
+    expect(usernameAvailableAt(null)).toBeNull();
+  });
+  it('gets CSRF and validates the returned identity', async () => {
+    const calls: string[] = [];
+    await expect(changeUsername('runner_new', async (input, init) => {
+      calls.push(String(input));
+      if (String(input).endsWith('/csrf')) return envelope({csrf_token:'fresh'});
+      expect(new Headers(init?.headers).get('X-CSRF-Token')).toBe('fresh');
+      expect(JSON.parse(init?.body as string)).toEqual({username:'runner_new'});
+      return envelope({id:'1',email:'a',username:'runner_new',username_changed_at:'bad',display_name:'a',timezone:'UTC',created_at:'2026-01-01',bio:'',is_admin:false,showcase_enabled:false,profile_is_public:false});
+    })).rejects.toThrow('身份无效');
+    expect(calls).toEqual(['/api/v1/auth/csrf','/api/v1/me/username']);
+  });
+});

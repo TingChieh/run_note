@@ -1,7 +1,7 @@
 from email_validator import EmailNotValidError, validate_email
 from pydantic import Field, field_validator
 
-from app.modules.users.schema import StrictInput, UserView, valid_timezone
+from app.modules.users.schema import StrictInput, Username, UserView, valid_timezone
 
 
 class LoginInput(StrictInput):
@@ -22,7 +22,7 @@ class LoginInput(StrictInput):
 
 
 class RegisterInput(LoginInput):
-    username: str = Field(min_length=3, max_length=30, pattern=r"^[a-z0-9_]+$")
+    username: Username
     timezone: str = Field(default="Asia/Shanghai", max_length=64)
 
     @field_validator("timezone")
