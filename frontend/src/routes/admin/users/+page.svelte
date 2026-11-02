@@ -78,8 +78,8 @@
   }
   // Not tied to `busy`: flipping `disabled` on every row button would re-run the glass layer and flash the table.
   let switching = false;
-  async function toggleSwitch(user: AdminUser, field: 'is_active' | 'showcase_enabled' | 'wellbeing_allowed') {
-    if (busy || switching || (user.is_admin && field !== 'wellbeing_allowed')) return;
+  async function toggleSwitch(user: AdminUser, field: 'is_active' | 'showcase_enabled' | 'wellbeing_allowed' | 'together_allowed') {
+    if (busy || switching || (user.is_admin && field !== 'wellbeing_allowed' && field !== 'together_allowed')) return;
     switching = true; error = ''; notice = '';
     try {
       const updated = await updateAdminUser(user.id, { [field]: !user[field] });
@@ -159,12 +159,13 @@
           <button type="button" class="delete-button" disabled={busy} onclick={confirmDeletion}>删除所选</button>
         </div>{/if}
         <div class="table-scroll" role="region" aria-label="用户表格，可横向滚动">
-          <table><caption class="sr-only">账号资料、登录状态和公开展示状态</caption><thead><tr><th scope="col" class="select-cell">{#if selectable.length}<input id="select-page" type="checkbox" aria-label="全选本页" checked={allChosen} indeterminate={chosen.length > 0 && !allChosen} disabled={busy} onchange={event => chosen = event.currentTarget.checked ? selectable.map(user => user.id) : []} />{:else}<span class="sr-only">选择</span>{/if}</th><th scope="col">用户</th><th scope="col">登录状态</th><th scope="col">个人展示</th><th scope="col">身心健康</th><th scope="col">操作</th></tr></thead>
+          <table><caption class="sr-only">账号资料、登录状态和公开展示状态</caption><thead><tr><th scope="col" class="select-cell">{#if selectable.length}<input id="select-page" type="checkbox" aria-label="全选本页" checked={allChosen} indeterminate={chosen.length > 0 && !allChosen} disabled={busy} onchange={event => chosen = event.currentTarget.checked ? selectable.map(user => user.id) : []} />{:else}<span class="sr-only">选择</span>{/if}</th><th scope="col">用户</th><th scope="col">登录状态</th><th scope="col">个人展示</th><th scope="col">身心健康</th><th scope="col">一起跑步</th><th scope="col">操作</th></tr></thead>
             <tbody class="stagger">{#each users.items as user (user.id)}<tr>
               <td class="select-cell">{#if !user.is_admin}<input type="checkbox" aria-label={`选择 ${user.display_name} @${user.username}`} checked={chosen.includes(user.id)} disabled={busy} onchange={event => choose(user.id, event.currentTarget.checked)} />{/if}</td>
               <th scope="row"><div class="user-cell"><span class="user-avatar" aria-hidden="true">{Array.from(user.display_name || user.username)[0]}</span><div class="min-w-0"><span class="block font-semibold">{user.display_name}{user.is_admin ? ' · 站主' : ''}</span><span class="block text-sm text-muted-foreground">@{user.username}</span><span class="block break-all text-sm text-muted-foreground">{user.email}</span></div></div></th>
               <td><button type="button" role="switch" class="rn-switch" aria-checked={user.is_admin || user.is_active} disabled={user.is_admin} onclick={() => toggleSwitch(user, 'is_active')} aria-label={user.is_admin ? `允许登录 ${user.display_name}（站主受保护，不可调节）` : `允许登录 ${user.display_name}`}><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span></button></td><td><button type="button" role="switch" class="rn-switch" aria-checked={user.is_admin || (user.is_active && user.showcase_enabled)} disabled={user.is_admin || !user.is_active} onclick={() => toggleSwitch(user, 'showcase_enabled')} aria-label={user.is_admin ? `公开展示 ${user.display_name}（站主受保护，不可调节）` : `公开展示 ${user.display_name}`}><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span></button></td>
               <td><button type="button" role="switch" class="rn-switch" aria-checked={user.wellbeing_allowed} onclick={() => toggleSwitch(user, 'wellbeing_allowed')} aria-label={`身心健康 ${user.display_name}`}><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span></button></td>
+              <td><button type="button" role="switch" class="rn-switch" aria-checked={user.together_allowed} onclick={() => toggleSwitch(user, 'together_allowed')} aria-label={`一起跑步 ${user.display_name}`}><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span></button></td>
               <td><div class="user-actions">
                 <button type="button" class="button-secondary button-compact" disabled={busy} onclick={() => edit(user)} aria-label={`编辑 ${user.display_name}`}>编辑</button>
                 {#if user.is_admin}<span class="text-sm text-muted-foreground">受保护账号</span>{:else}

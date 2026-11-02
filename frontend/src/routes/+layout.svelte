@@ -51,7 +51,7 @@
   const site = $derived(page.data.site ?? SITE_DEFAULTS);
   let logoFailed = $state(false);
   $effect(() => { void site.logo_url; logoFailed = false; });
-  const appLayout = $derived(/^\/(dashboard|activities|footprints|records|routes|ai|settings|wellbeing|admin|p|workspace)(\/|$)/.test(page.url.pathname) && page.url.pathname !== '/admin' || page.url.pathname === '/' || page.status >= 400 && !/^\/admin\/?$/.test(page.url.pathname));
+  const appLayout = $derived(/^\/(dashboard|activities|footprints|together|records|routes|ai|settings|wellbeing|admin|p|workspace)(\/|$)/.test(page.url.pathname) && page.url.pathname !== '/admin' || page.url.pathname === '/' || page.status >= 400 && !/^\/admin\/?$/.test(page.url.pathname));
   const privateView = $derived(!!page.data.user || isProtected(page.url.pathname));
   setContext(VIEW_CONTEXT, () => {
     const context = viewContext(page.url.pathname, page.data.user?.is_admin === true);
@@ -128,6 +128,7 @@
         <a href="/" class="brand">{#if site.logo_url && !logoFailed}<img class="brand-mark brand-logo" src={site.logo_url} alt="" width="32" height="32" onerror={() => { logoFailed = true; }} />{:else}<span class="brand-mark" aria-hidden="true">{brandInitial(site.title)}</span>{/if}{site.title}</a>
         <nav aria-label="主要导航" class="public-navigation">
           <ThemeToggle compact />
+          <a href="/together" class="public-activities">一起跑步</a>
           {#if page.data.user}<a href="/" data-sveltekit-reload class="button-secondary">我的运动统计</a>{#if !checking}<button type="button" onclick={logout} disabled={busy || !mounted} class="button-secondary">{busy ? '退出中…' : '退出登录'}</button>{/if}
           {:else}<a href="/activities" data-sveltekit-reload class="public-activities">跑步记录</a>{/if}
         </nav>

@@ -4,7 +4,7 @@ import { readAdminUsers, createAdminUser, updateAdminUser, resetAdminUserPasswor
 const user = {
   id: '00000000-0000-4000-8000-000000000123', email: 'synthetic@example.com', username: 'synthetic',
   display_name: '合成跑者', timezone: 'Asia/Shanghai', bio: '', profile_is_public: false,
-  created_at: '2026-10-16T00:00:00Z', is_admin: false, is_active: true, showcase_enabled: false, wellbeing_allowed: true, wellbeing_enabled: true,
+  created_at: '2026-10-16T00:00:00Z', is_admin: false, is_active: true, showcase_enabled: false, together_allowed: false, together_enabled: false, wellbeing_allowed: true, wellbeing_enabled: true,
 };
 const response = (data: unknown, status = 200) => new Response(JSON.stringify({ data, error: null }), { status });
 

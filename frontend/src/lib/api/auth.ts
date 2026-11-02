@@ -3,6 +3,8 @@ import { safeImagePath } from './site.ts';
 export interface User {
   is_admin: boolean;
   showcase_enabled: boolean;
+  together_allowed: boolean;
+  together_enabled: boolean;
   wellbeing_allowed: boolean;
   wellbeing_enabled: boolean;
   id: string;
@@ -60,7 +62,7 @@ export function isProtected(path: string): boolean { return /^\/(settings|worksp
 export function parseUser(value: unknown): User {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new AuthError('认证身份无效',502,'INVALID_RESPONSE');
   const v = value as Record<string, unknown>;
-  if (['id','email','username','display_name','timezone','created_at','bio'].some(k => typeof v[k] !== 'string') || ['is_admin','showcase_enabled','profile_is_public','wellbeing_allowed','wellbeing_enabled'].some(k => typeof v[k] !== 'boolean')) throw new AuthError('认证身份无效',502,'INVALID_RESPONSE');
+  if (['id','email','username','display_name','timezone','created_at','bio'].some(k => typeof v[k] !== 'string') || ['is_admin','showcase_enabled','profile_is_public','wellbeing_allowed','wellbeing_enabled','together_allowed','together_enabled'].some(k => typeof v[k] !== 'boolean')) throw new AuthError('认证身份无效',502,'INVALID_RESPONSE');
   if (v.username_changed_at != null && (typeof v.username_changed_at !== 'string' || !Number.isFinite(Date.parse(v.username_changed_at)))) throw new AuthError('认证身份无效',502,'INVALID_RESPONSE');
   return { ...(v as unknown as User), avatar_url: safeImagePath(v.avatar_url) };
 }

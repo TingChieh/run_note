@@ -25,6 +25,7 @@ class UserCreate(RegisterInput):
 
 
 class UserPatch(StrictInput):
+    together_allowed: bool = Field(default=None)
     wellbeing_allowed: bool = Field(default=None)
     wellbeing_enabled: bool = Field(default=None)
     email: str = Field(default=None, max_length=254)

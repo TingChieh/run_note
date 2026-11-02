@@ -332,3 +332,119 @@ def test_wellbeing_switches_preserve_private_records(site):  # noqa: F811
         response = user.get(f"/api/v1/me/wellbeing/days/{day}")
         assert response.status_code == 200
         assert response.json()["data"]["entry"]["mood"] == 5
+
+
+def test_together_switches_and_public_filter(site):  # noqa: F811
+    admin, visitor, _, admin_headers, _, _, _, settings, _ = site
+    suffix = uuid4().hex[:18]
+    payload = dict(
+        email=f"together-{suffix}@example.com",
+        username=f"t_{suffix}",
+        display_name="一起跑步合成用户",
+        timezone="UTC",
+        password=PASSWORD,
+    )
+    account = admin.post("/api/v1/admin/users", json=payload, headers=admin_headers).json()["data"]
+    assert not account["together_allowed"] and not account["together_enabled"]
+    endpoint = f"/api/v1/admin/users/{account['id']}"
+    with TestClient(create_app(settings.model_copy()), base_url=ORIGIN) as user:
+        user_headers = write_headers(login(user, payload["email"]))
+        assert (
+            user.patch(
+                "/api/v1/me", headers=user_headers, json={"together_allowed": True}
+            ).status_code
+            == 422
+        )
+        assert (
+            user.patch(endpoint, headers=user_headers, json={"together_allowed": True}).status_code
+            == 403
+        )
+        assert (
+            admin.patch(
+                endpoint, headers=admin_headers, json={"together_enabled": True}
+            ).status_code
+            == 422
+        )
+        assert (
+            user.patch(
+                "/api/v1/me", headers=user_headers, json={"together_enabled": True}
+            ).status_code
+            == 403
+        )
+        assert (
+            user.patch(
+                "/api/v1/me", headers=user_headers, json={"profile_is_public": True}
+            ).status_code
+            == 200
+        )
+        assert (
+            admin.patch(
+                endpoint, headers=admin_headers, json={"showcase_enabled": True}
+            ).status_code
+            == 200
+        )
+
+        def present():
+            response = visitor.get("/api/v1/together")
+            assert response.status_code == 200
+            assert "wellbeing" not in response.text and "mood" not in response.text
+            data = response.json()["data"]
+            included = payload["username"] in [row["username"] for row in data["participants"]]
+            if not included:
+                assert all(row["username"] != payload["username"] for row in data["recent"])
+                assert all(row["username"] != payload["username"] for row in data["tracks"])
+            return included
+
+        assert not present()
+        assert (
+            admin.patch(
+                endpoint, headers=admin_headers, json={"together_allowed": True}
+            ).status_code
+            == 200
+        )
+        assert not present()
+        assert (
+            user.patch(
+                "/api/v1/me", headers=user_headers, json={"together_enabled": True}
+            ).status_code
+            == 200
+        )
+        assert present()
+        raw = (Path(__file__).parents[1] / "fixtures/gpx/equator-six.gpx").read_bytes()
+        upload = user.post(
+            "/api/v1/gpx-imports",
+            headers=user_headers,
+            files={"file": ("synthetic.gpx", raw, "application/gpx+xml")},
+        )
+        assert upload.status_code == 201, upload.text
+        entry = user.put(
+            "/api/v1/me/wellbeing/days/2020-01-01/entry",
+            headers=user_headers,
+            json={"mood": 5, "note": "SECRET_WELLBEING"},
+        )
+        assert entry.status_code == 200, entry.text
+        result = visitor.get("/api/v1/together")
+        assert result.status_code == 200, result.text
+        data = result.json()["data"]
+        assert data["count"] >= 1 and data["tracks"] and data["recent"]
+        assert "SECRET_WELLBEING" not in result.text
+        assert (
+            user.patch(
+                "/api/v1/me", headers=user_headers, json={"profile_is_public": False}
+            ).status_code
+            == 200
+        )
+        assert not present()
+        assert (
+            user.patch(
+                "/api/v1/me", headers=user_headers, json={"profile_is_public": True}
+            ).status_code
+            == 200
+        )
+        assert (
+            admin.patch(
+                endpoint, headers=admin_headers, json={"together_allowed": False}
+            ).status_code
+            == 200
+        )
+        assert not present()

@@ -84,6 +84,7 @@
     { href: '/dashboard', label: '数据汇总', path: 'M3 10 12 3l9 7v10H3z M9 20v-7h6v7' },
     { href: '/records', label: '个人记录', path: 'M5 20V10 M12 20V4 M19 20v-7 M3 20h18' },
     { href: '/activities', label: '跑步记录', path: 'M4 5h16v15H4z M8 2v6 M16 2v6 M4 10h16 M8 14h3 M8 17h7' },
+    { href: '/together', label: '一起跑步', path: 'M3 20h18 M7 17l2-6 3 2 2-6 3 2 2 8 M13 4a1 1 0 1 0 2 0 1 1 0 0 0-2 0' },
     { href: '/footprints', label: '个人足迹', path: 'm3 5 6-2 6 2 6-2v16l-6 2-6-2-6 2z M9 3v16 M15 5v16' },
     { href: '/routes', label: '常跑路线', path: 'M6 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M18 9a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M8 17h5a3 3 0 0 0 0-6h-2a3 3 0 0 1 0-6h5' },
     { href: '/ai', label: 'AI 分析', path: 'm12 3 3 6 6 3-6 3-3 6-3-6-6-3 6-3z' },

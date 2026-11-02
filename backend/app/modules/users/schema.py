@@ -29,6 +29,8 @@ class UserView(BaseModel):
     profile_is_public: bool
     is_admin: bool
     showcase_enabled: bool
+    together_allowed: bool
+    together_enabled: bool
     wellbeing_allowed: bool
     wellbeing_enabled: bool
     created_at: datetime
@@ -40,6 +42,7 @@ class AvatarView(BaseModel):
 
 
 class ProfileUpdate(StrictInput):
+    together_enabled: bool = Field(default=None)
     wellbeing_enabled: bool = Field(default=None)
     bio: str = Field(default=None, max_length=500)
     profile_is_public: bool = Field(default=None)
