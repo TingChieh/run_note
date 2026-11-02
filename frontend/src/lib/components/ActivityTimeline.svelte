@@ -43,12 +43,12 @@
   .timeline { display: grid; gap: var(--space-4); min-width: 0; }
   .month { min-width: 0; }
   header { display: flex; flex-wrap: wrap; align-items: center; min-height: 1.75rem; gap: var(--space-1) var(--space-3); margin-bottom: var(--space-3); }
-  .month-pill { padding: 0 .75rem; line-height: 1.75rem; border-radius: var(--radius-pill); background: var(--foreground); color: var(--background); font-size: var(--text-small); font-weight: var(--weight-semibold); }
+  .month-pill { display: inline-flex; align-items: center; height: 1.75rem; padding: 0 .75rem; border-radius: var(--radius-pill); background: var(--foreground); color: var(--background); font-size: var(--text-small); font-weight: var(--weight-semibold); }
   .month-total { color: var(--muted-foreground); font-size: var(--text-small); font-variant-numeric: tabular-nums; }
   .activity-list { position: relative; display: grid; gap: var(--space-2); }
   .activity-list::before { content: ''; position: absolute; top: .5rem; bottom: .5rem; left: 1.2rem; border-left: 2px solid var(--border); }
   li { display: grid; grid-template-columns: 2.4rem minmax(0, 1fr); align-items: center; gap: var(--space-2); min-width: 0; }
-  .gutter { position: relative; z-index: 1; display: grid; justify-items: center; padding: .125rem 0; background: var(--background); line-height: 1.1; }
+  .gutter { position: relative; z-index: 1; display: grid; justify-items: center; padding: .125rem 0; background: var(--background); line-height: var(--line-height-tight); }
   .gutter b { font-size: var(--text-section); font-variant-numeric: tabular-nums; }
   .gutter span { color: var(--muted-foreground); font-size: var(--text-caption); }
 </style>

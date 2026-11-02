@@ -77,7 +77,7 @@
   .preview-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); padding: var(--space-4) var(--space-6) var(--space-3); }
   .preview-copy { min-width: 0; }
   /* The title line is as tall as the month pill beside it (1.75rem) and both columns start 1rem + the card border below the top, so the two sit on one line. */
-  .preview-title { font-size: var(--text-card); line-height: 1.75rem; font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+  .preview-title { display: flex; align-items: center; min-height: 1.75rem; font-size: var(--text-card); line-height: var(--line-height-heading); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
   .preview-when { margin-top: .125rem; color: var(--muted-foreground); font-size: var(--text-small); font-variant-numeric: tabular-nums; }
   .preview-labels { display: flex; flex-wrap: wrap; gap: .25rem .375rem; margin-top: .5rem; }
   .chip { padding: .0625rem .5rem; border-radius: .4rem; background: var(--muted); color: var(--muted-foreground); font-size: var(--text-caption); }
