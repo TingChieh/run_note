@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { installActivities, loginRunner, sampleActivity } from '../fixtures/activities.ts';
+import { installActivities, loginRunner, sampleActivity, openImport } from '../fixtures/activities.ts';
 
 async function create(page: Page, username: string, published = false) {
   await page.getByRole('button', { name: '新增用户', exact: true }).click();
@@ -133,6 +133,8 @@ test('two full personal showcases keep navigation, records, routes and reports s
     await page.goto(`/p/${username}/activities`);
     await expect(page.getByRole('link', { name: /专属记录/ }).first()).toHaveAttribute('href', `/p/${username}/activities/${sampleActivity.id}`);
     await page.getByRole('link', { name: /专属记录/ }).first().click();
+    // On a wide screen the card only selects the record; the preview's link opens its page.
+    await page.getByRole('link', { name: '查看完整详情 →' }).click();
     await expect(page).toHaveURL(new RegExp(`/p/${username}/activities/${sampleActivity.id}$`));
     await expect(page.getByRole('heading', { level: 1, name: `专属记录 ${username}`, exact: true })).toBeVisible();
     await expect(page.getByTestId('route-map-ready')).toBeVisible();
@@ -186,7 +188,7 @@ test('ordinary workspace stays private, cannot manage accounts, and disabled ses
     await own.getByLabel('密码', { exact: true }).fill('Synthetic-only-password');
     await own.getByRole('button', { name: '登录', exact: true }).click();
     await expect.poll(() => new URL(own.url()).pathname).toBe('/workspace/dashboard');
-    await own.goto('/workspace/activities');
+    await own.goto('/workspace/activities'); await openImport(own);
     await expect(own.getByRole('button', { name: '导入 GPX', exact: true })).toBeVisible();
     const ownNavigation = own.getByRole('navigation', { name: '主要导航' });
     await expect(ownNavigation.getByRole('link', { name: '本人工作区', exact: true })).toHaveAttribute('href', '/workspace/dashboard');

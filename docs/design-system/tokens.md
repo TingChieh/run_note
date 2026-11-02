@@ -30,12 +30,15 @@
 | `--control-hover-border` | #91aca0 | #8b8680 | 字段 hover |
 | `--scrollbar-thumb` / `--scrollbar-thumb-hover` | `--muted-foreground` 42% / 70% 透明混合 | `--muted-foreground` 46% / 75% 透明混合 | 全站统一的细滚动条滑块；`app.css` 的 `@layer base` 用 `scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent` 作用于所有元素（含页面根），hover 色只用于不支持标准属性的旧 WebKit 后备（`@supports not (scrollbar-width: thin)` 下的 `::-webkit-scrollbar`，8px、圆角滑块、透明轨道）。不要在组件里另写滚动条颜色 |
 | `--sport-sidebar` | #218538 | #34322f | 目前没有样式读取（原绿色侧栏与站点设置预览都已改走 `--surface` / `--border` / `--sport-brand` / `--foreground`）；令牌保留 |
-| `--sport-brand` | #218538 | #1f5a3a | Logo 方块底色（桌面顶部条、公开页顶部导航）；原先借用 `--sport-sidebar`，深色改成中性后单独拆出 |
+| `--sport-brand` / `--brand-foreground` | #218538 / #ffffff | #f2f0ee / #1d1c1a | Logo 方块底色与字母色（顶部条、手机栏、公开页顶部导航、站点设置预览）；浅色是品牌绿，深色是中性浅灰 |
 | `--sport-nav-hover` | #0000000a | #ffffff12 | 导航 hover |
-| `--sport-nav-active` | #e8f6df | #4d4644 | 当前导航 |
-| `--sport-nav-active-ink` | #18592a | #f2f0ee | 当前导航文字 |
-| `--sport-yellow` | #f5c519 | #54451d | 页头表面 |
-| `--sport-heading-ink` | #20332b | #ffe9a5 | 页头文字 |
+| `--sport-nav-active` / `--sport-nav-active-ink` | #e3f3d9 / #14532d | #4d4644 / #f2f0ee | 当前导航胶囊（也用于头像底）及其文字；浅色淡绿，深色中性灰 |
+| `--action` / `--action-hover` | #218538 / #176a2c | #8a847d / #a39d95 | 玻璃主操作按钮（`button.bg-primary`、`.button-primary` 等）的染色，按 `--glass-tint-opacity` 混合 |
+| `--segment-lens` / `--segment-lens-ink` / `--segment-track` | #cfeacd / #14532d / #ecebe7 | #5a5552 / #f2f0ee / #3e3b39 | 分段控件（`.settings-tabs`、`.compact-switch`、选择框展开态）的选中滑块、其文字与轨道；浅色淡绿滑块，深色中性灰 |
+| `--header-tint` / `--header-ink` / `--header-ink-muted` / `--header-tab-track` / `--header-pad` | #fbf0bd / #2a2a12 / #5a5628 / #ffffff99 / `clamp(1.25rem, 3vw, 2rem)` | 透明 / #f2f0ee / #b1aca6 / #3e3b39 / `var(--space-2) 0 var(--space-4)` | 页头（`.page-header`）：浅色是淡奶油黄的圆角卡片，深色没有色块；`--header-tab-track` 是页头里 `.settings-tabs` 的轨道 |
+| `--hero-bg` / `--hero-border` | #fbf0bd / 透明 | `--surface` / `--border` | 活动详情 hero（`.sport-hero`）与登录说明（`.auth-intro`）的底与边：浅色同页头，深色是卡片 |
+| `--sport-yellow` | #f5c519 | #54451d | 只剩海报标题块与分享预览读取，页面里不再读它 |
+| `--sport-heading-ink` | #20332b | #ffe9a5 | 同上，仅海报标题文字 |
 | `--sport-detail-ink` | #263120 | #ffe9a5 | 详情文字 |
 | `--sport-heading-border` | #b5a43d | #9c884f | 业务标题边界 |
 
@@ -136,7 +139,7 @@
 | 768px | DatePicker 全宽及局部布局 |
 | 800px | 壳层断点 B：≥800px 为私人悬浮顶部条，<800px 为手机栏加展开菜单（见 [top-navigation 设计文档](../superpowers/specs/2026-10-30-top-navigation-design.md)；`app.css`、`liquid-glass-controls.css`、`enhanceNavigation` 与 `AppNavigation.svelte` 的 `matchMedia` 各写一份，注释互相指向，要改一起改）；`.site-layout` 等页面内布局仍以 1024px 为界 |
 | 1200px | 指标图标横排恢复 |
-| 1360px | 顶部条图标加文字的下限：800–1359px 只有图标，≥1360px 带文字（实测 8 个带文字入口在 1280–1339px 会压到账户区）；入口达到 9 个（普通账户多一个“本人工作区”）时所有桌面宽度都是图标版，`aside` 带 `data-dense` |
+| 1360px | 顶部条图标加文字的下限：800–1359px 只有图标，≥1360px 带文字（实测 8 个带文字入口在 1280–1339px 会压到账户区）；普通账户 8 个入口（含最长的“本人工作区”）带文字也不压到账户区 |
 
 足迹墙采用自己的容器查询；不以 viewport 断点替代。验证边界两侧，不只验证一台手机。
 

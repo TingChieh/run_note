@@ -19,8 +19,8 @@
 }
 
 .sport-theme :is(button.bg-primary, .button-primary, button.save, button.apply-button, .mode-switch button[aria-pressed="true"]) {
-  --button-glass-fill: color-mix(in srgb, var(--primary) calc(var(--glass-tint-opacity) * 100%), transparent);
-  --button-glass-hover: color-mix(in srgb, var(--primary-hover) calc((var(--glass-tint-opacity) + .05) * 100%), transparent);
+  --button-glass-fill: color-mix(in srgb, var(--action) calc(var(--glass-tint-opacity) * 100%), transparent);
+  --button-glass-hover: color-mix(in srgb, var(--action-hover) calc((var(--glass-tint-opacity) + .05) * 100%), transparent);
   --button-glass-sheen: var(--glass-tint-sheen);
   --button-glass-fallback: var(--primary);
 }

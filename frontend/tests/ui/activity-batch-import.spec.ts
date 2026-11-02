@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { installActivities, loginRunner, incompleteActivity, sampleActivity } from '../fixtures/activities';
+import { installActivities, loginRunner, incompleteActivity, sampleActivity, openImport } from '../fixtures/activities';
 
 type Plan = 'ok' | 'duplicate' | 'error' | 'hold';
 const gpx = (name: string) => ({ name, mimeType: 'application/gpx+xml', buffer: Buffer.from('<gpx version="1.1" creator="synthetic"></gpx>') });
@@ -23,7 +23,7 @@ async function batchApi(page: Page, plan: Record<string, Plan>) {
   return { uploaded, release };
 }
 async function openActivities(page: Page) {
-  await page.goto('/activities');
+  await page.goto('/activities'); await openImport(page);
   // The controls stay disabled until hydration finishes; selecting files earlier is silently lost.
   await expect(page.getByRole('button', { name: '导入 GPX', exact: true })).toBeEnabled();
 }

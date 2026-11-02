@@ -1,10 +1,10 @@
 import {expect,test,type Page} from '@playwright/test';
-import {installActivities,loginRunner,sampleActivity} from '../fixtures/activities';
+import {installActivities,loginRunner,sampleActivity, openImport } from '../fixtures/activities';
 const source = (time=1791763200,track=false) => ({source_time:time,has_downloaded_track:track,source_metrics:{distance:3000,duration:1200,start_time:time,end_time:time+1200,max_cadence:5730,train_effect:0,account_id:'secret',download_url:'https://private.invalid'}});
 const preview = {activity_date:'2026-10-12',timezone:'Asia/Shanghai',started_at:'2026-10-12T00:00:00Z',ended_at:'2026-10-12T00:20:00Z',distance_m:'3000',timer_seconds:'1200',elapsed_seconds:'1200',calories_kcal:null,steps:null,avg_heart_rate_bpm:null,max_heart_rate_bpm:180,min_heart_rate_bpm:null,avg_cadence_spm:'170',max_cadence_spm:null,vo2_max_ml_kg_min:'45',training_load:null,aerobic_training_effect:'0',anaerobic_training_effect:null,has_route:false,point_count:0,segment_count:0,warnings:['MIFITNESS_MAX_CADENCE_INVALID'],suspected_activity_ids:[]};
 const jsonFile=(records:unknown[])=>({name:'running_summaries.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({records}))});
 const region=(page:Page)=>page.getByRole('region',{name:'Mi Fitness 跑步导入',exact:true});
-async function setup(page:Page){await installActivities(page);await loginRunner(page);await page.goto('/activities');await expect(region(page).getByLabel(/running_summaries\.json/)).toBeEnabled();}
+async function setup(page:Page){await installActivities(page);await loginRunner(page);await page.goto('/activities'); await openImport(page);await expect(region(page).getByLabel(/running_summaries\.json/)).toBeEnabled();}
 test('preview precedes serial summary-only saves and shows server device warnings on desktop and mobile',async({page})=>{
   const events:string[]=[];let active=0,max=0;
   await page.route('**/api/v1/mifitness-imports**',async route=>{

@@ -55,6 +55,8 @@ busy 时防重复提交，失败保留草稿，字段错误与输入关联。写
 
 聚合指标以服务端为准。canvas/WebGL 只在 onMount 动态导入，watchSystemTheme 更新 paint/option 并清理订阅；切换外观保留选择、相机与实例。地图底图可关，失败不阻断本地轨迹；数据表 details 提供无图形兜底。AI 生成是显式动作，展示不发供应商请求。
 
+跑步记录页 [/activities](../../frontend/src/routes/activities/+page.svelte)：PageHeader（页头下是“列表 / 足迹墙”切换）→ 标题行（“我的活动（N）”，右侧“导入轨迹”与“编辑”）→ 折叠的导入区（GPX/TCX 与 Mi Fitness，高度动画展开/收起，收起时 `inert` 且不可见但仍挂载，所以选好的文件不丢；记录为空、导入进行中或有结果提示时自动展开）→ 列表。桌面（≥1024px）是左右两栏：左栏固定 26rem 的 `ActivityTimeline`，右栏 `ActivityPreview`；选中项写进地址 `?id=`（`replaceState`），上下方向键换选中项，Ctrl/Cmd/中键点击照常打开详情页；窄屏只有时间线，点击进入详情页。见 [81](../81-activity-timeline-preview.md)。
+
 个人记录页 [/records](../../frontend/src/routes/records/+page.svelte) 是“先讲人话，再给数字”的样本：PageHeader → RecordsBanner（hero）→ 一句无边框总结（今年里程与去年同期，数字取服务端 `yearly`）→ 月度卡片（标题右侧 `.settings-tabs` 按钮组切换里程/配速，图表去掉网格线与纵轴，只给最大月份或最快月份标数值，其余柱为 `--primary` 的柔和透明度）→ 逐年回顾与训练规律两张卡并排（每张卡不足 28rem（按该行自身宽度）时上下堆叠）。逐年横条与周点、周内小柱都是页面私有的 CSS 图形，用 `--primary` 的 `color-mix` 档位表达强弱，进行中的年份用同色斜纹，正负变化用文字与符号表达。连续卡片不超过三层，每个图形下都有 `<details>` 数据表。
 
 反例：浏览器重算权威距离/配速；主题切换重建地图；用空数据/错误截图冒充非空图表成功；把真实轨迹放进 fixture。

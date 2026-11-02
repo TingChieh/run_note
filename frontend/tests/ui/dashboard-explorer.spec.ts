@@ -130,11 +130,11 @@ test('late activity and route responses cannot overwrite newer selection; errors
   await expect(page).toHaveURL(/admin\?reason=expired/);
 });
 
-test('wall has its own active navigation entry',async({page})=>{
+test('the wall is a view of 跑步记录: that entry stays current and there is no separate wall link',async({page})=>{
   await loginRunner(page);await page.goto('/activities/wall');
   const nav=page.getByRole('navigation',{name:'主要导航'});
-  await expect(nav.getByRole('link',{name:'足迹墙',exact:true})).toHaveAttribute('aria-current','page');
-  await expect(nav.getByRole('link',{name:'跑步记录',exact:true})).not.toHaveAttribute('aria-current','page');
+  await expect(nav.getByRole('link',{name:'跑步记录',exact:true})).toHaveAttribute('aria-current','page');
+  await expect(nav.getByRole('link',{name:'足迹墙'})).toHaveCount(0);
 });
 
 test('classification and route failures retry independently and a stale category cannot replace the current one',async({page})=>{

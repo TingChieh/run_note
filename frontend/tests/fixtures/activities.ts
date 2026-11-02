@@ -72,3 +72,14 @@ export async function installActivities(page: Page) {
   await page.route('https://tiles.openfreemap.org/**', route => route.abort());
   return state;
 }
+
+/** The import area on the records page is folded behind "导入轨迹"; open it before touching the upload forms. */
+export async function openImport(page: Page) {
+  const toggle = page.getByRole('button', { name: '导入轨迹', exact: true });
+  await expect(toggle).toBeVisible();
+  // A click before hydration is not handled, so retry until the region is really open.
+  await expect(async () => {
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true', { timeout: 1000 });
+  }).toPass();
+}

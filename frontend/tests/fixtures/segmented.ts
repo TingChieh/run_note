@@ -32,12 +32,12 @@ const clear = (value: string) => value === 'rgba(0, 0, 0, 0)' || value === 'tran
 export async function expectUnenhancedFallback(group: Locator) {
   await expect(group).not.toHaveClass(/rn-liquid-navigation/);
   const items = group.locator(':scope > :is(a, button)');
-  const primary = await token(group, '--primary'), onPrimary = await token(group, '--primary-foreground');
+  const lens = await token(group, '--segment-lens'), onLens = await token(group, '--segment-lens-ink');
   const selected = group.locator(`:scope > :is(${SELECTED})`);
   await expect(selected).toHaveCount(1);
   // Colours transition for a moment after the enhancer goes away, so poll for the settled value.
-  await expect.poll(async () => (await paint(selected)).background, 'selected item keeps the primary fill').toBe(primary);
-  await expect.poll(async () => (await paint(selected)).color, 'selected item uses the primary foreground').toBe(onPrimary);
+  await expect.poll(async () => (await paint(selected)).background, 'selected item keeps the lens fill').toBe(lens);
+  await expect.poll(async () => (await paint(selected)).color, 'selected item uses the lens ink').toBe(onLens);
   const chosen = await paint(selected);
   expect(contrast(chosen.color, chosen.background)).toBeGreaterThanOrEqual(4.5);
   for (const item of await items.all()) {
@@ -61,7 +61,7 @@ export async function expectEnhancedLook(group: Locator) {
     expect(state.image, 'no gradient plate').toBe('none');
     await expect.poll(async () => clear((await paint(item)).background), 'no plate behind the lens').toBe(true);
   }
-  // The lens carries the primary colour; the label drawn on it must stay readable.
+  // The lens carries the segment colour; the label drawn on it must stay readable.
   expect(contrast(lens.color, lens.background)).toBeGreaterThanOrEqual(4.5);
   await expect(selected).toHaveCount(1);
 }

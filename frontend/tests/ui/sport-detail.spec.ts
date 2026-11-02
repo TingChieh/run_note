@@ -26,7 +26,7 @@ test('detail keeps a compact overview beside a spacious route and stays consiste
   const active=page.getByRole('navigation',{name:'主要导航'}).getByRole('link',{name:'跑步记录',exact:true});await expect(active).toHaveAttribute('aria-current','page');await active.focus();expect(await active.evaluate(el=>getComputedStyle(el).outlineStyle)).toBe('solid');
   await capture(page,'desktop');await page.getByText('数据质量与指标说明',{exact:true}).focus();await page.keyboard.press('Enter');await expect(page.getByText('有效轨迹点',{exact:true})).toBeVisible();await page.keyboard.press('Enter');
   await page.getByRole('button',{name:'关闭底图',exact:true}).click();await page.getByRole('button',{name:'开启底图',exact:true}).click();await ready(page);
-  await active.click();await expect(page).toHaveURL(/\/activities$/);await expect(page.locator('.sport-theme')).toHaveCount(1);await page.evaluate(()=>window.scrollTo(0,0));await expect(sidebar).not.toHaveAttribute('data-floating');await expect.poll(()=>sidebar.evaluate(el=>getComputedStyle(el).backgroundColor)).toBe(color);
+  await active.click();await expect(page).toHaveURL(/\/activities(\?id=[0-9a-f-]+)?$/);await expect(page.locator('.sport-theme')).toHaveCount(1);await page.evaluate(()=>window.scrollTo(0,0));await expect(sidebar).not.toHaveAttribute('data-floating');await expect.poll(()=>sidebar.evaluate(el=>getComputedStyle(el).backgroundColor)).toBe(color);
 });
 test('sports detail fits phones with usable map, navigation and existing privacy controls',async({page})=>{
   await installActivities(page);await loginRunner(page);await page.goto(`/activities/${sampleActivity.id}`);await ready(page);
