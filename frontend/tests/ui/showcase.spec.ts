@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { installActivities, loginRunner, sampleActivity } from '../fixtures/activities.ts';
+import { installActivities, loginRunner, sampleActivity, openImport } from '../fixtures/activities.ts';
 import { installAI, report } from '../fixtures/p2.ts';
 import { openAccountMenu } from '../fixtures/top-navigation.ts';
 
@@ -43,7 +43,7 @@ test('admin entry authenticates, enables mutations, and logout returns to public
   await expect(page).toHaveURL(/\/admin\?next=%2Fsettings/);
   await expect(page.getByRole('link', { name: /注册/ })).toHaveCount(0);
   await loginRunner(page);
-  await page.goto('/activities');
+  await page.goto('/activities'); await openImport(page);
   await expect(page.getByRole('button', { name: '导入 GPX', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '编辑', exact: true }).click();
   await page.getByRole('button', { name: `编辑 ${sampleActivity.title}` }).click();
@@ -51,7 +51,7 @@ test('admin entry authenticates, enables mutations, and logout returns to public
   await page.getByRole('button', { name: '取消编辑', exact: true }).click();
   await page.getByRole('button', { name: '完成', exact: true }).click();
   await (await openAccountMenu(page)).getByRole('button', { name: '退出登录', exact: true }).click();
-  await expect(page).toHaveURL(/\/activities$/);
+  await expect(page).toHaveURL(/\/activities(\?id=[0-9a-f-]+)?$/);
   await expect(page.getByTestId('current-user')).toContainText('个人跑步展示');
   await page.goto('/activities');
   await expect(page.getByRole('heading', { name: sampleActivity.title })).toBeVisible();

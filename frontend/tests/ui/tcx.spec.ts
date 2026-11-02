@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { installActivities, loginRunner, sampleActivity } from '../fixtures/activities';
+import { installActivities, loginRunner, sampleActivity, openImport } from '../fixtures/activities';
 const file = { name:'synthetic-mi-fitness.tcx', mimeType:'application/xml', buffer:Buffer.from('<TrainingCenterDatabase/>') };
 const activity = { ...sampleActivity, title:'TCX 下午跑步', activity_date:'2026-10-04', started_at:'2026-10-04T08:15:20Z', ended_at:'2026-10-04T08:37:22Z', distance_m:'2999', elapsed_seconds:'1322', timer_seconds:'1166', avg_pace_seconds_per_km:'388.796', avg_heart_rate_bpm:156, steps:3262, calories_kcal:144, metrics_version:'tcx-v1' };
 
@@ -12,7 +12,7 @@ test('TCX selection exposes explicit time repair, retains failed draft, then sho
     if (++attempts===1) return route.fulfill({status:503,json:{error:{message:'保存暂时失败，请重试'}}});
     return route.fulfill({status:201,json:{data:{activity,warnings:['LOCAL_TIME_INTERPRETED']},error:null}});
   });
-  await loginRunner(page); await page.goto('/activities');
+  await loginRunner(page); await page.goto('/activities'); await openImport(page);
   await expect(page.getByRole('button',{name:'导入 GPX',exact:true})).toBeEnabled();
   await page.locator('input[type=file][name=file]').setInputFiles(file);
   await expect(page.getByLabel('文件格式',{exact:true})).toHaveValue('tcx');
@@ -58,7 +58,7 @@ test('TCX selection exposes explicit time repair, retains failed draft, then sho
 });
 
 test('TCX keyboard controls and mobile upload have no overflow, and GPX remains the default', async ({page}) => {
-  await installActivities(page); await loginRunner(page); await page.goto('/activities');
+  await installActivities(page); await loginRunner(page); await page.goto('/activities'); await openImport(page);
   await expect(page.getByRole('button',{name:'导入 GPX',exact:true})).toBeEnabled();
   await expect(page.getByRole('button',{name:'导入 GPX',exact:true})).toBeVisible();
   await page.getByLabel('文件格式',{exact:true}).focus();

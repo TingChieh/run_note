@@ -49,7 +49,7 @@ export function createIndicator(host: HTMLElement, items: HTMLElement[], initial
     Object.assign(copy.style, { height: `${host.clientHeight + 2 * bleed}px`, width: `${host.clientWidth + 2 * bleed}px`, transform: `translate(${-bleed}px, ${host.scrollTop - bleed}px)` });
     items.forEach((item, i) => {
       const style = getComputedStyle(item);
-      Object.assign(labels[i].style, { left: `${item.offsetLeft + bleed}px`, top: `${item.offsetTop - host.scrollTop + bleed}px`, width: `${item.offsetWidth}px`, height: `${item.offsetHeight}px`, padding: style.padding, gap: style.gap, font: style.font, letterSpacing: style.letterSpacing });
+      Object.assign(labels[i].style, { left: `${item.offsetLeft + bleed}px`, top: `${item.offsetTop - host.scrollTop + bleed}px`, width: `${item.offsetWidth}px`, height: `${item.offsetHeight}px`, padding: style.padding, gap: style.gap, justifyContent: style.justifyContent, font: style.font, letterSpacing: style.letterSpacing });
     });
     move(index, true);
   }

@@ -12,10 +12,12 @@
   import PageHeader from '#lib/components/PageHeader.svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import PageSkeleton from '#lib/components/PageSkeleton.svelte';
-  import ActivityCard from '#lib/components/ActivityCard.svelte';
+  import ActivityTimeline from '#lib/components/ActivityTimeline.svelte';
+  import ActivityPreview from '#lib/components/ActivityPreview.svelte';
+  import ActivityViews from '#lib/components/ActivityViews.svelte';
   import { page } from '$app/state';
-  import { onMount, tick } from 'svelte';
-  import { snapshot } from '$app/navigation';
+  import { onMount, tick, untrack } from 'svelte';
+  import { replaceState, snapshot } from '$app/navigation';
   import ActivityEditor from '#lib/components/ActivityEditor.svelte';
   import MifitnessImport from '#lib/components/MifitnessImport.svelte';
   import ImportBatchPanel from '#lib/components/ImportBatchPanel.svelte';
@@ -30,6 +32,8 @@
   const multi = $derived(pickedFiles.length > 1);
   let selected = $state<string[]>([]), editActivity = $state<Activity | null>(null), deleteIds = $state<string[]>([]);
   let editMode = $state(false);
+  // Desktop shows a second pane with the chosen record's map and details; narrower screens keep the timeline alone and open the detail page.
+  let wide = $state(false), importOpen = $state(false), currentId = $state<string | null>(null);
   let saving = $state(false), deleting = $state(false), deleteError = $state(''), lastOffset = $state(0);
   let editDialog = $state<HTMLDialogElement>(null!), deleteDialog = $state<HTMLDialogElement>(null!), recordsHeading: HTMLHeadingElement;
   let returnFocus: HTMLElement | null = null;
@@ -45,6 +49,37 @@
   let mifitnessBusy = $state(false);
   const controlsBusy = $derived(busy || managing || mifitnessBusy);
   const allSelected = $derived(!!records?.items.length && selected.length === records.items.length);
+  const currentActivity = $derived(records?.items.find(item => item.id === currentId) ?? null);
+  // The address carries ?id= so a refresh, Back or a shared link returns to the same record; an id that is not on this page falls back to the first record.
+  function syncCurrent(list: ActivityList) {
+    const wanted = new URL(window.location.href).searchParams.get('id');
+    currentId = list.items.find(item => item.id === wanted)?.id ?? list.items[0]?.id ?? null;
+  }
+  $effect(() => {
+    const id = currentId;
+    // Not before the list is loaded: an id from the address must survive until syncCurrent has read it.
+    if (!mounted || !wide || !records) return;
+    untrack(() => {
+      const url = new URL(window.location.href);
+      if (id) { if (url.searchParams.get('id') === id) return; url.searchParams.set('id', id); }
+      else { if (!url.searchParams.has('id')) return; url.searchParams.delete('id'); }
+      replaceState(url, page.state);
+    });
+  });
+  function openRecord(activity: Activity, event: MouseEvent) {
+    if (!wide || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault(); currentId = activity.id;
+  }
+  function moveCurrent(event: KeyboardEvent) {
+    if (!wide || !records || (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') || !(event.target instanceof Element) || !event.target.closest('.card-link')) return;
+    const index = records.items.findIndex(item => item.id === currentId), next = records.items[index + (event.key === 'ArrowDown' ? 1 : -1)];
+    if (!next) return;
+    event.preventDefault(); currentId = next.id;
+    void tick().then(() => document.querySelector<HTMLElement>(`.card-link[data-activity-id="${next.id}"]`)?.focus());
+  }
+  // Keep the import area open whenever something is going on or has something to say.
+  $effect(() => { if (view.manage && records?.total === 0) importOpen = true; });
+  $effect(() => { if (busy || batchRunning || mifitnessBusy || message || successId || warnings.length || batchItems.length) importOpen = true; });
   function toggleEditMode() {
     if (!view.manage || controlsBusy || loading) return;
     selected = []; editMode = !editMode;
@@ -141,7 +176,7 @@
         const clamped = Math.max(0, Math.floor((result.total - 1) / 20) * 20);
         lastOffset = clamped; result = await readActivities(fetch, clamped);
       }
-      if (!disposed && request === listRequest) { records = result; if (!result.items.length) editMode = false; }
+      if (!disposed && request === listRequest) { records = result; syncCurrent(result); if (!result.items.length) editMode = false; }
     } catch (cause) { if (!disposed && request === listRequest) fail(cause, 'list'); }
     finally { if (!disposed && request === listRequest) loading = false; }
   }
@@ -197,11 +232,19 @@
     } catch (cause) { if (!disposed) fail(cause); }
     finally { if (!disposed) busy = false; }
   }
-  onMount(() => { mounted = true; void load(lastOffset); return () => { disposed = true; ++listRequest; batchController?.abort(); }; });
+  onMount(() => {
+    mounted = true; void load(lastOffset);
+    const media = window.matchMedia('(min-width: 1024px)');
+    const update = () => { wide = media.matches; };
+    update(); media.addEventListener('change', update);
+    return () => { disposed = true; ++listRequest; batchController?.abort(); media.removeEventListener('change', update); };
+  });
 </script>
 <svelte:head><title>{pageTitle('跑步记录', page.data.site)}</title></svelte:head>
-<PageHeader title="跑步记录" description="每一次跑步，都值得留下。导入 GPX 或 TCX，回顾你的轨迹与运动表现。">{#snippet actions()}<a href={view.href("/activities/wall")}  class="button-secondary">查看足迹墙</a>{/snippet}</PageHeader>
-{#if view.manage}
+<PageHeader title="跑步记录" description="每一次跑步，都值得留下。导入 GPX 或 TCX，回顾你的轨迹与运动表现。">{#snippet footer()}<ActivityViews current="list" />{/snippet}</PageHeader>
+<section class="mt-8" aria-labelledby="records-title">
+  <div class="flex flex-wrap items-baseline justify-between gap-3"><h2 bind:this={recordsHeading} tabindex="-1" id="records-title" class="text-xl font-semibold">我的活动{records ? `（${records.total}）` : ''}</h2><div class="records-heading-actions">{#if view.manage}<button type="button" class="button-secondary import-toggle" aria-expanded={importOpen} aria-controls="import-region" onclick={() => { importOpen = !importOpen; }}>导入轨迹<svg class="import-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg></button><button class="button-secondary" aria-pressed={editMode} disabled={controlsBusy || loading || !records?.items.length} onclick={toggleEditMode}>{editMode ? '完成' : '编辑'}</button>{/if}</div></div>
+  {#if view.manage}<div id="import-region" class="import-fold" class:open={importOpen} inert={!importOpen}><div class="import-fold-inner">
 <section class="import-card" aria-labelledby="import-title">
   <div class="import-head"><h2 id="import-title">导入 GPX / TCX</h2><span id="gpx-help" class="import-note">导入后记录与完整轨迹公开展示，私人备注和源文件不公开</span></div>
   <form method="POST" enctype="multipart/form-data" onsubmit={submit} aria-busy={busy}>
@@ -243,21 +286,25 @@
   {#if warnings.length}<div class="import-warnings"><p class="font-medium">导入完成，部分数据需要留意</p><ul class="mt-2 list-inside list-disc text-sm">{#each warnings as warning}<li>{warningLabel(warning)}</li>{/each}</ul></div>{/if}
 </section>
 <MifitnessImport disabled={busy || managing} onbusy={value => { mifitnessBusy = value; }} onimported={() => { window.dispatchEvent(new CustomEvent('runnote-activities-changed')); void load(); }} onauthrequired={cause => fail(cause)} />
-{/if}
-<section class="mt-8" aria-labelledby="records-title">
-  <div class="flex flex-wrap items-baseline justify-between gap-3"><h2 bind:this={recordsHeading} tabindex="-1" id="records-title" class="text-xl font-semibold">我的活动{records ? `（${records.total}）` : ''}</h2><div class="records-heading-actions"><p class="text-sm text-muted-foreground">距离 · 用时 · 配速</p>{#if view.manage}<button class="button-secondary" aria-pressed={editMode} disabled={controlsBusy || loading || !records?.items.length} onclick={toggleEditMode}>{editMode ? '完成' : '编辑'}</button>{/if}</div></div>
+</div></div>{/if}
   {#if loading}<div class="mt-4"><PageSkeleton title="正在读取活动…" /></div>
   {:else if records}
     <div class="content-reveal">
     {#if !records.items.length}<div class="mt-4"><FeedbackState kind="empty" title="暂无跑步记录。"><p>{view.manage ? '选择上方文件并导入，开始积累跑步记录。' : '这里将展示站主的运动记录。'}</p></FeedbackState></div>
     {:else}
-      {#if editMode}<div class="selection-toolbar" aria-label="批量管理记录">
-        <label><input type="checkbox" aria-label="全选本页" checked={allSelected} indeterminate={selected.length > 0 && !allSelected} disabled={controlsBusy} onchange={event => selected = event.currentTarget.checked ? records!.items.map(item => item.id) : []} />全选本页</label>
-        <span class="selected-count" aria-live="polite">已选 {selected.length} 条</span>
-        <button class="button-secondary" disabled={!selected.length || controlsBusy} onclick={() => selected = []}>清除选择</button>
-        <button class="delete-button" disabled={!selected.length || controlsBusy} onclick={() => confirmDelete(selected)}>删除所选</button>
-      </div>{/if}
-      <ul class="activity-list stagger">{#each records.items as activity (activity.id)}<li class="min-w-0"><ActivityCard {activity} selectable={editMode} selected={selected.includes(activity.id)} disabled={controlsBusy} onselect={checked => select(activity.id, checked)} onedit={editMode ? () => void edit(activity) : undefined} ondelete={editMode ? () => confirmDelete([activity.id]) : undefined} /></li>{/each}</ul>
+      <div class="records-layout" class:two-pane={wide && currentActivity}>
+        <div class="records-list" role="presentation" onkeydown={moveCurrent}>
+          {#if editMode}<div class="selection-toolbar" aria-label="批量管理记录">
+            <label><input type="checkbox" aria-label="全选本页" checked={allSelected} indeterminate={selected.length > 0 && !allSelected} disabled={controlsBusy} onchange={event => selected = event.currentTarget.checked ? records!.items.map(item => item.id) : []} />全选本页</label>
+            <span class="selected-count" aria-live="polite">已选 {selected.length} 条</span>
+            <button class="button-secondary" disabled={!selected.length || controlsBusy} onclick={() => selected = []}>清除选择</button>
+            <button class="delete-button" disabled={!selected.length || controlsBusy} onclick={() => confirmDelete(selected)}>删除所选</button>
+          </div>{/if}
+          <ActivityTimeline items={records.items} offset={records.offset} total={records.total} {editMode} selectedIds={selected} disabled={controlsBusy} currentId={wide ? currentId : null}
+            onselect={select} onedit={activity => void edit(activity)} ondelete={activity => confirmDelete([activity.id])} onopen={openRecord} />
+        </div>
+        {#if wide && currentActivity}<aside class="records-preview" aria-label="记录预览"><ActivityPreview activity={currentActivity} manage={view.manage} busy={controlsBusy} onedit={() => void edit(currentActivity!)} ondelete={() => confirmDelete([currentActivity!.id])} /></aside>{/if}
+      </div>
     {/if}
     {#if records.total > 0}<div class="pagination"><button disabled={records.offset === 0 || controlsBusy} onclick={() => { void load(Math.max(0, records!.offset - 20)); }} class="rounded border border-border px-3 py-2 disabled:opacity-40">上一页</button><span class="text-sm text-muted-foreground">第 {Math.floor(records.offset / 20) + 1} 页 / {Math.ceil(records.total / 20)} 页</span><button disabled={records.offset + records.items.length >= records.total || controlsBusy} onclick={() => { void load(records!.offset + 20); }} class="rounded border border-border px-3 py-2 disabled:opacity-40">下一页</button></div>{/if}
     </div>
@@ -299,7 +346,19 @@
   .import-options { margin-top: var(--space-3); }
   summary { width: fit-content; color: var(--primary); font-size: var(--text-small); font-weight: var(--weight-semibold); cursor: pointer; }
   .import-warnings { margin-top: var(--space-4); padding: var(--space-4); background: var(--warning-soft); color: var(--warning); border: 1px solid var(--warning-border); border-radius: var(--radius-control); }
-  .activity-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); margin-top: var(--space-4); }
+  .import-toggle { gap: var(--space-2); }
+  .import-chevron { flex: none; transition: transform 320ms var(--ease-out, cubic-bezier(.2,.8,.2,1)); }
+  .import-toggle[aria-expanded="true"] .import-chevron { transform: rotate(180deg); }
+  /* The import area opens and closes by height: the grid row goes 0fr <-> 1fr, so the list below slides with it. Closed it is also invisible and inert, so nothing in it can be focused. */
+  .import-fold { display: grid; grid-template-rows: 0fr; visibility: hidden; opacity: 0; transition: grid-template-rows 420ms cubic-bezier(.4, 0, .2, 1), opacity 260ms ease-in, visibility 0s linear 420ms; }
+  .import-fold.open { grid-template-rows: 1fr; visibility: visible; opacity: 1; transition: grid-template-rows 420ms cubic-bezier(.2, .8, .2, 1), opacity 320ms ease-out 60ms, visibility 0s; }
+  .import-fold-inner { min-height: 0; overflow: hidden; margin: -.25rem; padding: .25rem; }
+  @media (prefers-reduced-motion: reduce) { .import-fold, .import-fold.open, .import-chevron { transition: none; } }
+  .records-layout { margin-top: var(--space-4); min-width: 0; }
+  .records-layout.two-pane { display: grid; grid-template-columns: minmax(0, 26rem) minmax(0, 1fr); align-items: start; gap: var(--space-6); }
+  .records-list { min-width: 0; }
+  .two-pane .records-list { padding-top: calc(var(--space-4) + 1px); }
+  .records-preview { position: sticky; top: calc(var(--top-navigation-offset) + var(--top-navigation-height) + var(--space-4)); min-width: 0; }
   .pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-3); margin-top: var(--space-6); }
-  @media (max-width: 639px) { .import-card { padding: var(--space-3) var(--space-4); } .upload-primary, .activity-list { grid-template-columns: 1fr; } .upload-primary button { width: 100%; } }
+  @media (max-width: 639px) { .import-card { padding: var(--space-3) var(--space-4); } .upload-primary { grid-template-columns: 1fr; } .upload-primary button { width: 100%; } }
 </style>

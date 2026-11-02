@@ -13,7 +13,7 @@ test('activity cards show private labels and only the highest real-distance achi
   const card = page.locator('.activity-card').filter({ has: page.getByRole('heading', { name: sampleActivity.title, exact: true }) });
   await expect(card.getByRole('img', { name: `${sampleActivity.title}的路线轮廓` })).toBeVisible();
   const link = card.getByRole('link');
-  await expect(link).toContainText('公开展示'); await expect(link).toContainText('配速');
+  await expect(link).toContainText('配速'); await expect(link).not.toContainText('公开展示');
   for (const label of ['轻松跑', '#河畔', '#清晨', '5 km 达成']) await expect(link.getByText(label, { exact: true })).toBeVisible();
   await expect(card.getByText('10 km 达成', { exact: true })).toHaveCount(0);
   const short = page.locator('.activity-card').filter({ has: page.getByRole('heading', { name: '尚未达成', exact: true }) });
@@ -25,7 +25,7 @@ test('activity cards show private labels and only the highest real-distance achi
   const preview = await card.locator('.route-thumbnail').boundingBox();
   expect(preview!.width).toBeLessThanOrEqual(112);
   expect(preview!.height).toBeLessThanOrEqual(84);
-  expect((await card.boundingBox())!.height).toBeLessThanOrEqual(300);
+  expect((await card.boundingBox())!.height, 'a compact row, not a tall card').toBeLessThanOrEqual(130);
   await expect(card.getByRole('checkbox')).toHaveCount(0);
   await page.getByRole('button', { name: '编辑', exact: true }).click();
   await expect(card.getByRole('checkbox', { name: `选择 ${sampleActivity.title}`, exact: true })).toBeVisible();

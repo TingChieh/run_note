@@ -3,75 +3,62 @@
   const view = useViewContext();
   const fetch = view.fetch;
 
-  import MetricSummary from './MetricSummary.svelte';
   import RouteThumbnail from './RouteThumbnail.svelte';
   import { activityAchievement } from '#lib/api/activity-labels.ts';
-  import { formatDate, formatDistance, formatDuration, activityDuration, formatPace, qualityLabel, type Activity } from '#lib/api/activities.ts';
-  let { activity, selectable = false, selected = false, disabled = false, onselect, onedit, ondelete }: {
-    activity: Activity; selectable?: boolean; selected?: boolean; disabled?: boolean;
-    onselect?: (selected: boolean) => void; onedit?: () => void; ondelete?: () => void;
+  import { formatDistance, formatDuration, activityDuration, formatPace, qualityLabel, type Activity } from '#lib/api/activities.ts';
+  let { activity, selectable = false, selected = false, disabled = false, current = false, onselect, onedit, ondelete, onopen }: {
+    activity: Activity; selectable?: boolean; selected?: boolean; disabled?: boolean; current?: boolean;
+    onselect?: (selected: boolean) => void; onedit?: () => void; ondelete?: () => void; onopen?: (event: MouseEvent) => void;
   } = $props();
   const achievement = $derived(activityAchievement(activity.distance_m));
+  const incomplete = $derived(activity.temporal_quality !== 'complete');
 </script>
-<article class="activity-card" class:selected>
-  {#if selectable || onedit || ondelete}
-    <div class="card-controls">
-      {#if selectable}
-        <label class="card-selection"><input type="checkbox" aria-label={`选择 ${activity.title}`} checked={selected} {disabled} onchange={event => onselect?.(event.currentTarget.checked)} /><span>选择</span></label>
-      {/if}
-      {#if onedit || ondelete}<div class="card-actions">
-        {#if onedit}<button type="button" {disabled} onclick={onedit} aria-label={`编辑 ${activity.title}`}>编辑</button>{/if}
-        {#if ondelete}<button type="button" {disabled} onclick={ondelete} aria-label={`删除 ${activity.title}`}>删除</button>{/if}
-      </div>{/if}
-    </div>
-  {/if}
-  <a href={view.href(`/activities/${activity.id}`)} class="card-link">
-  <div class="record-heading">
-    <div class="record-identity">
-      <div class="record-meta"><time datetime={activity.activity_date}>{formatDate(activity.activity_date)}</time><span class="visibility">公开展示</span></div>
-      <h3>{activity.title || '未命名活动'}</h3>
-      {#if activity.category || activity.tags?.length || achievement}
-        <div class="record-labels">
-          {#if activity.category}<span class="record-chip category">{activity.category}</span>{/if}
-          {#each activity.tags ?? [] as tag}<span class="record-chip">#{tag}</span>{/each}
-          {#if achievement}<span class="record-chip achievement">{achievement}</span>{/if}
-        </div>
-      {/if}
-    </div>
+<article class="activity-card" class:selected class:current>
+  {#if selectable}<label class="card-selection"><input type="checkbox" aria-label={`选择 ${activity.title}`} checked={selected} {disabled} onchange={event => onselect?.(event.currentTarget.checked)} /></label>{/if}
+  <a href={view.href(`/activities/${activity.id}`)} class="card-link" data-activity-id={activity.id} aria-current={current ? 'true' : undefined} onclick={onopen}>
     <RouteThumbnail {activity} compact />
-  </div>
-  <MetricSummary compact items={[{ label: '距离', value: formatDistance(activity.distance_m) }, { label: '用时', value: formatDuration(activityDuration(activity)) }, { label: '配速', value: formatPace(activity.avg_pace_seconds_per_km) }]} />
-  <div class="record-footer"><span>{qualityLabel(activity.temporal_quality)}</span><span class="record-entry">查看活动 <span aria-hidden="true">→</span></span></div>
+    <div class="card-main">
+      <h3>{activity.title || '未命名活动'}</h3>
+      {#if achievement || activity.category || activity.tags?.length || incomplete}
+        <p class="card-labels">
+          {#if achievement}<span class="chip achievement">{achievement}</span>{/if}
+          {#if activity.category}<span class="chip category">{activity.category}</span>{/if}
+          {#each activity.tags ?? [] as tag}<span class="chip">#{tag}</span>{/each}
+          {#if incomplete}<span class="chip warn">{qualityLabel(activity.temporal_quality)}</span>{/if}
+        </p>
+      {/if}
+      <p class="card-figures"><span class="sr-only">距离 </span><b>{formatDistance(activity.distance_m)}</b><span class="sr-only"> 用时 </span><span>{formatDuration(activityDuration(activity))}</span><span class="sr-only"> 配速 </span><span>{formatPace(activity.avg_pace_seconds_per_km)}</span></p>
+    </div>
   </a>
+  {#if onedit || ondelete}<div class="card-actions">
+    {#if onedit}<button type="button" {disabled} onclick={onedit} aria-label={`编辑 ${activity.title}`}>编辑</button>{/if}
+    {#if ondelete}<button type="button" {disabled} onclick={ondelete} aria-label={`删除 ${activity.title}`}>删除</button>{/if}
+  </div>{/if}
 </article>
 <style>
-  .activity-card { min-width: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); color: var(--foreground); }
-  .activity-card { transition: border-color var(--transition-control), box-shadow var(--motion-hover), transform var(--motion-hover); }
-  @media (hover: hover) { .activity-card:hover { border-color: var(--primary); box-shadow: var(--shadow-popover); } }
-  @media (hover: hover) and (pointer: fine) { .activity-card:hover { transform: translateY(-2px); } }
-  @media (prefers-reduced-motion: reduce) { .activity-card:hover { transform: none; } }
-  .activity-card.selected { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
-  .card-link { display: block; min-width: 0; padding: var(--space-6); color: inherit; }
-  .card-link:focus-visible { outline-offset: -3px; }
-  .card-controls { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--border); }
-  .card-selection { display: inline-flex; align-items: center; gap: .5rem; min-height: 2.75rem; color: var(--muted-foreground); font-size: var(--text-small); cursor: pointer; }
+  .activity-card { display: flex; align-items: center; gap: var(--space-2); min-width: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); color: var(--foreground); padding-right: var(--space-2); transition: border-color var(--transition-control), box-shadow var(--motion-hover), background-color var(--transition-control); }
+  @media (hover: hover) { .activity-card:hover { border-color: var(--primary); } }
+  .activity-card.selected, .activity-card.current { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+  .activity-card.current { background: color-mix(in srgb, var(--primary) 7%, var(--surface)); }
+  .card-selection { display: grid; place-items: center; flex: none; min-width: 2.75rem; min-height: 2.75rem; padding-left: var(--space-1); cursor: pointer; }
   .card-selection input { width: 1.125rem; height: 1.125rem; accent-color: var(--primary); }
-  .card-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-left: auto; }
-  .card-actions button { min-height: 2.75rem; padding: .5rem .75rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--surface); color: var(--foreground); font-size: var(--text-small); }
+  .card-link { display: flex; align-items: center; gap: var(--space-3); flex: 1; min-width: 0; padding: var(--space-3) var(--space-3); color: inherit; }
+  .card-link:focus-visible { outline-offset: -3px; }
+  .card-link :global(.route-thumbnail) { flex: none; width: 3.5rem; height: 2.75rem; aspect-ratio: auto; }
+  /* The thumbnail is too small for its "no route" caption: keep it for screen readers only. */
+  .card-link :global(.thumbnail-empty p) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .card-main { min-width: 0; flex: 1; }
+  h3 { font-size: var(--text-body); font-weight: var(--weight-semibold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-labels { display: flex; flex-wrap: wrap; gap: .25rem .375rem; margin-top: .25rem; }
+  .chip { max-width: 100%; padding: .0625rem .5rem; border-radius: .4rem; background: var(--muted); color: var(--muted-foreground); font-size: var(--text-caption); overflow-wrap: anywhere; }
+  .chip.achievement, .chip.category { color: var(--primary); background: var(--route-thumbnail); }
+  .chip.achievement { font-weight: var(--weight-bold); }
+  .chip.warn { color: var(--warning); background: var(--warning-soft); }
+  .card-figures { display: flex; align-items: baseline; flex-wrap: wrap; gap: .125rem var(--space-3); margin-top: .25rem; color: var(--muted-foreground); font-size: var(--text-small); font-variant-numeric: tabular-nums; }
+  .card-figures b { color: var(--foreground); font-size: var(--text-body); font-weight: var(--weight-bold); }
+  .card-actions { display: flex; flex-wrap: wrap; gap: .375rem; flex: none; }
+  .card-actions button { min-height: 2.75rem; padding: .375rem .75rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--surface); color: var(--foreground); font-size: var(--text-small); }
   @media (hover: hover) { .card-actions button:hover:enabled { border-color: var(--primary); color: var(--primary); } }
   .card-actions button:disabled { opacity: .5; cursor: not-allowed; }
-  .record-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); }
-  .record-heading :global(.route-thumbnail) { flex-shrink: 0; }
-  .record-identity { min-width: 0; flex: 1; }
-  .record-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
-  time { color: var(--muted-foreground); font-size: var(--text-small); font-variant-numeric: tabular-nums; }
-  h3 { margin-top: .375rem; font-size: var(--text-card); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
-  .visibility { flex-shrink: 0; padding: .125rem .5rem; border-radius: .375rem; background: var(--muted); color: var(--muted-foreground); font-size: var(--text-caption); }
-  .record-labels { display: flex; flex-wrap: wrap; gap: .375rem; margin-top: .625rem; }
-  .record-chip { max-width: 100%; padding: .25rem .5rem; border-radius: .5rem; background: var(--muted); color: var(--muted-foreground); font-size: var(--text-caption); overflow-wrap: anywhere; }
-  .category, .achievement { color: var(--primary); background: var(--route-thumbnail); }
-  .achievement { font-weight: var(--weight-bold); }
-  .record-footer { display: flex; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--border); color: var(--muted-foreground); font-size: var(--text-caption); }
-  .record-entry { color: var(--primary); font-weight: var(--weight-semibold); flex-shrink: 0; }
-  @media (max-width: 639px) { .card-link { padding: var(--space-4); } }
+  @media (max-width: 639px) { .card-link { gap: var(--space-2); padding: var(--space-2) var(--space-2); } .card-link :global(.route-thumbnail) { width: 3.25rem; height: 2.5rem; } }
 </style>

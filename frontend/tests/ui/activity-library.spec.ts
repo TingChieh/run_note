@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { installActivities, loginRunner, sampleActivity } from '../fixtures/activities';
+import { installActivities, loginRunner, sampleActivity, openImport } from '../fixtures/activities';
 
 test('list quickly edits private name/category/tags with draft retry and keeps import draft', async ({ page }) => {
   const state = await installActivities(page);
@@ -8,7 +8,7 @@ test('list quickly edits private name/category/tags with draft retry and keeps i
     if (route.request().method() === 'PATCH' && failures-- > 0) return route.fulfill({ status: 503, json: { error: { message: '保存暂时失败，请重试' } } });
     return route.fallback();
   });
-  await loginRunner(page); await page.goto('/activities');
+  await loginRunner(page); await page.goto('/activities'); await openImport(page);
   await page.getByRole('button', { name: '编辑', exact: true }).click();
   await page.getByText('补充导入信息', { exact: true }).click();
   await page.getByLabel('标题（可选）', { exact: true }).fill('保留的导入草稿');
@@ -46,7 +46,7 @@ test('batch delete confirms count, cancels, preserves selection on failure and r
     if (calls === 1) return route.fulfill({ status: 503, json: { error: { message: '删除暂时失败，请重试' } } });
     await held; return route.fallback();
   });
-  await loginRunner(page); await page.goto('/activities');
+  await loginRunner(page); await page.goto('/activities'); await openImport(page);
   await page.getByRole('button', { name: '编辑', exact: true }).click();
   await page.getByRole('checkbox', { name: '全选本页', exact: true }).check();
   await expect(page.getByText('已选 2 条', { exact: true })).toBeVisible();
@@ -70,7 +70,7 @@ test('batch delete confirms count, cancels, preserves selection on failure and r
 test('selection is page scoped and deletion clamps the final page without replaying after list failure', async ({ page }) => {
   const state = await installActivities(page);
   state.records = Array.from({ length: 21 }, (_, i) => ({ ...sampleActivity, id: `${String(i).padStart(8, '0')}-1111-4111-8111-111111111111`, title: `跑步 ${i + 1}` }));
-  await loginRunner(page); await page.goto('/activities');
+  await loginRunner(page); await page.goto('/activities'); await openImport(page);
   await page.getByRole('button', { name: '编辑', exact: true }).click();
   await page.getByRole('checkbox', { name: '选择 跑步 1', exact: true }).check();
   await page.getByRole('button', { name: '下一页', exact: true }).click();
@@ -87,7 +87,7 @@ test('selection is page scoped and deletion clamps the final page without replay
 
 test('mobile quick editor fits and validates metadata before saving', async ({ page }) => {
   const state = await installActivities(page);
-  await loginRunner(page); await page.goto('/activities');
+  await loginRunner(page); await page.goto('/activities'); await openImport(page);
   await page.getByRole('button', { name: '编辑', exact: true }).click();
   await page.getByRole('button', { name: `编辑 ${sampleActivity.title}`, exact: true }).click();
   const dialog = page.getByRole('dialog');
@@ -110,7 +110,7 @@ test('mobile quick editor fits and validates metadata before saving', async ({ p
 test('editing only a title preserves existing tags containing punctuation', async ({ page }) => {
   const state = await installActivities(page);
   state.records[0].tags = ['比赛、训练', 'park,track'];
-  await loginRunner(page); await page.goto('/activities');
+  await loginRunner(page); await page.goto('/activities'); await openImport(page);
   await page.getByRole('button', { name: '编辑', exact: true }).click();
   await page.getByRole('button', { name: `编辑 ${sampleActivity.title}`, exact: true }).click();
   await page.getByRole('dialog').getByLabel('标题', { exact: true }).fill('只改名称');
@@ -122,7 +122,7 @@ test('editing only a title preserves existing tags containing punctuation', asyn
 
 test('selection and record controls appear only in edit mode; finishing clears selection', async ({ page }) => {
   const state = await installActivities(page);
-  await loginRunner(page); await page.goto('/activities');
+  await loginRunner(page); await page.goto('/activities'); await openImport(page);
   await expect(page.getByRole('heading', { name: sampleActivity.title, exact: true })).toBeVisible();
   await expect(page.locator('.activity-card input, .activity-card button')).toHaveCount(0);
   await expect(page.getByRole('checkbox', { name: '全选本页', exact: true })).toHaveCount(0);

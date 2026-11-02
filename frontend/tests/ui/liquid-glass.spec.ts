@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test';
-import { installActivities, loginRunner, sampleActivity } from '../fixtures/activities';
+import { installActivities, loginRunner, sampleActivity, openImport } from '../fixtures/activities';
 import { openGoalPanel } from '../fixtures/top-navigation';
 import { DEFAULT_GLASS_SETTINGS } from '../../src/lib/styles/liquid-glass-settings.ts';
 
 test('file format select ignores empty space to the right of its label', async ({ page }) => {
-  await installActivities(page); await loginRunner(page); await page.goto('/activities');
+  await installActivities(page); await loginRunner(page); await page.goto('/activities'); await openImport(page);
   const select = page.getByLabel('文件格式', { exact: true });
   await expect(select).toHaveClass(/rn-liquid-select/);
   for (const width of [1440, 390, 320]) {
@@ -24,7 +24,7 @@ test('file format select ignores empty space to the right of its label', async (
 });
 
 test('selected menu capsule stays translucent and follows the glass transparency setting', async ({ page }) => {
-  await installActivities(page); await loginRunner(page); await page.goto('/activities');
+  await installActivities(page); await loginRunner(page); await page.goto('/activities'); await openImport(page);
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
     await expect(page.getByLabel('文件格式', {exact:true})).toHaveClass(/rn-liquid-select/);
@@ -57,7 +57,7 @@ test('selected menu capsule stays translucent and follows the glass transparency
 });
 
 test('themed arrow buttons toggle the native select and animate with its expanded state', async ({ page }) => {
-  await installActivities(page); await loginRunner(page); await page.goto('/activities');
+  await installActivities(page); await loginRunner(page); await page.goto('/activities'); await openImport(page);
   const select = page.getByLabel('文件格式', { exact: true });
   await expect(select).toHaveClass(/rn-liquid-select/);
   const toggle = select.locator('..').locator('.rn-select-toggle');
@@ -240,7 +240,7 @@ test('liquid select preserves native values, keyboard selection and Escape focus
   await expect(select).toBeHidden();
   // The narrow-viewport placement of a liquid select menu is checked on a select that stays
   // visible on phones: the import format select on the activities page.
-  await installActivities(page); await page.goto('/activities');
+  await installActivities(page); await page.goto('/activities'); await openImport(page);
   const format = page.getByLabel('文件格式', { exact: true });
   await expect(format).toHaveClass(/rn-liquid-select/);
   await format.click({ position: { x: 12, y: 20 } });

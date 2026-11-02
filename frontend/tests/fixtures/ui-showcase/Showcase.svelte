@@ -44,7 +44,7 @@
   <main id="showcase-main" class="page-content showcase" aria-label="组件展示">
     <div class="showcase-top"><p>RunNote · Design System</p><ThemeToggle /></div>
     <div data-testid="visual-reference" class="reference">
-      <PageHeader title="RunNote 组件展示" description="延续绿色运动导航、黄色页头与圆角表面。这里使用合成数据，展示公共组件及原生控件的现有组合。">
+      <PageHeader title="RunNote 组件展示" description="延续顶部玻璃导航、浅色奶油页头（深色为中性）与圆角表面。这里使用合成数据，展示公共组件及原生控件的现有组合。">
         {#snippet actions()}<a href="#controls" class="button-secondary">查看控件</a>{/snippet}
       </PageHeader>
       <MetricSummary items={metrics} />

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { installActivities, loginRunner, sampleActivity } from '../fixtures/activities';
+import { installActivities, loginRunner, sampleActivity, openImport } from '../fixtures/activities';
 import { openGoalPanel } from '../fixtures/top-navigation';
 import { DEFAULT_GLASS_SETTINGS } from '../../src/lib/styles/liquid-glass-settings.ts';
 
@@ -103,7 +103,7 @@ test('an open dialog keeps the page from scrolling underneath', async ({ page, i
     await expect(page.locator('html')).not.toHaveClass(/rn-dialog-lock/);
     return;
   }
-  await page.goto('/activities');
+  await page.goto('/activities'); await openImport(page);
   await expect(page.getByRole('button', { name: '编辑', exact: true })).toBeEnabled();
   await page.evaluate(() => { document.body.style.minHeight = '300vh'; window.scrollTo(0, 420); });
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(200);
@@ -125,7 +125,7 @@ test('a height-only resize keeps the menu and a width change closes it', async (
   test.skip(isMobile, 'phones keep the platform select');
   await installActivities(page);
   await loginRunner(page);
-  await page.goto('/activities');
+  await page.goto('/activities'); await openImport(page);
   const format = page.getByLabel('文件格式', { exact: true });
   await expect(format).toHaveClass(/rn-liquid-select/);
   await format.click({ position: { x: 12, y: 20 } });
@@ -149,7 +149,7 @@ test('coarse pointers do not stack a custom menu on the native select', async ({
   test.skip(!isMobile, 'desktop keeps the custom menu');
   await installActivities(page);
   await loginRunner(page);
-  await page.goto('/activities');
+  await page.goto('/activities'); await openImport(page);
   const format = page.getByLabel('文件格式', { exact: true });
   await expect(format).toBeVisible();
   await expect(format).not.toHaveClass(/rn-liquid-select/);
@@ -234,12 +234,12 @@ test('a browser without showPopover keeps the native select', async ({ page }) =
   });
   await installActivities(page);
   await loginRunner(page);
-  await page.goto('/activities');
+  await page.goto('/activities'); await openImport(page);
   const format = page.getByLabel('文件格式', { exact: true });
   await expect(format).toBeVisible();
   await expect(format).not.toHaveClass(/rn-liquid-select/);
-  // The select menu, not the goal and account popovers of the top bar (those are anchored panels).
-  await expect(page.locator('.rn-glass-menu:not(.anchored-panel)')).toHaveCount(0);
+  // The select menu, not the goal and account popovers of the top bar (anchored panels) nor the basemap picker of the preview map.
+  await expect(page.locator('.rn-glass-menu:not(.anchored-panel):not(.basemap-options)')).toHaveCount(0);
 });
 
 // WebKit cannot refract. A near-opaque static rim there let the content under the floating top bar ghost through unblurred ("two stacked cards"),

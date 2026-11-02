@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { installActivities, loginRunner, sampleActivity, incompleteActivity } from '../fixtures/activities';
+import { installActivities, loginRunner, sampleActivity, incompleteActivity, openImport } from '../fixtures/activities';
 import { openGoalPanel } from '../fixtures/top-navigation';
 const file = { name: 'morning.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from('<gpx version="1.1" creator="synthetic"></gpx>') };
 async function noOverflow(page: Page) { await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); }
@@ -9,10 +9,10 @@ async function capture(page: Page, path: string) {
 }
 
 test('scan-friendly records expose pace and visibility, with compact optional upload fields', async ({ page }) => {
-  await installActivities(page); await loginRunner(page); await page.goto('/activities');
+  await installActivities(page); await loginRunner(page); await page.goto('/activities'); await openImport(page);
   await expect(page.getByRole('heading', { name: '河畔晨跑' })).toBeVisible();
   const record = page.getByRole('link').filter({ has: page.getByRole('heading', { name: '河畔晨跑' }) });
-  await expect(record).toContainText('配速'); await expect(record).toContainText('公开展示');
+  await expect(record).toContainText('配速'); await expect(record).not.toContainText('公开展示');
   await expect(page.getByLabel('标题（可选）')).toBeHidden();
   const options = page.getByText('补充导入信息', { exact: true }); await options.focus(); await page.keyboard.press('Enter');
   await expect(page.getByLabel('标题（可选）')).toBeVisible();
@@ -23,7 +23,7 @@ test('scan-friendly records expose pace and visibility, with compact optional up
   await capture(page, 'test-results/activities-mobile-list.png');
 });
 test('upload preserves optional payload and file on failure; retry, busy, success and warnings work', async ({ page }) => {
-  const state = await installActivities(page); await loginRunner(page); await page.goto('/activities');
+  const state = await installActivities(page); await loginRunner(page); await page.goto('/activities'); await openImport(page);
   await page.getByText('补充导入信息', { exact: true }).click();
   await page.getByLabel('标题（可选）').fill('晨跑输入'); await page.getByLabel('时区（可选）', {exact:true}).fill('Asia/Shanghai'); await page.getByLabel('补录日期（可选）').fill('2026-10-12');
   await page.locator('input[type=file][name=file]').setInputFiles(file); state.uploadMode = 'error';
@@ -42,7 +42,7 @@ test('upload preserves optional payload and file on failure; retry, busy, succes
   await expect(page.getByRole('heading', { name: '新导入的跑步', level: 1 })).toBeVisible();
 });
 test('duplicate entry and local file limit preserve upload behavior', async ({ page }) => {
-  const state = await installActivities(page); await loginRunner(page); await page.goto('/activities');
+  const state = await installActivities(page); await loginRunner(page); await page.goto('/activities'); await openImport(page);
   await page.locator('input[type=file][name=file]').setInputFiles({ ...file, buffer: Buffer.alloc(10 * 1024 * 1024 + 1) });
   await page.getByRole('button', { name: '导入 GPX', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('不能超过 10 MiB'); expect(state.uploadCount).toBe(0);
@@ -52,7 +52,7 @@ test('duplicate entry and local file limit preserve upload behavior', async ({ p
   await expect(page.getByRole('link', { name: '查看已有活动' })).toHaveAttribute('href', `/activities/${sampleActivity.id}`);
 });
 test('list error retry, empty guidance and pagination remain usable', async ({ page }) => {
-  const state = await installActivities(page); state.listFailures = 1; await loginRunner(page); await page.goto('/activities');
+  const state = await installActivities(page); state.listFailures = 1; await loginRunner(page); await page.goto('/activities'); await openImport(page);
   await expect(page.getByRole('alert')).toContainText('暂时无法读取');
   await page.getByRole('button', { name: '重新读取活动' }).click(); await expect(page.getByRole('heading', { name: '河畔晨跑' })).toBeVisible();
   state.records = Array.from({ length: 22 }, (_, i) => ({ ...incompleteActivity, id: `${String(i).padStart(8,'0')}-1111-4111-8111-111111111111`, title: `第 ${i + 1} 条跑步` }));
@@ -90,7 +90,7 @@ test('detail retry and sharing operations preserve existing API payloads and pri
 });
 
 test('successful import followed by list outage reports separate outcomes and retries only the list', async ({ page }) => {
-  const state = await installActivities(page); await loginRunner(page); await page.goto('/activities');
+  const state = await installActivities(page); await loginRunner(page); await page.goto('/activities'); await openImport(page);
   await expect(page.getByRole('heading', { name: '河畔晨跑' })).toBeVisible();
   state.listFailures = 1; await page.locator('input[type=file][name=file]').setInputFiles(file);
   await page.getByRole('button', { name: '导入 GPX', exact: true }).click();
@@ -131,7 +131,7 @@ test('expired activity response redirects without retaining private content', as
 });
 
 test('file picker focus and successful session checks preserve selected GPX and upload form', async ({ page }) => {
-  const state = await installActivities(page); await loginRunner(page); await page.goto('/activities');
+  const state = await installActivities(page); await loginRunner(page); await page.goto('/activities'); await openImport(page);
   await expect(page.getByRole('heading',{name:'河畔晨跑'})).toBeVisible();
   await page.getByText('补充导入信息',{exact:true}).click();
   await page.getByLabel('标题（可选）').fill('保留选中文件');
@@ -166,6 +166,7 @@ test('successful imports update the persistent sidebar distance while keeping a 
   await page.getByRole('navigation').getByRole('link', { name: '跑步记录', exact: true }).click();
   await expect(page.getByRole('heading', { name: '跑步记录', exact: true })).toBeVisible();
   expect(summaryReads).toBe(1);
+  await openImport(page);
   await page.locator('input[type=file][name=file]').setInputFiles(file);
   await page.getByRole('button', { name: '导入 GPX', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: '导入成功。' })).toBeVisible();
@@ -175,6 +176,8 @@ test('successful imports update the persistent sidebar distance while keeping a 
   expect(summaryReads).toBe(2);
 });
 
+// On a wide screen the list keeps the chosen record in the address (?id=).
+const listUrl = /\/activities(\?id=[0-9a-f-]+)?$/;
 for (const source of ['list', 'wall'] as const) {
   for (const reload of [false, true]) {
     test(`detail back returns to ${source} on the same page${reload ? ' after reload' : ''}`, async ({page}, testInfo) => {
@@ -189,6 +192,8 @@ for (const source of ['list', 'wall'] as const) {
       const title = source === 'wall' ? '返回测试 25' : '返回测试 21';
       const cardLevel = source === 'wall' ? 2 : 3;
       await page.getByRole('link').filter({has:page.getByRole('heading',{name:title,exact:true})}).click();
+      // On a wide screen the card only selects the record; the preview's link opens its page.
+      if(source === 'list' && !reload)await page.getByRole('link',{name:'查看完整详情 →'}).click();
       await expect(page.getByRole('heading',{name:title,level:1})).toBeVisible();
       if(reload){await page.reload();await expect(page.getByRole('heading',{name:title,level:1})).toBeVisible();}
       const back = page.getByRole('button',{name:'返回',exact:true});
@@ -197,7 +202,7 @@ for (const source of ['list', 'wall'] as const) {
       if(source === 'wall' && !reload)await page.screenshot({path:testInfo.outputPath('detail-back-desktop.png')});
       if(source === 'wall' && reload)await page.screenshot({path:testInfo.outputPath('detail-back-mobile.png')});
       await back.focus();await page.keyboard.press('Enter');
-      await expect(page).toHaveURL(sourcePath);
+      await expect(page).toHaveURL(source === 'list' ? listUrl : sourcePath);
       await expect(page.getByRole('heading',{name:title,level:cardLevel})).toBeVisible();
       if(source === 'list')await expect(page.locator('.pagination')).toContainText('第 2 页');
       else await expect(page.locator('.wall-pagination')).toContainText('第 2 / 3 页');
@@ -205,7 +210,7 @@ for (const source of ['list', 'wall'] as const) {
       await page.goForward();
       await expect(page.getByRole('heading',{name:title,level:1})).toBeVisible();
       await page.getByRole('button',{name:'返回',exact:true}).click();
-      await expect(page).toHaveURL(sourcePath);
+      await expect(page).toHaveURL(source === 'list' ? listUrl : sourcePath);
       await expect(page.getByRole('heading',{name:title,level:cardLevel})).toBeVisible();
     });
   }
@@ -216,6 +221,200 @@ test('direct detail entry falls back to records without trusting a return URL', 
   await page.goto(`/activities/${incompleteActivity.id}?returnTo=https://example.com`);
   await expect(page.getByRole('heading',{name:incompleteActivity.title,level:1})).toBeVisible();
   await page.getByRole('button',{name:'返回',exact:true}).click();
-  await expect(page).toHaveURL('/activities');
+  await expect(page).toHaveURL(listUrl);
   await expect(page.getByRole('heading',{name:'跑步记录',level:1})).toBeVisible();
+});
+
+test.describe('list and wall are two views of the running records', () => {
+  test.beforeEach(async ({ page }) => { await installActivities(page); await loginRunner(page); });
+  test('the main navigation has one entry, current on both views; no wall link of its own', async ({ page }) => {
+    await page.goto('/activities'); await openImport(page);
+    const nav = page.getByRole('navigation', { name: '主要导航' });
+    await expect(nav.getByRole('link', { name: '足迹墙' })).toHaveCount(0);
+    await expect(nav.getByRole('link', { name: '跑步记录', exact: true })).toHaveAttribute('aria-current', 'page');
+    await page.goto('/activities/wall');
+    await expect(page.getByRole('heading', { name: '足迹墙', exact: true })).toBeVisible();
+    await expect(nav.getByRole('link', { name: '足迹墙' })).toHaveCount(0);
+    await expect(nav.getByRole('link', { name: '跑步记录', exact: true })).toHaveAttribute('aria-current', 'page');
+  });
+  test('a segmented switch moves between the views; the old buttons are gone', async ({ page }) => {
+    await page.goto('/activities'); await openImport(page);
+    const views = page.getByRole('navigation', { name: '跑步记录视图' });
+    await expect(views.getByRole('link', { name: '列表' })).toHaveAttribute('aria-current', 'page');
+    await expect(views.getByRole('link', { name: '足迹墙' })).not.toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('link', { name: '查看足迹墙' })).toHaveCount(0);
+    await views.getByRole('link', { name: '足迹墙' }).click();
+    await expect(page).toHaveURL(/\/activities\/wall$/);
+    await expect(page.getByRole('heading', { name: '足迹墙', exact: true })).toBeVisible();
+    await expect(views.getByRole('link', { name: '足迹墙' })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('link', { name: '返回跑步记录' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '生成分享图' })).toBeVisible();
+    await views.getByRole('link', { name: '列表' }).click();
+    await expect(page).toHaveURL(listUrl);
+    await expect(page.getByRole('heading', { name: '跑步记录', exact: true })).toBeVisible();
+    await expect(views.getByRole('link', { name: '列表' })).toHaveAttribute('aria-current', 'page');
+  });
+});
+
+test.describe('records timeline with a preview pane', () => {
+  const record = (n: number, date: string, title: string, distance: string) => ({ ...sampleActivity, id: `${String(n).padStart(8, '0')}-2222-4222-8222-222222222222`, title, activity_date: date, distance_m: distance, started_at: `${date}T00:00:00Z`, ended_at: `${date}T01:00:00Z` });
+  const months = [record(1, '2026-10-13', '十月三', '5000'), record(2, '2026-10-10', '十月二', '21000'), record(3, '2026-10-08', '十月一', '8000'), record(4, '2026-09-28', '九月二', '12000'), record(5, '2026-09-24', '九月一', '5000')];
+  test.beforeEach(async ({ page }) => {
+    const state = await installActivities(page); state.records = months.map(item => ({ ...item })); await loginRunner(page);
+  });
+
+  test('records are grouped by month with a total, and a month cut by the page border says so', async ({ page }) => {
+    await page.goto('/activities');
+    const groups = page.locator('.timeline .month');
+    await expect(groups).toHaveCount(2);
+    await expect(groups.nth(0)).toContainText('2026 年 10 月'); await expect(groups.nth(0).getByTestId('month-total')).toHaveText('3 次 · 34.0 km');
+    await expect(groups.nth(1)).toContainText('2026 年 9 月'); await expect(groups.nth(1).getByTestId('month-total')).toHaveText('2 次 · 17.0 km');
+    // 25 records, 20 per page: the last month of the first page continues on the next page.
+    const state = await installActivities(page); void state;
+    await page.unroute(/\/api\/v1\/(?:showcase\/)?activities(?:\?|\/|$)/);
+    const many = await installActivities(page);
+    many.records = Array.from({ length: 25 }, (_, i) => record(100 + i, `2026-${i < 12 ? '10' : '09'}-${String(28 - (i % 12)).padStart(2, '0')}`, `长列表 ${i + 1}`, '5000'));
+    await page.goto('/activities');
+    await expect(page.locator('.timeline .month').last().getByTestId('month-total')).toHaveText(/^本页 /);
+    await expect(page.locator('.timeline .month').first().getByTestId('month-total')).not.toHaveText(/^本页 /);
+  });
+
+  test('the first record is chosen, the address follows the choice, and the preview shows its details', async ({ page }) => {
+    await page.goto('/activities');
+    const preview = page.getByTestId('activity-preview');
+    await expect(preview).toContainText('十月三');
+    await expect(page).toHaveURL(new RegExp(`id=${months[0].id}$`));
+    await expect(page.locator('.card-link[aria-current="true"]')).toHaveCount(1);
+    await expect(preview.getByRole('link', { name: '查看完整详情 →' })).toHaveAttribute('href', `/activities/${months[0].id}`);
+    await page.getByRole('link').filter({ has: page.getByRole('heading', { name: '九月二', exact: true }) }).click();
+    await expect(preview).toContainText('九月二');
+    await expect(page).toHaveURL(new RegExp(`/activities\\?id=${months[3].id}$`));
+    await expect(page.locator('.card-link[aria-current="true"]')).toHaveCount(1);
+    await expect(preview.getByText(/^12(\.0)? km$/).first()).toBeVisible();
+    // A reload, Back or a shared link returns to the same record.
+    await page.reload();
+    await expect(page.getByTestId('activity-preview')).toContainText('九月二');
+  });
+
+  test('the first month and the preview title sit on one line, tops included', async ({ page }) => {
+    await page.goto('/activities');
+    await expect(page.getByTestId('activity-preview')).toContainText('十月三');
+    const boxes = await page.evaluate(() => {
+      const box = (selector: string) => { const rect = document.querySelector(selector)!.getBoundingClientRect(); return { top: rect.top, centre: rect.top + rect.height / 2 }; };
+      return { pill: box('.timeline .month-pill'), title: box('.preview-title'), card: box('.preview'), list: box('.records-list') };
+    });
+    expect(Math.abs(boxes.pill.centre - boxes.title.centre), 'the month pill and the preview title share a centre line').toBeLessThanOrEqual(1);
+    expect(boxes.card.top, 'the preview card starts at the top of the list column').toBeCloseTo(boxes.list.top, 0);
+  });
+
+  test('arrow keys move the choice between records', async ({ page }) => {
+    await page.goto('/activities');
+    await expect(page.getByTestId('activity-preview')).toContainText('十月三');
+    await page.locator(`.card-link[data-activity-id="${months[0].id}"]`).focus();
+    await page.keyboard.press('ArrowDown');
+    await expect(page.getByTestId('activity-preview')).toContainText('十月二');
+    await expect(page.locator(`.card-link[data-activity-id="${months[1].id}"]`)).toBeFocused();
+    await page.keyboard.press('ArrowUp');
+    await expect(page.getByTestId('activity-preview')).toContainText('十月三');
+  });
+
+  test('a modified click still opens the record page', async ({ page }) => {
+    await page.goto('/activities');
+    const link = page.locator(`.card-link[data-activity-id="${months[1].id}"]`);
+    await expect(link).toHaveAttribute('href', `/activities/${months[1].id}`);
+    await link.click({ modifiers: ['ControlOrMeta'] }).catch(() => undefined); // opens a new tab; the list keeps its choice
+    await expect(page.getByTestId('activity-preview')).toContainText('十月三');
+  });
+
+  test('a narrow screen has the timeline only; tapping a record opens its page', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/activities');
+    await expect(page.locator('.timeline .month').first()).toBeVisible();
+    await expect(page.getByTestId('activity-preview')).toHaveCount(0);
+    await page.getByRole('link').filter({ has: page.getByRole('heading', { name: '十月二', exact: true }) }).click();
+    await expect(page).toHaveURL(new RegExp(`/activities/${months[1].id}$`));
+    await expect(page.getByRole('heading', { name: '十月二', level: 1 })).toBeVisible();
+  });
+
+  test('the preview reads its route on demand and a failure only affects the preview', async ({ page }) => {
+    let calls = 0;
+    await page.route(`**/api/v1/showcase/activities/${months[0].id}/route`, async route => { calls++; if (calls === 1) await route.fulfill({ status: 503, json: { error: { message: '暂时不可用' } } }); else await route.fallback(); });
+    await page.goto('/activities');
+    const preview = page.getByTestId('activity-preview');
+    await expect(preview.getByRole('button', { name: '重新读取路线' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '十月二', level: 3 })).toBeVisible(); // the list is untouched
+    await preview.getByRole('button', { name: '重新读取路线' }).click();
+    await expect(preview.getByTestId('route-map-ready')).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('the preview edits and deletes through the list dialogs', async ({ page }) => {
+    await page.goto('/activities');
+    const preview = page.getByTestId('activity-preview');
+    await expect(preview).toContainText('十月三');
+    await preview.getByRole('button', { name: '编辑记录', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '编辑跑步记录' })).toBeVisible();
+    await page.getByRole('button', { name: '取消编辑', exact: true }).click();
+    await preview.getByRole('button', { name: '删除记录', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '删除 1 条跑步记录？' })).toBeVisible();
+    await page.getByRole('button', { name: '确认删除', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '十月三', level: 3 })).toHaveCount(0);
+    await expect(preview).toContainText('十月二'); // the choice moves on to the first record left
+  });
+
+  test('batch selection, edit and delete stay in the list', async ({ page }) => {
+    await page.goto('/activities');
+    await page.getByRole('button', { name: '编辑', exact: true }).click();
+    await page.getByRole('checkbox', { name: '选择 十月二' }).check();
+    await expect(page.getByText('已选 1 条')).toBeVisible();
+    await expect(page.getByRole('button', { name: '编辑 十月二', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '删除 十月二', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '完成', exact: true }).click();
+    await expect(page.getByRole('checkbox')).toHaveCount(0);
+  });
+});
+
+test.describe('the import area is folded', () => {
+  test('it starts closed when there are records, opens on demand and keeps a chosen file when closed again', async ({ page }) => {
+    await installActivities(page); await loginRunner(page); await page.goto('/activities');
+    const toggle = page.getByRole('button', { name: '导入轨迹', exact: true });
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByRole('heading', { name: '导入 GPX / TCX' })).toBeHidden();
+    await openImport(page);
+    await expect(page.getByRole('heading', { name: '导入 GPX / TCX' })).toBeVisible();
+    await page.locator('input[type="file"]').first().setInputFiles({ name: 'morning.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from('<gpx version="1.1" creator="synthetic"></gpx>') });
+    await toggle.click();
+    await expect(page.getByRole('heading', { name: '导入 GPX / TCX' })).toBeHidden();
+    await toggle.click();
+    await expect(page.getByText('morning.gpx')).toBeVisible();
+  });
+  test('opening and closing slides by height instead of popping, and the arrow turns', async ({ page }) => {
+    await installActivities(page); await loginRunner(page); await page.goto('/activities');
+    const toggle = page.getByRole('button', { name: '导入轨迹', exact: true });
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await page.locator('.app-sidebar .goal-container:not([hidden])').waitFor({ state: 'attached' }); // hydrated: an earlier click is not handled
+    const sample = (duration: number) => page.evaluate(ms => new Promise<{ heights: number[]; turn: string }>(resolve => {
+      const region = document.getElementById('import-region')!, chevron = document.querySelector('.import-chevron')!;
+      const heights: number[] = [], t0 = performance.now();
+      const tick = () => { heights.push(region.getBoundingClientRect().height); if (performance.now() - t0 < ms) requestAnimationFrame(tick); else resolve({ heights, turn: getComputedStyle(chevron).transform }); };
+      requestAnimationFrame(tick);
+    }), duration);
+    const opening = sample(800);
+    await toggle.click();
+    const opened = await opening;
+    const full = Math.max(...opened.heights);
+    expect(full, 'the area opens to its full height').toBeGreaterThan(150);
+    expect(opened.heights.filter(height => height > 4 && height < full - 4).length, 'and is seen growing for several frames').toBeGreaterThanOrEqual(5);
+    expect(opened.turn, 'the arrow has turned').not.toBe('none');
+    const closing = sample(800);
+    await toggle.click();
+    const closed = await closing;
+    expect(closed.heights.filter(height => height > 4 && height < full - 4).length, 'closing slides too').toBeGreaterThanOrEqual(5);
+    expect(closed.heights.at(-1)).toBeLessThan(4);
+    await expect(page.getByRole('heading', { name: '导入 GPX / TCX' })).toBeHidden();
+  });
+  test('an empty library opens it by itself', async ({ page }) => {
+    const state = await installActivities(page); state.records = []; await loginRunner(page); await page.goto('/activities');
+    await expect(page.getByRole('button', { name: '导入轨迹', exact: true })).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByRole('heading', { name: '导入 GPX / TCX' })).toBeVisible();
+  });
 });

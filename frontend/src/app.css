@@ -212,7 +212,7 @@
   .skip-link { position: fixed; top: -6rem; left: var(--space-4); z-index: var(--z-skip-link); border-radius: var(--radius-control); background: var(--primary); color: var(--primary-foreground); padding: var(--space-3) var(--space-4); }
   .skip-link:focus { top: var(--space-4); color: var(--primary-foreground); }
   .brand { display: inline-flex; align-items: center; gap: .625rem; width: fit-content; color: var(--foreground); font-size: var(--text-section); line-height: var(--line-height-solid); font-weight: var(--weight-bold); letter-spacing: 0; }
-  .brand-mark { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .625rem; background: var(--primary); color: white; font-size: var(--text-section); font-style: italic; }
+  .brand-mark { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .625rem; background: var(--sport-brand); color: var(--brand-foreground); font-size: var(--text-section); font-style: italic; }
   /* :root raises specificity above the themed sidebar/header .brand-mark backgrounds below. */
   :root img.brand-logo.brand-mark { object-fit: cover; padding: 0; background: transparent; }
   .app-sidebar { position: fixed; inset: 0 auto 0 0; width: var(--sidebar-width); display: flex; flex-direction: column; padding: var(--space-8) var(--space-4) var(--space-6); background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; }
@@ -318,8 +318,16 @@
     }
   }
   @media (max-width: 799px) {
-    .mobile-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) var(--space-4); background: var(--surface); border-bottom: 1px solid var(--border); }
-    .app-sidebar { display: none; position: static; width: 100%; padding: var(--space-4); border-right: 0; border-bottom: 1px solid var(--border); }
+    .mobile-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface); transition: background-color var(--transition-control), border-color var(--transition-control), box-shadow var(--transition-control); }
+    /* The whole header (bar + dropdown menu) sticks to the top and slides away while scrolling down; the menu hangs below the bar as an overlay instead of pushing the page down. */
+    /* The hidden position is 2.5rem beyond the header so the floating bar's shadow (offset .5rem, blur 1.5rem) is off screen before visibility cuts. */
+    /* Only transform animates: an opacity (or filter) on this header would make it a backdrop root and the glass on the bar would stop seeing the page behind it mid-animation. */
+    /* Like the desktop bar the phone bar floats --top-navigation-offset from the edges; the header's own gutters let taps through to the page. */
+    .app-shell > header { position: sticky; top: 0; z-index: var(--z-top-navigation); padding: var(--top-navigation-offset) var(--space-3) 0; pointer-events: none; transition: transform 340ms cubic-bezier(.22,.61,.36,1), visibility 0s; }
+    .app-shell > header > * { pointer-events: auto; }
+    .app-shell > header:has(.mobile-bar[data-hidden]) { transform: translateY(calc(-100% - 2.5rem)); visibility: hidden; transition: transform 420ms cubic-bezier(.4,0,.2,1), visibility 0s linear 420ms; }
+    @media (prefers-reduced-motion: reduce) { .app-shell > header, .app-shell > header:has(.mobile-bar[data-hidden]) { transition: none; } }
+    .app-sidebar { display: none; position: absolute; inset: calc(100% + var(--space-2)) var(--space-3) auto; width: auto; max-height: calc(100dvh - 6rem - var(--top-navigation-offset)); overflow-y: auto; overscroll-behavior: contain; padding: var(--space-4); box-shadow: 0 16px 28px color-mix(in srgb, var(--foreground) 12%, transparent); }
     .app-sidebar.nav-open { display: flex; }
     .app-sidebar { opacity: 0; transform: translateY(calc(-1 * var(--space-3))) scale(.96); transform-origin: top right; transition: opacity 180ms ease, transform 320ms cubic-bezier(.16,1.25,.35,1), display 320ms allow-discrete; }
     .app-sidebar.nav-open { opacity: 1; transform: none; }
@@ -329,7 +337,7 @@
     .nav-account { margin-top: var(--space-4); padding-top: var(--space-4); }
     .nav-account .appearance-row { display: none; }
     .account-menu-host, .account-avatar-slot { display: none; }
-    .app-shell .content-column { margin-left: 0; min-height: calc(100dvh - 69px); }
+    .app-shell .content-column { margin-left: 0; min-height: calc(100dvh - 5rem); }
     .app-shell .navigation-progress { left: 0; }
     .page-content { padding-block: var(--space-8); }
   }
@@ -385,10 +393,24 @@
     --sport-coral: #f06373;
     --sport-ink: #20332b;
     --sport-sidebar: #218538;
+    /* Light: a butter-yellow page header, the brand-green logo and a soft-green current pill; filled actions are brand green and the segmented lens a pale green. Dark (further down) keeps neutral greys. Green (--primary) is still the accent for numbers, links, progress and state. */
     --sport-brand: #218538;
+    --brand-foreground: #ffffff;
     --sport-nav-hover: #0000000a;
-    --sport-nav-active: #e8f6df;
-    --sport-nav-active-ink: #18592a;
+    --sport-nav-active: #e3f3d9;
+    --sport-nav-active-ink: #14532d;
+    --action: #218538;
+    --action-hover: #176a2c;
+    --segment-lens: #cfeacd;
+    --segment-lens-ink: #14532d;
+    --segment-track: #ecebe7;
+    --header-tint: #fbf0bd;
+    --hero-bg: #fbf0bd;
+    --header-ink: #2a2a12;
+    --header-ink-muted: #5a5628;
+    --header-tab-track: #ffffff99;
+    --header-pad: clamp(1.25rem, 3vw, 2rem);
+    --hero-border: transparent;
     --sport-heading-ink: #20332b;
     --sport-detail-ink: #263120;
     --sport-heading-border: #b5a43d;
@@ -410,7 +432,7 @@
   }
   .sport-theme .app-sidebar { background: var(--surface); border-right: 0; color: var(--foreground); }
   .sport-theme .app-sidebar .brand { color: var(--foreground); }
-  .sport-theme .app-sidebar .brand-mark { color: white; background: var(--sport-brand); }
+  .sport-theme .app-sidebar .brand-mark { color: var(--brand-foreground); background: var(--sport-brand); }
   .sport-theme .nav-caption, .sport-theme .account-email { color: var(--foreground); }
   .sport-theme .app-sidebar nav { gap: .25rem; flex: 0 0 auto; }
   .sport-theme .sidebar-brand, .sport-theme .app-sidebar nav, .sport-theme .nav-account { flex-shrink: 0; }
@@ -436,10 +458,17 @@
   .sport-theme .nav-account .settings-link[aria-current="page"]:focus-visible { outline-color: var(--sport-nav-active-ink); }
   .sport-theme .page-content { padding-top: 2rem; }
   .sport-theme .share-card { border-radius: var(--radius-card); }
-  .sport-theme .mobile-bar { background: var(--surface); border-bottom: 1px solid var(--border); color: var(--foreground); }
+  .sport-theme .mobile-bar { color: var(--foreground); }
   .sport-theme .mobile-bar .brand { color: var(--foreground); }
-  .sport-theme .mobile-bar .brand-mark { color: white; background: var(--sport-brand); }
+  .sport-theme .mobile-bar .brand-mark { color: var(--brand-foreground); background: var(--sport-brand); }
   .sport-theme .mobile-bar :focus-visible { outline-color: var(--ring); }
+  /* Phone bar and menu: the same floating look as the desktop bar. The menu is a rounded card; the bar turns into clear glass once the page has scrolled under it (data-floating). */
+  @media (max-width: 799px) {
+    .sport-theme.app-shell .app-sidebar { border: 1px solid var(--border); border-radius: var(--radius-card); }
+    .sport-theme.app-shell .mobile-bar[data-floating] { border-color: var(--glass-edge); background: color-mix(in srgb, var(--glass-fill-base, var(--surface)) calc(var(--glass-opacity, .12) * 100% * .75), transparent); box-shadow: inset 0 1px var(--glass-sheen), 0 .5rem 1.5rem var(--glass-shadow); }
+    .sport-theme.app-shell .mobile-bar[data-floating].rn-frosted-glass { -webkit-backdrop-filter: blur(14px) saturate(1.5); backdrop-filter: blur(14px) saturate(1.5); background: color-mix(in srgb, var(--surface) calc((.5 + var(--glass-opacity, .12) * .8) * 100%), transparent); }
+    @media (prefers-reduced-transparency: reduce), (forced-colors: active) { .sport-theme.app-shell .mobile-bar[data-floating], .sport-theme.app-shell .mobile-bar[data-floating].rn-frosted-glass { background: var(--surface); border-color: var(--border); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; } }
+  }
 
   /* Desktop top navigation: the same <aside> becomes a floating glass bar. Below 800px the mobile bar and menu take over, in the same surface/border/foreground colours. 800px is the shell breakpoint: keep it in sync with the other @media (min-width: 800px) blocks here, liquid-glass-controls.css, enhanceNavigation in liquid-glass-indicator.ts and the matchMedia in AppNavigation.svelte. */
   @media (min-width: 800px) {
@@ -456,7 +485,7 @@
     .sport-theme.app-shell .app-sidebar[data-floating].rn-frosted-glass { -webkit-backdrop-filter: blur(14px) saturate(1.5); backdrop-filter: blur(14px) saturate(1.5); background: color-mix(in srgb, var(--surface) calc((.5 + var(--glass-opacity, .12) * .8) * 100%), transparent); }
     @media (prefers-reduced-transparency: reduce), (forced-colors: active) { .sport-theme.app-shell .app-sidebar[data-floating], .sport-theme.app-shell .app-sidebar[data-floating].rn-frosted-glass { background: var(--surface); border-color: var(--border); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; } }
     .sport-theme.app-shell .app-sidebar .brand { color: var(--foreground); }
-    .sport-theme.app-shell .app-sidebar .brand-mark { background: var(--sport-brand); color: white; }
+    .sport-theme.app-shell .app-sidebar .brand-mark { background: var(--sport-brand); color: var(--brand-foreground); }
     .sport-theme.app-shell .sidebar-brand { margin: 0 var(--space-4) 0 0; flex-shrink: 0; }
     .sport-theme.app-shell .nav-caption { display: none; }
     .sport-theme.app-shell .app-sidebar nav { display: flex; flex: 0 1 auto; gap: .15rem; min-width: 0; }
@@ -496,17 +525,12 @@
     .sport-theme.app-shell .app-sidebar nav .nav-link > span, .sport-theme.app-shell .app-sidebar nav .rn-moving-label > span { display: none; }
     .sport-theme.app-shell .desktop-brand .brand-name { display: none; }
   }
-  /* Nine links (an ordinary account also gets its workspace entry) never fit labelled next to the account row: stay icon-only at every desktop width. Below 1360px the block above already does it. */
-  @media (min-width: 1360px) {
-    .sport-theme.app-shell .app-sidebar[data-dense] nav .nav-link { padding-inline: .7rem; }
-    .sport-theme.app-shell .app-sidebar[data-dense] nav .nav-link > span, .sport-theme.app-shell .app-sidebar[data-dense] nav .rn-moving-label > span { display: none; }
-  }
 }
 
 @layer components {
-  .sport-theme .page-header { padding: clamp(1.25rem, 3vw, 2rem); background: var(--sport-yellow); border-radius: var(--radius-card); color: var(--sport-heading-ink); align-items: center; }
+  .sport-theme .page-header { padding: var(--header-pad); background: var(--header-tint); border-radius: var(--radius-card); color: var(--header-ink); align-items: center; }
   .sport-theme .page-header h1 { font-size: var(--text-sport-title); font-weight: var(--weight-sport-title); }
-  .sport-theme .page-description { color: var(--sport-heading-ink); max-width: 48rem; }
+  .sport-theme .page-description { color: var(--header-ink-muted); max-width: 48rem; }
   .sport-theme .public-header { background: var(--surface); }
   .sport-theme .public-header .brand-mark { background: var(--sport-brand); }
   .sport-theme .public-header .brand { color: var(--foreground); }
@@ -517,8 +541,8 @@
 }
 
 @layer components {
-  .sport-theme .auth-intro { padding: 1.25rem; background: var(--sport-yellow); border-radius: 1rem; color: var(--sport-heading-ink); }
-  .sport-theme .auth-intro p { color: var(--sport-heading-ink); }
+  .sport-theme .auth-intro { padding: 1.25rem; background: var(--hero-bg); border: 1px solid var(--hero-border); border-radius: 1rem; color: var(--header-ink); }
+  .sport-theme .auth-intro p { color: var(--header-ink); }
   .sport-theme .auth-eyebrow { font-size: var(--text-caption); font-weight: var(--weight-semibold); margin-bottom: .75rem; }
   .sport-theme .auth-lead { margin-top: .75rem; font-size: var(--text-small); }
   .auth-help { font-size: var(--text-small); color: var(--foreground); }
@@ -556,7 +580,20 @@
   --warning-border: #806b41;
   --control-hover-border: #8b8680;
   --sport-sidebar: #34322f;
-  --sport-brand: #1f5a3a;
+  --sport-brand: #f2f0ee;
+  --brand-foreground: #1d1c1a;
+  --action: #8a847d;
+  --action-hover: #a39d95;
+  --segment-lens: #5a5552;
+  --segment-lens-ink: #f2f0ee;
+  --segment-track: #3e3b39;
+  --header-tint: transparent;
+  --hero-bg: var(--surface);
+  --header-ink: #f2f0ee;
+  --header-ink-muted: #b1aca6;
+  --header-tab-track: #3e3b39;
+  --header-pad: var(--space-2) 0 var(--space-4);
+  --hero-border: var(--border);
   --sport-nav-hover: #ffffff12;
   --sport-nav-active: #4d4644;
   --sport-nav-active-ink: #f2f0ee;
@@ -640,15 +677,15 @@
   .save-bar { display: grid; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-card); background: color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter: blur(16px) saturate(1.4); box-shadow: 0 .5rem 1.5rem var(--glass-shadow); }
   .save-bar-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
   .save-status { flex: 1 1 10rem; padding: 0; background: none; font-size: var(--text-small); color: var(--muted-foreground); }
-  .settings-tabs { display: flex; flex-wrap: wrap; width: max-content; max-width: 100%; overflow-x: clip; gap: .25rem; margin-top: var(--space-4); padding: .25rem; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--surface) 45%, transparent); }
-  .settings-tabs :is(a, button) { display: inline-flex; align-items: center; min-height: 2.5rem; padding: .375rem 1.125rem; border-radius: var(--radius-pill); font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--sport-heading-ink); transition: background-color var(--transition-control), color var(--transition-control), box-shadow var(--transition-control); }
+  .settings-tabs { display: flex; flex-wrap: wrap; width: max-content; max-width: 100%; overflow-x: clip; gap: .25rem; margin-top: var(--space-4); padding: .25rem; border-radius: var(--radius-pill); background: var(--header-tab-track); }
+  .settings-tabs :is(a, button) { display: inline-flex; align-items: center; min-height: 2.5rem; padding: .375rem 1.125rem; border-radius: var(--radius-pill); font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--foreground); transition: background-color var(--transition-control), color var(--transition-control), box-shadow var(--transition-control); }
   @media (max-width: 479px) {
     .settings-tabs { flex-wrap: nowrap; width: 100%; overflow-x: auto; scrollbar-width: none; }
     .settings-tabs::-webkit-scrollbar { display: none; }
     .settings-tabs :is(a, button) { flex: 1 0 auto; justify-content: center; padding-inline: .625rem; white-space: nowrap; }
   }
   @media (hover: hover) { .settings-tabs :is(a, button):hover { background: color-mix(in srgb, var(--surface) 70%, transparent); } }
-  .settings-tabs :is(a[aria-current='page'], button[aria-pressed='true']) { color: var(--primary-foreground); background: var(--primary); box-shadow: 0 .125rem .5rem var(--glass-shadow); }
+  .settings-tabs :is(a[aria-current='page'], button[aria-pressed='true']) { color: var(--segment-lens-ink); background: var(--segment-lens); box-shadow: 0 .125rem .5rem var(--glass-shadow); }
 }
 
 /* Compact text field set: input, textarea and select share one height, radius and focus ring. */
@@ -690,7 +727,7 @@
   .site-preview { display: grid; gap: var(--space-3); padding: var(--space-4); border-radius: var(--radius-control); background: var(--muted); }
   /* A small sample of the top navigation bar: a surface card with a border, the green logo tile and the site name in the foreground colour. */
   .preview-side { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-4) var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface); color: var(--foreground); }
-  .preview-mark { display: grid; place-items: center; flex: none; width: 2rem; height: 2rem; overflow: hidden; border-radius: .625rem; background: var(--sport-brand); color: white; font-weight: var(--weight-bold); }
+  .preview-mark { display: grid; place-items: center; flex: none; width: 2rem; height: 2rem; overflow: hidden; border-radius: .625rem; background: var(--sport-brand); color: var(--brand-foreground); font-weight: var(--weight-bold); }
   .preview-mark img { width: 100%; height: 100%; object-fit: cover; }
   .preview-title { display: block; font-weight: var(--weight-bold); overflow-wrap: anywhere; }
   .preview-sub { display: block; font-size: var(--text-caption); color: var(--muted-foreground); overflow-wrap: anywhere; }
@@ -704,9 +741,9 @@
   .toolbar-search { display: flex; flex: 1 1 16rem; gap: var(--space-2); max-width: 28rem; }
   .toolbar-search .text-field { flex: 1; min-width: 0; }
   .toolbar-count { margin-left: auto; font-size: var(--text-small); color: var(--muted-foreground); }
-  .mode-switch.compact-switch { display: inline-flex; gap: .25rem; padding: .25rem; border-radius: var(--radius-pill); background: var(--muted); }
+  .mode-switch.compact-switch { display: inline-flex; gap: .25rem; padding: .25rem; border-radius: var(--radius-pill); background: var(--segment-track); }
   .mode-switch.compact-switch button { min-height: 2rem; padding: .25rem .875rem; border-radius: var(--radius-pill); font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--muted-foreground); }
-  .mode-switch.compact-switch button[aria-pressed='true'] { color: var(--primary-foreground); background: var(--primary); }
+  .mode-switch.compact-switch button[aria-pressed='true'] { color: var(--segment-lens-ink); background: var(--segment-lens); }
   @media (hover: hover) { .mode-switch.compact-switch button:not([aria-pressed='true']):hover { color: var(--primary); background: var(--surface); } }
   .user-pager { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-4); font-size: var(--text-small); color: var(--muted-foreground); }
   .user-note { margin-top: var(--space-3); }

@@ -126,7 +126,7 @@
 {:else if loading}<div class="mt-6"><FeedbackState kind="loading" title="正在读取活动…" /></div>{/if}
 <style>
   .hero-side { display: grid; flex-shrink: 0; justify-items: end; gap: var(--space-3); }
-  .sport-hero { display: flex; justify-content: space-between; align-items: center; gap: 2rem; background: var(--sport-yellow); border-radius: var(--radius-card); padding: clamp(1.5rem, 3vw, 2rem); margin-top: 1.5rem; color: var(--sport-detail-ink); }
+  .sport-hero { display: flex; justify-content: space-between; align-items: center; gap: 2rem; background: var(--hero-bg); border: 1px solid var(--hero-border); border-radius: var(--radius-card); padding: clamp(1.5rem, 3vw, 2rem); margin-top: 1.5rem; color: var(--header-ink); }
   .hero-copy { min-width: 0; }
   .hero-kicker { display: flex; align-items: center; gap: .5rem; font-size: var(--text-small); font-weight: var(--weight-semibold); }
   .sport-hero h1 { margin-top: .75rem; font-size: var(--text-title); font-weight: var(--weight-bold); line-height: var(--line-height-tight); }
