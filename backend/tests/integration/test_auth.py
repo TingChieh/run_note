@@ -168,6 +168,7 @@ def test_register_rotation_storage_and_identity_isolation(workers):
         "is_admin",
         "showcase_enabled",
         "avatar_url",
+        "username_changed_at",
     }
     engine.dispose()
 
