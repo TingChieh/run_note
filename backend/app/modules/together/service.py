@@ -23,15 +23,18 @@ def overview(db, settings, now):
     participants = (
         db.execute(
             text(f"""
-        SELECT u.username, u.display_name, COALESCE(sum(a.distance_m), 0) AS distance_m,
-            count(a.id) AS count,
-            sum(COALESCE(sum(a.distance_m), 0)) OVER () AS total_distance,
-            sum(count(a.id)) OVER () AS total_count,
+        SELECT u.id AS user_id, u.username, u.display_name, u.avatar_version,
+            COALESCE(sum(a.distance_m) FILTER (WHERE a.activity_date >= :month), 0) AS distance_m,
+            count(a.id) FILTER (WHERE a.activity_date >= :month) AS count,
+            sum(COALESCE(sum(a.distance_m) FILTER (WHERE a.activity_date >= :month), 0))
+                OVER () AS total_distance,
+            sum(count(a.id) FILTER (WHERE a.activity_date >= :month)) OVER () AS total_count,
             COALESCE(sum(a.distance_m) FILTER (WHERE a.activity_date >= :week
                 AND a.activity_date < :end), 0) AS week_m,
             COALESCE(sum(a.distance_m) FILTER (WHERE a.activity_date >= :month
                 AND a.activity_date < :end), 0) AS month_m
-        FROM users u LEFT JOIN activities a ON a.user_id = u.id
+        FROM users u LEFT JOIN activities a ON a.user_id = u.id AND a.visibility = 'public'
+            AND a.activity_date >= LEAST(:week, :month) AND a.activity_date < :end
         WHERE {ELIGIBLE} GROUP BY u.id ORDER BY u.username
     """),
             params,
@@ -42,9 +45,11 @@ def overview(db, settings, now):
     recent = (
         db.execute(
             text(f"""
-        SELECT a.id, u.username, u.display_name, a.title, a.activity_date, a.distance_m
+        SELECT a.id, u.username, u.display_name, a.title, a.activity_date, a.distance_m,
+            a.avg_pace_seconds_per_km
         FROM activities a JOIN users u ON u.id = a.user_id
-        WHERE {ELIGIBLE} ORDER BY a.activity_date DESC, a.id DESC LIMIT 30
+        WHERE {ELIGIBLE} AND a.visibility = 'public'
+        ORDER BY a.activity_date DESC, a.id DESC LIMIT 20
     """),
             params,
         )
@@ -59,7 +64,7 @@ def overview(db, settings, now):
                 s.segment_index, s.geom
             FROM activities a JOIN users u ON u.id = a.user_id
             JOIN activity_segments s ON s.activity_id = a.id
-            WHERE {ELIGIBLE} AND s.geom IS NOT NULL
+            WHERE {ELIGIBLE} AND a.visibility = 'public' AND s.geom IS NOT NULL
                 AND ST_YMin(Box3D(s.geom)) >= -85 AND ST_YMax(Box3D(s.geom)) <= 85
                 AND ST_XMax(Box3D(s.geom)) - ST_XMin(Box3D(s.geom)) <= 180
             ORDER BY a.activity_date DESC, a.id DESC, s.segment_index LIMIT 500

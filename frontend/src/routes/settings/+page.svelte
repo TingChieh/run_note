@@ -96,7 +96,7 @@
         <button type="button" role="switch" class="rn-switch" aria-checked={wellbeing} aria-labelledby="wellbeing-label" disabled={busy || !page.data.user.wellbeing_allowed} onclick={() => wellbeing = !wellbeing}><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span></button>
       </div>
       <div class="block-title-row">
-        <div><h3 id="together-label">加入一起跑步</h3><p class="block-hint">开启后，符合展示条件时全部运动记录（含私人记录）和精确路线将公开汇入一起跑步。</p>{#if !page.data.user.together_allowed}<p class="block-hint">需管理员开启</p>{/if}</div>
+        <div><h3 id="together-label">加入一起跑步</h3><p class="block-hint">开启后，符合展示条件时仅公开运动记录和对应精确路线将汇入一起跑步。</p>{#if !page.data.user.together_allowed}<p class="block-hint">需管理员开启</p>{/if}</div>
         <button type="button" role="switch" class="rn-switch" aria-checked={together} aria-labelledby="together-label" disabled={busy || !page.data.user.together_allowed} onclick={() => together = !together}><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span></button>
       </div>
     </section>

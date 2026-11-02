@@ -209,8 +209,8 @@
 }
 
 @layer components {
-  .skip-link { position: fixed; top: -6rem; left: var(--space-4); z-index: var(--z-skip-link); border-radius: var(--radius-control); background: var(--primary); color: var(--primary-foreground); padding: var(--space-3) var(--space-4); }
-  .skip-link:focus { top: var(--space-4); color: var(--primary-foreground); }
+  .skip-link { opacity: 0; pointer-events: none; position: fixed; top: -6rem; left: var(--space-4); z-index: var(--z-skip-link); border-radius: var(--radius-control); background: var(--primary); color: var(--primary-foreground); padding: var(--space-3) var(--space-4); }
+  .skip-link:focus-visible { opacity: 1; pointer-events: auto; top: var(--space-4); color: var(--primary-foreground); }
   .brand { display: inline-flex; align-items: center; gap: .625rem; width: fit-content; color: var(--foreground); font-size: var(--text-section); line-height: var(--line-height-solid); font-weight: var(--weight-bold); letter-spacing: 0; }
   .brand-mark { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .625rem; background: var(--sport-brand); color: var(--brand-foreground); font-size: var(--text-section); font-style: italic; }
   /* :root raises specificity above the themed sidebar/header .brand-mark backgrounds below. */

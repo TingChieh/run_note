@@ -5,6 +5,8 @@ from pydantic import BaseModel
 
 
 class Participant(BaseModel):
+    user_id: UUID
+    avatar_version: str | None
     username: str
     display_name: str
     distance_m: float
@@ -20,6 +22,7 @@ class Recent(BaseModel):
     title: str
     activity_date: date
     distance_m: float
+    avg_pace_seconds_per_km: float | None
 
 
 class Track(BaseModel):

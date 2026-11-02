@@ -15,7 +15,7 @@
   import { createBasemapController } from '#lib/map/basemap-controller.ts';
   import { watchSystemTheme } from './system-theme';
   import 'maplibre-gl/dist/maplibre-gl.css';
-  let { data, onretry, participantColors = {}, mapLabel = "" }: {data: FootprintCollection; onretry: () => void; participantColors?: Record<string, string>; mapLabel?: string} = $props();
+  let { data, onretry, participantColors = {}, mapLabel = "", quietCityFailure = false }: {data: FootprintCollection; onretry: () => void; participantColors?: Record<string, string>; mapLabel?: string; quietCityFailure?: boolean} = $props();
   let container: HTMLDivElement, frameEl: HTMLDivElement, map: LibreMap | undefined, disposed=false;
   let framing: 'auto' | 'all' | 'picked' | 'free' = 'auto';
   let ready=$state(false), error=$state(''), basemap=$state<'loading'|'ready'|'failed'|'off'>('loading');
@@ -156,7 +156,7 @@
 <div class="map-section content-reveal">
   <div class="map-toolbar"><div class="toolbar-actions"><button type="button" onclick={overview} disabled={!ready || !!error} class="button-secondary">回到全部足迹</button><button type="button" onclick={()=>{cityOpen=!cityOpen;}} disabled={!ready || !!error || cityLookup!=='ready' || !cityName} aria-expanded={cityOpen} aria-controls="footprint-cities" class="button-secondary city-menu-toggle">城市</button><button type="button" onclick={toggleBasemap} disabled={!ready || !!error} aria-pressed={basemap!=='off'} class="button-secondary">{basemap==='off'?'开启底图':'关闭底图'}</button></div><p class="map-hint" id="footprint-map-help">拖动或缩放探索 · 方向键移动 · + / − 缩放</p></div>
   {#if cityLookup==='loading'}<p role="status" class="city-hint">正在识别有记录的城市…</p>
-  {:else if cityLookup==='failed'}<div class="city-actions"><p role="status" class="city-hint">城市识别暂不可用，全部足迹仍可查看。</p><button type="button" onclick={loadCities} class="button-secondary">重试识别城市</button></div>
+  {:else if cityLookup==='failed' && !quietCityFailure}<div class="city-actions"><p role="status" class="city-hint">城市识别暂不可用，全部足迹仍可查看。</p><button type="button" onclick={loadCities} class="button-secondary">重试识别城市</button></div>
   {:else}
     <div class="city-buttons" role="group" aria-label="有记录的城市">{#each cities as city}<button type="button" onclick={()=>locateCity(city.code)} disabled={!ready || !!error} aria-pressed={selectedCity===city.code} class="button-secondary">{city.name}</button>{/each}{#if unlocatedBounds}<button type="button" onclick={()=>locateCity('unlocated')} disabled={!ready || !!error} aria-pressed={selectedCity==='unlocated'} class="button-secondary">未识别区域</button>{/if}</div>
   {/if}

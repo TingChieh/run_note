@@ -335,7 +335,7 @@ def test_wellbeing_switches_preserve_private_records(site):  # noqa: F811
 
 
 def test_together_switches_and_public_filter(site):  # noqa: F811
-    admin, visitor, _, admin_headers, _, _, _, settings, _ = site
+    admin, visitor, _, admin_headers, _, _, engine, settings, _ = site
     suffix = uuid4().hex[:18]
     payload = dict(
         email=f"together-{suffix}@example.com",
@@ -393,9 +393,14 @@ def test_together_switches_and_public_filter(site):  # noqa: F811
             if not included:
                 assert all(row["username"] != payload["username"] for row in data["recent"])
                 assert all(row["username"] != payload["username"] for row in data["tracks"])
+                if baseline is not None:
+                    assert data["distance_m"] == baseline["distance_m"]
+                    assert data["count"] == baseline["count"]
             return included
 
+        baseline = None
         assert not present()
+        baseline = visitor.get("/api/v1/together").json()["data"]
         assert (
             admin.patch(
                 endpoint, headers=admin_headers, json={"together_allowed": True}
@@ -417,6 +422,43 @@ def test_together_switches_and_public_filter(site):  # noqa: F811
             files={"file": ("synthetic.gpx", raw, "application/gpx+xml")},
         )
         assert upload.status_code == 201, upload.text
+        activity_id = upload.json()["data"]["activity"]["id"]
+        with engine.begin() as connection:
+            connection.execute(
+                Activity.__table__.update()
+                .where(Activity.id == UUID(activity_id))
+                .values(activity_date=visitor.app.state.clock().date())
+            )
+        private = visitor.get("/api/v1/together").json()["data"]
+        assert all(row["id"] != activity_id for row in private["recent"])
+        assert all(row["activity_id"] != activity_id for row in private["tracks"])
+        assert (
+            next(row for row in private["participants"] if row["username"] == payload["username"])[
+                "distance_m"
+            ]
+            == 0
+        )
+        assert (
+            user.patch(
+                f"/api/v1/activities/{activity_id}",
+                headers=user_headers,
+                json={"visibility": "unlisted"},
+            ).status_code
+            == 200
+        )
+        unlisted = visitor.get("/api/v1/together").json()["data"]
+        assert all(row["id"] != activity_id for row in unlisted["recent"])
+        assert all(row["activity_id"] != activity_id for row in unlisted["tracks"])
+        assert unlisted["distance_m"] == baseline["distance_m"]
+        assert unlisted["count"] == baseline["count"]
+        assert (
+            user.patch(
+                f"/api/v1/activities/{activity_id}",
+                headers=user_headers,
+                json={"visibility": "public"},
+            ).status_code
+            == 200
+        )
         entry = user.put(
             "/api/v1/me/wellbeing/days/2020-01-01/entry",
             headers=user_headers,
@@ -427,6 +469,7 @@ def test_together_switches_and_public_filter(site):  # noqa: F811
         assert result.status_code == 200, result.text
         data = result.json()["data"]
         assert data["count"] >= 1 and data["tracks"] and data["recent"]
+        assert result.headers["cache-control"] == "no-store"
         assert "SECRET_WELLBEING" not in result.text
         assert (
             user.patch(
@@ -444,6 +487,20 @@ def test_together_switches_and_public_filter(site):  # noqa: F811
         assert (
             admin.patch(
                 endpoint, headers=admin_headers, json={"together_allowed": False}
+            ).status_code
+            == 200
+        )
+        assert not present()
+        assert (
+            admin.patch(
+                endpoint, headers=admin_headers, json={"together_allowed": True}
+            ).status_code
+            == 200
+        )
+        assert present()
+        assert (
+            user.patch(
+                "/api/v1/me", headers=user_headers, json={"together_enabled": False}
             ).status_code
             == 200
         )
