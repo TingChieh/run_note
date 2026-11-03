@@ -16,10 +16,11 @@ describe('一起跑步公开契约',()=>{
 
 import { participantColors } from '../../src/lib/map/together-colors.ts';
 describe('参与者颜色', () => {
-  it('稳定分配不同颜色，且不依赖返回顺序', () => {
+  it('按色板循环分配颜色，且不依赖返回顺序', () => {
     const people = Array.from({ length: 40 }, (_, i) => ({ user_id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, username: `runner_${i}` }));
     const colors = participantColors(people);
-    expect(new Set(Object.values(colors)).size).toBe(people.length);
+    expect(new Set(Object.values(colors)).size).toBe(16);
+    expect(new Set(people.slice(16, 32).map(person => colors[person.username])).size).toBe(16);
     expect(participantColors([...people].reverse())).toEqual(colors);
     expect(new Set(Object.values(participantColors(people.slice(0, 8)))).size).toBe(8);
   });
