@@ -17,7 +17,7 @@
 <article class="activity-card" class:selected class:current>
   {#if selectable}<label class="card-selection"><input type="checkbox" aria-label={`选择 ${activity.title}`} checked={selected} {disabled} onchange={event => onselect?.(event.currentTarget.checked)} /></label>{/if}
   <a href={href ?? view.href(`/activities/${activity.id}`)} class="card-link" data-activity-id={activity.id} aria-current={current ? 'true' : undefined} onclick={onopen}>
-    <RouteThumbnail {activity} initialRoute={route} managedRoute={route !== undefined} compact />
+    <RouteThumbnail {activity} initialRoute={route} managedRoute={route !== undefined} color={runner?.color} compact />
     <div class="card-main">
       <h3>{activity.title || '未命名活动'}</h3>
       {#if runner}<p class="card-runner" style:color={runner.color}><span class="runner-icon">{#if runner.avatar}<img src={runner.avatar} alt="" />{:else}{Array.from(runner.name)[0]}{/if}</span>{runner.name}{#if runner.city} · {runner.city}{/if}</p>{/if}

@@ -250,3 +250,32 @@ test('动态选择、手机返回和公开操作', async ({page}) => {
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeCloseTo(previousScroll, 0);
   await expect(feed.locator('.card-link').first()).toBeFocused();
 });
+
+for (const theme of ['light', 'dark'] as const) {
+  for (const width of [1440, 390]) {
+    test(`动态路线使用跑者排行颜色：${theme} ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.addInitScript(value => localStorage.setItem('runnote-theme', value), theme);
+      const record = {id:runners[0].user_id,username:'runner_one',display_name:'合成甲',title:'晨跑',activity_date:'2026-10-01',distance_m:3000,category:'',tags:[],temporal_quality:'complete',avg_pace_seconds_per_km:330,elapsed_seconds:1800,timer_seconds:null,avg_heart_rate_bpm:null,geometry:[{type:'LineString',coordinates:[[10,10],[10.01,10.01]]}]};
+      const second = {...record,id:runners[1].user_id,username:'runner_two',display_name:'合成乙',title:'夜跑'};
+      await page.route('**/api/v1/together?*', route => route.fulfill({json:{data:{distance_m:7000,count:2,participants:runners,recent:[record,second],tracks:[],next_cursor:null,tracks_truncated:false},error:null,meta:{request_id:'test'}}}));
+      await page.goto('/together');
+      const feed = page.locator('#together-feed');
+      const colors = await Promise.all(['合成甲','合成乙'].map(name => page.getByLabel(`${name}排行进度`).evaluate(el => (el as HTMLElement).style.getPropertyValue('--runner-color'))));
+      expect(colors[0]).not.toBe(colors[1]);
+      for (let i = 0; i < 2; i++) {
+        const path = feed.locator('.activity-card').nth(i).locator('svg path');
+        await expect(path).toBeAttached();
+        const expected = await page.evaluate(color => { const el = document.createElement('span'); el.style.color = color; document.body.append(el); const value = getComputedStyle(el).color; el.remove(); return value; }, colors[i]);
+        await expect(path).toHaveCSS('stroke', expected);
+      }
+      if (width < 800) await feed.locator('.card-link').first().click();
+      await expect(feed.getByTestId('route-map-ready')).toHaveAttribute('data-route-line-color', colors[0], {timeout: 20000});
+      if (width < 800) await feed.getByRole('button', {name:'返回'}).click();
+      await feed.locator('.card-link').nth(1).click();
+      await expect(feed.getByTestId('route-map-ready')).toHaveAttribute('data-route-line-color', colors[1], {timeout: 20000});
+      await page.evaluate(async () => { document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; window.dispatchEvent(new Event('runnote-theme-change')); await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame); });
+      await expect(feed.getByTestId('route-map-ready')).toHaveAttribute('data-route-line-color', colors[1]);
+    });
+  }
+}

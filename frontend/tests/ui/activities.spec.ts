@@ -405,3 +405,14 @@ test.describe('the import area is folded', () => {
     await expect(page.getByRole('heading', { name: '导入 GPX / TCX' })).toBeVisible();
   });
 });
+
+test('活动列表路线缩略图保留默认主题颜色', async ({ page }) => {
+  await installActivities(page); await loginRunner(page); await page.goto('/activities');
+  const path = page.locator('.activity-card svg path').first();
+  await expect(path).toBeAttached();
+  const primary = await path.evaluate(el => getComputedStyle(el.closest('.route-thumbnail')!).color);
+  await expect(path).toHaveCSS('stroke', primary);
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; window.dispatchEvent(new Event('runnote-theme-change')); });
+  const darkPrimary = await path.evaluate(el => getComputedStyle(el.closest('.route-thumbnail')!).color);
+  await expect(path).toHaveCSS('stroke', darkPrimary);
+});

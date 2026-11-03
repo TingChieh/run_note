@@ -96,10 +96,10 @@ export function createRouteMapStyle(dark = false): StyleSpecification {
 }
 
 // Change paint only: retain the camera, loaded GeoJSON, selection and tile source.
-export function applyMapTheme(map: MapLibreMap, dark: boolean): void {
+export function applyMapTheme(map: MapLibreMap, dark: boolean, routeColor?: string): void {
   if (map.getLayer('background')) map.setPaintProperty('background', 'background-color', routeMapBackground(dark));
-  if (map.getLayer('route-lines')) map.setPaintProperty('route-lines', 'line-color', dark ? '#77d4ac' : '#14785b');
-  if (map.getLayer('route-points')) map.setPaintProperty('route-points', 'circle-color', dark ? '#77d4ac' : '#14785b');
+  if (map.getLayer('route-lines')) map.setPaintProperty('route-lines', 'line-color', routeColor ?? (dark ? '#77d4ac' : '#14785b'));
+  if (map.getLayer('route-points')) map.setPaintProperty('route-points', 'circle-color', routeColor ?? (dark ? '#77d4ac' : '#14785b'));
   // Keep each route's identity, making all six hues readable on the dark map.
   const colors = dark ? ['match', ['get', 'color'], '#14785b', '#77d4ac', '#315caf', '#94baff', '#b4552c', '#f2b087', '#854caa', '#d3a2ed', '#397d87', '#8bd0d9', '#ba3970', '#f29bbb', ['get', 'color']] : ['get', 'color'];
   if (map.getLayer('footprint-lines')) map.setPaintProperty('footprint-lines', 'line-color', colors);
