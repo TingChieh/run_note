@@ -17,8 +17,9 @@
   import SaveBar from '#lib/components/SaveBar.svelte';
   import { ActivityError } from '#lib/api/activities.ts';
   let name=$state(page.data.user?.display_name ?? ''), bio=$state(page.data.user?.bio ?? ''), enabled=$state(page.data.user?.profile_is_public ?? false), busy=$state(false), message=$state(''), error=$state('');
+  let together = $state(page.data.user?.together_enabled ?? false);
   let wellbeing = $state(page.data.user?.wellbeing_enabled ?? false);
-  let baseline = $state({wellbeing: page.data.user?.wellbeing_enabled ?? false, name: page.data.user?.display_name ?? '', bio: page.data.user?.bio ?? '', enabled: page.data.user?.profile_is_public ?? false});
+  let baseline = $state({together: page.data.user?.together_enabled ?? false, wellbeing: page.data.user?.wellbeing_enabled ?? false, name: page.data.user?.display_name ?? '', bio: page.data.user?.bio ?? '', enabled: page.data.user?.profile_is_public ?? false});
   let currentPassword=$state(''), newPassword=$state(''), passwordBusy=$state(false), passwordError=$state(''), passwordReady=$state(false), disposed=false;
   let avatarUrl = $state<string | null>(page.data.user?.avatar_url ?? null), avatarBusy = $state(false), avatarError = $state('');
   let username = $state(page.data.user?.username ?? ''), usernameOpen = $state(false), usernameBusy = $state(false), usernameError = $state(''), usernameMessage = $state('');
@@ -62,10 +63,10 @@
     finally { if(!disposed) passwordBusy=false; }
   }
   let passwordOpen = $state(false), messageTimer: ReturnType<typeof setTimeout> | undefined;
-  const dirty = $derived(name !== baseline.name || bio !== baseline.bio || enabled !== baseline.enabled || wellbeing !== baseline.wellbeing);
-  function discard() { name = baseline.name; bio = baseline.bio; enabled = baseline.enabled; wellbeing = baseline.wellbeing; error = ''; }
+  const dirty = $derived(name !== baseline.name || bio !== baseline.bio || enabled !== baseline.enabled || wellbeing !== baseline.wellbeing || together !== baseline.together);
+  function discard() { name = baseline.name; bio = baseline.bio; enabled = baseline.enabled; wellbeing = baseline.wellbeing; together = baseline.together; error = ''; }
   $effect(() => { if (dirty) message = ''; });
-  async function save() { if(busy) return;busy=true;message='';error='';clearTimeout(messageTimer);try { const saved=parseUser(await sharingWrite<unknown>('/api/v1/me','PATCH',{display_name:name,bio,profile_is_public:enabled,wellbeing_enabled:wellbeing}));if(disposed) return;name=saved.display_name;bio=saved.bio;enabled=saved.profile_is_public;wellbeing=saved.wellbeing_enabled;baseline={name,bio,enabled,wellbeing};await invalidateAll();message=saved.profile_is_public?'资料已保存，主页已开启。仅公开记录进入主页。':'资料已保存，主页已关闭。独立记录分享仍需单独撤销。'; } catch(cause) { error=cause instanceof Error?cause.message:'保存失败，请重试';if(cause instanceof ActivityError && cause.status===401) window.location.replace('/admin?reason=expired'); } finally { busy=false; if (message) messageTimer = setTimeout(() => { message = ''; }, 6000); } }
+  async function save() { if(busy) return;busy=true;message='';error='';clearTimeout(messageTimer);try { const changes = {...(name !== baseline.name && {display_name:name}), ...(bio !== baseline.bio && {bio}), ...(enabled !== baseline.enabled && {profile_is_public:enabled}), ...(wellbeing !== baseline.wellbeing && {wellbeing_enabled:wellbeing}), ...(together !== baseline.together && {together_enabled:together})}; const saved=parseUser(await sharingWrite<unknown>('/api/v1/me','PATCH',changes));if(disposed) return;name=saved.display_name;bio=saved.bio;enabled=saved.profile_is_public;wellbeing=saved.wellbeing_enabled;together=saved.together_enabled;baseline={name,bio,enabled,wellbeing,together};await invalidateAll();message=saved.profile_is_public?'资料已保存，主页已开启。仅公开记录进入主页。':'资料已保存，主页已关闭。独立记录分享仍需单独撤销。'; } catch(cause) { error=cause instanceof Error?cause.message:'保存失败，请重试';if(cause instanceof ActivityError && cause.status===401) window.location.replace('/admin?reason=expired'); } finally { busy=false; if (message) messageTimer = setTimeout(() => { message = ''; }, 6000); } }
 </script>
 <svelte:head><title>{pageTitle('设置', page.data.site)}</title></svelte:head>
 {#if view.manage}
@@ -105,6 +106,12 @@
         <div class="block-title-row">
           <div><h2 id="wellbeing-label">身心健康</h2><p class="block-hint">关闭后隐藏入口，记录会保留。</p>{#if !page.data.user.wellbeing_allowed}<p class="block-hint">已被管理员关闭。</p>{/if}</div>
           <button type="button" role="switch" class="rn-switch" aria-checked={wellbeing} aria-labelledby="wellbeing-label" disabled={busy || !page.data.user.wellbeing_allowed} onclick={() => wellbeing = !wellbeing}><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span></button>
+        </div>
+      </div>
+      <div class="switch-row">
+        <div class="block-title-row">
+          <div><h2 id="together-label">加入一起跑步</h2><p class="block-hint">开启后，符合展示条件时仅公开运动记录和对应精确路线将汇入一起跑步。</p>{#if !page.data.user.together_allowed}<p class="block-hint">需管理员开启。</p>{/if}</div>
+          <button type="button" role="switch" class="rn-switch" aria-checked={together} aria-labelledby="together-label" disabled={busy || !page.data.user.together_allowed} onclick={() => together = !together}><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span></button>
         </div>
       </div>
     </section>

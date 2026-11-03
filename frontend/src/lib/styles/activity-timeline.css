@@ -1,0 +1,13 @@
+/* Shared timeline structure for running records and together activity. */
+.activity-timeline { display: grid; gap: var(--space-4); min-width: 0; }
+.activity-timeline .timeline-month { min-width: 0; }
+.activity-timeline .timeline-header { display: flex; flex-wrap: wrap; align-items: center; min-height: 1.75rem; gap: var(--space-1) var(--space-3); margin-bottom: var(--space-3); }
+.activity-timeline .timeline-month-pill { display: inline-flex; align-items: center; height: 1.75rem; padding: 0 .75rem; border-radius: var(--radius-pill); background: var(--foreground); color: var(--background); font-size: var(--text-small); font-weight: var(--weight-semibold); }
+.activity-timeline .timeline-month-total { color: var(--muted-foreground); font-size: var(--text-small); font-variant-numeric: tabular-nums; }
+.activity-timeline .timeline-list { position: relative; display: grid; gap: var(--space-2); }
+.activity-timeline .timeline-list::before { content: ''; position: absolute; top: .5rem; bottom: .5rem; left: 1.2rem; border-left: 2px solid var(--border); }
+.activity-timeline .timeline-list > li { display: grid; grid-template-columns: 2.4rem minmax(0, 1fr); align-items: center; gap: var(--space-2); min-width: 0; }
+.activity-timeline .timeline-gutter { position: relative; z-index: 1; display: grid; justify-items: center; padding: .125rem 0; background: var(--timeline-ground, var(--background)); line-height: var(--line-height-tight); }
+.activity-timeline .timeline-gutter b { font-size: var(--text-section); font-variant-numeric: tabular-nums; }
+.activity-timeline .timeline-gutter span { color: var(--muted-foreground); font-size: var(--text-caption); }
+.aux-panel .activity-timeline { --timeline-ground: var(--surface); }

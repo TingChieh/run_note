@@ -165,9 +165,9 @@
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
-  /* Enhanced controls paint hover colour on the deforming tint layer only. */
+  /* Enhanced controls paint hover colour on the deforming tint layer only. Switches are excluded: their track is the control, a fill on the taller button box shows as a halo. */
   @media (hover: hover) {
-    .sport-theme :is(button:where(:not(.wall-card)):where(:not(.settings-tabs > button)):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]), a.button-primary, a.button-secondary):where(:not(.rn-glass-control)):not(:disabled):not([aria-disabled="true"]):hover {
+    .sport-theme :is(button:where(:not(.wall-card)):where(:not(.settings-tabs > button)):not(.rn-menu-option):not(.rn-select-toggle):not(.rn-switch):not([data-date]), a.button-primary, a.button-secondary):where(:not(.rn-glass-control)):not(:disabled):not([aria-disabled="true"]):hover {
       background-color: var(--button-glass-hover) !important;
     }
   }

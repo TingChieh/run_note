@@ -13,7 +13,7 @@ describe('authentication boundary', () => {
       expect(new Headers(init?.headers).get('X-CSRF-Token')).toBe(`csrf-${token}`);
       expect(new Headers(init?.headers).has('Origin')).toBe(false);
       expect(JSON.parse(init?.body as string)).toEqual({ email: 'a@example.com', password: 'long-password' });
-      return envelope({ user: { id: `user-${token}`, email: 'a@example.com', username: 'runner', display_name: '跑者', timezone: 'UTC', created_at: '2026-10-16T00:00:00Z', bio: '', profile_is_public: false, is_admin: false, showcase_enabled: false, wellbeing_allowed: true, wellbeing_enabled: true }, csrf_token: 'rotated' });
+      return envelope({ user: { id: `user-${token}`, email: 'a@example.com', username: 'runner', display_name: '跑者', timezone: 'UTC', created_at: '2026-10-16T00:00:00Z', bio: '', profile_is_public: false, is_admin: false, showcase_enabled: false, together_allowed: false, together_enabled: false, wellbeing_allowed: true, wellbeing_enabled: true }, csrf_token: 'rotated' });
     };
     expect(await authWrite('login', { email: 'a@example.com', password: 'long-password' }, fetcher)).toMatchObject({ user: { id: 'user-1' } });
     expect(await authWrite('login', { email: 'a@example.com', password: 'long-password' }, fetcher)).toMatchObject({ user: { id: 'user-2' } });

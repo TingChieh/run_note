@@ -15,7 +15,7 @@
   import { createBasemapController } from '#lib/map/basemap-controller.ts';
   import { watchSystemTheme } from './system-theme';
   import 'maplibre-gl/dist/maplibre-gl.css';
-  let { data, onretry }: {data: FootprintCollection; onretry: () => void} = $props();
+  let { data, onretry, participantColors = {}, mapLabel = "", quietCityFailure = false }: {data: FootprintCollection; onretry: () => void; participantColors?: Record<string, string>; mapLabel?: string; quietCityFailure?: boolean} = $props();
   let container: HTMLDivElement, frameEl: HTMLDivElement, map: LibreMap | undefined, disposed=false;
   let framing: 'auto' | 'all' | 'picked' | 'free' = 'auto';
   let ready=$state(false), error=$state(''), basemap=$state<'loading'|'ready'|'failed'>('loading');
@@ -102,10 +102,13 @@
     const source=map?.getSource('footprints') as GeoJSONSource|undefined;
     if(!map || !source || appliedData===data)return;
     appliedData=data;
-    source.setData({type:'FeatureCollection',features:colorFootprintFeatures(displayData.features,palette)});
+    source.setData({type:'FeatureCollection',features:colored(displayData.features)});
     framing='auto';choices=[];heat=null;heatPage=0;highlight([]);loadCities();frameInitial();
   }
   $effect(()=>{data;untrack(applyData);});
+  function colored(features: typeof displayData.features) {
+    return colorFootprintFeatures(features, palette).map(feature => ({...feature, properties: {...feature.properties, color: participantColors[String(feature.properties?.username)] ?? feature.properties.color}}));
+  }
   const palette=['#14785b','#315caf','#b4552c','#854caa','#397d87','#ba3970'];
   function loadBasemap() { basemapController?.retry(); }
   const onWindowResize = () => { sizeCanvas(); map?.resize(); if (framing === 'all') fit(allBounds); else if (framing === 'picked') locateCity(selectedCity, false); else if (framing === 'auto') frameInitial(); };
@@ -124,7 +127,7 @@
       map.on('load',()=>{
         if(!map || disposed)return;
         appliedData=data;
-        const features=colorFootprintFeatures(displayData.features,palette);
+        const features=colored(displayData.features);
         map.addSource('footprints',{type:'geojson',data:{type:'FeatureCollection',features}});
         map.addLayer({id:'footprint-fill',type:'fill',source:'footprints',filter:['==','$type','Polygon'],paint:{'fill-color':['step',['get','count'],'#c0dfac',2,'#72b78a',4,'#2d9474',8,'#e69338',16,'#bd432c'],'fill-opacity':0.8}});
         map.addLayer({id:'footprint-lines',type:'line',source:'footprints',filter:['==','$type','LineString'],paint:{'line-color':['get','color'],'line-width':3,'line-opacity':0.8},layout:{'line-join':'round','line-cap':'round'}});
@@ -152,7 +155,7 @@
 <div class="map-section content-reveal">
   <div class="map-toolbar"><div class="toolbar-actions"><button type="button" onclick={overview} disabled={!ready || !!error} class="button-secondary">回到全部足迹</button><button type="button" onclick={()=>{cityOpen=!cityOpen;}} disabled={!ready || !!error || cityLookup!=='ready' || !cityName} aria-expanded={cityOpen} aria-controls="footprint-cities" class="button-secondary city-menu-toggle">城市</button></div><p class="map-hint" id="footprint-map-help">拖动或缩放探索 · 方向键移动 · + / − 缩放</p></div>
   {#if cityLookup==='loading'}<p role="status" class="city-hint">正在识别有记录的城市…</p>
-  {:else if cityLookup==='failed'}<div class="city-actions"><p role="status" class="city-hint">城市识别暂不可用，全部足迹仍可查看。</p><button type="button" onclick={loadCities} class="button-secondary">重试识别城市</button></div>
+  {:else if cityLookup==='failed' && !quietCityFailure}<div class="city-actions"><p role="status" class="city-hint">城市识别暂不可用，全部足迹仍可查看。</p><button type="button" onclick={loadCities} class="button-secondary">重试识别城市</button></div>
   {:else}
     <div class="city-buttons" role="group" aria-label="有记录的城市">{#each cities as city}<button type="button" onclick={()=>locateCity(city.code)} disabled={!ready || !!error} aria-pressed={selectedCity===city.code} class="button-secondary">{city.name}</button>{/each}{#if unlocatedBounds}<button type="button" onclick={()=>locateCity('unlocated')} disabled={!ready || !!error} aria-pressed={selectedCity==='unlocated'} class="button-secondary">未识别区域</button>{/if}</div>
   {/if}
@@ -162,12 +165,12 @@
   </div>{/if}
   {#if basemap==='failed' && !error}<div class="basemap-feedback" role="status"><span>底图暂不可用，足迹仍可查看。</span><button type="button" onclick={loadBasemap} class="button-secondary">重试底图</button></div>{:else if basemap==='loading' && ready && !error}<p role="status" class="basemap-status">正在加载底图，足迹可先查看…</p>{/if}
   {#if error}<FeedbackState kind="error" title={error}><button type="button" class="button-secondary" onclick={onretry}>重新绘制地图</button></FeedbackState>{:else if !ready}<p role="status" class="basemap-status">正在绘制足迹…</p>{/if}
-  <div class="map-frame" bind:this={frameEl}><div bind:this={container} class="map-canvas" role="region" aria-label={data.mode==='heatmap'?'个人运动热力图':'个人多轨迹叠加地图'} aria-describedby="footprint-map-help" data-testid={ready?'footprint-map-ready':'footprint-map-loading'}></div>
+  <div class="map-frame" bind:this={frameEl}><div bind:this={container} class="map-canvas" role="region" aria-label={mapLabel || (data.mode==='heatmap'?'个人运动热力图':'个人多轨迹叠加地图')} aria-describedby="footprint-map-help" data-testid={ready?'footprint-map-ready':'footprint-map-loading'}></div>
     <div class="map-layers"><BasemapPicker preference={basemapPreference} style={basemapStyle} status={basemap} /></div>
   </div>
-  {#if choices.length}<div class="route-choices" data-testid="route-choices"><p class="font-semibold" role="status">此处经过的记录（{choices.length}）</p><ul>{#each choices as record}<li><div><span class="record-date">{record.date}</span><a href={view.href(`/activities/${record.id}`)}>{record.title || '未命名活动'} · 查看详情</a></div><button type="button" class="button-secondary" onclick={()=>selectRecord(record)} aria-pressed={selectedIds.length===1 && selectedIds[0]===record.id}>定位路线</button></li>{/each}</ul></div>{/if}
+  {#if choices.length}<div class="route-choices" data-testid="route-choices"><p class="font-semibold" role="status">此处经过的记录（{choices.length}）</p><ul>{#each choices as record}<li><div><span class="record-date">{record.date}</span><a href={data.features.find(f => f.properties?.activity_id === record.id)?.properties?.username ? `/p/${encodeURIComponent(String(data.features.find(f => f.properties?.activity_id === record.id)?.properties?.username))}/activities/${record.id}` : view.href(`/activities/${record.id}`)}>{record.title || '未命名活动'} · 查看详情</a></div><button type="button" class="button-secondary" onclick={()=>selectRecord(record)} aria-pressed={selectedIds.length===1 && selectedIds[0]===record.id}>定位路线</button></li>{/each}</ul></div>{/if}
   {#if heat!==null}<p role="status" class="heat-selection">所选网格：{heat} 条不同运动记录经过。</p>{/if}
-  {#if records.length}<details class="record-list" bind:open={recordsOpen}><summary>全部可显示记录（{records.length}）· 详情入口</summary>{#if recordsOpen}<ul>{#each records as record}<li><div><span class="record-date">{record.date}</span><a href={view.href(`/activities/${record.id}`)}>{record.title || '未命名活动'}</a></div><button type="button" disabled={!ready || !!error} onclick={()=>selectRecord(record)} aria-label={`定位 ${record.title || '未命名活动'}`} aria-pressed={selectedIds.length===1 && selectedIds[0]===record.id} class="button-secondary">定位</button></li>{/each}</ul>{/if}</details>
+  {#if records.length}<details class="record-list" bind:open={recordsOpen}><summary>全部可显示记录（{records.length}）· 详情入口</summary>{#if recordsOpen}<ul>{#each records as record}<li><div><span class="record-date">{record.date}</span><a href={data.features.find(f => f.properties?.activity_id === record.id)?.properties?.username ? `/p/${encodeURIComponent(String(data.features.find(f => f.properties?.activity_id === record.id)?.properties?.username))}/activities/${record.id}` : view.href(`/activities/${record.id}`)}>{record.title || '未命名活动'}</a></div><button type="button" disabled={!ready || !!error} onclick={()=>selectRecord(record)} aria-label={`定位 ${record.title || '未命名活动'}`} aria-pressed={selectedIds.length===1 && selectedIds[0]===record.id} class="button-secondary">定位</button></li>{/each}</ul>{/if}</details>
   {:else if data.mode==='heatmap'}<details class="heat-data" bind:open={heatDataOpen}><summary>查看热区数据（{data.features.length} 格）</summary>{#if heatDataOpen}<div class="heat-table"><table><caption class="sr-only">不同运动记录经过各网格的次数，可定位到地图</caption><thead><tr><th>区域</th><th>不同记录数</th><th>地图定位</th></tr></thead><tbody>{#each data.features.slice(heatPage*heatPageSize,(heatPage+1)*heatPageSize) as feature,index}<tr><td>热区 {heatPage*heatPageSize+index+1}</td><td>{feature.properties?.count} 次</td><td><button type="button" class="button-secondary" disabled={!ready || !!error} aria-label={`定位热区 ${heatPage*heatPageSize+index+1}`} onclick={()=>selectHeat(heatPage*heatPageSize+index)}>定位</button></td></tr>{/each}</tbody></table></div>{#if data.features.length>heatPageSize}<div class="heat-pagination"><button type="button" class="button-secondary" disabled={heatPage===0} onclick={()=>{heatPage--;}}>上一页热区</button><p role="status">第 {heatPage+1} / {Math.ceil(data.features.length/heatPageSize)} 页 · 共 {data.features.length} 格</p><button type="button" class="button-secondary" disabled={(heatPage+1)*heatPageSize>=data.features.length} onclick={()=>{heatPage++;}}>下一页热区</button></div>{/if}{/if}</details>{/if}
 </div>
 <style>

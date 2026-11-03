@@ -25,6 +25,8 @@ def view(user, settings):
         is_admin=is_admin(user, settings),
         showcase_enabled=is_admin(user, settings)
         or (bool(user.is_active) and bool(user.showcase_enabled)),
+        together_allowed=user.together_allowed,
+        together_enabled=user.together_enabled,
         wellbeing_allowed=user.wellbeing_allowed,
         wellbeing_enabled=user.wellbeing_enabled,
         email=user.email_normalized,
@@ -44,7 +46,10 @@ def view(user, settings):
 
 
 def update_profile(user, payload, settings):
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    if changes.get("together_enabled") is True and not user.together_allowed:
+        raise ApiError(403, "TOGETHER_NOT_ALLOWED", "需管理员开启")
+    for key, value in changes.items():
         setattr(user, key, value)
     return view(user, settings)
 
