@@ -5,6 +5,27 @@ const runners = [
   { user_id:'00000000-0000-4000-8000-000000000001',avatar_version:null,username:'runner_one',display_name:'合成甲',distance_m:3000,count:1,week_m:3000,month_m:3000,year_m:5000 },
   { user_id:'00000000-0000-4000-8000-000000000002',avatar_version:null,username:'runner_two',display_name:'合成乙',distance_m:4000,count:1,week_m:1000,month_m:4000,year_m:8000 },
 ];
+test('手机地图筛选紧凑且桌面布局保持原样', async ({page}) => {
+  const participants = ['小林','阿杰','美玲','志明'].map((display_name, i) => ({...runners[i % 2], user_id:`00000000-0000-4000-8000-00000000000${i+1}`, username:`runner_${i}`, display_name}));
+  const tracks = [{username:participants[0].username,activity_id:participants[0].user_id,title:'合成路线',activity_date:'2026-10-01',segment_index:0,geometry:{type:'LineString',coordinates:[[10,10],[10.01,10.01]]}}];
+  await page.route('**/api/v1/together?*', route=>route.fulfill({json:{data:{next_cursor:null,tracks_truncated:false,distance_m:7000,count:1,participants,recent:[],tracks},error:null,meta:{request_id:'test'}}}));
+  await page.setViewportSize({width:390,height:844});
+  await page.goto('/together');
+  await expect(page.getByTestId('footprint-map-ready')).toBeVisible({timeout:15000});
+  const legend=page.getByRole('region',{name:'选择参与者'});
+  const height=async()=> (await legend.boundingBox())!.height;
+  console.log(`390px filter height: ${await height()}px; controls height: ${(await page.locator('.map-toolbar').boundingBox())!.height}px`);
+  expect(await height()).toBeLessThanOrEqual(60);
+  for (const button of await legend.getByRole('button').all()) expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(40);
+  await legend.getByRole('button',{name:'小林'}).click();
+  await expect(legend.getByRole('button',{name:'小林'})).toHaveAttribute('aria-pressed','true');
+  await page.setViewportSize({width:320,height:844});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.setViewportSize({width:1280,height:844});
+  await expect(legend.locator('.runner-avatar').first()).toBeVisible();
+  await expect(legend).toHaveCSS('flex-wrap','wrap');
+});
+
 test('访客可切换排行和地图参与者', async ({page}) => {
   await page.route('**/api/v1/together?*', route=>route.fulfill({json:{data:{next_cursor:null,tracks_truncated:false,distance_m:7000,count:2,participants:runners,recent:[],tracks:[{username:'runner_one',activity_id:'00000000-0000-4000-8000-000000000001',title:'合成路线',activity_date:'2026-10-01',segment_index:0,geometry:{type:'LineString',coordinates:[[10,10],[10.01,10.01]]}}]},error:null,meta:{request_id:'test'}}}));
   await page.goto('/together');
@@ -18,14 +39,14 @@ test('访客可切换排行和地图参与者', async ({page}) => {
   await expect(page.getByTestId('footprint-map-ready')).toBeVisible({timeout:15000});
   const legend=page.getByRole('region',{name:'选择参与者'});
   const map=page.getByTestId('footprint-map-ready');
-  expect((await legend.boundingBox())!.y).toBeLessThan((await map.boundingBox())!.y);
+  expect((await legend.boundingBox())!.y).toBeGreaterThan((await map.boundingBox())!.y);
   await page.getByRole('button',{name:'合成乙'}).click();
   await expect(page.getByText('全部可显示记录（1）', {exact:false})).toBeVisible();
   await expect(page.getByText('该跑者在此时段暂无路线，地图仍显示全部足迹。')).toBeVisible();
   await expect(page.getByRole('button',{name:'合成乙'})).toHaveAttribute('aria-pressed','true');
   await expect(ranking.locator('progress').first()).toHaveAttribute('value','100');
   await page.setViewportSize({width:320,height:700});
-  await expect(legend).toHaveCSS('flex-wrap','wrap');
+  await expect(legend).toHaveCSS('flex-wrap','nowrap');
   await expect(ranking.locator('progress').first()).toHaveCSS('appearance','none');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
   const mapBox=await page.getByTestId('footprint-map-ready').boundingBox();
@@ -36,7 +57,8 @@ test('访客可切换排行和地图参与者', async ({page}) => {
 test('重叠轨迹选择跑者时突出其颜色并保留其他记录', async ({page}) => {
   await page.emulateMedia({reducedMotion:'reduce'});
   const tracks=runners.map(runner=>({username:runner.username,activity_id:runner.user_id,title:runner.display_name,activity_date:'2026-10-01',segment_index:0,geometry:{type:'LineString',coordinates:[[10,10],[10.02,10.02]]}}));
-  await page.route('**/api/v1/together?*', route=>route.fulfill({json:{data:{next_cursor:null,tracks_truncated:false,distance_m:7000,count:2,participants:runners,recent:[],tracks},error:null,meta:{request_id:'test'}}}));
+  const recent=runners.map(runner=>({id:runner.user_id,username:runner.username,display_name:runner.display_name,title:runner.display_name,activity_date:'2026-10-01',distance_m:3000,category:'',tags:[],temporal_quality:'complete',avg_pace_seconds_per_km:330,elapsed_seconds:1800,timer_seconds:null,avg_heart_rate_bpm:null,geometry:[]}));
+  await page.route('**/api/v1/together?*', route=>route.fulfill({json:{data:{next_cursor:null,tracks_truncated:false,distance_m:7000,count:2,participants:runners,recent,tracks},error:null,meta:{request_id:'test'}}}));
   await page.goto('/together');
   const map=page.getByTestId('footprint-map-ready');
   await expect(map).toBeVisible({timeout:15000});
@@ -58,6 +80,11 @@ test('重叠轨迹选择跑者时突出其颜色并保留其他记录', async ({
   await expect(page.getByText('全部可显示记录（2）', {exact:false})).toBeVisible();
   await expect.poll(countColor).toBeGreaterThan(before+50);
   await page.getByRole('button',{name:'全部',exact:true}).click();
+  await expect.poll(countColor).toBeLessThan(before+50);
+  await page.locator('#together-feed .card-link').first().click();
+  await expect.poll(countColor).toBeGreaterThan(before+50);
+  await expect(page.locator('#together-feed .card-link').first()).toHaveAttribute('aria-current','true');
+  await page.locator('#together-feed .card-link').first().click();
   await expect.poll(countColor).toBeLessThan(before+50);
 });
 
@@ -114,7 +141,7 @@ test('手机动态使用时间线且点击后跳转链接保持隐藏', async ({
   await page.setViewportSize({width:390,height:844});
   await page.route('**/api/v1/together?*', route=>route.fulfill({json:{data:{next_cursor:null,tracks_truncated:false,distance_m:3000,count:1,participants:runners,recent:[{id:'00000000-0000-4000-8000-000000000001',username:'runner_one',display_name:'合成甲',title:'跑步',activity_date:'2026-10-01',distance_m:3000,category:'',tags:[],temporal_quality:'complete',avg_pace_seconds_per_km:330,elapsed_seconds:1800,timer_seconds:null,avg_heart_rate_bpm:null,geometry:[]}],tracks:[]},error:null,meta:{request_id:'test'}}}));
   await page.goto('/together');
-  const recent=page.locator('section').filter({has:page.getByRole('heading',{name:'最近动态'})});
+  const recent=page.locator('#together-feed');
   await expect(recent.locator('.activity-card')).toContainText('合成甲');
   await expect(recent.locator('.activity-card')).not.toContainText('未识别城市');
   await expect(recent.locator('.card-link')).toHaveAttribute('href','/p/runner_one/activities/00000000-0000-4000-8000-000000000001');
@@ -214,7 +241,7 @@ test('周期更新摘要和地址，刷新保留年份且动态不变', async ({
     return route.fulfill({json:{data:{next_cursor:null,tracks_truncated:false,distance_m:distance,count:2,participants:runners,recent:[{id:runners[0].user_id,username:'runner_one',display_name:'合成甲',title:'跑步',activity_date:'2026-10-01',distance_m:3000,category:'',tags:[],temporal_quality:'complete',avg_pace_seconds_per_km:330,elapsed_seconds:1800,timer_seconds:null,avg_heart_rate_bpm:null,geometry:[]}],tracks:[]},error:null,meta:{request_id:'test'}}});
   });
   await page.goto('/together');
-  const recent = page.locator('section').filter({has:page.getByRole('heading',{name:'最近动态'})});
+  const recent = page.locator('#together-feed');
   await expect(page.getByText('本周我们一起跑了 4.00 公里')).toBeVisible();
   await page.getByRole('button',{name:'本月'}).click();
   await expect(page).toHaveURL(/period=month/);
@@ -237,7 +264,7 @@ test('动态分页失败可重试，追加去重并在末页隐藏按钮', async
   await page.route('**/api/v1/together/feed?*', route=>{ attempts++; return attempts===1 ? route.fulfill({status:503,json:{error:{code:'FAILED'}}}) : route.fulfill({json:{data:{items:[record,{...record,id:runners[1].user_id,activity_date:'2026-09-30'}],next_cursor:null},error:null,meta:{request_id:'test'}}}); });
   await page.goto('/together');
   await expect(page.getByText('仅显示最近 500 条轨迹')).toBeVisible();
-  const recent=page.locator('section').filter({has:page.getByRole('heading',{name:'最近动态'})});
+  const recent=page.locator('#together-feed');
   await recent.getByRole('button',{name:'加载更多'}).click();
   await expect(recent.getByRole('alert')).toBeVisible();
   await recent.getByRole('button',{name:'重试'}).click();
@@ -255,64 +282,35 @@ test('轨迹未截断时不显示截断提示', async ({page}) => {
   await expect(page.getByText('仅显示最近 500 条轨迹')).toHaveCount(0);
 });
 
-test('动态选择、手机返回和公开操作', async ({page}) => {
+test('动态选择、地图详情和手机布局', async ({page}) => {
   await page.setViewportSize({width:1440,height:900});
   const record = {id:runners[0].user_id,username:'runner_one',display_name:'合成甲',title:'晨跑',activity_date:'2026-10-01',distance_m:3000,category:'慢跑',tags:['公园'],temporal_quality:'complete',avg_pace_seconds_per_km:330,elapsed_seconds:990,timer_seconds:null,avg_heart_rate_bpm:120,geometry:[{type:'LineString',coordinates:[[10,10],[10.01,10.01]]}]};
   const second = {...record,id:runners[1].user_id,username:'runner_two',display_name:'合成乙',title:'夜跑'};
   await page.route('**/api/v1/together?*', route => route.fulfill({json:{data:{distance_m:7000,count:2,participants:runners,recent:[record,second],tracks:[],next_cursor:null,tracks_truncated:false},error:null,meta:{request_id:'test'}}}));
   await page.goto('/together');
-  const feed=page.locator('#together-feed');
-  await expect(feed.getByTestId('activity-preview')).toContainText('晨跑');
-  const firstCard = await feed.locator('.activity-card').first().boundingBox();
-  const detailPanel = await feed.getByTestId('activity-preview').boundingBox();
-  expect(firstCard).not.toBeNull();
-  expect(detailPanel).not.toBeNull();
-  expect(Math.abs(firstCard!.y - detailPanel!.y)).toBeLessThanOrEqual(2);
-  await expect(feed.locator('[data-testid=month-total]')).toHaveText('已加载 2 次 · 6.0 km');
-  await expect(feed.locator('.activity-card').first()).toContainText('#公园');
-  await expect(feed.getByTestId('route-map-ready')).toBeVisible({timeout:15000});
-  await expect(feed.locator('[aria-label="路线起点"]')).toBeVisible();
+  const feed=page.locator('#together-feed'), map=page.locator('#together-map');
+  await expect(page.getByTestId('footprint-map-ready')).toBeVisible({timeout:15000});
+  expect(Math.abs((await feed.locator('.activity-card').first().boundingBox())!.y - (await map.boundingBox())!.y)).toBeLessThanOrEqual(2);
+  await expect(map).toHaveCSS('position','sticky');
   await feed.locator('.card-link').nth(1).click();
-  await expect(feed.getByTestId('activity-preview')).toContainText('夜跑');
-  await expect(feed.getByTestId('activity-preview')).toContainText('合成乙');
+  await expect(page.getByTestId('together-map-info')).toContainText('夜跑');
+  await expect(page.getByTestId('together-map-info').getByRole('link')).toHaveAttribute('href',`/p/runner_two/activities/${second.id}`);
   await expect(feed.getByRole('button',{name:/编辑|删除|分享|导出/})).toHaveCount(0);
-  await page.setViewportSize({width:375,height:700});
-  await feed.locator('.card-link').first().scrollIntoViewIfNeeded();
-  const previousScroll = await page.evaluate(() => window.scrollY);
+  await feed.locator('.card-link').nth(1).click();
+  await expect(page.getByTestId('together-map-info')).toHaveCount(0);
+  await page.setViewportSize({width:320,height:700});
+  expect((await map.boundingBox())!.y).toBeLessThan((await feed.locator('.activity-card').first().boundingBox())!.y);
   await feed.locator('.card-link').first().click();
-  await expect(feed.getByTestId('activity-preview')).toBeVisible();
-  await expect(feed.locator('.activity-card').first()).toBeHidden();
-  await feed.getByRole('button',{name:'返回'}).click();
-  await expect(feed.locator('.activity-card').first()).toBeVisible();
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeCloseTo(previousScroll, 0);
-  await expect(feed.locator('.card-link').first()).toBeFocused();
+  await expect(page.getByTestId('together-map-info')).toContainText('晨跑');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-for (const theme of ['light', 'dark'] as const) {
-  for (const width of [1440, 390]) {
-    test(`动态路线使用跑者排行颜色：${theme} ${width}px`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 900 });
-      await page.addInitScript(value => localStorage.setItem('runnote-theme', value), theme);
-      const record = {id:runners[0].user_id,username:'runner_one',display_name:'合成甲',title:'晨跑',activity_date:'2026-10-01',distance_m:3000,category:'',tags:[],temporal_quality:'complete',avg_pace_seconds_per_km:330,elapsed_seconds:1800,timer_seconds:null,avg_heart_rate_bpm:null,geometry:[{type:'LineString',coordinates:[[10,10],[10.01,10.01]]}]};
-      const second = {...record,id:runners[1].user_id,username:'runner_two',display_name:'合成乙',title:'夜跑'};
-      await page.route('**/api/v1/together?*', route => route.fulfill({json:{data:{distance_m:7000,count:2,participants:runners,recent:[record,second],tracks:[],next_cursor:null,tracks_truncated:false},error:null,meta:{request_id:'test'}}}));
-      await page.goto('/together');
-      const feed = page.locator('#together-feed');
-      const colors = await Promise.all(['合成甲','合成乙'].map(name => page.getByLabel(`${name}排行进度`).evaluate(el => (el as HTMLElement).style.getPropertyValue('--runner-color'))));
-      expect(colors[0]).not.toBe(colors[1]);
-      for (let i = 0; i < 2; i++) {
-        const path = feed.locator('.activity-card').nth(i).locator('svg path');
-        await expect(path).toBeAttached();
-        const expected = await page.evaluate(color => { const el = document.createElement('span'); el.style.color = color; document.body.append(el); const value = getComputedStyle(el).color; el.remove(); return value; }, colors[i]);
-        await expect(path).toHaveCSS('stroke', expected);
-      }
-      if (width < 800) await feed.locator('.card-link').first().click();
-      await expect(feed.getByTestId('route-map-ready')).toHaveAttribute('data-route-line-color', colors[0], {timeout: 20000});
-      if (width < 800) await feed.getByRole('button', {name:'返回'}).click();
-      await feed.locator('.card-link').nth(1).click();
-      await expect(feed.getByTestId('route-map-ready')).toHaveAttribute('data-route-line-color', colors[1], {timeout: 20000});
-      await page.evaluate(async () => { document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; window.dispatchEvent(new Event('runnote-theme-change')); await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame); });
-      await expect(feed.getByTestId('route-map-ready')).toHaveAttribute('data-route-line-color', colors[1]);
-    });
-  }
-}
+test('选择动态时在合并地图显示详情并可重置', async ({page}) => {
+  const record = {id:runners[0].user_id,username:'runner_one',display_name:'合成甲',title:'晨跑',activity_date:'2026-10-01',distance_m:3000,category:'',tags:[],temporal_quality:'complete',avg_pace_seconds_per_km:330,elapsed_seconds:1800,timer_seconds:null,avg_heart_rate_bpm:null,geometry:[{type:'LineString',coordinates:[[10,10],[10.01,10.01]]}]};
+  await page.route('**/api/v1/together?*', route => route.fulfill({json:{data:{distance_m:3000,count:1,participants:runners,recent:[record],tracks:[],next_cursor:null,tracks_truncated:false},error:null,meta:{request_id:'test'}}}));
+  await page.goto('/together');
+  await page.locator('#together-feed .card-link').first().click();
+  await expect(page.getByTestId('together-map-info')).toContainText('晨跑');
+  await page.getByRole('button',{name:'回到全部足迹'}).click();
+  await expect(page.getByTestId('together-map-info')).toHaveCount(0);
+});

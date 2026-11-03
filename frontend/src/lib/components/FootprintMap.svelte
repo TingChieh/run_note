@@ -4,7 +4,7 @@
   const fetch = view.fetch;
 
   import FeedbackState from '#lib/components/FeedbackState.svelte';
-  import { onMount, onDestroy, untrack } from 'svelte';
+  import { onMount, onDestroy, untrack, type Snippet } from 'svelte';
   import type { Map as LibreMap, GeoJSONSource } from 'maplibre-gl';
   import type { FootprintCollection } from '#lib/api/footprints.ts';
   import { geometryBounds, displayFootprints } from '#lib/api/footprints.ts';
@@ -15,7 +15,7 @@
   import { createBasemapController } from '#lib/map/basemap-controller.ts';
   import { watchSystemTheme } from './system-theme';
   import 'maplibre-gl/dist/maplibre-gl.css';
-  let { data, onretry, participantColors = {}, mapLabel = "", quietCityFailure = false, animateDataChanges = false, selectedRunner = "", onclearRunner }: {data: FootprintCollection; onretry: () => void; participantColors?: Record<string, string>; mapLabel?: string; quietCityFailure?: boolean; animateDataChanges?: boolean; selectedRunner?: string; onclearRunner?: () => void} = $props();
+  let { data, onretry, participantColors = {}, mapLabel = "", quietCityFailure = false, animateDataChanges = false, selectedRunner = "", selectedActivity = "", compact = false, children, onclearRunner }: {data: FootprintCollection; onretry: () => void; participantColors?: Record<string, string>; mapLabel?: string; quietCityFailure?: boolean; animateDataChanges?: boolean; selectedRunner?: string; selectedActivity?: string; compact?: boolean; children?: Snippet; onclearRunner?: () => void} = $props();
   let container: HTMLDivElement, frameEl: HTMLDivElement, map: LibreMap | undefined, disposed=false;
   let framing: 'auto' | 'all' | 'picked' | 'free' = 'auto';
   let ready=$state(false), error=$state(''), basemap=$state<'loading'|'ready'|'failed'>('loading');
@@ -54,6 +54,7 @@
   }
   function sizeCanvas() {
     if (!frameEl) return;
+    if (compact && window.matchMedia('(max-width: 959px)').matches) { frameEl.style.height = `${Math.round(window.innerHeight * 0.45)}px`; return; }
     const available = window.innerHeight - frameEl.getBoundingClientRect().top - 16;
     frameEl.style.height = `${Math.min(720, Math.max(424, Math.floor(available)))}px`;
   }
@@ -105,29 +106,29 @@
     appliedData=data;
     source.setData({type:'FeatureCollection',features:colored(displayData.features)});
     framing='auto';choices=[];heat=null;heatPage=0;highlight([]);loadCities();
-    if (onclearRunner && selectedRunner) focusRunner(selectedRunner); else fit(allBounds, animateDataChanges);
+    if (onclearRunner && (selectedRunner || selectedActivity)) focusRunner(selectedRunner, selectedActivity); else fit(allBounds, animateDataChanges);
   }
   $effect(()=>{data;untrack(applyData);});
-  function focusRunner(runner: string) {
+  function focusRunner(runner: string, activity = "") {
     if (!map?.getLayer('footprint-lines') || !onclearRunner) return;
-    const hasRunner = !!runner && displayData.features.some(f => f.properties?.username === runner);
-    const match = ['==', ['get', 'username'], runner] as ['==', ['get', 'username'], string];
+    const hasRunner = activity ? displayData.features.some(f => f.properties?.activity_id === activity) : !!runner && displayData.features.some(f => f.properties?.username === runner);
+    const match = ['==', ['get', activity ? 'activity_id' : 'username'], activity || runner] as ['==', ['get', 'username'], string];
     if (map.getLayer('footprint-casing')) map.setPaintProperty('footprint-casing', 'line-opacity', hasRunner ? ['case', match, 0.8, 0.12] : 0.65);
     map.setPaintProperty('footprint-lines', 'line-opacity', hasRunner ? ['case', match, 1, 0.18] : 0.8);
     map.setPaintProperty('footprint-lines', 'line-width', hasRunner ? ['case', match, 4, 2] : 3);
     map.setPaintProperty('footprint-points', 'circle-opacity', hasRunner ? ['case', match, 1, 0.18] : 1);
-    if (map.getLayer('footprint-selected')) map.setFilter('footprint-selected', ['all', ['==', '$type', 'LineString'], match]);
-    const bounds = runner ? geometryBounds(displayData.features.filter(f => f.properties?.username === runner).map(f => f.geometry)) : allBounds;
-    if (bounds) { framing = runner ? 'free' : 'all'; fit(bounds, animateDataChanges); }
+    if (map.getLayer('footprint-selected')) { map.setFilter('footprint-selected', ['all', ['==', '$type', 'LineString'], match]); map.setFilter('footprint-selected-casing', ['all', ['==', '$type', 'LineString'], match]); }
+    const bounds = activity ? geometryBounds(displayData.features.filter(f => f.properties?.activity_id === activity).map(f => f.geometry)) : runner ? geometryBounds(displayData.features.filter(f => f.properties?.username === runner).map(f => f.geometry)) : allBounds;
+    if (bounds) { framing = runner || activity ? 'free' : 'all'; fit(bounds, animateDataChanges); }
   }
-  $effect(()=>{const runner=selectedRunner; if (ready) untrack(()=>focusRunner(runner));});
+  $effect(()=>{const runner=selectedRunner, activity=selectedActivity; if (ready) untrack(()=>focusRunner(runner, activity));});
   function colored(features: typeof displayData.features) {
     return colorFootprintFeatures(features, palette).map(feature => ({...feature, properties: {...feature.properties, color: participantColors[String(feature.properties?.username)] ?? feature.properties.color}}));
   }
   const palette=['#14785b','#315caf','#b4552c','#854caa','#397d87','#ba3970'];
   function loadBasemap() { basemapController?.retry(); }
   const onWindowResize = () => { sizeCanvas(); map?.resize(); if (framing === 'all') fit(allBounds); else if (framing === 'picked') locateCity(selectedCity, false); else if (framing === 'auto') frameInitial(); };
-  onMount(()=>{loadCities();sizeCanvas();window.addEventListener('resize', onWindowResize);stopTheme=watchSystemTheme(value=>{dark=value;if(map && !disposed) { if (!basemapController) applyMapTheme(map,dark); if (map.getLayer('footprint-casing')) map.setPaintProperty('footprint-casing','line-color',dark?'#302e2c':'#ffffff'); }});void(async()=>{
+  onMount(()=>{loadCities();sizeCanvas();window.addEventListener('resize', onWindowResize);stopTheme=watchSystemTheme(value=>{dark=value;if(map && !disposed) { if (!basemapController) applyMapTheme(map,dark); if (map.getLayer('footprint-casing')) map.setPaintProperty('footprint-casing','line-color',dark?'#302e2c':'#ffffff'); if (map.getLayer('footprint-selected-casing')) map.setPaintProperty('footprint-selected-casing','line-color',dark?'#302e2c':'#ffffff'); }});void(async()=>{
     try {
       const lib=await import('maplibre-gl'); if(disposed)return;
       // Start on the overview so no high-zoom tiles load before the first fit.
@@ -147,6 +148,7 @@
         map.addLayer({id:'footprint-fill',type:'fill',source:'footprints',filter:['==','$type','Polygon'],paint:{'fill-color':['step',['get','count'],'#c0dfac',2,'#72b78a',4,'#2d9474',8,'#e69338',16,'#bd432c'],'fill-opacity':0.8}});
         if (onclearRunner) map.addLayer({id:'footprint-casing',type:'line',source:'footprints',filter:['==','$type','LineString'],paint:{'line-color':dark?'#302e2c':'#ffffff','line-width':5,'line-opacity':0.65},layout:{'line-join':'round','line-cap':'round'}});
         map.addLayer({id:'footprint-lines',type:'line',source:'footprints',filter:['==','$type','LineString'],paint:{'line-color':['get','color'],'line-width':3,'line-opacity':0.8},layout:{'line-join':'round','line-cap':'round'}});
+        if (onclearRunner) map.addLayer({id:'footprint-selected-casing',type:'line',source:'footprints',filter:['all',['==','$type','LineString'],['==',['get','username'],'']],paint:{'line-color':dark?'#302e2c':'#ffffff','line-width':7,'line-opacity':0.9},layout:{'line-join':'round','line-cap':'round'}});
         if (onclearRunner) map.addLayer({id:'footprint-selected',type:'line',source:'footprints',filter:['all',['==','$type','LineString'],['==',['get','username'],'']],paint:{'line-color':['get','color'],'line-width':4,'line-opacity':1},layout:{'line-join':'round','line-cap':'round'}});
         map.addLayer({id:'footprint-points',type:'circle',source:'footprints',filter:['==','$type','Point'],paint:{'circle-color':['get','color'],'circle-radius':5}});
         map.addSource('footprint-cities',{type:'geojson',data:cityMarkerData()});
@@ -183,6 +185,7 @@
   {#if basemap==='failed' && !error}<div class="basemap-feedback" role="status"><span>底图暂不可用，足迹仍可查看。</span><button type="button" onclick={loadBasemap} class="button-secondary">重试底图</button></div>{:else if basemap==='loading' && ready && !error}<p role="status" class="basemap-status">正在加载底图，足迹可先查看…</p>{/if}
   {#if error}<FeedbackState kind="error" title={error}><button type="button" class="button-secondary" onclick={onretry}>重新绘制地图</button></FeedbackState>{:else if !ready}<p role="status" class="basemap-status">正在绘制足迹…</p>{/if}
   <div class="map-frame" bind:this={frameEl}><div bind:this={container} class="map-canvas" role="region" aria-label={mapLabel || (data.mode==='heatmap'?'个人运动热力图':'个人多轨迹叠加地图')} aria-describedby="footprint-map-help" data-testid={ready?'footprint-map-ready':'footprint-map-loading'}></div>
+    {@render children?.()}
     <div class="map-layers"><BasemapPicker preference={basemapPreference} style={basemapStyle} status={basemap} /></div>
   </div>
   {#if choices.length}<div class="route-choices" data-testid="route-choices"><p class="font-semibold" role="status">此处经过的记录（{choices.length}）</p><ul>{#each choices as record}<li><div><span class="record-date">{record.date}</span><a href={data.features.find(f => f.properties?.activity_id === record.id)?.properties?.username ? `/p/${encodeURIComponent(String(data.features.find(f => f.properties?.activity_id === record.id)?.properties?.username))}/activities/${record.id}` : view.href(`/activities/${record.id}`)}>{record.title || '未命名活动'} · 查看详情</a></div><button type="button" class="button-secondary" onclick={()=>selectRecord(record)} aria-pressed={selectedIds.length===1 && selectedIds[0]===record.id}>定位路线</button></li>{/each}</ul></div>{/if}

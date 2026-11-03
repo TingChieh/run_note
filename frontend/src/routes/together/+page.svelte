@@ -8,8 +8,7 @@
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import PageSkeleton from '#lib/components/PageSkeleton.svelte';
   import ActivityTimeline from '#lib/components/ActivityTimeline.svelte';
-  import ActivityPreview from '#lib/components/ActivityPreview.svelte';
-  import type { Activity, Route } from '#lib/api/activities.ts';
+  import { formatDate, formatDistance, formatDuration, activityDuration, formatPace, type Activity, type Route } from '#lib/api/activities.ts';
   import { tick } from 'svelte';
   import FootprintMap from '#lib/components/FootprintMap.svelte';
   import { participantColors } from '#lib/map/together-colors.ts';
@@ -21,7 +20,7 @@
   const colors=$derived(participantColors(data?.participants ?? []));
   const ranking=$derived([...(data?.participants ?? [])].sort((a,b)=>(b[`${period}_m`]-a[`${period}_m`]) || a.username.localeCompare(b.username)));
   const footprints=$derived(data?.footprints ?? null);
-  let currentId = $state<string | null>(null), mobileDetail = $state(false), scrollPosition = 0;
+  let currentId = $state<string | null>(null);
   const activities = $derived((data?.recent ?? []).map((item): Activity => ({
     id:item.id, title:item.title, category:item.category, tags:item.tags, activity_date:item.activity_date, timezone:'Asia/Shanghai',
     started_at:null, ended_at:null, distance_m:item.distance_m, elapsed_seconds:item.elapsed_seconds,
@@ -37,18 +36,23 @@
     return [item.id, {route, runner:{name:item.display_name,city:cityNames[item.id],color:colors[item.username] ?? '#14785b',avatar:person?.avatar_version ? `/api/v1/showcase/users/${encodeURIComponent(item.username)}/avatar?v=${person.avatar_version}` : null}, href:`/p/${encodeURIComponent(item.username)}/activities/${item.id}`}];
   })));
   const currentActivity = $derived(activities.find(item => item.id === currentId) ?? null);
+  const selectedRecord = $derived(data?.recent.find(item => item.id === currentId));
+  const mapFootprints = $derived.by(() => {
+    if (!footprints) return null;
+    if (!selectedRecord || footprints.features.some(f => f.properties?.activity_id === selectedRecord.id)) return footprints;
+    return {...footprints, features:[...footprints.features, ...selectedRecord.geometry.map((geometry, segment_index) => ({type:'Feature' as const, geometry, properties:{activity_id:selectedRecord.id, username:selectedRecord.username, title:selectedRecord.title, activity_date:selectedRecord.activity_date, segment_index}}))]};
+  });
   function openRecord(activity: Activity, event: MouseEvent) {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    event.preventDefault(); currentId = activity.id;
-    if (window.matchMedia('(max-width: 959px)').matches) { scrollPosition=window.scrollY; mobileDetail=true; void tick().then(() => document.getElementById('together-feed')?.scrollIntoView()); }
+    event.preventDefault(); currentId = currentId === activity.id ? null : activity.id; selected='';
+    if (currentId && window.matchMedia('(max-width: 959px)').matches) void tick().then(() => document.getElementById('together-map')?.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'start'}));
   }
-  function backToFeed() { mobileDetail=false; void tick().then(() => { document.querySelector<HTMLElement>(`.card-link[data-activity-id="${currentId}"]`)?.focus({preventScroll:true}); window.scrollTo(0, scrollPosition); }); }
   const km=(meters:number)=>(meters/1000).toFixed(2);
   const amount=(runner:Together['participants'][number])=>runner[`${period}_m`];
   async function load() {
     const current=++token; feedController?.abort(); feedLoading=false; feedError=''; controller?.abort(); controller=new AbortController(); loading=true; error='';
     try { const result=await readTogether(controller.signal, period); if (!disposed && current===token) {
-      data=result; currentId=result.recent.find(item => item.id === currentId)?.id ?? result.recent[0]?.id ?? null; mobileDetail=false;
+      data=result; currentId=result.recent.find(item => item.id === currentId)?.id ?? null;
       if (!citiesStarted) { citiesStarted=true;
       try { cityWorker=new Worker(new URL('../../lib/map/together-cities.worker.ts', import.meta.url), {type:'module'}); cityWorker.onmessage=(event:MessageEvent<Record<string,string>>)=>{ if (!disposed) cityNames=event.data; }; cityWorker.postMessage(result.footprints.features); } catch { cityWorker=undefined; }
       }
@@ -87,27 +91,34 @@
     <section class="aux-panel section"><h2>里程排行榜</h2><div class="mode-switch compact-switch" role="group" aria-label="排行榜时间"><button type="button" aria-pressed={period==='week'} onclick={()=>selectPeriod('week')}>本周</button><button type="button" aria-pressed={period==='month'} onclick={()=>selectPeriod('month')}>本月</button><button type="button" aria-pressed={period==='year'} onclick={()=>selectPeriod('year')}>今年</button></div>
       {#if ranking.length}<ol>{#each ranking as runner, i (runner.user_id)}<li class="rank-row">{@render avatar(runner)}<div class="rank-content"><div class="row"><span>{i+1}. <a href={`/p/${encodeURIComponent(runner.username)}/dashboard`}>{runner.display_name}</a></span><strong>{km(amount(runner))} km</strong></div><progress style:--runner-color={colors[runner.username]} max="100" value={i===0 ? 100 : amount(ranking[0]) ? amount(runner)/amount(ranking[0])*100 : 0} aria-label={`${runner.display_name}排行进度`}></progress></div></li>{/each}</ol>{:else}<p>暂无排行。</p>{/if}
     </section>
-    <section class="aux-panel section"><h2>一起跑过的地方</h2><p class="hint">展示所选时段最近最多 500 段经过简化的路线。选择跑者可聚焦其足迹。</p>
+    <section id="together-feed" class="aux-panel section"><h2>一起跑过的地方 · 最近动态</h2>
+      <p class="hint">地图展示所选时段最近最多 500 段经过简化的路线；动态不受时段或跑者筛选影响。</p>
       {#if data.tracks_truncated}<p class="hint">仅显示最近 500 条轨迹</p>{/if}
-      {#if footprints && data.footprints.features.length}
-        <div class="legend" role="region" aria-label="选择参与者"><button class="button-secondary" aria-pressed={!selected} onclick={()=>selected=''}>全部</button>{#each data.participants as runner}<button class="button-secondary" aria-pressed={selected===runner.username} onclick={()=>selected=runner.username}><span class="dot" style:background={colors[runner.username]}></span>{@render avatar(runner)}{runner.display_name}</button>{/each}</div>
-        {#if selected && !footprints.features.some(f => f.properties?.username === selected)}<p class="hint" role="status">该跑者在此时段暂无路线，地图仍显示全部足迹。</p>{/if}
-        <FootprintMap data={footprints} animateDataChanges mapLabel="一起跑步足迹地图" participantColors={colors} selectedRunner={selected} onclearRunner={()=>selected=''} quietCityFailure onretry={load} />
-      {:else}<FeedbackState kind="empty" title="暂无可显示的路线。" />{/if}
-    </section>
-    <section id="together-feed" class="aux-panel section"><h2>最近动态</h2>{#if data.recent.length}
-      <div class="feed-layout" class:mobile-detail={mobileDetail}>
-        <div class="feed-list"><ActivityTimeline items={activities} offset={0} total={activities.length} {extras} {currentId} loadedSummary onopen={openRecord} />
+      <div class="feed-layout">
+        <div class="feed-list">{#if data.recent.length}<ActivityTimeline items={activities} offset={0} total={activities.length} {extras} {currentId} loadedSummary onopen={openRecord} />
           {#if data.next_cursor}<div class="feed-actions">{#if feedError}<p class="hint" role="alert">{feedError}</p>{/if}<button type="button" class="button-secondary" disabled={feedLoading || loading} onclick={loadMore}>{feedLoading ? '加载中…' : feedError ? '重试' : '加载更多'}</button></div>{/if}
+        {:else}<p>暂无动态。</p>{/if}</div>
+        <div class="feed-map" id="together-map">
+          {#if mapFootprints}
+            <FootprintMap data={mapFootprints} animateDataChanges compact mapLabel="一起跑步足迹地图" participantColors={colors} selectedRunner={selected} selectedActivity={currentId ?? ''} onclearRunner={()=>{selected='';currentId=null;}} quietCityFailure onretry={load}>
+              {#if currentActivity && selectedRecord}<article class="rn-glass-menu map-info" data-testid="together-map-info">
+                <strong>{currentActivity.title || '未命名活动'}</strong><span style:color={colors[selectedRecord.username]}>{selectedRecord.display_name}</span><span>{formatDate(currentActivity.activity_date)}</span>
+                <span>{formatDistance(currentActivity.distance_m)} · {formatDuration(activityDuration(currentActivity))} · {formatPace(currentActivity.avg_pace_seconds_per_km)}{currentActivity.avg_heart_rate_bpm == null ? '' : ` · ${currentActivity.avg_heart_rate_bpm} bpm`}</span>
+                {#if !mapFootprints.features.some(f => f.properties?.activity_id === currentId)}<span role="status">这条记录暂无可显示的路线。</span>{/if}
+                <a href={extras[currentActivity.id].href}>查看完整详情 →</a>
+              </article>{/if}
+            </FootprintMap>
+            <div class="legend" role="region" aria-label="选择参与者"><button class="button-secondary" aria-pressed={!selected} onclick={()=>{selected='';currentId=null;}}>全部</button>{#each data.participants as runner}<button class="button-secondary" aria-pressed={selected===runner.username} onclick={()=>{selected=runner.username;currentId=null;}}><span class="dot" style:background={colors[runner.username]}></span>{@render avatar(runner)}{runner.display_name}</button>{/each}</div>
+            {#if selected && !footprints?.features.some(f => f.properties?.username === selected)}<p class="hint" role="status">该跑者在此时段暂无路线，地图仍显示全部足迹。</p>{/if}
+          {/if}
         </div>
-        {#if currentActivity && extras[currentActivity.id]}<div class="feed-preview"><button type="button" class="button-secondary feed-back" onclick={backToFeed}>返回</button><ActivityPreview activity={currentActivity} suppliedRoute={extras[currentActivity.id].route} runner={extras[currentActivity.id].runner} href={extras[currentActivity.id].href} routeColor={extras[currentActivity.id].runner.color} /></div>{/if}
       </div>
-    {:else}<p>暂无动态。</p>{/if}</section>
+    </section>
     {/if}
   {/if}
 </div>
 <style>
-  .together-stack,.section { display:grid; gap:var(--space-4); min-width:0; }
+  .together-stack,.section { display:grid; grid-template-columns:minmax(0,1fr); gap:var(--space-4); min-width:0; }
   h2 { font-size:var(--text-section); font-weight:var(--weight-semibold); }
   .overview-distance { color:var(--primary); font-size:var(--text-stat); font-weight:var(--weight-bold); font-variant-numeric:tabular-nums; }
   .overview-detail { color:var(--muted-foreground); }
@@ -118,11 +129,10 @@
   .mode-switch.compact-switch button[aria-pressed='true'] { color:var(--segment-lens-ink); background:var(--segment-lens); }
   .feed-layout { display:grid; grid-template-columns:minmax(18rem, 1fr) minmax(0, 1.7fr); gap:var(--space-4); align-items:start; }
   .feed-list { min-width:0; }
-  .feed-preview { min-width:0; position:sticky; top:var(--space-4); }
-  /* Match the first card below ActivityTimeline's month heading. */
-  @media (min-width:960px) { .feed-preview { margin-top:calc(1.75rem + var(--space-3)); } }
-  .feed-back { display:none; margin-bottom:var(--space-3); }
-  @media (max-width:959px) { .feed-layout { display:block; } .feed-preview { display:none; position:static; } .mobile-detail .feed-list { display:none; } .mobile-detail .feed-preview { display:block; } .feed-back { display:inline-flex; } }
+  .feed-map { min-width:0; position:sticky; top:var(--space-4); margin-top:calc(1.75rem + var(--space-3)); }
+  @media (max-width:959px) { .feed-layout { display:flex; flex-direction:column; } .feed-map { position:static; margin-top:0; order:-1; width:100%; } .feed-list { width:100%; } }
+  :global(.sport-theme) .map-info { position:absolute; z-index:3; left:var(--space-3); bottom:var(--space-3); display:grid; gap:var(--space-1); max-width:calc(100% - 2rem); padding:var(--space-3); font-size:var(--text-small); }
+  .map-info a { color:var(--primary); font-weight:var(--weight-semibold); }
   .feed-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:var(--space-3); min-width:0; }
   .rank-content progress::-webkit-progress-value { transition:width var(--motion-reveal); }
   .rank-content progress::-moz-progress-bar { transition:width var(--motion-reveal); }
@@ -139,6 +149,12 @@
   .rank-content progress::-webkit-progress-value { border-radius:var(--radius-pill); background:var(--runner-color, var(--primary)); box-shadow:inset 0 1px color-mix(in srgb, var(--surface) 35%, transparent); }
   .rank-content progress::-moz-progress-bar { border-radius:var(--radius-pill); background:var(--runner-color, var(--primary)); box-shadow:inset 0 1px color-mix(in srgb, var(--surface) 35%, transparent); }
   .runner-avatar img { width:100%; height:100%; border-radius:50%; object-fit:cover; }
+  @media (max-width:640px) {
+    .legend { gap:var(--space-1); flex-wrap:nowrap; overflow-x:auto; scrollbar-width:thin; }
+    .legend button { flex:none; white-space:nowrap; min-height:2.5rem; padding:0 var(--space-2); gap:var(--space-1); }
+    .legend .runner-avatar { display:none; }
+    .legend .dot { width:.5rem; height:.5rem; margin:0; flex:none; }
+  }
   .legend button[aria-pressed='true'] { outline:2px solid var(--primary); outline-offset:2px; }
   .dot { display:inline-block; width:.75rem; height:.75rem; border-radius:50%; margin-right:var(--space-2); }
 </style>
