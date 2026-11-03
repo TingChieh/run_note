@@ -168,6 +168,9 @@
   </div>
 </aside>
 <style>
+  @media (min-width: 1360px) {
+    :global(.sport-theme.app-shell) .app-sidebar nav .nav-link { padding-inline: .65rem; }
+  }
   .mobile-actions { display: flex; align-items: center; gap: var(--space-2); }
   .runner-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
   .appearance-row { margin: 0; }

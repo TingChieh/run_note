@@ -268,8 +268,8 @@ test.describe('horizontal page transition', () => {
   });
 });
 
-// An ordinary enabled account gets an extra link ("本人工作区"), the longest label of the bar: eight links, one of them wider than any admin link. It must stay clear of the account row at every desktop width.
-test('a signed-in ordinary account (eight links, the longest label last) stays clear of the account row at every desktop width', async ({ page, browser }) => {
+// An ordinary enabled account gets nine links, ending with the longest label ("本人工作区"). They must stay clear of the account row at every desktop width.
+test('a signed-in ordinary account (nine links, the longest label last) stays clear of the account row at every desktop width', async ({ page, browser }) => {
   await installActivities(page); await loginRunner(page);
   const username = `ui_dense_${Date.now() % 1000000}`;
   const created = await page.request.post('/api/v1/admin/users', {
@@ -291,7 +291,8 @@ test('a signed-in ordinary account (eight links, the longest label last) stays c
       await own.goto('/workspace/dashboard');
       const nav = own.getByRole('navigation', { name: '主要导航' });
       await own.locator('.app-sidebar .goal-container:not([hidden])').waitFor({ state: 'attached' });
-      await expect(nav.locator(':scope > .nav-link'), `${width}px: eight links`).toHaveCount(8);
+      await expect(nav.locator(':scope > .nav-link'), `${width}px: nine links`).toHaveCount(9);
+      await expect(nav.locator(':scope > .nav-link').last()).toHaveAttribute('title', '本人工作区');
       await expect(nav.getByRole('link', { name: '本人工作区', exact: true })).toHaveAttribute('title', '本人工作区');
       if (width >= 1360) await expect(nav.getByRole('link', { name: '数据汇总', exact: true }).locator('span').first(), `${width}px: labelled`).toBeVisible();
       else await expect(nav.getByRole('link', { name: '数据汇总', exact: true }).locator('span').first(), `${width}px: icon-only`).toBeHidden();

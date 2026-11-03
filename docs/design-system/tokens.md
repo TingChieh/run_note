@@ -139,7 +139,7 @@
 | 768px | DatePicker 全宽及局部布局 |
 | 800px | 壳层断点 B：≥800px 为私人悬浮顶部条，<800px 为手机栏加展开菜单（见 [top-navigation 设计文档](../superpowers/specs/2026-10-30-top-navigation-design.md)；`app.css`、`liquid-glass-controls.css`、`enhanceNavigation` 与 `AppNavigation.svelte` 的 `matchMedia` 各写一份，注释互相指向，要改一起改）；`.site-layout` 等页面内布局仍以 1024px 为界 |
 | 1200px | 指标图标横排恢复 |
-| 1360px | 顶部条图标加文字的下限：800–1359px 只有图标，≥1360px 带文字（实测 8 个带文字入口在 1280–1339px 会压到账户区）；普通账户 8 个入口（含最长的“本人工作区”）带文字也不压到账户区 |
+| 1360px | 顶部条图标加文字的下限：800–1359px 只有图标，≥1360px 带文字；普通账户 9 个入口（含末尾最长的“本人工作区”）使用紧凑内边距，避免压到账户区 |
 
 足迹墙采用自己的容器查询；不以 viewport 断点替代。验证边界两侧，不只验证一台手机。
 
