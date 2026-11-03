@@ -16,18 +16,49 @@ test('访客可切换排行和地图参与者', async ({page}) => {
   await page.getByRole('button',{name:'本月'}).click();
   await expect(ranking.locator('li').first()).toContainText('合成乙');
   await expect(page.getByTestId('footprint-map-ready')).toBeVisible({timeout:15000});
+  const legend=page.getByRole('region',{name:'选择参与者'});
+  const map=page.getByTestId('footprint-map-ready');
+  expect((await legend.boundingBox())!.y).toBeLessThan((await map.boundingBox())!.y);
   await page.getByRole('button',{name:'合成乙'}).click();
+  await expect(page.getByText('全部可显示记录（1）', {exact:false})).toBeVisible();
+  await expect(page.getByText('该跑者在此时段暂无路线，地图仍显示全部足迹。')).toBeVisible();
   await expect(page.getByRole('button',{name:'合成乙'})).toHaveAttribute('aria-pressed','true');
   await expect(ranking.locator('progress').first()).toHaveAttribute('value','100');
   await page.setViewportSize({width:320,height:700});
-  const legend=page.getByRole('region',{name:'选择参与者'});
-  await expect(legend).toHaveCSS('overflow-x','auto');
-  await expect(legend.locator('button').first()).toHaveCSS('white-space','nowrap');
-  expect(await legend.locator('..').evaluate(el => getComputedStyle(el, '::after').backgroundImage)).toContain('linear-gradient');
+  await expect(legend).toHaveCSS('flex-wrap','wrap');
   await expect(ranking.locator('progress').first()).toHaveCSS('appearance','none');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
   const mapBox=await page.getByTestId('footprint-map-ready').boundingBox();
   expect(mapBox && mapBox.height).toBeGreaterThan(200);
+});
+
+
+test('重叠轨迹选择跑者时突出其颜色并保留其他记录', async ({page}) => {
+  await page.emulateMedia({reducedMotion:'reduce'});
+  const tracks=runners.map(runner=>({username:runner.username,activity_id:runner.user_id,title:runner.display_name,activity_date:'2026-10-01',segment_index:0,geometry:{type:'LineString',coordinates:[[10,10],[10.02,10.02]]}}));
+  await page.route('**/api/v1/together?*', route=>route.fulfill({json:{data:{next_cursor:null,tracks_truncated:false,distance_m:7000,count:2,participants:runners,recent:[],tracks},error:null,meta:{request_id:'test'}}}));
+  await page.goto('/together');
+  const map=page.getByTestId('footprint-map-ready');
+  await expect(map).toBeVisible({timeout:15000});
+  const color=await page.getByLabel('合成甲排行进度').evaluate(el=>(el as HTMLElement).style.getPropertyValue('--runner-color'));
+  const countColor=async()=>{
+    const png=await map.locator('canvas').screenshot();
+    return page.evaluate(async ({imageData,color})=>{
+      const image=new Image(); image.src=`data:image/png;base64,${imageData}`; await image.decode();
+      const canvas=document.createElement('canvas'); canvas.width=image.width; canvas.height=image.height;
+      const context=canvas.getContext('2d')!; context.drawImage(image,0,0);
+      const pixels=context.getImageData(0,0,canvas.width,canvas.height).data;
+      const rgb=[1,3,5].map(i=>parseInt(color.slice(i,i+2),16)); let count=0;
+      for(let i=0;i<pixels.length;i+=4) if(rgb.every((value,j)=>Math.abs(pixels[i+j]-value)<12)) count++;
+      return count;
+    },{imageData:png.toString('base64'),color});
+  };
+  const before=await countColor();
+  await page.getByRole('button',{name:'合成甲'}).click();
+  await expect(page.getByText('全部可显示记录（2）', {exact:false})).toBeVisible();
+  await expect.poll(countColor).toBeGreaterThan(before+50);
+  await page.getByRole('button',{name:'全部',exact:true}).click();
+  await expect.poll(countColor).toBeLessThan(before+50);
 });
 
 

@@ -20,7 +20,7 @@
   let cityNames=$state<Record<string,string>>({});
   const colors=$derived(participantColors(data?.participants ?? []));
   const ranking=$derived([...(data?.participants ?? [])].sort((a,b)=>(b[`${period}_m`]-a[`${period}_m`]) || a.username.localeCompare(b.username)));
-  const footprints=$derived(data ? {...data.footprints,features:data.footprints.features.filter(f=>!selected || f.properties?.username===selected)} : null);
+  const footprints=$derived(data?.footprints ?? null);
   let currentId = $state<string | null>(null), mobileDetail = $state(false), scrollPosition = 0;
   const activities = $derived((data?.recent ?? []).map((item): Activity => ({
     id:item.id, title:item.title, category:item.category, tags:item.tags, activity_date:item.activity_date, timezone:'Asia/Shanghai',
@@ -87,9 +87,13 @@
     <section class="aux-panel section"><h2>里程排行榜</h2><div class="mode-switch compact-switch" role="group" aria-label="排行榜时间"><button type="button" aria-pressed={period==='week'} onclick={()=>selectPeriod('week')}>本周</button><button type="button" aria-pressed={period==='month'} onclick={()=>selectPeriod('month')}>本月</button><button type="button" aria-pressed={period==='year'} onclick={()=>selectPeriod('year')}>今年</button></div>
       {#if ranking.length}<ol>{#each ranking as runner, i (runner.user_id)}<li class="rank-row">{@render avatar(runner)}<div class="rank-content"><div class="row"><span>{i+1}. <a href={`/p/${encodeURIComponent(runner.username)}/dashboard`}>{runner.display_name}</a></span><strong>{km(amount(runner))} km</strong></div><progress style:--runner-color={colors[runner.username]} max="100" value={i===0 ? 100 : amount(ranking[0]) ? amount(runner)/amount(ranking[0])*100 : 0} aria-label={`${runner.display_name}排行进度`}></progress></div></li>{/each}</ol>{:else}<p>暂无排行。</p>{/if}
     </section>
-    <section class="aux-panel section"><h2>一起跑过的地方</h2><p class="hint">展示所选时段最近最多 500 段经过简化的路线。</p>{#if footprints && data.footprints.features.length}<FootprintMap data={footprints} animateDataChanges mapLabel="一起跑步足迹地图" participantColors={colors} quietCityFailure onretry={load} />{:else}<p>暂无可显示的路线。</p>{/if}
+    <section class="aux-panel section"><h2>一起跑过的地方</h2><p class="hint">展示所选时段最近最多 500 段经过简化的路线。选择跑者可聚焦其足迹。</p>
       {#if data.tracks_truncated}<p class="hint">仅显示最近 500 条轨迹</p>{/if}
-      <div class="legend-wrap"><div class="legend" role="region" aria-label="选择参与者"><button class="button-secondary" aria-pressed={!selected} onclick={()=>selected=''}>全部</button>{#each data.participants as runner}<button class="button-secondary" aria-pressed={selected===runner.username} onclick={()=>selected=runner.username}><span class="dot" style:background={colors[runner.username]}></span>{@render avatar(runner)}{runner.display_name}</button>{/each}</div></div>
+      {#if footprints && data.footprints.features.length}
+        <div class="legend" role="region" aria-label="选择参与者"><button class="button-secondary" aria-pressed={!selected} onclick={()=>selected=''}>全部</button>{#each data.participants as runner}<button class="button-secondary" aria-pressed={selected===runner.username} onclick={()=>selected=runner.username}><span class="dot" style:background={colors[runner.username]}></span>{@render avatar(runner)}{runner.display_name}</button>{/each}</div>
+        {#if selected && !footprints.features.some(f => f.properties?.username === selected)}<p class="hint" role="status">该跑者在此时段暂无路线，地图仍显示全部足迹。</p>{/if}
+        <FootprintMap data={footprints} animateDataChanges mapLabel="一起跑步足迹地图" participantColors={colors} selectedRunner={selected} onclearRunner={()=>selected=''} quietCityFailure onretry={load} />
+      {:else}<FeedbackState kind="empty" title="暂无可显示的路线。" />{/if}
     </section>
     <section id="together-feed" class="aux-panel section"><h2>最近动态</h2>{#if data.recent.length}
       <div class="feed-layout" class:mobile-detail={mobileDetail}>
@@ -124,10 +128,8 @@
   .rank-content progress::-moz-progress-bar { transition:width var(--motion-reveal); }
   @media (prefers-reduced-motion:reduce) { .rank-content progress::-webkit-progress-value { transition:none; } .rank-content progress::-moz-progress-bar { transition:none; } }
   .hint { color:var(--muted-foreground); font-size:var(--text-small); }
-  .legend-wrap { position:relative; min-width:0; }
-  @media (max-width: 799px) { .legend-wrap::after { content:""; position:absolute; inset:0 0 0 auto; width:2rem; pointer-events:none; background:linear-gradient(to right, transparent, var(--surface)); } }
-  .legend { display:flex; overflow-x:auto; gap:var(--space-2); padding:var(--space-2); }
-  .legend button { flex:none; white-space:nowrap; }
+  .legend { display:flex; flex-wrap:wrap; gap:var(--space-2); min-width:0; padding:var(--space-1); }
+  .legend button { max-width:100%; overflow-wrap:anywhere; }
   .legend .runner-avatar { width:1.75rem; height:1.75rem; font-size:var(--text-small); margin-right:var(--space-2); }
   .rank-row { display:flex; align-items:center; gap:var(--space-3); padding:var(--space-2) 0; }
   .rank-content { flex:1; min-width:0; }
