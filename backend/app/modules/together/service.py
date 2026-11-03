@@ -1,6 +1,7 @@
 """Public, explicitly selected running data; no wellbeing tables are accessed."""
 
 from datetime import timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
 
@@ -11,30 +12,38 @@ ELIGIBLE = """u.together_allowed AND u.together_enabled AND u.profile_is_public
     AND (u.email_normalized = :owner OR (u.is_active AND u.showcase_enabled))"""
 
 
-def overview(db, settings, now):
-    today = now.date()
+TRACK_SEGMENT_LIMIT = 500
+
+
+def overview(db, settings, now, period="week"):
+    today = now.astimezone(ZoneInfo("Asia/Shanghai")).date()
     params = {
         "owner": settings.site_owner_email,
         "week": today - timedelta(days=today.weekday()),
         "month": today.replace(day=1),
+        "year": today.replace(month=1, day=1),
         "end": today + timedelta(days=1),
+        "track_limit": TRACK_SEGMENT_LIMIT,
     }
-    # One grouped SQL query computes all participant totals and both rankings; no per-user queries.
+    params["start"] = params[period]
+    # One grouped SQL query computes all participant totals and rankings; no per-user queries.
     participants = (
         db.execute(
             text(f"""
         SELECT u.id AS user_id, u.username, u.display_name, u.avatar_version,
-            COALESCE(sum(a.distance_m) FILTER (WHERE a.activity_date >= :month), 0) AS distance_m,
-            count(a.id) FILTER (WHERE a.activity_date >= :month) AS count,
-            sum(COALESCE(sum(a.distance_m) FILTER (WHERE a.activity_date >= :month), 0))
+            COALESCE(sum(a.distance_m) FILTER (WHERE a.activity_date >= :start), 0) AS distance_m,
+            count(a.id) FILTER (WHERE a.activity_date >= :start) AS count,
+            sum(COALESCE(sum(a.distance_m) FILTER (WHERE a.activity_date >= :start), 0))
                 OVER () AS total_distance,
-            sum(count(a.id) FILTER (WHERE a.activity_date >= :month)) OVER () AS total_count,
+            sum(count(a.id) FILTER (WHERE a.activity_date >= :start)) OVER () AS total_count,
             COALESCE(sum(a.distance_m) FILTER (WHERE a.activity_date >= :week
                 AND a.activity_date < :end), 0) AS week_m,
             COALESCE(sum(a.distance_m) FILTER (WHERE a.activity_date >= :month
-                AND a.activity_date < :end), 0) AS month_m
+                AND a.activity_date < :end), 0) AS month_m,
+            COALESCE(sum(a.distance_m) FILTER (WHERE a.activity_date >= :year
+                AND a.activity_date < :end), 0) AS year_m
         FROM users u LEFT JOIN activities a ON a.user_id = u.id AND a.visibility = 'public'
-            AND a.activity_date >= LEAST(:week, :month) AND a.activity_date < :end
+            AND a.activity_date >= LEAST(:week, :month, :year) AND a.activity_date < :end
         WHERE {ELIGIBLE} GROUP BY u.id ORDER BY u.username
     """),
             params,
@@ -64,13 +73,14 @@ def overview(db, settings, now):
                 s.segment_index, s.geom
             FROM activities a JOIN users u ON u.id = a.user_id
             JOIN activity_segments s ON s.activity_id = a.id
-            WHERE {ELIGIBLE} AND a.visibility = 'public' AND s.geom IS NOT NULL
+            WHERE {ELIGIBLE} AND a.visibility = 'public'
+                AND a.activity_date >= :start AND a.activity_date < :end AND s.geom IS NOT NULL
                 AND ST_YMin(Box3D(s.geom)) >= -85 AND ST_YMax(Box3D(s.geom)) <= 85
                 AND ST_XMax(Box3D(s.geom)) - ST_XMin(Box3D(s.geom)) <= 180
-            ORDER BY a.activity_date DESC, a.id DESC, s.segment_index LIMIT 500
+            ORDER BY a.activity_date DESC, a.id DESC, s.segment_index LIMIT :track_limit
         )
         SELECT username, activity_id, title, activity_date, segment_index,
-            ST_AsGeoJSON(ST_Simplify(geom, 0.000005, true), 6)::json AS geometry
+            ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, 0.000005), 6)::json AS geometry
         FROM selected
     """),
             params,

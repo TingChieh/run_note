@@ -1,8 +1,11 @@
 import type { FootprintCollection } from './footprints.ts';
 
-export interface Runner { user_id: string; avatar_version: string | null; username: string; display_name: string; distance_m: number; count: number; week_m: number; month_m: number }
+export interface Runner { user_id: string; avatar_version: string | null; username: string; display_name: string; distance_m: number; count: number; week_m: number; month_m: number; year_m: number }
 export interface Recent { id: string; username: string; display_name: string; title: string; activity_date: string; distance_m: number; avg_pace_seconds_per_km: number | null }
 export interface Together { distance_m: number; count: number; participants: Runner[]; recent: Recent[]; footprints: FootprintCollection }
+export type Period = 'week' | 'month' | 'year';
+export const parsePeriod = (value: string | null): Period => value === 'month' || value === 'year' ? value : 'week';
+export const periodCopy = (period: Period) => ({week:'本周', month:'本月', year:'今年'})[period];
 export class TogetherError extends Error { constructor(message: string, public status = 502) { super(message); } }
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const number = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0;
@@ -14,8 +17,8 @@ function invalid(): never { throw new TogetherError('一起跑步服务返回了
 export function parseTogether(value: unknown): Together {
   if (!object(value) || !number(value.distance_m) || !integer(value.count) || !Array.isArray(value.participants) || !Array.isArray(value.recent) || !Array.isArray(value.tracks)) return invalid();
   const participants: Runner[] = value.participants.map((p: unknown) => {
-    if (!object(p) || !id(p.user_id) || !(p.avatar_version === null || typeof p.avatar_version === 'string' && /^[a-zA-Z0-9]+$/.test(p.avatar_version)) || !username(p.username) || typeof p.display_name !== 'string' || !number(p.distance_m) || !integer(p.count) || !number(p.week_m) || !number(p.month_m)) return invalid();
-    return {user_id:p.user_id as string, avatar_version:p.avatar_version as string | null, username:p.username as string, display_name:p.display_name, distance_m:p.distance_m as number, count:p.count as number, week_m:p.week_m as number, month_m:p.month_m as number};
+    if (!object(p) || !id(p.user_id) || !(p.avatar_version === null || typeof p.avatar_version === 'string' && /^[a-zA-Z0-9]+$/.test(p.avatar_version)) || !username(p.username) || typeof p.display_name !== 'string' || !number(p.distance_m) || !integer(p.count) || !number(p.week_m) || !number(p.month_m) || !number(p.year_m)) return invalid();
+    return {user_id:p.user_id as string, avatar_version:p.avatar_version as string | null, username:p.username as string, display_name:p.display_name, distance_m:p.distance_m as number, count:p.count as number, week_m:p.week_m as number, month_m:p.month_m as number, year_m:p.year_m as number};
   });
   const names = new Set(participants.map(p=>p.username));
   const recent: Recent[] = value.recent.map((r: unknown) => {
@@ -28,9 +31,9 @@ export function parseTogether(value: unknown): Together {
   });
   return {distance_m:value.distance_m as number, count:value.count as number, participants, recent, footprints:{type:'FeatureCollection',scope:'all',mode:'tracks',features,activity_count:value.count as number,visible_activity_count:new Set(features.map(f=>f.properties.activity_id)).size,unsupported_segment_count:0,grid_size_m:100,grid_crs:'EPSG:3857',count_basis:'distinct_activity_per_cell',max_count:0}};
 }
-export async function readTogether(signal: AbortSignal): Promise<Together> {
+export async function readTogether(signal: AbortSignal, period: Period): Promise<Together> {
   let response: Response;
-  try { response = await fetch('/api/v1/together', {cache:'no-store',signal}); } catch { throw new TogetherError('无法连接一起跑步服务',503); }
+  try { response = await fetch(`/api/v1/together?period=${period}`,  {cache:'no-store',signal}); } catch { throw new TogetherError('无法连接一起跑步服务',503); }
   let body: unknown;
   try { body=await response.json(); } catch { return invalid(); }
   if (response.status===401) throw new TogetherError('登录已过期',401);

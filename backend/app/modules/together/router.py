@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
@@ -13,8 +13,13 @@ router = APIRouter(prefix="/api/v1/together", tags=["together"])
 
 
 @router.get("", response_model=ApiResponse[TogetherView])
-def together(request: Request, response: Response, db: Annotated[Session, Depends(get_session)]):
+def together(
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_session)],
+    period: Literal["week", "month", "year"] = "week",
+):
     response.headers["Cache-Control"] = "no-store"
-    data = overview(db, request.app.state.settings, request.app.state.clock())
+    data = overview(db, request.app.state.settings, request.app.state.clock(), period)
     db.commit()
     return envelope(request, data)

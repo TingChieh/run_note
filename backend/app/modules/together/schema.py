@@ -13,6 +13,7 @@ class Participant(BaseModel):
     count: int
     week_m: float
     month_m: float
+    year_m: float
 
 
 class Recent(BaseModel):

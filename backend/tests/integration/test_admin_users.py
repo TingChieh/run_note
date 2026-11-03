@@ -1,11 +1,12 @@
 """Account administration and named full-showcase acceptance on an allowlisted _test DB."""
 
+from datetime import UTC, date, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.main import create_app
 from app.modules.activities.model import Activity
@@ -334,7 +335,7 @@ def test_wellbeing_switches_preserve_private_records(site):  # noqa: F811
         assert response.json()["data"]["entry"]["mood"] == 5
 
 
-def test_together_switches_and_public_filter(site):  # noqa: F811
+def test_together_switches_and_public_filter(site, monkeypatch):  # noqa: F811
     admin, visitor, _, admin_headers, _, _, engine, settings, _ = site
     suffix = uuid4().hex[:18]
     payload = dict(
@@ -471,6 +472,60 @@ def test_together_switches_and_public_filter(site):  # noqa: F811
         assert data["count"] >= 1 and data["tracks"] and data["recent"]
         assert result.headers["cache-control"] == "no-store"
         assert "SECRET_WELLBEING" not in result.text
+        invalid = visitor.get("/api/v1/together?period=bad")
+        assert invalid.status_code == 422 and invalid.json()["error"]
+        monkeypatch.setattr(
+            visitor.app.state, "clock", lambda: datetime(2023, 12, 31, 16, tzinfo=UTC)
+        )
+        for day, included in [(date(2023, 12, 31), False), (date(2024, 1, 1), True)]:
+            with engine.begin() as connection:
+                connection.execute(
+                    Activity.__table__.update()
+                    .where(Activity.id == UUID(activity_id))
+                    .values(activity_date=day)
+                )
+            for period in ("week", "month", "year"):
+                response = visitor.get(f"/api/v1/together?period={period}")
+                assert response.headers["cache-control"] == "no-store"
+                view = response.json()["data"]
+                person = next(
+                    row for row in view["participants"] if row["username"] == payload["username"]
+                )
+                assert (person["count"] == 1) == included
+                assert any(row["activity_id"] == activity_id for row in view["tracks"]) == included
+                assert any(row["id"] == activity_id for row in view["recent"])
+        monkeypatch.setattr(
+            visitor.app.state, "clock", lambda: datetime(2024, 2, 5, 12, tzinfo=UTC)
+        )
+        for day, period, included in [
+            (date(2024, 1, 31), "month", False),
+            (date(2024, 2, 1), "month", True),
+            (date(2024, 2, 4), "week", False),
+            (date(2024, 2, 5), "week", True),
+        ]:
+            with engine.begin() as connection:
+                connection.execute(
+                    Activity.__table__.update()
+                    .where(Activity.id == UUID(activity_id))
+                    .values(activity_date=day)
+                )
+            view = visitor.get(f"/api/v1/together?period={period}").json()["data"]
+            person = next(
+                row for row in view["participants"] if row["username"] == payload["username"]
+            )
+            assert (person["count"] == 1) == included
+        with engine.begin() as connection:
+            connection.execute(
+                text("""INSERT INTO activity_segments
+                (id, activity_id, segment_index, source_track_index, source_segment_index,
+                 break_reason, point_count, geom)
+                SELECT gen_random_uuid(), activity_id, n, source_track_index, source_segment_index,
+                       break_reason, point_count, geom
+                FROM activity_segments CROSS JOIN generate_series(1000, 1500) n
+                WHERE activity_id = :activity_id AND segment_index = 0"""),
+                {"activity_id": UUID(activity_id)},
+            )
+        assert len(visitor.get("/api/v1/together?period=year").json()["data"]["tracks"]) == 500
         assert (
             user.patch(
                 "/api/v1/me", headers=user_headers, json={"profile_is_public": False}
