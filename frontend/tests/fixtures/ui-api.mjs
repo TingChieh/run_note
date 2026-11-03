@@ -179,6 +179,7 @@ createServer(async (req, res) => {
     if (req.method === 'PATCH') {
       if (payload.email && account.email !== payload.email) revoke();
       Object.assign(account,payload);
+      if ('together_allowed' in payload) account.together_enabled = payload.together_allowed;
       if (!account.is_active) { account.showcase_enabled=false; revoke(); }
       if (account.is_admin) Object.assign(user,clean(account));
       return send(clean(account));
@@ -219,7 +220,7 @@ createServer(async (req, res) => {
   }
   if (url.pathname === '/api/v1/me' && req.method === 'PATCH') {
     let body = ''; for await (const chunk of req) body += chunk;
-    const value = JSON.parse(body); Object.assign(current ?? user, value);
+    const value = JSON.parse(body); if ('together_enabled' in value) value.together_allowed = value.together_enabled; Object.assign(current ?? user, value);
     if (current?.is_admin) Object.assign(user,clean(current));
     return send(clean(current ?? user));
   }

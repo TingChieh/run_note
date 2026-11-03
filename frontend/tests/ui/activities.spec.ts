@@ -61,8 +61,8 @@ test('list error retry, empty guidance and pagination remain usable', async ({ p
   await page.getByRole('button', { name: '上一页' }).click(); await expect(page.getByRole('heading', { name: '第 1 条跑步', exact: true })).toBeVisible();
   state.records = []; await page.reload(); await expect(page.getByRole('region', { name: /^我的活动/ }).getByRole('status')).toContainText('暂无跑步记录'); await noOverflow(page);
 });
-test('detail puts route before sharing and keeps quality available through keyboard disclosure', async ({ page }) => {
-  await installActivities(page); await loginRunner(page); await page.goto(`/activities/${sampleActivity.id}`);
+test('detail puts route before legacy share links and keeps quality available through keyboard disclosure', async ({ page }) => {
+  const state = await installActivities(page); state.links = [{ link_id: '33333333-3333-4333-8333-333333333333', created_at: '2026-10-13T02:00:00Z', expires_at: null, revoked_at: null, status: 'active' }]; await loginRunner(page); await page.goto(`/activities/${sampleActivity.id}`);
   await expect(page.getByTestId('activity-distance')).toHaveText('5.1 km');
   const quality = page.getByText('数据质量与指标说明', { exact: true }); await expect(quality).toBeVisible();
   await expect(page.getByText('有效轨迹点', { exact: true })).toBeHidden(); await quality.focus(); await page.keyboard.press('Enter');
@@ -74,19 +74,12 @@ test('detail puts route before sharing and keeps quality available through keybo
   for (const width of [320,390,768]) { await page.setViewportSize({ width, height: 844 }); await noOverflow(page); }
   await page.setViewportSize({ width: 390, height: 844 }); await expect(page.getByTestId('route-map-ready')).toBeVisible(); await capture(page, 'test-results/activities-mobile-detail.png');
 });
-test('detail retry and sharing operations preserve existing API payloads and private restriction', async ({ page }) => {
-  const state = await installActivities(page); state.detailFailures = 1; await loginRunner(page); await page.goto(`/activities/${sampleActivity.id}`);
+test('detail retry and legacy share links that can only be revoked', async ({ page }) => {
+  const state = await installActivities(page); state.detailFailures = 1; state.links = [{ link_id: '33333333-3333-4333-8333-333333333333', created_at: '2026-10-13T02:00:00Z', expires_at: null, revoked_at: null, status: 'active' }]; await loginRunner(page); await page.goto(`/activities/${sampleActivity.id}`);
   await expect(page.getByRole('alert')).toContainText('暂时无法读取'); await page.getByRole('button', { name: '重新读取活动详情' }).click();
   await expect(page.getByRole('heading', { name: '河畔晨跑', level: 1 })).toBeVisible();
-  await expect(page.getByRole('button', { name: '创建分享链接' })).toBeDisabled();
-  await page.getByLabel('记录可见性').selectOption('unlisted'); await page.getByRole('button', { name: '保存可见性' }).click();
-  await expect(page.getByRole('status').filter({ hasText: '可见性已保存' })).toBeVisible();
-  await page.getByLabel('链接有效期').selectOption('forever'); await page.getByRole('button', { name: '创建分享链接' }).click();
-  await expect(page.getByLabel('新分享链接')).toHaveValue(/synthetic-token/);
-  expect(state.writes[0].data).toEqual({ visibility: 'unlisted' }); expect(state.writes[1].data).toEqual({ expires_at: null });
+  await expect(page.getByLabel('记录可见性')).toHaveCount(0); await expect(page.getByRole('button', { name: '创建分享链接' })).toHaveCount(0);
   await page.getByRole('button', { name: '撤销链接' }).click(); await expect(page.getByRole('status').filter({ hasText: '分享已撤销' })).toBeVisible();
-  await page.getByLabel('记录可见性').selectOption('private'); await page.getByRole('button', { name: '保存可见性' }).click();
-  await expect(page.getByRole('button', { name: '创建分享链接' })).toBeDisabled(); await expect(page.getByRole('status').filter({ hasText: '已关闭旧版摘要' })).toBeVisible();
 });
 
 test('successful import followed by list outage reports separate outcomes and retries only the list', async ({ page }) => {
@@ -100,27 +93,15 @@ test('successful import followed by list outage reports separate outcomes and re
   await page.getByRole('button', { name: '重新读取活动' }).click(); await expect(page.getByRole('heading', { name: '新导入的跑步', level: 3 })).toBeVisible();
   expect(state.uploadCount).toBe(1);
 });
-test('sharing errors keep private restriction until save succeeds; copy and route retry remain usable', async ({ page, context }) => {
+test('route read failure can be retried', async ({ page }) => {
   await installActivities(page); await loginRunner(page);
-  let patchFailed = false, routeFailed = false;
-  await page.route(`**/api/v1/activities/${sampleActivity.id}`, async route => {
-    if (route.request().method() === 'PATCH' && !patchFailed) { patchFailed = true; return route.fulfill({ status: 503, json: { error: { message: '保存失败，请重试' } } }); }
-    await route.fallback();
-  });
+  let routeFailed = false;
   await page.route(`**/api/v1/showcase/activities/${sampleActivity.id}/route`, async route => {
     if (!routeFailed) { routeFailed = true; return route.fulfill({ status: 503, json: { error: { message: '路线读取失败' } } }); }
     await route.fallback();
   });
   await page.goto(`/activities/${sampleActivity.id}`); await expect(page.getByRole('alert')).toContainText('路线读取失败');
   await page.getByRole('button', { name: '重新读取路线' }).click(); await expect(page.getByTestId('route-map-ready')).toBeVisible({ timeout: 20000 });
-  await page.getByLabel('记录可见性').selectOption('unlisted'); await page.getByRole('button', { name: '保存可见性' }).click();
-  await expect(page.getByRole('alert')).toContainText('保存失败'); await expect(page.getByRole('button', { name: '创建分享链接' })).toBeDisabled();
-  await page.getByRole('button', { name: '保存可见性' }).click(); await expect(page.getByRole('button', { name: '创建分享链接' })).toBeEnabled();
-  await page.getByRole('button', { name: '创建分享链接' }).click();
-  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-  await page.getByRole('button', { name: '复制分享链接' }).click();
-  await expect(page.getByRole('status').filter({ hasText: '链接已复制' })).toBeVisible();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('/shared/synthetic-token');
 });
 test('expired activity response redirects without retaining private content', async ({ page }) => {
   await installActivities(page); await loginRunner(page);

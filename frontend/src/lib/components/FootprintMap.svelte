@@ -15,7 +15,7 @@
   import { createBasemapController } from '#lib/map/basemap-controller.ts';
   import { watchSystemTheme } from './system-theme';
   import 'maplibre-gl/dist/maplibre-gl.css';
-  let { data, onretry, participantColors = {}, mapLabel = "", quietCityFailure = false, animateDataChanges = false, selectedRunner = "", selectedActivity = "", compact = false, children, onclearRunner }: {data: FootprintCollection; onretry: () => void; participantColors?: Record<string, string>; mapLabel?: string; quietCityFailure?: boolean; animateDataChanges?: boolean; selectedRunner?: string; selectedActivity?: string; compact?: boolean; children?: Snippet; onclearRunner?: () => void} = $props();
+  let { data, onretry, participantColors = {}, mapLabel = "", quietCityFailure = false, animateDataChanges = false, selectedRunner = "", selectedActivity = "", compact = false, detailHref = undefined, children, onclearRunner }: {data: FootprintCollection; onretry: () => void; participantColors?: Record<string, string>; mapLabel?: string; quietCityFailure?: boolean; animateDataChanges?: boolean; selectedRunner?: string; selectedActivity?: string; compact?: boolean; detailHref?: string; children?: Snippet; onclearRunner?: () => void} = $props();
   let container: HTMLDivElement, frameEl: HTMLDivElement, map: LibreMap | undefined, disposed=false;
   let framing: 'auto' | 'all' | 'picked' | 'free' = 'auto';
   let ready=$state(false), error=$state(''), basemap=$state<'loading'|'ready'|'failed'>('loading');
@@ -54,7 +54,8 @@
   }
   function sizeCanvas() {
     if (!frameEl) return;
-    if (compact && window.matchMedia('(max-width: 959px)').matches) { frameEl.style.height = `${Math.round(window.innerHeight * 0.45)}px`; return; }
+    // Compact maps are sized by CSS alone: measuring the frame's offset made the height depend on the scroll position.
+    if (compact) { frameEl.style.height = ''; return; }
     const available = window.innerHeight - frameEl.getBoundingClientRect().top - 16;
     frameEl.style.height = `${Math.min(720, Math.max(424, Math.floor(available)))}px`;
   }
@@ -141,8 +142,11 @@
       const overlapY=Math.max(0,Math.min(bottom,frameRect.height-padding.bottom)-Math.max(top,padding.top));
       const visibleX = right-left < 1 ? (left>=padding.left && left<=frameRect.width-padding.right ? 1 : 0) : overlapX/(right-left);
       const visibleY = bottom-top < 1 ? (top>=padding.top && top<=frameRect.height-padding.bottom ? 1 : 0) : overlapY/(bottom-top);
-      if (visibleX >= .8 && visibleY >= .8) return;
+      // A route that is in view but only a few pixels wide cannot be told apart: go to it instead of staying put.
+      const tiny = Math.max((right-left)/availableWidth, (bottom-top)/availableHeight) < .15;
+      if (!tiny && visibleX >= .8 && visibleY >= .8) return;
       const duration=window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 350;
+      if (tiny) { map.fitBounds(bounds, {padding, maxZoom:16, duration}); return; }
       if (right-left > availableWidth || bottom-top > availableHeight) {
         map.fitBounds(bounds, {padding, maxZoom:map.getZoom(), duration});
         return;
@@ -160,6 +164,14 @@
   const palette=['#14785b','#315caf','#b4552c','#854caa','#397d87','#ba3970'];
   function loadBasemap() { basemapController?.retry(); }
   const onWindowResize = () => { sizeCanvas(); map?.resize(); if (framing === 'all') fit(allBounds); else if (framing === 'picked') locateCity(selectedCity, false); else if (framing === 'auto') frameInitial(); };
+  // Overlays dock above the attribution, whose height changes with its expanded text.
+  let attributionObserver: ResizeObserver | undefined;
+  function trackAttribution() {
+    const attribution = frameEl?.querySelector<HTMLElement>('.maplibregl-ctrl-attrib');
+    if (!attribution) return;
+    const clearance = () => { const rect = attribution.getBoundingClientRect(); frameEl.style.setProperty('--map-attribution-clearance', rect.height ? `${Math.ceil(frameEl.getBoundingClientRect().bottom - rect.top)}px` : '0px'); };
+    attributionObserver = new ResizeObserver(clearance); attributionObserver.observe(attribution); clearance();
+  }
   onMount(()=>{loadCities();sizeCanvas();window.addEventListener('resize', onWindowResize);stopTheme=watchSystemTheme(value=>{dark=value;if(map && !disposed) { if (!basemapController) applyMapTheme(map,dark); if (map.getLayer('footprint-casing')) map.setPaintProperty('footprint-casing','line-color',dark?'#302e2c':'#ffffff'); if (map.getLayer('footprint-selected-casing')) map.setPaintProperty('footprint-selected-casing','line-color',dark?'#302e2c':'#ffffff'); }});void(async()=>{
     try {
       const lib=await import('maplibre-gl'); if(disposed)return;
@@ -167,6 +179,7 @@
       const camera = allBounds ? { bounds: allBounds, fitBoundsOptions: { padding: cameraPadding } } : { center: [0, 0] as [number, number], zoom: 4 };
       map=new lib.Map({container,fadeDuration:0,locale:{'NavigationControl.ZoomIn':'放大地图','NavigationControl.ZoomOut':'缩小地图','Map.Title':'足迹地图'},style:createRouteMapStyle(dark),...camera,maxZoom:19,attributionControl:false});
       map.addControl(new lib.AttributionControl({compact:true}),'bottom-right');
+      trackAttribution();
       map.addControl(new lib.NavigationControl({showCompass:false}),'top-right');
       map.on('dragstart',()=>{selectedCity='';framing='free';});
       observer=new ResizeObserver(()=>{sizeCanvas();map?.resize();}); observer.observe(frameEl ?? container);
@@ -202,10 +215,10 @@
       });
     }catch{if(!disposed)error='无法初始化地图，请使用支持 WebGL 的浏览器。';}
   })();});
-  onDestroy(()=>{disposed=true;window.removeEventListener('resize', onWindowResize);cityWorker?.terminate();stopTheme?.();basemapController?.destroy();observer?.disconnect();map?.remove();map=undefined;});
+  onDestroy(()=>{disposed=true;attributionObserver?.disconnect();window.removeEventListener('resize', onWindowResize);cityWorker?.terminate();stopTheme?.();basemapController?.destroy();observer?.disconnect();map?.remove();map=undefined;});
 </script>
 <div class="map-section content-reveal">
-  <div class="map-toolbar"><div class="toolbar-actions"><button type="button" onclick={overview} disabled={!ready || !!error} class="button-secondary">回到全部足迹</button><button type="button" onclick={()=>{cityOpen=!cityOpen;}} disabled={!ready || !!error || cityLookup!=='ready' || !cityName} aria-expanded={cityOpen} aria-controls="footprint-cities" class="button-secondary city-menu-toggle">城市</button></div><p class="map-hint" id="footprint-map-help">拖动或缩放探索 · 方向键移动 · + / − 缩放</p></div>
+  <div class="map-toolbar"><div class="toolbar-actions"><button type="button" onclick={overview} disabled={!ready || !!error} class="button-secondary">回到全部足迹</button><button type="button" onclick={()=>{cityOpen=!cityOpen;}} disabled={!ready || !!error || cityLookup!=='ready' || !cityName} aria-expanded={cityOpen} aria-controls="footprint-cities" class="button-secondary city-menu-toggle">城市</button></div><p class="sr-only" id="footprint-map-help">拖动或缩放探索 · 方向键移动 · + / − 缩放</p>{#if detailHref}<a class="button-secondary map-detail-link" href={detailHref} data-testid="map-detail-link">查看完整详情 →</a>{/if}</div>
   {#if cityLookup==='loading'}<p role="status" class="city-hint">正在识别有记录的城市…</p>
   {:else if cityLookup==='failed' && !quietCityFailure}<div class="city-actions"><p role="status" class="city-hint">城市识别暂不可用，全部足迹仍可查看。</p><button type="button" onclick={loadCities} class="button-secondary">重试识别城市</button></div>
   {:else}
@@ -217,7 +230,7 @@
   </div>{/if}
   {#if basemap==='failed' && !error}<div class="basemap-feedback" role="status"><span>底图暂不可用，足迹仍可查看。</span><button type="button" onclick={loadBasemap} class="button-secondary">重试底图</button></div>{:else if basemap==='loading' && ready && !error}<p role="status" class="basemap-status">正在加载底图，足迹可先查看…</p>{/if}
   {#if error}<FeedbackState kind="error" title={error}><button type="button" class="button-secondary" onclick={onretry}>重新绘制地图</button></FeedbackState>{:else if !ready}<p role="status" class="basemap-status">正在绘制足迹…</p>{/if}
-  <div class="map-frame" bind:this={frameEl}><div bind:this={container} class="map-canvas" role="region" aria-label={mapLabel || (data.mode==='heatmap'?'个人运动热力图':'个人多轨迹叠加地图')} aria-describedby="footprint-map-help" data-testid={ready?'footprint-map-ready':'footprint-map-loading'}></div>
+  <div class="map-frame" class:compact bind:this={frameEl}><div bind:this={container} class="map-canvas" role="region" aria-label={mapLabel || (data.mode==='heatmap'?'个人运动热力图':'个人多轨迹叠加地图')} aria-describedby="footprint-map-help" data-testid={ready?'footprint-map-ready':'footprint-map-loading'}></div>
     {@render children?.()}
     <div class="map-layers"><BasemapPicker preference={basemapPreference} style={basemapStyle} status={basemap} /></div>
   </div>
@@ -238,7 +251,7 @@
   .city-buttons { display:flex; flex-wrap:wrap; gap:var(--space-2); }
   .city-buttons button[aria-pressed='true'] { outline:2px solid var(--primary); outline-offset:2px; }
   .city-menu-toggle,.city-panel { display:none; }
-  .map-hint { font-size: var(--text-caption); color:var(--muted-foreground); }
+  .map-detail-link { margin-left:auto; }
   .basemap-feedback { display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:.5rem; padding:.5rem .75rem; border:1px solid var(--border); border-radius:var(--radius-control); background:var(--surface); color:var(--muted-foreground); font-size: var(--text-small); }
   .basemap-status { font-size: var(--text-small); margin:0; }
   .map-layers { position:absolute; top:var(--space-3); left:var(--space-3); z-index:2; }
@@ -258,6 +271,8 @@
   .heat-table { max-height:20rem; overflow:auto; margin-top:.75rem; }
   table { width:100%; font-size: var(--text-small); text-align:left; }
   th,td { padding:.5rem; border-bottom:1px solid var(--border); }
-  @media(max-width:767px) { .map-frame { height:min(600px, max(424px, calc(100dvh - 22rem))); } .map-hint { display:none; } .route-choices { padding:.75rem; } }
+  .map-frame.compact { height:clamp(424px, calc(100dvh - 13rem), 720px); }
+  @media(max-width:959px) { .map-frame.compact { height:45dvh; } }
+  @media(max-width:767px) { .map-frame { height:min(600px, max(424px, calc(100dvh - 22rem))); } .route-choices { padding:.75rem; } }
   @media(max-width:1023px) { .city-buttons { display:none; } .city-menu-toggle { display:inline-flex; } .city-panel { display:grid; } }
 </style>

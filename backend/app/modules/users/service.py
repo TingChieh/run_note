@@ -19,14 +19,19 @@ def is_enabled(user, settings):
     return is_admin(user, settings) or bool(user.is_active)
 
 
+def together_on(user):
+    # One switch, stored in both columns: they only diverge in rows written before the merge.
+    return bool(user.together_allowed and user.together_enabled)
+
+
 def view(user, settings):
     return UserView(
         id=user.id,
         is_admin=is_admin(user, settings),
         showcase_enabled=is_admin(user, settings)
         or (bool(user.is_active) and bool(user.showcase_enabled)),
-        together_allowed=user.together_allowed,
-        together_enabled=user.together_enabled,
+        together_allowed=together_on(user),
+        together_enabled=together_on(user),
         wellbeing_allowed=user.wellbeing_allowed,
         wellbeing_enabled=user.wellbeing_enabled,
         email=user.email_normalized,
@@ -47,8 +52,8 @@ def view(user, settings):
 
 def update_profile(user, payload, settings):
     changes = payload.model_dump(exclude_unset=True)
-    if changes.get("together_enabled") is True and not user.together_allowed:
-        raise ApiError(403, "TOGETHER_NOT_ALLOWED", "需管理员开启")
+    if "together_enabled" in changes:
+        changes["together_allowed"] = changes["together_enabled"]
     for key, value in changes.items():
         setattr(user, key, value)
     return view(user, settings)

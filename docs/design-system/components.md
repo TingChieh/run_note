@@ -162,7 +162,7 @@ RecordsBannerLoader：`onMount` 读取 `readRecords()`，保留 `disposed` 与�
 
 Button 入口、字段组、dialog 表面和分页为阶段 4 候选；先证明至少两个用途与行为一致，再决定用共享类还是最小组件。首批不搬迁现有组件、不改业务消费者。
 
-Badge 有可见性/标签等局部形式，暂不统一状态与装饰。`title` 不是可访问 Tooltip；真正出现复杂提示需求时先评估成熟无障碍基础设施。Toast、Drawer、通用 DataTable/ChartContainer、SearchToolbar 等无当前必需用例，不为齐名单实现。移动导航保持原文档流，不能擅自换成模态 Drawer。
+Badge 有可见性/标签等局部形式，暂不统一状态与装饰。`title` 不是可访问 Tooltip；真正出现复杂提示需求时先评估成熟无障碍基础设施。Toast、Drawer、通用 DataTable/ChartContainer、SearchToolbar 等无当前必需用例，不为齐名单实现。移动导航保持原文档流，不能擅自换成模态 Drawer。一起跑步页在手机宽度用页面专用的 `TogetherRecordSheet`（原生 dialog 底部抽屉）查看单条记录，见 [docs/84-together.md](../84-together.md)，不是通用组件。
 
 ## 展示与验证
 

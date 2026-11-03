@@ -122,7 +122,7 @@
     </div>
   </details>
   <ActivityWallPreview {activity} {route} {routeLoading} {routeError} onauthrequired={expired} onswitch={switchActivity} />
-  {#if view.manage}<p class="mt-6 text-sm text-muted-foreground">个人展示站公开全部记录和完整轨迹；以下分享设置仅控制旧版摘要链接。</p>{#key activity.id}<SharePanel {activity} />{/key}{/if}
+  {#if view.manage}{#key activity.id}<SharePanel {activity} />{/key}{/if}
 {:else if loading}<div class="mt-6"><FeedbackState kind="loading" title="正在读取活动…" /></div>{/if}
 <style>
   .hero-side { display: grid; flex-shrink: 0; justify-items: end; gap: var(--space-3); }
