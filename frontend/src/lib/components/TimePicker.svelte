@@ -143,14 +143,14 @@
 <style>
   .time-field { display: grid; gap: .35rem; min-width: 0; font-size: var(--text-small); }
   .time-control { display: flex; align-items: center; width: 100%; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); }
-  .time-control:focus-within { border-color: var(--primary); }
+  .time-control:focus-within { border-color: var(--control-accent); }
   input { width: 100%; min-width: 0; border: 0; background: transparent; padding: .5rem 0 .5rem .75rem; border-radius: var(--radius-control); color: var(--foreground); font-variant-numeric: tabular-nums; }
   input::placeholder { color: var(--muted-foreground); font-weight: var(--weight-regular); }
-  .clock-trigger { display: grid; place-items: center; flex-shrink: 0; width: 2.75rem; height: 2.75rem; border-radius: .65rem; color: var(--primary); }
+  .clock-trigger { display: grid; place-items: center; flex-shrink: 0; width: 2.75rem; height: 2.75rem; border-radius: .65rem; color: var(--control-accent); }
   /* Without popover support there is only the typed field. */
   @supports not selector(:popover-open) { .clock-trigger { display: none; } }
-  .clock-trigger[aria-expanded='true'] { background: var(--primary-soft); }
-  @media (hover: hover) { .clock-trigger:hover { background: var(--primary-soft); } }
+  .clock-trigger[aria-expanded='true'] { background: var(--control-accent-soft); }
+  @media (hover: hover) { .clock-trigger:hover { background: var(--control-accent-soft); } }
   .time-popover { position: fixed; inset: auto; margin: 0; width: 17rem; max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); color: var(--foreground); box-shadow: var(--shadow-popover); }
   /* The time being set, big, so the two columns below read as the two halves of it. */
   /* The same pop-in as the calendar popover (its glass material is not wanted here). */
@@ -176,8 +176,8 @@
   .wheel button[aria-selected='true'] { color: var(--primary-foreground); font-weight: var(--weight-bold); }
   .wheel button:focus-visible { outline-offset: 1px; }
   .footer { display: flex; justify-content: space-between; margin-top: var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--border); }
-  .footer button { min-height: 2.5rem; padding: .25rem .75rem; border-radius: .65rem; color: var(--primary); font-weight: var(--weight-semibold); }
-  @media (hover: hover) { .footer button:hover:not(:disabled) { background: var(--primary-soft); } }
+  .footer button { min-height: 2.5rem; padding: .25rem .75rem; border-radius: .65rem; color: var(--control-accent); font-weight: var(--weight-semibold); }
+  @media (hover: hover) { .footer button:hover:not(:disabled) { background: var(--control-accent-soft); } }
   .footer button:disabled { opacity: .4; cursor: not-allowed; }
   @media (prefers-reduced-motion: reduce) { .wheel { scroll-behavior: auto; } }
 </style>

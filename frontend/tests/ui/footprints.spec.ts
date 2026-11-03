@@ -56,7 +56,6 @@ test('opens on every footprint rather than one city, also after city lookup fini
   const state=await fixture(page);state.multipleCities=true;await loginRunner(page);
   await page.emulateMedia({reducedMotion:'reduce'});
   await page.goto('/footprints?mode=tracks');await ready(page);
-  await page.getByRole('button',{name:'关闭底图',exact:true}).click();
   await expect(page.getByRole('group',{name:'有记录的城市',exact:true}).getByRole('button')).toHaveCount(2);
   const style='.glass-tuner, .maplibregl-control-container { visibility: hidden !important; }';
   const canvas=page.locator('.maplibregl-canvas');
@@ -74,7 +73,6 @@ for(const mode of ['tracks','heatmap'])test(`city locator moves and restores the
   await page.emulateMedia({reducedMotion:mode==='tracks'?'reduce':'no-preference',colorScheme:'dark'});
   await page.setViewportSize({width:390,height:1000});
   await page.goto(`/footprints?mode=${mode}`);await ready(page);
-  await page.getByRole('button',{name:'关闭底图',exact:true}).click();
   await page.getByRole('button',{name:'回到全部足迹',exact:true}).click();
   const canvas=page.locator('.maplibregl-canvas');
   // Element screenshots also capture fixed overlays; exclude the development-only tuner.
@@ -224,7 +222,6 @@ test('single line and point render; empty filters, data and tile failures offer 
   await expect(page.getByTestId('footprint-summary')).toContainText('地图显示 1 条');
   await expect(page.getByRole('button',{name:'重试底图'})).toBeVisible();
   await page.getByRole('button',{name:'重试底图'}).click();await expect(page.getByRole('button',{name:'重试底图'})).toBeVisible();
-  await page.getByRole('button',{name:'关闭底图'}).click();await expect(page.getByRole('button',{name:'开启底图'})).toHaveAttribute('aria-pressed','false');
   await page.getByRole('button',{name:'回到全部足迹'}).click();await ready(page);
   state.scenario='point';await page.getByRole('button',{name:'重新读取足迹'}).click();await ready(page);
   state.failures=1;await page.getByRole('button',{name:'重新读取足迹'}).click();await expect(page.getByRole('alert')).toContainText('足迹暂不可用');

@@ -44,10 +44,6 @@ test('automatic theme, persistent manual override, rapid races, outage, retry an
   await expect(page.getByRole('button', { name: '重试底图', exact: true })).toBeVisible();
   await expect(page.getByTestId('route-map-ready')).toBeVisible(); await expect(page.getByLabel('路线起点')).toBeVisible();
   state.fail = false; state.delay = 0; await page.getByRole('button', { name: '重试底图', exact: true }).click(); await basemapReady(page, 'dark');
-  await page.getByRole('button', { name: '关闭底图', exact: true }).click();
-  const requests = state.requests.length; await page.emulateMedia({ colorScheme: 'dark' });
-  await expect(page.locator('[data-basemap-status="off"]')).toBeVisible(); expect(state.requests.length).toBe(requests);
-  await page.getByRole('button', { name: '开启底图', exact: true }).click(); await basemapReady(page, 'dark');
   for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 1000 });
     const toggle = page.getByRole('button', { name: '切换底图', exact: true });
@@ -157,7 +153,7 @@ for (const colorScheme of ['light', 'dark'] as const) test(`pressing map overlay
   await page.setViewportSize({ width: colorScheme === 'dark' ? 390 : 1440, height: 1000 });
   await installActivities(page); await installBasemaps(page); await loginRunner(page);
   await page.goto(`/activities/${sampleActivity.id}`); await basemapReady(page, colorScheme === 'dark' ? 'dark' : 'positron');
-  for (const name of ['切换底图', '关闭底图']) {
+  for (const name of ['切换底图']) {
     const button = page.getByRole('button', { name, exact: true });
     const optical = button.locator('.rn-glass-layer');
     await expect.poll(() => optical.evaluate(el => el.style.backdropFilter)).toContain('url(');

@@ -148,7 +148,6 @@ test('单人单条记录的摘要、排行、地图和动态完整显示', async
   const legend=page.getByRole('region',{name:'选择参与者'});
   await expect(legend.getByRole('button',{name:'合成甲'}).locator('.runner-avatar')).toHaveText('合');
   await expect(page.getByTestId('footprint-map-ready')).toBeVisible({timeout:15000});
-  await page.getByRole('button',{name:'关闭底图',exact:true}).click();
   await expect(page.getByText('合成甲 跑了 3.00 公里', {exact:false})).toBeVisible();
   await expect(page.getByText('全部可显示记录（1）', {exact:false})).toBeVisible();
   for (const width of [1440,390]) {

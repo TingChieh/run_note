@@ -14,7 +14,7 @@
   import PageSkeleton from '#lib/components/PageSkeleton.svelte';
   import ActivityTimeline from '#lib/components/ActivityTimeline.svelte';
   import ActivityPreview from '#lib/components/ActivityPreview.svelte';
-  import ActivityViews from '#lib/components/ActivityViews.svelte';
+  import RoutePosterDialog from '#lib/components/RoutePosterDialog.svelte';
   import { page } from '$app/state';
   import { onMount, tick, untrack } from 'svelte';
   import { replaceState, snapshot } from '$app/navigation';
@@ -241,7 +241,7 @@
   });
 </script>
 <svelte:head><title>{pageTitle('跑步记录', page.data.site)}</title></svelte:head>
-<PageHeader title="跑步记录" description="每一次跑步，都值得留下。导入 GPX 或 TCX，回顾你的轨迹与运动表现。">{#snippet footer()}<ActivityViews current="list" />{/snippet}</PageHeader>
+<PageHeader title="跑步记录" description="每一次跑步，都值得留下。导入 GPX 或 TCX，回顾你的轨迹与运动表现。">{#snippet actions()}<RoutePosterDialog />{/snippet}</PageHeader>
 <section class="mt-8" aria-labelledby="records-title">
   <div class="flex flex-wrap items-baseline justify-between gap-3"><h2 bind:this={recordsHeading} tabindex="-1" id="records-title" class="text-xl font-semibold">我的活动{records ? `（${records.total}）` : ''}</h2><div class="records-heading-actions">{#if view.manage}<button type="button" class="button-secondary import-toggle" aria-expanded={importOpen} aria-controls="import-region" onclick={() => { importOpen = !importOpen; }}>导入轨迹<svg class="import-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg></button><button class="button-secondary" aria-pressed={editMode} disabled={controlsBusy || loading || !records?.items.length} onclick={toggleEditMode}>{editMode ? '完成' : '编辑'}</button>{/if}</div></div>
   {#if view.manage}<div id="import-region" class="import-fold" class:open={importOpen} inert={!importOpen}><div class="import-fold-inner">
@@ -357,7 +357,8 @@
   .records-layout { margin-top: var(--space-4); min-width: 0; }
   .records-layout.two-pane { display: grid; grid-template-columns: minmax(0, 26rem) minmax(0, 1fr); align-items: start; gap: var(--space-6); }
   .records-list { min-width: 0; }
-  .two-pane .records-list { padding-top: calc(var(--space-4) + 1px); }
+  /* The preview card starts level with the first record: below the month heading (1.75rem + --space-3, see ActivityTimeline). */
+  .two-pane .records-preview { margin-top: calc(1.75rem + var(--space-3)); }
   .records-preview { position: sticky; top: calc(var(--top-navigation-offset) + var(--top-navigation-height) + var(--space-4)); min-width: 0; }
   .pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-3); margin-top: var(--space-6); }
   @media (max-width: 639px) { .import-card { padding: var(--space-3) var(--space-4); } .upload-primary { grid-template-columns: 1fr; } .upload-primary button { width: 100%; } }

@@ -10,7 +10,7 @@ describe('context resource mapping', () => {
   const c=viewContext('/p/a%20b/ai', true);
   expect(contextAPI(c,'/api/v1/auth/session')).toBe('/api/v1/auth/session');
   expect(contextAPI(c,'/api/v1/showcase/ai-reports?limit=10')).toBe('/api/v1/showcase/users/a%20b/ai-reports?limit=10');
-  expect(contextPath(c,'/activities/wall')).toBe('/p/a%20b/activities/wall');
+  expect(contextPath(c,'/activities')).toBe('/p/a%20b/activities');
   expect(contextPath(c,'/workspace/dashboard')).toBe('/workspace/dashboard');
   expect(contextPath(viewContext('/activities'), '/dashboard')).toBe('/');
   expect(contextPath(viewContext('/activities'), '/dashboard?year=2026')).toBe('/?year=2026');

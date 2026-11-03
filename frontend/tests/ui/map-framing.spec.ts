@@ -43,7 +43,6 @@ for (const view of ['detail', 'preview']) test(`small loops fill the ${view} map
   await installLoop(page);
   await page.goto(view === 'detail' ? `/activities/${sampleActivity.id}` : '/dashboard?year=2026');
   await expect(page.getByTestId('route-map-ready')).toBeVisible();
-  await page.getByRole('button', { name: '关闭底图', exact: true }).click();
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     await expect(page.getByTestId('route-map-ready')).toBeVisible();
@@ -66,7 +65,6 @@ for (const mode of ['tracks', 'heatmap']) test(`small ${mode} footprints fill th
   }, error: null } }));
   await page.goto(`/footprints?mode=${mode}`);
   await expect(page.getByTestId('footprint-map-ready')).toBeVisible();
-  await page.getByRole('button', { name: '关闭底图', exact: true }).click();
   await expect.poll(async () => (await routeExtent(page)).ratio).toBeGreaterThan(.6);
   if (mode === 'tracks') {
     await page.getByText('全部可显示记录', { exact: false }).click();

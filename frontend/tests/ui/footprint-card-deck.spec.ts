@@ -487,8 +487,8 @@ test('leaving the detail while springs move releases animation callbacks', async
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('足迹 10');
   await expect(deck.locator('.card-stack')).toHaveAttribute('data-moving', 'true');
   const detached = await deck.locator('.stack-slot').first().elementHandle();
-  await deck.getByRole('link', { name: '查看全部足迹' }).click();
-  await expect(page).toHaveURL(/\/activities\/wall$/);
+  await deck.getByRole('link', { name: '查看全部记录' }).click();
+  await expect(page).toHaveURL(/\/activities$/);
   expect(await detached!.evaluate(el => el.isConnected)).toBe(false);
   const transform = await detached!.evaluate(el => (el as HTMLElement).style.transform);
   // Let real browser frames run after Svelte has unmounted the deck.
@@ -789,10 +789,13 @@ test('detail read failure keeps URL and record; retry changes the record', async
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('足迹 2');
 });
 
-test('switching records and reloading preserves the original wall page on Back', async ({ page }) => {
+test('switching records and reloading preserves the original list page on Back', async ({ page }) => {
   const { state } = await setup(page, 60);
-  await page.goto('/activities/wall?offset=24');
-  await page.locator(`a.wall-card[href="/activities/${state.records[24].id}"]`).click();
+  await page.goto('/activities');
+  await page.getByRole('button', { name: '下一页', exact: true }).click();
+  // On a wide screen the card only selects the record; the preview's link opens its page.
+  await page.locator(`a.card-link[data-activity-id="${state.records[24].id}"]`).click();
+  await page.getByRole('link', { name: '查看完整详情 →' }).click();
   const deck = page.getByRole('region', { name: '本次足迹卡片' });
   await deck.scrollIntoViewIfNeeded();
   await deck.getByRole('button', { name: '较旧一条' }).click();
@@ -802,6 +805,7 @@ test('switching records and reloading preserves the original wall page on Back',
   await page.reload();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('足迹 27');
   await page.getByRole('button', { name: '返回', exact: true }).click();
-  await expect(page).toHaveURL(/\/activities\/wall\?offset=24$/);
-  await expect(page.locator('a.wall-card').first()).toContainText('足迹 25');
+  await expect(page).toHaveURL(/\/activities(\?id=[0-9a-f-]+)?$/);
+  await expect(page.locator('.pagination')).toContainText('第 2 页');
+  await expect(page.locator('a.card-link', { hasText: '足迹 25' })).toBeVisible();
 });

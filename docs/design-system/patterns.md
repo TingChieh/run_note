@@ -55,7 +55,7 @@ busy 时防重复提交，失败保留草稿，字段错误与输入关联。写
 
 聚合指标以服务端为准。canvas/WebGL 只在 onMount 动态导入，watchSystemTheme 更新 paint/option 并清理订阅；切换外观保留选择、相机与实例。地图底图可关，失败不阻断本地轨迹；数据表 details 提供无图形兜底。AI 生成是显式动作，展示不发供应商请求。
 
-跑步记录页 [/activities](../../frontend/src/routes/activities/+page.svelte)：PageHeader（页头下是“列表 / 足迹墙”切换）→ 标题行（“我的活动（N）”，右侧“导入轨迹”与“编辑”）→ 折叠的导入区（GPX/TCX 与 Mi Fitness，高度动画展开/收起，收起时 `inert` 且不可见但仍挂载，所以选好的文件不丢；记录为空、导入进行中或有结果提示时自动展开）→ 列表。桌面（≥1024px）是左右两栏：左栏固定 26rem 的 `ActivityTimeline`，右栏 `ActivityPreview`；选中项写进地址 `?id=`（`replaceState`），上下方向键换选中项，Ctrl/Cmd/中键点击照常打开详情页；窄屏只有时间线，点击进入详情页。见 [82](../82-activity-timeline-preview.md)。
+跑步记录页 [/activities](../../frontend/src/routes/activities/+page.svelte)：PageHeader（右侧是整段时间的“生成分享图”，没有视图切换）→ 标题行（“我的活动（N）”，右侧“导入轨迹”与“编辑”）→ 折叠的导入区（GPX/TCX 与 Mi Fitness，高度动画展开/收起，收起时 `inert` 且不可见但仍挂载，所以选好的文件不丢；记录为空、导入进行中或有结果提示时自动展开）→ 列表。桌面（≥1024px）是左右两栏：左栏固定 26rem 的 `ActivityTimeline`，右栏 `ActivityPreview`；选中项写进地址 `?id=`（`replaceState`），上下方向键换选中项，Ctrl/Cmd/中键点击照常打开详情页；窄屏只有时间线，点击进入详情页。见 [82](../82-activity-timeline-preview.md)。
 
 个人记录页 [/records](../../frontend/src/routes/records/+page.svelte) 是“先讲人话，再给数字”的样本：PageHeader → RecordsBanner（hero）→ 一句无边框总结（今年里程与去年同期，数字取服务端 `yearly`）→ 月度卡片（标题右侧 `.settings-tabs` 按钮组切换里程/配速，图表去掉网格线与纵轴，只给最大月份或最快月份标数值，其余柱为 `--primary` 的柔和透明度）→ 逐年回顾与训练规律两张卡并排（每张卡不足 28rem（按该行自身宽度）时上下堆叠）。逐年横条与周点、周内小柱都是页面私有的 CSS 图形，用 `--primary` 的 `color-mix` 档位表达强弱，进行中的年份用同色斜纹，正负变化用文字与符号表达。连续卡片不超过三层，每个图形下都有 `<details>` 数据表。
 
@@ -73,7 +73,7 @@ error 为 alert，其他状态 polite；文本与图形共同表意。缺失 `�
 
 适用：所有私人/公开页面。参考 [app.css](../../frontend/src/app.css)、[AppNavigation](../../frontend/src/lib/components/AppNavigation.svelte)。桌面（800px 起）为悬浮顶部条，800px 以下使用手机栏加文档流菜单（两者同为 `--surface` 配色）；公开页面独立顶部导航。外壳模式见下。内容和栅格项 min-width:0，动作可换行，表格只在局部滚动。
 
-验证 320/390/768/1024/1440px、关键断点两侧与桌面低高度；长中文、长数值不溢出。保留 DOM 阅读顺序、skip link、Escape/焦点恢复及常用 44px 目标；密集日历按间距和适用例外评估。足迹墙按容器查询，不能仅看 viewport。
+验证 320/390/768/1024/1440px、关键断点两侧与桌面低高度；长中文、长数值不溢出。保留 DOM 阅读顺序、skip link、Escape/焦点恢复及常用 44px 目标；密集日历按间距和适用例外评估。按容器查询的组件（如活动详情页的足迹卡片）不能仅看 viewport。
 
 外壳模式（私人页面）：整页是“顶部条 + 内容区”，没有左侧栏，内容区宽度只受 `--content-width` 与页面水平 padding 限制，`.content-column` 的 `padding-top: 5rem` 为顶部条留位，`navigation-progress` 整宽。顶部条从左到右是 Logo 加站点名、导航项、账户区；账户区顺序固定为**进度环 → 主题切换（图标）→ 头像菜单**（进度环弹层放跑量目标，头像菜单放姓名与模式、设置、退出登录）。三档：≥1360px 图标加文字，800–1359px 只有图标，入口达到 9 个时所有桌面宽度都是图标版（`data-dense`）；每个图标项必须保留 `title` 与 `aria-label`，页面名称由页头标题呈现。页面滚动到内容经过条的下方时条进入 floating 玻璃态，其余时候是不透明卡片（见 [components](components.md) 的“顶部导航与锚定弹层”）。<800px 是手机栏加文档流菜单，账户区是内联块（姓名与模式、退出登录、设置），不另开弹层，进度环弹层在这里是 `AnchoredPanel inline`。新增页面不要自带导航或固定在顶部的第二条栏；需要悬浮提示或操作栏时避开 `--top-navigation-height` 加上下间距，并确认 floating 态下文字不被条遮住。页面切换动画：≥800px 左右滑，<800px 上下滑，方向由菜单顺序决定。
 

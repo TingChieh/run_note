@@ -4,6 +4,7 @@
   import { preparePopoverMotion, positionPopoverMotion } from '#lib/styles/popover-motion.ts';
   import { bindVisualViewport, popoverSupported, visualViewportBox } from '#lib/styles/browser-support.ts';
   import { attachMenuGlass } from '#lib/styles/menu-glass.ts';
+  import type { createIndicator } from '#lib/styles/liquid-glass-indicator.ts';
   let { label, panelLabel, inline = false, trigger, children }: { label: string; panelLabel: string; inline?: boolean; trigger: Snippet; children: Snippet } = $props();
   const id = $props.id();
   let panel: HTMLDivElement, anchor: HTMLDivElement;
@@ -25,20 +26,38 @@
   }
   function glass(node: HTMLDivElement) {
     let surface: ReturnType<typeof attachMenuGlass> | undefined;
+    let lens: ReturnType<typeof createIndicator> | undefined;
+    let items: HTMLElement[] = [];
     let timer: ReturnType<typeof setTimeout> | undefined;
     let settings = readGlassSettings();
-    const release = () => { surface?.destroy(); surface = undefined; };
+    const release = () => { lens?.destroy(); lens = undefined; delete node.dataset.lensIdle; surface?.destroy(); surface = undefined; };
     releaseGlass = () => { clearTimeout(timer); release(); };
-    const stop = watchGlassSettings(value => { settings = value; surface?.update({ ...glassOptics(value, .7), chroma: 0 }); });
+    const stop = watchGlassSettings(value => { settings = value; surface?.update({ ...glassOptics(value, .7), chroma: 0 }); lens?.update(value); });
     const toggled = (event: Event) => {
       clearTimeout(timer);
       expanded = (event as ToggleEvent).newState === 'open';
       if (!expanded) { timer = setTimeout(release, 240); return; }
       position();
       surface ??= attachMenuGlass(node, settings);
+      // Menus of options (the account menu) get the same pointer-following glass lens as the select and basemap menus.
+      // It stays hidden until the pointer or keyboard focus reaches an option.
+      items = [...node.querySelectorAll<HTMLElement>('.rn-menu-option:not(:disabled)')];
+      // Loaded on demand like the other glass modules, so the menu still works when they are unavailable.
+      if (items.length && !lens) void import('#lib/styles/liquid-glass-indicator.ts').then(({ createIndicator: create }) => {
+        if (lens || !node.matches(':popover-open')) return;
+        lens = create(node, items, settings); node.dataset.lensIdle = ''; lens.refresh();
+      }).catch(() => {});
     };
+    const reach = (event: Event) => {
+      const index = items.indexOf((event.target as HTMLElement).closest<HTMLElement>('.rn-menu-option')!);
+      if (index < 0 || !lens) return;
+      const wasIdle = 'lensIdle' in node.dataset;
+      delete node.dataset.lensIdle; lens.move(index, wasIdle);
+    };
+    const leave = () => { if (lens && !node.contains(document.activeElement)) node.dataset.lensIdle = ''; };
+    node.addEventListener('pointermove', reach); node.addEventListener('focusin', reach); node.addEventListener('pointerleave', leave);
     node.addEventListener('toggle', toggled);
-    return { destroy() { clearTimeout(timer); stop(); node.removeEventListener('toggle', toggled); release(); } };
+    return { destroy() { clearTimeout(timer); stop(); node.removeEventListener('toggle', toggled); node.removeEventListener('pointermove', reach); node.removeEventListener('focusin', reach); node.removeEventListener('pointerleave', leave); release(); } };
   }
   // Going inline drops the popover attribute. Browsers close the popover then and fire toggle, but do not rely on it: reset here too.
   $effect(() => { if (inline) { expanded = false; releaseGlass?.(); } });

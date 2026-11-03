@@ -10,7 +10,7 @@ import { createBasemapController } from '../../src/lib/map/basemap-controller.ts
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-it.each(['timeout', 'off'])('recovers from %s without reusing failed assets or accepting expired sprite errors', async mode => {
+it('recovers from a timeout without reusing failed assets or accepting expired sprite errors', async () => {
   vi.useFakeTimers();
   const callbacks: ((error?: Error) => void)[] = [];
   const listeners = new Map<string, (...args: any[]) => void>();
@@ -35,14 +35,8 @@ it.each(['timeout', 'off'])('recovers from %s without reusing failed assets or a
   const states: string[] = [];
   const controller = createBasemapController(map as unknown as LibreMap, 'route-lines', state => states.push(state.status));
   await vi.advanceTimersByTimeAsync(0); expect(callbacks).toHaveLength(1);
-  if (mode === 'off') {
-    controller.toggle(); callbacks[0](new Error('offline while disabled'));
-    await vi.advanceTimersByTimeAsync(0); expect(states.at(-1)).toBe('off');
-    controller.toggle();
-  } else {
-    await vi.advanceTimersByTimeAsync(8100); expect(states.at(-1)).toBe('failed');
-    controller.retry();
-  }
+  await vi.advanceTimersByTimeAsync(8100); expect(states.at(-1)).toBe('failed');
+  controller.retry();
   await vi.advanceTimersByTimeAsync(0); expect(callbacks).toHaveLength(2);
   callbacks[1](); await vi.advanceTimersByTimeAsync(0); expect(states.at(-1)).toBe('ready');
   const installed = [...layers.keys()];

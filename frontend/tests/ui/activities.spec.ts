@@ -178,42 +178,35 @@ test('successful imports update the persistent sidebar distance while keeping a 
 
 // On a wide screen the list keeps the chosen record in the address (?id=).
 const listUrl = /\/activities(\?id=[0-9a-f-]+)?$/;
-for (const source of ['list', 'wall'] as const) {
-  for (const reload of [false, true]) {
-    test(`detail back returns to ${source} on the same page${reload ? ' after reload' : ''}`, async ({page}, testInfo) => {
-      const state = await installActivities(page);
-      state.records = Array.from({length:50}, (_,i) => ({...incompleteActivity,
-        id:`${String(i).padStart(8,'0')}-1111-4111-8111-111111111111`, title:`返回测试 ${i+1}`}));
-      if(reload)await page.setViewportSize({width:390,height:844});
-      await loginRunner(page);
-      const sourcePath = source === 'wall' ? '/activities/wall?offset=24' : '/activities';
-      await page.goto(source === 'wall' ? '/activities/wall' : sourcePath);
-      await page.getByRole('button',{name:'下一页',exact:true}).click();
-      const title = source === 'wall' ? '返回测试 25' : '返回测试 21';
-      const cardLevel = source === 'wall' ? 2 : 3;
-      await page.getByRole('link').filter({has:page.getByRole('heading',{name:title,exact:true})}).click();
-      // On a wide screen the card only selects the record; the preview's link opens its page.
-      if(source === 'list' && !reload)await page.getByRole('link',{name:'查看完整详情 →'}).click();
-      await expect(page.getByRole('heading',{name:title,level:1})).toBeVisible();
-      if(reload){await page.reload();await expect(page.getByRole('heading',{name:title,level:1})).toBeVisible();}
-      const back = page.getByRole('button',{name:'返回',exact:true});
-      await expect(back).toBeVisible();
-      await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-      if(source === 'wall' && !reload)await page.screenshot({path:testInfo.outputPath('detail-back-desktop.png')});
-      if(source === 'wall' && reload)await page.screenshot({path:testInfo.outputPath('detail-back-mobile.png')});
-      await back.focus();await page.keyboard.press('Enter');
-      await expect(page).toHaveURL(source === 'list' ? listUrl : sourcePath);
-      await expect(page.getByRole('heading',{name:title,level:cardLevel})).toBeVisible();
-      if(source === 'list')await expect(page.locator('.pagination')).toContainText('第 2 页');
-      else await expect(page.locator('.wall-pagination')).toContainText('第 2 / 3 页');
-      // Traversing forward must keep the same return target, without creating a loop.
-      await page.goForward();
-      await expect(page.getByRole('heading',{name:title,level:1})).toBeVisible();
-      await page.getByRole('button',{name:'返回',exact:true}).click();
-      await expect(page).toHaveURL(source === 'list' ? listUrl : sourcePath);
-      await expect(page.getByRole('heading',{name:title,level:cardLevel})).toBeVisible();
-    });
-  }
+for (const reload of [false, true]) {
+  test(`detail back returns to the list on the same page${reload ? ' after reload' : ''}`, async ({page}) => {
+    const state = await installActivities(page);
+    state.records = Array.from({length:50}, (_,i) => ({...incompleteActivity,
+      id:`${String(i).padStart(8,'0')}-1111-4111-8111-111111111111`, title:`返回测试 ${i+1}`}));
+    if(reload)await page.setViewportSize({width:390,height:844});
+    await loginRunner(page);
+    await page.goto('/activities');
+    await page.getByRole('button',{name:'下一页',exact:true}).click();
+    const title = '返回测试 21';
+    await page.getByRole('link').filter({has:page.getByRole('heading',{name:title,exact:true})}).click();
+    // On a wide screen the card only selects the record; the preview's link opens its page.
+    if(!reload)await page.getByRole('link',{name:'查看完整详情 →'}).click();
+    await expect(page.getByRole('heading',{name:title,level:1})).toBeVisible();
+    if(reload){await page.reload();await expect(page.getByRole('heading',{name:title,level:1})).toBeVisible();}
+    const back = page.getByRole('button',{name:'返回',exact:true});
+    await expect(back).toBeVisible();
+    await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await back.focus();await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(listUrl);
+    await expect(page.getByRole('heading',{name:title,level:3})).toBeVisible();
+    await expect(page.locator('.pagination')).toContainText('第 2 页');
+    // Traversing forward must keep the same return target, without creating a loop.
+    await page.goForward();
+    await expect(page.getByRole('heading',{name:title,level:1})).toBeVisible();
+    await page.getByRole('button',{name:'返回',exact:true}).click();
+    await expect(page).toHaveURL(listUrl);
+    await expect(page.getByRole('heading',{name:title,level:3})).toBeVisible();
+  });
 }
 
 test('direct detail entry falls back to records without trusting a return URL', async ({page}) => {
@@ -225,34 +218,28 @@ test('direct detail entry falls back to records without trusting a return URL', 
   await expect(page.getByRole('heading',{name:'跑步记录',level:1})).toBeVisible();
 });
 
-test.describe('list and wall are two views of the running records', () => {
+test.describe('the footprint wall is folded into the records page', () => {
   test.beforeEach(async ({ page }) => { await installActivities(page); await loginRunner(page); });
-  test('the main navigation has one entry, current on both views; no wall link of its own', async ({ page }) => {
-    await page.goto('/activities'); await openImport(page);
+  test('one navigation entry, no view switch, and the share image sits in the page header', async ({ page }) => {
+    await page.goto('/activities');
     const nav = page.getByRole('navigation', { name: '主要导航' });
     await expect(nav.getByRole('link', { name: '足迹墙' })).toHaveCount(0);
     await expect(nav.getByRole('link', { name: '跑步记录', exact: true })).toHaveAttribute('aria-current', 'page');
-    await page.goto('/activities/wall');
-    await expect(page.getByRole('heading', { name: '足迹墙', exact: true })).toBeVisible();
-    await expect(nav.getByRole('link', { name: '足迹墙' })).toHaveCount(0);
-    await expect(nav.getByRole('link', { name: '跑步记录', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('navigation', { name: '跑步记录视图' })).toHaveCount(0);
+    await expect(page.locator('.page-header').getByRole('button', { name: '生成分享图' })).toBeVisible();
+    // The preview's own button is named differently, so the two never read as the same action.
+    await expect(page.getByTestId('activity-preview').getByRole('button', { name: '本次分享图' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '生成分享图', exact: true })).toHaveCount(1);
   });
-  test('a segmented switch moves between the views; the old buttons are gone', async ({ page }) => {
-    await page.goto('/activities'); await openImport(page);
-    const views = page.getByRole('navigation', { name: '跑步记录视图' });
-    await expect(views.getByRole('link', { name: '列表' })).toHaveAttribute('aria-current', 'page');
-    await expect(views.getByRole('link', { name: '足迹墙' })).not.toHaveAttribute('aria-current', 'page');
-    await expect(page.getByRole('link', { name: '查看足迹墙' })).toHaveCount(0);
-    await views.getByRole('link', { name: '足迹墙' }).click();
-    await expect(page).toHaveURL(/\/activities\/wall$/);
-    await expect(page.getByRole('heading', { name: '足迹墙', exact: true })).toBeVisible();
-    await expect(views.getByRole('link', { name: '足迹墙' })).toHaveAttribute('aria-current', 'page');
-    await expect(page.getByRole('link', { name: '返回跑步记录' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: '生成分享图' })).toBeVisible();
-    await views.getByRole('link', { name: '列表' }).click();
+  test('the old wall addresses permanently redirect to the records page of the same view', async ({ page }) => {
+    for (const [from, to] of [['/activities/wall', '/activities'], ['/activities/wall?offset=24', '/activities'], ['/workspace/activities/wall', '/workspace/activities'], ['/p/runner/activities/wall', '/p/runner/activities']]) {
+      const response = await page.request.get(from, { maxRedirects: 0 });
+      expect(response.status(), from).toBe(308);
+      expect(response.headers().location, from).toBe(to);
+    }
+    await page.goto('/activities/wall');
     await expect(page).toHaveURL(listUrl);
     await expect(page.getByRole('heading', { name: '跑步记录', exact: true })).toBeVisible();
-    await expect(views.getByRole('link', { name: '列表' })).toHaveAttribute('aria-current', 'page');
   });
 });
 
@@ -296,15 +283,15 @@ test.describe('records timeline with a preview pane', () => {
     await expect(page.getByTestId('activity-preview')).toContainText('九月二');
   });
 
-  test('the first month and the preview title sit on one line, tops included', async ({ page }) => {
+  test('the preview card starts level with the first record, below the month heading', async ({ page }) => {
     await page.goto('/activities');
     await expect(page.getByTestId('activity-preview')).toContainText('十月三');
     const boxes = await page.evaluate(() => {
-      const box = (selector: string) => { const rect = document.querySelector(selector)!.getBoundingClientRect(); return { top: rect.top, centre: rect.top + rect.height / 2 }; };
-      return { pill: box('.timeline .month-pill'), title: box('.preview-title'), card: box('.preview'), list: box('.records-list') };
+      const box = (selector: string) => { const rect = document.querySelector(selector)!.getBoundingClientRect(); return { top: rect.top, bottom: rect.bottom }; };
+      return { pill: box('.timeline .month-pill'), first: box('.timeline .activity-card'), card: box('.preview') };
     });
-    expect(Math.abs(boxes.pill.centre - boxes.title.centre), 'the month pill and the preview title share a centre line').toBeLessThanOrEqual(1);
-    expect(boxes.card.top, 'the preview card starts at the top of the list column').toBeCloseTo(boxes.list.top, 0);
+    expect(boxes.card.top, 'the preview card and the first record share a top edge').toBeCloseTo(boxes.first.top, 0);
+    expect(boxes.pill.bottom, 'the month heading sits above both').toBeLessThanOrEqual(boxes.first.top);
   });
 
   test('arrow keys move the choice between records', async ({ page }) => {
