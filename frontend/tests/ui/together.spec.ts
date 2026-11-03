@@ -294,6 +294,9 @@ test('动态选择、地图详情和手机布局', async ({page}) => {
   await expect(map).toHaveCSS('position','sticky');
   await feed.locator('.card-link').nth(1).click();
   await expect(page.getByTestId('together-map-info')).toContainText('夜跑');
+  await expect(page.getByTestId('together-map-info')).toBeVisible();
+  await expect(page.getByTestId('together-map-info')).toHaveCSS('opacity','1');
+  expect((await page.getByTestId('together-map-info').boundingBox())!.width).toBeGreaterThanOrEqual(200);
   await expect(page.getByTestId('together-map-info').getByRole('link')).toHaveAttribute('href',`/p/runner_two/activities/${second.id}`);
   await expect(feed.getByRole('button',{name:/编辑|删除|分享|导出/})).toHaveCount(0);
   await feed.locator('.card-link').nth(1).click();
@@ -302,6 +305,9 @@ test('动态选择、地图详情和手机布局', async ({page}) => {
   expect((await map.boundingBox())!.y).toBeLessThan((await feed.locator('.activity-card').first().boundingBox())!.y);
   await feed.locator('.card-link').first().click();
   await expect(page.getByTestId('together-map-info')).toContainText('晨跑');
+  await expect(page.getByTestId('together-map-info')).toBeVisible();
+  await expect(page.getByTestId('together-map-info')).toHaveCSS('opacity','1');
+  expect((await page.getByTestId('together-map-info').boundingBox())!.width).toBeGreaterThanOrEqual(200);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 

@@ -101,7 +101,7 @@
         <div class="feed-map" id="together-map">
           {#if mapFootprints}
             <FootprintMap data={mapFootprints} animateDataChanges compact mapLabel="一起跑步足迹地图" participantColors={colors} selectedRunner={selected} selectedActivity={currentId ?? ''} onclearRunner={()=>{selected='';currentId=null;}} quietCityFailure onretry={load}>
-              {#if currentActivity && selectedRecord}<article class="rn-glass-menu map-info" data-testid="together-map-info">
+              {#if currentActivity && selectedRecord}<article class="save-bar map-info" data-testid="together-map-info">
                 <strong>{currentActivity.title || '未命名活动'}</strong><span style:color={colors[selectedRecord.username]}>{selectedRecord.display_name}</span><span>{formatDate(currentActivity.activity_date)}</span>
                 <span>{formatDistance(currentActivity.distance_m)} · {formatDuration(activityDuration(currentActivity))} · {formatPace(currentActivity.avg_pace_seconds_per_km)}{currentActivity.avg_heart_rate_bpm == null ? '' : ` · ${currentActivity.avg_heart_rate_bpm} bpm`}</span>
                 {#if !mapFootprints.features.some(f => f.properties?.activity_id === currentId)}<span role="status">这条记录暂无可显示的路线。</span>{/if}
@@ -131,7 +131,7 @@
   .feed-list { min-width:0; }
   .feed-map { min-width:0; position:sticky; top:var(--space-4); margin-top:calc(1.75rem + var(--space-3)); }
   @media (max-width:959px) { .feed-layout { display:flex; flex-direction:column; } .feed-map { position:static; margin-top:0; order:-1; width:100%; } .feed-list { width:100%; } }
-  :global(.sport-theme) .map-info { position:absolute; z-index:3; left:var(--space-3); bottom:var(--space-3); display:grid; gap:var(--space-1); max-width:calc(100% - 2rem); padding:var(--space-3); font-size:var(--text-small); }
+  .map-info { position:absolute; z-index:3; left:var(--space-3); bottom:var(--space-8); width:max-content; min-width:min(15rem, calc(100% - 2rem)); max-width:calc(100% - 2rem); max-height:calc(100% - 6rem); overflow:auto; overflow-wrap:anywhere; gap:var(--space-1); padding:var(--space-3); color:var(--foreground); font-size:var(--text-small); }
   .map-info a { color:var(--primary); font-weight:var(--weight-semibold); }
   .feed-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:var(--space-3); min-width:0; }
   .rank-content progress::-webkit-progress-value { transition:width var(--motion-reveal); }
