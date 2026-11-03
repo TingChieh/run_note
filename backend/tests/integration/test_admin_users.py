@@ -1,11 +1,12 @@
 """Account administration and named full-showcase acceptance on an allowlisted _test DB."""
 
+from datetime import UTC, date, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.main import create_app
 from app.modules.activities.model import Activity
@@ -334,7 +335,7 @@ def test_wellbeing_switches_preserve_private_records(site):  # noqa: F811
         assert response.json()["data"]["entry"]["mood"] == 5
 
 
-def test_together_switches_and_public_filter(site):  # noqa: F811
+def test_together_switches_and_public_filter(site, monkeypatch):  # noqa: F811
     admin, visitor, _, admin_headers, _, _, engine, settings, _ = site
     suffix = uuid4().hex[:18]
     payload = dict(
@@ -392,6 +393,10 @@ def test_together_switches_and_public_filter(site):  # noqa: F811
             included = payload["username"] in [row["username"] for row in data["participants"]]
             if not included:
                 assert all(row["username"] != payload["username"] for row in data["recent"])
+                assert all(
+                    row["username"] != payload["username"]
+                    for row in visitor.get("/api/v1/together/feed").json()["data"]["items"]
+                )
                 assert all(row["username"] != payload["username"] for row in data["tracks"])
                 if baseline is not None:
                     assert data["distance_m"] == baseline["distance_m"]
@@ -431,6 +436,10 @@ def test_together_switches_and_public_filter(site):  # noqa: F811
             )
         private = visitor.get("/api/v1/together").json()["data"]
         assert all(row["id"] != activity_id for row in private["recent"])
+        assert all(
+            row["id"] != activity_id
+            for row in visitor.get("/api/v1/together/feed").json()["data"]["items"]
+        )
         assert all(row["activity_id"] != activity_id for row in private["tracks"])
         assert (
             next(row for row in private["participants"] if row["username"] == payload["username"])[
@@ -459,6 +468,52 @@ def test_together_switches_and_public_filter(site):  # noqa: F811
             ).status_code
             == 200
         )
+        public_feed = visitor.get("/api/v1/together/feed").json()["data"]["items"]
+        public_run = next(row for row in public_feed if row["id"] == activity_id)
+        assert public_run["geometry"] and public_run["geometry"][0]["type"] == "LineString"
+        assert "notes" not in public_run and "filename" not in public_run
+
+        # A synthetic tied-date run spans the default first page and a shorter second page.
+        synthetic_ids = [uuid4() for _ in range(23)]
+        with engine.begin() as connection:
+            connection.execute(
+                Activity.__table__.insert(),
+                [
+                    {
+                        "id": identifier,
+                        "user_id": UUID(account["id"]),
+                        "source": "manual",
+                        "title": "分页合成",
+                        "activity_date": date(2099, 1, 1),
+                        "date_source": "manual",
+                        "timezone": "UTC",
+                        "distance_m": 1000,
+                        "temporal_quality": "manual",
+                        "quality_summary": {},
+                        "metrics_version": "test",
+                        "visibility": "public",
+                    }
+                    for identifier in synthetic_ids
+                ],
+            )
+        first = visitor.get("/api/v1/together?period=week").json()["data"]
+        assert [row["id"] for row in first["recent"]] == [
+            str(x) for x in sorted(synthetic_ids, reverse=True)[:20]
+        ]
+        assert first["recent"][0]["geometry"] == []
+        assert first["recent"][0]["elapsed_seconds"] is None
+        assert first["recent"][0]["avg_heart_rate_bpm"] is None
+        response = visitor.get(
+            "/api/v1/together/feed", params={"before": first["next_cursor"], "limit": 50}
+        )
+        assert response.headers["cache-control"] == "no-store"
+        rest = response.json()["data"]
+        assert [row["id"] for row in rest["items"][:3]] == [
+            str(x) for x in sorted(synthetic_ids, reverse=True)[20:]
+        ]
+        assert rest["next_cursor"] is None
+        with engine.begin() as connection:
+            connection.execute(Activity.__table__.delete().where(Activity.id.in_(synthetic_ids)))
         entry = user.put(
             "/api/v1/me/wellbeing/days/2020-01-01/entry",
             headers=user_headers,
@@ -469,8 +524,67 @@ def test_together_switches_and_public_filter(site):  # noqa: F811
         assert result.status_code == 200, result.text
         data = result.json()["data"]
         assert data["count"] >= 1 and data["tracks"] and data["recent"]
+        assert data["tracks_truncated"] is False
+        for query in ("?before=***", "?limit=0", "?limit=51"):
+            invalid_feed = visitor.get("/api/v1/together/feed" + query)
+            assert invalid_feed.status_code == 422 and invalid_feed.json()["error"]
         assert result.headers["cache-control"] == "no-store"
         assert "SECRET_WELLBEING" not in result.text
+        invalid = visitor.get("/api/v1/together?period=bad")
+        assert invalid.status_code == 422 and invalid.json()["error"]
+        monkeypatch.setattr(
+            visitor.app.state, "clock", lambda: datetime(2023, 12, 31, 16, tzinfo=UTC)
+        )
+        for day, included in [(date(2023, 12, 31), False), (date(2024, 1, 1), True)]:
+            with engine.begin() as connection:
+                connection.execute(
+                    Activity.__table__.update()
+                    .where(Activity.id == UUID(activity_id))
+                    .values(activity_date=day)
+                )
+            for period in ("week", "month", "year"):
+                response = visitor.get(f"/api/v1/together?period={period}")
+                assert response.headers["cache-control"] == "no-store"
+                view = response.json()["data"]
+                person = next(
+                    row for row in view["participants"] if row["username"] == payload["username"]
+                )
+                assert (person["count"] == 1) == included
+                assert any(row["activity_id"] == activity_id for row in view["tracks"]) == included
+                assert any(row["id"] == activity_id for row in view["recent"])
+        monkeypatch.setattr(
+            visitor.app.state, "clock", lambda: datetime(2024, 2, 5, 12, tzinfo=UTC)
+        )
+        for day, period, included in [
+            (date(2024, 1, 31), "month", False),
+            (date(2024, 2, 1), "month", True),
+            (date(2024, 2, 4), "week", False),
+            (date(2024, 2, 5), "week", True),
+        ]:
+            with engine.begin() as connection:
+                connection.execute(
+                    Activity.__table__.update()
+                    .where(Activity.id == UUID(activity_id))
+                    .values(activity_date=day)
+                )
+            view = visitor.get(f"/api/v1/together?period={period}").json()["data"]
+            person = next(
+                row for row in view["participants"] if row["username"] == payload["username"]
+            )
+            assert (person["count"] == 1) == included
+        with engine.begin() as connection:
+            connection.execute(
+                text("""INSERT INTO activity_segments
+                (id, activity_id, segment_index, source_track_index, source_segment_index,
+                 break_reason, point_count, geom)
+                SELECT gen_random_uuid(), activity_id, n, source_track_index, source_segment_index,
+                       break_reason, point_count, geom
+                FROM activity_segments CROSS JOIN generate_series(1000, 1500) n
+                WHERE activity_id = :activity_id AND segment_index = 0"""),
+                {"activity_id": UUID(activity_id)},
+            )
+        view = visitor.get("/api/v1/together?period=year").json()["data"]
+        assert len(view["tracks"]) == 500 and view["tracks_truncated"] is True
         assert (
             user.patch(
                 "/api/v1/me", headers=user_headers, json={"profile_is_public": False}

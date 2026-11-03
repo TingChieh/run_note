@@ -8,13 +8,14 @@
   import { createBasemapController } from '#lib/map/basemap-controller.ts';
   import { watchSystemTheme } from './system-theme';
   import 'maplibre-gl/dist/maplibre-gl.css';
-  let { route, spacious = false, embedded = false }: { route: Route; spacious?: boolean; embedded?: boolean } = $props();
+  let { route, spacious = false, embedded = false, color }: { color?: string; route: Route; spacious?: boolean; embedded?: boolean } = $props();
   let container: HTMLDivElement;
   let map: MapLibreMap | undefined, markers: Marker[] = [], disposed = false;
   let loaded = $state(false), error = $state(''), routeReady = $state(false), hasRendered = $state(false);
   let updateRoute: ((value: Route) => void) | undefined;
   let renderedRoute: Route | undefined;
   $effect(() => { const value = route; if (routeReady) updateRoute?.(value); });
+  $effect(() => { const value = color; if (map && routeReady && value) { map.setPaintProperty('route-lines', 'line-color', value); map.setPaintProperty('route-points', 'circle-color', value); if (markers[0]) markers[0].getElement().style.background = value; } });
   let basemapStatus = $state<'loading' | 'ready' | 'failed'>('loading');
   let basemapPreference = $state<BasemapPreference>('auto'), basemapStyle = $state<BasemapStyle>('positron');
   let basemapController: ReturnType<typeof createBasemapController> | undefined, routeInitialized = false;
@@ -42,7 +43,7 @@
     });
   }
   onMount(() => {
-    stopTheme = watchSystemTheme(value => { dark = value; if (map && !disposed && !basemapController) applyMapTheme(map, dark); });
+    stopTheme = watchSystemTheme(value => { dark = value; if (map && !disposed && !basemapController) applyMapTheme(map, dark, color); });
     void (async () => {
       try {
         const lib = await import('maplibre-gl'); if (disposed) return;
@@ -52,6 +53,7 @@
         map.addControl(new lib.NavigationControl({ showCompass: false }), 'top-right');
         // Wait for the local GeoJSON source to render, independently of external basemap resources.
         map.on('render', () => {
+          if (map?.getLayer('route-lines')) container.dataset.routeLineColor = String(map.getPaintProperty('route-lines', 'line-color'));
           if (!disposed && !error && map && routeInitialized && fittedWidth > 0 && fittedHeight > 0
             && container.clientWidth === fittedWidth && container.clientHeight === fittedHeight
             && !map.isMoving() && map.isSourceLoaded('route')) { loaded = true; hasRendered = true; }
@@ -65,12 +67,12 @@
         map.on('load', () => {
           if (!map || disposed) return;
           map.addSource('route', { type: 'geojson', data: { type: 'FeatureCollection', features: route.features } });
-          map.addLayer({ id: 'route-lines', type: 'line', source: 'route', filter: ['==', '$type', 'LineString'], paint: { 'line-color': '#14785b', 'line-width': 4 }, layout: { 'line-join': 'round', 'line-cap': 'round' } });
-          map.addLayer({ id: 'route-points', type: 'circle', source: 'route', filter: ['==', '$type', 'Point'], paint: { 'circle-radius': 5, 'circle-color': '#14785b' } });
-          applyMapTheme(map, dark);
-          for (const [coordinate, label, color] of [[route.start, '起', '#14785b'], [route.end, '终', '#bd4d29']] as const) {
+          map.addLayer({ id: 'route-lines', type: 'line', source: 'route', filter: ['==', '$type', 'LineString'], paint: { 'line-color': color ?? '#14785b', 'line-width': 4 }, layout: { 'line-join': 'round', 'line-cap': 'round' } });
+          map.addLayer({ id: 'route-points', type: 'circle', source: 'route', filter: ['==', '$type', 'Point'], paint: { 'circle-radius': 5, 'circle-color': color ?? '#14785b' } });
+          applyMapTheme(map, dark, color);
+          for (const [coordinate, label, markerColor] of [[route.start, '起', color ?? '#14785b'], [route.end, '终', '#bd4d29']] as const) {
             const element = document.createElement('span'); element.textContent = label; element.setAttribute('aria-label', label === '起' ? '路线起点' : '路线终点');
-            Object.assign(element.style, { background: color, color: 'white', borderRadius: '50%', width: '28px', height: '28px', lineHeight: '28px', textAlign: 'center', border: '2px solid white', boxShadow: '0 1px 4px #0003' });
+            Object.assign(element.style, { background: markerColor, color: 'white', borderRadius: '50%', width: '28px', height: '28px', lineHeight: '28px', textAlign: 'center', border: '2px solid white', boxShadow: '0 1px 4px #0003' });
             markers.push(new lib.Marker({ element, anchor: label === '起' ? 'bottom-right' : 'top-left' }).setLngLat(coordinate).addTo(map));
           }
           updateRoute = (value: Route) => {
@@ -90,7 +92,7 @@
           // Fit locally before scheduling external viewport tile requests.
           requestAnimationFrame(() => { if (!disposed && map) basemapController = createBasemapController(map, 'route-lines', state => {
             basemapStatus = state.status; basemapPreference = state.preference; basemapStyle = state.style;
-          }); });
+          }, () => color); });
         });
       } catch { if (!disposed) error = '此浏览器无法初始化地图，请使用支持 WebGL 的浏览器。'; }
     })();
@@ -98,7 +100,7 @@
   onDestroy(() => { disposed = true; stopTheme?.(); basemapController?.destroy(); observer?.disconnect(); if (resizeFrame) cancelAnimationFrame(resizeFrame); for (const marker of markers) marker.remove(); map?.remove(); map = undefined; });
 </script>
 <div class="relative mt-4 overflow-hidden rounded-xl border border-border" data-glass-stable class:spacious class:embedded>
-  <div bind:this={container} class="route-map w-full" role="region" aria-label="活动路线地图，绿色为路线，起与终标记起终点" data-testid={loaded ? 'route-map-ready' : 'route-map-loading'}></div>
+  <div bind:this={container} class="route-map w-full" role="region" aria-label={!color || color === '#14785b' ? '活动路线地图，绿色为路线，起与终标记起终点' : '活动路线地图，起与终标记起终点'} data-testid={loaded ? 'route-map-ready' : 'route-map-loading'}></div>
   <div class="absolute left-3 top-3 z-[2]"><BasemapPicker preference={basemapPreference} style={basemapStyle} status={basemapStatus} /></div>
   <div class="absolute bottom-3 left-3"><button type="button" onclick={recenter} disabled={!routeReady || !!error} aria-label="回到路线" title="回到路线" class="button-secondary locate-button"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3.5" /><circle cx="12" cy="12" r="8" /><path d="M12 1.5v3 M12 19.5v3 M1.5 12h3 M19.5 12h3" /></svg></button></div>
   {#if embedded}

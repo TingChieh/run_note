@@ -5,7 +5,7 @@ import { watchSystemTheme } from '#lib/components/system-theme.ts';
 
 // Owns external layers only. Local sources, markers, selections, camera and handlers survive.
 export function createBasemapController(map: LibreMap, beforeLayer: string,
-  update: (state: { status: BasemapStatus; preference: BasemapPreference; style: BasemapStyle }) => void) {
+  update: (state: { status: BasemapStatus; preference: BasemapPreference; style: BasemapStyle }) => void, routeColor?: () => string | undefined) {
   let preference = savedBasemapPreference(), dark = false, disposed = false;
   let retryAssets = false;
   let installing = false;
@@ -14,7 +14,7 @@ export function createBasemapController(map: LibreMap, beforeLayer: string,
   let generation = 0, prefix = '', sources: string[] = [], layers: string[] = [];
   let abort: AbortController | undefined, timer: ReturnType<typeof setTimeout> | undefined;
   const publish = () => {
-    applyMapTheme(map, status === 'failed' ? dark : active === 'dark');
+    applyMapTheme(map, status === 'failed' ? dark : active === 'dark', routeColor?.());
     update({ status, preference, style: resolveBasemap(preference, dark) });
   };
   function clear() {

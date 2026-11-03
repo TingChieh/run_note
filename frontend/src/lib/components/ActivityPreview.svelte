@@ -10,7 +10,7 @@
   import ActivityPosterDialog from './ActivityPosterDialog.svelte';
   import { activityAchievement } from '#lib/api/activity-labels.ts';
   import { ActivityError, readRoute as scoped_readRoute, formatDate, formatDistance, formatDuration, activityDuration, formatStartTime, formatPace, qualityLabel, type Activity, type Route } from '#lib/api/activities.ts';
-  let { activity, manage = false, busy = false, onedit, ondelete }: { activity: Activity; manage?: boolean; busy?: boolean; onedit?: () => void; ondelete?: () => void } = $props();
+  let { activity, manage = false, busy = false, onedit, ondelete, suppliedRoute, runner, href, routeColor }: { suppliedRoute?: Route | null; runner?: {name: string; color: string}; href?: string; routeColor?: string; activity: Activity; manage?: boolean; busy?: boolean; onedit?: () => void; ondelete?: () => void } = $props();
   // The map keeps the previous route while the next record's route loads, so the MapLibre instance is updated in place instead of rebuilt.
   let route = $state.raw<Route | null>(null), loading = $state(false), error = $state('');
   let token = 0, disposed = false;
@@ -29,6 +29,7 @@
   }
   $effect(() => {
     const id = activity.id, hasRoute = activity.has_route;
+    if (suppliedRoute !== undefined) { ++token; route = suppliedRoute; loading = false; error = ''; return; }
     untrack(() => { if (hasRoute) void load(id); else { ++token; route = null; loading = false; error = ''; } });
   });
   onMount(() => () => { disposed = true; ++token; });
@@ -37,7 +38,8 @@
   <header class="preview-head">
     <div class="preview-copy">
       <p id="preview-title" class="preview-title">{activity.title || '未命名活动'}</p>
-      <p class="preview-when">{formatDate(activity.activity_date)} · {activity.timezone}</p>
+      {#if runner}<p style:color={runner.color}>{runner.name}</p>{/if}
+      <p class="preview-when">{formatDate(activity.activity_date)}{runner ? '' : ` · ${activity.timezone}`}</p>
       {#if achievement || activity.category || activity.tags?.length}<p class="preview-labels">
         {#if achievement}<span class="chip achievement">{achievement}</span>{/if}
         {#if activity.category}<span class="chip category">{activity.category}</span>{/if}
@@ -46,12 +48,12 @@
     </div>
     <div class="preview-links">
       {#if manage && activity.has_route}<ActivityPosterDialog activityId={activity.id} label="本次分享图" />{/if}
-      <a class="preview-open button-secondary" href={view.href(`/activities/${activity.id}`)}>查看完整详情 →</a>
+      <a class="preview-open button-secondary" href={href ?? view.href(`/activities/${activity.id}`)}>查看完整详情 →</a>
     </div>
   </header>
   <div class="preview-map">
     {#if route}
-      <RouteMap {route} embedded />
+      <RouteMap {route} color={routeColor} embedded />
       {#if loading}<p class="map-note" role="status">正在读取路线…</p>{/if}
     {:else if loading}<FeedbackState kind="loading" title="正在读取路线…" />
     {:else if error}<FeedbackState kind="error" title={error}><button type="button" class="button-secondary" onclick={() => void load(activity.id)}>重新读取路线</button></FeedbackState>
@@ -63,12 +65,12 @@
     <div><dt>平均配速</dt><dd>{formatPace(activity.avg_pace_seconds_per_km)}</dd></div>
     <div><dt>平均心率</dt><dd>{activity.avg_heart_rate_bpm == null ? '—' : `${activity.avg_heart_rate_bpm} bpm`}</dd></div>
   </dl>
-  <dl class="more">
+  {#if !runner}<dl class="more">
     <div><dt>热量</dt><dd>{activity.calories_kcal == null ? '—' : `${activity.calories_kcal} kcal`}</dd></div>
     <div><dt>步数</dt><dd>{activity.steps == null ? '—' : `${activity.steps} 步`}</dd></div>
     <div><dt>开始时间</dt><dd>{formatStartTime(activity.started_at, activity.timezone)}</dd></div>
     <div><dt>数据完整度</dt><dd>{qualityLabel(activity.temporal_quality)}</dd></div>
-  </dl>
+  </dl>{/if}
   {#if manage}<div class="preview-actions">
     <button type="button" class="button-secondary" disabled={busy} onclick={onedit}>编辑记录</button>
     <button type="button" class="button-secondary delete" disabled={busy} onclick={ondelete}>删除记录</button>

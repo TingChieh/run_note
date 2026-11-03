@@ -4,7 +4,7 @@
   const fetch = view.fetch;
 
   import FeedbackState from '#lib/components/FeedbackState.svelte';
-  import { onMount, onDestroy, untrack } from 'svelte';
+  import { onMount, onDestroy, untrack, type Snippet } from 'svelte';
   import type { Map as LibreMap, GeoJSONSource } from 'maplibre-gl';
   import type { FootprintCollection } from '#lib/api/footprints.ts';
   import { geometryBounds, displayFootprints } from '#lib/api/footprints.ts';
@@ -15,7 +15,7 @@
   import { createBasemapController } from '#lib/map/basemap-controller.ts';
   import { watchSystemTheme } from './system-theme';
   import 'maplibre-gl/dist/maplibre-gl.css';
-  let { data, onretry, participantColors = {}, mapLabel = "", quietCityFailure = false }: {data: FootprintCollection; onretry: () => void; participantColors?: Record<string, string>; mapLabel?: string; quietCityFailure?: boolean} = $props();
+  let { data, onretry, participantColors = {}, mapLabel = "", quietCityFailure = false, animateDataChanges = false, selectedRunner = "", selectedActivity = "", compact = false, children, onclearRunner }: {data: FootprintCollection; onretry: () => void; participantColors?: Record<string, string>; mapLabel?: string; quietCityFailure?: boolean; animateDataChanges?: boolean; selectedRunner?: string; selectedActivity?: string; compact?: boolean; children?: Snippet; onclearRunner?: () => void} = $props();
   let container: HTMLDivElement, frameEl: HTMLDivElement, map: LibreMap | undefined, disposed=false;
   let framing: 'auto' | 'all' | 'picked' | 'free' = 'auto';
   let ready=$state(false), error=$state(''), basemap=$state<'loading'|'ready'|'failed'>('loading');
@@ -37,10 +37,11 @@
   // Equal insets keep a symmetric route's midpoint on the canvas centre.
   // 72px clears the top-right zoom control and the layer button.
   const cameraPadding = 72;
+  const fitPadding = () => onclearRunner && frameEl ? Math.min(cameraPadding, frameEl.clientWidth / 4, frameEl.clientHeight / 4) : cameraPadding;
   function fit(bounds: [[number,number],[number,number]] | null, animate = false) {
     if (!map || !bounds) return;
     const motion = animate && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    map.fitBounds(bounds, { padding: cameraPadding, maxZoom: map.getMaxZoom(), bearing: 0, pitch: 0, duration: motion ? 350 : 0 });
+    map.fitBounds(bounds, { padding: fitPadding(), maxZoom: map.getMaxZoom(), bearing: 0, pitch: 0, duration: motion ? 350 : 0 });
   }
   function frame(bounds: [[number,number],[number,number]] | null) {
     framing = 'free'; selectedCity = ''; fit(bounds);
@@ -53,6 +54,7 @@
   }
   function sizeCanvas() {
     if (!frameEl) return;
+    if (compact && window.matchMedia('(max-width: 959px)').matches) { frameEl.style.height = `${Math.round(window.innerHeight * 0.45)}px`; return; }
     const available = window.innerHeight - frameEl.getBoundingClientRect().top - 16;
     frameEl.style.height = `${Math.min(720, Math.max(424, Math.floor(available)))}px`;
   }
@@ -75,7 +77,7 @@
     frame(geometryBounds(displayData.features.filter(f=>f.properties?.activity_id===record.id).map(f=>f.geometry)));
   }
   function selectHeat(index:number) { const feature=displayData.features[index]; heat=Number(feature.properties?.count);choices=[];frame(geometryBounds([feature.geometry])); }
-  function overview() { map?.stop();choices=[];heat=null;highlight([]);framing='all';selectedCity='';fit(allBounds); }
+  function overview() { onclearRunner?.(); map?.stop();choices=[];heat=null;highlight([]);framing='all';selectedCity='';fit(allBounds); }
   function locateCity(code=cityName, animate=true) {
     const city=code==='unlocated' && unlocatedBounds ? {name:'未识别区域',bounds:unlocatedBounds} : cities.find(city=>city.code===code);
     if(!map || !ready || error || !city)return;
@@ -103,16 +105,62 @@
     if(!map || !source || appliedData===data)return;
     appliedData=data;
     source.setData({type:'FeatureCollection',features:colored(displayData.features)});
-    framing='auto';choices=[];heat=null;heatPage=0;highlight([]);loadCities();frameInitial();
+    framing='auto';choices=[];heat=null;heatPage=0;highlight([]);loadCities();
+    if (onclearRunner && (selectedRunner || selectedActivity)) focusRunner(selectedRunner, selectedActivity); else fit(allBounds, animateDataChanges);
   }
   $effect(()=>{data;untrack(applyData);});
+  function focusRunner(runner: string, activity = "") {
+    if (!map?.getLayer('footprint-lines') || !onclearRunner) return;
+    const match = ['==', ['get', activity ? 'activity_id' : 'username'], activity || runner] as ['==', ['get', 'username'], string];
+    for (const layer of ['footprint-selected-glow', 'footprint-selected-casing', 'footprint-selected']) {
+      if (map.getLayer(layer)) map.setFilter(layer, ['all', ['==', ['geometry-type'], 'LineString'], match]);
+    }
+    const bounds = activity ? geometryBounds(displayData.features.filter(f => f.properties?.activity_id === activity).map(f => f.geometry)) : runner ? geometryBounds(displayData.features.filter(f => f.properties?.username === runner).map(f => f.geometry)) : allBounds;
+    if (!runner && !activity) { framing = 'all'; fit(allBounds, animateDataChanges); return; }
+    if (!bounds) return;
+    framing = 'free';
+    // Measure the selected record's overlay after it has been laid out.
+    requestAnimationFrame(() => {
+      if (!map || disposed || selectedRunner !== runner || selectedActivity !== activity) return;
+      const card = activity ? frameEl.querySelector<HTMLElement>('.map-info') : null;
+      const cardRect = card?.getBoundingClientRect(), frameRect = frameEl.getBoundingClientRect();
+      const inset = 20;
+      const padding = {top:inset, right:inset, bottom:inset, left:inset};
+      const a=map.project(bounds[0]), b=map.project(bounds[1]);
+      const left=Math.min(a.x,b.x), right=Math.max(a.x,b.x), top=Math.min(a.y,b.y), bottom=Math.max(a.y,b.y);
+      if (cardRect) {
+        const cardRight=cardRect.right-frameRect.left+inset, cardTop=cardRect.top-frameRect.top-inset;
+        if (left < cardRight && right > cardRect.left-frameRect.left-inset && bottom > cardTop && top < cardRect.bottom-frameRect.top+inset) {
+          const shiftRight=cardRight-left, shiftUp=bottom-cardTop;
+          if (shiftRight <= shiftUp && cardRight < frameRect.width-inset) padding.left=Math.ceil(cardRight);
+          else padding.bottom=Math.ceil(frameRect.height-cardTop);
+        }
+      }
+      const availableWidth=frameRect.width-padding.left-padding.right, availableHeight=frameRect.height-padding.top-padding.bottom;
+      const overlapX=Math.max(0,Math.min(right,frameRect.width-padding.right)-Math.max(left,padding.left));
+      const overlapY=Math.max(0,Math.min(bottom,frameRect.height-padding.bottom)-Math.max(top,padding.top));
+      const visibleX = right-left < 1 ? (left>=padding.left && left<=frameRect.width-padding.right ? 1 : 0) : overlapX/(right-left);
+      const visibleY = bottom-top < 1 ? (top>=padding.top && top<=frameRect.height-padding.bottom ? 1 : 0) : overlapY/(bottom-top);
+      if (visibleX >= .8 && visibleY >= .8) return;
+      const duration=window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 350;
+      if (right-left > availableWidth || bottom-top > availableHeight) {
+        map.fitBounds(bounds, {padding, maxZoom:map.getZoom(), duration});
+        return;
+      }
+      const dx=left<padding.left ? left-padding.left : right>frameRect.width-padding.right ? right-(frameRect.width-padding.right) : 0;
+      const dy=top<padding.top ? top-padding.top : bottom>frameRect.height-padding.bottom ? bottom-(frameRect.height-padding.bottom) : 0;
+      const center=map.project(map.getCenter());
+      map.easeTo({center:map.unproject([center.x+dx,center.y+dy]), duration});
+    });
+  }
+  $effect(()=>{const runner=selectedRunner, activity=selectedActivity; if (ready) untrack(()=>focusRunner(runner, activity));});
   function colored(features: typeof displayData.features) {
     return colorFootprintFeatures(features, palette).map(feature => ({...feature, properties: {...feature.properties, color: participantColors[String(feature.properties?.username)] ?? feature.properties.color}}));
   }
   const palette=['#14785b','#315caf','#b4552c','#854caa','#397d87','#ba3970'];
   function loadBasemap() { basemapController?.retry(); }
   const onWindowResize = () => { sizeCanvas(); map?.resize(); if (framing === 'all') fit(allBounds); else if (framing === 'picked') locateCity(selectedCity, false); else if (framing === 'auto') frameInitial(); };
-  onMount(()=>{loadCities();sizeCanvas();window.addEventListener('resize', onWindowResize);stopTheme=watchSystemTheme(value=>{dark=value;if(map && !disposed && !basemapController)applyMapTheme(map,dark);});void(async()=>{
+  onMount(()=>{loadCities();sizeCanvas();window.addEventListener('resize', onWindowResize);stopTheme=watchSystemTheme(value=>{dark=value;if(map && !disposed) { if (!basemapController) applyMapTheme(map,dark); if (map.getLayer('footprint-casing')) map.setPaintProperty('footprint-casing','line-color',dark?'#302e2c':'#ffffff'); if (map.getLayer('footprint-selected-casing')) map.setPaintProperty('footprint-selected-casing','line-color',dark?'#302e2c':'#ffffff'); }});void(async()=>{
     try {
       const lib=await import('maplibre-gl'); if(disposed)return;
       // Start on the overview so no high-zoom tiles load before the first fit.
@@ -130,8 +178,12 @@
         const features=colored(displayData.features);
         map.addSource('footprints',{type:'geojson',data:{type:'FeatureCollection',features}});
         map.addLayer({id:'footprint-fill',type:'fill',source:'footprints',filter:['==','$type','Polygon'],paint:{'fill-color':['step',['get','count'],'#c0dfac',2,'#72b78a',4,'#2d9474',8,'#e69338',16,'#bd432c'],'fill-opacity':0.8}});
+        if (onclearRunner) map.addLayer({id:'footprint-casing',type:'line',source:'footprints',filter:['==','$type','LineString'],paint:{'line-color':dark?'#302e2c':'#ffffff','line-width':5,'line-opacity':0.65},layout:{'line-join':'round','line-cap':'round'}});
         map.addLayer({id:'footprint-lines',type:'line',source:'footprints',filter:['==','$type','LineString'],paint:{'line-color':['get','color'],'line-width':3,'line-opacity':0.8},layout:{'line-join':'round','line-cap':'round'}});
         map.addLayer({id:'footprint-points',type:'circle',source:'footprints',filter:['==','$type','Point'],paint:{'circle-color':['get','color'],'circle-radius':5}});
+        if (onclearRunner) map.addLayer({id:'footprint-selected-glow',type:'line',source:'footprints',filter:['all',['==',['geometry-type'],'LineString'],['==',['get','username'],'']],paint:{'line-color':['get','color'],'line-width':15,'line-blur':6,'line-opacity':0.5},layout:{'line-join':'round','line-cap':'round'}});
+        if (onclearRunner) map.addLayer({id:'footprint-selected-casing',type:'line',source:'footprints',filter:['all',['==',['geometry-type'],'LineString'],['==',['get','username'],'']],paint:{'line-color':dark?'#302e2c':'#ffffff','line-width':9,'line-opacity':0.95},layout:{'line-join':'round','line-cap':'round'}});
+        if (onclearRunner) map.addLayer({id:'footprint-selected',type:'line',source:'footprints',filter:['all',['==',['geometry-type'],'LineString'],['==',['get','username'],'']],paint:{'line-color':['get','color'],'line-width':5,'line-opacity':1},layout:{'line-join':'round','line-cap':'round'}});
         map.addSource('footprint-cities',{type:'geojson',data:cityMarkerData()});
         map.addLayer({id:'footprint-city-markers',type:'circle',source:'footprint-cities',maxzoom:8,paint:{'circle-radius':7,'circle-color':'#14785b','circle-stroke-width':2,'circle-stroke-color':'#ffffff','circle-opacity':0.95}});
         map.on('click','footprint-city-markers',event=>{const code=event.features?.[0]?.properties?.code;if(typeof code==='string')locateCity(code);});
@@ -166,6 +218,7 @@
   {#if basemap==='failed' && !error}<div class="basemap-feedback" role="status"><span>底图暂不可用，足迹仍可查看。</span><button type="button" onclick={loadBasemap} class="button-secondary">重试底图</button></div>{:else if basemap==='loading' && ready && !error}<p role="status" class="basemap-status">正在加载底图，足迹可先查看…</p>{/if}
   {#if error}<FeedbackState kind="error" title={error}><button type="button" class="button-secondary" onclick={onretry}>重新绘制地图</button></FeedbackState>{:else if !ready}<p role="status" class="basemap-status">正在绘制足迹…</p>{/if}
   <div class="map-frame" bind:this={frameEl}><div bind:this={container} class="map-canvas" role="region" aria-label={mapLabel || (data.mode==='heatmap'?'个人运动热力图':'个人多轨迹叠加地图')} aria-describedby="footprint-map-help" data-testid={ready?'footprint-map-ready':'footprint-map-loading'}></div>
+    {@render children?.()}
     <div class="map-layers"><BasemapPicker preference={basemapPreference} style={basemapStyle} status={basemap} /></div>
   </div>
   {#if choices.length}<div class="route-choices" data-testid="route-choices"><p class="font-semibold" role="status">此处经过的记录（{choices.length}）</p><ul>{#each choices as record}<li><div><span class="record-date">{record.date}</span><a href={data.features.find(f => f.properties?.activity_id === record.id)?.properties?.username ? `/p/${encodeURIComponent(String(data.features.find(f => f.properties?.activity_id === record.id)?.properties?.username))}/activities/${record.id}` : view.href(`/activities/${record.id}`)}>{record.title || '未命名活动'} · 查看详情</a></div><button type="button" class="button-secondary" onclick={()=>selectRecord(record)} aria-pressed={selectedIds.length===1 && selectedIds[0]===record.id}>定位路线</button></li>{/each}</ul></div>{/if}
