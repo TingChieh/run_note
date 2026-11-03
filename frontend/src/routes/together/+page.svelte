@@ -115,6 +115,8 @@
   .feed-layout { display:grid; grid-template-columns:minmax(18rem, 1fr) minmax(0, 1.7fr); gap:var(--space-4); align-items:start; }
   .feed-list { min-width:0; }
   .feed-preview { min-width:0; position:sticky; top:var(--space-4); }
+  /* Match the first card below ActivityTimeline's month heading. */
+  @media (min-width:960px) { .feed-preview { margin-top:calc(1.75rem + var(--space-3)); } }
   .feed-back { display:none; margin-bottom:var(--space-3); }
   @media (max-width:959px) { .feed-layout { display:block; } .feed-preview { display:none; position:static; } .mobile-detail .feed-list { display:none; } .mobile-detail .feed-preview { display:block; } .feed-back { display:inline-flex; } }
   .feed-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:var(--space-3); min-width:0; }

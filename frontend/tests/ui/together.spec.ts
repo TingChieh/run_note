@@ -225,12 +225,18 @@ test('轨迹未截断时不显示截断提示', async ({page}) => {
 });
 
 test('动态选择、手机返回和公开操作', async ({page}) => {
+  await page.setViewportSize({width:1440,height:900});
   const record = {id:runners[0].user_id,username:'runner_one',display_name:'合成甲',title:'晨跑',activity_date:'2026-10-01',distance_m:3000,category:'慢跑',tags:['公园'],temporal_quality:'complete',avg_pace_seconds_per_km:330,elapsed_seconds:990,timer_seconds:null,avg_heart_rate_bpm:120,geometry:[{type:'LineString',coordinates:[[10,10],[10.01,10.01]]}]};
   const second = {...record,id:runners[1].user_id,username:'runner_two',display_name:'合成乙',title:'夜跑'};
   await page.route('**/api/v1/together?*', route => route.fulfill({json:{data:{distance_m:7000,count:2,participants:runners,recent:[record,second],tracks:[],next_cursor:null,tracks_truncated:false},error:null,meta:{request_id:'test'}}}));
   await page.goto('/together');
   const feed=page.locator('#together-feed');
   await expect(feed.getByTestId('activity-preview')).toContainText('晨跑');
+  const firstCard = await feed.locator('.activity-card').first().boundingBox();
+  const detailPanel = await feed.getByTestId('activity-preview').boundingBox();
+  expect(firstCard).not.toBeNull();
+  expect(detailPanel).not.toBeNull();
+  expect(Math.abs(firstCard!.y - detailPanel!.y)).toBeLessThanOrEqual(2);
   await expect(feed.locator('[data-testid=month-total]')).toHaveText('已加载 2 次 · 6.0 km');
   await expect(feed.locator('.activity-card').first()).toContainText('#公园');
   await expect(feed.getByTestId('route-map-ready')).toBeVisible({timeout:15000});
