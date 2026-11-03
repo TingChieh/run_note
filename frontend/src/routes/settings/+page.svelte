@@ -110,8 +110,8 @@
       </div>
       <div class="switch-row">
         <div class="block-title-row">
-          <div><h2 id="together-label">加入一起跑步</h2><p class="block-hint">开启后，符合展示条件时仅公开运动记录和对应精确路线将汇入一起跑步。</p>{#if !page.data.user.together_allowed}<p class="block-hint">需管理员开启。</p>{/if}</div>
-          <button type="button" role="switch" class="rn-switch" aria-checked={together} aria-labelledby="together-label" disabled={busy || !page.data.user.together_allowed} onclick={() => together = !together}><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span></button>
+          <div><h2 id="together-label">加入一起跑步</h2><p class="block-hint">开启后，你的全部运动记录（含私人记录）和对应精确路线都会公开汇入一起跑步。</p></div>
+          <button type="button" role="switch" class="rn-switch" aria-checked={together} aria-labelledby="together-label" disabled={busy} onclick={() => together = !together}><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span></button>
         </div>
       </div>
     </section>

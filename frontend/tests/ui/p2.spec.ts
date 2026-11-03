@@ -6,7 +6,7 @@ async function responsive(page: Page, name: string) {
     await page.setViewportSize({width,height:1000});
     await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     if(width===390 || width===1440) { await page.evaluate(()=>{(document.activeElement as HTMLElement)?.blur();window.scrollTo(0,0);}); await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())))); await page.screenshot({path:`test-results/p2-${name}-${width}.png`});
-      if(name==='ai-report' || name==='share') await page.getByRole('region',{name:name==='ai-report'?'当前报告':'公开与分享'}).screenshot({path:`test-results/p2-${name}-panel-${width}.png`}); }
+      if(name==='ai-report' || name==='share') await page.getByRole('region',{name:name==='ai-report'?'当前报告':'旧版分享链接'}).screenshot({path:`test-results/p2-${name}-panel-${width}.png`}); }
   }
 }
 test('admin login native validation, password visibility, busy and failure retry, safe redirect',async({page})=>{
@@ -85,29 +85,19 @@ test('invalid share links are real 404 pages without a retry',async({page})=>{
   expect(activity?.status()).toBe(404);
   await expect(page.getByRole('button',{name:'重新读取分享'})).toHaveCount(0);
 });
-test('sharing keeps saved permissions, copies and revokes links',async({page,context})=>{
-  await context.grantPermissions(['clipboard-read','clipboard-write']);await installActivities(page);await loginRunner(page);await page.goto(`/activities/${sampleActivity.id}`);
-  const panel=page.getByRole('region',{name:'公开与分享'});await panel.getByLabel('记录可见性').selectOption('unlisted');await expect(panel.getByText('选择尚未保存',{exact:true})).toBeVisible();await expect(panel.getByRole('button',{name:'创建分享链接'})).toBeDisabled();
-  await panel.getByRole('button',{name:'保存可见性'}).click();await panel.getByRole('button',{name:'创建分享链接'}).click();await panel.getByRole('button',{name:'复制分享链接'}).click();await expect(panel.getByRole('status')).toContainText('链接已复制');expect(await page.evaluate(()=>navigator.clipboard.readText())).toContain('synthetic-token');
+test('legacy share links can only be revoked',async({page})=>{
+  const state=await installActivities(page);state.links=[{link_id:'33333333-3333-4333-8333-333333333333',created_at:'2026-10-13T02:00:00Z',expires_at:null,revoked_at:null,status:'active' as const}];await loginRunner(page);await page.goto(`/activities/${sampleActivity.id}`);
+  const panel=page.getByRole('region',{name:'旧版分享链接'});await expect(panel.getByLabel('记录可见性')).toHaveCount(0);await expect(panel.getByRole('button',{name:'创建分享链接'})).toHaveCount(0);
   await responsive(page,'share');await panel.getByRole('button',{name:'撤销链接'}).click();await expect(panel.getByText(/已撤销/).first()).toBeVisible();
-});
-test('login error receives keyboard focus and supports retry on mobile',async({page})=>{
-  await page.goto('/admin');await responsive(page,'login');
-  await page.getByLabel('邮箱',{exact:true}).fill('runner@example.com');await page.getByLabel('密码',{exact:true}).fill('Synthetic-ui-password-2026');
-  await page.route('**/api/v1/auth/login',route=>route.fulfill({status:401,json:{error:{message:'邮箱或密码不正确'}}}));
-  await page.getByRole('button',{name:'登录',exact:true}).click();await expect(page.locator('#auth-error')).toBeFocused();await expect(page.getByRole('alert')).toContainText('邮箱或密码不正确');
-  await page.unroute('**/api/v1/auth/login');await page.getByLabel('密码',{exact:true}).fill('Synthetic-ui-password-2026');await page.getByRole('button',{name:'登录',exact:true}).click();await expect(page).toHaveURL(/\/$/);
 });
 test('historical AI failed, pending and stale snapshots remain accessible without calls',async({page})=>{
   const state=await installAI(page);state.reports=[{...report,status:'failed',analysis:null,error_code:'PROVIDER_ERROR',is_stale:true}];
   await loginRunner(page);await page.goto('/ai');await page.getByRole('button',{name:'查看报告'}).click();await expect(page.getByRole('region',{name:'当前报告'})).toContainText('新的调用会计入额度');await expect(page.getByText(/运动数据已变化；/)).toBeVisible();
   state.reports=[{...report,status:'pending',analysis:null}];await page.getByRole('button',{name:'读取历史'}).click();await page.getByRole('button',{name:'查看报告'}).click();await expect(page.getByRole('region',{name:'当前报告'})).toContainText('报告正在生成');await expect(page.getByRole('button',{name:'删除报告'})).toBeDisabled();expect(state.calls).toHaveLength(0);
 });
-test('sharing read and clipboard failures offer recovery',async({page})=>{
+test('sharing read failure offers recovery',async({page})=>{
   await installActivities(page);await loginRunner(page);
   await page.route(`**/api/v1/activities/${sampleActivity.id}/shares`,route=>route.fulfill({status:503,json:{error:{message:'分享链接读取失败'}}}));
-  await page.goto(`/activities/${sampleActivity.id}`);const panel=page.getByRole('region',{name:'公开与分享'});await expect(panel.getByRole('button',{name:'重试读取分享链接'})).toBeVisible();
-  await page.unroute(`**/api/v1/activities/${sampleActivity.id}/shares`);await panel.getByRole('button',{name:'重试读取分享链接'}).click();await expect(panel.getByText('尚无分享链接。')).toBeVisible();
-  await panel.getByLabel('记录可见性').selectOption('unlisted');await panel.getByRole('button',{name:'保存可见性'}).click();await panel.getByRole('button',{name:'创建分享链接'}).click();
-  await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async()=>{throw new Error('denied');}}}));await panel.getByRole('button',{name:'复制分享链接'}).click();await expect(panel.getByRole('alert')).toContainText('手动选择并复制');await expect(panel.getByLabel('新分享链接')).toHaveValue(/synthetic-token/);
+  await page.goto(`/activities/${sampleActivity.id}`);const panel=page.getByRole('region',{name:'旧版分享链接'});await expect(panel.getByRole('button',{name:'重试读取分享链接'})).toBeVisible();
+  await page.unroute(`**/api/v1/activities/${sampleActivity.id}/shares`);await panel.getByRole('button',{name:'重试读取分享链接'}).click();await expect(panel).toHaveCount(0);
 });

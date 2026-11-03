@@ -64,6 +64,8 @@ test('horizontal wheel only browses; an arrow explicitly selects from the visibl
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('足迹 9');
   await expect(page).toHaveURL(new RegExp(`${state.records[8].id}$`));
   expect(details).toHaveLength(0);
+  // Start above the bottom so there is room to scroll down (the page is short without the legacy share panel).
+  await page.evaluate(() => scrollTo(0, Math.max(0, scrollY - 400)));
   const before = await page.evaluate(() => scrollY);
   await page.mouse.wheel(0, 100);
   await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(before);
@@ -544,6 +546,8 @@ test('touch swipes browse without selecting and preserve native vertical scrolli
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('足迹 9');
     await expect(deck.locator('.card-stack')).toHaveAttribute('data-moving', 'false');
     await expect(page).toHaveURL(new RegExp(`${state.records[8].id}$`));
+    // Start above the bottom so there is room to scroll down (the page is short without the legacy share panel).
+    await page.evaluate(() => scrollTo(0, Math.max(0, scrollY - 400)));
     const beforeScroll = await page.evaluate(() => scrollY);
     await swipe(2, -70);
     await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(beforeScroll);

@@ -1,4 +1,5 @@
-"""Public, explicitly selected running data; no wellbeing tables are accessed."""
+"""Running data of users who joined; per-record visibility is not consulted and no wellbeing
+tables are accessed."""
 
 import base64
 import binascii
@@ -48,7 +49,7 @@ def feed(db, settings, before=None, limit=20):
                 AND ST_XMax(Box3D(s.geom)) - ST_XMin(Box3D(s.geom)) <= 180), '[]'::json)
                 AS geometry
         FROM activities a JOIN users u ON u.id = a.user_id
-        WHERE {ELIGIBLE} AND a.visibility = 'public' {predicate}
+        WHERE {ELIGIBLE} {predicate}
         ORDER BY a.activity_date DESC, a.id DESC LIMIT :limit
     """),
             params,
@@ -95,7 +96,7 @@ def overview(db, settings, now, period="week"):
                 AND a.activity_date < :end), 0) AS month_m,
             COALESCE(sum(a.distance_m) FILTER (WHERE a.activity_date >= :year
                 AND a.activity_date < :end), 0) AS year_m
-        FROM users u LEFT JOIN activities a ON a.user_id = u.id AND a.visibility = 'public'
+        FROM users u LEFT JOIN activities a ON a.user_id = u.id
             AND a.activity_date >= LEAST(:week, :month, :year) AND a.activity_date < :end
         WHERE {ELIGIBLE} GROUP BY u.id ORDER BY u.username
     """),
@@ -113,7 +114,7 @@ def overview(db, settings, now, period="week"):
                 s.segment_index, s.geom
             FROM activities a JOIN users u ON u.id = a.user_id
             JOIN activity_segments s ON s.activity_id = a.id
-            WHERE {ELIGIBLE} AND a.visibility = 'public'
+            WHERE {ELIGIBLE}
                 AND a.activity_date >= :start AND a.activity_date < :end AND s.geom IS NOT NULL
                 AND ST_YMin(Box3D(s.geom)) >= -85 AND ST_YMax(Box3D(s.geom)) <= 85
                 AND ST_XMax(Box3D(s.geom)) - ST_XMin(Box3D(s.geom)) <= 180

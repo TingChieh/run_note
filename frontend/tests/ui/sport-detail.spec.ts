@@ -37,7 +37,7 @@ test('sports detail fits phones with usable map, navigation and existing privacy
   await page.setViewportSize({width:390,height:900});await ready(page);await capture(page,'mobile');await capture(page,'mobile-map','.route-panel');
   await page.getByRole('button',{name:'打开导航'}).focus();await page.keyboard.press('Enter');await expect(page.getByRole('button',{name:'关闭导航'})).toHaveAttribute('aria-expanded','true');await page.keyboard.press('Escape');await expect(page.getByRole('button',{name:'打开导航'})).toBeFocused();
   const canvas=page.locator('.maplibregl-canvas');await canvas.focus();await page.keyboard.press('ArrowRight');await page.keyboard.press('+');
-  await expect(page.getByRole('button',{name:'创建分享链接'})).toBeDisabled();await page.getByLabel('记录可见性').selectOption('unlisted');await page.getByRole('button',{name:'保存可见性'}).click();await expect(page.getByRole('button',{name:'创建分享链接'})).toBeEnabled();await capture(page,'mobile-sharing','.share-card');
+  await expect(page.getByLabel('记录可见性')).toHaveCount(0);
 });
 test('full device metrics and route stay compact on short desktops and narrow phones', async ({ page }, testInfo) => {
   const state = await installActivities(page);

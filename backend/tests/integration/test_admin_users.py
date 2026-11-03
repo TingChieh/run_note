@@ -368,12 +368,6 @@ def test_together_switches_and_public_filter(site, monkeypatch):  # noqa: F811
         )
         assert (
             user.patch(
-                "/api/v1/me", headers=user_headers, json={"together_enabled": True}
-            ).status_code
-            == 403
-        )
-        assert (
-            user.patch(
                 "/api/v1/me", headers=user_headers, json={"profile_is_public": True}
             ).status_code
             == 200
@@ -406,20 +400,19 @@ def test_together_switches_and_public_filter(site, monkeypatch):  # noqa: F811
         baseline = None
         assert not present()
         baseline = visitor.get("/api/v1/together").json()["data"]
-        assert (
-            admin.patch(
-                endpoint, headers=admin_headers, json={"together_allowed": True}
-            ).status_code
-            == 200
-        )
-        assert not present()
-        assert (
-            user.patch(
-                "/api/v1/me", headers=user_headers, json={"together_enabled": True}
-            ).status_code
-            == 200
-        )
+        # One switch: the administrator's and the user's controls read and write the same value.
+        switched = admin.patch(endpoint, headers=admin_headers, json={"together_allowed": True})
+        assert switched.status_code == 200
+        assert switched.json()["data"]["together_allowed"] is True
+        assert switched.json()["data"]["together_enabled"] is True
         assert present()
+        off = user.patch("/api/v1/me", headers=user_headers, json={"together_enabled": False})
+        assert off.status_code == 200 and off.json()["data"]["together_allowed"] is False
+        assert not present()
+        on = user.patch("/api/v1/me", headers=user_headers, json={"together_enabled": True})
+        assert on.status_code == 200 and on.json()["data"]["together_allowed"] is True
+        assert present()
+        assert user.get("/api/v1/me").json()["data"]["together_enabled"] is True
         raw = (Path(__file__).parents[1] / "fixtures/gpx/equator-six.gpx").read_bytes()
         upload = user.post(
             "/api/v1/gpx-imports",
@@ -434,39 +427,21 @@ def test_together_switches_and_public_filter(site, monkeypatch):  # noqa: F811
                 .where(Activity.id == UUID(activity_id))
                 .values(activity_date=visitor.app.state.clock().date())
             )
-        private = visitor.get("/api/v1/together").json()["data"]
-        assert all(row["id"] != activity_id for row in private["recent"])
-        assert all(
-            row["id"] != activity_id
-            for row in visitor.get("/api/v1/together/feed").json()["data"]["items"]
-        )
-        assert all(row["activity_id"] != activity_id for row in private["tracks"])
+        # Joining shares every record, whatever its legacy per-record visibility.
+        with engine.begin() as connection:
+            visibility = connection.execute(
+                text("SELECT visibility FROM activities WHERE id = :id"),
+                {"id": UUID(activity_id)},
+            ).scalar()
+        assert visibility == "private"
+        joined = visitor.get("/api/v1/together").json()["data"]
+        assert any(row["id"] == activity_id for row in joined["recent"])
+        assert any(row["activity_id"] == activity_id for row in joined["tracks"])
         assert (
-            next(row for row in private["participants"] if row["username"] == payload["username"])[
+            next(row for row in joined["participants"] if row["username"] == payload["username"])[
                 "distance_m"
             ]
-            == 0
-        )
-        assert (
-            user.patch(
-                f"/api/v1/activities/{activity_id}",
-                headers=user_headers,
-                json={"visibility": "unlisted"},
-            ).status_code
-            == 200
-        )
-        unlisted = visitor.get("/api/v1/together").json()["data"]
-        assert all(row["id"] != activity_id for row in unlisted["recent"])
-        assert all(row["activity_id"] != activity_id for row in unlisted["tracks"])
-        assert unlisted["distance_m"] == baseline["distance_m"]
-        assert unlisted["count"] == baseline["count"]
-        assert (
-            user.patch(
-                f"/api/v1/activities/{activity_id}",
-                headers=user_headers,
-                json={"visibility": "public"},
-            ).status_code
-            == 200
+            > 0
         )
         public_feed = visitor.get("/api/v1/together/feed").json()["data"]["items"]
         public_run = next(row for row in public_feed if row["id"] == activity_id)
@@ -491,7 +466,7 @@ def test_together_switches_and_public_filter(site, monkeypatch):  # noqa: F811
                         "temporal_quality": "manual",
                         "quality_summary": {},
                         "metrics_version": "test",
-                        "visibility": "public",
+                        "visibility": "private",
                     }
                     for identifier in synthetic_ids
                 ],

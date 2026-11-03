@@ -100,6 +100,8 @@ def patch(db, identifier, payload, settings, now):
         raise ApiError(409, "OWNER_PROTECTED", "不能修改站主邮箱、启用状态或展示开关")
     if changes.get("email") == settings.site_owner_email:
         raise ApiError(409, "OWNER_PROTECTED", "不能将普通账号变为站主")
+    if "together_allowed" in changes:
+        changes["together_enabled"] = changes["together_allowed"]
     revoke = ("email" in changes and changes["email"] != user.email_normalized) or changes.get(
         "is_active"
     ) is False

@@ -9,8 +9,8 @@
   import PageSkeleton from '#lib/components/PageSkeleton.svelte';
   import ActivityTimeline from '#lib/components/ActivityTimeline.svelte';
   import { formatDate, formatDistance, formatDuration, activityDuration, formatPace, type Activity, type Route } from '#lib/api/activities.ts';
-  import { tick } from 'svelte';
   import FootprintMap from '#lib/components/FootprintMap.svelte';
+  import TogetherRecordSheet from '#lib/components/TogetherRecordSheet.svelte';
   import { participantColors } from '#lib/map/together-colors.ts';
   import { readTogether, readFeed, appendRecent, TogetherError, parsePeriod, periodCopy, type Period, type Together } from '#lib/api/together.ts';
   let data=$state<Together | null>(null), error=$state(''), loading=$state(true), period=$state<Period>('week'), selected=$state('');
@@ -21,6 +21,8 @@
   const ranking=$derived([...(data?.participants ?? [])].sort((a,b)=>(b[`${period}_m`]-a[`${period}_m`]) || a.username.localeCompare(b.username)));
   const footprints=$derived(data?.footprints ?? null);
   let currentId = $state<string | null>(null);
+  // Phone widths stack the layout: a record opens in a bottom sheet instead of scrolling back up to the map.
+  let narrow = $state(false), sheetId = $state<string | null>(null);
   const activities = $derived((data?.recent ?? []).map((item): Activity => ({
     id:item.id, title:item.title, category:item.category, tags:item.tags, activity_date:item.activity_date, timezone:'Asia/Shanghai',
     started_at:null, ended_at:null, distance_m:item.distance_m, elapsed_seconds:item.elapsed_seconds,
@@ -36,6 +38,7 @@
     return [item.id, {route, runner:{name:item.display_name,city:cityNames[item.id],color:colors[item.username] ?? '#14785b',avatar:person?.avatar_version ? `/api/v1/showcase/users/${encodeURIComponent(item.username)}/avatar?v=${person.avatar_version}` : null}, href:`/p/${encodeURIComponent(item.username)}/activities/${item.id}`}];
   })));
   const currentActivity = $derived(activities.find(item => item.id === currentId) ?? null);
+  const sheetActivity = $derived(narrow ? activities.find(item => item.id === sheetId) ?? null : null);
   const selectedRecord = $derived(data?.recent.find(item => item.id === currentId));
   const mapFootprints = $derived.by(() => {
     if (!footprints) return null;
@@ -44,15 +47,16 @@
   });
   function openRecord(activity: Activity, event: MouseEvent) {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    event.preventDefault(); currentId = currentId === activity.id ? null : activity.id; selected='';
-    if (currentId && window.matchMedia('(max-width: 959px)').matches) void tick().then(() => document.getElementById('together-map')?.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'start'}));
+    event.preventDefault();
+    if (narrow) { sheetId = activity.id; return; }
+    currentId = currentId === activity.id ? null : activity.id; selected='';
   }
   const km=(meters:number)=>(meters/1000).toFixed(2);
   const amount=(runner:Together['participants'][number])=>runner[`${period}_m`];
   async function load() {
     const current=++token; feedController?.abort(); feedLoading=false; feedError=''; controller?.abort(); controller=new AbortController(); loading=true; error='';
     try { const result=await readTogether(controller.signal, period); if (!disposed && current===token) {
-      data=result; currentId=result.recent.find(item => item.id === currentId)?.id ?? null;
+      data=result; currentId=result.recent.find(item => item.id === currentId)?.id ?? null; sheetId=result.recent.find(item => item.id === sheetId)?.id ?? null;
       if (!citiesStarted) { citiesStarted=true;
       try { cityWorker=new Worker(new URL('../../lib/map/together-cities.worker.ts', import.meta.url), {type:'module'}); cityWorker.onmessage=(event:MessageEvent<Record<string,string>>)=>{ if (!disposed) cityNames=event.data; }; cityWorker.postMessage(result.footprints.features); } catch { cityWorker=undefined; }
       }
@@ -77,7 +81,11 @@
     if (period === value) return;
     period=value; const url=new URL(window.location.href); url.searchParams.set('period', value); replaceState(url, page.state); void load();
   }
-  onMount(()=>{period=parsePeriod(page.url.searchParams.get('period')); void load(); return ()=>{disposed=true;token++;controller?.abort();feedController?.abort();cityWorker?.terminate();};});
+  onMount(()=>{
+    const query=window.matchMedia('(max-width: 959px)');
+    const sync=()=>{ narrow=query.matches; if (narrow) currentId=null; else sheetId=null; };
+    sync(); query.addEventListener('change', sync);
+    period=parsePeriod(page.url.searchParams.get('period')); void load(); return ()=>{query.removeEventListener('change', sync);disposed=true;token++;controller?.abort();feedController?.abort();cityWorker?.terminate();};});
 </script>
 <svelte:head><title>{pageTitle('一起跑步',page.data.site)}</title></svelte:head>
 {#snippet avatar(runner: Together['participants'][number])}
@@ -95,17 +103,16 @@
       <p class="hint">地图展示所选时段最近最多 500 段经过简化的路线；动态不受时段或跑者筛选影响。</p>
       {#if data.tracks_truncated}<p class="hint">仅显示最近 500 条轨迹</p>{/if}
       <div class="feed-layout">
-        <div class="feed-list">{#if data.recent.length}<ActivityTimeline items={activities} offset={0} total={activities.length} {extras} {currentId} loadedSummary onopen={openRecord} />
+        <div class="feed-list">{#if data.recent.length}<ActivityTimeline items={activities} offset={0} total={activities.length} {extras} currentId={narrow ? sheetId : currentId} loadedSummary onopen={openRecord} />
           {#if data.next_cursor}<div class="feed-actions">{#if feedError}<p class="hint" role="alert">{feedError}</p>{/if}<button type="button" class="button-secondary" disabled={feedLoading || loading} onclick={loadMore}>{feedLoading ? '加载中…' : feedError ? '重试' : '加载更多'}</button></div>{/if}
         {:else}<p>暂无动态。</p>{/if}</div>
         <div class="feed-map" id="together-map">
           {#if mapFootprints}
-            <FootprintMap data={mapFootprints} animateDataChanges compact mapLabel="一起跑步足迹地图" participantColors={colors} selectedRunner={selected} selectedActivity={currentId ?? ''} onclearRunner={()=>{selected='';currentId=null;}} quietCityFailure onretry={load}>
+            <FootprintMap data={mapFootprints} animateDataChanges compact mapLabel="一起跑步足迹地图" participantColors={colors} selectedRunner={selected} selectedActivity={currentId ?? ''} onclearRunner={()=>{selected='';currentId=null;}} detailHref={currentActivity && selectedRecord ? extras[currentActivity.id].href : undefined} quietCityFailure onretry={load}>
               {#if currentActivity && selectedRecord}<article class="save-bar map-info" data-testid="together-map-info">
                 <div class="map-info-title"><strong>{currentActivity.title || '未命名活动'}</strong><span style:color={colors[selectedRecord.username]}>{selectedRecord.display_name}</span><span>{formatDate(currentActivity.activity_date)}</span></div>
                 <span class="map-info-metrics">{formatDistance(currentActivity.distance_m)} · {formatDuration(activityDuration(currentActivity))} · {formatPace(currentActivity.avg_pace_seconds_per_km)}{currentActivity.avg_heart_rate_bpm == null ? '' : ` · ${currentActivity.avg_heart_rate_bpm} bpm`}</span>
-                <div class="map-info-link">{#if !mapFootprints.features.some(f => f.properties?.activity_id === currentId)}<span role="status">暂无路线</span>{/if}
-                <a href={extras[currentActivity.id].href}>查看完整详情 →</a></div>
+                {#if !mapFootprints.features.some(f => f.properties?.activity_id === currentId)}<span class="map-info-link" role="status">暂无路线</span>{/if}
               </article>{/if}
             </FootprintMap>
             <div class="legend" role="region" aria-label="选择参与者"><button class="button-secondary" aria-pressed={!selected} onclick={()=>{selected='';currentId=null;}}>全部</button>{#each data.participants as runner}<button class="button-secondary" aria-pressed={selected===runner.username} onclick={()=>{selected=runner.username;currentId=null;}}><span class="dot" style:background={colors[runner.username]}></span>{@render avatar(runner)}{runner.display_name}</button>{/each}</div>
@@ -113,6 +120,7 @@
           {/if}
         </div>
       </div>
+      {#if sheetActivity}{@const item=extras[sheetActivity.id]}<TogetherRecordSheet activity={sheetActivity} route={item.route} runner={{name:item.runner.name,color:item.runner.color}} href={item.href} onclose={()=>{sheetId=null;}} />{/if}
     </section>
     {/if}
   {/if}
@@ -131,11 +139,9 @@
   .feed-list { min-width:0; }
   .feed-map { min-width:0; position:sticky; top:var(--space-4); margin-top:calc(1.75rem + var(--space-3)); }
   @media (max-width:959px) { .feed-layout { display:flex; flex-direction:column; } .feed-map { position:static; margin-top:0; order:-1; width:100%; } .feed-list { width:100%; } }
-  .map-info { position:absolute; z-index:3; left:var(--space-3); bottom:var(--space-8); width:max-content; min-width:min(15rem, calc(100% - 2rem)); max-width:calc(100% - 2rem); max-height:calc(100% - 6rem); overflow:auto; overflow-wrap:anywhere; gap:var(--space-1); padding:var(--space-3); color:var(--foreground); font-size:var(--text-small); }
+  .map-info { position:absolute; z-index:3; left:var(--space-3); bottom:max(var(--space-8), calc(var(--map-attribution-clearance, 0px) + var(--space-2))); width:max-content; min-width:min(15rem, calc(100% - 2rem)); max-width:calc(100% - 2rem); max-height:calc(100% - 6rem); overflow:auto; overflow-wrap:anywhere; gap:var(--space-1); padding:var(--space-3); color:var(--foreground); font-size:var(--text-small); }
   .map-info-link { display:flex; flex-wrap:wrap; gap:var(--space-2); }
   .map-info-title { display:flex; flex-wrap:wrap; gap:var(--space-2); min-width:0; }
-  @media (max-width:640px) { .map-info { width:auto; min-width:0; max-width:calc(100% - 2rem); padding:var(--space-2); gap:0; line-height:var(--line-height-title); } .map-info-title { flex-wrap:nowrap; overflow:hidden; white-space:nowrap; } .map-info-title strong { overflow:hidden; text-overflow:ellipsis; } .map-info-metrics { display:none; } .map-info-link { flex-wrap:nowrap; white-space:nowrap; } }
-  .map-info a { color:var(--primary); font-weight:var(--weight-semibold); }
   .feed-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:var(--space-3); min-width:0; }
   .rank-content progress::-webkit-progress-value { transition:width var(--motion-reveal); }
   .rank-content progress::-moz-progress-bar { transition:width var(--motion-reveal); }
