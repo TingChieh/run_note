@@ -15,14 +15,13 @@
   let updateRoute: ((value: Route) => void) | undefined;
   let renderedRoute: Route | undefined;
   $effect(() => { const value = route; if (routeReady) updateRoute?.(value); });
-  let basemapEnabled = $state(true), basemapStatus = $state<'loading' | 'ready' | 'failed' | 'off'>('loading');
+  let basemapStatus = $state<'loading' | 'ready' | 'failed'>('loading');
   let basemapPreference = $state<BasemapPreference>('auto'), basemapStyle = $state<BasemapStyle>('positron');
   let basemapController: ReturnType<typeof createBasemapController> | undefined, routeInitialized = false;
   let observer: ResizeObserver | undefined, resizeFrame = 0, bounds: LngLatBounds | undefined;
   let fittedWidth = 0, fittedHeight = 0;
   let dark = false, stopTheme: (() => void) | undefined;
   function loadBasemap() { basemapController?.retry(); }
-  function toggleBasemap() { basemapController?.toggle(); }
   const fitPadding = () => Math.min(55, container.clientWidth / 4, container.clientHeight / 4);
   // Fly back to the whole route after the user has panned, zoomed or rotated away.
   function recenter() {
@@ -90,7 +89,7 @@
           routeInitialized = true; updateRoute(route); routeReady = true;
           // Fit locally before scheduling external viewport tile requests.
           requestAnimationFrame(() => { if (!disposed && map) basemapController = createBasemapController(map, 'route-lines', state => {
-            basemapStatus = state.status; basemapEnabled = state.status !== 'off'; basemapPreference = state.preference; basemapStyle = state.style;
+            basemapStatus = state.status; basemapPreference = state.preference; basemapStyle = state.style;
           }); });
         });
       } catch { if (!disposed) error = '此浏览器无法初始化地图，请使用支持 WebGL 的浏览器。'; }
@@ -100,9 +99,8 @@
 </script>
 <div class="relative mt-4 overflow-hidden rounded-xl border border-border" data-glass-stable class:spacious class:embedded>
   <div bind:this={container} class="route-map w-full" role="region" aria-label="活动路线地图，绿色为路线，起与终标记起终点" data-testid={loaded ? 'route-map-ready' : 'route-map-loading'}></div>
-  <div class="absolute left-3 top-3"><button type="button" onclick={toggleBasemap} disabled={!routeReady || !!error} aria-pressed={basemapEnabled} class="button-secondary">{basemapEnabled ? '关闭底图' : '开启底图'}</button></div>
+  <div class="absolute left-3 top-3 z-[2]"><BasemapPicker preference={basemapPreference} style={basemapStyle} status={basemapStatus} /></div>
   <div class="absolute bottom-3 left-3"><button type="button" onclick={recenter} disabled={!routeReady || !!error} aria-label="回到路线" title="回到路线" class="button-secondary locate-button"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3.5" /><circle cx="12" cy="12" r="8" /><path d="M12 1.5v3 M12 19.5v3 M1.5 12h3 M19.5 12h3" /></svg></button></div>
-  <BasemapPicker preference={basemapPreference} style={basemapStyle} status={basemapStatus} />
   {#if embedded}
     {#if error}<div class="map-status"><FeedbackState kind="error" title={error} /></div>
     {:else if !loaded && !hasRendered}<div class="map-status"><FeedbackState kind="loading" title="正在绘制路线…" /></div>{/if}
@@ -115,7 +113,7 @@
 {#if basemapStatus === 'failed'}<div class="basemap-feedback" role="status"><span>底图暂不可用，轨迹仍可查看。</span><button type="button" onclick={loadBasemap} class="font-medium text-primary underline">重试底图</button></div>
 {:else if basemapStatus === 'loading'}<p role="status" class="mt-3 text-sm">正在加载底图…</p>{/if}
 {/if}
-<details class="mt-3 text-sm text-muted-foreground"><summary class="w-fit font-medium">地图与隐私说明</summary><p class="mt-2">底图由 OpenFreeMap 提供，使用 OpenMapTiles 与 OpenStreetMap 数据；会请求样式、字体、图标和当前视口瓦片；完整 GPX 与轨迹点不会发送给底图服务，路径在本地绘制。关闭底图可停止后续瓦片请求。不同轨迹段不会连线，起终点重合时两个标记分别显示。公共底图为尽力服务，可能暂不可用。</p></details>
+<details class="mt-3 text-sm text-muted-foreground"><summary class="w-fit font-medium">地图与隐私说明</summary><p class="mt-2">底图由 OpenFreeMap 提供，使用 OpenMapTiles 与 OpenStreetMap 数据；会请求样式、字体、图标和当前视口瓦片；完整 GPX 与轨迹点不会发送给底图服务，路径在本地绘制。不同轨迹段不会连线，起终点重合时两个标记分别显示。公共底图为尽力服务，可能暂不可用。</p></details>
 <style>
   .embedded { margin-top: 1rem; }
   .locate-button { width: 2.75rem; padding: 0; }

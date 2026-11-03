@@ -42,17 +42,17 @@ async function installPoster(page: Page, count = 251) {
 }
 const dialog = (page: Page) => page.getByRole('dialog', { name: '生成分享图' });
 // Share images are owner-only; the synthetic runner is the site owner.
-async function visit(page: Page, path = '/activities/wall') {
+async function visit(page: Page, path = '/activities') {
   await loginRunner(page);
   await page.goto(path);
-  await expect(page.getByRole('heading', { name: '足迹墙', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '跑步记录', exact: true })).toBeVisible();
   await page.waitForLoadState('networkidle');
 }
 async function reopen(page: Page) {
   await page.getByRole('button', { name: '生成分享图', exact: true }).click();
   await expect(dialog(page)).toBeVisible();
 }
-async function open(page: Page, path = '/activities/wall') { await visit(page, path); await reopen(page); }
+async function open(page: Page, path = '/activities') { await visit(page, path); await reopen(page); }
 // Opening the dialog reads the viewer's own data automatically; this waits for the real preview.
 const generate = (page: Page) => expect(preview(page)).toBeVisible();
 const preview = (page: Page) => dialog(page).getByRole('img', { name: '跑步足迹分享图预览' });
@@ -137,7 +137,7 @@ test('cancel discards pending responses and a new generation remains independent
   expect(state.peak).toBeLessThanOrEqual(8); // Old cancelled requests may still be in flight.
 });
 
-for(const path of ['/activities/wall','/p/runner/activities/wall','/workspace/activities/wall']) {
+for(const path of ['/activities','/p/runner/activities','/workspace/activities']) {
   test(`reads only the authenticated own-data API from ${path}`, async ({page}) => {
     const state = await installPoster(page,3);
     await visit(page,path); const prior = state.urls.length; await reopen(page); await generate(page);
@@ -216,9 +216,9 @@ test('poster colors follow the actual UI theme without refetching or resampling 
   await (await download).saveAs(info.outputPath('route-poster-dark.png'));
 });
 
-const layouts = ['经典足迹', '极简画廊', '运动海报', '足迹手账'];
+const layouts = ['经典足迹', '极简画廊'];
 for (const theme of ['light', 'dark'] as const) {
-  test(`four poster layouts export distinct PNGs from the same sample in ${theme}`, async ({page}, info) => {
+  test(`both route poster layouts export distinct PNGs from the same sample in ${theme}`, async ({page}, info) => {
     await page.emulateMedia({colorScheme:theme});
     const state = await installPoster(page,121); await open(page);
     await expect(dialog(page).getByRole('radio',{name:'经典足迹',exact:true})).toBeChecked();
@@ -255,7 +255,7 @@ for (const theme of ['light', 'dark'] as const) {
       expect(pixels.routePixels).toBeGreaterThan(2000);
       expect(state.urls).toEqual(requests);
     }
-    expect(hashes.size).toBe(4);
+    expect(hashes.size).toBe(2);
     await dialog(page).screenshot({path:info.outputPath(`styles-desktop-${theme}.png`)});
   });
 }
@@ -273,7 +273,7 @@ test('styles preview instantly while loading, and route-free styles only read to
     await dialog(page).screenshot({path:info.outputPath('sample-while-loading.png')});
     const during=[...state.urls];
     // Controls stay usable during loading; each click redraws the sample locally without new requests.
-    for(const name of ['极简画廊','大字里程','动感斜纹']) {
+    for(const name of ['极简画廊','大字里程','跑步票根']) {
       const option=dialog(page).getByRole('radio',{name,exact:true});
       await expect(option).toBeEnabled();
       const previous=await sample(page).getAttribute('src');
@@ -327,7 +327,7 @@ test('sparse poster layouts remain usable with keyboard selection on narrow scre
   }
 });
 
-const plainLayouts = ['大字里程', '跑步票根', '半马勋章', '动感斜纹'];
+const plainLayouts = ['大字里程', '跑步票根', '半马勋章'];
 for (const theme of ['light', 'dark'] as const) {
   test(`route-free poster layouts export distinct PNGs without refetching in ${theme}`, async ({page}, info) => {
     await page.emulateMedia({colorScheme:theme});
@@ -360,7 +360,7 @@ for (const theme of ['light', 'dark'] as const) {
       expect(footerMarks).toBe(0);
       expect(state.urls).toEqual(requests);
     }
-    expect(hashes.size).toBe(4);
+    expect(hashes.size).toBe(3);
     await dialog(page).getByRole('radio',{name:'经典足迹',exact:true}).check();
     await expect(dialog(page)).toContainText('随机展示 120 / 120 条轨迹');
     await expect(dialog(page).getByRole('button',{name:'换一组轨迹',exact:true})).toBeVisible();
@@ -451,12 +451,12 @@ test('month scope uses the shared calendar picker with keyboard selection inside
   await page.screenshot({path:info.outputPath('month-calendar-320.png')});
 });
 
-const wallReady = (page: Page) => expect(page.getByRole('heading',{name:'足迹墙',exact:true})).toBeVisible();
+const wallReady = (page: Page) => expect(page.getByRole('heading',{name:'跑步记录',exact:true})).toBeVisible();
 const posterButton = (page: Page) => page.getByRole('button',{name:'生成分享图',exact:true});
 
 test('anonymous visitors cannot create share images on any showcase wall', async ({page}) => {
   const state = await installPoster(page,3);
-  for(const path of ['/activities/wall','/p/runner/activities/wall']) {
+  for(const path of ['/activities','/p/runner/activities']) {
     await page.goto(path); await wallReady(page);
     await expect(posterButton(page)).toHaveCount(0);
     await expect(page.getByRole('dialog',{name:'生成分享图'})).toHaveCount(0);
@@ -475,7 +475,7 @@ test('signed-in accounts can only share their own records', async ({page, browse
   });
   expect(created.status()).toBe(201);
   // The site owner cannot share another account's named showcase.
-  await page.goto(`/p/${username}/activities/wall`); await wallReady(page);
+  await page.goto(`/p/${username}/activities`); await wallReady(page);
   await expect(posterButton(page)).toHaveCount(0);
   const context = await browser.newContext();
   try {
@@ -486,11 +486,11 @@ test('signed-in accounts can only share their own records', async ({page, browse
     await other.getByLabel('密码',{exact:true}).fill('Synthetic-only-password');
     await other.getByRole('button',{name:'登录',exact:true}).click();
     await expect.poll(()=>new URL(other.url()).pathname).toBe('/workspace/dashboard');
-    for(const path of ['/activities/wall','/p/runner/activities/wall']) {
+    for(const path of ['/activities','/p/runner/activities']) {
       await other.goto(path); await wallReady(other);
       await expect(posterButton(other)).toHaveCount(0);
     }
-    for(const path of [`/p/${username}/activities/wall`,'/workspace/activities/wall']) {
+    for(const path of [`/p/${username}/activities`,'/workspace/activities']) {
       await other.goto(path); await wallReady(other);
       await other.waitForLoadState('networkidle');
       const prior = state.urls.length;

@@ -122,7 +122,7 @@ test('two full personal showcases keep navigation, records, routes and reports s
     return route.fulfill({ json: { data: url.pathname.endsWith(sampleActivity.id) ? record : { items: [record], total: 1, limit: Number(url.searchParams.get('limit') ?? 20), offset: Number(url.searchParams.get('offset') ?? 0) }, error: null } });
   });
   for (const username of users) {
-    for (const [section, title] of [['dashboard', '数据汇总'], ['activities', '跑步记录'], ['activities/wall', '足迹墙'], ['footprints', '个人足迹'], ['ai', 'AI 跑步分析']]) {
+    for (const [section, title] of [['dashboard', '数据汇总'], ['activities', '跑步记录'], ['footprints', '个人足迹'], ['ai', 'AI 跑步分析']]) {
       await page.goto(`/p/${username}/${section}`);
       await expect(page.getByRole('heading', { level: 1, name: title, exact: true })).toBeVisible();
       const navigation = page.getByRole('navigation', { name: '主要导航' });

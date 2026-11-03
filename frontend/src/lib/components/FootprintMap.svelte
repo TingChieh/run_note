@@ -18,7 +18,7 @@
   let { data, onretry }: {data: FootprintCollection; onretry: () => void} = $props();
   let container: HTMLDivElement, frameEl: HTMLDivElement, map: LibreMap | undefined, disposed=false;
   let framing: 'auto' | 'all' | 'picked' | 'free' = 'auto';
-  let ready=$state(false), error=$state(''), basemap=$state<'loading'|'ready'|'failed'|'off'>('loading');
+  let ready=$state(false), error=$state(''), basemap=$state<'loading'|'ready'|'failed'>('loading');
   let choices=$state<{id:string;title:string;date:string}[]>([]), heat=$state<number|null>(null);
   let observer: ResizeObserver|undefined;
   let basemapPreference=$state<BasemapPreference>('auto'), basemapStyle=$state<BasemapStyle>('positron');
@@ -108,7 +108,6 @@
   $effect(()=>{data;untrack(applyData);});
   const palette=['#14785b','#315caf','#b4552c','#854caa','#397d87','#ba3970'];
   function loadBasemap() { basemapController?.retry(); }
-  function toggleBasemap() { basemapController?.toggle(); }
   const onWindowResize = () => { sizeCanvas(); map?.resize(); if (framing === 'all') fit(allBounds); else if (framing === 'picked') locateCity(selectedCity, false); else if (framing === 'auto') frameInitial(); };
   onMount(()=>{loadCities();sizeCanvas();window.addEventListener('resize', onWindowResize);stopTheme=watchSystemTheme(value=>{dark=value;if(map && !disposed && !basemapController)applyMapTheme(map,dark);});void(async()=>{
     try {
@@ -151,7 +150,7 @@
   onDestroy(()=>{disposed=true;window.removeEventListener('resize', onWindowResize);cityWorker?.terminate();stopTheme?.();basemapController?.destroy();observer?.disconnect();map?.remove();map=undefined;});
 </script>
 <div class="map-section content-reveal">
-  <div class="map-toolbar"><div class="toolbar-actions"><button type="button" onclick={overview} disabled={!ready || !!error} class="button-secondary">回到全部足迹</button><button type="button" onclick={()=>{cityOpen=!cityOpen;}} disabled={!ready || !!error || cityLookup!=='ready' || !cityName} aria-expanded={cityOpen} aria-controls="footprint-cities" class="button-secondary city-menu-toggle">城市</button><button type="button" onclick={toggleBasemap} disabled={!ready || !!error} aria-pressed={basemap!=='off'} class="button-secondary">{basemap==='off'?'开启底图':'关闭底图'}</button></div><p class="map-hint" id="footprint-map-help">拖动或缩放探索 · 方向键移动 · + / − 缩放</p></div>
+  <div class="map-toolbar"><div class="toolbar-actions"><button type="button" onclick={overview} disabled={!ready || !!error} class="button-secondary">回到全部足迹</button><button type="button" onclick={()=>{cityOpen=!cityOpen;}} disabled={!ready || !!error || cityLookup!=='ready' || !cityName} aria-expanded={cityOpen} aria-controls="footprint-cities" class="button-secondary city-menu-toggle">城市</button></div><p class="map-hint" id="footprint-map-help">拖动或缩放探索 · 方向键移动 · + / − 缩放</p></div>
   {#if cityLookup==='loading'}<p role="status" class="city-hint">正在识别有记录的城市…</p>
   {:else if cityLookup==='failed'}<div class="city-actions"><p role="status" class="city-hint">城市识别暂不可用，全部足迹仍可查看。</p><button type="button" onclick={loadCities} class="button-secondary">重试识别城市</button></div>
   {:else}
@@ -164,7 +163,7 @@
   {#if basemap==='failed' && !error}<div class="basemap-feedback" role="status"><span>底图暂不可用，足迹仍可查看。</span><button type="button" onclick={loadBasemap} class="button-secondary">重试底图</button></div>{:else if basemap==='loading' && ready && !error}<p role="status" class="basemap-status">正在加载底图，足迹可先查看…</p>{/if}
   {#if error}<FeedbackState kind="error" title={error}><button type="button" class="button-secondary" onclick={onretry}>重新绘制地图</button></FeedbackState>{:else if !ready}<p role="status" class="basemap-status">正在绘制足迹…</p>{/if}
   <div class="map-frame" bind:this={frameEl}><div bind:this={container} class="map-canvas" role="region" aria-label={data.mode==='heatmap'?'个人运动热力图':'个人多轨迹叠加地图'} aria-describedby="footprint-map-help" data-testid={ready?'footprint-map-ready':'footprint-map-loading'}></div>
-    <BasemapPicker preference={basemapPreference} style={basemapStyle} status={basemap} />
+    <div class="map-layers"><BasemapPicker preference={basemapPreference} style={basemapStyle} status={basemap} /></div>
   </div>
   {#if choices.length}<div class="route-choices" data-testid="route-choices"><p class="font-semibold" role="status">此处经过的记录（{choices.length}）</p><ul>{#each choices as record}<li><div><span class="record-date">{record.date}</span><a href={view.href(`/activities/${record.id}`)}>{record.title || '未命名活动'} · 查看详情</a></div><button type="button" class="button-secondary" onclick={()=>selectRecord(record)} aria-pressed={selectedIds.length===1 && selectedIds[0]===record.id}>定位路线</button></li>{/each}</ul></div>{/if}
   {#if heat!==null}<p role="status" class="heat-selection">所选网格：{heat} 条不同运动记录经过。</p>{/if}
@@ -186,6 +185,7 @@
   .map-hint { font-size: var(--text-caption); color:var(--muted-foreground); }
   .basemap-feedback { display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:.5rem; padding:.5rem .75rem; border:1px solid var(--border); border-radius:var(--radius-control); background:var(--surface); color:var(--muted-foreground); font-size: var(--text-small); }
   .basemap-status { font-size: var(--text-small); margin:0; }
+  .map-layers { position:absolute; top:var(--space-3); left:var(--space-3); z-index:2; }
   .map-frame { position:relative; overflow:hidden; height:min(720px, max(424px, calc(100dvh - 26rem))); border:1px solid var(--border); border-radius:var(--radius-card); background:var(--muted); }
   .map-canvas { height:100%; width:100%; }
   .route-choices { border-left:3px solid var(--primary); padding:.75rem 1rem; background:var(--primary-soft); border-radius:var(--radius-control); }

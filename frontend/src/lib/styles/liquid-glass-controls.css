@@ -58,6 +58,9 @@
 .rn-menu-option[aria-selected="true"] { font-weight: var(--weight-semibold) !important; }
 .rn-glass-menu > .rn-moving-copy { background: var(--glass-menu-selection); color: var(--foreground); }
 .rn-glass-menu > .rn-moving-outline { box-shadow: inset 0 1px var(--glass-edge); }
+/* Menus that only show the lens once the pointer or focus reaches an option (the account menu). */
+.rn-glass-menu[data-lens-idle] > :is(.rn-moving-outline, .rn-moving-copy) { opacity: 0; }
+.rn-glass-menu > :is(.rn-moving-outline, .rn-moving-copy) { transition: opacity var(--transition-control); }
 .rn-menu-option:disabled { opacity: .45; }
 
 /* Overlay-copy slider. The original labelled range keeps its entire 44px hit area. */

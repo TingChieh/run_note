@@ -154,8 +154,8 @@
 </script>
 
 {#if allowed}
-<!-- Hidden token probe: resolves the chosen fixed appearance without switching the site theme. -->
-<div hidden data-poster-theme={theme === 'auto' ? undefined : theme}><div class="sport-theme" bind:this={themeProbe}></div></div>
+<!-- Hidden token probe: resolves the chosen fixed appearance without switching the site theme. It is present only for a fixed appearance, so the records page keeps its single `.sport-theme` shell (same as the single-record dialog). -->
+{#if theme !== 'auto'}<div hidden data-poster-theme={theme}><div class="sport-theme" bind:this={themeProbe}></div></div>{/if}
 <button bind:this={trigger} type="button" class="button-secondary" disabled={!mounted} onclick={open}>生成分享图</button>
 <dialog bind:this={dialog} class="poster-dialog" aria-labelledby="poster-title" aria-describedby="poster-description"
   oncancel={(event) => { event.preventDefault(); close(); }}
@@ -190,11 +190,6 @@
                   <rect class="mini-heading" x="8" y="8" width="80" height="26" rx="4" />
                   <rect class="mini-heading-ink" x="15" y="17" width="40" height="8" rx="1" />
                   <rect class="mini-surface" x="8" y="41" width="80" height="66" rx="4" />
-                {:else if preset.id === 'sport'}
-                  <rect class="mini-primary" x="8" y="8" width="80" height="36" rx="4" />
-                  <rect class="mini-primary-ink" x="15" y="18" width="48" height="12" rx="1" />
-                  <rect class="mini-heading" x="15" y="35" width="18" height="2" />
-                  <rect class="mini-surface" x="8" y="48" width="80" height="59" rx="4" />
                 {:else if preset.id === 'numeral'}
                   <rect class="mini-muted" x="8" y="14" width="30" height="3" rx="1" />
                   <rect class="mini-ink" x="8" y="24" width="72" height="26" rx="2" />
@@ -219,12 +214,6 @@
                   <circle class="mini-ring" cx="48" cy="64" r="29" />
                   <circle class="mini-ring-inner" cx="48" cy="64" r="23" />
                   <rect class="mini-ink" x="37" y="58" width="22" height="12" rx="1" />
-                {:else if preset.id === 'stripe'}
-                  <rect class="mini-primary" x="8" y="8" width="80" height="48" rx="4" />
-                  <path class="mini-heading" d="M52 56H58L80 8H74ZM64 56H66L88 8H86ZM74 56H80L88 39V26Z" />
-                  <rect class="mini-primary-ink" x="14" y="16" width="30" height="6" rx="1" />
-                  <rect class="mini-ink" x="8" y="70" width="62" height="20" rx="2" />
-                  <rect class="mini-heading" x="8" y="95" width="18" height="3" />
                 {:else}
                   <rect class="mini-muted" x="8" y="10" width="34" height="3" rx="1" />
                   <rect class="mini-ink" x="8" y="22" width="57" height="11" rx="1" />
@@ -232,8 +221,7 @@
                 {/if}
                 {#if preset.routes}
                   {#each [0,1,2,3,4,5] as index}
-                    <g transform={`translate(${15 + index % 3 * 26} ${56 + Math.floor(index / 3) * 25}) rotate(${preset.id === 'journal' ? (index % 3 - 1) * 2 : 0} 6 7)`}>
-                      {#if preset.id === 'journal'}<rect class="mini-card" x="-4" y="-5" width="23" height="25" rx="2" />{/if}
+                    <g transform={`translate(${15 + index % 3 * 26} ${56 + Math.floor(index / 3) * 25})`}>
                       <path class="mini-route" d="M0 8L6 0L13 4L11 14L3 12Z" />
                     </g>
                   {/each}
@@ -303,6 +291,6 @@
   .poster-styles{min-width:0;margin:0;padding:0;border:0;}.poster-styles legend{margin-bottom:var(--space-2);}.poster-style-group{margin:var(--space-3) 0 var(--space-2);font-size:var(--text-small);color:var(--muted-foreground);}.poster-style-group:first-of-type{margin-top:0;}.poster-style-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-3);}
   .poster-style{position:relative;display:grid;gap:var(--space-1);min-width:0;padding:var(--space-3);border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface);cursor:pointer;}.poster-style.selected{border-color:var(--primary);background:var(--primary-soft);}.poster-style:has(input:focus-visible){outline:2px solid var(--ring);outline-offset:2px;}.poster-styles:disabled .poster-style{opacity:.65;cursor:wait;}
   .poster-style input{position:absolute;right:var(--space-2);top:var(--space-2);width:1rem;height:1rem;margin:0;}.poster-style svg{width:100%;}.poster-style-name{font-size:var(--text-small);font-weight: var(--weight-semibold);}.poster-style-description{font-size:var(--text-small);color:var(--muted-foreground);overflow-wrap:anywhere;}
-  .mini-background{fill:var(--background);}.mini-surface{fill:var(--surface);}.mini-heading{fill:var(--sport-yellow);}.mini-heading-ink{fill:var(--sport-heading-ink);}.mini-primary{fill:var(--primary);}.mini-primary-ink{fill:var(--primary-foreground);}.mini-ink{fill:var(--foreground);}.mini-muted{fill:var(--muted-foreground);}.mini-divider{stroke:var(--border);}.mini-divider-fill{fill:var(--border);}.mini-card{fill:var(--surface);stroke:var(--border);}.mini-dash{fill:none;stroke:var(--border);stroke-dasharray:3 2;}.mini-ring{fill:none;stroke:var(--primary);stroke-width:4;}.mini-ring-inner{fill:none;stroke:var(--sport-yellow);stroke-width:1.5;}.mini-route{fill:none;stroke:var(--primary);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
+  .mini-background{fill:var(--background);}.mini-surface{fill:var(--surface);}.mini-heading{fill:var(--sport-yellow);}.mini-heading-ink{fill:var(--sport-heading-ink);}.mini-primary{fill:var(--primary);}.mini-ink{fill:var(--foreground);}.mini-muted{fill:var(--muted-foreground);}.mini-divider{stroke:var(--border);}.mini-divider-fill{fill:var(--border);}.mini-card{fill:var(--surface);stroke:var(--border);}.mini-dash{fill:none;stroke:var(--border);stroke-dasharray:3 2;}.mini-ring{fill:none;stroke:var(--primary);stroke-width:4;}.mini-ring-inner{fill:none;stroke:var(--sport-yellow);stroke-width:1.5;}.mini-route{fill:none;stroke:var(--primary);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
   @media(max-width:719px),(max-height:500px){dialog{padding:var(--space-4);}.poster-appearance-options label{gap:var(--space-1);padding-inline:var(--space-2);white-space:nowrap;}.poster-workspace{grid-template-columns:minmax(0,1fr);}.poster-placeholder{min-height:12rem;}.poster-save>button{flex:1;}}
 </style>

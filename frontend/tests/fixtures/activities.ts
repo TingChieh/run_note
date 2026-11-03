@@ -82,4 +82,14 @@ export async function openImport(page: Page) {
     if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'true', { timeout: 1000 });
   }).toPass();
+  // The region opens with a height animation; layout measured before it settles (and what sits beside it) is not final.
+  await page.waitForFunction(() => new Promise<boolean>(resolve => {
+    const fold = document.querySelector('.import-fold'); let last = -1, since = performance.now();
+    const tick = () => {
+      const height = fold?.getBoundingClientRect().height ?? 0;
+      if (height !== last) { last = height; since = performance.now(); }
+      if (height > 0 && performance.now() - since > 150) resolve(true); else requestAnimationFrame(tick);
+    };
+    tick();
+  }));
 }

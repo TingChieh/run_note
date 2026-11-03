@@ -1,6 +1,5 @@
 const descriptions: [RegExp, string][] = [
   [/^\/$/, '查看跑步距离、活动日历、趋势和最近的运动记录。'],
-  [/\/activities\/wall$/, '每次跑步一张足迹卡片，回顾全部路线。'],
   [/\/activities\/[^/]+$/, '查看这次跑步的距离、用时、配速和路线。'],
   [/\/activities$/, '浏览跑步记录。导入 GPX 或 TCX 后，可以回顾每一次出发。'],
   [/\/footprints$/, '在地图上查看跑过的路线和运动热力。'],
@@ -25,7 +24,7 @@ export function pageNoindex(pathname: string, status: number): boolean {
   return status >= 400 || /^\/(admin|workspace|settings|wellbeing)(\/|$)/.test(pathname);
 }
 
-export const SITEMAP_PATHS = ['/', '/activities', '/activities/wall', '/footprints', '/ai'] as const;
+export const SITEMAP_PATHS = ['/', '/activities', '/footprints', '/ai'] as const;
 
 const ROBOTS_DISALLOW = ['/admin', '/workspace', '/settings', '/wellbeing', '/api', '/shared', '/public'] as const;
 

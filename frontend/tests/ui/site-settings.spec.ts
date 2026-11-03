@@ -63,7 +63,7 @@ test('sidebar shows the subject avatar and falls back to the initial', async ({ 
 test('route poster draws the site logo in the brand corner', async ({ page }) => {
   await loginRunner(page);
   expect((await page.request.put('/api/v1/site/images/logo', { headers: csrf, multipart: { file: { name: 'logo.png', mimeType: 'image/png', buffer: png } } })).status()).toBe(200);
-  await page.goto('/activities/wall');
+  await page.goto('/activities');
   await page.waitForLoadState('networkidle');
   const logoRequest = page.waitForRequest(request => /\/api\/v1\/site\/images\/logo\?v=/.test(request.url()));
   await page.getByRole('button', { name: '生成分享图', exact: true }).click();

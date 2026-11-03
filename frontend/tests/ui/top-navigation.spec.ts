@@ -503,6 +503,28 @@ test.describe('account menu', () => {
     await expect(trigger).toBeFocused();
   });
 
+  test('a glass lens follows the pointer and keyboard focus across the options, and rests while neither is on them', async ({ page }) => {
+    const menu = await openAccountMenu(page);
+    const outline = menu.locator('> .rn-moving-outline');
+    await expect(outline, 'the lens exists in the menu').toHaveCount(1);
+    await expect(outline, 'and stays hidden until an option is reached').toHaveCSS('opacity', '0');
+    const lensAt = async (name: string) => {
+      const target = await menu.getByRole(name === '设置' ? 'link' : 'button', { name, exact: true }).boundingBox();
+      const lens = await outline.boundingBox();
+      return { target: target!, lens: lens! };
+    };
+    const logout = menu.getByRole('button', { name: '退出登录', exact: true });
+    await logout.hover();
+    await expect(outline).toHaveCSS('opacity', '1');
+    await expect.poll(async () => { const { target, lens } = await lensAt('退出登录'); return Math.abs(lens.y - target.y) + Math.abs(lens.height - target.height); }, { message: 'the lens settles over the hovered option' }).toBeLessThan(4);
+    await menu.getByRole('link', { name: '设置', exact: true }).hover();
+    await expect.poll(async () => { const { target, lens } = await lensAt('设置'); return Math.abs(lens.y - target.y); }).toBeLessThan(4);
+    await page.mouse.move(5, 5);
+    await expect(outline, 'the lens rests when the pointer leaves the menu').toHaveCSS('opacity', '0');
+    await page.keyboard.press('Tab');
+    await expect(outline, 'keyboard focus shows it again').toHaveCSS('opacity', '1');
+  });
+
   test('settings opens from the menu, closes the menu and is marked as the current page', async ({ page }) => {
     await (await settingsLink(page)).click();
     await expect(page).toHaveURL(/\/settings$/);
@@ -812,11 +834,27 @@ test.describe('page chrome per appearance', () => {
     expect(c.lensChroma, 'the segment lens is tinted').toBeGreaterThan(12);
     expect(c.actionChroma, 'actions are coloured').toBeGreaterThan(60);
   });
-  test('dark: no colour block, logo, current nav, lens and actions are neutral greys', async ({ page }) => {
+  test('dark: the page header is a filled neutral block; logo, current nav, lens and actions are neutral greys', async ({ page }) => {
     await open(page, 'dark');
     const c = await chrome(page);
-    expect(c.headerAlpha, 'the page header has no filled block').toBe(0);
+    expect(c.headerAlpha, 'the header is a filled block, like in light').toBe(1);
+    expect(c.header, 'painted with the header tint').toEqual(c.tint);
+    expect(Math.max(...c.header) - Math.min(...c.header), 'the block is a neutral grey').toBeLessThan(16);
     for (const [name, value] of Object.entries({ logo: c.logoChroma, nav: c.navChroma, lens: c.lensChroma, track: c.trackChroma, action: c.actionChroma })) expect(value, `${name} is a neutral grey`).toBeLessThan(16);
+  });
+  test('switching appearance never moves the page header or what follows it', async ({ page }) => {
+    const geometry = () => page.evaluate(() => {
+      const header = document.querySelector('.page-header')!, tabs = document.querySelector('.settings-tabs')!;
+      const box = (el: Element) => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map(Math.round); };
+      return { header: box(header), tabs: box(tabs), padding: getComputedStyle(header).padding, radius: getComputedStyle(header).borderRadius };
+    });
+    await open(page, 'light'); const light = await geometry();
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.goto('/settings');
+    await expect(page.locator('.settings-tabs')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark');
+    const dark = await geometry();
+    expect(dark).toEqual(light);
   });
 });
 

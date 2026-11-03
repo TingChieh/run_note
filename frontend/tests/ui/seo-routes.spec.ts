@@ -49,7 +49,7 @@ test('server routes 404 missing resources, redirect the old home, and publish cr
   expect(sitemap.status()).toBe(200);
   expect(sitemap.headers()['content-type']).toContain('xml');
   const xml = await sitemap.text();
-  for (const path of ['/', '/activities', '/activities/wall', '/footprints', '/ai']) {
+  for (const path of ['/', '/activities', '/footprints', '/ai']) {
     expect(xml).toContain(`<loc>http://127.0.0.1:5191${path}</loc>`);
   }
   for (const path of ['/admin', '/settings', '/shared', '/public', '/workspace']) expect(xml).not.toContain(path);

@@ -8,7 +8,7 @@
   import { activityPosterHasRoute, activityPosterStyles, renderActivityPoster, type ActivityPosterStyle } from '#lib/share/activity-poster-render.ts';
   import { loadPosterLogo, posterPalette } from '#lib/share/route-poster-render.ts';
 
-  let { activityId }: { activityId: string } = $props();
+  let { activityId, label = '生成分享图' }: { activityId: string; label?: string } = $props();
 
   // Only a signed-in viewer looking at their own record may create a share image:
   // their workspace, the root showcase as site owner, or their own named showcase.
@@ -111,7 +111,7 @@
 <!-- Hidden token probe, present only for a fixed appearance: resolves it without switching the site theme
      and keeps the page's single `.sport-theme` shell unique otherwise. -->
 {#if visible && theme !== 'auto'}<div hidden data-poster-theme={theme}><div class="sport-theme" bind:this={themeProbe}></div></div>{/if}
-<button bind:this={trigger} type="button" class="button-secondary" disabled={!mounted} onclick={open}>生成分享图</button>
+<button bind:this={trigger} type="button" class="button-secondary" disabled={!mounted} onclick={open}>{label}</button>
 <dialog bind:this={dialog} class="poster-dialog" aria-labelledby="activity-poster-title" aria-describedby="activity-poster-description"
   oncancel={(event) => { event.preventDefault(); close(); }}
   onclose={() => { if (dialog.open) return; stop(); visible = false; trigger?.focus(); }}>

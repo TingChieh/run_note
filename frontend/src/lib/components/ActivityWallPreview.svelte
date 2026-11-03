@@ -212,7 +212,7 @@
     <div class="preview-copy">
       <h2>本次足迹卡片</h2>
       <p>每次跑步，留下属于你的路线记忆。</p>
-      <a href={view.href("/activities/wall")}  class="button-secondary">查看全部足迹</a>
+      <a href={view.href("/activities")} class="button-secondary">查看全部记录</a>
     </div>
     <div class="preview-browser" aria-busy={pending} use:coverflowNavigation={{ onbrowse: stepBrowse }}>
       <button type="button" class="button-secondary deck-arrow" aria-label="较新一条" disabled={pending || browseIndex <= 0} onclick={() => void select(browseIndex - 1)}><span aria-hidden="true">←</span></button>

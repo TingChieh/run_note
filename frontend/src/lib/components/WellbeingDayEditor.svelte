@@ -515,11 +515,11 @@
   @media (max-width: 479px) { .pair { grid-template-columns: minmax(0, 1fr); } }
   /* The pill count: a − and a + (in halves) either side of the number. */
   .stepper { display: grid; grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem; align-items: stretch; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); }
-  .stepper:focus-within { border-color: var(--primary); }
+  .stepper:focus-within { border-color: var(--control-accent); }
   .stepper .text-field { min-width: 0; border: 0; border-radius: 0; background: transparent; text-align: center; font-size: var(--text-body); font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; box-shadow: none; }
-  .stepper .step { display: grid; place-items: center; min-height: 2.75rem; padding: 0; border: 0; border-radius: var(--radius-control); background-color: transparent; color: var(--primary); font-size: var(--text-card); font-weight: var(--weight-bold); cursor: pointer; }
+  .stepper .step { display: grid; place-items: center; min-height: 2.75rem; padding: 0; border: 0; border-radius: var(--radius-control); background-color: transparent; color: var(--control-accent); font-size: var(--text-card); font-weight: var(--weight-bold); cursor: pointer; }
   .stepper .step[data-date] { background-image: none !important; box-shadow: none !important; }
-  @media (hover: hover) { .stepper .step:not(:disabled):hover { background-color: var(--primary-soft); } }
+  @media (hover: hover) { .stepper .step:not(:disabled):hover { background-color: var(--control-accent-soft); } }
   .stepper .step:disabled { opacity: .4; cursor: not-allowed; }
   .stepper .step:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
   /* The kind of dose is the app's range switch (.settings-tabs) stretched across the form; its glass lens does the rest. */
@@ -533,7 +533,7 @@
   .chip-button.add { border-style: dashed; color: var(--muted-foreground); }
   .effect-other { flex: 0 1 auto; width: 6.5rem; min-height: 2.5rem; padding: 0 var(--space-3); border: 1px dashed var(--border); border-radius: var(--radius-pill); background: transparent; color: var(--foreground); font-size: var(--text-small); transition: width .26s cubic-bezier(.22, 1, .36, 1), border-color .2s ease; }
   .effect-other::placeholder { color: var(--muted-foreground); }
-  .effect-other:focus { width: 11rem; border-style: solid; border-color: var(--primary); outline: none; }
+  .effect-other:focus { width: 11rem; border-style: solid; border-color: var(--control-accent); outline: none; }
   .foot { margin-top: var(--space-1); padding-top: var(--space-4); border-top: 1px solid var(--border); }
   .subform { display: grid; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--muted); }
   .chips { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; border: 0; }

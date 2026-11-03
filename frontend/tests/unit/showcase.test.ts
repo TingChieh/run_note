@@ -4,7 +4,7 @@ import { readShowcaseProfile, parseShowcaseActivity, showcasePath } from '../../
 
 describe('single-owner showcase contract', () => {
   it('keeps browsing public and protects account settings', () => {
-    for (const path of ['/dashboard', '/activities', '/activities/example', '/activities/wall', '/footprints', '/ai', '/admin']) expect(isProtected(path)).toBe(false);
+    for (const path of ['/dashboard', '/activities', '/activities/example', '/footprints', '/ai', '/admin']) expect(isProtected(path)).toBe(false);
     expect(isProtected('/settings')).toBe(true);
   });
 
