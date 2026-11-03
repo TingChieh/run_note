@@ -307,7 +307,7 @@ test('动态选择、地图详情和手机布局', async ({page}) => {
   await expect(page.getByTestId('together-map-info')).toContainText('晨跑');
   await expect(page.getByTestId('together-map-info')).toBeVisible();
   await expect(page.getByTestId('together-map-info')).toHaveCSS('opacity','1');
-  expect((await page.getByTestId('together-map-info').boundingBox())!.width).toBeGreaterThanOrEqual(200);
+  expect((await page.getByTestId('together-map-info').boundingBox())!.height).toBeLessThanOrEqual(64);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
@@ -319,4 +319,30 @@ test('选择动态时在合并地图显示详情并可重置', async ({page}) =>
   await expect(page.getByTestId('together-map-info')).toContainText('晨跑');
   await page.getByRole('button',{name:'回到全部足迹'}).click();
   await expect(page.getByTestId('together-map-info')).toHaveCount(0);
+});
+
+test('选中记录保留其他轨迹与当前缩放，手机信息卡保持紧凑', async ({page}) => {
+  await page.emulateMedia({reducedMotion:'reduce'});
+  const tracks = runners.map((runner,i)=>({username:runner.username,activity_id:runner.user_id,title:runner.display_name,activity_date:'2026-10-01',segment_index:0,geometry:{type:'LineString',coordinates:i ? [[10,10.02],[10.02,10.02]] : [[10,10],[10.02,10]]}}));
+  const recent = runners.map(runner=>({id:runner.user_id,username:runner.username,display_name:runner.display_name,title:runner.display_name,activity_date:'2026-10-01',distance_m:3000,category:'',tags:[],temporal_quality:'complete',avg_pace_seconds_per_km:330,elapsed_seconds:1800,timer_seconds:null,avg_heart_rate_bpm:null,geometry:[]}));
+  await page.route('**/api/v1/together?*', route=>route.fulfill({json:{data:{next_cursor:null,tracks_truncated:false,distance_m:7000,count:2,participants:runners,recent,tracks},error:null,meta:{request_id:'test'}}}));
+  await page.goto('/together');
+  const canvas=page.locator('.maplibregl-canvas');
+  await expect(page.getByTestId('footprint-map-ready')).toBeVisible({timeout:15000});
+  await page.getByLabel('缩小地图').click();
+  const before=await canvas.screenshot();
+  await page.locator('#together-feed .card-link').first().click();
+  const after=await canvas.screenshot();
+  const difference=await page.evaluate(async ({a,b})=>{
+    const pixels=async (src:string)=>{const image=new Image();image.src=`data:image/png;base64,${src}`;await image.decode();const c=document.createElement('canvas');c.width=image.width;c.height=image.height;const ctx=c.getContext('2d')!;ctx.drawImage(image,0,0);return {data:ctx.getImageData(0,0,c.width,c.height).data,width:c.width,height:c.height};};
+    const x=await pixels(a),y=await pixels(b);let changed=0;
+    for(let row=Math.floor(x.height*.15);row<Math.floor(x.height*.4);row++) for(let col=Math.floor(x.width*.2);col<Math.floor(x.width*.8);col++){const i=(row*x.width+col)*4;if(Math.abs(x.data[i]-y.data[i])+Math.abs(x.data[i+1]-y.data[i+1])+Math.abs(x.data[i+2]-y.data[i+2])>30)changed++;}
+    return changed;
+  },{a:before.toString('base64'),b:after.toString('base64')});
+  expect(difference).toBeLessThan(100);
+  await page.setViewportSize({width:320,height:700});
+  const info=page.getByTestId('together-map-info');
+  await expect(info).toBeVisible();
+  await expect(info).toHaveCSS('opacity','1');
+  expect((await info.boundingBox())!.height).toBeLessThanOrEqual(64);
 });

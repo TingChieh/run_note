@@ -111,15 +111,47 @@
   $effect(()=>{data;untrack(applyData);});
   function focusRunner(runner: string, activity = "") {
     if (!map?.getLayer('footprint-lines') || !onclearRunner) return;
-    const hasRunner = activity ? displayData.features.some(f => f.properties?.activity_id === activity) : !!runner && displayData.features.some(f => f.properties?.username === runner);
     const match = ['==', ['get', activity ? 'activity_id' : 'username'], activity || runner] as ['==', ['get', 'username'], string];
-    if (map.getLayer('footprint-casing')) map.setPaintProperty('footprint-casing', 'line-opacity', hasRunner ? ['case', match, 0.8, 0.12] : 0.65);
-    map.setPaintProperty('footprint-lines', 'line-opacity', hasRunner ? ['case', match, 1, 0.18] : 0.8);
-    map.setPaintProperty('footprint-lines', 'line-width', hasRunner ? ['case', match, 4, 2] : 3);
-    map.setPaintProperty('footprint-points', 'circle-opacity', hasRunner ? ['case', match, 1, 0.18] : 1);
-    if (map.getLayer('footprint-selected')) { map.setFilter('footprint-selected', ['all', ['==', '$type', 'LineString'], match]); map.setFilter('footprint-selected-casing', ['all', ['==', '$type', 'LineString'], match]); }
+    for (const layer of ['footprint-selected-glow', 'footprint-selected-casing', 'footprint-selected']) {
+      if (map.getLayer(layer)) map.setFilter(layer, ['all', ['==', ['geometry-type'], 'LineString'], match]);
+    }
     const bounds = activity ? geometryBounds(displayData.features.filter(f => f.properties?.activity_id === activity).map(f => f.geometry)) : runner ? geometryBounds(displayData.features.filter(f => f.properties?.username === runner).map(f => f.geometry)) : allBounds;
-    if (bounds) { framing = runner || activity ? 'free' : 'all'; fit(bounds, animateDataChanges); }
+    if (!runner && !activity) { framing = 'all'; fit(allBounds, animateDataChanges); return; }
+    if (!bounds) return;
+    framing = 'free';
+    // Measure the selected record's overlay after it has been laid out.
+    requestAnimationFrame(() => {
+      if (!map || disposed || selectedRunner !== runner || selectedActivity !== activity) return;
+      const card = activity ? frameEl.querySelector<HTMLElement>('.map-info') : null;
+      const cardRect = card?.getBoundingClientRect(), frameRect = frameEl.getBoundingClientRect();
+      const inset = 20;
+      const padding = {top:inset, right:inset, bottom:inset, left:inset};
+      const a=map.project(bounds[0]), b=map.project(bounds[1]);
+      const left=Math.min(a.x,b.x), right=Math.max(a.x,b.x), top=Math.min(a.y,b.y), bottom=Math.max(a.y,b.y);
+      if (cardRect) {
+        const cardRight=cardRect.right-frameRect.left+inset, cardTop=cardRect.top-frameRect.top-inset;
+        if (left < cardRight && right > cardRect.left-frameRect.left-inset && bottom > cardTop && top < cardRect.bottom-frameRect.top+inset) {
+          const shiftRight=cardRight-left, shiftUp=bottom-cardTop;
+          if (shiftRight <= shiftUp && cardRight < frameRect.width-inset) padding.left=Math.ceil(cardRight);
+          else padding.bottom=Math.ceil(frameRect.height-cardTop);
+        }
+      }
+      const availableWidth=frameRect.width-padding.left-padding.right, availableHeight=frameRect.height-padding.top-padding.bottom;
+      const overlapX=Math.max(0,Math.min(right,frameRect.width-padding.right)-Math.max(left,padding.left));
+      const overlapY=Math.max(0,Math.min(bottom,frameRect.height-padding.bottom)-Math.max(top,padding.top));
+      const visibleX = right-left < 1 ? (left>=padding.left && left<=frameRect.width-padding.right ? 1 : 0) : overlapX/(right-left);
+      const visibleY = bottom-top < 1 ? (top>=padding.top && top<=frameRect.height-padding.bottom ? 1 : 0) : overlapY/(bottom-top);
+      if (visibleX >= .8 && visibleY >= .8) return;
+      const duration=window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 350;
+      if (right-left > availableWidth || bottom-top > availableHeight) {
+        map.fitBounds(bounds, {padding, maxZoom:map.getZoom(), duration});
+        return;
+      }
+      const dx=left<padding.left ? left-padding.left : right>frameRect.width-padding.right ? right-(frameRect.width-padding.right) : 0;
+      const dy=top<padding.top ? top-padding.top : bottom>frameRect.height-padding.bottom ? bottom-(frameRect.height-padding.bottom) : 0;
+      const center=map.project(map.getCenter());
+      map.easeTo({center:map.unproject([center.x+dx,center.y+dy]), duration});
+    });
   }
   $effect(()=>{const runner=selectedRunner, activity=selectedActivity; if (ready) untrack(()=>focusRunner(runner, activity));});
   function colored(features: typeof displayData.features) {
@@ -148,9 +180,10 @@
         map.addLayer({id:'footprint-fill',type:'fill',source:'footprints',filter:['==','$type','Polygon'],paint:{'fill-color':['step',['get','count'],'#c0dfac',2,'#72b78a',4,'#2d9474',8,'#e69338',16,'#bd432c'],'fill-opacity':0.8}});
         if (onclearRunner) map.addLayer({id:'footprint-casing',type:'line',source:'footprints',filter:['==','$type','LineString'],paint:{'line-color':dark?'#302e2c':'#ffffff','line-width':5,'line-opacity':0.65},layout:{'line-join':'round','line-cap':'round'}});
         map.addLayer({id:'footprint-lines',type:'line',source:'footprints',filter:['==','$type','LineString'],paint:{'line-color':['get','color'],'line-width':3,'line-opacity':0.8},layout:{'line-join':'round','line-cap':'round'}});
-        if (onclearRunner) map.addLayer({id:'footprint-selected-casing',type:'line',source:'footprints',filter:['all',['==','$type','LineString'],['==',['get','username'],'']],paint:{'line-color':dark?'#302e2c':'#ffffff','line-width':7,'line-opacity':0.9},layout:{'line-join':'round','line-cap':'round'}});
-        if (onclearRunner) map.addLayer({id:'footprint-selected',type:'line',source:'footprints',filter:['all',['==','$type','LineString'],['==',['get','username'],'']],paint:{'line-color':['get','color'],'line-width':4,'line-opacity':1},layout:{'line-join':'round','line-cap':'round'}});
         map.addLayer({id:'footprint-points',type:'circle',source:'footprints',filter:['==','$type','Point'],paint:{'circle-color':['get','color'],'circle-radius':5}});
+        if (onclearRunner) map.addLayer({id:'footprint-selected-glow',type:'line',source:'footprints',filter:['all',['==',['geometry-type'],'LineString'],['==',['get','username'],'']],paint:{'line-color':['get','color'],'line-width':15,'line-blur':6,'line-opacity':0.5},layout:{'line-join':'round','line-cap':'round'}});
+        if (onclearRunner) map.addLayer({id:'footprint-selected-casing',type:'line',source:'footprints',filter:['all',['==',['geometry-type'],'LineString'],['==',['get','username'],'']],paint:{'line-color':dark?'#302e2c':'#ffffff','line-width':9,'line-opacity':0.95},layout:{'line-join':'round','line-cap':'round'}});
+        if (onclearRunner) map.addLayer({id:'footprint-selected',type:'line',source:'footprints',filter:['all',['==',['geometry-type'],'LineString'],['==',['get','username'],'']],paint:{'line-color':['get','color'],'line-width':5,'line-opacity':1},layout:{'line-join':'round','line-cap':'round'}});
         map.addSource('footprint-cities',{type:'geojson',data:cityMarkerData()});
         map.addLayer({id:'footprint-city-markers',type:'circle',source:'footprint-cities',maxzoom:8,paint:{'circle-radius':7,'circle-color':'#14785b','circle-stroke-width':2,'circle-stroke-color':'#ffffff','circle-opacity':0.95}});
         map.on('click','footprint-city-markers',event=>{const code=event.features?.[0]?.properties?.code;if(typeof code==='string')locateCity(code);});

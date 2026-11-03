@@ -58,3 +58,9 @@
 验证：`svelte-kit sync`、`svelte-check`（0 错误、0 警告），Vitest（44 文件、291 项通过）；合成 API 的 `playwright.together.config.ts`（17 项通过）。共享 UI 回归首次 123 通过、3 失败，失败的足迹轮询、导航玻璃态和退出用例独立重跑均通过；首次运行期间有并行浏览器测试和前端热更新。上述结果不代表开发服务已加载改动，也不代表真实底图或生产环境验收。
 
 共享 UI 回归在无并行测试与热更新的条件下完整重跑：`playwright.ui.config.ts` 的 footprints、activities、top-navigation 和 map-framing 共 126 项通过。
+
+### 地图选择与视口（2026-11-03）
+
+选择动态或跑者时，其他轨迹保持原有透明度；选中路线在上层以跑者颜色、描边和柔和光晕突出。选中路线大部分已在可用视口时保持当前视角，否则尽量平移，只有当前缩放无法容纳时才缩小；与信息卡相交时为卡片留出空间。再次选择或使用“回到全部足迹”恢复总览。手机信息卡收为紧凑的两行，仍提供公开详情链接。减弱动态效果时地图定位不播放动画。
+
+本次使用现有本地二进制执行：`svelte-kit sync` 与 `svelte-check --tsconfig ./tsconfig.json` 为 0 错误、0 警告；`vitest run` 为 44 个文件、291 项通过；合成 API 的 `playwright.together.config.ts` 为 18 项通过；`playwright.ui.config.ts tests/ui/footprints.spec.ts tests/ui/map-framing.spec.ts` 为 32 项通过（该共享回归在最后一次仅影响一起跑步的卡片避让调整前执行）。浏览器日志含既有 `replaceState` 弃用提示和合成公开页面预加载提示。未重启开发服务，也未进行真实底图或生产验收；接口、权限与隐私边界未变。

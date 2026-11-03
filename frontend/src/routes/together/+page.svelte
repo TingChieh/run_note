@@ -102,10 +102,10 @@
           {#if mapFootprints}
             <FootprintMap data={mapFootprints} animateDataChanges compact mapLabel="一起跑步足迹地图" participantColors={colors} selectedRunner={selected} selectedActivity={currentId ?? ''} onclearRunner={()=>{selected='';currentId=null;}} quietCityFailure onretry={load}>
               {#if currentActivity && selectedRecord}<article class="save-bar map-info" data-testid="together-map-info">
-                <strong>{currentActivity.title || '未命名活动'}</strong><span style:color={colors[selectedRecord.username]}>{selectedRecord.display_name}</span><span>{formatDate(currentActivity.activity_date)}</span>
-                <span>{formatDistance(currentActivity.distance_m)} · {formatDuration(activityDuration(currentActivity))} · {formatPace(currentActivity.avg_pace_seconds_per_km)}{currentActivity.avg_heart_rate_bpm == null ? '' : ` · ${currentActivity.avg_heart_rate_bpm} bpm`}</span>
-                {#if !mapFootprints.features.some(f => f.properties?.activity_id === currentId)}<span role="status">这条记录暂无可显示的路线。</span>{/if}
-                <a href={extras[currentActivity.id].href}>查看完整详情 →</a>
+                <div class="map-info-title"><strong>{currentActivity.title || '未命名活动'}</strong><span style:color={colors[selectedRecord.username]}>{selectedRecord.display_name}</span><span>{formatDate(currentActivity.activity_date)}</span></div>
+                <span class="map-info-metrics">{formatDistance(currentActivity.distance_m)} · {formatDuration(activityDuration(currentActivity))} · {formatPace(currentActivity.avg_pace_seconds_per_km)}{currentActivity.avg_heart_rate_bpm == null ? '' : ` · ${currentActivity.avg_heart_rate_bpm} bpm`}</span>
+                <div class="map-info-link">{#if !mapFootprints.features.some(f => f.properties?.activity_id === currentId)}<span role="status">暂无路线</span>{/if}
+                <a href={extras[currentActivity.id].href}>查看完整详情 →</a></div>
               </article>{/if}
             </FootprintMap>
             <div class="legend" role="region" aria-label="选择参与者"><button class="button-secondary" aria-pressed={!selected} onclick={()=>{selected='';currentId=null;}}>全部</button>{#each data.participants as runner}<button class="button-secondary" aria-pressed={selected===runner.username} onclick={()=>{selected=runner.username;currentId=null;}}><span class="dot" style:background={colors[runner.username]}></span>{@render avatar(runner)}{runner.display_name}</button>{/each}</div>
@@ -132,6 +132,9 @@
   .feed-map { min-width:0; position:sticky; top:var(--space-4); margin-top:calc(1.75rem + var(--space-3)); }
   @media (max-width:959px) { .feed-layout { display:flex; flex-direction:column; } .feed-map { position:static; margin-top:0; order:-1; width:100%; } .feed-list { width:100%; } }
   .map-info { position:absolute; z-index:3; left:var(--space-3); bottom:var(--space-8); width:max-content; min-width:min(15rem, calc(100% - 2rem)); max-width:calc(100% - 2rem); max-height:calc(100% - 6rem); overflow:auto; overflow-wrap:anywhere; gap:var(--space-1); padding:var(--space-3); color:var(--foreground); font-size:var(--text-small); }
+  .map-info-link { display:flex; flex-wrap:wrap; gap:var(--space-2); }
+  .map-info-title { display:flex; flex-wrap:wrap; gap:var(--space-2); min-width:0; }
+  @media (max-width:640px) { .map-info { width:auto; min-width:0; max-width:calc(100% - 2rem); padding:var(--space-2); gap:0; line-height:var(--line-height-title); } .map-info-title { flex-wrap:nowrap; overflow:hidden; white-space:nowrap; } .map-info-title strong { overflow:hidden; text-overflow:ellipsis; } .map-info-metrics { display:none; } .map-info-link { flex-wrap:nowrap; white-space:nowrap; } }
   .map-info a { color:var(--primary); font-weight:var(--weight-semibold); }
   .feed-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:var(--space-3); min-width:0; }
   .rank-content progress::-webkit-progress-value { transition:width var(--motion-reveal); }
