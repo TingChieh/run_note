@@ -13,3 +13,14 @@ describe('一起跑步公开契约',()=>{
     expect(()=>parseTogether({...sample, tracks:[{...sample.tracks[0],geometry:{type:'LineString',coordinates:[[200,0],[1,2]]}}]})).toThrow();
   });
 });
+
+import { participantColors } from '../../src/lib/map/together-colors.ts';
+describe('参与者颜色', () => {
+  it('稳定分配不同颜色，且不依赖返回顺序', () => {
+    const people = Array.from({ length: 40 }, (_, i) => ({ user_id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, username: `runner_${i}` }));
+    const colors = participantColors(people);
+    expect(new Set(Object.values(colors)).size).toBe(people.length);
+    expect(participantColors([...people].reverse())).toEqual(colors);
+    expect(new Set(Object.values(participantColors(people.slice(0, 8)))).size).toBe(8);
+  });
+});

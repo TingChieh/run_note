@@ -12,6 +12,7 @@ test('访客可切换排行和地图参与者', async ({page}) => {
   await expect(page.getByText('本月我们一起跑了 7.00 公里')).toBeVisible();
   const ranking=page.locator('section').filter({has:page.getByRole('heading',{name:'里程排行榜'})});
   await expect(ranking.locator('li').first()).toContainText('合成甲');
+  await expect(ranking.getByRole('link',{name:'合成甲'})).toHaveAttribute('href','/p/runner_one/dashboard');
   await page.getByRole('button',{name:'本月'}).click();
   await expect(ranking.locator('li').first()).toContainText('合成乙');
   await expect(page.getByTestId('footprint-map-ready')).toBeVisible({timeout:15000});
@@ -22,6 +23,8 @@ test('访客可切换排行和地图参与者', async ({page}) => {
   const legend=page.getByRole('region',{name:'选择参与者'});
   await expect(legend).toHaveCSS('overflow-x','auto');
   await expect(legend.locator('button').first()).toHaveCSS('white-space','nowrap');
+  expect(await legend.locator('..').evaluate(el => getComputedStyle(el, '::after').backgroundImage)).toContain('linear-gradient');
+  await expect(ranking.locator('progress').first()).toHaveCSS('appearance','none');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
   const mapBox=await page.getByTestId('footprint-map-ready').boundingBox();
   expect(mapBox && mapBox.height).toBeGreaterThan(200);
@@ -61,15 +64,16 @@ test('手机深色模式可从导航进入', async ({page}) => {
 
 
 test('分段控件和跳转链接保持正确焦点，目标面板默认收起', async ({page}) => {
+  await page.route('**/api/v1/together', route=>route.fulfill({json:{data:{distance_m:3000,count:1,participants:runners,recent:[],tracks:[]},error:null,meta:{request_id:'test'}}}));
   await page.goto('/together');
   await expect(page.getByRole('heading',{name:'一起跑步'})).toBeVisible();
   const skip=page.getByRole('link',{name:'跳转到主要内容'});
   await page.getByRole('button',{name:'本月'}).click();
   await expect(skip).not.toBeInViewport();
-  await expect(page.getByRole('group',{name:'跑量目标面板'})).toBeHidden();
+  await expect(page.locator('.goal-container .anchored-panel')).toBeHidden();
   await page.setViewportSize({width:390,height:844});
   await page.setViewportSize({width:1280,height:800});
-  await expect(page.getByRole('group',{name:'跑量目标面板'})).toBeHidden();
+  await expect(page.locator('.goal-container .anchored-panel')).toBeHidden();
   await page.keyboard.press('Tab');
   await page.goto('/settings');
   await expect(skip).not.toBeInViewport();
@@ -80,7 +84,8 @@ test('手机动态使用时间线且点击后跳转链接保持隐藏', async ({
   await page.route('**/api/v1/together', route=>route.fulfill({json:{data:{distance_m:3000,count:1,participants:runners,recent:[{id:'00000000-0000-4000-8000-000000000001',username:'runner_one',display_name:'合成甲',title:'跑步',activity_date:'2026-10-01',distance_m:3000,avg_pace_seconds_per_km:330}],tracks:[]},error:null,meta:{request_id:'test'}}}));
   await page.goto('/together');
   const recent=page.locator('section').filter({has:page.getByRole('heading',{name:'最近动态'})});
-  await expect(recent.locator('.timeline-card')).toContainText('合成甲');
+  await expect(recent.locator('.timeline-card')).toContainText('合成甲 跑了 3.00 公里');
+  await expect(recent.locator('.timeline-card')).not.toContainText('未识别城市');
   await expect(recent.getByRole('link')).toHaveAttribute('href','/p/runner_one/activities/00000000-0000-4000-8000-000000000001');
   await page.getByRole('button',{name:'本月'}).click();
   await expect(page.locator('.skip-link')).toHaveCSS('opacity','0');
@@ -88,4 +93,31 @@ test('手机动态使用时间线且点击后跳转链接保持隐藏', async ({
   await page.keyboard.press('Tab');
   await expect(page.locator('.skip-link')).toBeFocused();
   await expect(page.locator('.skip-link')).toHaveCSS('opacity','1');
+});
+
+
+test('无人加入时只显示一张空状态卡', async ({page}) => {
+  await page.goto('/together');
+  await expect(page.getByText('还没有人加入一起跑步')).toBeVisible();
+  await expect(page.getByRole('heading',{name:'里程排行榜'})).toHaveCount(0);
+  await expect(page.getByRole('heading',{name:'一起跑过的地方'})).toHaveCount(0);
+  await expect(page.getByRole('heading',{name:'最近动态'})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'全部',exact:true})).toHaveCount(0);
+});
+
+test('从桌面切到手机时设置页菜单保持关闭', async ({page}) => {
+  await loginRunner(page);
+  await page.setViewportSize({width:1280,height:800});
+  await page.goto('/settings');
+  await page.setViewportSize({width:390,height:844});
+  await expect(page.locator('#app-navigation')).toBeHidden();
+  await expect(page.getByRole('button',{name:'打开导航'})).toHaveAttribute('aria-expanded','false');
+});
+
+
+test('已登录但未加入时空状态提供设置入口', async ({page}) => {
+  await loginRunner(page);
+  await page.goto('/together');
+  await expect(page.getByRole('link',{name:'去设置里加入'})).toHaveAttribute('href','/settings');
+  await expect(page.getByRole('heading',{name:'里程排行榜'})).toHaveCount(0);
 });
