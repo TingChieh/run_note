@@ -2,8 +2,10 @@
   import '#lib/styles/activity-timeline.css';
   import ActivityCard from './ActivityCard.svelte';
   import type { Activity, Metric } from '#lib/api/activities.ts';
-  let { items, offset, total, editMode = false, selectedIds = [], disabled = false, currentId = null, onselect, onedit, ondelete, onopen }: {
+  let { items, offset, total, editMode = false, selectedIds = [], disabled = false, currentId = null, onselect, onedit, ondelete, onopen, extras, loadedSummary = false }: {
     items: Activity[]; offset: number; total: number; editMode?: boolean; selectedIds?: string[]; disabled?: boolean; currentId?: string | null;
+    loadedSummary?: boolean;
+    extras?: Record<string, { runner: { name: string; color: string; avatar: string | null; city?: string }; route: import('#lib/api/activities.ts').Route | null; href: string }>;
     onselect?: (id: string, checked: boolean) => void; onedit?: (activity: Activity) => void; ondelete?: (activity: Activity) => void; onopen?: (activity: Activity, event: MouseEvent) => void;
   } = $props();
   const weekdays = '日一二三四五六';
@@ -22,7 +24,7 @@
     }
     return result;
   });
-  const summary = (group: { items: Activity[]; partial: boolean }) => `${group.partial ? '本页 ' : ''}${group.items.length} 次 · ${(group.items.reduce((sum, item) => sum + metres(item.distance_m), 0) / 1000).toFixed(1)} km`;
+  const summary = (group: { items: Activity[]; partial: boolean }) => `${loadedSummary ? '已加载 ' : group.partial ? '本页 ' : ''}${group.items.length} 次 · ${(group.items.reduce((sum, item) => sum + metres(item.distance_m), 0) / 1000).toFixed(1)} km`;
 </script>
 <div class="activity-timeline timeline">
   {#each groups as group (group.key)}
@@ -33,7 +35,7 @@
           <li><div class="timeline-gutter" aria-hidden="true"><b>{day(activity.activity_date).day}</b><span>{day(activity.activity_date).weekday}</span></div>
             <ActivityCard {activity} selectable={editMode} selected={selectedIds.includes(activity.id)} {disabled} current={currentId === activity.id}
               onselect={checked => onselect?.(activity.id, checked)} onedit={editMode ? () => onedit?.(activity) : undefined} ondelete={editMode ? () => ondelete?.(activity) : undefined}
-              onopen={event => onopen?.(activity, event)} />
+              runner={extras?.[activity.id]?.runner} route={extras?.[activity.id]?.route} href={extras?.[activity.id]?.href} onopen={event => onopen?.(activity, event)} />
           </li>
         {/each}
       </ul>

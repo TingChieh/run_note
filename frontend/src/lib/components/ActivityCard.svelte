@@ -6,8 +6,9 @@
   import RouteThumbnail from './RouteThumbnail.svelte';
   import { activityAchievement } from '#lib/api/activity-labels.ts';
   import { formatDistance, formatDuration, activityDuration, formatPace, qualityLabel, type Activity } from '#lib/api/activities.ts';
-  let { activity, selectable = false, selected = false, disabled = false, current = false, onselect, onedit, ondelete, onopen }: {
+  let { activity, selectable = false, selected = false, disabled = false, current = false, onselect, onedit, ondelete, onopen, runner, route, href }: {
     activity: Activity; selectable?: boolean; selected?: boolean; disabled?: boolean; current?: boolean;
+    runner?: { name: string; color: string; avatar: string | null; city?: string }; route?: import('#lib/api/activities.ts').Route | null; href?: string;
     onselect?: (selected: boolean) => void; onedit?: () => void; ondelete?: () => void; onopen?: (event: MouseEvent) => void;
   } = $props();
   const achievement = $derived(activityAchievement(activity.distance_m));
@@ -15,10 +16,11 @@
 </script>
 <article class="activity-card" class:selected class:current>
   {#if selectable}<label class="card-selection"><input type="checkbox" aria-label={`选择 ${activity.title}`} checked={selected} {disabled} onchange={event => onselect?.(event.currentTarget.checked)} /></label>{/if}
-  <a href={view.href(`/activities/${activity.id}`)} class="card-link" data-activity-id={activity.id} aria-current={current ? 'true' : undefined} onclick={onopen}>
-    <RouteThumbnail {activity} compact />
+  <a href={href ?? view.href(`/activities/${activity.id}`)} class="card-link" data-activity-id={activity.id} aria-current={current ? 'true' : undefined} onclick={onopen}>
+    <RouteThumbnail {activity} initialRoute={route} managedRoute={route !== undefined} compact />
     <div class="card-main">
       <h3>{activity.title || '未命名活动'}</h3>
+      {#if runner}<p class="card-runner" style:color={runner.color}><span class="runner-icon">{#if runner.avatar}<img src={runner.avatar} alt="" />{:else}{Array.from(runner.name)[0]}{/if}</span>{runner.name}{#if runner.city} · {runner.city}{/if}</p>{/if}
       {#if achievement || activity.category || activity.tags?.length || incomplete}
         <p class="card-labels">
           {#if achievement}<span class="chip achievement">{achievement}</span>{/if}
@@ -47,6 +49,9 @@
   .card-link :global(.route-thumbnail) { flex: none; width: 3.5rem; height: 2.75rem; aspect-ratio: auto; }
   /* The thumbnail is too small for its "no route" caption: keep it for screen readers only. */
   .card-link :global(.thumbnail-empty p) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .card-runner { display:flex; align-items:center; gap:var(--space-1); font-size:var(--text-small); font-weight:var(--weight-semibold); }
+  .runner-icon { display:inline-grid; place-items:center; width:1.4rem; height:1.4rem; border-radius:50%; background:var(--muted); overflow:hidden; }
+  .runner-icon img { width:100%; height:100%; object-fit:cover; }
   .card-main { min-width: 0; flex: 1; }
   h3 { font-size: var(--text-body); font-weight: var(--weight-semibold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .card-labels { display: flex; flex-wrap: wrap; gap: .25rem .375rem; margin-top: .25rem; }

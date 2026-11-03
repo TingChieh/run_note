@@ -7,6 +7,10 @@
   import PageHeader from '#lib/components/PageHeader.svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import PageSkeleton from '#lib/components/PageSkeleton.svelte';
+  import ActivityTimeline from '#lib/components/ActivityTimeline.svelte';
+  import ActivityPreview from '#lib/components/ActivityPreview.svelte';
+  import type { Activity, Route } from '#lib/api/activities.ts';
+  import { tick } from 'svelte';
   import FootprintMap from '#lib/components/FootprintMap.svelte';
   import { participantColors } from '#lib/map/together-colors.ts';
   import { readTogether, readFeed, appendRecent, TogetherError, parsePeriod, periodCopy, type Period, type Together } from '#lib/api/together.ts';
@@ -17,15 +21,34 @@
   const colors=$derived(participantColors(data?.participants ?? []));
   const ranking=$derived([...(data?.participants ?? [])].sort((a,b)=>(b[`${period}_m`]-a[`${period}_m`]) || a.username.localeCompare(b.username)));
   const footprints=$derived(data ? {...data.footprints,features:data.footprints.features.filter(f=>!selected || f.properties?.username===selected)} : null);
-  const groups=$derived.by(() => { const result: {key:string; items:Together['recent']}[]=[]; for (const item of data?.recent ?? []) { const key=item.activity_date.slice(0,7); const last=result.at(-1); if(last?.key===key) last.items.push(item); else result.push({key,items:[item]}); } return result; });
-  const weekday=(date:string)=>`周${'日一二三四五六'[new Date(`${date}T00:00:00Z`).getUTCDay()]}`;
+  let currentId = $state<string | null>(null), mobileDetail = $state(false), scrollPosition = 0;
+  const activities = $derived((data?.recent ?? []).map((item): Activity => ({
+    id:item.id, title:item.title, category:item.category, tags:item.tags, activity_date:item.activity_date, timezone:'Asia/Shanghai',
+    started_at:null, ended_at:null, distance_m:item.distance_m, elapsed_seconds:item.elapsed_seconds,
+    timer_seconds:item.timer_seconds, avg_heart_rate_bpm:item.avg_heart_rate_bpm,
+    avg_pace_seconds_per_km:item.avg_pace_seconds_per_km, temporal_quality:item.temporal_quality, visibility:'public',
+    allow_shared_route:false, quality_summary:{}, metrics_version:'', has_route:item.geometry.length > 0, created_at:''
+  })));
+  const extras = $derived.by(() => Object.fromEntries((data?.recent ?? []).map(item => {
+    const features: Route['features'] = item.geometry.map((geometry, index) => ({type:'Feature', geometry, properties:{segment_index:index, point_count:geometry.coordinates.length}}));
+    const points = item.geometry.flatMap(g => g.coordinates);
+    const route: Route | null = points.length ? {type:'FeatureCollection',features,start:points[0],end:points[points.length-1]} : null;
+    const person = data?.participants.find(p => p.username === item.username);
+    return [item.id, {route, runner:{name:item.display_name,city:cityNames[item.id],color:colors[item.username] ?? '#14785b',avatar:person?.avatar_version ? `/api/v1/showcase/users/${encodeURIComponent(item.username)}/avatar?v=${person.avatar_version}` : null}, href:`/p/${encodeURIComponent(item.username)}/activities/${item.id}`}];
+  })));
+  const currentActivity = $derived(activities.find(item => item.id === currentId) ?? null);
+  function openRecord(activity: Activity, event: MouseEvent) {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault(); currentId = activity.id;
+    if (window.matchMedia('(max-width: 959px)').matches) { scrollPosition=window.scrollY; mobileDetail=true; void tick().then(() => document.getElementById('together-feed')?.scrollIntoView()); }
+  }
+  function backToFeed() { mobileDetail=false; void tick().then(() => { document.querySelector<HTMLElement>(`.card-link[data-activity-id="${currentId}"]`)?.focus({preventScroll:true}); window.scrollTo(0, scrollPosition); }); }
   const km=(meters:number)=>(meters/1000).toFixed(2);
-  const pace=(seconds:number|null)=>seconds === null ? '—' : `${Math.floor(Math.round(seconds)/60)}'${String(Math.round(seconds)%60).padStart(2,'0')}"`;
   const amount=(runner:Together['participants'][number])=>runner[`${period}_m`];
   async function load() {
     const current=++token; feedController?.abort(); feedLoading=false; feedError=''; controller?.abort(); controller=new AbortController(); loading=true; error='';
     try { const result=await readTogether(controller.signal, period); if (!disposed && current===token) {
-      data=result;
+      data=result; currentId=result.recent.find(item => item.id === currentId)?.id ?? result.recent[0]?.id ?? null; mobileDetail=false;
       if (!citiesStarted) { citiesStarted=true;
       try { cityWorker=new Worker(new URL('../../lib/map/together-cities.worker.ts', import.meta.url), {type:'module'}); cityWorker.onmessage=(event:MessageEvent<Record<string,string>>)=>{ if (!disposed) cityNames=event.data; }; cityWorker.postMessage(result.footprints.features); } catch { cityWorker=undefined; }
       }
@@ -68,7 +91,14 @@
       {#if data.tracks_truncated}<p class="hint">仅显示最近 500 条轨迹</p>{/if}
       <div class="legend-wrap"><div class="legend" role="region" aria-label="选择参与者"><button class="button-secondary" aria-pressed={!selected} onclick={()=>selected=''}>全部</button>{#each data.participants as runner}<button class="button-secondary" aria-pressed={selected===runner.username} onclick={()=>selected=runner.username}><span class="dot" style:background={colors[runner.username]}></span>{@render avatar(runner)}{runner.display_name}</button>{/each}</div></div>
     </section>
-    <section class="aux-panel section"><h2>最近动态</h2>{#if data.recent.length}<div class="activity-timeline">{#each groups as group}<div class="timeline-month"><header class="timeline-header"><span class="timeline-month-pill">{group.key.slice(0,4)} 年 {Number(group.key.slice(5))} 月</span></header><ul class="timeline-list">{#each group.items as activity, index (activity.id)}<li class="content-reveal" style:animation-delay={`${Math.min(index, 6) * 35}ms`}><div class="timeline-gutter" aria-hidden="true"><b>{activity.activity_date.slice(8,10)}</b><span>{weekday(activity.activity_date)}</span></div><a class="timeline-card" href={`/p/${encodeURIComponent(activity.username)}/activities/${activity.id}`}>{activity.display_name}{#if cityNames[activity.id]} 在 {cityNames[activity.id]}{/if} 跑了 {km(activity.distance_m)} 公里 · 配速 {pace(activity.avg_pace_seconds_per_km)}</a></li>{/each}</ul></div>{/each}</div>{:else}<p>暂无动态。</p>{/if}{#if data.next_cursor}<div class="feed-actions">{#if feedError}<p class="hint" role="alert">{feedError}</p>{/if}<button type="button" class="button-secondary" disabled={feedLoading || loading} onclick={loadMore}>{feedLoading ? '加载中…' : feedError ? '重试' : '加载更多'}</button></div>{/if}</section>
+    <section id="together-feed" class="aux-panel section"><h2>最近动态</h2>{#if data.recent.length}
+      <div class="feed-layout" class:mobile-detail={mobileDetail}>
+        <div class="feed-list"><ActivityTimeline items={activities} offset={0} total={activities.length} {extras} {currentId} loadedSummary onopen={openRecord} />
+          {#if data.next_cursor}<div class="feed-actions">{#if feedError}<p class="hint" role="alert">{feedError}</p>{/if}<button type="button" class="button-secondary" disabled={feedLoading || loading} onclick={loadMore}>{feedLoading ? '加载中…' : feedError ? '重试' : '加载更多'}</button></div>{/if}
+        </div>
+        {#if currentActivity && extras[currentActivity.id]}<div class="feed-preview"><button type="button" class="button-secondary feed-back" onclick={backToFeed}>返回</button><ActivityPreview activity={currentActivity} suppliedRoute={extras[currentActivity.id].route} runner={extras[currentActivity.id].runner} href={extras[currentActivity.id].href} routeColor={extras[currentActivity.id].runner.color} /></div>{/if}
+      </div>
+    {:else}<p>暂无动态。</p>{/if}</section>
     {/if}
   {/if}
 </div>
@@ -82,14 +112,15 @@
   .mode-switch.compact-switch { justify-self:start; display:inline-flex; gap:var(--space-1); padding:var(--space-1); border-radius:var(--radius-pill); background:var(--segment-track); }
   .mode-switch.compact-switch button { min-height:2.75rem; padding:0 var(--space-4); border-radius:var(--radius-pill); color:var(--muted-foreground); font-weight:var(--weight-semibold); }
   .mode-switch.compact-switch button[aria-pressed='true'] { color:var(--segment-lens-ink); background:var(--segment-lens); }
-  .timeline-card { display:block; min-width:0; padding:var(--space-3); border:1px solid var(--border); border-radius:var(--radius-card); background:var(--surface); color:var(--foreground); overflow-wrap:anywhere; }
-  .timeline-card:focus-visible { outline-offset:-3px; }
+  .feed-layout { display:grid; grid-template-columns:minmax(18rem, 1fr) minmax(0, 1.7fr); gap:var(--space-4); align-items:start; }
+  .feed-list { min-width:0; }
+  .feed-preview { min-width:0; position:sticky; top:var(--space-4); }
+  .feed-back { display:none; margin-bottom:var(--space-3); }
+  @media (max-width:959px) { .feed-layout { display:block; } .feed-preview { display:none; position:static; } .mobile-detail .feed-list { display:none; } .mobile-detail .feed-preview { display:block; } .feed-back { display:inline-flex; } }
   .feed-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:var(--space-3); min-width:0; }
-  .timeline-card { transition:border-color var(--transition-control), box-shadow var(--motion-hover); }
-  @media (hover:hover) { .timeline-card:hover { border-color:var(--primary); } }
   .rank-content progress::-webkit-progress-value { transition:width var(--motion-reveal); }
   .rank-content progress::-moz-progress-bar { transition:width var(--motion-reveal); }
-  @media (prefers-reduced-motion:reduce) { .timeline-card { transition:none; } .rank-content progress::-webkit-progress-value { transition:none; } .rank-content progress::-moz-progress-bar { transition:none; } }
+  @media (prefers-reduced-motion:reduce) { .rank-content progress::-webkit-progress-value { transition:none; } .rank-content progress::-moz-progress-bar { transition:none; } }
   .hint { color:var(--muted-foreground); font-size:var(--text-small); }
   .legend-wrap { position:relative; min-width:0; }
   @media (max-width: 799px) { .legend-wrap::after { content:""; position:absolute; inset:0 0 0 auto; width:2rem; pointer-events:none; background:linear-gradient(to right, transparent, var(--surface)); } }

@@ -38,3 +38,13 @@
 加载更多按 ID 去重，失败可重试，切换周期会取消正在进行的分页请求。首页加载使用 `PageSkeleton`；周期分段沿用设置页玻璃滑块；数字和时间线沿用活动页的 `content-reveal`，列表追加带短暂错开；排行进度沿用项目过渡令牌，地图更新复用足迹地图的减动效感知定位。减少动态效果时关闭这些 CSS 动画和地图定位动画。
 
 本次验证：隔离 PostgreSQL 18/PostGIS 的 `run_note_switch_test` 升级至当前 head，`pytest tests/integration/test_admin_users.py -k together -q` 为 1 项通过、3 项未选择；Python 3.13 的 `/tmp/run-note-venv` 执行 `pytest tests/unit -q` 为 457 项通过，Ruff 检查通过、231 个文件格式检查通过。前端 `svelte-kit sync` 与 `svelte-check` 为 0 错误、0 警告；Vitest 为 44 个文件、289 项通过；合成 API 的一起跑步 Playwright 为 13 项通过，顶部导航为 65 项通过。首次后端单元测试因没有注入必填 `DATABASE_URL` 而失败 1 项，注入不连接的隔离地址后重跑通过。Playwright 出现既有 `replaceState` 弃用警告。没有重启开发服务或进行生产验收。
+
+### 最近动态的跑步记录视图（2026-11-03）
+
+最近动态按已加载记录的月份统计次数与距离。宽屏同时显示时间线与选中记录，窄屏选择记录后在页内查看，返回时恢复列表位置和焦点；加载更多仍按游标追加、去重并可重试，切换周期时重新读取首页。地图和卡片沿用跑步记录组件，轨迹使用参与者的配色；详情只提供公开活动链接。
+
+动态接口继续在 SQL 中同时约束参与资格和 `visibility = 'public'`，增加公开分类、标签、时间质量、设备用时、经过时间、平均心率和简化路线段。平均心率已在具名公开活动中展示；路线在浏览器本地绘制，底图请求不包含轨迹。月份汇总仅包含当前已加载记录，并非整月总量。没有新增编辑、删除、分享或导出操作。
+
+验证：隔离原生 PostgreSQL 18/PostGIS `_test` 数据库迁移到当前 head 后，`pytest tests/integration/test_admin_users.py -k together -q` 为 1 通过、3 未选择，覆盖公开路线以及私人记录过滤；后端单元测试 457 通过，Ruff 检查与 231 个文件格式检查通过。前端 `svelte-kit sync` 和 `svelte-check` 为 0 错误、0 警告；Vitest 44 文件、291 项通过。浏览器测试采用合成 API，不代表开发服务或生产环境验收。
+
+合成浏览器回归：`playwright.together.config.ts` 14 项通过；`playwright.ui.config.ts tests/ui/top-navigation.spec.ts` 65 项通过；`playwright.activity-library.config.ts` 56 项通过。一起跑步用例覆盖地图、选择、手机返回与滚动恢复、分页重试及没有管理操作。首次运行一起跑步用例时，一个旧的跑者名称选择器因新增详情产生歧义而失败；收窄选择器后重跑通过。浏览器日志含既有 `replaceState` 弃用提示及合成公开页面的预加载提示。

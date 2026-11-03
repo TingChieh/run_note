@@ -468,6 +468,11 @@ def test_together_switches_and_public_filter(site, monkeypatch):  # noqa: F811
             ).status_code
             == 200
         )
+        public_feed = visitor.get("/api/v1/together/feed").json()["data"]["items"]
+        public_run = next(row for row in public_feed if row["id"] == activity_id)
+        assert public_run["geometry"] and public_run["geometry"][0]["type"] == "LineString"
+        assert "notes" not in public_run and "filename" not in public_run
+
         # A synthetic tied-date run spans the default first page and a shorter second page.
         synthetic_ids = [uuid4() for _ in range(23)]
         with engine.begin() as connection:
@@ -495,6 +500,9 @@ def test_together_switches_and_public_filter(site, monkeypatch):  # noqa: F811
         assert [row["id"] for row in first["recent"]] == [
             str(x) for x in sorted(synthetic_ids, reverse=True)[:20]
         ]
+        assert first["recent"][0]["geometry"] == []
+        assert first["recent"][0]["elapsed_seconds"] is None
+        assert first["recent"][0]["avg_heart_rate_bpm"] is None
         response = visitor.get(
             "/api/v1/together/feed", params={"before": first["next_cursor"], "limit": 50}
         )

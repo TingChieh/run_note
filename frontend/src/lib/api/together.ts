@@ -1,7 +1,7 @@
 import type { FootprintCollection } from './footprints.ts';
 
 export interface Runner { user_id: string; avatar_version: string | null; username: string; display_name: string; distance_m: number; count: number; week_m: number; month_m: number; year_m: number }
-export interface Recent { id: string; username: string; display_name: string; title: string; activity_date: string; distance_m: number; avg_pace_seconds_per_km: number | null }
+export interface Recent { id: string; username: string; display_name: string; title: string; category: string; tags: string[]; temporal_quality: 'complete' | 'incomplete' | 'invalid' | 'manual'; activity_date: string; distance_m: number; avg_pace_seconds_per_km: number | null; elapsed_seconds: number | null; timer_seconds: number | null; avg_heart_rate_bpm: number | null; geometry: {type: 'LineString'; coordinates: [number, number][]}[] }
 export interface Together { distance_m: number; count: number; participants: Runner[]; recent: Recent[]; next_cursor: string | null; tracks_truncated: boolean; footprints: FootprintCollection }
 export type Period = 'week' | 'month' | 'year';
 export const parsePeriod = (value: string | null): Period => value === 'month' || value === 'year' ? value : 'week';
@@ -19,7 +19,9 @@ export function parseFeed(value: unknown, names?: Set<string>): FeedPage {
   if (!object(value) || !Array.isArray(value.items) || !(value.next_cursor === null || typeof value.next_cursor === 'string' && value.next_cursor.length > 0 && value.next_cursor.length <= 128)) return invalid();
   const items: Recent[] = value.items.map((r: unknown) => {
     if (!object(r) || !id(r.id) || !username(r.username) || (names !== undefined && !names.has(r.username as string)) || typeof r.display_name !== 'string' || typeof r.title !== 'string' || !date(r.activity_date) || !number(r.distance_m) || !(r.avg_pace_seconds_per_km === null || number(r.avg_pace_seconds_per_km))) return invalid();
-    return {id:r.id as string, username:r.username as string, display_name:r.display_name, title:r.title, activity_date:r.activity_date as string, distance_m:r.distance_m as number, avg_pace_seconds_per_km:r.avg_pace_seconds_per_km as number | null};
+    if (typeof r.category !== 'string' || r.category.length > 30 || !Array.isArray(r.tags) || r.tags.length > 10 || !r.tags.every((tag: unknown) => typeof tag === 'string' && tag.length <= 30) || !['complete','incomplete','invalid','manual'].includes(r.temporal_quality as string)) return invalid();
+    if (![r.elapsed_seconds, r.timer_seconds].every(v => v === null || number(v)) || !(r.avg_heart_rate_bpm === null || integer(r.avg_heart_rate_bpm) && (r.avg_heart_rate_bpm as number) >= 1 && (r.avg_heart_rate_bpm as number) <= 300) || !Array.isArray(r.geometry) || !r.geometry.every((g: unknown) => object(g) && g.type === 'LineString' && Array.isArray(g.coordinates) && g.coordinates.length >= 2 && g.coordinates.every((p: unknown) => Array.isArray(p) && p.length === 2 && typeof p[0] === 'number' && Number.isFinite(p[0]) && Math.abs(p[0]) <= 180 && typeof p[1] === 'number' && Number.isFinite(p[1]) && Math.abs(p[1]) <= 85))) return invalid();
+    return {category:r.category as string, tags:r.tags as string[], temporal_quality:r.temporal_quality as Recent['temporal_quality'], elapsed_seconds:r.elapsed_seconds as number | null, timer_seconds:r.timer_seconds as number | null, avg_heart_rate_bpm:r.avg_heart_rate_bpm as number | null, geometry:r.geometry as Recent['geometry'], id:r.id as string, username:r.username as string, display_name:r.display_name, title:r.title, activity_date:r.activity_date as string, distance_m:r.distance_m as number, avg_pace_seconds_per_km:r.avg_pace_seconds_per_km as number | null};
   });
   return {items, next_cursor:value.next_cursor as string | null};
 }

@@ -21,9 +21,16 @@ class Recent(BaseModel):
     username: str
     display_name: str
     title: str
+    category: str
+    tags: list[str]
+    temporal_quality: str
     activity_date: date
     distance_m: float
     avg_pace_seconds_per_km: float | None
+    elapsed_seconds: float | None
+    timer_seconds: float | None
+    avg_heart_rate_bpm: int | None
+    geometry: list[dict]
 
 
 class Track(BaseModel):

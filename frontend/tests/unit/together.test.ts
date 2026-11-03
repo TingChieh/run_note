@@ -56,9 +56,19 @@ it('parses periods and provides overview copy', () => {
 
 import { appendRecent, parseFeed } from '../../src/lib/api/together.ts';
 it('validates feed cursors and deduplicates appended records', () => {
-  const record = {id:participant.user_id, username:'runner', display_name:'跑者', title:'晨跑', activity_date:'2026-10-01', distance_m:2000, avg_pace_seconds_per_km:null};
+  const record = {id:participant.user_id, username:'runner', display_name:'跑者', title:'晨跑', activity_date:'2026-10-01', distance_m:2000, category:'',tags:[],temporal_quality:'complete' as const,avg_pace_seconds_per_km:null,elapsed_seconds:null,timer_seconds:null,avg_heart_rate_bpm:null,geometry:[]};
   const parsed = parseFeed({items:[record], next_cursor:'opaque'}, new Set(['runner']));
   expect(appendRecent([record], parsed.items)).toEqual([record]);
   expect(parsed.next_cursor).toBe('opaque');
   expect(() => parseFeed({items:[record], next_cursor:42}, new Set(['runner']))).toThrow();
+});
+
+it('rejects feed records with invalid public duration', () => {
+  const record = {id:participant.user_id, username:'runner', display_name:'跑者', title:'晨跑', activity_date:'2026-10-01', distance_m:2000, category:'',tags:[],temporal_quality:'complete',avg_pace_seconds_per_km:null, timer_seconds:null, avg_heart_rate_bpm:null, geometry:[], elapsed_seconds:-1};
+  expect(() => parseFeed({items:[record], next_cursor:null})).toThrow();
+});
+
+it('rejects malformed public labels', () => {
+  const record = {id:participant.user_id, username:'runner', display_name:'跑者', title:'晨跑', activity_date:'2026-10-01', distance_m:2000, avg_pace_seconds_per_km:null, elapsed_seconds:null, timer_seconds:null, avg_heart_rate_bpm:null, geometry:[], category:'跑步', tags:[42], temporal_quality:'complete'};
+  expect(() => parseFeed({items:[record], next_cursor:null})).toThrow();
 });

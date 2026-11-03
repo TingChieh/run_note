@@ -37,8 +37,16 @@ def feed(db, settings, before=None, limit=20):
     rows = (
         db.execute(
             text(f"""
-        SELECT a.id, u.username, u.display_name, a.title, a.activity_date, a.distance_m,
-            a.avg_pace_seconds_per_km
+        SELECT a.id, u.username, u.display_name, a.title, a.category, a.tags,
+            a.temporal_quality, a.activity_date, a.distance_m,
+            a.avg_pace_seconds_per_km, a.elapsed_seconds, a.timer_seconds,
+            a.avg_heart_rate_bpm,
+            COALESCE((SELECT json_agg(ST_AsGeoJSON(
+                ST_SimplifyPreserveTopology(s.geom, 0.000005), 6)::json ORDER BY s.segment_index)
+                FROM activity_segments s WHERE s.activity_id = a.id AND s.geom IS NOT NULL
+                AND ST_YMin(Box3D(s.geom)) >= -85 AND ST_YMax(Box3D(s.geom)) <= 85
+                AND ST_XMax(Box3D(s.geom)) - ST_XMin(Box3D(s.geom)) <= 180), '[]'::json)
+                AS geometry
         FROM activities a JOIN users u ON u.id = a.user_id
         WHERE {ELIGIBLE} AND a.visibility = 'public' {predicate}
         ORDER BY a.activity_date DESC, a.id DESC LIMIT :limit
