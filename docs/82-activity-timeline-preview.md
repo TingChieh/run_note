@@ -28,4 +28,4 @@
 
 - 右栏会多读一次选中项的路线（缩略图自己读一次），暂不共享缓存。
 - 地址里的 `?id=` 指向别的页的记录时回退到第一条，不为此单独请求。
-- `FootprintWall`、`WallCard` 仍在（足迹墙页与活动详情页的预览在用），按 [81](81-activities-views.md) 的计划之后再删。
+- `WallCard` 仍在（活动详情页的预览在用）；`FootprintWall` 与足迹墙页已在 [83](83-footprint-wall-retired.md) 中删除。

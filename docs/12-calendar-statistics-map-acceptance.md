@@ -49,7 +49,7 @@ INTERNAL_API_BASE_URL=http://127.0.0.1:8001 pnpm dev --port 5183
 
 MapLibre 使用 OpenStreetMap 标准栅格瓦片 `https://tile.openstreetmap.org/{z}/{x}/{y}.png`，可见 © OpenStreetMap contributors 链接指向版权页。遵守 [官方瓦片政策](https://operations.osmfoundation.org/policies/tiles/)：标准 HTTPS 端点、正常浏览器 Referer/缓存、无批量下载、离线缓存或预取。
 
-本地样式和 GeoJSON 轨迹先显示，外部栅格不阻塞路线。瓦片错误/超时移除栅格，保留原分段、起终点与指标，提示并支持重试和关闭底图。外部服务接收当前视口瓦片请求元数据，不上传整份 GPX。标准瓦片为尽力服务，无 SLA；未来生产规模需重新评估服务容量与条款。
+本地样式和 GeoJSON 轨迹先显示，外部栅格不阻塞路线。瓦片错误/超时移除栅格，保留原分段、起终点与指标，提示并支持重试（“关闭底图”后来已取消，见 docs/83）。外部服务接收当前视口瓦片请求元数据，不上传整份 GPX。标准瓦片为尽力服务，无 SLA；未来生产规模需重新评估服务容量与条款。
 
 ## 实际验收
 

@@ -55,7 +55,7 @@ test('delete requires confirmation, supports Escape and retry, and returns to th
   await expect(dialog.getByRole('alert')).toContainText('删除暂时失败');
   await expect(page).toHaveURL(new RegExp(`/activities/${sampleActivity.id}$`));
   await dialog.getByRole('button', { name: '确认删除' }).click();
-  await expect(page).toHaveURL(/\/activities$/);
+  await expect(page).toHaveURL(/\/activities(\?id=[0-9a-f-]+)?$/);
   await expect(page.getByRole('heading', { name: sampleActivity.title, exact: true })).toHaveCount(0);
   expect(deletes).toBe(2);
 });

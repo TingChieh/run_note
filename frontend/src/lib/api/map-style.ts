@@ -2,7 +2,7 @@ import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
 
 export type BasemapStyle = 'positron' | 'dark' | 'liberty';
 export type BasemapPreference = BasemapStyle | 'auto';
-export type BasemapStatus = 'loading' | 'ready' | 'failed' | 'off';
+export type BasemapStatus = 'loading' | 'ready' | 'failed';
 export const BASEMAP_URL = 'https://tiles.openfreemap.org/styles/';
 export const BASEMAP_STORAGE_KEY = 'runnote-basemap';
 const preferenceEvent = 'runnote-basemap-change';

@@ -6,7 +6,7 @@ import { watchSystemTheme } from '#lib/components/system-theme.ts';
 // Owns external layers only. Local sources, markers, selections, camera and handlers survive.
 export function createBasemapController(map: LibreMap, beforeLayer: string,
   update: (state: { status: BasemapStatus; preference: BasemapPreference; style: BasemapStyle }) => void) {
-  let preference = savedBasemapPreference(), dark = false, enabled = true, disposed = false;
+  let preference = savedBasemapPreference(), dark = false, disposed = false;
   let retryAssets = false;
   let installing = false;
   let atlas: { url: string; ready: Promise<void> } | undefined;
@@ -14,7 +14,7 @@ export function createBasemapController(map: LibreMap, beforeLayer: string,
   let generation = 0, prefix = '', sources: string[] = [], layers: string[] = [];
   let abort: AbortController | undefined, timer: ReturnType<typeof setTimeout> | undefined;
   const publish = () => {
-    applyMapTheme(map, status === 'failed' || status === 'off' ? dark : active === 'dark');
+    applyMapTheme(map, status === 'failed' ? dark : active === 'dark');
     update({ status, preference, style: resolveBasemap(preference, dark) });
   };
   function clear() {
@@ -25,11 +25,11 @@ export function createBasemapController(map: LibreMap, beforeLayer: string,
     layers = []; sources = []; prefix = '';
   }
   function fail(token: number) {
-    if (disposed || token !== generation || !enabled) return;
+    if (disposed || token !== generation) return;
     retryAssets = true; clear(); status = 'failed'; publish();
   }
   async function load() {
-    if (disposed || !enabled) return;
+    if (disposed) return;
     clear(); active = resolveBasemap(preference, dark); status = 'loading'; publish();
     const token = generation, controller = new AbortController(); abort = controller;
     timer = setTimeout(() => fail(token), BASEMAP_TIMEOUT_MS);
@@ -76,7 +76,7 @@ export function createBasemapController(map: LibreMap, beforeLayer: string,
     clearTimeout(timer); timer = undefined; status = 'ready'; publish();
   }
   function onError(event: ErrorEvent & { sourceId?: string }) {
-    if (disposed || !enabled) return;
+    if (disposed) return;
     // Old tile events must not fail a newer selection. Local errors stay with its component.
     if (event.sourceId) {
       if (prefix && event.sourceId.startsWith(prefix)) fail(generation);
@@ -90,18 +90,17 @@ export function createBasemapController(map: LibreMap, beforeLayer: string,
   let initialized = false;
   const stopPreference = watchBasemapPreference(value => {
     preference = value;
-    if (initialized && enabled && active !== resolveBasemap(preference, dark)) void load();
+    if (initialized && active !== resolveBasemap(preference, dark)) void load();
     else if (initialized) publish();
   });
   const stopTheme = watchSystemTheme(value => {
     dark = value;
-    if (initialized && enabled && active !== resolveBasemap(preference, dark)) void load();
+    if (initialized && active !== resolveBasemap(preference, dark)) void load();
     else if (initialized) publish();
   });
   initialized = true; void load();
   return {
-    retry: () => { if (enabled) void load(); },
-    toggle: () => { enabled = !enabled; if (enabled) void load(); else { if (status === 'loading') retryAssets = true; clear(); status = 'off'; publish(); } },
+    retry: () => { void load(); },
     destroy: () => { disposed = true; stopPreference(); stopTheme(); clear(); map.off('render', onData); map.off('error', onError); }
   };
 }

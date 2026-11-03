@@ -44,7 +44,10 @@
         {#each activity.tags ?? [] as tag}<span class="chip">#{tag}</span>{/each}
       </p>{/if}
     </div>
-    <a class="preview-open" href={view.href(`/activities/${activity.id}`)}>查看完整详情 →</a>
+    <div class="preview-links">
+      {#if manage && activity.has_route}<ActivityPosterDialog activityId={activity.id} label="本次分享图" />{/if}
+      <a class="preview-open button-secondary" href={view.href(`/activities/${activity.id}`)}>查看完整详情 →</a>
+    </div>
   </header>
   <div class="preview-map">
     {#if route}
@@ -68,7 +71,6 @@
   </dl>
   {#if manage}<div class="preview-actions">
     <button type="button" class="button-secondary" disabled={busy} onclick={onedit}>编辑记录</button>
-    {#if activity.has_route}<ActivityPosterDialog activityId={activity.id} />{/if}
     <button type="button" class="button-secondary delete" disabled={busy} onclick={ondelete}>删除记录</button>
   </div>{/if}
 </article>
@@ -76,15 +78,14 @@
   .preview { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); overflow: hidden; min-width: 0; }
   .preview-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); padding: var(--space-4) var(--space-6) var(--space-3); }
   .preview-copy { min-width: 0; }
-  /* The title line is as tall as the month pill beside it (1.75rem) and both columns start 1rem + the card border below the top, so the two sit on one line. */
-  .preview-title { display: flex; align-items: center; min-height: 1.75rem; font-size: var(--text-card); line-height: var(--line-height-heading); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+  .preview-title { font-size: var(--text-card); line-height: var(--line-height-heading); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
   .preview-when { margin-top: .125rem; color: var(--muted-foreground); font-size: var(--text-small); font-variant-numeric: tabular-nums; }
   .preview-labels { display: flex; flex-wrap: wrap; gap: .25rem .375rem; margin-top: .5rem; }
   .chip { padding: .0625rem .5rem; border-radius: .4rem; background: var(--muted); color: var(--muted-foreground); font-size: var(--text-caption); }
   .chip.achievement, .chip.category { color: var(--primary); background: var(--route-thumbnail); }
   .chip.achievement { font-weight: var(--weight-bold); }
-  .preview-open { flex: none; padding: .375rem .875rem; border: 1px solid var(--border); border-radius: var(--radius-pill); color: var(--primary); font-size: var(--text-small); font-weight: var(--weight-semibold); white-space: nowrap; }
-  @media (hover: hover) { .preview-open:hover { border-color: var(--primary); } }
+  .preview-links { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+  .preview-links :global(.button-secondary) { min-height: 2.25rem; padding: .375rem .875rem; white-space: nowrap; }
   .preview-map { position: relative; --route-map-height: 18rem; border-block: 1px solid var(--border); background: var(--route-thumbnail); }
   .preview-map :global(> div) { margin-top: 0; border: 0; border-radius: 0; }
   .preview-map :global(details) { display: none; }

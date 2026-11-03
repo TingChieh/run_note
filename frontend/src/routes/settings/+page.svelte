@@ -90,19 +90,23 @@
       <p class="block-hint">昵称和简介会出现在个人展示页。</p>
       <label class="block-field" for="profile-name">昵称<input class="text-field" id="profile-name" required maxlength="80" bind:value={name} disabled={busy} /></label>
       <label class="block-field" for="profile-bio">个人简介<textarea class="text-field" id="profile-bio" maxlength="500" bind:value={bio} disabled={busy} rows="4"></textarea></label>
-      <div class="block-title-row">
-        <div><h3 id="wellbeing-label">身心健康</h3><p class="block-hint">关闭后隐藏入口，记录会保留</p>{#if !page.data.user.wellbeing_allowed}<p class="block-hint">已被管理员关闭</p>{/if}</div>
-        <button type="button" role="switch" class="rn-switch" aria-checked={wellbeing} aria-labelledby="wellbeing-label" disabled={busy || !page.data.user.wellbeing_allowed} onclick={() => wellbeing = !wellbeing}><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span></button>
-      </div>
     </section>
-    <section class="aux-panel settings-block" aria-labelledby="public-profile-label">
-      <div class="block-title-row">
-        <h2 id="public-profile-label">公开个人主页</h2>
-        <button type="button" role="switch" class="rn-switch" aria-checked={enabled} aria-labelledby="public-profile-label" disabled={busy} onclick={() => enabled = !enabled}><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span></button>
+    <section class="aux-panel settings-block" aria-label="展示与功能开关">
+      <div class="switch-row">
+        <div class="block-title-row">
+          <h2 id="public-profile-label">公开个人主页</h2>
+          <button type="button" role="switch" class="rn-switch" aria-checked={enabled} aria-labelledby="public-profile-label" disabled={busy} onclick={() => enabled = !enabled}><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span></button>
+        </div>
+        <p class="block-hint">仅展示主动设为公开的记录、统计和日历，不会公开历史私人记录。</p>
+        <p class="status-badge" class:on={baseline.enabled}>已保存：{baseline.enabled ? '已开启' : '已关闭'}</p>
+        <details class="block-details"><summary>展示与隐私说明</summary><p>开启完整展示后，个人展示页将展示全部记录和完整路线；这里的公开主页设置仅影响旧版摘要主页。私人备注和原始文件不公开。</p><p>关闭主页会立即关闭主页及其资料、统计、日历和列表接口。关闭主页不会撤销独立分享链接或单条公开记录；独立记录需到详情单独撤销链接或设为私人，已被他人保存的摘要无法收回。</p></details>
       </div>
-      <p class="block-hint">仅展示主动设为公开的记录、统计和日历，不会公开历史私人记录。</p>
-      <p class="status-badge" class:on={baseline.enabled}>已保存：{baseline.enabled ? '已开启' : '已关闭'}</p>
-      <details class="block-details"><summary>展示与隐私说明</summary><p>开启完整展示后，个人展示页将展示全部记录和完整路线；这里的公开主页设置仅影响旧版摘要主页。私人备注和原始文件不公开。</p><p>关闭主页会立即关闭主页及其资料、统计、日历和列表接口。关闭主页不会撤销独立分享链接或单条公开记录；独立记录需到详情单独撤销链接或设为私人，已被他人保存的摘要无法收回。</p></details>
+      <div class="switch-row">
+        <div class="block-title-row">
+          <div><h2 id="wellbeing-label">身心健康</h2><p class="block-hint">关闭后隐藏入口，记录会保留。</p>{#if !page.data.user.wellbeing_allowed}<p class="block-hint">已被管理员关闭。</p>{/if}</div>
+          <button type="button" role="switch" class="rn-switch" aria-checked={wellbeing} aria-labelledby="wellbeing-label" disabled={busy || !page.data.user.wellbeing_allowed} onclick={() => wellbeing = !wellbeing}><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span></button>
+        </div>
+      </div>
     </section>
   </form>
   <section class="aux-panel settings-block" aria-labelledby="username-title">
@@ -133,6 +137,6 @@
       {#if passwordError}<FeedbackState kind="error" title={passwordError} />{/if}
     </form></div>{/if}
   </section>
-  <SaveBar form="profile-form" {dirty} {busy} {message} {error} label="保存公开设置" busyLabel="正在保存资料与公开设置…" ondiscard={discard} />
+  <SaveBar glass form="profile-form" {dirty} {busy} {message} {error} label="保存公开设置" busyLabel="正在保存资料与公开设置…" ondiscard={discard} />
 </div>
 {/if}

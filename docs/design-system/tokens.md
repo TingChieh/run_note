@@ -35,8 +35,9 @@
 | `--sport-nav-active` / `--sport-nav-active-ink` | #e3f3d9 / #14532d | #4d4644 / #f2f0ee | 当前导航胶囊（也用于头像底）及其文字；浅色淡绿，深色中性灰 |
 | `--action` / `--action-hover` | #218538 / #176a2c | #8a847d / #a39d95 | 玻璃主操作按钮（`button.bg-primary`、`.button-primary` 等）的染色，按 `--glass-tint-opacity` 混合 |
 | `--segment-lens` / `--segment-lens-ink` / `--segment-track` | #cfeacd / #14532d / #ecebe7 | #5a5552 / #f2f0ee / #3e3b39 | 分段控件（`.settings-tabs`、`.compact-switch`、选择框展开态）的选中滑块、其文字与轨道；浅色淡绿滑块，深色中性灰 |
-| `--header-tint` / `--header-ink` / `--header-ink-muted` / `--header-tab-track` / `--header-pad` | #fbf0bd / #2a2a12 / #5a5628 / #ffffff99 / `clamp(1.25rem, 3vw, 2rem)` | 透明 / #f2f0ee / #b1aca6 / #3e3b39 / `var(--space-2) 0 var(--space-4)` | 页头（`.page-header`）：浅色是淡奶油黄的圆角卡片，深色没有色块；`--header-tab-track` 是页头里 `.settings-tabs` 的轨道 |
+| `--header-tint` / `--header-ink` / `--header-ink-muted` / `--header-tab-track` / `--header-pad` | #fbf0bd / #2a2a12 / #5a5628 / #ffffff99 / `clamp(1.25rem, 3vw, 2rem)` | #3a3735 / #f2f0ee / #b1aca6 / `--background` / `clamp(1.25rem, 3vw, 2rem)` | 页头（`.page-header`）：浅色是淡奶油黄的圆角卡片，深色是中性深灰的同尺寸圆角卡片（内边距与浅色一致，切换外观时页面不位移）；`--header-tab-track` 是页头里 `.settings-tabs` 的轨道 |
 | `--hero-bg` / `--hero-border` | #fbf0bd / 透明 | `--surface` / `--border` | 活动详情 hero（`.sport-hero`）与登录说明（`.auth-intro`）的底与边：浅色同页头，深色是卡片 |
+| `--control-accent` / `--control-accent-soft` | `--primary` / `--primary-soft` | #d9d5cf / #46433f | 表单控件的强调色：输入框与日期/时间字段的聚焦边框和外圈、字段里的日历/时钟图标、步进器 +/−、日历与时间选择里的箭头、文字按钮和悬停底。深色里不再用薄荷绿；选中的月份/日期/时间、链接、数字、进度、开关开启和数据颜色仍用 `--primary` |
 | `--sport-yellow` | #f5c519 | #54451d | 只剩海报标题块与分享预览读取，页面里不再读它 |
 | `--sport-heading-ink` | #20332b | #ffe9a5 | 同上，仅海报标题文字 |
 | `--sport-detail-ink` | #263120 | #ffe9a5 | 详情文字 |

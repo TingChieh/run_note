@@ -19,7 +19,10 @@
     const desired = box.bottom + 8 + height <= view.top + view.height - 12 ? box.bottom + 8 : box.top - 8 - height;
     top = Math.max(view.top + 12, Math.min(desired, view.top + view.height - height - 12));
     const panelWidth = panel.offsetWidth;
-    const left = view.left + Math.max(12, Math.min(box.right - view.left - panelWidth, view.width - panelWidth - 12));
+    // Open towards the free side: a picker in the left half of the screen keeps its left edge.
+    const flushLeft = box.left + box.width / 2 < view.left + view.width / 2;
+    const edge = flushLeft ? box.left - view.left : box.right - view.left - panelWidth;
+    const left = view.left + Math.max(12, Math.min(edge, view.width - panelWidth - 12));
     right = window.innerWidth - (left + panelWidth);
     positionPopoverMotion(panel, box, { left, top });
   }
@@ -80,7 +83,7 @@
   </div>
 </div>
 <style>
-  .basemap-picker { position:absolute; top:var(--space-3); right:calc(var(--space-3) + 44px); z-index:2; }
+  .basemap-picker { display:inline-block; }
   @supports selector(:popover-open) {
     .basemap-fallback { position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip-path:inset(50%); border:0; white-space:nowrap; }
   }

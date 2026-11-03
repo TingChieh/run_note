@@ -173,21 +173,17 @@ test('route map updates its fallback background without replacing the canvas or 
   await page.getByRole('button', { name: '切换到深色模式', exact: true }).click(); await expect.poll(background).toBeLessThan(60);
   expect(await original!.evaluate(el => el === document.querySelector('.maplibregl-canvas'))).toBe(true);
   const after = await start.boundingBox(); expect(after!.x).toBeCloseTo(before!.x, 1); expect(after!.y).toBeCloseTo(before!.y, 1);
-  await expect(page.getByRole('button', { name: '关闭底图', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.screenshot({ path: 'test-results/theme-detail-dark.png' });
 });
 
-test('loaded vector styles follow the theme and the basemap toggle stays off across changes', async ({ page }) => {
+test('loaded vector styles follow the theme', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
   await installActivities(page); await installNeutralTiles(page); await loginRunner(page); await page.goto(`/activities/${sampleActivity.id}`);
   await expect(page.getByTestId('route-map-ready')).toBeVisible();
   const map = page.locator('.maplibregl-canvas');
   await dimmedTiles(page, map);
   await page.emulateMedia({ colorScheme: 'light' }); await expect.poll(() => mapCorner(page, map)).toBeGreaterThan(230);
-  await page.getByRole('button', { name: '关闭底图', exact: true }).click();
-  await page.emulateMedia({ colorScheme: 'dark' }); await expect.poll(() => mapCorner(page, map)).toBeLessThan(60);
-  await expect(page.getByRole('button', { name: '开启底图', exact: true })).toHaveAttribute('aria-pressed', 'false');
-  await page.getByRole('button', { name: '开启底图', exact: true }).click();
+  await page.emulateMedia({ colorScheme: 'dark' });
   await dimmedTiles(page, map);
 });
 

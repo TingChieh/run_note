@@ -4,12 +4,9 @@ import type { PosterData } from './route-poster-data.ts';
 export const posterStyles = [
   { id: 'classic', name: '经典足迹', description: '黄色页头 · 规整网格', routes: true },
   { id: 'gallery', name: '极简画廊', description: '舒展留白 · 纯粹路线', routes: true },
-  { id: 'sport', name: '运动海报', description: '绿色主视觉 · 醒目数字', routes: true },
-  { id: 'journal', name: '足迹手账', description: '路线小卡 · 轻微错落', routes: true },
   { id: 'numeral', name: '大字里程', description: '纯数字排版 · 不含轨迹', routes: false },
   { id: 'ticket', name: '跑步票根', description: '清单存根 · 不含轨迹', routes: false },
   { id: 'medal', name: '半马勋章', description: '圆环徽章 · 不含轨迹', routes: false },
-  { id: 'stripe', name: '动感斜纹', description: '运动色带 · 不含轨迹', routes: false },
 ] as const;
 export type PosterStyle = typeof posterStyles[number]['id'];
 export const posterHasRoutes = (style: PosterStyle) => posterStyles.some(preset => preset.id === style && preset.routes);
@@ -84,7 +81,7 @@ export async function renderPoster(data: PosterData, palette: PosterPalette, sty
       for (const [px, py] of drawing.points) { ctx.beginPath(); ctx.arc(px, py, 2.2 / scale, 0, Math.PI * 2); ctx.fill(); }
       ctx.restore();
     };
-    const grid = (box: Box, cards = false) => {
+    const grid = (box: Box) => {
       if (!data.cells.length) return;
       const columns = Math.min(data.cells.length, 10, Math.max(3, Math.ceil(Math.sqrt(data.cells.length * box.width / box.height))));
       const rows = Math.ceil(data.cells.length / columns);
@@ -94,14 +91,7 @@ export async function renderPoster(data: PosterData, palette: PosterPalette, sty
         const row = Math.floor(i / columns), inRow = Math.min(columns, data.cells.length - row * columns);
         const x = box.x + (box.width - inRow * cellWidth) / 2 + (i % columns) * cellWidth;
         const y = top + row * cellHeight;
-        if (cards) {
-          const width = cellWidth - 12, height = cellHeight - 12;
-          ctx.save(); ctx.translate(x + cellWidth / 2, y + cellHeight / 2 + (i % 3 - 1) * 2); ctx.rotate((i % 3 - 1) * .022);
-          panel(-width / 2, -height / 2, width, height, palette.surface, Math.min(14, width / 8));
-          text(String(i + 1).padStart(2, '0'), -width / 2 + 8, -height / 2 + 15, 12, palette.muted, 500);
-          route(data.cells[i], { x: -width / 2 + 6, y: -height / 2 + 22, width: width - 12, height: height - 28 });
-          ctx.restore();
-        } else route(data.cells[i], { x: x + 9, y: y + 11, width: cellWidth - 18, height: cellHeight - 22 });
+        route(data.cells[i], { x: x + 9, y: y + 11, width: cellWidth - 18, height: cellHeight - 22 });
       }
     };
     const aligned = (align: CanvasTextAlign, ...args: Parameters<typeof text>) => { ctx.textAlign = align; text(...args); ctx.textAlign = 'left'; };
@@ -170,32 +160,6 @@ export async function renderPoster(data: PosterData, palette: PosterPalette, sty
         text(posterPeriod(data.month), 76, 416, 26, palette.muted);
         line(76, 460, 928);
         grid({x:64,y:504,width:952,height:1080});
-        sample(1648);
-        line(76, 1700, 928);
-        stats(1710);
-        break;
-      case 'sport':
-        panel(48, 128, 984, 388, palette.route);
-        text(posterPeriod(data.month), 82, 192, 26, palette.brandInk);
-        text('每一步，都算数', 82, 262, 46, palette.brandInk, 600);
-        text(data.kilometers, 70, 421, 146, palette.brandInk, 700, 810);
-        text('公里', 916, 410, 31, palette.brandInk);
-        ctx.fillStyle = palette.heading; ctx.fillRect(82, 466, 140, 8);
-        ctx.strokeStyle = palette.heading; ctx.lineWidth = 9;
-        for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(870 + i * 38, 218); ctx.lineTo(918 + i * 38, 160); ctx.stroke(); }
-        panel(48, 600, 984, 1040, palette.surface);
-        grid({x:80,y:580,width:920,height:980});
-        sample(1644);
-        panel(48, 1690, 984, 174, palette.surface);
-        stats(1690);
-        break;
-      case 'journal':
-        text('我的足迹收藏', 76, 190, 52, palette.foreground, 600);
-        line(76, 218, 928);
-        text(posterPeriod(data.month), 76, 270, 26, palette.muted);
-        text(data.kilometers, 70, 380, 112, palette.foreground, 600, 700);
-        text('公里', 916, 371, 31, palette.muted);
-        grid({x:64,y:440,width:952,height:1152}, true);
         sample(1648);
         line(76, 1700, 928);
         stats(1710);
@@ -271,27 +235,6 @@ export async function renderPoster(data: PosterData, palette: PosterPalette, sty
         }
         line(76, 1720, 928);
         text('每次出发，都留下了足迹', 76, 1800, 26, palette.muted);
-        break;
-      }
-      case 'stripe': {
-        ctx.save(); ctx.beginPath(); ctx.roundRect(48, 128, 984, 700, 32); ctx.clip();
-        ctx.fillStyle = palette.route; ctx.fillRect(48, 128, 984, 700);
-        ctx.fillStyle = palette.heading;
-        for (let i = 0; i < 5; i++) {
-          const x = 600 + i * 120, width = i % 2 ? 26 : 64;
-          ctx.beginPath(); ctx.moveTo(x, 828); ctx.lineTo(x + width, 828); ctx.lineTo(x + width + 300, 128); ctx.lineTo(x + 300, 128); ctx.fill();
-        }
-        ctx.restore();
-        text(posterPeriod(data.month), 82, 210, 28, palette.brandInk);
-        text('跑出自己的节奏', 82, 300, 56, palette.brandInk, 700, 500);
-        text(`${data.activityCount.toLocaleString('zh-CN')} 次出发`, 82, 760, 44, palette.brandInk, 600, 480);
-        text(lead, 76, 960, 40, palette.muted, 500);
-        figure(data.kilometers, 64, 1200, data.kilometers.length > 8 ? 130 : 190, 700, 820, '公里');
-        ctx.fillStyle = palette.heading; ctx.fillRect(76, 1250, 220, 14);
-        line(76, 1400, 928);
-        stats(1400);
-        line(76, 1600, 928);
-        text('每次出发，都留下了足迹', 76, 1700, 26, palette.muted);
         break;
       }
     }
