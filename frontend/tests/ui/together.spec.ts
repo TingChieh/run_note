@@ -6,7 +6,7 @@ const runners = [
   { user_id:'00000000-0000-4000-8000-000000000002',avatar_version:null,username:'runner_two',display_name:'合成乙',distance_m:4000,count:1,week_m:1000,month_m:4000,year_m:8000 },
 ];
 test('访客可切换排行和地图参与者', async ({page}) => {
-  await page.route('**/api/v1/together?*', route=>route.fulfill({json:{data:{distance_m:7000,count:2,participants:runners,recent:[],tracks:[{username:'runner_one',activity_id:'00000000-0000-4000-8000-000000000001',title:'合成路线',activity_date:'2026-10-01',segment_index:0,geometry:{type:'LineString',coordinates:[[10,10],[10.01,10.01]]}}]},error:null,meta:{request_id:'test'}}}));
+  await page.route('**/api/v1/together?*', route=>route.fulfill({json:{data:{next_cursor:null,tracks_truncated:false,distance_m:7000,count:2,participants:runners,recent:[],tracks:[{username:'runner_one',activity_id:'00000000-0000-4000-8000-000000000001',title:'合成路线',activity_date:'2026-10-01',segment_index:0,geometry:{type:'LineString',coordinates:[[10,10],[10.01,10.01]]}}]},error:null,meta:{request_id:'test'}}}));
   await page.goto('/together');
   await expect(page.getByRole('heading',{name:'一起跑步'})).toBeVisible();
   await expect(page.getByText('本周我们一起跑了 7.00 公里')).toBeVisible();
@@ -64,7 +64,7 @@ test('手机深色模式可从导航进入', async ({page}) => {
 
 
 test('分段控件和跳转链接保持正确焦点，目标面板默认收起', async ({page}) => {
-  await page.route('**/api/v1/together?*', route=>route.fulfill({json:{data:{distance_m:3000,count:1,participants:runners,recent:[],tracks:[]},error:null,meta:{request_id:'test'}}}));
+  await page.route('**/api/v1/together?*', route=>route.fulfill({json:{data:{next_cursor:null,tracks_truncated:false,distance_m:3000,count:1,participants:runners,recent:[],tracks:[]},error:null,meta:{request_id:'test'}}}));
   await page.goto('/together');
   await expect(page.getByRole('heading',{name:'一起跑步'})).toBeVisible();
   const skip=page.getByRole('link',{name:'跳转到主要内容'});
@@ -81,7 +81,7 @@ test('分段控件和跳转链接保持正确焦点，目标面板默认收起',
 
 test('手机动态使用时间线且点击后跳转链接保持隐藏', async ({page}) => {
   await page.setViewportSize({width:390,height:844});
-  await page.route('**/api/v1/together?*', route=>route.fulfill({json:{data:{distance_m:3000,count:1,participants:runners,recent:[{id:'00000000-0000-4000-8000-000000000001',username:'runner_one',display_name:'合成甲',title:'跑步',activity_date:'2026-10-01',distance_m:3000,avg_pace_seconds_per_km:330}],tracks:[]},error:null,meta:{request_id:'test'}}}));
+  await page.route('**/api/v1/together?*', route=>route.fulfill({json:{data:{next_cursor:null,tracks_truncated:false,distance_m:3000,count:1,participants:runners,recent:[{id:'00000000-0000-4000-8000-000000000001',username:'runner_one',display_name:'合成甲',title:'跑步',activity_date:'2026-10-01',distance_m:3000,avg_pace_seconds_per_km:330}],tracks:[]},error:null,meta:{request_id:'test'}}}));
   await page.goto('/together');
   const recent=page.locator('section').filter({has:page.getByRole('heading',{name:'最近动态'})});
   await expect(recent.locator('.timeline-card')).toContainText('合成甲 跑了 3.00 公里');
@@ -136,7 +136,7 @@ test('已登录但未加入时空状态提供设置入口', async ({page}) => {
 test('单人单条记录的摘要、排行、地图和动态完整显示', async ({page}) => {
   await page.emulateMedia({ reducedMotion:'reduce' });
   const coordinates = Array.from({length:49}, (_, i) => [10 + Math.sin(i * Math.PI / 24) * .001, 10 + Math.cos(i * Math.PI / 24) * .001]);
-  await page.route('**/api/v1/together?*', route=>route.fulfill({json:{data:{distance_m:3000,count:1,participants:[runners[0]],recent:[{id:runners[0].user_id,username:'runner_one',display_name:'合成甲',title:'合成路线',activity_date:'2026-10-01',distance_m:3000,avg_pace_seconds_per_km:330}],tracks:[{username:'runner_one',activity_id:runners[0].user_id,title:'合成路线',activity_date:'2026-10-01',segment_index:0,geometry:{type:'LineString',coordinates}}]},error:null,meta:{request_id:'test'}}}));
+  await page.route('**/api/v1/together?*', route=>route.fulfill({json:{data:{next_cursor:null,tracks_truncated:false,distance_m:3000,count:1,participants:[runners[0]],recent:[{id:runners[0].user_id,username:'runner_one',display_name:'合成甲',title:'合成路线',activity_date:'2026-10-01',distance_m:3000,avg_pace_seconds_per_km:330}],tracks:[{username:'runner_one',activity_id:runners[0].user_id,title:'合成路线',activity_date:'2026-10-01',segment_index:0,geometry:{type:'LineString',coordinates}}]},error:null,meta:{request_id:'test'}}}));
   await page.goto('/together');
   await expect(page.getByText('本周我们一起跑了 3.00 公里')).toBeVisible();
   await expect(page.getByText('1 人 · 1 次')).toBeVisible();
@@ -180,7 +180,7 @@ test('周期更新摘要和地址，刷新保留年份且动态不变', async ({
   await page.route('**/api/v1/together?*', route => {
     const period = new URL(route.request().url()).searchParams.get('period');
     const distance = period === 'year' ? 13000 : period === 'month' ? 7000 : 4000;
-    return route.fulfill({json:{data:{distance_m:distance,count:2,participants:runners,recent:[{id:runners[0].user_id,username:'runner_one',display_name:'合成甲',title:'跑步',activity_date:'2026-10-01',distance_m:3000,avg_pace_seconds_per_km:330}],tracks:[]},error:null,meta:{request_id:'test'}}});
+    return route.fulfill({json:{data:{next_cursor:null,tracks_truncated:false,distance_m:distance,count:2,participants:runners,recent:[{id:runners[0].user_id,username:'runner_one',display_name:'合成甲',title:'跑步',activity_date:'2026-10-01',distance_m:3000,avg_pace_seconds_per_km:330}],tracks:[]},error:null,meta:{request_id:'test'}}});
   });
   await page.goto('/together');
   const recent = page.locator('section').filter({has:page.getByRole('heading',{name:'最近动态'})});
@@ -195,4 +195,31 @@ test('周期更新摘要和地址，刷新保留年份且动态不变', async ({
   await page.reload();
   await expect(page.getByText('今年我们一起跑了 13.00 公里')).toBeVisible();
   await expect(recent.locator('.timeline-card')).toContainText('合成甲 跑了 3.00 公里');
+});
+
+test('动态分页失败可重试，追加去重并在末页隐藏按钮', async ({page}) => {
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.setViewportSize({width:320,height:800});
+  const record = {id:runners[0].user_id,username:'runner_one',display_name:'合成甲',title:'跑步',activity_date:'2026-10-01',distance_m:3000,avg_pace_seconds_per_km:null};
+  await page.route('**/api/v1/together?*', route=>route.fulfill({json:{data:{distance_m:3000,count:1,participants:[runners[0]],recent:[record],tracks:[],next_cursor:'cursor',tracks_truncated:true},error:null,meta:{request_id:'test'}}}));
+  let attempts=0;
+  await page.route('**/api/v1/together/feed?*', route=>{ attempts++; return attempts===1 ? route.fulfill({status:503,json:{error:{code:'FAILED'}}}) : route.fulfill({json:{data:{items:[record,{...record,id:runners[1].user_id,activity_date:'2026-09-30'}],next_cursor:null},error:null,meta:{request_id:'test'}}}); });
+  await page.goto('/together');
+  await expect(page.getByText('仅显示最近 500 条轨迹')).toBeVisible();
+  const recent=page.locator('section').filter({has:page.getByRole('heading',{name:'最近动态'})});
+  await recent.getByRole('button',{name:'加载更多'}).click();
+  await expect(recent.getByRole('alert')).toBeVisible();
+  await recent.getByRole('button',{name:'重试'}).click();
+  await expect(recent.locator('.timeline-card')).toHaveCount(2);
+  await expect(recent.locator('.timeline-month')).toHaveCount(2);
+  await expect(recent.getByRole('button',{name:'加载更多'})).toHaveCount(0);
+  await expect(recent.locator('.timeline-list li').first()).toHaveCSS('animation-name','none');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('轨迹未截断时不显示截断提示', async ({page}) => {
+  await page.route('**/api/v1/together?*', route=>route.fulfill({json:{data:{distance_m:0,count:0,participants:[runners[0]],recent:[],tracks:[],next_cursor:null,tracks_truncated:false},error:null,meta:{request_id:'test'}}}));
+  await page.goto('/together');
+  await expect(page.getByRole('heading',{name:'一起跑过的地方'})).toBeVisible();
+  await expect(page.getByText('仅显示最近 500 条轨迹')).toHaveCount(0);
 });

@@ -393,6 +393,10 @@ def test_together_switches_and_public_filter(site, monkeypatch):  # noqa: F811
             included = payload["username"] in [row["username"] for row in data["participants"]]
             if not included:
                 assert all(row["username"] != payload["username"] for row in data["recent"])
+                assert all(
+                    row["username"] != payload["username"]
+                    for row in visitor.get("/api/v1/together/feed").json()["data"]["items"]
+                )
                 assert all(row["username"] != payload["username"] for row in data["tracks"])
                 if baseline is not None:
                     assert data["distance_m"] == baseline["distance_m"]
@@ -432,6 +436,10 @@ def test_together_switches_and_public_filter(site, monkeypatch):  # noqa: F811
             )
         private = visitor.get("/api/v1/together").json()["data"]
         assert all(row["id"] != activity_id for row in private["recent"])
+        assert all(
+            row["id"] != activity_id
+            for row in visitor.get("/api/v1/together/feed").json()["data"]["items"]
+        )
         assert all(row["activity_id"] != activity_id for row in private["tracks"])
         assert (
             next(row for row in private["participants"] if row["username"] == payload["username"])[
@@ -460,6 +468,44 @@ def test_together_switches_and_public_filter(site, monkeypatch):  # noqa: F811
             ).status_code
             == 200
         )
+        # A synthetic tied-date run spans the default first page and a shorter second page.
+        synthetic_ids = [uuid4() for _ in range(23)]
+        with engine.begin() as connection:
+            connection.execute(
+                Activity.__table__.insert(),
+                [
+                    {
+                        "id": identifier,
+                        "user_id": UUID(account["id"]),
+                        "source": "manual",
+                        "title": "分页合成",
+                        "activity_date": date(2099, 1, 1),
+                        "date_source": "manual",
+                        "timezone": "UTC",
+                        "distance_m": 1000,
+                        "temporal_quality": "manual",
+                        "quality_summary": {},
+                        "metrics_version": "test",
+                        "visibility": "public",
+                    }
+                    for identifier in synthetic_ids
+                ],
+            )
+        first = visitor.get("/api/v1/together?period=week").json()["data"]
+        assert [row["id"] for row in first["recent"]] == [
+            str(x) for x in sorted(synthetic_ids, reverse=True)[:20]
+        ]
+        response = visitor.get(
+            "/api/v1/together/feed", params={"before": first["next_cursor"], "limit": 50}
+        )
+        assert response.headers["cache-control"] == "no-store"
+        rest = response.json()["data"]
+        assert [row["id"] for row in rest["items"][:3]] == [
+            str(x) for x in sorted(synthetic_ids, reverse=True)[20:]
+        ]
+        assert rest["next_cursor"] is None
+        with engine.begin() as connection:
+            connection.execute(Activity.__table__.delete().where(Activity.id.in_(synthetic_ids)))
         entry = user.put(
             "/api/v1/me/wellbeing/days/2020-01-01/entry",
             headers=user_headers,
@@ -470,6 +516,10 @@ def test_together_switches_and_public_filter(site, monkeypatch):  # noqa: F811
         assert result.status_code == 200, result.text
         data = result.json()["data"]
         assert data["count"] >= 1 and data["tracks"] and data["recent"]
+        assert data["tracks_truncated"] is False
+        for query in ("?before=***", "?limit=0", "?limit=51"):
+            invalid_feed = visitor.get("/api/v1/together/feed" + query)
+            assert invalid_feed.status_code == 422 and invalid_feed.json()["error"]
         assert result.headers["cache-control"] == "no-store"
         assert "SECRET_WELLBEING" not in result.text
         invalid = visitor.get("/api/v1/together?period=bad")
@@ -525,7 +575,8 @@ def test_together_switches_and_public_filter(site, monkeypatch):  # noqa: F811
                 WHERE activity_id = :activity_id AND segment_index = 0"""),
                 {"activity_id": UUID(activity_id)},
             )
-        assert len(visitor.get("/api/v1/together?period=year").json()["data"]["tracks"]) == 500
+        view = visitor.get("/api/v1/together?period=year").json()["data"]
+        assert len(view["tracks"]) == 500 and view["tracks_truncated"] is True
         assert (
             user.patch(
                 "/api/v1/me", headers=user_headers, json={"profile_is_public": False}

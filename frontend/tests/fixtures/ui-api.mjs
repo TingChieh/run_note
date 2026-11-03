@@ -185,7 +185,7 @@ createServer(async (req, res) => {
     }
     return send(null,405,'不支持的请求');
   }
-  if (url.pathname === '/api/v1/together' && req.method === 'GET') return send({distance_m:0,count:0,participants:[],recent:[],tracks:[]});
+  if (url.pathname === '/api/v1/together' && req.method === 'GET') return send({distance_m:0,count:0,participants:[],recent:[],tracks:[],next_cursor:null,tracks_truncated:false});
   const publicRead = req.method === 'GET' && (url.pathname.startsWith('/api/v1/public/') || url.pathname.startsWith('/api/v1/shared/'));
   if (!signedIn && !showcase && !publicRead) return send(null, 401);
   if (url.pathname === '/api/v1/me' && req.method === 'GET') return send(current?.is_admin ? user : clean(current ?? user));

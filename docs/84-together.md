@@ -8,7 +8,9 @@
 
 ## 接口与隐私
 
-`GET /api/v1/together?period=week|month|year` 无需登录，默认 `week`，无效值返回 422，账号须同时满足管理员许可、本人加入和公开主页三个开关，且具名展示可访问；任一条件关闭后下一次请求不再包含该用户。接口不缓存，响应带 `Cache-Control: no-store`。仅统计 `visibility=public` 的记录和路线，私人及不公开链接记录不参与任何汇总、排行、动态或地图。总里程、次数和路线按所选周期筛选：以服务端时钟转换到 Asia/Shanghai 的日期计算，自自然周周一、月初或元旦 00:00 起至明日 00:00（不含）；参与人数为符合条件的账号数。最近动态始终为最新 20 条公开记录，不随周期变化。每个周期地图最多返回最近 500 段路线。
+`GET /api/v1/together?period=week|month|year` 无需登录，默认 `week`，无效值返回 422，账号须同时满足管理员许可、本人加入和公开主页三个开关，且具名展示可访问；任一条件关闭后下一次请求不再包含该用户。接口不缓存，响应带 `Cache-Control: no-store`。仅统计 `visibility=public` 的记录和路线，私人及不公开链接记录不参与任何汇总、排行、动态或地图。总里程、次数和路线按所选周期筛选：以服务端时钟转换到 Asia/Shanghai 的日期计算，自自然周周一、月初或元旦 00:00 起至明日 00:00（不含）；参与人数为符合条件的账号数。最近动态首页为最新 20 条公开记录，不随周期变化，切换周期时重新读取首页；可以加载更多。每个周期地图最多返回最近 500 段路线，超出时显示「仅显示最近 500 条轨迹」。
+
+首页响应新增 `next_cursor`（没有下一页时为 null）和 `tracks_truncated`（确有超过 500 段符合条件时为 true）。`GET /api/v1/together/feed?before=<cursor>&limit=20` 单独读取动态，不重新加载地图或排行；limit 范围 1–50，游标不合法或 limit 越界返回 422。记录以日期和 ID 降序排列，相同日期按 ID 排序，客户端应将游标视为不透明值；数据可能在分页期间改变，并非快照。接口沿用相同参与条件、公开可见性和 no-store。
 
 响应包含参与者标识、昵称、头像版本、公开运动汇总、最多 20 条动态和最近最多 500 段简化路线；不包含邮箱、备注、原始文件或身心健康数据。地图颜色从用户 ID 稳定派生；轨迹留在浏览器，不发送给底图服务。地图不显示极区或跨日期变更线的轨迹段。具名个人展示原有完整展示规则不受此接口过滤规则改变。
 
@@ -29,3 +31,10 @@
 ### 周期扩展验证（2026-11-03）
 
 在临时隔离 PostgreSQL 18/PostGIS `together_test` 库迁移至 head 后，`pytest tests/integration/test_admin_users.py -k together -q`：1 项通过、3 项未选择；覆盖上海时区跨日、周/月/年边界、无效参数、路线 500 段上限和不缓存。前端 `pnpm check`：0 错误、0 警告；`pnpm vitest run`：44 个文件、288 项通过；合成 API 的 `playwright.together.config.ts`：11 项通过；`playwright.ui.config.ts` 的 `top-navigation.spec.ts`：65 项通过。后端使用环境中已有的 Python 3.13 虚拟环境执行，仓库内 Python 3.12 虚拟环境不可用；这些结果不代表开发服务已重启或生产验收。
+
+
+### 动态分页与动效跟进（2026-11-03）
+
+加载更多按 ID 去重，失败可重试，切换周期会取消正在进行的分页请求。首页加载使用 `PageSkeleton`；周期分段沿用设置页玻璃滑块；数字和时间线沿用活动页的 `content-reveal`，列表追加带短暂错开；排行进度沿用项目过渡令牌，地图更新复用足迹地图的减动效感知定位。减少动态效果时关闭这些 CSS 动画和地图定位动画。
+
+本次验证：隔离 PostgreSQL 18/PostGIS 的 `run_note_switch_test` 升级至当前 head，`pytest tests/integration/test_admin_users.py -k together -q` 为 1 项通过、3 项未选择；Python 3.13 的 `/tmp/run-note-venv` 执行 `pytest tests/unit -q` 为 457 项通过，Ruff 检查通过、231 个文件格式检查通过。前端 `svelte-kit sync` 与 `svelte-check` 为 0 错误、0 警告；Vitest 为 44 个文件、289 项通过；合成 API 的一起跑步 Playwright 为 13 项通过，顶部导航为 65 项通过。首次后端单元测试因没有注入必填 `DATABASE_URL` 而失败 1 项，注入不连接的隔离地址后重跑通过。Playwright 出现既有 `replaceState` 弃用警告。没有重启开发服务或进行生产验收。

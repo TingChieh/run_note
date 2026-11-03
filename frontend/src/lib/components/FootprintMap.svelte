@@ -15,7 +15,7 @@
   import { createBasemapController } from '#lib/map/basemap-controller.ts';
   import { watchSystemTheme } from './system-theme';
   import 'maplibre-gl/dist/maplibre-gl.css';
-  let { data, onretry, participantColors = {}, mapLabel = "", quietCityFailure = false }: {data: FootprintCollection; onretry: () => void; participantColors?: Record<string, string>; mapLabel?: string; quietCityFailure?: boolean} = $props();
+  let { data, onretry, participantColors = {}, mapLabel = "", quietCityFailure = false, animateDataChanges = false }: {data: FootprintCollection; onretry: () => void; participantColors?: Record<string, string>; mapLabel?: string; quietCityFailure?: boolean; animateDataChanges?: boolean} = $props();
   let container: HTMLDivElement, frameEl: HTMLDivElement, map: LibreMap | undefined, disposed=false;
   let framing: 'auto' | 'all' | 'picked' | 'free' = 'auto';
   let ready=$state(false), error=$state(''), basemap=$state<'loading'|'ready'|'failed'>('loading');
@@ -103,7 +103,7 @@
     if(!map || !source || appliedData===data)return;
     appliedData=data;
     source.setData({type:'FeatureCollection',features:colored(displayData.features)});
-    framing='auto';choices=[];heat=null;heatPage=0;highlight([]);loadCities();frameInitial();
+    framing='auto';choices=[];heat=null;heatPage=0;highlight([]);loadCities();fit(allBounds, animateDataChanges);
   }
   $effect(()=>{data;untrack(applyData);});
   function colored(features: typeof displayData.features) {

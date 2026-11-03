@@ -6,11 +6,13 @@
   import { pageTitle } from '#lib/site.ts';
   import PageHeader from '#lib/components/PageHeader.svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
+  import PageSkeleton from '#lib/components/PageSkeleton.svelte';
   import FootprintMap from '#lib/components/FootprintMap.svelte';
   import { participantColors } from '#lib/map/together-colors.ts';
-  import { readTogether, TogetherError, parsePeriod, periodCopy, type Period, type Together } from '#lib/api/together.ts';
+  import { readTogether, readFeed, appendRecent, TogetherError, parsePeriod, periodCopy, type Period, type Together } from '#lib/api/together.ts';
   let data=$state<Together | null>(null), error=$state(''), loading=$state(true), period=$state<Period>('week'), selected=$state('');
-  let disposed=false, token=0, citiesStarted=false, controller:AbortController, cityWorker:Worker | undefined;
+  let disposed=false, token=0, citiesStarted=false, controller:AbortController, feedController:AbortController | undefined, cityWorker:Worker | undefined;
+  let feedLoading=$state(false), feedError=$state('');
   let cityNames=$state<Record<string,string>>({});
   const colors=$derived(participantColors(data?.participants ?? []));
   const ranking=$derived([...(data?.participants ?? [])].sort((a,b)=>(b[`${period}_m`]-a[`${period}_m`]) || a.username.localeCompare(b.username)));
@@ -21,7 +23,7 @@
   const pace=(seconds:number|null)=>seconds === null ? '—' : `${Math.floor(Math.round(seconds)/60)}'${String(Math.round(seconds)%60).padStart(2,'0')}"`;
   const amount=(runner:Together['participants'][number])=>runner[`${period}_m`];
   async function load() {
-    const current=++token; controller?.abort(); controller=new AbortController(); loading=true; error='';
+    const current=++token; feedController?.abort(); feedLoading=false; feedError=''; controller?.abort(); controller=new AbortController(); loading=true; error='';
     try { const result=await readTogether(controller.signal, period); if (!disposed && current===token) {
       data=result;
       if (!citiesStarted) { citiesStarted=true;
@@ -31,11 +33,24 @@
     catch(cause) { if(disposed || current!==token)return; data=null; if(cause instanceof TogetherError && cause.status===401) { window.location.replace('/admin?reason=expired'); return; } error=cause instanceof Error?cause.message:'读取失败'; }
     finally { if(!disposed && current===token) loading=false; }
   }
+  async function loadMore() {
+    if (!data?.next_cursor || feedLoading || loading) return;
+    const current=token, cursor=data.next_cursor;
+    feedController?.abort(); feedController=new AbortController(); feedLoading=true; feedError='';
+    try {
+      const result=await readFeed(feedController.signal,cursor);
+      if (!disposed && current===token && data) data={...data,recent:appendRecent(data.recent,result.items),next_cursor:result.next_cursor};
+    } catch (cause) {
+      if (disposed || current!==token) return;
+      if (cause instanceof TogetherError && cause.status===401) { data=null; window.location.replace('/admin?reason=expired'); return; }
+      feedError=cause instanceof Error ? cause.message : '动态加载失败，请重试';
+    } finally { if (!disposed && current===token) feedLoading=false; }
+  }
   function selectPeriod(value: Period) {
     if (period === value) return;
     period=value; const url=new URL(window.location.href); url.searchParams.set('period', value); replaceState(url, page.state); void load();
   }
-  onMount(()=>{period=parsePeriod(page.url.searchParams.get('period')); void load(); return ()=>{disposed=true;token++;controller?.abort();cityWorker?.terminate();};});
+  onMount(()=>{period=parsePeriod(page.url.searchParams.get('period')); void load(); return ()=>{disposed=true;token++;controller?.abort();feedController?.abort();cityWorker?.terminate();};});
 </script>
 <svelte:head><title>{pageTitle('一起跑步',page.data.site)}</title></svelte:head>
 {#snippet avatar(runner: Together['participants'][number])}
@@ -43,16 +58,17 @@
 {/snippet}
 <div class="together-stack">
   <PageHeader title="一起跑步" description="汇聚每一段脚步，一起探索跑过的地方。" />
-  {#if loading && !data}<FeedbackState kind="loading" title="正在读取一起跑步…" />{:else if error}<FeedbackState kind="error" title={error}><button class="button-secondary" onclick={load}>重试</button></FeedbackState>{:else if data}
+  {#if loading && !data}<PageSkeleton title="正在读取一起跑步…" />{:else if error}<FeedbackState kind="error" title={error}><button class="button-secondary" onclick={load}>重试</button></FeedbackState>{:else if data}
     {#if !data.participants.length}<section class="aux-panel section">{#if page.data.user}<p>还没有人加入一起跑步</p><p>在设置里打开『一起跑步』就能加入</p><a href="/settings">去设置里加入</a>{:else}<p>还没有人加入</p>{/if}</section>{:else}
-    <section class="aux-panel section"><h2>{periodCopy(period)}我们一起跑了 <strong class="overview-distance">{km(data.distance_m)}</strong> 公里</h2><p class="overview-detail">{data.participants.length} 人 · {data.count} 次</p></section>
+    <section class="aux-panel section content-reveal"><h2>{periodCopy(period)}我们一起跑了 {#key data.distance_m}<strong class="overview-distance content-reveal">{km(data.distance_m)}</strong>{/key} 公里</h2><p class="overview-detail">{data.participants.length} 人 · {data.count} 次</p></section>
     <section class="aux-panel section"><h2>里程排行榜</h2><div class="mode-switch compact-switch" role="group" aria-label="排行榜时间"><button type="button" aria-pressed={period==='week'} onclick={()=>selectPeriod('week')}>本周</button><button type="button" aria-pressed={period==='month'} onclick={()=>selectPeriod('month')}>本月</button><button type="button" aria-pressed={period==='year'} onclick={()=>selectPeriod('year')}>今年</button></div>
-      {#if ranking.length}<ol>{#each ranking as runner, i}<li class="rank-row">{@render avatar(runner)}<div class="rank-content"><div class="row"><span>{i+1}. <a href={`/p/${encodeURIComponent(runner.username)}/dashboard`}>{runner.display_name}</a></span><strong>{km(amount(runner))} km</strong></div><progress style:--runner-color={colors[runner.username]} max="100" value={i===0 ? 100 : amount(ranking[0]) ? amount(runner)/amount(ranking[0])*100 : 0} aria-label={`${runner.display_name}排行进度`}></progress></div></li>{/each}</ol>{:else}<p>暂无排行。</p>{/if}
+      {#if ranking.length}<ol>{#each ranking as runner, i (runner.user_id)}<li class="rank-row">{@render avatar(runner)}<div class="rank-content"><div class="row"><span>{i+1}. <a href={`/p/${encodeURIComponent(runner.username)}/dashboard`}>{runner.display_name}</a></span><strong>{km(amount(runner))} km</strong></div><progress style:--runner-color={colors[runner.username]} max="100" value={i===0 ? 100 : amount(ranking[0]) ? amount(runner)/amount(ranking[0])*100 : 0} aria-label={`${runner.display_name}排行进度`}></progress></div></li>{/each}</ol>{:else}<p>暂无排行。</p>{/if}
     </section>
-    <section class="aux-panel section"><h2>一起跑过的地方</h2><p class="hint">展示所选时段最近最多 500 段经过简化的路线。</p>{#if footprints && data.footprints.features.length}<FootprintMap data={footprints} mapLabel="一起跑步足迹地图" participantColors={colors} quietCityFailure onretry={load} />{:else}<p>暂无可显示的路线。</p>{/if}
+    <section class="aux-panel section"><h2>一起跑过的地方</h2><p class="hint">展示所选时段最近最多 500 段经过简化的路线。</p>{#if footprints && data.footprints.features.length}<FootprintMap data={footprints} animateDataChanges mapLabel="一起跑步足迹地图" participantColors={colors} quietCityFailure onretry={load} />{:else}<p>暂无可显示的路线。</p>{/if}
+      {#if data.tracks_truncated}<p class="hint">仅显示最近 500 条轨迹</p>{/if}
       <div class="legend-wrap"><div class="legend" role="region" aria-label="选择参与者"><button class="button-secondary" aria-pressed={!selected} onclick={()=>selected=''}>全部</button>{#each data.participants as runner}<button class="button-secondary" aria-pressed={selected===runner.username} onclick={()=>selected=runner.username}><span class="dot" style:background={colors[runner.username]}></span>{@render avatar(runner)}{runner.display_name}</button>{/each}</div></div>
     </section>
-    <section class="aux-panel section"><h2>最近动态</h2>{#if data.recent.length}<div class="activity-timeline">{#each groups as group}<div class="timeline-month"><header class="timeline-header"><span class="timeline-month-pill">{group.key.slice(0,4)} 年 {Number(group.key.slice(5))} 月</span></header><ul class="timeline-list">{#each group.items as activity}<li><div class="timeline-gutter" aria-hidden="true"><b>{activity.activity_date.slice(8,10)}</b><span>{weekday(activity.activity_date)}</span></div><a class="timeline-card" href={`/p/${encodeURIComponent(activity.username)}/activities/${activity.id}`}>{activity.display_name}{#if cityNames[activity.id]} 在 {cityNames[activity.id]}{/if} 跑了 {km(activity.distance_m)} 公里 · 配速 {pace(activity.avg_pace_seconds_per_km)}</a></li>{/each}</ul></div>{/each}</div>{:else}<p>暂无动态。</p>{/if}</section>
+    <section class="aux-panel section"><h2>最近动态</h2>{#if data.recent.length}<div class="activity-timeline">{#each groups as group}<div class="timeline-month"><header class="timeline-header"><span class="timeline-month-pill">{group.key.slice(0,4)} 年 {Number(group.key.slice(5))} 月</span></header><ul class="timeline-list">{#each group.items as activity, index (activity.id)}<li class="content-reveal" style:animation-delay={`${Math.min(index, 6) * 35}ms`}><div class="timeline-gutter" aria-hidden="true"><b>{activity.activity_date.slice(8,10)}</b><span>{weekday(activity.activity_date)}</span></div><a class="timeline-card" href={`/p/${encodeURIComponent(activity.username)}/activities/${activity.id}`}>{activity.display_name}{#if cityNames[activity.id]} 在 {cityNames[activity.id]}{/if} 跑了 {km(activity.distance_m)} 公里 · 配速 {pace(activity.avg_pace_seconds_per_km)}</a></li>{/each}</ul></div>{/each}</div>{:else}<p>暂无动态。</p>{/if}{#if data.next_cursor}<div class="feed-actions">{#if feedError}<p class="hint" role="alert">{feedError}</p>{/if}<button type="button" class="button-secondary" disabled={feedLoading || loading} onclick={loadMore}>{feedLoading ? '加载中…' : feedError ? '重试' : '加载更多'}</button></div>{/if}</section>
     {/if}
   {/if}
 </div>
@@ -68,6 +84,12 @@
   .mode-switch.compact-switch button[aria-pressed='true'] { color:var(--segment-lens-ink); background:var(--segment-lens); }
   .timeline-card { display:block; min-width:0; padding:var(--space-3); border:1px solid var(--border); border-radius:var(--radius-card); background:var(--surface); color:var(--foreground); overflow-wrap:anywhere; }
   .timeline-card:focus-visible { outline-offset:-3px; }
+  .feed-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:var(--space-3); min-width:0; }
+  .timeline-card { transition:border-color var(--transition-control), box-shadow var(--motion-hover); }
+  @media (hover:hover) { .timeline-card:hover { border-color:var(--primary); } }
+  .rank-content progress::-webkit-progress-value { transition:width var(--motion-reveal); }
+  .rank-content progress::-moz-progress-bar { transition:width var(--motion-reveal); }
+  @media (prefers-reduced-motion:reduce) { .timeline-card { transition:none; } .rank-content progress::-webkit-progress-value { transition:none; } .rank-content progress::-moz-progress-bar { transition:none; } }
   .hint { color:var(--muted-foreground); font-size:var(--text-small); }
   .legend-wrap { position:relative; min-width:0; }
   @media (max-width: 799px) { .legend-wrap::after { content:""; position:absolute; inset:0 0 0 auto; width:2rem; pointer-events:none; background:linear-gradient(to right, transparent, var(--surface)); } }

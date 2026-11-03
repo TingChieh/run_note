@@ -35,9 +35,16 @@ class Track(BaseModel):
     geometry: dict
 
 
+class FeedPage(BaseModel):
+    items: list[Recent]
+    next_cursor: str | None
+
+
 class TogetherView(BaseModel):
     distance_m: float
     count: int
     participants: list[Participant]
     recent: list[Recent]
     tracks: list[Track]
+    next_cursor: str | None
+    tracks_truncated: bool

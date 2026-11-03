@@ -1,11 +1,15 @@
 """Public, explicitly selected running data; no wellbeing tables are accessed."""
 
-from datetime import timedelta
+import base64
+import binascii
+from datetime import date, timedelta
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
 
-from app.modules.together.schema import TogetherView
+from app.core.errors import ApiError
+from app.modules.together.schema import FeedPage, TogetherView
 
 # Named showcase must be accessible as well as the user's own public-home switch.
 ELIGIBLE = """u.together_allowed AND u.together_enabled AND u.profile_is_public
@@ -13,6 +17,47 @@ ELIGIBLE = """u.together_allowed AND u.together_enabled AND u.profile_is_public
 
 
 TRACK_SEGMENT_LIMIT = 500
+
+
+def feed(db, settings, before=None, limit=20):
+    params = {"owner": settings.site_owner_email, "limit": limit + 1}
+    predicate = ""
+    if before is not None:
+        try:
+            if len(before) > 128:
+                raise ValueError
+            raw = base64.b64decode(
+                before + "=" * (-len(before) % 4), altchars=b"-_", validate=True
+            ).decode("ascii")
+            day, identifier = raw.split("|")
+            params.update(day=date.fromisoformat(day), identifier=UUID(identifier))
+            predicate = "AND (a.activity_date, a.id) < (:day, :identifier)"
+        except (ValueError, UnicodeError, binascii.Error):
+            raise ApiError(422, "INVALID_CURSOR", "动态游标无效") from None
+    rows = (
+        db.execute(
+            text(f"""
+        SELECT a.id, u.username, u.display_name, a.title, a.activity_date, a.distance_m,
+            a.avg_pace_seconds_per_km
+        FROM activities a JOIN users u ON u.id = a.user_id
+        WHERE {ELIGIBLE} AND a.visibility = 'public' {predicate}
+        ORDER BY a.activity_date DESC, a.id DESC LIMIT :limit
+    """),
+            params,
+        )
+        .mappings()
+        .all()
+    )
+    items = rows[:limit]
+    cursor = None
+    if len(rows) > limit:
+        last = items[-1]
+        cursor = (
+            base64.urlsafe_b64encode(f"{last['activity_date']}|{last['id']}".encode())
+            .decode()
+            .rstrip("=")
+        )
+    return FeedPage(items=items, next_cursor=cursor)
 
 
 def overview(db, settings, now, period="week"):
@@ -23,7 +68,7 @@ def overview(db, settings, now, period="week"):
         "month": today.replace(day=1),
         "year": today.replace(month=1, day=1),
         "end": today + timedelta(days=1),
-        "track_limit": TRACK_SEGMENT_LIMIT,
+        "track_limit": TRACK_SEGMENT_LIMIT + 1,
     }
     params["start"] = params[period]
     # One grouped SQL query computes all participant totals and rankings; no per-user queries.
@@ -51,20 +96,7 @@ def overview(db, settings, now, period="week"):
         .mappings()
         .all()
     )
-    recent = (
-        db.execute(
-            text(f"""
-        SELECT a.id, u.username, u.display_name, a.title, a.activity_date, a.distance_m,
-            a.avg_pace_seconds_per_km
-        FROM activities a JOIN users u ON u.id = a.user_id
-        WHERE {ELIGIBLE} AND a.visibility = 'public'
-        ORDER BY a.activity_date DESC, a.id DESC LIMIT 20
-    """),
-            params,
-        )
-        .mappings()
-        .all()
-    )
+    recent = feed(db, settings)
     tracks = (
         db.execute(
             text(f"""
@@ -81,7 +113,7 @@ def overview(db, settings, now, period="week"):
         )
         SELECT username, activity_id, title, activity_date, segment_index,
             ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, 0.000005), 6)::json AS geometry
-        FROM selected
+        FROM selected ORDER BY activity_date DESC, activity_id DESC, segment_index
     """),
             params,
         )
@@ -92,6 +124,8 @@ def overview(db, settings, now, period="week"):
         distance_m=float(participants[0]["total_distance"]) if participants else 0,
         count=int(participants[0]["total_count"]) if participants else 0,
         participants=participants,
-        recent=recent,
-        tracks=tracks,
+        recent=recent.items,
+        next_cursor=recent.next_cursor,
+        tracks=tracks[:TRACK_SEGMENT_LIMIT],
+        tracks_truncated=len(tracks) > TRACK_SEGMENT_LIMIT,
     )
