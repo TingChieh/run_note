@@ -488,7 +488,7 @@ test('leaving the detail while springs move releases animation callbacks', async
   await expect(deck.locator('.card-stack')).toHaveAttribute('data-moving', 'true');
   const detached = await deck.locator('.stack-slot').first().elementHandle();
   await deck.getByRole('link', { name: '查看全部记录' }).click();
-  await expect(page).toHaveURL(/\/activities$/);
+  await expect(page).toHaveURL(/\/activities(\?id=[0-9a-f-]+)?$/);
   expect(await detached!.evaluate(el => el.isConnected)).toBe(false);
   const transform = await detached!.evaluate(el => (el as HTMLElement).style.transform);
   // Let real browser frames run after Svelte has unmounted the deck.

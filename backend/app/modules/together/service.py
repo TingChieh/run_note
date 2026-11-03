@@ -70,7 +70,7 @@ def overview(db, settings, now):
             ORDER BY a.activity_date DESC, a.id DESC, s.segment_index LIMIT 500
         )
         SELECT username, activity_id, title, activity_date, segment_index,
-            ST_AsGeoJSON(ST_Simplify(geom, 0.0001), 6)::json AS geometry
+            ST_AsGeoJSON(ST_Simplify(geom, 0.000005, true), 6)::json AS geometry
         FROM selected
     """),
             params,

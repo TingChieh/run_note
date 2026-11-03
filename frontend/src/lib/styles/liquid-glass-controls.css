@@ -119,7 +119,7 @@
 .rn-switch[aria-checked='true'] .rn-switch-static { transform: translateX(24px); }
 .rn-switch-ready > .rn-switch-static { visibility: hidden; }
 .rn-switch-decoration { position: absolute; inset: 0; pointer-events: none; overflow: clip; overflow-clip-margin: 16px; }
-.rn-switch-lens { position: absolute; inset: -16px; background: var(--surface); }
+.rn-switch-lens { position: absolute; inset: -16px; background: var(--switch-ground, var(--surface)); }
 .rn-switch-copy { left: 16px; top: 16px; width: 4rem; height: 1.75rem; }
 .rn-switch[aria-checked='true'] .rn-switch-copy { background: var(--primary); }
 .rn-switch-thumb, .rn-switch-shadow { position: absolute; left: 0; top: 0; z-index: 3; background: var(--slider-thumb); box-shadow: 0 .125rem .375rem var(--glass-shadow), inset 0 1px var(--glass-edge); }

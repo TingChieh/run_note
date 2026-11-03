@@ -7,6 +7,7 @@
 .activity-timeline .timeline-list { position: relative; display: grid; gap: var(--space-2); }
 .activity-timeline .timeline-list::before { content: ''; position: absolute; top: .5rem; bottom: .5rem; left: 1.2rem; border-left: 2px solid var(--border); }
 .activity-timeline .timeline-list > li { display: grid; grid-template-columns: 2.4rem minmax(0, 1fr); align-items: center; gap: var(--space-2); min-width: 0; }
-.activity-timeline .timeline-gutter { position: relative; z-index: 1; display: grid; justify-items: center; padding: .125rem 0; background: var(--background); line-height: var(--line-height-tight); }
+.activity-timeline .timeline-gutter { position: relative; z-index: 1; display: grid; justify-items: center; padding: .125rem 0; background: var(--timeline-ground, var(--background)); line-height: var(--line-height-tight); }
 .activity-timeline .timeline-gutter b { font-size: var(--text-section); font-variant-numeric: tabular-nums; }
 .activity-timeline .timeline-gutter span { color: var(--muted-foreground); font-size: var(--text-caption); }
+.aux-panel .activity-timeline { --timeline-ground: var(--surface); }
