@@ -1,9 +1,9 @@
 /** High-contrast data colors, shared by the map, legend and ranking. */
 const palette = [
-  '#d13b42', '#007eaa', '#9a5ac7', '#a26700',
-  '#008474', '#cf4c8a', '#526ac7', '#788000',
-  '#c05419', '#00828c', '#a54477', '#5d72a0',
-  '#487c3c', '#b15b58', '#6f609b', '#827043'
+  '#b15b58', '#6f609b', '#d13b42', '#487c3c',
+  '#cf4c8a', '#5d72a0', '#a54477', '#007eaa',
+  '#827043', '#526ac7', '#788000', '#00828c',
+  '#a26700', '#9a5ac7', '#c05419', '#008474'
 ];
 
 type Participant = { user_id: string; username: string };

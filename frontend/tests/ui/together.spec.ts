@@ -96,13 +96,23 @@ test('手机动态使用时间线且点击后跳转链接保持隐藏', async ({
 });
 
 
-test('无人加入时只显示一张空状态卡', async ({page}) => {
+test('访客在无人加入时看到简短空状态', async ({page}) => {
   await page.goto('/together');
-  await expect(page.getByText('还没有人加入一起跑步')).toBeVisible();
+  await expect(page.getByText('还没有人加入', {exact:true})).toBeVisible();
+  await expect(page.getByText('在设置里打开『一起跑步』就能加入')).toHaveCount(0);
+  await expect(page.locator('.together-stack').getByRole('link',{name:'去设置里加入'})).toHaveCount(0);
   await expect(page.getByRole('heading',{name:'里程排行榜'})).toHaveCount(0);
   await expect(page.getByRole('heading',{name:'一起跑过的地方'})).toHaveCount(0);
   await expect(page.getByRole('heading',{name:'最近动态'})).toHaveCount(0);
   await expect(page.getByRole('button',{name:'全部',exact:true})).toHaveCount(0);
+});
+
+test('已登录用户在无人加入时看到设置指引', async ({page}) => {
+  await loginRunner(page);
+  await page.goto('/together');
+  await expect(page.getByText('还没有人加入一起跑步', {exact:true})).toBeVisible();
+  await expect(page.getByText('在设置里打开『一起跑步』就能加入', {exact:true})).toBeVisible();
+  await expect(page.locator('.together-stack').getByRole('link',{name:'去设置里加入'})).toHaveAttribute('href','/settings');
 });
 
 test('从桌面切到手机时设置页菜单保持关闭', async ({page}) => {
