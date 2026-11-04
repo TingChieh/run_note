@@ -9,7 +9,7 @@ import { contextPath, viewContext } from '../../src/lib/api/view-context';
 import { pageNoindex, robotsTxt } from '../../src/lib/seo';
 
 const ID = '11111111-1111-4111-8111-111111111111';
-const entry = (over: Record<string, unknown> = {}) => ({ entry_date: '2026-10-10', mood: 3, anxiety: null, energy: 0, focus: null, functioning: null, sleep_hours: 7.5, sleep_quality: null, note: null, updated_at: '2026-10-10T01:00:00.123456Z', ...over });
+const entry = (over: Record<string, unknown> = {}) => ({ entry_date: '2026-10-10', mood: 3, anxiety: null, energy: 0, focus: null, functioning: null, sleep_hours: 7.5, sleep_quality: null, sleep_wakeups: null, note: null, updated_at: '2026-10-10T01:00:00.123456Z', ...over });
 const dose = (over: Record<string, unknown> = {}) => ({ id: ID, entry_date: '2026-10-10', medication_name: '示例药物', medication_id: null, pills: null, dose_amount: 12.5, dose_unit: 'mg', taken_at: '2026-10-10T00:00:00Z', regimen: 'scheduled', note: null, ...over });
 const day = (over: Record<string, unknown> = {}) => ({ date: '2026-10-10', today: '2026-10-29', timezone: 'Asia/Shanghai', entry: entry(), doses: [dose()], symptoms: [], ...over });
 const ok = (data: unknown, status = 200) => new Response(JSON.stringify({ data, error: null, meta: { request_id: 'x' } }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -21,7 +21,7 @@ describe('response validation', () => {
     expect(parsed.anxiety).toBeNull();
   });
   it('rejects out of range, wrongly typed and malformed values', () => {
-    for (const bad of [entry({ mood: 11 }), entry({ mood: 2.5 }), entry({ mood: '3' }), entry({ sleep_hours: 25 }), entry({ note: 'x'.repeat(2001) }), entry({ entry_date: '2026-02-30' }), entry({ updated_at: 'yesterday' }), null, []])
+    for (const bad of [entry({ mood: 11 }), entry({ mood: 2.5 }), entry({ mood: '3' }), entry({ sleep_hours: 25 }), entry({ sleep_wakeups: 11 }), entry({ sleep_wakeups: -1 }), entry({ sleep_wakeups: 1.5 }), entry({ sleep_wakeups: '2' }), entry({ note: 'x'.repeat(2001) }), entry({ entry_date: '2026-02-30' }), entry({ updated_at: 'yesterday' }), null, []])
       expect(() => parseEntry(bad)).toThrow(ActivityError);
   });
   it('requires every record of a day to belong to that day', () => {
@@ -32,7 +32,7 @@ describe('response validation', () => {
     expect(() => parseDay(day({ doses: [dose({ dose_amount: 0 })] }))).toThrow(ActivityError);
   });
   it('checks the trend series is one gap-free run of days of the requested length', () => {
-    const series = (n: number) => Array.from({ length: n }, (_, i) => ({ date: addDays('2026-10-01', i), mood: i === 2 ? null : 4, anxiety: null, energy: null, focus: null, functioning: null, sleep_hours: null, sleep_quality: null, dose_count: 0, symptom_count: 0, symptom_max_severity: null }));
+    const series = (n: number) => Array.from({ length: n }, (_, i) => ({ date: addDays('2026-10-01', i), mood: i === 2 ? null : 4, anxiety: null, energy: null, focus: null, functioning: null, sleep_hours: null, sleep_quality: null, sleep_wakeups: null, dose_count: 0, symptom_count: 0, symptom_max_severity: null }));
     const trends = (n: number, over: Record<string, unknown> = {}) => ({ days: n, start: '2026-10-01', end: addDays('2026-10-01', n - 1), timezone: 'Asia/Shanghai', recorded_days: 6, series: series(n), symptoms: [], ...over });
     expect(parseTrends(trends(7), 7).series[2].mood).toBeNull();
     expect(() => parseTrends(trends(7), 30)).toThrow(ActivityError);
@@ -43,7 +43,7 @@ describe('response validation', () => {
 });
 
 describe('medicine list, stock and pill doses', () => {
-  const stock = (over: Record<string, unknown> = {}) => ({ pills: 61, boxes: 2, loose_pills: 5, avg_daily_pills: 1.5, days_left: 40.7, ...over });
+  const stock = (over: Record<string, unknown> = {}) => ({ pills: 61, boxes: 2, loose_pills: 5, avg_daily_pills: 1.5, avg_days: 7, days_left: 40.7, ...over });
   const med = (over: Record<string, unknown> = {}) => ({ id: ID, name: '示例药物', count_unit: '颗', pills_per_box: 28, strength_amount: 12.5, strength_unit: 'mg', default_pills: 1, regimen: 'scheduled', side_effects: ['恶心', '出汗'], dose_count: 2, last_taken_at: '2026-10-10T00:00:00Z', stock: stock(), ...over });
   it('accepts a full medicine, a bare one, and one with no stock yet', () => {
     expect(parseMedication(med()).stock?.pills).toBe(61);
@@ -51,7 +51,7 @@ describe('medicine list, stock and pill doses', () => {
     expect(parseMedication(med({ side_effects: [] })).side_effects).toEqual([]);
     const bare = parseMedication(med({ pills_per_box: null, strength_amount: null, strength_unit: null, default_pills: null, last_taken_at: null, dose_count: 0, stock: null }));
     expect(bare.stock).toBeNull();
-    expect(parseMedication(med({ stock: stock({ pills: -3, boxes: null, loose_pills: null, avg_daily_pills: null, days_left: null }) })).stock?.pills).toBe(-3);
+    expect(parseMedication(med({ stock: stock({ pills: -3, boxes: null, loose_pills: null, avg_daily_pills: null, avg_days: null, days_left: null }) })).stock?.pills).toBe(-3);
   });
   it('rejects bad box sizes, strengths, pill counts, stock and ids', () => {
     for (const bad of [med({ pills_per_box: 0 }), med({ pills_per_box: 2.5 }), med({ strength_unit: null }), med({ strength_amount: 0 }), med({ default_pills: 0 }), med({ default_pills: 1001 }), med({ count_unit: '' }), med({ id: 'nope' }), med({ name: '' }),
@@ -76,8 +76,9 @@ describe('medicine list, stock and pill doses', () => {
     expect(stockText({ count_unit: '片', stock: stock({ pills: 12, boxes: null, loose_pills: null }) })).toBe('12 片');
     expect(stockText({ count_unit: '颗', stock: stock({ pills: 0, boxes: 0, loose_pills: 0 }) })).toBe('已用完（0 颗）');
     expect(stockText({ count_unit: '颗', stock: stock({ pills: -3, boxes: null, loose_pills: null }) })).toContain('请盘点');
-    expect(supplyText({ count_unit: '颗', stock: stock() })).toBe('按近 14 天平均每天 1.5 颗，约可吃 40.7 天');
-    expect(supplyText({ count_unit: '颗', stock: stock({ avg_daily_pills: null, days_left: null }) })).toBe('');
+    expect(supplyText({ count_unit: '颗', stock: stock() })).toBe('按近 7 天平均每天 1.5 颗，约可吃 40.7 天');
+    expect(supplyText({ count_unit: '颗', stock: stock({ avg_days: 3 }) })).toBe('按已吃的 3 天平均每天 1.5 颗，约可吃 40.7 天');
+    expect(supplyText({ count_unit: '颗', stock: stock({ avg_daily_pills: null, avg_days: null, days_left: null }) })).toBe('');
     expect(supplyText({ count_unit: '颗', stock: stock({ pills: 0, days_left: 0 }) })).toBe('');
     expect(supplyText({ count_unit: '颗', stock: null })).toBe('');
   });
@@ -121,7 +122,7 @@ describe('requests', () => {
       if (url === '/api/v1/auth/csrf') return ok({ csrf_token: 't' });
       calls.push({ url, body: init?.body ? JSON.parse(init.body as string) : null });
       if (url.endsWith('/doses/batch')) return ok({ created: 14, skipped_existing: 0, skipped_future: 0 }, 201);
-      if (url.includes('/stock')) return ok({ id: ID, name: 'a', count_unit: '颗', pills_per_box: 28, strength_amount: null, strength_unit: null, default_pills: null, regimen: 'scheduled', side_effects: [], dose_count: 0, last_taken_at: null, stock: { pills: 61, boxes: 2, loose_pills: 5, avg_daily_pills: null, days_left: null } });
+      if (url.includes('/stock')) return ok({ id: ID, name: 'a', count_unit: '颗', pills_per_box: 28, strength_amount: null, strength_unit: null, default_pills: null, regimen: 'scheduled', side_effects: [], dose_count: 0, last_taken_at: null, stock: { pills: 61, boxes: 2, loose_pills: 5, avg_daily_pills: null, avg_days: null, days_left: null } });
       return ok(dose({ pills: 1, medication_id: ID }), 201);
     }) as unknown as typeof fetch;
     await createDose({ medication_name: '示例药物', medication_id: ID, pills: 1, taken_at: '2026-10-10T00:00:00Z', regimen: 'scheduled', note: null }, fetcher);
@@ -149,10 +150,13 @@ describe('requests', () => {
 
 describe('drafts', () => {
   it('counts answers and treats a blank note as unanswered', () => {
-    expect(answeredCount(null)).toEqual({ answered: 0, total: 8 });
-    expect(answeredCount({ ...emptyDraft(), mood: 0, note: 'x' })).toEqual({ answered: 2, total: 8 });
+    expect(answeredCount(null)).toEqual({ answered: 0, total: 9 });
+    expect(answeredCount({ ...emptyDraft(), mood: 0, note: 'x' })).toEqual({ answered: 2, total: 9 });
     expect(draftEmpty({ ...emptyDraft(), note: '   ' })).toBe(true);
     expect(draftEmpty({ ...emptyDraft(), energy: 0 })).toBe(false);
+    // Zero wake-ups is an answer, so a day with only that is not empty.
+    expect(draftEmpty({ ...emptyDraft(), sleep_wakeups: 0 })).toBe(false);
+    expect(answeredCount({ ...emptyDraft(), sleep_wakeups: 0 })).toEqual({ answered: 1, total: 9 });
   });
   it('detects edits but ignores whitespace-only note changes', () => {
     const base = draftOf(parseEntry(entry()));

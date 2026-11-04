@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { UNLINKED, change, changeLines, changeText, medicineMatrix, previousRange, sparkRuns, spanDays } from '../../src/lib/components/wellbeing-report-math.ts';
+import { UNLINKED, change, changeLines, changeText, medicineMatrix, previousRange, sparkRuns, spanDays, wakeupFigures } from '../../src/lib/components/wellbeing-report-math.ts';
 
 describe('ranges and comparison', () => {
   it('counts days inclusively and puts the previous stretch right before it, same length', () => {
@@ -12,6 +12,13 @@ describe('ranges and comparison', () => {
     expect(change(null, 5)).toBeNull();
     expect(change(5, null)).toBeNull();
     expect([changeText(0.8), changeText(-1.2), changeText(0), changeText(null)]).toEqual(['↑ 0.8', '↓ 1.2', '持平', '']);
+  });
+});
+
+describe('night waking figures', () => {
+  it('counts the most in a night and the nights with none, a recorded 0 included and an unrecorded night left out', () => {
+    expect(wakeupFigures([2, 0, null, 5, 0, 1])).toEqual({ max: 5, clear: 2 });
+    expect(wakeupFigures([null, null])).toEqual({ max: 0, clear: 0 });
   });
 });
 

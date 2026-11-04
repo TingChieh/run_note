@@ -14,6 +14,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 
 from app.core.errors import ApiError
+from app.modules.users.model import User
 from app.modules.wellbeing.model import DoseEvent, Medication, StockMovement, SymptomEvent
 from app.modules.wellbeing.schema import (
     BatchDoseInput,
@@ -38,7 +39,9 @@ from app.modules.wellbeing.service import (
     today_for,
 )
 
-RECENT_DAYS = 14
+# Pace of use: the last 7 finished days, or fewer for a medicine that was only started recently
+# (its pills are divided by the days it has actually been taken, never by days before it began).
+RECENT_DAYS = 7
 MAX_BATCH = 1000
 ZERO = Decimal(0)
 
@@ -66,14 +69,44 @@ def _sums(db, model, owner: UUID, *conditions) -> dict[UUID, Decimal]:
     return {k: v for k, v in rows}
 
 
-def _stock_view(med: Medication, ledger, taken, recent) -> StockView | None:
+def _pace(db, owner: UUID, today: date) -> dict[UUID, tuple[float, int]]:
+    """Average pills a day and the number of days it is based on, per medicine that has doses.
+
+    Today is left out while it is still going (a daily medicine not yet taken this morning
+    would otherwise drag the average down), unless the medicine was first taken today.
+    """
+    first = dict(
+        db.execute(
+            select(DoseEvent.medication_id, func.min(DoseEvent.entry_date))
+            .where(DoseEvent.user_id == owner, DoseEvent.medication_id.is_not(None))
+            .group_by(DoseEvent.medication_id)
+        ).all()
+    )
+    finished = _sums(
+        db,
+        DoseEvent,
+        owner,
+        DoseEvent.entry_date >= today - timedelta(days=RECENT_DAYS),
+        DoseEvent.entry_date < today,
+    )
+    so_far = _sums(db, DoseEvent, owner, DoseEvent.entry_date == today)
+    pace: dict[UUID, tuple[float, int]] = {}
+    for key, started in first.items():
+        days = min(RECENT_DAYS, (today - started).days)
+        pills = finished.get(key, ZERO) if days else so_far.get(key, ZERO)
+        days = max(days, 1)
+        pace[key] = (float(pills) / days, days)
+    return pace
+
+
+def _stock_view(med: Medication, ledger, taken, pace) -> StockView | None:
     if med.id not in ledger:
         return None
     pills = ledger[med.id] - taken.get(med.id, ZERO)
     box = med.pills_per_box
     boxes = int(pills // box) if box and pills >= 0 else None
     loose = float(pills - boxes * box) if boxes is not None else None
-    average = float(recent.get(med.id, ZERO)) / RECENT_DAYS
+    average, basis = pace.get(med.id, (0.0, 0))
     days = None
     if average > 0:
         days = 0.0 if pills <= 0 else round(float(pills) / average, 1)
@@ -82,6 +115,7 @@ def _stock_view(med: Medication, ledger, taken, recent) -> StockView | None:
         boxes=boxes,
         loose_pills=loose,
         avg_daily_pills=round(average, 2) if average > 0 else None,
+        avg_days=basis if average > 0 else None,
         days_left=days,
     )
 
@@ -90,7 +124,7 @@ def medication_views(db, owner: UUID, now: datetime) -> list[MedicationView]:
     """The user's medicine list, newest use first, with stock and how long it should last."""
     ledger = _sums(db, StockMovement, owner)
     taken = _sums(db, DoseEvent, owner)
-    recent = _sums(db, DoseEvent, owner, DoseEvent.taken_at >= now - timedelta(days=RECENT_DAYS))
+    pace = _pace(db, owner, today_for(db.get(User, owner), now))
     usage = (
         select(
             DoseEvent.medication_id.label("key"),
@@ -121,7 +155,7 @@ def medication_views(db, owner: UUID, now: datetime) -> list[MedicationView]:
             side_effects=list(med.side_effects or []),
             dose_count=total or 0,
             last_taken_at=last,
-            stock=_stock_view(med, ledger, taken, recent),
+            stock=_stock_view(med, ledger, taken, pace),
         )
         for med, total, last in rows
     ]

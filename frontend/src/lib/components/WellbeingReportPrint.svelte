@@ -39,9 +39,9 @@
           {#if item.stat.answered_days}<strong>{item.stat.mean} / 10</strong><small>{item.stat.answered_days} 天 · 最低 {item.stat.min} · 最高 {item.stat.max} · 首次 {item.stat.first} · 最近 {item.stat.last}</small>{:else}<strong>—</strong><small>没有记录</small>{/if}</li>
       {/each}
       <li data-testid="report-sleep"><span>睡眠</span>
-        {#if r.sleep.answered_days || r.sleep.quality_answered_days}
+        {#if r.sleep.answered_days || r.sleep.quality_answered_days || r.sleep.wakeups_answered_days}
           <strong>{#if r.sleep.mean_hours !== null}平均 {hoursText(r.sleep.mean_hours)}{:else}—{/if}</strong>
-          <small>{#if r.sleep.mean_hours !== null}时长 {r.sleep.answered_days} 天 · 最短 {hoursText(r.sleep.min_hours ?? 0)} · 最长 {hoursText(r.sleep.max_hours ?? 0)}；{/if}质量{#if r.sleep.mean_quality !== null} 平均 {r.sleep.mean_quality} / 10（{quality.answered_days} 天 · 最低 {quality.min} · 最高 {quality.max} · 越高越好）{:else}：没有记录{/if}</small>
+          <small>{#if r.sleep.mean_hours !== null}时长 {r.sleep.answered_days} 天 · 最短 {hoursText(r.sleep.min_hours ?? 0)} · 最长 {hoursText(r.sleep.max_hours ?? 0)}；{/if}质量{#if r.sleep.mean_quality !== null} 平均 {r.sleep.mean_quality} / 10（{quality.answered_days} 天 · 最低 {quality.min} · 最高 {quality.max} · 越高越好）{:else}：没有记录{/if}{#if r.sleep.mean_wakeups !== null}；夜间醒来 平均 {+r.sleep.mean_wakeups.toFixed(1)} 次（{r.sleep.wakeups_answered_days} 天）{/if}</small>
         {:else}<strong>—</strong><small>没有记录</small>{/if}</li>
     </ul>
   </section>

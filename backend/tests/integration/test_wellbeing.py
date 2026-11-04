@@ -811,6 +811,39 @@ def test_medicine_list_is_managed_once_and_keeps_history_independent(clients):  
     assert count == [(3,)]
 
 
+def test_supply_pace_uses_the_days_a_medicine_has_actually_been_taken(clients):  # noqa: F811
+    a, _, _, _ = clients
+    register(a)
+    med = post(a, "/medications", **med_body()).json()["data"]
+    post(a, f"/medications/{med['id']}/stock/count", pills=60)
+    now = datetime.now(UTC)
+
+    def take(days_ago, pills):
+        taken = post(
+            a,
+            "/doses",
+            medication_name="米那普仑",
+            medication_id=med["id"],
+            pills=pills,
+            taken_at=(now - timedelta(days=days_ago, minutes=5)).isoformat(),
+        )
+        assert taken.status_code == 201, taken.text
+
+    # Started three days ago, one pill a day; today's pills are in the stock but not in the pace.
+    for days_ago in (3, 2, 1):
+        take(days_ago, 1)
+    take(0, 2)
+    started = stock(a, med["id"])
+    assert started["pills"] == 55.0
+    assert started["avg_daily_pills"] == 1.0 and started["avg_days"] == 3
+    assert started["days_left"] == 55.0
+    # After a long time on it the pace is the last seven finished days: older doses drop out.
+    take(9, 7)
+    long_run = stock(a, med["id"])
+    assert long_run["avg_days"] == 7
+    assert long_run["avg_daily_pills"] == round(3 / 7, 2)
+
+
 def test_stock_is_a_ledger_that_follows_doses_restocks_and_counts(clients):  # noqa: F811
     a, b, _, _ = clients
     register(a)
@@ -822,6 +855,7 @@ def test_stock_is_a_ledger_that_follows_doses_restocks_and_counts(clients):  # n
     counted = post(a, f"{path}/stock/count", boxes=2, pills=5).json()["data"]["stock"]
     assert (counted["pills"], counted["boxes"], counted["loose_pills"]) == (61.0, 2, 5.0)
     assert counted["avg_daily_pills"] is None and counted["days_left"] is None
+    assert counted["avg_days"] is None
     # Each dose logged by pills takes from the stock; half a pill is fine.
     now = datetime.now(UTC)
     first = post(
@@ -844,8 +878,9 @@ def test_stock_is_a_ledger_that_follows_doses_restocks_and_counts(clients):  # n
     assert half["dose_amount"] == 6.25 and half["medication_id"] == med["id"]
     after = stock(a, med["id"])
     assert (after["pills"], after["boxes"], after["loose_pills"]) == (59.5, 2, 3.5)
-    assert after["avg_daily_pills"] == round(1.5 / 14, 2)
-    assert after["days_left"] == round(59.5 / (1.5 / 14), 1)
+    # First taken today: the pace is today's pills over one day, not diluted over a fortnight.
+    assert after["avg_daily_pills"] == 1.5 and after["avg_days"] == 1
+    assert after["days_left"] == round(59.5 / 1.5, 1)
     # Editing a dose corrects the stock by itself; so does deleting one.
     assert (
         a.patch(f"{BASE}/doses/{half['id']}", headers=headers(a), json={"pills": 2}).json()["data"][
@@ -1168,6 +1203,43 @@ def test_sleep_duration_keeps_whole_minutes_exactly(clients):  # noqa: F811
     assert "7.42,7:25" in csv_text
     report = a.get(f"{BASE}/report?from=2026-10-13&to=2026-10-13").json()["data"]["sleep"]
     assert report["mean_hours"] == 7.42
+
+
+def test_night_wakeups_are_optional_bounded_and_reach_trends_report_and_csv(
+    clients,  # noqa: F811
+):
+    a, b, _, _ = clients
+    register(a)
+    register(b)
+    end = today(a)
+    # Zero is an answer by itself (a day with only that is a record); replacing the day clears it.
+    zero = put_entry(a, end, sleep_wakeups=0)
+    assert zero.status_code == 200, zero.text
+    assert zero.json()["data"]["sleep_wakeups"] == 0
+    assert put_entry(a, end, mood=5).json()["data"]["sleep_wakeups"] is None
+    for bad in (11, -1, 1.5, "2", True):
+        assert put_entry(a, end, sleep_wakeups=bad, mood=1).status_code == 422, bad
+    assert put_entry(a, end, sleep_wakeups=10).status_code == 200
+    for days_ago, wakeups in ((2, 1), (1, 4)):
+        put_entry(a, end - timedelta(days=days_ago), sleep_wakeups=wakeups, mood=3)
+    put_entry(a, end, mood=6)  # no answer for wake-ups today
+    put_entry(b, end, sleep_wakeups=9)  # someone else's answer never leaks into a's figures
+    series = {p["date"]: p for p in a.get(f"{BASE}/trends?days=7").json()["data"]["series"]}
+    assert series[str(end - timedelta(days=2))]["sleep_wakeups"] == 1
+    assert series[str(end - timedelta(days=1))]["sleep_wakeups"] == 4
+    assert series[str(end)]["sleep_wakeups"] is None
+    assert series[str(end - timedelta(days=3))]["sleep_wakeups"] is None  # no entry: never invented
+    start = end - timedelta(days=2)
+    report = a.get(f"{BASE}/report?from={start}&to={end}").json()["data"]
+    assert report["sleep"]["wakeups_answered_days"] == 2
+    assert report["sleep"]["mean_wakeups"] == 2.5
+    assert report["coverage"]["unanswered"]["sleep_wakeups"] == 1
+    body = a.get(f"{BASE}/report.csv?from={start}&to={end}").content.decode("utf-8-sig")
+    table = list(csv.reader(io.StringIO(body)))
+    column = table[0].index("夜间醒来次数")
+    assert [row[column] for row in table[1:]] == ["1", "4", ""]
+    empty = a.get(f"{BASE}/report?from={end}&to={end}").json()["data"]["sleep"]
+    assert empty["mean_wakeups"] is None and empty["wakeups_answered_days"] == 0
 
 
 def test_a_medicine_carries_its_own_side_effects(clients):  # noqa: F811

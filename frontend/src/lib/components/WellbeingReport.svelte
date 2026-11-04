@@ -5,9 +5,10 @@
   import WellbeingReportEffects from './WellbeingReportEffects.svelte';
   import WellbeingReportMedicines from './WellbeingReportMedicines.svelte';
   import WellbeingReportPrint from './WellbeingReportPrint.svelte';
+  import WellbeingChart from './WellbeingChart.svelte';
   import WellbeingReportTimeline from './WellbeingReportTimeline.svelte';
   import WellbeingTile from './WellbeingTile.svelte';
-  import { change, changeText, previousRange, sparkRuns, spanDays } from './wellbeing-report-math.ts';
+  import { change, changeText, previousRange, sparkRuns, spanDays, wakeupFigures } from './wellbeing-report-math.ts';
   import type { ToneKey } from './wellbeing-tones.ts';
   import { ActivityError } from '#lib/api/activities.ts';
   import { RATING_KEYS, RATING_LABELS, addDays, dateLabel, downloadCsv, hoursText, readReport, type CsvKind, type Report } from '#lib/api/wellbeing.ts';
@@ -128,6 +129,7 @@
           {@const prev = stat(before, key)}
           {@const label = RATING_LABELS[key]}
           {@const spark = sparkRuns(r.series.map(d => d[key]), 10)}
+          <div class="cell">
           <WellbeingTile metric={key as ToneKey} title={label.name} subtitle={label.direction === 'worse' ? '越高越严重' : '越高越好'} testid={`report-measure-${key}`}>
             {#if now && now.answered_days}
               <p class="big"><strong>{now.mean}</strong><span class="unit">/ 10 平均</span>{#if prev && prev.mean !== null}<span class="delta" aria-label={deltaWords(now.mean, prev.mean)}>{shownDelta(now.mean, prev.mean)}</span>{/if}</p>
@@ -139,13 +141,15 @@
               <p class="sub">这段时间没有{label.name}记录。</p>
             {/if}
           </WellbeingTile>
+          </div>
         {/each}
         {#snippet sleepTile()}
           {@const q = stat(r, 'sleep_quality')}
           {@const fmt = (h: number) => String(+h.toFixed(1))}
-          <WellbeingTile metric="sleep" title="睡眠" subtitle="平均睡了多久、睡得好不好" testid="report-measure-sleep">
-            {#if r.sleep.mean_hours !== null || r.sleep.mean_quality !== null}
-              <!-- Two halves built the same way: a caption, the average, a bar from the lowest to the highest with a tick at the average, and those two numbers. -->
+          {@const figures = wakeupFigures(r.series.map(d => d.sleep_wakeups))}
+          <WellbeingTile metric="sleep" title="睡眠" subtitle="平均睡了多久、睡得好不好、夜里醒来几次" testid="report-measure-sleep">
+            {#if r.sleep.mean_hours !== null || r.sleep.mean_quality !== null || r.sleep.mean_wakeups !== null}
+              <!-- Three figures built the same way: a caption, the average, a bar with a tick at the average, and what stands out; under them the nights themselves (hours with quality, then the waking). -->
               <div class="pair">
                 <div class="fig" data-testid="report-sleep-hours">
                   <p class="cap">平均睡眠时长</p>
@@ -163,15 +167,24 @@
                     <p class="sub">最低 {q.min} · 最高 {q.max}</p>
                   {:else}<p class="sub">没有记录</p>{/if}
                 </div>
+                <div class="fig" data-testid="report-sleep-wakeups">
+                  <p class="cap">平均每晚醒来</p>
+                  <p class="big">{#if r.sleep.mean_wakeups !== null}<strong>{fmt(r.sleep.mean_wakeups)}</strong><span class="unit">次</span>{#if before && before.sleep.mean_wakeups !== null}<span class="delta" aria-label={deltaWords(r.sleep.mean_wakeups, before.sleep.mean_wakeups, ' 次')}>{shownDelta(r.sleep.mean_wakeups, before.sleep.mean_wakeups)}</span>{/if}{:else}<strong>—</strong>{/if}</p>
+                  {#if r.sleep.mean_wakeups !== null}
+                    <span class="range-bar" style:--tone="var(--well-wakeups)" aria-hidden="true"><span class="mean" style:left={`${(r.sleep.mean_wakeups / 10) * 100}%`}></span></span>
+                    <p class="sub" data-testid="report-wakeups-figures">最多一晚 {figures.max} 次 · {figures.clear} 晚整晚没醒</p>
+                  {:else}<p class="sub">没有记录</p>{/if}
+                </div>
               </div>
-              <p class="sub">{Math.max(r.sleep.answered_days, r.sleep.quality_answered_days)} 天有记录 · 质量越高越好</p>
+              <p class="sub">{Math.max(r.sleep.answered_days, r.sleep.quality_answered_days, r.sleep.wakeups_answered_days)} 天有记录 · 质量越高越好 · 醒来越少睡得越连续</p>
+              <WellbeingChart kind="sleep" series={r.series} embedded />
             {:else}
               <p class="big"><strong>—</strong></p>
               <p class="sub">这段时间没有睡眠记录。</p>
             {/if}
           </WellbeingTile>
         {/snippet}
-        {@render sleepTile()}
+        <div class="cell sleep">{@render sleepTile()}</div>
       </div>
 
       <WellbeingReportTimeline series={r.series} doses={r.doses} events={r.symptom_events} medications={r.medications} missing={r.coverage.missing_dates} timezone={r.timezone} />
@@ -233,16 +246,26 @@
   .duo { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); align-items: stretch; min-width: 0; }
   @container (min-width: 62rem) { .duo { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); } }
   .tiles { display: grid; gap: var(--space-4); grid-template-columns: minmax(0, 1fr); min-width: 0; }
-  @container (min-width: 34rem) { .measures { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @container (min-width: 34rem) { .measures { grid-template-columns: repeat(2, minmax(0, 1fr)); } .measures > .cell:nth-child(5) { grid-column: 1 / -1; } }
   @container (min-width: 44rem) { .overview { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-  @container (min-width: 52rem) { .measures { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  /* The five measures and the sleep card, never a row with a hole: 2 + 2 + 1, or on six tracks 3 + 2 (the last two wider), and the sleep card on a row of its own. */
+  .cell { display: grid; min-width: 0; }
+  .cell.sleep, .measures > .cell:nth-child(5) { grid-column: 1 / -1; }
+  @container (min-width: 52rem) {
+    .measures { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .measures > .cell { grid-column: span 2; }
+    .measures > .cell:nth-child(n + 4) { grid-column: span 3; }
+    .measures > .cell.sleep { grid-column: 1 / -1; }
+  }
   /* The figure of a tile: a big number, its unit, and how it moved against the stretch before. */
   .big { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); line-height: var(--line-height-heading); }
   .big strong { font-size: var(--text-stat); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; }
   /* The sleep widget: hours and quality side by side with a thin rule between them, then one chart (bars = hours, line = quality). */
-  .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-3); }
+  .pair { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
+  @container (min-width: 30rem) { .pair { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); } }
   .fig { display: grid; align-content: start; gap: var(--space-2); min-width: 0; }
-  .fig + .fig { padding-left: var(--space-3); border-left: 1px solid var(--border); }
+  .fig + .fig { padding-top: var(--space-4); border-top: 1px solid var(--border); }
+  @container (min-width: 30rem) { .fig + .fig { padding: 0 0 0 var(--space-3); border-top: 0; border-left: 1px solid var(--border); } }
   .cap { color: var(--muted-foreground); font-size: var(--text-caption); }
   .pair .big strong { font-size: var(--text-section); }
   .pair .delta { margin-left: 0; }

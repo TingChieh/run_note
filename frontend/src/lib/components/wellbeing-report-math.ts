@@ -32,6 +32,12 @@ export function sparkRuns(values: (number | null)[], max: number, width = 100, h
   return { runs, dots };
 }
 
+/** What the night-waking tile says beside its chart: the most in one night, and the nights with none (a recorded 0 counts; an unrecorded night is neither). Counted from the server's daily series. */
+export function wakeupFigures(values: (number | null)[]): { max: number; clear: number } {
+  const recorded = values.filter((v): v is number => v !== null);
+  return { max: recorded.length ? Math.max(...recorded) : 0, clear: recorded.filter(v => v === 0).length };
+}
+
 export interface MatrixRow { name: string; total: number; cells: number[] }
 export interface Matrix { columns: string[]; rows: MatrixRow[]; max: number }
 export const UNLINKED = '未关联到某种药';

@@ -2,14 +2,14 @@
   import { onDestroy, onMount } from 'svelte';
   import { scale } from 'svelte/transition';
   import WellbeingTile from './WellbeingTile.svelte';
-  import { arcPath, createTween, fractionAt, parseDuration, pointAt, valueAt } from './wellbeing-dial-math.ts';
+  import { MAX_SLEEP_HOURS, arcPath, createTween, fractionAt, parseDuration, pointAt, valueAt } from './wellbeing-dial-math.ts';
   import { readGlassSettings, watchGlassSettings } from '#lib/styles/liquid-glass-settings.ts';
   import { hoursText } from '#lib/api/wellbeing.ts';
   // Sleep duration on one double ring: the big outer ring is the hours, the small inner ring the minutes (exact to the minute).
   // Where a finger lands decides which ring turns; tapping the time in the middle opens a small box to type it (7:25, 7.5, 7h25m, 7时25分).
   // Stored as decimal hours with two decimals, which keeps whole minutes exact.
   let { value = $bindable(null), disabled = false }: { value?: number | null; disabled?: boolean } = $props();
-  const MAX_HOURS = 16, OUTER = 41, INNER = 25;
+  const MAX_HOURS = MAX_SLEEP_HOURS, OUTER = 41, INNER = 25;
   const total = $derived(value === null ? null : Math.round(value * 60));
   const hours = $derived(total === null ? null : Math.floor(total / 60));
   const minutes = $derived(total === null ? null : total % 60);

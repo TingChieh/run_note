@@ -7,7 +7,7 @@ export type Regimen = 'scheduled' | 'as_needed';
 export type CsvKind = 'entries' | 'doses' | 'symptoms';
 export type TrendDays = 7 | 14 | 30;
 
-export interface Entry { entry_date: string; mood: number | null; anxiety: number | null; energy: number | null; focus: number | null; functioning: number | null; sleep_hours: number | null; sleep_quality: number | null; note: string | null; updated_at: string }
+export interface Entry { entry_date: string; mood: number | null; anxiety: number | null; energy: number | null; focus: number | null; functioning: number | null; sleep_hours: number | null; sleep_quality: number | null; sleep_wakeups: number | null; note: string | null; updated_at: string }
 /** One intake: a pill count (the usual way), and/or an amount with a unit (derived from the strength of one pill, or typed). */
 export interface Dose { id: string; entry_date: string; medication_name: string; medication_id: string | null; pills: number | null; dose_amount: number | null; dose_unit: string | null; taken_at: string; regimen: Regimen; note: string | null }
 export interface Symptom { id: string; entry_date: string; dose_id: string | null; symptom: string; severity: number | null; onset_at: string | null; duration_minutes: number | null; affects_daily_life: boolean | null }
@@ -16,13 +16,13 @@ export interface DayMark { date: string; has_entry: boolean; dose_count: number;
 export interface EntryList { items: Entry[]; total: number; limit: number; offset: number }
 /** A medicine on the user's own list, with its usual dose. History keeps its own copy of the name. */
 /** Pills on hand = restocks and counts minus the pills of the doses logged against the medicine; `null` until a first count or restock. */
-export interface Stock { pills: number; boxes: number | null; loose_pills: number | null; avg_daily_pills: number | null; days_left: number | null }
+export interface Stock { pills: number; boxes: number | null; loose_pills: number | null; avg_daily_pills: number | null; avg_days: number | null; days_left: number | null }
 export interface Medication { id: string; name: string; count_unit: string; pills_per_box: number | null; strength_amount: number | null; strength_unit: string | null; default_pills: number | null; regimen: Regimen; side_effects: string[]; dose_count: number; last_taken_at: string | null; stock: Stock | null }
 export interface MedicationDraft { name: string; count_unit: string; pills_per_box: number | null; strength_amount: number | null; strength_unit: string | null; default_pills: number | null; regimen: Regimen; side_effects: string[] }
 export interface BatchResult { created: number; skipped_existing: number; skipped_future: number }
 /** A side effect on the user's own list of one-tap choices. */
 export interface SymptomName { id: string; name: string; event_count: number }
-export interface TrendDay { date: string; mood: number | null; anxiety: number | null; energy: number | null; focus: number | null; functioning: number | null; sleep_hours: number | null; sleep_quality: number | null; dose_count: number; symptom_count: number; symptom_max_severity: number | null }
+export interface TrendDay { date: string; mood: number | null; anxiety: number | null; energy: number | null; focus: number | null; functioning: number | null; sleep_hours: number | null; sleep_quality: number | null; sleep_wakeups: number | null; dose_count: number; symptom_count: number; symptom_max_severity: number | null }
 export interface SymptomStat { symptom: string; count: number; days: number; avg_severity: number | null; max_severity: number | null; affects_daily_life_count: number }
 export interface Trends { days: TrendDays; start: string; end: string; timezone: string; recorded_days: number; series: TrendDay[]; symptoms: SymptomStat[] }
 export interface RatingStat { key: RatingKey; answered_days: number; mean: number | null; min: number | null; max: number | null; first: number | null; last: number | null }
@@ -36,12 +36,12 @@ export interface Report {
   coverage: { days_in_range: number; days_with_entry: number; days_without_entry: number; missing_dates: string[]; unanswered: Record<string, number> };
   ratings: RatingStat[];
   weekly: { week_start: string; entries: number; mood_mean: number | null; anxiety_mean: number | null }[];
-  sleep: { answered_days: number; mean_hours: number | null; min_hours: number | null; max_hours: number | null; quality_answered_days: number; mean_quality: number | null };
+  sleep: { answered_days: number; mean_hours: number | null; min_hours: number | null; max_hours: number | null; quality_answered_days: number; mean_quality: number | null; wakeups_answered_days: number; mean_wakeups: number | null };
   medications: MedicationStat[]; doses: Dose[]; symptoms: SymptomStat[]; symptom_events: SymptomEvent[];
   notes: { date: string; note: string }[];
 }
 /** The answers of one day's form. `null` means unanswered and is saved as NULL, never 0. */
-export type EntryDraft = Pick<Entry, RatingKey | 'sleep_hours' | 'note'>;
+export type EntryDraft = Pick<Entry, RatingKey | 'sleep_hours' | 'sleep_wakeups' | 'note'>;
 export interface DoseDraft { medication_name: string; medication_id?: string | null; pills?: number | null; dose_amount?: number | null; dose_unit?: string | null; taken_at: string; regimen: Regimen; note: string | null }
 export interface SymptomDraft { entry_date: string; dose_id?: string | null; symptom: string; severity?: number | null; onset_at: string | null; duration_minutes: number | null; affects_daily_life: boolean | null }
 
@@ -67,13 +67,16 @@ export const isoDate = (v: unknown): v is string => {
 };
 const instant = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v) && Number.isFinite(Date.parse(v));
 const rating = (v: unknown, nullable = true) => v === null ? nullable : typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 10;
+/** Times woken during the night: a whole number, `null` when unanswered (0 is a real answer). */
+export const WAKEUPS_MAX = 10;
+const wakeups = (v: unknown) => v === null || (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= WAKEUPS_MAX);
 const count = (v: unknown) => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
 const finite = (v: unknown, nullable = false) => v === null ? nullable : typeof v === 'number' && Number.isFinite(v);
 const text = (v: unknown, max: number, nullable = false) => v === null ? nullable : typeof v === 'string' && [...v].length <= max;
 function invalid(): never { throw new ActivityError('健康日记服务返回了无效响应，请刷新重试', 502, 'INVALID_RESPONSE'); }
 
 export function parseEntry(v: unknown): Entry {
-  if (!object(v) || !isoDate(v.entry_date) || !RATING_KEYS.every(k => rating(v[k])) || !finite(v.sleep_hours, true) || (v.sleep_hours !== null && (Number(v.sleep_hours) < 0 || Number(v.sleep_hours) > 24))
+  if (!object(v) || !isoDate(v.entry_date) || !RATING_KEYS.every(k => rating(v[k])) || !finite(v.sleep_hours, true) || (v.sleep_hours !== null && (Number(v.sleep_hours) < 0 || Number(v.sleep_hours) > 24)) || !wakeups(v.sleep_wakeups)
     || !text(v.note, 2000, true) || !instant(v.updated_at)) invalid();
   return v as unknown as Entry;
 }
@@ -112,7 +115,7 @@ export function parseEntryList(v: unknown, limit: number, offset: number): Entry
 function parseStock(v: unknown): Stock | null {
   if (v === null) return null;
   if (!object(v) || !finite(v.pills) || !(v.boxes === null || count(v.boxes)) || !(v.loose_pills === null || (finite(v.loose_pills) && Number(v.loose_pills) >= 0))
-    || !(v.avg_daily_pills === null || (finite(v.avg_daily_pills) && Number(v.avg_daily_pills) > 0)) || !(v.days_left === null || (finite(v.days_left) && Number(v.days_left) >= 0))) invalid();
+    || !(v.avg_daily_pills === null || (finite(v.avg_daily_pills) && Number(v.avg_daily_pills) > 0)) || !(v.avg_days === null || (typeof v.avg_days === 'number' && Number.isInteger(v.avg_days) && v.avg_days >= 1 && v.avg_days <= 7)) || !(v.days_left === null || (finite(v.days_left) && Number(v.days_left) >= 0))) invalid();
   return v as unknown as Stock;
 }
 export function parseMedication(v: unknown): Medication {
@@ -135,7 +138,7 @@ const parseStat = (v: unknown): SymptomStat => {
 /** The daily points of a range: one per day in order, each rating a whole number 0–10 or null (a gap, never 0). */
 function parseSeries(items: unknown[]): TrendDay[] {
   return items.map((item, i) => {
-    if (!object(item) || !isoDate(item.date) || !RATING_KEYS.every(k => rating(item[k])) || !finite(item.sleep_hours, true) || !count(item.dose_count) || !count(item.symptom_count) || !rating(item.symptom_max_severity)) invalid();
+    if (!object(item) || !isoDate(item.date) || !RATING_KEYS.every(k => rating(item[k])) || !finite(item.sleep_hours, true) || !wakeups(item.sleep_wakeups) || !count(item.dose_count) || !count(item.symptom_count) || !rating(item.symptom_max_severity)) invalid();
     if (i > 0 && Date.parse(`${item.date}T00:00:00Z`) - Date.parse(`${(items[i - 1] as { date: string }).date}T00:00:00Z`) !== 86400000) invalid();
     return item as unknown as TrendDay;
   });
@@ -157,7 +160,7 @@ function parseReport(v: unknown): Report {
   if (!Array.isArray(r.ratings) || r.ratings.length !== RATING_KEYS.length || !r.ratings.every((item, i) => object(item) && item.key === RATING_KEYS[i] && count(item.answered_days) && finite(item.mean, true) && rating(item.min) && rating(item.max) && rating(item.first) && rating(item.last))) invalid();
   if (!Array.isArray(r.weekly) || !r.weekly.every(w => object(w) && isoDate(w.week_start) && count(w.entries) && finite(w.mood_mean, true) && finite(w.anxiety_mean, true))) invalid();
   const s = r.sleep;
-  if (!object(s) || !count(s.answered_days) || !finite(s.mean_hours, true) || !finite(s.min_hours, true) || !finite(s.max_hours, true) || !count(s.quality_answered_days) || !finite(s.mean_quality, true)) invalid();
+  if (!object(s) || !count(s.answered_days) || !finite(s.mean_hours, true) || !finite(s.min_hours, true) || !finite(s.max_hours, true) || !count(s.quality_answered_days) || !finite(s.mean_quality, true) || !count(s.wakeups_answered_days) || !finite(s.mean_wakeups, true)) invalid();
   if (!Array.isArray(r.medications) || !r.medications.every(m => object(m) && text(m.name, 80) && count(m.dose_count) && count(m.scheduled_count) && count(m.as_needed_count) && finite(m.total_pills) && instant(m.first_taken_at) && instant(m.last_taken_at)
     && Array.isArray(m.timeline) && m.timeline.every(x => object(x) && isoDate(x.date) && instant(x.taken_at) && finite(x.pills, true) && finite(x.dose_amount, true) && text(x.dose_unit, 16, true) && (x.kind === 'first_in_range' || x.kind === 'changed')))) invalid();
   const events = list(r.symptom_events, item => {
@@ -277,15 +280,15 @@ export async function downloadCsv(kind: CsvKind, from: string, to: string, fetch
 
 // ---- Pure helpers (also covered by unit tests) ----
 
-/** Completion of a day: how many of the eight answers were given. */
+/** Completion of a day: how many of the nine answers were given. */
 export function answeredCount(entry: EntryDraft | Entry | null): { answered: number; total: number } {
-  const keys = [...RATING_KEYS, 'sleep_hours'] as const;
+  const keys = [...RATING_KEYS, 'sleep_hours', 'sleep_wakeups'] as const;
   const total = keys.length + 1;
   if (!entry) return { answered: 0, total };
   return { answered: keys.filter(k => entry[k] !== null).length + (entry.note ? 1 : 0), total };
 }
-export const emptyDraft = (): EntryDraft => ({ mood: null, anxiety: null, energy: null, focus: null, functioning: null, sleep_hours: null, sleep_quality: null, note: null });
-export const draftOf = (entry: Entry | null): EntryDraft => entry ? { mood: entry.mood, anxiety: entry.anxiety, energy: entry.energy, focus: entry.focus, functioning: entry.functioning, sleep_hours: entry.sleep_hours, sleep_quality: entry.sleep_quality, note: entry.note } : emptyDraft();
+export const emptyDraft = (): EntryDraft => ({ mood: null, anxiety: null, energy: null, focus: null, functioning: null, sleep_hours: null, sleep_quality: null, sleep_wakeups: null, note: null });
+export const draftOf = (entry: Entry | null): EntryDraft => entry ? { mood: entry.mood, anxiety: entry.anxiety, energy: entry.energy, focus: entry.focus, functioning: entry.functioning, sleep_hours: entry.sleep_hours, sleep_quality: entry.sleep_quality, sleep_wakeups: entry.sleep_wakeups, note: entry.note } : emptyDraft();
 export const normalizeDraft = (d: EntryDraft): EntryDraft => ({ ...d, note: d.note && d.note.trim() ? d.note.trim() : null });
 export const draftChanged = (a: EntryDraft, b: EntryDraft) => JSON.stringify(normalizeDraft(a)) !== JSON.stringify(normalizeDraft(b));
 export const draftEmpty = (d: EntryDraft) => answeredCount(normalizeDraft(d)).answered === 0;
@@ -344,12 +347,13 @@ export function stockText(med: Pick<Medication, 'count_unit' | 'stock'>): string
   const total = pillsText(stock.pills, med.count_unit);
   return stock.boxes !== null && stock.loose_pills !== null ? `${stock.boxes} 盒 ${trim(stock.loose_pills, 2)} ${med.count_unit}（共 ${total}）` : total;
 }
-/** How long the stock lasts at the pace of the last 14 days. Arithmetic on the user's own log, not advice. */
+/** How long the stock lasts at the pace of the last 7 finished days, or of the days a newer medicine has been taken. Arithmetic on the user's own log, not advice. */
 export function supplyText(med: Pick<Medication, 'count_unit' | 'stock'>): string {
   const stock = med.stock;
   if (!stock || stock.avg_daily_pills === null) return '';
   if (stock.days_left === 0) return '';
-  return `按近 14 天平均每天 ${trim(stock.avg_daily_pills, 2)} ${med.count_unit}，约可吃 ${trim(stock.days_left ?? 0, 1)} 天`;
+  const basis = stock.avg_days !== null && stock.avg_days < 7 ? `已吃的 ${stock.avg_days} 天` : '近 7 天';
+  return `按${basis}平均每天 ${trim(stock.avg_daily_pills, 2)} ${med.count_unit}，约可吃 ${trim(stock.days_left ?? 0, 1)} 天`;
 }
 
 /**
