@@ -26,10 +26,12 @@ ENTRY_FIELDS = (
     "functioning",
     "sleep_hours",
     "sleep_quality",
+    "sleep_wakeups",
     "note",
 )
 
 Rating = Annotated[int, Field(ge=0, le=10)]
+Wakeups = Annotated[int, Field(ge=0, le=10)]
 Regimen = Literal["scheduled", "as_needed"]
 # JSON carries dates and instants as strings; strict mode would reject them for date types.
 Day = Annotated[date, Field(strict=False)]
@@ -137,6 +139,7 @@ class EntryInput(_Texts):
     functioning: Rating | None = None
     sleep_hours: Decimal | None = Field(default=None, ge=0, le=24, decimal_places=2)
     sleep_quality: Rating | None = None
+    sleep_wakeups: Wakeups | None = None
     note: str | None = Field(default=None, max_length=2000)
     # Optional write guard. Omitted: save unconditionally. null: the editor loaded an empty day.
     # A timestamp: the editor loaded that version; a newer save elsewhere makes this one a 409.
@@ -254,6 +257,7 @@ class EntryView(BaseModel):
     functioning: int | None
     sleep_hours: float | None
     sleep_quality: int | None
+    sleep_wakeups: int | None
     note: str | None
     updated_at: datetime
 
@@ -387,6 +391,7 @@ class StockView(BaseModel):
     boxes: int | None
     loose_pills: float | None
     avg_daily_pills: float | None
+    avg_days: int | None
     days_left: float | None
 
 
@@ -418,6 +423,7 @@ class TrendDay(BaseModel):
     functioning: int | None
     sleep_hours: float | None
     sleep_quality: int | None
+    sleep_wakeups: int | None
     dose_count: int
     symptom_count: int
     symptom_max_severity: int | None

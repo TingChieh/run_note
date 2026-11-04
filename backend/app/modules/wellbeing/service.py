@@ -88,6 +88,7 @@ def entry_view(row: DailyEntry) -> EntryView:
         entry_date=row.entry_date,
         **{name: getattr(row, name) for name in RATING_FIELDS},
         sleep_hours=_number(row.sleep_hours),
+        sleep_wakeups=row.sleep_wakeups,
         note=row.note,
         updated_at=row.updated_at,
     )
@@ -420,6 +421,7 @@ def daily_series(
                 date=day,
                 **{name: getattr(row, name) if row else None for name in RATING_FIELDS},
                 sleep_hours=_number(row.sleep_hours) if row else None,
+                sleep_wakeups=row.sleep_wakeups if row else None,
                 dose_count=dose_counts.get(day, 0),
                 symptom_count=len(events),
                 symptom_max_severity=max(

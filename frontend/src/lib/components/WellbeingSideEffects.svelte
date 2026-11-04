@@ -146,8 +146,9 @@
   .day.selected .num { transform: scale(1.12); background: var(--primary); color: var(--primary-foreground); font-weight: var(--weight-bold); }
   @media (hover: hover) { .day:not(.selected):hover .num { background: var(--muted); } }
   .day:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
-  /* The tile is stretched to the height of its row; its content starts right under the title like the other widgets'. */
-  :global([data-testid='wellbeing-side-effects']) { align-content: start; }
+  /* The tile is stretched to the height of its row (the sleep chart beside it is taller): the title stays at the top and the circle with its day sits in the middle of the room left below it. */
+  :global([data-testid='wellbeing-side-effects']) { grid-template-rows: auto minmax(0, 1fr); }
+  .layout { align-self: center; }
   .panel { min-width: 0; }
   .stage { display: grid; min-width: 0; overflow-x: clip; }
   .pane { grid-area: 1 / 1; display: grid; align-content: start; gap: var(--space-3); min-width: 0; }

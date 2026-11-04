@@ -2,6 +2,7 @@
   import { untrack } from 'svelte';
   import { cubicIn, cubicOut } from 'svelte/easing';
   import { fly } from 'svelte/transition';
+  import { MAX_SLEEP_HOURS } from './wellbeing-dial-math.ts';
   import { OUTER, centre, polar, slice } from './wellbeing-wheel.ts';
   import { RATING_LABELS, dateLabel, doseText, hoursText, monthLabel, timeLabel, type Dose, type MedicationStat, type SymptomEvent, type TrendDay } from '#lib/api/wellbeing.ts';
   // The days of the range as a calendar, the way the history page draws them: a round day with a ring in three parts (state, medication, side effect), each lit when that kind of record exists.
@@ -67,12 +68,13 @@
   const changed = $derived(new Set(medications.flatMap(m => m.timeline.filter(t => t.kind === 'changed').map(t => `${m.name}|${Date.parse(t.taken_at)}`))));
   const isChanged = (dose: Dose) => changed.has(`${dose.medication_name}|${Date.parse(dose.taken_at)}`);
   const RATINGS = ['mood', 'anxiety', 'energy', 'focus', 'functioning', 'sleep_quality'] as const;
-  const COLORS: Record<string, string> = { mood: '--well-mood', anxiety: '--well-anxiety', energy: '--well-energy', focus: '--well-focus', functioning: '--well-function', sleep_quality: '--well-sleep-quality', sleep_hours: '--well-sleep' };
+  const COLORS: Record<string, string> = { mood: '--well-mood', anxiety: '--well-anxiety', energy: '--well-energy', focus: '--well-focus', functioning: '--well-function', sleep_quality: '--well-sleep-quality', sleep_hours: '--well-sleep', sleep_wakeups: '--well-wakeups' };
   /** The answers of the day as rows with a bar: a rating out of 10, sleep out of 12 hours. */
   const values = $derived(!day ? [] : [
     ...RATINGS.slice(0, 2).map(key => ({ key, label: RATING_LABELS[key].name, value: day[key], text: day[key] === null ? '' : String(day[key]), ratio: (day[key] ?? 0) / 10 })),
-    { key: 'sleep_hours', label: '睡眠时长', value: day.sleep_hours, text: day.sleep_hours === null ? '' : hoursText(day.sleep_hours), ratio: Math.min(1, (day.sleep_hours ?? 0) / 12) },
-    ...RATINGS.slice(2).map(key => ({ key, label: RATING_LABELS[key].name, value: day[key], text: day[key] === null ? '' : String(day[key]), ratio: (day[key] ?? 0) / 10 }))
+    { key: 'sleep_hours', label: '睡眠时长', value: day.sleep_hours, text: day.sleep_hours === null ? '' : hoursText(day.sleep_hours), ratio: Math.min(1, (day.sleep_hours ?? 0) / MAX_SLEEP_HOURS) },
+    ...RATINGS.slice(2).map(key => ({ key, label: RATING_LABELS[key].name, value: day[key], text: day[key] === null ? '' : String(day[key]), ratio: (day[key] ?? 0) / 10 })),
+    { key: 'sleep_wakeups', label: '夜间醒来', value: day.sleep_wakeups, text: day.sleep_wakeups === null ? '' : `${day.sleep_wakeups} 次`, ratio: Math.min(1, (day.sleep_wakeups ?? 0) / 6) }
   ].filter(item => item.value !== null));
   const label = (d: TrendDay) => `${dateLabel(d.date)}：${[!lack.has(d.date) ? '有状态记录' : '', d.dose_count ? `${d.dose_count} 次服药` : '', d.symptom_count ? `${d.symptom_count} 条副作用` : ''].filter(Boolean).join('，') || '没有记录'}`;
   const summary = $derived(`每天的记录：${series[0]?.date ?? ''} 至 ${series[series.length - 1]?.date ?? ''} 共 ${series.length} 天，${series.length - missing.length} 天有状态记录，${series.filter(d => d.dose_count).length} 天有服药，${series.filter(d => d.symptom_count).length} 天有副作用。`);

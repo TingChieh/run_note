@@ -43,6 +43,9 @@ class DailyEntry(Base):
         CheckConstraint(
             "sleep_hours IS NULL OR sleep_hours BETWEEN 0 AND 24", name="sleep_hours_range"
         ),
+        CheckConstraint(
+            "sleep_wakeups IS NULL OR sleep_wakeups BETWEEN 0 AND 10", name="sleep_wakeups_range"
+        ),
         CheckConstraint("note IS NULL OR char_length(note) <= 2000", name="note_length"),
     )
 
@@ -56,6 +59,7 @@ class DailyEntry(Base):
     functioning: Mapped[int | None] = mapped_column(SmallInteger)
     sleep_hours: Mapped[Decimal | None] = mapped_column(Numeric(4, 2))
     sleep_quality: Mapped[int | None] = mapped_column(SmallInteger)
+    sleep_wakeups: Mapped[int | None] = mapped_column(SmallInteger)
     note: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

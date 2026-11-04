@@ -8,6 +8,7 @@
   import WellbeingDialog from './WellbeingDialog.svelte';
   import WellbeingScale from './WellbeingScale.svelte';
   import WellbeingSleep from './WellbeingSleep.svelte';
+  import WellbeingWakeups from './WellbeingWakeups.svelte';
   import WellbeingTile from './WellbeingTile.svelte';
   import { ActivityError } from '#lib/api/activities.ts';
   import {
@@ -289,6 +290,7 @@
           {/each}
           <WellbeingSleep bind:value={draft.sleep_hours} disabled={saving} />
           <WellbeingScale metric="sleep_quality" label={RATING_LABELS.sleep_quality.name} hint={RATING_LABELS.sleep_quality.hint} low={RATING_LABELS.sleep_quality.low} high={RATING_LABELS.sleep_quality.high} bind:value={draft.sleep_quality} disabled={saving} />
+          <WellbeingWakeups bind:value={draft.sleep_wakeups} disabled={saving} />
           <WellbeingTile metric="dose" title="今天吃的药" testid="wellbeing-doses">
             {#snippet actions()}
               <button type="button" class="icon add-dose" onclick={() => openDose()} data-testid="wellbeing-add-dose" aria-label="添加服药" title="添加服药"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg></button>
@@ -483,6 +485,8 @@
   .tiles { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
   @media (min-width: 480px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (min-width: 900px) { .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); } }
+  /* Ten widgets fill three rows of three and leave one over: at three columns the note takes that last row by itself, as wide as the form. */
+  @media (min-width: 900px) { .tiles .note { grid-column: 1 / -1; } }
   .field { display: grid; gap: var(--space-1); min-width: 0; font-size: var(--text-small); font-weight: var(--weight-semibold); }
   .link { padding: 0; border: 0; background: none; color: var(--primary); font-size: var(--text-small); text-decoration: underline; cursor: pointer; }
   .empty { color: var(--muted-foreground); font-size: var(--text-small); }

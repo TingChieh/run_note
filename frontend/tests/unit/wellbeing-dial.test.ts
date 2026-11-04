@@ -40,15 +40,15 @@ describe('typed sleep durations', () => {
     expect(parseDuration('7小时30分钟')).toBe(7.5);
     expect(parseDuration('7小时')).toBe(7);
     expect(parseDuration('0:45')).toBe(0.75);
-    expect(parseDuration('24:00')).toBe(24);
+    expect(parseDuration('14:00')).toBe(14);
   });
   it('round-trips every whole minute through the stored two decimals', () => {
-    for (let minutes = 0; minutes <= 1440; minutes++) {
+    for (let minutes = 0; minutes <= 14 * 60; minutes++) {
       const typed = `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}`;
       expect(Math.round(parseDuration(typed)! * 60)).toBe(minutes);
     }
   });
   it('refuses what it cannot read or what is not a duration of a day', () => {
-    for (const bad of ['', 'abc', '7:60', '25:00', '24:01', '7:5:3', '-1', '7,5', '1e3', '7.555.1', '7h61m']) expect(parseDuration(bad), bad).toBeNull();
+    for (const bad of ['', 'abc', '7:60', '15:00', '14:01', '24:00', '7:5:3', '-1', '7,5', '1e3', '7.555.1', '7h61m']) expect(parseDuration(bad), bad).toBeNull();
   });
 });

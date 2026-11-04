@@ -45,7 +45,8 @@ def test_migration_ddl_matches_models_and_downgrade_refuses_real_data(monkeypatc
     with Operations.context(context):
         module.upgrade()
     sql = output.getvalue()
-    later = {"pills", "medication_id", "mood", "dose_id"}  # added or renamed by a later migration
+    # Added or renamed by a later migration.
+    later = {"pills", "medication_id", "mood", "dose_id", "sleep_wakeups"}
     for name in module.TABLES:
         assert f"CREATE TABLE {name}" in sql
         columns = Base.metadata.tables[name].columns

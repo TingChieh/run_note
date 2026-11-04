@@ -3,7 +3,7 @@ import { CHART_META, chartSummary, recordedDays, wellbeingChartOption } from '..
 import type { TrendDay } from '../../src/lib/api/wellbeing';
 
 const colors = { foreground: '#000', muted: '#666', border: '#ccc', surface: '#fff', primary: '#0a0', accent: '#a60' };
-const day = (n: number, over: Partial<TrendDay> = {}): TrendDay => ({ date: `2026-10-0${n}`, mood: null, anxiety: null, energy: null, focus: null, functioning: null, sleep_hours: null, sleep_quality: null, dose_count: 0, symptom_count: 0, symptom_max_severity: null, ...over });
+const day = (n: number, over: Partial<TrendDay> = {}): TrendDay => ({ date: `2026-10-0${n}`, mood: null, anxiety: null, energy: null, focus: null, functioning: null, sleep_hours: null, sleep_quality: null, sleep_wakeups: null, dose_count: 0, symptom_count: 0, symptom_max_severity: null, ...over });
 const series = [day(1, { mood: 0, energy: 5, sleep_hours: 7.5, sleep_quality: 6 }), day(2), day(3, { mood: 8, symptom_count: 2, symptom_max_severity: 6 })];
 
 describe('wellbeing chart options', () => {
@@ -15,9 +15,48 @@ describe('wellbeing chart options', () => {
   });
   it('plots hours as bars and quality as a line on its own axis', () => {
     const option: any = wellbeingChartOption('sleep', series, colors, false);
-    expect(option.series.map((s: any) => s.type)).toEqual(['bar', 'line']);
+    expect(option.series.map((s: any) => s.type)).toEqual(['bar', 'line', 'bar']);
     expect(option.series[0].data).toEqual([7.5, null, null]);
     expect(option.series[1]).toMatchObject({ yAxisIndex: 1, connectNulls: false });
+  });
+  it('mirrors the night around one baseline: hours and quality above, waking growing downward with its count written under it', () => {
+    const nights = [day(1, { sleep_hours: 7, sleep_quality: 6, sleep_wakeups: 2 }), day(2, { sleep_hours: 6 }), day(3, { sleep_wakeups: 0 }), day(4, { sleep_hours: 8, sleep_quality: 4, sleep_wakeups: 4 })];
+    const option: any = wellbeingChartOption('sleep', nights, { ...colors, wakeups: '#70c' }, false);
+    expect(option.series.map((s: any) => s.type)).toEqual(['bar', 'line', 'bar']);
+    const [hours, quality, waking] = option.series;
+    expect(hours.data).toEqual([7, 6, null, 8]);
+    expect(waking.data.map((d: any) => d && d.count)).toEqual([2, null, 0, 4]);          // an unrecorded night has nothing
+    expect(waking.data[0].value).toBeLessThan(0);                                         // below the baseline
+    expect(waking.data[3].value).toBeLessThan(waking.data[0].value);                      // more waking reaches further down
+    expect(waking.data[2].value === 0).toBe(true);                                        // a 0 sits on the baseline...
+    expect(waking.label.formatter({ data: waking.data[2] })).toBe('0');                   // ...and is written
+    expect(waking.label.position).toBe('bottom');
+    expect([waking.barWidth, waking.barMaxWidth]).toEqual([hours.barWidth, hours.barMaxWidth]);   // the same column above and below
+    expect(waking.barGap).toBe('-100%');
+    expect(waking.markLine.z).toBeLessThan(waking.z);                                     // the 4-times line runs behind the columns
+    expect(waking.itemStyle.color).toBe('#70c');
+    expect(quality.yAxisIndex).toBe(1);
+    // Both axes put 0 on the same baseline, a third of the way up, and neither labels the part below it.
+    const [left, right] = option.yAxis;
+    expect(left.min / left.max).toBeCloseTo(right.min / right.max);
+    expect(left.axisLabel.formatter(-3)).toBe('');
+    expect(right.axisLabel.formatter(-5)).toBe('');
+    expect(right.axisLabel.formatter(0)).toBe('');
+    expect(left).toMatchObject({ max: 12, interval: 6 });                                   // round hour ticks: 0 / 6 / 12
+    expect((wellbeingChartOption('sleep', [day(1, { sleep_hours: 13.5 })], colors, false) as any).yAxis[0]).toMatchObject({ max: 18, interval: 9 });
+    expect(waking.markLine.label.formatter).toBe('4');                                    // the one reference below the baseline
+    expect(waking.markLine.data[0].yAxis).toBeCloseTo(-4 * (6 / (4 + 1.5)));
+    expect(quality.lineStyle.width).toBeLessThan(4);
+    expect(option.legend.left).toBe(0);
+    expect(left.axisLabel.formatter(6)).toBe('6');
+    expect(hours.markLine.data).toEqual([{ yAxis: 0 }]);
+    expect(option.xAxis.axisLine.onZero).toBe(false);                                     // dates stay at the bottom, not on the baseline
+    const tip = option.tooltip.formatter([{ dataIndex: 0 }]);
+    expect(tip).toContain('睡眠时长');
+    expect(tip).toContain('夜间醒来 2 次');
+    expect(CHART_META.sleep.columns.map(c => c.key)).toEqual(['sleep_hours', 'sleep_quality', 'sleep_wakeups']);
+    expect(CHART_META.sleep.direction).toContain('基线以下');
+    expect(recordedDays('sleep', [day(1, { sleep_wakeups: 3 })])).toBe(1);
   });
   it('charts daily functioning on its own, one straight line per recorded day', () => {
     const withValue = [day(1, { functioning: 7 }), day(2), day(3, { functioning: 4 })];

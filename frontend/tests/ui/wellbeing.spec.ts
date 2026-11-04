@@ -84,7 +84,7 @@ test('a partial day saves unanswered items as empty and shows completion', async
   await sleep(page, 7, 30);
   await page.getByRole('button', { name: '保存今日状态' }).click();
   await expect(page.getByRole('status').filter({ hasText: '已保存' })).toBeVisible();
-  await expect(page.getByTestId('wellbeing-status')).toContainText('已记录 3/8 项状态');
+  await expect(page.getByTestId('wellbeing-status')).toContainText('已记录 3/9 项状态');
   await expect(scale(page, '精力').locator('.dial')).toHaveClass(/unset/);
   await expect(scale(page, '开心程度').getByTestId('scale-value')).toHaveText('0');
   await page.reload();
@@ -98,14 +98,14 @@ test('saving twice on one day updates the same record and the rating can be clea
   await open(page);
   await pick(page, '焦虑', 3);
   await page.getByRole('button', { name: '保存今日状态' }).click();
-  await expect(page.getByTestId('wellbeing-status')).toContainText('1/8');
+  await expect(page.getByTestId('wellbeing-status')).toContainText('1/9');
   await pick(page, '焦虑', 5);
   await page.getByRole('button', { name: '保存今日状态' }).click();
   await expect(scale(page, '焦虑').getByTestId('scale-value')).toHaveText('5');
   await page.getByRole('button', { name: '清除焦虑' }).click();
   await pick(page, '精力', 2);
   await page.getByRole('button', { name: '保存今日状态' }).click();
-  await expect(page.getByTestId('wellbeing-status')).toContainText('1/8');
+  await expect(page.getByTestId('wellbeing-status')).toContainText('1/9');
   await page.getByTestId('wellbeing-tab-history').click();
   await page.getByRole('button', { name: '列表' }).click();
   await expect(page.getByTestId('wellbeing-entry')).toHaveCount(1);
@@ -221,14 +221,14 @@ test('the medication widget lists doses from the top down, each as a capsule', a
 
 test('many doses are all listed in the widget: it grows with them, in the page flow, with no scrollbar of its own', async ({ page }) => {
   await open(page);
-  const tile = page.locator('[data-metric="dose"]'), note = page.locator('[data-metric="note"]');
+  const tile = page.locator('[data-metric="dose"]'), neighbour = page.locator('[data-metric="wakeups"]');
   const before = (await tile.boundingBox())!.height;
   for (const time of ['00:00', '00:01', '00:02', '00:03', '00:04', '00:05']) await addDose(page, { time });
   await expect(page.getByTestId('wellbeing-dose')).toHaveCount(6);
   const after = (await tile.boundingBox())!.height, list = page.getByTestId('wellbeing-dose-list');
   // The widget grows to hold every dose (no inner scroll box caps it); the widget beside it in the row stretches to match.
   expect(after).toBeGreaterThan(before + 100);
-  expect(Math.abs(after - (await note.boundingBox())!.height)).toBeLessThanOrEqual(1);
+  expect(Math.abs(after - (await neighbour.boundingBox())!.height)).toBeLessThanOrEqual(1);
   await expect(list).not.toHaveAttribute('tabindex', /.*/);
   expect(await list.evaluate(el => ({ over: el.scrollHeight > el.clientHeight + 4, overflow: getComputedStyle(el).overflowY }))).toEqual({ over: false, overflow: 'visible' });
   // Every capsule lies fully inside the card (nothing is hidden below a fold inside the widget); the page scrolls, not the widget.
@@ -471,18 +471,18 @@ test('a day with a dose can be saved even when no state is answered, and a note 
   // Nothing at all: an answer is asked for.
   await pick(page, '开心程度', 5);
   await page.getByRole('button', { name: '保存今日状态' }).click();
-  await expect(page.getByTestId('wellbeing-status')).toContainText('1/8');
+  await expect(page.getByTestId('wellbeing-status')).toContainText('1/9');
   await addDose(page);
   // Clearing the only answer, with a dose on the day, saves.
   await page.getByRole('button', { name: '清除开心程度' }).click();
   await page.getByRole('button', { name: '保存今日状态' }).click();
-  await expect(page.getByTestId('wellbeing-status')).toContainText('0/8');
+  await expect(page.getByTestId('wellbeing-status')).toContainText('0/9');
   await expect(page.getByText('请至少填写')).toHaveCount(0);
   await expect(page.getByTestId('wellbeing-dose')).toHaveCount(1);
   // A note alone is enough too.
   await page.getByRole('textbox', { name: '当日备注' }).fill('只写一句');
   await page.getByRole('button', { name: '保存今日状态' }).click();
-  await expect(page.getByTestId('wellbeing-status')).toContainText('1/8');
+  await expect(page.getByTestId('wellbeing-status')).toContainText('1/9');
 });
 
 test('the words of every chip sit in the middle of it, the open-ended "其他药物" too', async ({ page }) => {
@@ -830,7 +830,7 @@ test('history: calendar marks, back-filling a past day, and deleting only the st
   await expect(page.getByTestId('wellbeing-status')).toHaveText('这一天还没有记录');
   await pick(page, '开心程度', 5);
   await page.getByRole('button', { name: '保存这一天' }).click();
-  await expect(page.getByTestId('wellbeing-status')).toContainText('1/8');
+  await expect(page.getByTestId('wellbeing-status')).toContainText('1/9');
   await expect(page.locator(`[data-testid="wellbeing-day"][data-date="${past}"]`)).toHaveAttribute('aria-label', /有状态记录/);
   const remove = page.getByTestId('wellbeing-delete-entry');
   await remove.click();
@@ -1060,7 +1060,7 @@ test('trends: six charts say which way is better, missing days stay empty, and e
   await pick(page, '开心程度', 6);
   await pick(page, '精力', 3);
   await page.getByRole('button', { name: '保存今日状态' }).click();
-  await expect(page.getByTestId('wellbeing-status')).toContainText('2/8');
+  await expect(page.getByTestId('wellbeing-status')).toContainText('2/9');
   await page.getByTestId('wellbeing-tab-trends').click();
   // The default range is the last 7 days.
   await expect(page.getByRole('button', { name: '近 7 天' })).toHaveAttribute('aria-pressed', 'true');
@@ -1090,7 +1090,7 @@ test('report: the page is charts and cards with no tables; the print report is a
   await pick(page, '焦虑', 2);
   await sleep(page, 6, 30);
   await page.getByRole('button', { name: '保存今日状态' }).click();
-  await expect(page.getByTestId('wellbeing-status')).toContainText('3/8');
+  await expect(page.getByTestId('wellbeing-status')).toContainText('3/9');
   await addDose(page);
   await expect(page.getByTestId('wellbeing-dose')).toHaveCount(1);
   await page.getByTestId('wellbeing-tab-report').click();
@@ -1198,7 +1198,7 @@ test('summary: each measure is a widget with its figure, a small line and the mo
   await seed(page, 14);
   await page.getByTestId('wellbeing-tab-report').click();
   const measures = page.getByTestId('report-measures');
-  // Six widgets: sleep hours and sleep quality are one widget, so the rows fill up exactly (3 + 3, 2 + 2 + 2 or one by one) at any width.
+  // Six widgets: sleep hours, quality and night waking are one widget (a row of its own), so no row has a hole at any width: 3 + 2 and the sleep card, 2 + 2 + 1 and the sleep card, or one by one.
   await expect(measures.locator('[data-metric]')).toHaveCount(6);
   const sleepTile = page.getByTestId('report-measure-sleep');
   await expect(sleepTile).toContainText('小时');
@@ -1208,8 +1208,12 @@ test('summary: each measure is a widget with its figure, a small line and the mo
   for (const width of [1440, 1100, 900, 700, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     await settled(page);
-    const rows = await measures.locator('[data-metric]').evaluateAll(els => { const tops = els.map(el => Math.round(el.getBoundingClientRect().top)); return [...new Set(tops)].map(top => tops.filter(t => t === top).length); });
-    expect(new Set(rows).size, `rows at ${width}px: ${rows}`).toBe(1);
+    const gaps = await measures.evaluate(el => {
+      const box = el.getBoundingClientRect(), tiles = [...el.querySelectorAll('[data-metric]')].map(t => t.getBoundingClientRect());
+      const tops = [...new Set(tiles.map(t => Math.round(t.top)))];
+      return tops.map(top => { const row = tiles.filter(t => Math.round(t.top) === top); return { left: Math.min(...row.map(t => t.left)) - box.left, right: box.right - Math.max(...row.map(t => t.right)) }; });
+    });
+    for (const row of gaps) { expect(Math.abs(row.left), `a row starts at the edge at ${width}px`).toBeLessThanOrEqual(1); expect(Math.abs(row.right), `a row ends at the edge at ${width}px`).toBeLessThanOrEqual(1); }
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
   const mood = page.getByTestId('report-measure-mood');
@@ -1544,6 +1548,8 @@ test('summary: side effects and notes share one row when there is room (side eff
   await expect(notes).toBeVisible();
   await settled(page);
   const rects = async () => ({ effects: (await effects.boundingBox())!, notes: (await notes.boundingBox())! });
+  await expect(page.getByTestId('report-measure-sleep').locator('.chart[data-ready="true"]').first()).toBeVisible(); // the sleep charts change the page's height as they appear
+  await expect.poll(async () => { const r = await rects(); return Math.abs(r.effects.height - r.notes.height); }).toBeLessThanOrEqual(1);
   let { effects: e, notes: n } = await rects();
   expect(Math.abs(e.y - n.y)).toBeLessThanOrEqual(1); // the same row
   expect(e.x + e.width).toBeLessThanOrEqual(n.x + 1);   // side effects on the left
@@ -1585,7 +1591,7 @@ test('the diary never writes to browser storage', async ({ page }) => {
   await pick(page, '焦虑', 8);
   await page.getByRole('textbox', { name: '当日备注' }).fill('私密备注内容');
   await page.getByRole('button', { name: '保存今日状态' }).click();
-  await expect(page.getByTestId('wellbeing-status')).toContainText('2/8');
+  await expect(page.getByTestId('wellbeing-status')).toContainText('2/9');
   const stored = await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }));
   expect(stored).not.toContain('私密备注内容');
   expect(stored).not.toMatch(/wellbeing|焦虑/);
@@ -1644,26 +1650,28 @@ test('a tap or drag on the ring turns the dial; the middle and the opening do no
   await expect(value).toHaveText('10');
 });
 
-test('every measure is a widget of its own colour and icon, and the note is the same size as the others', async ({ page }) => {
+test('every measure is a widget of its own colour and icon, and the note has the last row to itself', async ({ page }) => {
   await open(page);
   const tiles = page.locator('section.widgets').first().locator('[data-metric]'); // the measures, then the medication widget, then the note
-  expect(await tiles.evaluateAll(nodes => nodes.map(n => (n as HTMLElement).dataset.metric))).toEqual(['mood', 'anxiety', 'energy', 'focus', 'functioning', 'sleep', 'sleep_quality', 'dose', 'note']);
+  expect(await tiles.evaluateAll(nodes => nodes.map(n => (n as HTMLElement).dataset.metric))).toEqual(['mood', 'anxiety', 'energy', 'focus', 'functioning', 'sleep', 'sleep_quality', 'wakeups', 'dose', 'note']);
   const colours = await tiles.evaluateAll(nodes => nodes.map(n => getComputedStyle(n).getPropertyValue('--tone').trim()));
-  expect(new Set(colours).size).toBe(9); // no two measures share a colour
+  expect(new Set(colours).size).toBe(10); // no two measures share a colour
   expect(await tiles.evaluateAll(nodes => nodes.every(n => !!n.querySelector('header svg')))).toBe(true);
   // Each is its own card: nothing wraps them in a larger box.
   expect(await page.locator('[data-metric="anxiety"]').evaluate(n => getComputedStyle(n.parentElement!).borderTopWidth)).toBe('0px');
   // Same width as every other widget, and as tall as its row neighbours.
-  const mood = (await page.locator('[data-metric="mood"]').boundingBox())!, note = (await page.locator('[data-metric="note"]').boundingBox())!, quality = (await page.locator('[data-metric="sleep_quality"]').boundingBox())!;
-  expect(Math.abs(mood.width - note.width)).toBeLessThanOrEqual(1);
-  expect(Math.abs(quality.width - note.width)).toBeLessThanOrEqual(1);
-  expect(Math.abs(quality.height - note.height)).toBeLessThanOrEqual(1);
-  expect(Math.abs(quality.y - note.y)).toBeLessThanOrEqual(1);
-  // The medication widget is one of the grid's cells, the same width as the others, right before the note.
+  const mood = (await page.locator('[data-metric="mood"]').boundingBox())!, wakeups = (await page.locator('[data-metric="wakeups"]').boundingBox())!, note = (await page.locator('[data-metric="note"]').boundingBox())!, quality = (await page.locator('[data-metric="sleep_quality"]').boundingBox())!;
+  expect(Math.abs(mood.width - wakeups.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(quality.width - wakeups.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(quality.height - wakeups.height)).toBeLessThanOrEqual(1);
+  expect(Math.abs(quality.y - wakeups.y)).toBeLessThanOrEqual(1);
+  // The medication widget is one of the grid's cells, the same width as the others, right after the wake-ups one. The note has the last row to itself, as wide as the form.
   const dose = (await page.locator('[data-metric="dose"]').boundingBox())!;
-  expect(Math.abs(dose.width - note.width)).toBeLessThanOrEqual(1);
-  expect(dose.x).toBeLessThan(note.x);
-  expect(Math.abs(dose.y - note.y)).toBeLessThanOrEqual(1);
+  expect(Math.abs(dose.width - wakeups.width)).toBeLessThanOrEqual(1);
+  expect(dose.x).toBeGreaterThan(wakeups.x);
+  expect(Math.abs(dose.y - wakeups.y)).toBeLessThanOrEqual(1);
+  expect(note.width).toBeGreaterThan(mood.width * 2.5);
+  expect(note.y).toBeGreaterThan(dose.y + dose.height - 1);
   // Every card's name sits at the same height from its top, even a short card stretched to its row's height.
   const tops = await page.locator('section.widgets [data-metric]').evaluateAll(nodes => nodes.map(n => Math.round(n.querySelector('header .badge')!.getBoundingClientRect().top - n.getBoundingClientRect().top)));
   expect(new Set(tops).size).toBe(1);
@@ -1757,7 +1765,7 @@ test('one tap logs "taken", can be undone, and restock and count keep the stock 
   await expect(stock).toContainText('0 盒 27 颗（共 27 颗）');
   await expect(ring).toHaveAttribute('data-fraction', '0.964');
   await expect(ring).toContainText('27');
-  await expect(card).toContainText('按近 14 天平均每天 0.07 颗');
+  await expect(card).toContainText('按已吃的 1 天平均每天 1 颗');
   await page.getByTestId('wellbeing-med-undo').getByRole('button', { name: '撤销' }).click();
   await expect(stock).toContainText('1 盒 0 颗（共 28 颗）');
   await expect(page.getByTestId('wellbeing-med-notice')).toContainText('库存已恢复');
@@ -2005,7 +2013,7 @@ test('the save bar is liquid glass while it floats over content and a plain card
   // Top of a long form: the bar covers the content below it.
   await expect(bar).toHaveAttribute('data-glass', 'floating');
   // The bar is as wide as one widget column and lines up with the last column above it, left and right.
-  const barBox = (await bar.boundingBox())!, lastTile = (await page.locator('[data-metric="note"]').boundingBox())!;
+  const barBox = (await bar.boundingBox())!, lastTile = (await page.locator('[data-metric="dose"]').boundingBox())!;
   expect(Math.abs(barBox.x - lastTile.x)).toBeLessThanOrEqual(1);
   expect(Math.abs(barBox.x + barBox.width - (lastTile.x + lastTile.width))).toBeLessThanOrEqual(1);
   expect(barBox.height).toBeLessThan(90); // still a slim bar
@@ -2106,7 +2114,7 @@ test('widgets sit three to a row, so each one is wide enough for its dial', asyn
     const boxes = await page.locator('section.widgets').first().locator('[data-metric]').evaluateAll(nodes => nodes.map(n => { const b = n.getBoundingClientRect(); return { x: b.x, y: Math.round(b.y), w: b.width }; }));
     const rows = new Map<number, number>();
     for (const b of boxes) rows.set(b.y, (rows.get(b.y) ?? 0) + 1);
-    expect([...rows.values()]).toEqual([3, 3, 3]); // 9 widgets (the medication one just before the note): 3 + 3 + 3, at every desktop width
+    expect([...rows.values()]).toEqual([3, 3, 3, 1]); // 10 widgets: 3 + 3 + 3, then the note on its own row, at every desktop width
     expect(Math.abs(boxes[0].w - boxes[1].w)).toBeLessThanOrEqual(1);
     // The widget is as wide as its row allows: a dial never has to shrink.
     expect(boxes[0].w).toBeGreaterThan(260);
@@ -2132,7 +2140,7 @@ test('sleep is one double ring: hours outside, minutes inside, exact to the minu
   expect(Math.abs((await page.locator('[data-metric="sleep"]').boundingBox())!.height - (await page.locator('[data-metric="focus"]').boundingBox())!.height)).toBeLessThanOrEqual(1); // and the row is even
   expect(text.width).toBeLessThan(d.width * 0.44);
   await page.getByRole('button', { name: '保存今日状态' }).click();
-  await expect(page.getByTestId('wellbeing-status')).toContainText('1/8');
+  await expect(page.getByTestId('wellbeing-status')).toContainText('1/9');
   await page.reload();
   await expect(page.getByTestId('wellbeing-sleep').getByTestId('scale-value')).toHaveText('7 小时 25 分');
   await expect(page.getByRole('slider', { name: '睡眠小时' })).toHaveValue('7');
@@ -2162,7 +2170,7 @@ test('the sleep rings differ in size: a thick ring with a big knob for hours, a 
   expect(knobs).toHaveLength(2);
   expect(knobs[0]).toBeGreaterThan(knobs[1] * 1.4); // hours first, then minutes
   // Even where both rings start (and at any time), the two knobs never overlap: the rings are far enough apart for them to sit side by side.
-  for (const [h, m] of [[0, 0], [7, 25], [16, 59]] as const) {
+  for (const [h, m] of [[0, 0], [7, 25], [14, 59]] as const) {
     await sleep(page, h, m);
     const centres = await dial.locator('.rn-slider-thumb').evaluateAll(nodes => nodes.map(n => { const r = n.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, r: r.width / 2 }; }));
     expect(Math.hypot(centres[0].x - centres[1].x, centres[0].y - centres[1].y)).toBeGreaterThanOrEqual(centres[0].r + centres[1].r);
@@ -2179,12 +2187,12 @@ test('on the sleep ring, where you touch decides what turns: the outer ring is h
   await dial.evaluate(el => el.scrollIntoView({ block: 'center' }));
   let at = await ringPoint(dial, 0.5, 41);
   await page.mouse.click(at.x, at.y);
-  await expect(value).toHaveText('8 小时'); // 16 hours round, half way
+  await expect(value).toHaveText('7 小时'); // 14 hours round, half way
   at = await ringPoint(dial, 0.5, 27);
   await page.mouse.click(at.x, at.y);
-  await expect(dial).toHaveAttribute('data-hours', '8');
+  await expect(dial).toHaveAttribute('data-hours', '7');
   await expect(dial).toHaveAttribute('data-minutes', '30');
-  await expect(value).toHaveText('8 小时 30 分');
+  await expect(value).toHaveText('7 小时 30 分');
   // Dragging the inner ring keeps turning the inner ring even when the pointer drifts outwards.
   await dial.evaluate(el => el.scrollIntoView({ block: 'center' }));
   const start = await ringPoint(dial, 0.1, 27);
@@ -2193,12 +2201,12 @@ test('on the sleep ring, where you touch decides what turns: the outer ring is h
   const drift = await ringPoint(dial, 0.75, 38);
   await page.mouse.move(drift.x, drift.y, { steps: 8 });
   await page.mouse.up();
-  await expect(dial).toHaveAttribute('data-hours', '8');
+  await expect(dial).toHaveAttribute('data-hours', '7');
   expect(Number(await dial.getAttribute('data-minutes'))).toBeGreaterThan(40);
   // The middle of the ring is not a handle.
   const centre = (await dial.boundingBox())!;
   await page.mouse.click(centre.x + centre.width / 2, centre.y + centre.height / 2);
-  await expect(dial).toHaveAttribute('data-hours', '8');
+  await expect(dial).toHaveAttribute('data-hours', '7');
 });
 
 test('the sleep ring takes a typed time in a small box: 7:25, 7.5 or 7h25m; something unreadable stays open and says so', async ({ page }) => {
@@ -2296,4 +2304,69 @@ test('on a very small screen the floating save bar is one slim row with both but
   for (const box of [saveBox!, discardBox!]) { expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(315); expect(box.y + box.height).toBeLessThanOrEqual(320); }
   await expect(page.getByRole('status').filter({ hasText: '有未保存的更改' })).toHaveCount(1);
   await noOverflow(page);
+});
+
+test('night wake-ups use the round slider, zero is a real answer and the report shows the average', async ({ page }) => {
+  await open(page);
+  await expect(scale(page, '夜间醒来').locator('.dial')).toHaveClass(/unset/);
+  await pick(page, '夜间醒来', 0);                   // only this answered: still a record
+  await page.getByRole('button', { name: '保存今日状态' }).click();
+  await expect(page.getByRole('status').filter({ hasText: '已保存' })).toBeVisible();
+  await expect(page.getByTestId('wellbeing-status')).toContainText('已记录 1/9 项状态');
+  await page.reload();
+  await expect(scale(page, '夜间醒来').getByTestId('scale-value')).toHaveText('0');
+  await expect(scale(page, '夜间醒来').locator('.dial')).not.toHaveClass(/unset/);
+  await page.getByRole('button', { name: '清除夜间醒来次数' }).click();
+  await expect(scale(page, '夜间醒来').locator('.dial')).toHaveClass(/unset/);
+  await pick(page, '夜间醒来', 3);
+  await page.getByRole('button', { name: '保存今日状态' }).click();
+  await expect(page.getByRole('status').filter({ hasText: '已保存' })).toBeVisible();
+  await page.reload();
+  await expect(scale(page, '夜间醒来').getByTestId('scale-value')).toHaveText('3');
+  await page.getByTestId('wellbeing-tab-report').click();
+  // Part of the sleep card in the summary: its own figure (and what stands out), and the nights drawn as columns right under the hours.
+  const sleepCard = page.getByTestId('report-measure-sleep');
+  await expect(sleepCard.getByTestId('report-sleep-wakeups').locator('.big strong')).toHaveText('3');
+  await expect(sleepCard.getByTestId('report-wakeups-figures')).toContainText('最多一晚 3 次 · 0 晚整晚没醒');
+  await expect(sleepCard.locator('.chart[data-ready="true"]')).toHaveCount(1);       // one chart: the nights' waking is drawn below the sleep chart's baseline, not a second one
+  await expect(sleepCard.getByTestId('wellbeing-chart-sleep')).toContainText('基线以下：夜间醒来次数');
+  await expect(page.getByTestId('report-measure-wakeups')).toHaveCount(0);           // no tile of its own
+  // And in the sleep chart among the trends, with the full table.
+  await page.getByTestId('wellbeing-tab-trends').click();
+  const chart = page.getByTestId('wellbeing-trends').getByTestId('wellbeing-chart-sleep');
+  await expect(chart).toContainText('向下越长醒得越多');
+  await expect(chart.locator('.chart[data-ready="true"]')).toHaveCount(1);
+  await expect(page.getByTestId('wellbeing-trends').getByTestId('wellbeing-chart-wakeups')).toHaveCount(0);
+  await chart.getByText('查看睡眠数据表').click();
+  await expect(chart.getByRole('cell', { name: '3 次' })).toBeVisible();
+});
+
+test('summary: a very long night keeps the hours bar inside its own track, never running into the quality figure', async ({ page }) => {
+  await open(page);
+  await page.evaluate(async () => {
+    const csrf = (await (await fetch('/api/v1/auth/csrf')).json()).data.csrf_token;
+    const shift = (n: number) => new Date(Date.now() - n * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
+    for (const [n, hours] of [[2, 3], [1, 13.5]] as const) await fetch(`/api/v1/me/wellbeing/days/${shift(n)}/entry`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify({ sleep_hours: hours, sleep_quality: 5 }) });
+  });
+  await page.getByTestId('wellbeing-tab-report').click();
+  const hours = page.getByTestId('report-sleep-hours');
+  await expect(hours).toContainText('最长 13.5 小时');
+  const [track, span, quality] = await Promise.all([hours.locator('.range-bar').boundingBox(), hours.locator('.range-bar .span').boundingBox(), page.getByTestId('report-sleep-quality').boundingBox()]);
+  expect(span!.x + span!.width).toBeLessThanOrEqual(track!.x + track!.width + 1);
+  expect(span!.x + span!.width).toBeLessThan(quality!.x);
+});
+
+test('sleep duration runs from 0 to 14 hours: the hours ring stops at 14 and a typed 15 hours is refused', async ({ page }) => {
+  await open(page);
+  const box = page.getByTestId('wellbeing-sleep');
+  await expect(page.getByRole('slider', { name: '睡眠小时' })).toHaveAttribute('max', '14');
+  await box.getByRole('button', { name: '直接输入睡眠时长' }).click();
+  const input = box.getByRole('textbox', { name: /^输入睡眠时长/ });
+  await input.fill('15:00');
+  await input.press('Enter');
+  await expect(input).toHaveAttribute('aria-invalid', 'true');
+  await expect(box.locator('.dial')).toHaveClass(/unset/);
+  await input.fill('14:00');
+  await input.press('Enter');
+  await expect(box.getByTestId('scale-value')).toHaveText('14 小时');
 });

@@ -54,6 +54,8 @@ class SleepStat(BaseModel):
     max_hours: float | None
     quality_answered_days: int
     mean_quality: float | None
+    wakeups_answered_days: int
+    mean_wakeups: float | None
 
 
 class DoseChange(BaseModel):
@@ -160,6 +162,7 @@ def _weekly(entries: list[DailyEntry]) -> list[WeekStat]:
 def _sleep(entries: list[DailyEntry]) -> SleepStat:
     hours = [float(row.sleep_hours) for row in entries if row.sleep_hours is not None]
     quality = [row.sleep_quality for row in entries if row.sleep_quality is not None]
+    wakeups = [row.sleep_wakeups for row in entries if row.sleep_wakeups is not None]
     return SleepStat(
         answered_days=len(hours),
         mean_hours=_mean(hours, 2),
@@ -167,6 +170,8 @@ def _sleep(entries: list[DailyEntry]) -> SleepStat:
         max_hours=max(hours, default=None),
         quality_answered_days=len(quality),
         mean_quality=_mean(quality),
+        wakeups_answered_days=len(wakeups),
+        mean_wakeups=_mean(wakeups),
     )
 
 
@@ -234,7 +239,7 @@ def build_report(db, user, start: date, end: date, now: datetime) -> Report:
     missing = [day for day in span if day not in recorded]
     unanswered = {
         key: sum(1 for row in entries if getattr(row, key) is None)
-        for key in (*RATING_FIELDS, "sleep_hours")
+        for key in (*RATING_FIELDS, "sleep_hours", "sleep_wakeups")
     }
     return Report(
         start=start,
@@ -299,6 +304,7 @@ def csv_rows(db, user, kind: CsvKind, start: date, end: date) -> list[list[str]]
                 "睡眠时长(小时)",
                 "睡眠时长(时:分)",
                 "睡眠质量(0-10,越高越好)",
+                "夜间醒来次数",
                 "备注",
             ]
         ]
@@ -314,6 +320,7 @@ def csv_rows(db, user, kind: CsvKind, start: date, end: date) -> list[list[str]]
                     "" if row.sleep_hours is None else f"{row.sleep_hours:.2f}",
                     _clock(row.sleep_hours),
                     safe_cell(row.sleep_quality),
+                    safe_cell(row.sleep_wakeups),
                     safe_cell(row.note),
                 ]
             )

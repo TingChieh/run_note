@@ -28,6 +28,8 @@ export function valueAt(fraction: number, min: number, max: number, step: number
  * A typed sleep duration as decimal hours (two decimals): "7:25", "7.5", "7h25m" or "7时25分", "7" (hours). Minutes must be under 60, the total at most 24 hours.
  * Returns null for anything else, so the caller can say it was not understood.
  */
+/** The sleep duration the form accepts: 0 to 14 hours (what the ring turns through; a longer time already stored is still shown). */
+export const MAX_SLEEP_HOURS = 14;
 export function parseDuration(text: string): number | null {
   const value = text.trim().replace(/：/g, ':').replace(/\s+/g, '');
   let hours: number, minutes = 0;
@@ -36,7 +38,7 @@ export function parseDuration(text: string): number | null {
   else if ((match = /^(\d{1,2})(?:h|时|小时)(?:(\d{1,2})(?:m|min|分|分钟)?)?$/i.exec(value))) { hours = Number(match[1]); minutes = match[2] === undefined ? 0 : Number(match[2]); }
   else if ((match = /^(\d{1,2})(?:\.(\d{1,2}))?$/.exec(value))) { hours = Number(match[1]); minutes = match[2] === undefined ? 0 : Math.round(Number(`0.${match[2]}`) * 60); }
   else return null;
-  if (minutes > 59 || hours * 60 + minutes > 24 * 60) return null;
+  if (minutes > 59 || hours * 60 + minutes > MAX_SLEEP_HOURS * 60) return null;
   return Math.round((hours + minutes / 60) * 100) / 100;
 }
 

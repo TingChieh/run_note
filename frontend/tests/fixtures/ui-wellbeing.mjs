@@ -60,9 +60,10 @@ export function createWellbeing(getUser) {
       const date = m[1];
       if (req.method === 'PUT') {
         if (date > today) return json(422, null, 'FUTURE_DATE', '不能记录未来的日期');
-        const answers = Object.fromEntries([...RATINGS, 'sleep_hours', 'note'].map(k => [k, body[k] ?? null]));
+        const answers = Object.fromEntries([...RATINGS, 'sleep_hours', 'sleep_wakeups', 'note'].map(k => [k, body[k] ?? null]));
         if (Object.values(answers).every(v => v === null || v === '')) return json(422, null, 'VALIDATION_ERROR', '请求参数不合法');
         if (RATINGS.some(k => answers[k] !== null && (!Number.isInteger(answers[k]) || answers[k] < 0 || answers[k] > 10))) return json(422, null, 'VALIDATION_ERROR', '请求参数不合法');
+        if (answers.sleep_wakeups !== null && (!Number.isInteger(answers.sleep_wakeups) || answers.sleep_wakeups < 0 || answers.sleep_wakeups > 10)) return json(422, null, 'VALIDATION_ERROR', '请求参数不合法');
         const existing = entries.get(date);
         if ('based_on' in body && (body.based_on === null ? !!existing : !existing || existing.updated_at !== body.based_on)) return json(409, null, 'ENTRY_CHANGED', '这一天的记录已在其他位置更新，请刷新后再保存');
         const entry = { entry_date: date, ...answers, updated_at: stamp() };
@@ -88,10 +89,15 @@ export function createWellbeing(getUser) {
       let stock = null;
       if (moves.length) {
         const pills = Math.round((moves.reduce((sum, x) => sum + x.pills, 0) - taken(med)) * 100) / 100;
-        const recent = doses.filter(d => d.medication_id === med.id && d.pills !== null && Date.parse(d.taken_at) >= Date.now() - 14 * 86400000).reduce((sum, d) => sum + d.pills, 0);
-        const avg = recent / 14;
+        // Pace: the last 7 finished days, or the days since the first dose for a newer medicine (today only when it was first taken today).
+        const dayNumber = (/** @type {string} */ date) => Date.parse(`${date}T00:00:00Z`) / 86400000;
+        const started = own.map(d => d.entry_date).sort()[0];
+        const span = started ? dayNumber(today) - dayNumber(started) : 0;
+        const basis = Math.max(1, Math.min(7, span));
+        const counted = own.filter(d => d.pills !== null && (span ? d.entry_date < today && dayNumber(d.entry_date) >= dayNumber(today) - 7 : d.entry_date === today));
+        const avg = started ? counted.reduce((sum, d) => sum + d.pills, 0) / basis : 0;
         const boxes = med.pills_per_box && pills >= 0 ? Math.floor(pills / med.pills_per_box) : null;
-        stock = { pills, boxes, loose_pills: boxes === null ? null : Math.round((pills - boxes * med.pills_per_box) * 100) / 100, avg_daily_pills: avg > 0 ? Math.round(avg * 100) / 100 : null, days_left: avg > 0 ? (pills <= 0 ? 0 : Math.round(pills / avg * 10) / 10) : null };
+        stock = { pills, boxes, loose_pills: boxes === null ? null : Math.round((pills - boxes * med.pills_per_box) * 100) / 100, avg_daily_pills: avg > 0 ? Math.round(avg * 100) / 100 : null, avg_days: avg > 0 ? basis : null, days_left: avg > 0 ? (pills <= 0 ? 0 : Math.round(pills / avg * 10) / 10) : null };
       }
       return { ...med, dose_count: own.length, last_taken_at: own[0]?.taken_at ?? null, stock };
     };
@@ -218,7 +224,7 @@ export function createWellbeing(getUser) {
       const start = addDays(today, -(days - 1));
       const series = Array.from({ length: days }, (_, i) => {
         const date = addDays(start, i), entry = entries.get(date), events = symptoms.filter(s => s.entry_date === date);
-        return { date, ...Object.fromEntries(RATINGS.map(k => [k, entry?.[k] ?? null])), sleep_hours: entry?.sleep_hours ?? null, dose_count: dosesOn(date).length, symptom_count: events.length, symptom_max_severity: null };
+        return { date, ...Object.fromEntries(RATINGS.map(k => [k, entry?.[k] ?? null])), sleep_hours: entry?.sleep_hours ?? null, sleep_wakeups: entry?.sleep_wakeups ?? null, dose_count: dosesOn(date).length, symptom_count: events.length, symptom_max_severity: null };
       });
       return json(200, { days, start, end: today, timezone: zone(), recorded_days: series.filter(p => entries.has(p.date)).length, series, symptoms: stats(between(symptoms, start, today)) });
     }
@@ -243,13 +249,13 @@ export function createWellbeing(getUser) {
         own.forEach((d, i) => { const before = own[i - 1]; if (!before || before.pills !== d.pills || before.dose_amount !== d.dose_amount || before.dose_unit !== d.dose_unit) timeline.push({ date: d.entry_date, taken_at: d.taken_at, pills: d.pills, dose_amount: d.dose_amount, dose_unit: d.dose_unit, kind: before ? 'changed' : 'first_in_range' }); });
         return { name, total_pills: own.reduce((sum, d) => sum + (d.pills ?? 0), 0), dose_count: own.length, scheduled_count: own.filter(d => d.regimen === 'scheduled').length, as_needed_count: own.filter(d => d.regimen === 'as_needed').length, first_taken_at: own[0].taken_at, last_taken_at: own.at(-1).taken_at, timeline };
       });
-      const hours = rows.filter(r => r.sleep_hours !== null).map(r => r.sleep_hours), quality = rows.filter(r => r.sleep_quality !== null).map(r => r.sleep_quality);
+      const hours = rows.filter(r => r.sleep_hours !== null).map(r => r.sleep_hours), quality = rows.filter(r => r.sleep_quality !== null).map(r => r.sleep_quality), wakeups = rows.filter(r => r.sleep_wakeups != null).map(r => r.sleep_wakeups);
       return json(200, {
         start: from, end: to, timezone: zone(), generated_on: today,
-        series: span.map(date => { const e = entries.get(date), events = symptoms.filter(x => x.entry_date === date); return { date, ...Object.fromEntries(RATINGS.map(k => [k, e?.[k] ?? null])), sleep_hours: e?.sleep_hours ?? null, dose_count: dosesOn(date).length, symptom_count: events.length, symptom_max_severity: null }; }),
-        coverage: { days_in_range: span.length, days_with_entry: rows.length, days_without_entry: missing.length, missing_dates: missing, unanswered: Object.fromEntries([...RATINGS, 'sleep_hours'].map(k => [k, rows.filter(r => r[k] === null).length])) },
+        series: span.map(date => { const e = entries.get(date), events = symptoms.filter(x => x.entry_date === date); return { date, ...Object.fromEntries(RATINGS.map(k => [k, e?.[k] ?? null])), sleep_hours: e?.sleep_hours ?? null, sleep_wakeups: e?.sleep_wakeups ?? null, dose_count: dosesOn(date).length, symptom_count: events.length, symptom_max_severity: null }; }),
+        coverage: { days_in_range: span.length, days_with_entry: rows.length, days_without_entry: missing.length, missing_dates: missing, unanswered: Object.fromEntries([...RATINGS, 'sleep_hours', 'sleep_wakeups'].map(k => [k, rows.filter(r => r[k] === null).length])) },
         ratings: RATINGS.map(key => { const v = rows.map(r => r[key]).filter(x => x !== null); return { key, answered_days: v.length, mean: mean(v), min: v.length ? Math.min(...v) : null, max: v.length ? Math.max(...v) : null, first: v[0] ?? null, last: v.at(-1) ?? null }; }),
-        weekly: [], sleep: { answered_days: hours.length, mean_hours: mean(hours), min_hours: hours.length ? Math.min(...hours) : null, max_hours: hours.length ? Math.max(...hours) : null, quality_answered_days: quality.length, mean_quality: mean(quality) },
+        weekly: [], sleep: { answered_days: hours.length, mean_hours: mean(hours), min_hours: hours.length ? Math.min(...hours) : null, max_hours: hours.length ? Math.max(...hours) : null, quality_answered_days: quality.length, mean_quality: mean(quality), wakeups_answered_days: wakeups.length, mean_wakeups: mean(wakeups) },
         medications: meds, doses: inRange, symptoms: stats(events), symptom_events: events.map(e => ({ ...e, preceding_dose: preceding(e, inRange) })),
         notes: rows.filter(r => r.note).map(r => ({ date: r.entry_date, note: r.note }))
       });

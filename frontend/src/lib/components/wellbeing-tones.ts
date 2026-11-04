@@ -1,5 +1,5 @@
 /** Colour and icon of each journal measure. Colours are the `--well-*` tokens in app.css (light and dark); icons are 24×24 stroke paths. */
-export type ToneKey = 'mood' | 'anxiety' | 'energy' | 'focus' | 'functioning' | 'sleep' | 'sleep_quality' | 'effects' | 'note' | 'dose';
+export type ToneKey = 'mood' | 'anxiety' | 'energy' | 'focus' | 'functioning' | 'sleep' | 'sleep_quality' | 'wakeups' | 'effects' | 'note' | 'dose';
 export const TONES: Record<ToneKey, { color: string; icon: string }> = {
   mood: { color: '--well-mood', icon: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01' },
   anxiety: { color: '--well-anxiety', icon: 'M22 12h-4l-3 9L9 3l-3 9H2' },
@@ -8,6 +8,7 @@ export const TONES: Record<ToneKey, { color: string; icon: string }> = {
   functioning: { color: '--well-function', icon: 'M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z' },
   sleep: { color: '--well-sleep', icon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z' },
   sleep_quality: { color: '--well-sleep-quality', icon: 'm12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17.4l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z' },
+  wakeups: { color: '--well-wakeups', icon: 'M12 2v4M4.9 4.9l2.8 2.8M19.1 4.9l-2.8 2.8M2 14h3M19 14h3M7 18a5 5 0 0 1 10 0M3 18h18' },
   effects: { color: '--well-effect', icon: 'M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01' },
   dose: { color: '--well-dose', icon: 'M10.5 20.5 3.5 13.5a5 5 0 0 1 7-7l7 7a5 5 0 0 1-7 7zM8.5 8.5l7 7' },
   note: { color: '--well-note', icon: 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z' },
