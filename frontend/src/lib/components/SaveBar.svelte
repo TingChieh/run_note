@@ -44,7 +44,7 @@
 </script>
 {#if visible}<div bind:this={slot} transition:unfoldBar class="save-bar-slot" class:save-glass={glass}><div bind:this={bar} class="save-bar" class:docked={glass && !floating} class:floating={glass && floating} data-glass={glass ? (floating ? 'floating' : 'docked') : undefined} role="region" aria-label="保存设置">
   {#if error}<FeedbackState kind="error" title={error} />{/if}
-  <div class="save-bar-row">
+  <div class="save-bar-row" class:with-actions={dirty || busy}>
     <p class="save-status" role="status">{#if busy}{busyLabel}{:else if dirty}有未保存的更改{:else if message}{message}{/if}</p>
     {#if dirty || busy}<button type="button" class="button-secondary" disabled={busy} onclick={ondiscard}>放弃</button><button type="submit" {form} class="button-primary" disabled={busy}>{busy ? '保存中…' : label}</button>{/if}
   </div>
@@ -56,6 +56,12 @@
   .save-glass .save-bar-row { flex-wrap: nowrap; gap: var(--space-3); }
   .save-glass .save-status { flex: 1 1 auto; white-space: nowrap; }
   @media (max-width: 479px) { .save-glass { justify-self: stretch; width: auto; } .save-glass .save-bar-row { flex-wrap: wrap; } .save-glass .save-status { white-space: normal; flex: 1 1 8rem; } }
+  /* On a narrow screen the discard and save buttons already say there is something to save: the status text stays for screen readers only, so the bar is one slim row instead of two and covers less of a short screen. */
+  @media (max-width: 479px) {
+    .save-glass .save-bar-row.with-actions { flex-wrap: nowrap; gap: var(--space-2); }
+    .save-glass .save-bar-row.with-actions .save-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .save-glass .save-bar-row.with-actions .button-primary { flex: 1 1 auto; min-width: 0; }
+  }
   .save-bar { transition: background-color var(--transition-control), border-color var(--transition-control), box-shadow var(--transition-control); }
   /* At rest: a plain card, no blur and no float shadow. */
   .save-bar.docked { background: var(--surface); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
