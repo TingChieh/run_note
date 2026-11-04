@@ -8,6 +8,7 @@
   import WellbeingChart from './WellbeingChart.svelte';
   import WellbeingReportTimeline from './WellbeingReportTimeline.svelte';
   import WellbeingTile from './WellbeingTile.svelte';
+  import { MAX_SLEEP_HOURS } from './wellbeing-dial-math.ts';
   import { change, changeText, previousRange, sparkRuns, spanDays, wakeupFigures } from './wellbeing-report-math.ts';
   import type { ToneKey } from './wellbeing-tones.ts';
   import { ActivityError } from '#lib/api/activities.ts';
@@ -71,6 +72,8 @@
   type RatingKey = (typeof RATING_KEYS)[number];
   /** Sleep quality is shown inside the sleep widget, with the hours, so it has no widget of its own. */
   const MEASURE_KEYS = RATING_KEYS.filter(key => key !== 'sleep_quality');
+  /** Where an hour count sits on the 0–14 h track (the range the diary takes); an older, longer night stops at the end instead of running into the next figure. */
+  const hourPct = (hours: number) => Math.min(100, Math.max(0, (hours / MAX_SLEEP_HOURS) * 100));
   const stat = (r: Report | null, key: RatingKey) => r?.ratings.find(item => item.key === key) ?? null;
   const shownDelta = (now: number | null, then: number | null) => changeText(change(now, then));
   const deltaWords = (now: number | null, then: number | null, unit = '') => { const d = change(now, then); return d === null ? '' : d === 0 ? '与上一段相同' : `比上一段${d > 0 ? '高' : '低'} ${Math.abs(d)}${unit}`; };
@@ -155,7 +158,7 @@
                   <p class="cap">平均睡眠时长</p>
                   <p class="big">{#if r.sleep.mean_hours !== null}<strong>{hoursText(r.sleep.mean_hours)}</strong>{#if before && before.sleep.mean_hours !== null}<span class="delta" aria-label={deltaWords(r.sleep.mean_hours, before.sleep.mean_hours, ' 小时')}>{shownDelta(r.sleep.mean_hours, before.sleep.mean_hours)}</span>{/if}{:else}<strong>—</strong>{/if}</p>
                   {#if r.sleep.mean_hours !== null}
-                    <span class="range-bar" style:--tone="var(--well-sleep)" aria-hidden="true"><span class="span" style:left={`${((r.sleep.min_hours ?? 0) / 12) * 100}%`} style:width={`${Math.max(2, (((r.sleep.max_hours ?? 0) - (r.sleep.min_hours ?? 0)) / 12) * 100)}%`}></span><span class="mean" style:left={`${(r.sleep.mean_hours / 12) * 100}%`}></span></span>
+                    <span class="range-bar" style:--tone="var(--well-sleep)" aria-hidden="true"><span class="span" style:left={`${hourPct(r.sleep.min_hours ?? 0)}%`} style:width={`${Math.max(2, hourPct(r.sleep.max_hours ?? 0) - hourPct(r.sleep.min_hours ?? 0))}%`}></span><span class="mean" style:left={`${hourPct(r.sleep.mean_hours)}%`}></span></span>
                     <p class="sub">最短 {fmt(r.sleep.min_hours ?? 0)} · 最长 {fmt(r.sleep.max_hours ?? 0)} 小时</p>
                   {:else}<p class="sub">没有记录</p>{/if}
                 </div>

@@ -2,6 +2,7 @@
   import { untrack } from 'svelte';
   import { cubicIn, cubicOut } from 'svelte/easing';
   import { fly } from 'svelte/transition';
+  import { MAX_SLEEP_HOURS } from './wellbeing-dial-math.ts';
   import { OUTER, centre, polar, slice } from './wellbeing-wheel.ts';
   import { RATING_LABELS, dateLabel, doseText, hoursText, monthLabel, timeLabel, type Dose, type MedicationStat, type SymptomEvent, type TrendDay } from '#lib/api/wellbeing.ts';
   // The days of the range as a calendar, the way the history page draws them: a round day with a ring in three parts (state, medication, side effect), each lit when that kind of record exists.
@@ -71,7 +72,7 @@
   /** The answers of the day as rows with a bar: a rating out of 10, sleep out of 12 hours. */
   const values = $derived(!day ? [] : [
     ...RATINGS.slice(0, 2).map(key => ({ key, label: RATING_LABELS[key].name, value: day[key], text: day[key] === null ? '' : String(day[key]), ratio: (day[key] ?? 0) / 10 })),
-    { key: 'sleep_hours', label: '睡眠时长', value: day.sleep_hours, text: day.sleep_hours === null ? '' : hoursText(day.sleep_hours), ratio: Math.min(1, (day.sleep_hours ?? 0) / 12) },
+    { key: 'sleep_hours', label: '睡眠时长', value: day.sleep_hours, text: day.sleep_hours === null ? '' : hoursText(day.sleep_hours), ratio: Math.min(1, (day.sleep_hours ?? 0) / MAX_SLEEP_HOURS) },
     ...RATINGS.slice(2).map(key => ({ key, label: RATING_LABELS[key].name, value: day[key], text: day[key] === null ? '' : String(day[key]), ratio: (day[key] ?? 0) / 10 })),
     { key: 'sleep_wakeups', label: '夜间醒来', value: day.sleep_wakeups, text: day.sleep_wakeups === null ? '' : `${day.sleep_wakeups} 次`, ratio: Math.min(1, (day.sleep_wakeups ?? 0) / 6) }
   ].filter(item => item.value !== null));

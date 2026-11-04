@@ -2341,6 +2341,21 @@ test('night wake-ups use the round slider, zero is a real answer and the report 
   await expect(chart.getByRole('cell', { name: '3 次' })).toBeVisible();
 });
 
+test('summary: a very long night keeps the hours bar inside its own track, never running into the quality figure', async ({ page }) => {
+  await open(page);
+  await page.evaluate(async () => {
+    const csrf = (await (await fetch('/api/v1/auth/csrf')).json()).data.csrf_token;
+    const shift = (n: number) => new Date(Date.now() - n * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
+    for (const [n, hours] of [[2, 3], [1, 13.5]] as const) await fetch(`/api/v1/me/wellbeing/days/${shift(n)}/entry`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify({ sleep_hours: hours, sleep_quality: 5 }) });
+  });
+  await page.getByTestId('wellbeing-tab-report').click();
+  const hours = page.getByTestId('report-sleep-hours');
+  await expect(hours).toContainText('最长 13.5 小时');
+  const [track, span, quality] = await Promise.all([hours.locator('.range-bar').boundingBox(), hours.locator('.range-bar .span').boundingBox(), page.getByTestId('report-sleep-quality').boundingBox()]);
+  expect(span!.x + span!.width).toBeLessThanOrEqual(track!.x + track!.width + 1);
+  expect(span!.x + span!.width).toBeLessThan(quality!.x);
+});
+
 test('sleep duration runs from 0 to 14 hours: the hours ring stops at 14 and a typed 15 hours is refused', async ({ page }) => {
   await open(page);
   const box = page.getByTestId('wellbeing-sleep');
