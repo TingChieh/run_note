@@ -2281,3 +2281,19 @@ test('personal setting saves the preference and reports administrator restrictio
   await expect(toggle).toBeDisabled();
   await expect(page.getByText('已被管理员关闭')).toBeVisible();
 });
+
+test('on a very small screen the floating save bar is one slim row with both buttons inside the viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 315, height: 320 });
+  await open(page);
+  await pick(page, '焦虑', 3);
+  const bar = page.locator('.save-bar');
+  await expect(bar).toBeVisible();
+  await settled(page);
+  const save = page.getByRole('button', { name: '保存今日状态' }), discard = page.getByRole('button', { name: '放弃' });
+  const [barBox, saveBox, discardBox] = await Promise.all([bar.boundingBox(), save.boundingBox(), discard.boundingBox()]);
+  expect(barBox!.height).toBeLessThan(80);
+  expect(Math.abs(saveBox!.y - discardBox!.y)).toBeLessThan(8);
+  for (const box of [saveBox!, discardBox!]) { expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(315); expect(box.y + box.height).toBeLessThanOrEqual(320); }
+  await expect(page.getByRole('status').filter({ hasText: '有未保存的更改' })).toHaveCount(1);
+  await noOverflow(page);
+});
