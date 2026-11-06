@@ -46,7 +46,8 @@
     return () => { cancelAnimationFrame(frame); window.removeEventListener('scroll', schedule); window.removeEventListener('resize', schedule); };
   });
   $effect(() => { if (!floating || mobile || !sidebar) return; return attachFloatingGlass(sidebar); });
-  $effect(() => { if (!mobile || !raised || !bar) return; return attachFloatingGlass(bar); });
+  // The phone bar's glass stays attached (CSS keeps its backdrop-filter off until data-floating): building the lens map and filter on the first scrolled frame, and tearing them down at the top, stalled the start of every scroll.
+  $effect(() => { if (!mobile || !bar) return; return attachFloatingGlass(bar); });
   // Phone bar: scrolling down tucks it away, scrolling back up a little brings it straight back (no need to reach the top of the page). It stays while the menu is open.
   $effect(() => { if (open) hidden = false; });
   $effect(() => {

@@ -2370,3 +2370,56 @@ test('sleep duration runs from 0 to 14 hours: the hours ring stops at 14 and a t
   await input.press('Enter');
   await expect(box.getByTestId('scale-value')).toHaveText('14 小时');
 });
+
+test('a dial only keeps touches on its grip: the corners and the number leave vertical swipes to the page', async ({ page }) => {
+  await open(page);
+  const group = scale(page, '焦虑');
+  const dial = group.locator('.dial');
+  const box = (await dial.boundingBox())!;
+  const touchActionAt = (x: number, y: number) => page.evaluate(([px, py]) => {
+    // The effective touch-action is the intersection along the ancestors, which is what decides whether the browser may scroll.
+    const actions: string[] = [];
+    for (let el = document.elementFromPoint(px, py); el && el !== document.body; el = el.parentElement) actions.push(getComputedStyle(el).touchAction);
+    return actions;
+  }, [x, y]);
+  const ring = await ringPoint(dial, 0.5);
+  expect(await touchActionAt(ring.x, ring.y), 'on the ring').toContain('none');
+  expect(await touchActionAt(box.x + box.width / 2, box.y + box.height / 2), 'on the number').not.toContain('none');
+  expect(await touchActionAt(box.x + 2, box.y + 2), 'in a corner').not.toContain('none');
+  // A tap in the corner no longer turns the dial; one on the ring still does.
+  await page.mouse.click(box.x + 2, box.y + 2);
+  await expect(dial).toHaveClass(/unset/);
+  await page.mouse.click(ring.x, ring.y);
+  await expect(dial).not.toHaveClass(/unset/);
+});
+
+test('the sleep rings keep touches only on their grip', async ({ page }) => {
+  await open(page);
+  const dial = page.getByTestId('wellbeing-sleep').locator('.dial');
+  const box = (await dial.boundingBox())!;
+  const actions = (x: number, y: number) => page.evaluate(([px, py]) => {
+    const list: string[] = [];
+    for (let el = document.elementFromPoint(px, py); el && el !== document.body; el = el.parentElement) list.push(getComputedStyle(el).touchAction);
+    return list;
+  }, [x, y]);
+  const outer = await ringPoint(dial, 0.5, 41);
+  expect(await actions(outer.x, outer.y), 'on the hours ring').toContain('none');
+  expect(await actions(box.x + 2, box.y + 2), 'in a corner').not.toContain('none');
+  expect(await actions(box.x + box.width / 2, box.y + box.height / 2), 'on the time').not.toContain('none');
+});
+
+test('glass on a rigid backdrop pauses its filter while the page scrolls and comes back afterwards', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 600 });
+  await open(page);
+  await slider(page, '精力').fill('6');
+  const tile = scale(page, '精力');
+  const layer = tile.locator('button.clear .rn-glass-layer');
+  const filter = () => layer.evaluate(el => getComputedStyle(el).backdropFilter);
+  await expect(layer).toHaveCount(1);
+  await expect.poll(filter, 'idle: the filter is on').not.toBe('none');
+  await page.mouse.wheel(0, 120);
+  await expect.poll(() => page.locator('.sport-theme').evaluate(el => el.classList.contains('rn-scrolling'))).toBe(true);
+  expect(await filter(), 'scrolling: paused').toBe('none');
+  await expect.poll(() => page.locator('.sport-theme').evaluate(el => el.classList.contains('rn-scrolling'))).toBe(false);
+  expect(await filter(), 'settled: back on').not.toBe('none');
+});

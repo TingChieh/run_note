@@ -62,7 +62,8 @@
     if (next !== null && next !== value) onvalue(next);
   }
   function down(event: PointerEvent) {
-    if (disabled || event.button > 0 || (event.target as HTMLElement).closest('.edit, .quick')) return;
+    // Only the grip turns the dial; the corners and the number stay free for the page to scroll.
+    if (disabled || event.button > 0 || !(event.target as Element).closest('.grip') || (event.target as Element).closest('.edit, .quick')) return;
     if (fromPointer(event) === null) return;
     dragging = true; glassKnob?.press(true); box.setPointerCapture(event.pointerId); turn(event);
   }
@@ -79,6 +80,7 @@
     {#if value !== null && shown > 0.001}<path class="progress" d={arcPath(R, shown)} data-part="progress" />{/if}
     {#if !glassOn}<circle class="knob" cx={knob[0]} cy={knob[1]} r="7.5" />{/if}
   </svg>
+  <span class="grip" aria-hidden="true"></span>
   <div class="edit center" class:hidden={editing} role="button" tabindex={disabled || editing ? -1 : 0} aria-disabled={disabled} onclick={startEdit} onkeydown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); startEdit(); } }} aria-label={`直接输入${label}`}><strong>{value ?? '—'}</strong><small>{unit}</small></div>
   {#if editing}
     <!-- A small box in the middle: it grows out of the number and shrinks back into it. -->
@@ -88,7 +90,9 @@
     oninput={(event) => onvalue(Number(event.currentTarget.value))} onkeydown={key} />
 </div>
 <style>
-  .dial { position: relative; width: var(--dial, 7.75rem); aspect-ratio: 1; margin-inline: auto; border-radius: 50%; touch-action: none; user-select: none; cursor: pointer; }
+  .dial { position: relative; width: var(--dial, 7.75rem); aspect-ratio: 1; margin-inline: auto; border-radius: 50%; touch-action: pan-y; user-select: none; cursor: pointer; }
+  /* The round area a finger turns the dial on keeps every touch for itself; around it (the corners) and in the middle (the number, which sits above it) a vertical swipe still scrolls the page. */
+  .grip { position: absolute; inset: 0; border-radius: 50%; touch-action: none; }
   .dial.off { cursor: not-allowed; opacity: .55; }
   svg { display: block; width: 100%; height: 100%; overflow: visible; box-shadow: none; }
   .track, .progress { fill: none; stroke-width: 9; stroke-linecap: round; }
