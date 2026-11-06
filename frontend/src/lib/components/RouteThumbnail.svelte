@@ -10,7 +10,7 @@
   let { activity, initialRoute = null, managedRoute = false, routeLoading = false, routeError = '', compact = false, color, onauthrequired }: { activity: Activity; initialRoute?: Route | null; managedRoute?: boolean; routeLoading?: boolean; routeError?: string; compact?: boolean; color?: string; onauthrequired?: (cause: ActivityError) => void } = $props();
   let route = $state<Route | null>(null), loading = $state(true), error = $state('');
   let element: HTMLDivElement, active = false;
-  let drawing = $derived(route ? routeDrawing(route) : null);
+  let drawing = $derived(route ? routeDrawing(route, 360, 220, { tolerance: 0.8, digits: 1 }) : null);
   $effect(()=>{
     if(managedRoute){route=initialRoute;loading=routeLoading;error=routeError;}
     else if(initialRoute){route=initialRoute;loading=false;error='';}
