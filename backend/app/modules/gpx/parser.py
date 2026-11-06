@@ -5,6 +5,7 @@ import re
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from xml.etree import ElementTree as ET
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from defusedxml import ElementTree as SafeET
 from defusedxml.common import DefusedXmlException
@@ -41,9 +42,39 @@ def timestamp(text: str | None) -> datetime | None:
         return None
 
 
-def parse_gpx(raw: bytes) -> ParsedGPX:
+def interpreted_time(text, zone, mode, prefix="GPX"):
+    value = timestamp(text)
+    if value is None or mode == "absolute":
+        return value
+    # Local mode intentionally discards the written offset, never its wall-clock digits.
+    naive = datetime.fromisoformat(text.strip().replace("Z", "+00:00")).replace(tzinfo=None)
+    instants = {
+        aware.astimezone(UTC)
+        for fold in (0, 1)
+        if (aware := naive.replace(tzinfo=zone, fold=fold))
+        .astimezone(UTC)
+        .astimezone(zone)
+        .replace(tzinfo=None)
+        == naive
+    }
+    if len(instants) != 1:
+        raise ApiError(
+            422,
+            f"{prefix}_LOCAL_TIME_INVALID",
+            "当地时间存在夏令时歧义或不存在，请使用文件时区",
+        )
+    return instants.pop()
+
+
+def parse_gpx(raw: bytes, timezone="UTC", time_mode="absolute") -> ParsedGPX:
     if len(raw) > MAX_BYTES:
         raise ApiError(413, "GPX_TOO_LARGE", "GPX 文件超过大小限制")
+    if time_mode not in {"absolute", "local"}:
+        raise ApiError(422, "VALIDATION_ERROR", "时间解释方式不合法")
+    try:
+        zone = ZoneInfo(timezone)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ApiError(422, "VALIDATION_ERROR", "时区不合法") from None
     try:
         root = SafeET.fromstring(raw, forbid_dtd=True, forbid_entities=True, forbid_external=True)
     except (ET.ParseError, DefusedXmlException, ValueError):
@@ -90,7 +121,7 @@ def parse_gpx(raw: bytes) -> ParsedGPX:
                     counts["invalid_coordinate_count"] += 1
                     points.append(None)
                     continue
-                time = timestamp(element.findtext(ns + "time"))
+                time = interpreted_time(element.findtext(ns + "time"), zone, time_mode)
                 elevation = number(element.findtext(ns + "ele"))
                 counts["missing_time_count"] += time is None
                 counts["missing_elevation_count"] += elevation is None

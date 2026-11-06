@@ -1,6 +1,5 @@
 """Offline TCX v2 extraction; device totals remain separate from route geometry."""
 
-from datetime import UTC, datetime
 from decimal import ROUND_HALF_EVEN, Decimal, InvalidOperation
 from xml.etree import ElementTree as ET
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -9,7 +8,13 @@ from defusedxml import ElementTree as SafeET
 from defusedxml.common import DefusedXmlException
 
 from app.core.errors import ApiError
-from app.modules.gpx.parser import MAX_BYTES, MAX_POINTS, MAX_SEGMENTS, number, timestamp
+from app.modules.gpx.parser import (
+    MAX_BYTES,
+    MAX_POINTS,
+    MAX_SEGMENTS,
+    interpreted_time,
+    number,
+)
 from app.modules.gpx.schema import Point
 from app.modules.tcx.schema import ParsedTCX
 
@@ -33,28 +38,6 @@ def summary_number(element, path, *, integer=False, heart_rate=False):
         return int(value) if integer else value
     except (InvalidOperation, ValueError, AttributeError):
         raise ApiError(422, "TCX_SUMMARY_INVALID", "TCX 设备汇总指标不合法") from None
-
-
-def interpreted_time(text, zone, mode):
-    value = timestamp(text)
-    if value is None or mode == "absolute":
-        return value
-    # Local mode intentionally discards the written offset, never its wall-clock digits.
-    naive = datetime.fromisoformat(text.strip().replace("Z", "+00:00")).replace(tzinfo=None)
-    instants = {
-        aware.astimezone(UTC)
-        for fold in (0, 1)
-        if (aware := naive.replace(tzinfo=zone, fold=fold))
-        .astimezone(UTC)
-        .astimezone(zone)
-        .replace(tzinfo=None)
-        == naive
-    }
-    if len(instants) != 1:
-        raise ApiError(
-            422, "TCX_LOCAL_TIME_INVALID", "当地时间存在夏令时歧义或不存在，请使用文件时区"
-        )
-    return instants.pop()
 
 
 def parse_tcx(raw: bytes, timezone="UTC", time_mode="absolute") -> ParsedTCX:
@@ -123,7 +106,7 @@ def parse_tcx(raw: bytes, timezone="UTC", time_mode="absolute") -> ParsedTCX:
                     counts["invalid_coordinate_count"] += 1
                     points.append(None)
                     continue
-                time = interpreted_time(point.findtext(NS + "Time"), zone, time_mode)
+                time = interpreted_time(point.findtext(NS + "Time"), zone, time_mode, "TCX")
                 elevation = number(point.findtext(NS + "AltitudeMeters"))
                 counts["missing_time_count"] += time is None
                 counts["missing_elevation_count"] += elevation is None

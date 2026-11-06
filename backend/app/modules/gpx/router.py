@@ -28,9 +28,7 @@ async def import_gpx(
 
 async def import_file(request, identity, db, format):
     label = format.upper()
-    allowed = {"file", "title", "timezone", "activity_date"}
-    if format == "tcx":
-        allowed.add("time_mode")
+    allowed = {"file", "title", "timezone", "activity_date", "time_mode"}
     owner, default_timezone = identity[1].id, identity[1].timezone
     db.commit()  # Authentication's user lock must not cover reading/parsing a file.
     try:
@@ -71,8 +69,8 @@ async def import_file(request, identity, db, format):
                 raw.extend(chunk)
                 if len(raw) > 10485760:
                     raise ApiError(413, f"{label}_TOO_LARGE", "轨迹文件不能超过 10 MiB")
-            importer = service.import_gpx if format == "gpx" else service.import_track
-            options = {"format": "tcx", "time_mode": time_mode} if format == "tcx" else {}
+            importer = service.import_track
+            options = {"format": format, "time_mode": time_mode}
             data = await run_in_threadpool(
                 importer,
                 request,

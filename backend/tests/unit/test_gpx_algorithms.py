@@ -332,3 +332,34 @@ def test_zero_time_geographic_identity(lat, lon1, lon2, expected):
     result = derive(parsed, segment, [[distance]], "UTC", None)
     assert result.temporal_quality == expected
     assert (canonical(parsed) is not None) is (expected == "complete")
+
+
+def test_local_mode_reinterprets_mislabeled_utc_as_zone_wall_clock():
+    from datetime import UTC, datetime
+
+    from app.modules.gpx.parser import parse_gpx
+
+    raw = xml(point(time="2026-10-04T16:15:20Z") + point("0.001", "2026-10-04T16:37:22+02:00"))
+    absolute = parse_gpx(raw).tracks[0][0]
+    local = parse_gpx(raw, "Asia/Shanghai", "local").tracks[0][0]
+    assert absolute[0].time == datetime(2026, 10, 4, 16, 15, 20, tzinfo=UTC)
+    # The written offset is discarded; only the wall-clock digits are kept.
+    assert local[0].time == datetime(2026, 10, 4, 8, 15, 20, tzinfo=UTC)
+    assert local[1].time == datetime(2026, 10, 4, 8, 37, 22, tzinfo=UTC)
+
+
+@pytest.mark.parametrize("instant", ["2026-03-08T02:30:00Z", "2026-11-01T01:30:00Z"])
+def test_local_mode_rejects_nonexistent_or_ambiguous_dst_time(instant):
+    from app.modules.gpx.parser import parse_gpx
+
+    with pytest.raises(ApiError) as error:
+        parse_gpx(xml(point(time=instant)), "America/New_York", "local")
+    assert error.value.code == "GPX_LOCAL_TIME_INVALID"
+
+
+def test_invalid_time_mode_is_rejected():
+    from app.modules.gpx.parser import parse_gpx
+
+    with pytest.raises(ApiError) as error:
+        parse_gpx(xml(point()), "UTC", "guess")
+    assert error.value.code == "VALIDATION_ERROR"

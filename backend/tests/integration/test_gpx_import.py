@@ -354,13 +354,13 @@ def test_session_revoked_during_parse_cannot_commit(clients, monkeypatch):
     owner = register(a)
     original = service.bounded_parse
 
-    def revoke(raw):
+    def revoke(raw, **options):
         with engine.begin() as c:
             c.execute(
                 text("UPDATE auth_sessions SET revoked_at=now() WHERE token_hash=:token"),
                 {"token": token_hash(a.cookies.get("run_session"))},
             )
-        return original(raw)
+        return original(raw, **options)
 
     monkeypatch.setattr(service, "bounded_parse", revoke)
     assert upload(a).status_code == 401
