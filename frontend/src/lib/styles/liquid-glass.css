@@ -209,6 +209,8 @@
 .rn-glass-surface { position: absolute; inset: 0; pointer-events: none; z-index: -1; overflow: clip; overflow-clip-margin: 12px; }
 .rn-glass-body { position: absolute; inset: -12px; }
 .rn-glass-layer { position: absolute; inset: 0; overflow: hidden; }
+/* Paused while the page scrolls: a rigid backdrop (see liquid-glass.ts) renders the same image each frame, so the live filter is wasted work. */
+.rn-scrolling [data-glass-rigid] .rn-glass-layer { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
 .rn-glass-shadow, .rn-glass-tint { position: absolute; left: 0; top: 0; }
 .rn-glass-shadow { box-shadow: inset 0 1px 0 color-mix(in srgb, var(--glass-edge) 45%, transparent), 0 .25rem .75rem color-mix(in srgb, var(--glass-shadow) 65%, transparent); }
 .rn-glass-tint { background: var(--button-glass-fill); transition: background-color var(--transition-control); }

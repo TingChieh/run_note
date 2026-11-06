@@ -42,7 +42,7 @@
     return () => { stop(); handle.destroy(); };
   });
 </script>
-{#if visible}<div bind:this={slot} transition:unfoldBar class="save-bar-slot" class:save-glass={glass}><div bind:this={bar} class="save-bar" class:docked={glass && !floating} class:floating={glass && floating} data-glass={glass ? (floating ? 'floating' : 'docked') : undefined} role="region" aria-label="保存设置">
+{#if visible}<div bind:this={slot} transition:unfoldBar class="save-bar-slot" class:save-glass={glass}><div bind:this={bar} class="save-bar" data-glass-rigid class:docked={glass && !floating} class:floating={glass && floating} data-glass={glass ? (floating ? 'floating' : 'docked') : undefined} role="region" aria-label="保存设置">
   {#if error}<FeedbackState kind="error" title={error} />{/if}
   <div class="save-bar-row" class:with-actions={dirty || busy}>
     <p class="save-status" role="status">{#if busy}{busyLabel}{:else if dirty}有未保存的更改{:else if message}{message}{/if}</p>

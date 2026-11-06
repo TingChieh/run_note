@@ -39,7 +39,8 @@ export function liquidGlass(root: HTMLElement) {
     };
     const aligners = new Set<() => void>();
     let alignFrame = 0;
-    function align() { if (!alignFrame) alignFrame = requestAnimationFrame(() => { alignFrame = 0; aligners.forEach(fn => fn()); }); }
+    // Only the dev preview registers aligners; skip the per-scroll frame when there is nothing to align.
+    function align() { if (!alignFrame && aligners.size) alignFrame = requestAnimationFrame(() => { alignFrame = 0; aligners.forEach(fn => fn()); }); }
     function enhance(element: HTMLElement) {
       const isZoomGroup = element.matches('.maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in)');
       const stableBackdrop = !!element.closest('[data-glass-stable]');
@@ -143,6 +144,15 @@ export function liquidGlass(root: HTMLElement) {
         surface.remove(); element.classList.remove('rn-glass-control'); element.style.position = previousPosition;
       } };
     }
+    // Controls inside [data-glass-rigid] sit on a backdrop that scrolls with them, so their live backdrop filter re-renders to the same image every frame.
+    // While the page scrolls, CSS pauses it (see liquid-glass.css) and it returns shortly after the last scroll event.
+    let scrollTimer: ReturnType<typeof setTimeout> | undefined;
+    const scrolled = (event: Event) => {
+      align();
+      if (event.target !== document) return;
+      root.classList.add('rn-scrolling'); clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(() => root.classList.remove('rn-scrolling'), 150);
+    };
     function reconcile() {
       frame = 0;
       root.style.setProperty('--glass-opacity', String(1 - settings.transparency / 100));
@@ -187,14 +197,14 @@ export function liquidGlass(root: HTMLElement) {
     nativeSelect.addEventListener('change', schedule);
     motion.addEventListener('change', releaseAll);
     const unwatchTheme = watchSystemTheme(() => align());
-    window.addEventListener('blur', releaseAll); window.addEventListener('scroll', align, { capture: true, passive: true });
+    window.addEventListener('blur', releaseAll); window.addEventListener('scroll', scrolled, { capture: true, passive: true });
     window.addEventListener('resize', relayout);
     reconcile();
     cleanup = () => {
       observer.disconnect(); resize.disconnect(); unwatch();
       preferences.forEach(query => query.removeEventListener('change', schedule)); nativeSelect.removeEventListener('change', schedule); motion.removeEventListener('change', releaseAll);
       unwatchTheme();
-      window.removeEventListener('blur', releaseAll); window.removeEventListener('scroll', align, true); window.removeEventListener('resize', relayout);
+      window.removeEventListener('blur', releaseAll); window.removeEventListener('scroll', scrolled, true); clearTimeout(scrollTimer); root.classList.remove('rn-scrolling'); window.removeEventListener('resize', relayout);
       if (frame) cancelAnimationFrame(frame); if (alignFrame) cancelAnimationFrame(alignFrame);
       for (const control of controls.values()) control.destroy();
       for (const enhancement of enhancements.values()) enhancement.destroy();

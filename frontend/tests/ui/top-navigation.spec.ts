@@ -906,6 +906,18 @@ test.describe('phone bar looks like the desktop bar', () => {
     expect(alpha(docked.background), 'docked is solid').toBe(1);
     expect(alpha(floating.background), 'floating is clear glass').toBeLessThan(.5);
   });
+  test('the phone bar keeps its refraction prepared but only applies it once the page scrolls under it', async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'only Chromium refracts through backdrop-filter: url()');
+    const filter = () => page.locator('.mobile-bar').evaluate(el => getComputedStyle(el).backdropFilter);
+    await expect.poll(() => page.locator('.mobile-bar').evaluate(el => el.style.backdropFilter), 'prepared before any scroll').toContain('url(');
+    expect(await filter(), 'docked bar applies no backdrop filter').toBe('none');
+    await page.mouse.wheel(0, 300);
+    await expect(page.locator('.mobile-bar')).toHaveAttribute('data-floating', '');
+    expect(await filter(), 'floating bar refracts the page').toContain('url(');
+    await page.mouse.wheel(0, -300);
+    await expect(page.locator('.mobile-bar')).not.toHaveAttribute('data-floating');
+    expect(await filter(), 'back at the top it is released again').toBe('none');
+  });
   test('the menu is a rounded card with a full border', async ({ page }) => {
     await page.getByRole('button', { name: '打开导航' }).click();
     await expect(bar(page)).toBeVisible();

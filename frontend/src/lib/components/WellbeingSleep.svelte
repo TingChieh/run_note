@@ -51,7 +51,8 @@
     else { const next = valueAt(hit.fraction, 0, 59, 1); if (next !== minutes) setMinutes(next); }
   }
   function down(event: PointerEvent) {
-    if (disabled || event.button > 0 || (event.target as HTMLElement).closest('.edit, .quick')) return;
+    // Only the grip turns a ring; the corners and the time stay free for the page to scroll.
+    if (disabled || event.button > 0 || !(event.target as Element).closest('.grip') || (event.target as Element).closest('.edit, .quick')) return;
     const hit = ringAt(event);
     if (!hit) return;
     turning = hit.ring; (hit.ring === 'hours' ? glassHours : glassMinutes)?.press(true); box.setPointerCapture(event.pointerId); turn(event);
@@ -106,6 +107,7 @@
       {#if value !== null && shownMinutes > 0.001}<path class="progress inner" d={arcPath(INNER, shownMinutes)} data-part="minutes" />{/if}
       {#if !glassOn}<circle class="knob" cx={hourKnob[0]} cy={hourKnob[1]} r="7.3" /><circle class="knob inner" cx={minuteKnob[0]} cy={minuteKnob[1]} r="4.9" />{/if}
     </svg>
+    <span class="grip" aria-hidden="true"></span>
     <div class="edit center" class:hidden={editing} role="button" tabindex={disabled || editing ? -1 : 0} aria-disabled={disabled} onclick={startEdit} onkeydown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); startEdit(); } }} aria-label="直接输入睡眠时长">
       {#if value === null}<strong class="none">—</strong>
       {:else}<strong>{hours}<i>:</i>{String(minutes).padStart(2, '0')}</strong><small>时 : 分</small>{/if}
@@ -121,7 +123,9 @@
 </WellbeingTile>
 <style>
   /* The double ring is the same size as the single dials of the other widgets, so the whole row is even; the time in the middle is set a little smaller to sit inside the inner ring. */
-  .dial { position: relative; width: min(100%, var(--dial)); aspect-ratio: 1; margin-inline: auto; border-radius: 50%; touch-action: none; user-select: none; cursor: pointer; }
+  .dial { position: relative; width: min(100%, var(--dial)); aspect-ratio: 1; margin-inline: auto; border-radius: 50%; touch-action: pan-y; user-select: none; cursor: pointer; }
+  /* The round area a finger turns the rings on keeps every touch for itself; around it (the corners) and in the middle (the time, which sits above it) a vertical swipe still scrolls the page. */
+  .grip { position: absolute; inset: 0; border-radius: 50%; touch-action: none; }
   .dial.off { cursor: not-allowed; opacity: .55; }
   .dial svg { display: block; width: 100%; height: 100%; overflow: visible; box-shadow: none; }
   .track, .progress { fill: none; stroke-linecap: round; }
