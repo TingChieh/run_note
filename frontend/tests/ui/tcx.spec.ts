@@ -3,7 +3,7 @@ import { installActivities, loginRunner, sampleActivity, openImport } from '../f
 const file = { name:'synthetic-mi-fitness.tcx', mimeType:'application/xml', buffer:Buffer.from('<TrainingCenterDatabase/>') };
 const activity = { ...sampleActivity, title:'TCX 下午跑步', activity_date:'2026-10-04', started_at:'2026-10-04T08:15:20Z', ended_at:'2026-10-04T08:37:22Z', distance_m:'2999', elapsed_seconds:'1322', timer_seconds:'1166', avg_pace_seconds_per_km:'388.796', avg_heart_rate_bpm:156, steps:3262, calories_kcal:144, metrics_version:'tcx-v1' };
 
-test('TCX selection exposes explicit time repair, retains failed draft, then shows private device metrics', async ({page}) => {
+test('TCX selection defaults to local-time repair, retains failed draft, then shows private device metrics', async ({page}) => {
   const state = await installActivities(page); state.records = [activity];
   let attempts=0, body='';
   await page.route('**/api/v1/tcx-imports', async route => {
@@ -16,8 +16,7 @@ test('TCX selection exposes explicit time repair, retains failed draft, then sho
   await expect(page.getByRole('button',{name:'导入 GPX',exact:true})).toBeEnabled();
   await page.locator('input[type=file][name=file]').setInputFiles(file);
   await expect(page.getByLabel('文件格式',{exact:true})).toHaveValue('tcx');
-  await expect(page.getByLabel('时间解释',{exact:true})).toHaveValue('absolute');
-  await page.getByLabel('时间解释',{exact:true}).selectOption('local');
+  await expect(page.getByLabel('时间解释',{exact:true})).toHaveValue('local');
   await page.getByText('补充导入信息',{exact:true}).click();
   await page.getByLabel('时区（可选）', {exact:true}).fill('Asia/Shanghai');
   await page.getByLabel('标题（可选）').fill('TCX 下午跑步');
@@ -31,9 +30,10 @@ test('TCX selection exposes explicit time repair, retains failed draft, then sho
   await page.getByRole('button',{name:'导入 TCX',exact:true}).click();
   await expect(page.getByRole('status').filter({hasText:'导入成功'})).toBeVisible();
   await expect(page.getByText('已按所选时区的当地时间解释文件时间',{exact:true})).toBeVisible();
-  // Each new file must explicitly opt in; repair cannot leak to a later upload.
+  // A one-off switch to the file's own offset must not leak to a later upload.
+  await page.getByLabel('时间解释',{exact:true}).selectOption('absolute');
   await page.locator('input[type=file][name=file]').setInputFiles(file);
-  await expect(page.getByLabel('时间解释',{exact:true})).toHaveValue('absolute');
+  await expect(page.getByLabel('时间解释',{exact:true})).toHaveValue('local');
   await page.goto(`/activities/${activity.id}`);
   await expect(page.getByText('156 bpm',{exact:true})).toBeVisible();
   await expect(page.getByText('144 kcal',{exact:true})).toBeVisible();

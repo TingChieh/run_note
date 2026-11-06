@@ -25,7 +25,8 @@
   import { ActivityError, deleteActivities as scoped_deleteActivities, readActivities as scoped_readActivities, readActivity as scoped_readActivity, uploadGpx as scoped_uploadGpx, uploadTcx as scoped_uploadTcx, warningLabel, type Activity, type ActivityList } from '#lib/api/activities.ts';
   let records = $state<ActivityList | null>(null), loading = $state(true), busy = $state(false), mounted = $state(false), disposed = false;
   let message = $state(''), listMessage = $state(''), duplicateId = $state<string | null>(null), successId = $state<string | null>(null), warnings = $state<string[]>([]);
-  let importFormat = $state<'gpx' | 'tcx'>('gpx'), timeMode = $state('absolute'), timeHint = $state('');
+  const DEFAULT_TIME_MODE = 'local';
+  let importFormat = $state<'gpx' | 'tcx'>('gpx'), timeMode = $state(DEFAULT_TIME_MODE), timeHint = $state('');
   let fileInput = $state<HTMLInputElement>(null!), picked = $state<File | null>(null), dragging = $state(false), title = $state(''), timezone = $state(''), activityDate = $state('');
   let pickedFiles = $state<File[]>([]), batchItems = $state<ImportItem[]>([]), batchRunning = $state(false);
   let batchController: AbortController | undefined, timeRequest = 0;
@@ -100,12 +101,12 @@
       const extension = picked?.name.split('.').at(-1)?.toLowerCase();
       if (extension === 'tcx' || extension === 'gpx') importFormat = extension;
     }
-    timeMode = 'absolute'; timeHint = '';
+    timeMode = DEFAULT_TIME_MODE; timeHint = '';
     const files = pickedFiles, request = ++timeRequest;
     void detectLocalTime(files).then(signal => {
       if (disposed || request !== timeRequest || !signal) return;
       timeMode = 'local';
-      timeHint = signal === 'creator' ? '检测到小米运动健康导出文件，已预选“按当地时间解释”。如时间本来就正确，请改回。' : '文件结束时间晚于当前时刻，已预选“按当地时间解释”。如时间本来就正确，请改回。';
+      timeHint = signal === 'creator' ? '检测到小米运动健康导出文件，默认按当地时间解释。如时间本来就带正确偏移，请改选“遵守文件时区”。' : '文件结束时间晚于当前时刻，默认按当地时间解释。如时间本来就带正确偏移，请改选“遵守文件时区”。';
     });
   }
   function dropFile(event: DragEvent) {
@@ -233,7 +234,7 @@
       const result = await (importFormat === 'tcx' ? uploadTcx(form) : uploadGpx(form));
       window.dispatchEvent(new CustomEvent('runnote-activities-changed'));
       if (disposed) return;
-      successId = result.activity.id; warnings = result.warnings; fileInput.value = ''; picked = null; title = ''; activityDate = ''; timeMode = 'absolute'; timeHint = '';
+      successId = result.activity.id; warnings = result.warnings; fileInput.value = ''; picked = null; title = ''; activityDate = ''; timeMode = DEFAULT_TIME_MODE; timeHint = '';
       await load();
     } catch (cause) { if (!disposed) fail(cause); }
     finally { if (!disposed) busy = false; }
@@ -268,10 +269,10 @@
       <button disabled={controlsBusy || !mounted} class="rounded bg-primary px-5 py-3 font-semibold text-primary-foreground disabled:opacity-50">{busy ? (batchRunning ? '正在批量导入…' : '正在解析与保存…') : multi ? `导入 ${pickedFiles.length} 个 ${importFormat.toUpperCase()}` : `导入 ${importFormat.toUpperCase()}`}</button>
     </div>
     <div class="import-meta">
-      <label class="import-format text-sm font-medium">文件格式<select aria-label="文件格式" bind:value={importFormat} onchange={() => { timeMode = 'absolute'; timeHint = ''; }} disabled={controlsBusy || !mounted || multi} class="rounded border border-border bg-background p-2"><option value="gpx">GPX</option><option value="tcx">TCX</option></select></label>
-      <label class="import-time text-sm font-medium">时间解释<select aria-label="时间解释" bind:value={timeMode} disabled={controlsBusy || !mounted} aria-describedby="import-time-help" class="rounded border border-border bg-background p-2"><option value="absolute">遵守文件时区（默认）</option><option value="local">按当地时间解释（修正误标 UTC）</option></select></label>
+      <label class="import-format text-sm font-medium">文件格式<select aria-label="文件格式" bind:value={importFormat} onchange={() => { timeMode = DEFAULT_TIME_MODE; timeHint = ''; }} disabled={controlsBusy || !mounted || multi} class="rounded border border-border bg-background p-2"><option value="gpx">GPX</option><option value="tcx">TCX</option></select></label>
+      <label class="import-time text-sm font-medium">时间解释<select aria-label="时间解释" bind:value={timeMode} disabled={controlsBusy || !mounted} aria-describedby="import-time-help" class="rounded border border-border bg-background p-2"><option value="local">按当地时间解释（默认，修正误标 UTC）</option><option value="absolute">遵守文件时区（时间带正确偏移时选）</option></select></label>
     </div>
-    <p id="import-time-help" class="import-help">如果导出时间错误标记为 UTC，可选择按账户时区或下方指定时区解释。例如文件写 16:15Z，但实际是北京时间下午 16:15。选择此项会修正整条轨迹的时间。{#if timeHint}<strong data-testid="import-time-hint"> {timeHint}</strong>{/if}</p>
+    <p id="import-time-help" class="import-help">默认忽略文件里的 Z/偏移，把写的钟点当作账户时区或下方指定时区的当地时间。例如文件写 16:15Z，实际是北京时间下午 16:15。如果文件时间带有正确的偏移（如 +08:00），请改选“遵守文件时区”。{#if timeHint}<strong data-testid="import-time-hint"> {timeHint}</strong>{/if}</p>
     <details class="import-options">
       <summary>补充导入信息</summary>
       <div class="mt-3 grid gap-3 sm:grid-cols-2">
