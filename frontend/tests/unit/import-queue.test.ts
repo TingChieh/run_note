@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ActivityError } from '../../src/lib/api/activities.ts';
 import {
-  BUSY_RETRY_DELAY_MS, BUSY_RETRY_LIMIT, MAX_IMPORT_BYTES, createItems, detectBatchFormat, runImportQueue, summarize,
+  BUSY_RETRY_DELAY_MS, BUSY_RETRY_LIMIT, MAX_IMPORT_BYTES, createItems, detectBatchFormat, localTimeSignal, runImportQueue, summarize,
   type ImportItem
 } from '../../src/lib/import-queue.ts';
 
@@ -117,5 +117,22 @@ describe('summarize', () => {
   it('counts statuses and files that carry warnings', () => {
     const items = createItems([file('a.gpx'), file('b.gpx'), file('c.gpx')]).map((item, i) => ({ ...item, status: (['success', 'failed', 'skipped'] as const)[i], warnings: i === 0 ? ['X', 'Y'] : [] }));
     expect(summarize(items)).toEqual({ total: 3, done: 2, success: 1, duplicate: 0, failed: 1, skipped: 1, withWarnings: 1 });
+  });
+});
+
+describe('localTimeSignal', () => {
+  const now = Date.parse('2026-10-04T10:00:00Z');
+  it('recognises the Mi Fitness creator in GPX and TCX headers', () => {
+    expect(localTimeSignal('<gpx creator="Mi Fitness" version="1.1">', '', now)).toBe('creator');
+    expect(localTimeSignal("<TrainingCenterDatabase creator='Mi Fitness'>", '', now)).toBe('creator');
+  });
+  it('flags a final Z timestamp that is still in the future', () => {
+    expect(localTimeSignal('<gpx creator="x">', '<time>2026-10-04T16:37:22Z</time></trkpt>', now)).toBe('future');
+    expect(localTimeSignal('<x>', '<Time>2026-10-04T16:37:22Z</Time>', now)).toBe('future');
+  });
+  it('leaves ordinary files alone', () => {
+    expect(localTimeSignal('<gpx creator="Other">', '<time>2026-10-04T08:37:22Z</time>', now)).toBeNull();
+    expect(localTimeSignal('<gpx>', '<time>2026-10-04T16:37:22+08:00</time>', now)).toBeNull();
+    expect(localTimeSignal('<gpx>', '', now)).toBeNull();
   });
 });

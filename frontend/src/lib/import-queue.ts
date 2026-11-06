@@ -38,6 +38,30 @@ export function detectBatchFormat(files: readonly File[]): BatchFormat {
   return { ok: false, message: '请分开导入同一种格式的 GPX 或 TCX 文件' };
 }
 
+/**
+ * Spots exports that write local wall-clock time with a Z suffix. Only unmistakable signals count:
+ * the Mi Fitness creator, or a last timestamp that lies in the future.
+ */
+export type LocalTimeSignal = 'creator' | 'future';
+export function localTimeSignal(head: string, tail: string, now = Date.now()): LocalTimeSignal | null {
+  if (/creator\s*=\s*["']Mi Fitness["']/i.test(head)) return 'creator';
+  const stamps = [...tail.matchAll(/<time>\s*([^<\s]+)\s*<\/time>/gi)].map(match => match[1]);
+  const last = stamps.at(-1);
+  if (last && /^\d{4}-\d\d-\d\dT[\d:.]+Z$/.test(last) && Date.parse(last) > now + 5 * 60 * 1000) return 'future';
+  return null;
+}
+export async function detectLocalTime(files: readonly File[]): Promise<LocalTimeSignal | null> {
+  const found = new Set<LocalTimeSignal>();
+  for (const file of files) {
+    try {
+      const [head, tail] = await Promise.all([file.slice(0, 2048).text(), file.slice(Math.max(0, file.size - 4096)).text()]);
+      const signal = localTimeSignal(head, tail);
+      if (signal) found.add(signal);
+    } catch { /* unreadable files are reported by the upload itself */ }
+  }
+  return found.has('creator') ? 'creator' : found.has('future') ? 'future' : null;
+}
+
 export function summarize(items: readonly ImportItem[]) {
   const count = (status: ImportStatus) => items.filter(item => item.status === status).length;
   const success = count('success'), duplicate = count('duplicate'), failed = count('failed');

@@ -148,11 +148,7 @@ def import_track(
         with import_lock(engine, owner):
             duplicate(db, owner, raw_hash, format=format)
             db.rollback()  # No pool slot or transaction held during the child parse.
-            parsed = (
-                bounded_parse(raw, format="tcx", timezone=timezone, time_mode=time_mode)
-                if format == "tcx"
-                else bounded_parse(raw)
-            )
+            parsed = bounded_parse(raw, format=format, timezone=timezone, time_mode=time_mode)
             summary = parsed.summary if format == "tcx" else {}
             source = prepare_segments(parsed)
             derived = derive(parsed, source, edge_distances(db, source), timezone, activity_date)
@@ -187,6 +183,9 @@ def import_track(
                 else None
             )
             warnings = derived.quality_summary["warnings"]
+            derived.quality_summary["time_interpretation"] = time_mode
+            if time_mode == "local":
+                warnings.append("LOCAL_TIME_INTERPRETED")
             if format == "tcx":
                 if timer is not None:
                     warnings[:] = [
@@ -194,13 +193,10 @@ def import_track(
                         for code in warnings
                     ]
                 derived.quality_summary.update(
-                    time_interpretation=time_mode,
                     distance_source="device" if device_distance is not None else "route",
                     duration_source="device" if timer is not None else "track_timestamps",
                     route_distance_m=str(route_metric),
                 )
-                if time_mode == "local":
-                    warnings.append("LOCAL_TIME_INTERPRETED")
                 if (
                     timer is not None
                     and derived.elapsed_seconds is not None

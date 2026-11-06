@@ -21,7 +21,7 @@ def _parse_target(raw, pipe, format="gpx", timezone="UTC", time_mode="absolute")
         elif format == "tcx":
             parsed = parse_tcx(raw, timezone, time_mode)
         else:
-            parsed = parse_gpx(raw)
+            parsed = parse_gpx(raw, timezone, time_mode)
         pipe.send(("ok", parsed))
     except ApiError as error:
         pipe.send(("error", (error.status_code, error.code, error.message)))
