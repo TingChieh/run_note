@@ -13,7 +13,8 @@ from app.core.errors import ApiError
 Image.MAX_IMAGE_PIXELS = 40_000_000
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MIN_SIDE = 32
-SIZES = {"avatar": 512, "logo": 256, "favicon": 64}
+# Avatars show as small circles, so 256 px stays sharp at 3x for a quarter of the pixels of 512.
+SIZES = {"avatar": 256, "logo": 256, "favicon": 64}
 # Pillow reports JPEGs carrying an MPF extension (multi-picture, gain-map photos) as MPO.
 FORMATS = {"PNG", "JPEG", "MPO", "WEBP"}
 DRAFT_SIDE = 1024
@@ -75,6 +76,8 @@ def normalize_image(raw: bytes, purpose: Purpose) -> ProcessedImage:
     target = min(side, SIZES[purpose])
     if target != side:
         image = image.resize((target, target), Image.Resampling.LANCZOS)
+    if image.getchannel("A").getextrema() == (255, 255):
+        image = image.convert("RGB")  # Fully opaque: the alpha channel is dead weight.
     image.info.clear()  # Never carry ICC, EXIF, text or DPI from the source.
     buffer = BytesIO()
     image.save(buffer, format="PNG", optimize=True)

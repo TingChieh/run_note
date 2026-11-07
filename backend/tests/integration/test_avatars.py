@@ -56,7 +56,7 @@ def test_avatar_lifecycle_and_public_boundary(site, monkeypatch):  # noqa: F811
         image = own.get(url)
         assert image.status_code == 200 and image.headers["content-type"] == "image/png"
         with Image.open(BytesIO(image.content)) as decoded:
-            assert decoded.size == (512, 512)
+            assert decoded.size == (256, 256)
 
         # Not public until the showcase is enabled; same 404 as a missing account.
         assert visitor.get(named + "/avatar").status_code == 404

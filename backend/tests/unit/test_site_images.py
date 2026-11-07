@@ -45,6 +45,21 @@ def test_center_crop_square_without_upscaling(purpose, size, expected):
         assert image.size == (expected, expected)
 
 
+def test_large_avatar_is_downscaled_to_256():
+    result = normalize_image(encoded((1000, 800)), "avatar")
+    assert (result.width, result.height) == (256, 256)
+
+
+def test_opaque_images_drop_alpha_but_transparency_is_kept():
+    with Image.open(BytesIO(normalize_image(encoded((120, 120)), "avatar").png)) as opaque:
+        assert opaque.mode == "RGB"
+    buffer = BytesIO()
+    Image.new("RGBA", (120, 120), (200, 30, 30, 128)).save(buffer, format="PNG")
+    with Image.open(BytesIO(normalize_image(buffer.getvalue(), "logo").png)) as translucent:
+        assert translucent.mode == "RGBA"
+        assert translucent.getpixel((10, 10))[3] == 128
+
+
 def test_exif_orientation_is_applied_before_crop():
     # Orientation 6 displays the 40x80 source rotated 90 degrees clockwise (80x40), so the
     # source's left half (red) ends up on top and its right half (blue) at the bottom.
