@@ -14,7 +14,6 @@
   import BasemapPicker from './BasemapPicker.svelte';
   import { createBasemapController } from '#lib/map/basemap-controller.ts';
   import { watchSystemTheme } from './system-theme';
-  import 'maplibre-gl/dist/maplibre-gl.css';
   let { data, onretry, participantColors = {}, mapLabel = "", quietCityFailure = false, animateDataChanges = false, selectedRunner = "", selectedActivity = "", compact = false, detailHref = undefined, children, onclearRunner }: {data: FootprintCollection; onretry: () => void; participantColors?: Record<string, string>; mapLabel?: string; quietCityFailure?: boolean; animateDataChanges?: boolean; selectedRunner?: string; selectedActivity?: string; compact?: boolean; detailHref?: string; children?: Snippet; onclearRunner?: () => void} = $props();
   let container: HTMLDivElement, frameEl: HTMLDivElement, map: LibreMap | undefined, disposed=false;
   let framing: 'auto' | 'all' | 'picked' | 'free' = 'auto';
@@ -174,7 +173,7 @@
   }
   onMount(()=>{loadCities();sizeCanvas();window.addEventListener('resize', onWindowResize);stopTheme=watchSystemTheme(value=>{dark=value;if(map && !disposed) { if (!basemapController) applyMapTheme(map,dark); if (map.getLayer('footprint-casing')) map.setPaintProperty('footprint-casing','line-color',dark?'#302e2c':'#ffffff'); if (map.getLayer('footprint-selected-casing')) map.setPaintProperty('footprint-selected-casing','line-color',dark?'#302e2c':'#ffffff'); }});void(async()=>{
     try {
-      const lib=await import('maplibre-gl'); if(disposed)return;
+      const [lib]=await Promise.all([import('maplibre-gl'), import('maplibre-gl/dist/maplibre-gl.css')]); if(disposed)return;
       // Start on the overview so no high-zoom tiles load before the first fit.
       const camera = allBounds ? { bounds: allBounds, fitBoundsOptions: { padding: cameraPadding } } : { center: [0, 0] as [number, number], zoom: 4 };
       map=new lib.Map({container,fadeDuration:0,locale:{'NavigationControl.ZoomIn':'放大地图','NavigationControl.ZoomOut':'缩小地图','Map.Title':'足迹地图'},style:createRouteMapStyle(dark),...camera,maxZoom:19,attributionControl:false});

@@ -7,7 +7,6 @@
   import BasemapPicker from './BasemapPicker.svelte';
   import { createBasemapController } from '#lib/map/basemap-controller.ts';
   import { watchSystemTheme } from './system-theme';
-  import 'maplibre-gl/dist/maplibre-gl.css';
   let { route, spacious = false, embedded = false, color }: { color?: string; route: Route; spacious?: boolean; embedded?: boolean } = $props();
   let container: HTMLDivElement;
   let map: MapLibreMap | undefined, markers: Marker[] = [], disposed = false;
@@ -46,7 +45,8 @@
     stopTheme = watchSystemTheme(value => { dark = value; if (map && !disposed && !basemapController) applyMapTheme(map, dark, color); });
     void (async () => {
       try {
-        const lib = await import('maplibre-gl'); if (disposed) return;
+        // The map stylesheet travels with the library, not with the page: it is ~70 KB that would otherwise block first paint.
+        const [lib] = await Promise.all([import('maplibre-gl'), import('maplibre-gl/dist/maplibre-gl.css')]); if (disposed) return;
         map = new lib.Map({ container, style: createRouteMapStyle(dark), center: route.start, zoom: 13, attributionControl: false, renderWorldCopies: true, maxZoom: 19 });
         observer = new ResizeObserver(() => scheduleFit()); observer.observe(container);
         map.addControl(new lib.AttributionControl({ compact: true }), 'bottom-right');

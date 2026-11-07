@@ -23,7 +23,7 @@
 | GET | `/api/v1/me/avatar` | 本人登录 | 本人头像 PNG，无图 404 |
 | GET | `/api/v1/showcase/avatar`、`/api/v1/showcase/users/{username}/avatar` | 公开 | 复用展示主体解析（站主，或 `is_active AND showcase_enabled`），否则统一 404 |
 
-- **图片处理**：服务端 Pillow（13.0.0）只接受识别为 PNG / JPEG / WEBP 的文件（其余 415 `IMAGE_UNSUPPORTED`）；文件 ≤5 MiB（413 `IMAGE_TOO_LARGE`）；`Image.MAX_IMAGE_PIXELS = 40_000_000`，超限 422 `IMAGE_TOO_LARGE`；解码失败或最短边 <32 返回 422 `IMAGE_INVALID`。处理流程为方向校正 → 转 RGBA → 居中裁方 → LANCZOS 缩放（不放大；头像 512、logo 256、favicon 64）→ `optimize=True` 写出 PNG，不传 `exif`/`pnginfo`，因此 EXIF/GPS 与文本块一律丢弃，绕过前端直传同样安全。错误信息为中文提示，不回显文件名或 Pillow 原文。
+- **图片处理**：服务端 Pillow（13.0.0）只接受识别为 PNG / JPEG / WEBP 的文件（其余 415 `IMAGE_UNSUPPORTED`）；文件 ≤5 MiB（413 `IMAGE_TOO_LARGE`）；`Image.MAX_IMAGE_PIXELS = 40_000_000`，超限 422 `IMAGE_TOO_LARGE`；解码失败或最短边 <32 返回 422 `IMAGE_INVALID`。处理流程为方向校正 → 转 RGBA → 居中裁方 → LANCZOS 缩放（不放大；头像 256、logo 256、favicon 64）→ 完全不透明时去掉 alpha 通道（转 RGB）→ `optimize=True` 写出 PNG，不传 `exif`/`pnginfo`，因此 EXIF/GPS 与文本块一律丢弃，绕过前端直传同样安全。错误信息为中文提示，不回显文件名或 Pillow 原文。
 - **请求体上限**：新增 ASGI 中间件 `ImageBodyLimit`，对 `PUT /api/v1/site/images/*` 与 `PUT /api/v1/me/avatar` 限制 6 MiB，在 multipart 解析前拒绝（413 `IMAGE_TOO_LARGE`）。上传入口为 `async def`，Pillow 处理与数据库写入通过 `run_in_threadpool` 卸载。
 - **存储**：`site_settings`（单行）、`site_images`、`user_avatars` 三张新表；`users.avatar_version`（sha256 前 16 位）与头像同事务更新。二进制不放入 `users`，常规查询不读大字段。头像随用户删除级联清除。
 - **新增字段**：`UserView.avatar_url`（`/me`、登录、会话；指向 `/api/v1/me/avatar?v=…` 或 `null`；管理员用户列表中恒为 `null`，避免指向错误对象）与 `ShowcaseProfile.avatar_url`（可公开时为带版本 URL，否则 `null`）。均为新增字段，既有字段不变。前端 `auth.ts`、`showcase.ts` 解析时按同源固定路径正则白名单校验。
