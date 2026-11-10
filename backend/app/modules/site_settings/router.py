@@ -63,7 +63,8 @@ def update(payload: SitePatch, request: Request, db: DB, identity: Write):
 @router.put("/images/{kind}", response_model=ApiResponse[SiteView])
 async def upload(kind: str, request: Request, db: DB, identity: Write):
     service.checked_kind(kind)  # Reject unknown kinds before buffering the body.
-    db.commit()  # Release the identity lock before reading and decoding the upload.
+    # Release the identity lock before reading and decoding the upload.
+    await run_in_threadpool(db.commit)
     raw = await read_upload(request)
     data = await run_in_threadpool(service.put_image, db, kind, raw)
     await run_in_threadpool(db.commit)

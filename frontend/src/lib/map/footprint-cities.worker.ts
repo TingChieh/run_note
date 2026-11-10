@@ -1,8 +1,8 @@
-import regions from '#lib/data/china-cities.json';
-import { locateFootprintCities, type CityRegion } from './footprint-cities.ts';
+import { locateFootprintCities } from './footprint-cities.ts';
+import { withCityAtlas } from './city-atlas.ts';
 import type { FootprintCollection } from '#lib/api/footprints.ts';
 
 type Geometry = FootprintCollection['features'][number]['geometry'];
 self.onmessage = (event: MessageEvent<Geometry[]>) => {
-  self.postMessage(locateFootprintCities(event.data, regions as CityRegion[]));
+  withCityAtlas(regions => self.postMessage(locateFootprintCities(event.data, regions)));
 };
