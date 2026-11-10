@@ -90,6 +90,9 @@ def test_site_settings_permissions_patch_and_images(restore_site, monkeypatch):
     assert image.status_code == 200
     assert image.headers["content-type"] == "image/png"
     assert image.headers["x-content-type-options"] == "nosniff"
+    assert image.headers["cache-control"] == "private, max-age=31536000, immutable"
+    for stale in ("/api/v1/site/images/logo", "/api/v1/site/images/logo?v=0000000000000000"):
+        assert visitor.get(stale).headers["cache-control"] == "no-store"
     with Image.open(BytesIO(image.content)) as decoded:
         assert decoded.size == (200, 200)
     assert visitor.get("/api/v1/site/images/favicon").status_code == 404

@@ -38,7 +38,8 @@ def register_request_metadata(app: FastAPI) -> None:
         request.state.request_id = uuid4().hex
         response = await call_next(request)
         response.headers["X-Request-ID"] = request.state.request_id
-        response.headers["Cache-Control"] = "no-store"
+        # Only a content-addressed image (site_settings.router.png_response) opts into caching.
+        response.headers.setdefault("Cache-Control", "no-store")
         if request.url.path.startswith(("/api/v1/shared/", "/api/v1/public/")):
             response.headers["Referrer-Policy"] = "no-referrer"
             response.headers["X-Robots-Tag"] = "noindex, nofollow"
