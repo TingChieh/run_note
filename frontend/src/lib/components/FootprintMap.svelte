@@ -9,7 +9,7 @@
   import type { FootprintCollection } from '#lib/api/footprints.ts';
   import { geometryBounds, displayFootprints } from '#lib/api/footprints.ts';
   import type { CityLocations, FootprintCity } from '#lib/map/footprint-cities.ts';
-  import { colorFootprintFeatures } from '#lib/map/footprint-colors.ts';
+  import { colorFootprintFeatures, heatFillColor } from '#lib/map/footprint-colors.ts';
   import { createRouteMapStyle, applyMapTheme, type BasemapPreference, type BasemapStyle } from '#lib/api/map-style.ts';
   import BasemapPicker from './BasemapPicker.svelte';
   import { createBasemapController } from '#lib/map/basemap-controller.ts';
@@ -189,7 +189,7 @@
         appliedData=data;
         const features=colored(displayData.features);
         map.addSource('footprints',{type:'geojson',data:{type:'FeatureCollection',features}});
-        map.addLayer({id:'footprint-fill',type:'fill',source:'footprints',filter:['==','$type','Polygon'],paint:{'fill-color':['step',['get','count'],'#c0dfac',2,'#72b78a',4,'#2d9474',8,'#e69338',16,'#bd432c'],'fill-opacity':0.8}});
+        map.addLayer({id:'footprint-fill',type:'fill',source:'footprints',filter:['==','$type','Polygon'],paint:{'fill-color':heatFillColor,'fill-opacity':0.8}});
         if (onclearRunner) map.addLayer({id:'footprint-casing',type:'line',source:'footprints',filter:['==','$type','LineString'],paint:{'line-color':dark?'#302e2c':'#ffffff','line-width':5,'line-opacity':0.65},layout:{'line-join':'round','line-cap':'round'}});
         map.addLayer({id:'footprint-lines',type:'line',source:'footprints',filter:['==','$type','LineString'],paint:{'line-color':['get','color'],'line-width':3,'line-opacity':0.8},layout:{'line-join':'round','line-cap':'round'}});
         map.addLayer({id:'footprint-points',type:'circle',source:'footprints',filter:['==','$type','Point'],paint:{'circle-color':['get','color'],'circle-radius':5}});
