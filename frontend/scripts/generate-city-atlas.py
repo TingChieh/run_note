@@ -50,6 +50,22 @@ for feature in source["features"]:
 for region in regions.values():
     points = [point for polygon in region["polygons"] for ring in polygon for point in ring]
     region["bounds"] = [[min(p[0] for p in points), min(p[1] for p in points)], [max(p[0] for p in points), max(p[1] for p in points)]]
+
+
+def encode(ring):
+    # Lossless for 4-decimal input: flat integer deltas in 1/10000 degree (decoded by lib/map/city-atlas.ts).
+    flat, last_x, last_y = [], 0, 0
+    for x, y in ring:
+        ix, iy = round(x * SCALE), round(y * SCALE)
+        flat += [ix - last_x, iy - last_y]
+        last_x, last_y = ix, iy
+    return flat
+
+
+SCALE = 10000
+for region in regions.values():
+    region["polygons"] = [[encode(ring) for ring in polygon] for polygon in region["polygons"]]
+atlas = {"scale": SCALE, "regions": sorted(regions.values(), key=lambda r: r["code"])}
 target = Path(__file__).parent.parent / "src/lib/data/china-cities.json"
-target.write_text(json.dumps(sorted(regions.values(), key=lambda r: r["code"]), ensure_ascii=False, separators=(",", ":")) + "\n")
+target.write_text(json.dumps(atlas, ensure_ascii=False, separators=(",", ":")) + "\n")
 print(f"Generated {len(regions)} regions; {target.stat().st_size} bytes")
