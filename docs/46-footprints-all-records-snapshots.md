@@ -25,6 +25,8 @@
 
 `result` 仅在成功版本与当前用户数据版本及算法版本一致时存在；全量集合明确 `scope=all`，不伪造日期范围。GET 只读取选定模式及状态，不执行空间计算或访问原始点/段，也不读取另一个模式的大型 JSON。匿名返回 401，未知参数返回 422，不接受 owner 参数，响应维持 no-store。
 
+可选参数 `encoding=delta`（本人 `/api/v1/footprints/all` 与展示 `/api/v1/showcase/footprints/all`、具名展示均支持）：在白名单序列化之后，把每段坐标改为以 1e-9 度为单位的逐点差分整数（几何中用 `delta` 代替 `coordinates`；`Point` 为一对绝对值，`LineString`/`MultiPoint` 为一个扁平数组，`MultiLineString`/`Polygon` 为数组的数组），并在 `result` 中加 `coordinate_encoding: "delta-1e9"`。快照几何本由 `ST_AsGeoJSON(..., 9)` 生成，因此该编码无损；任一坐标无法精确表示时整体退回原格式。不带该参数时响应逐字节不变。前端始终请求该格式，解码后再走原有逐字段校验，并仍可读取原格式。实现见 `backend/app/modules/footprints/encoding.py` 与 `frontend/src/lib/api/footprints.ts`；线上数据压缩后约 1027 KB → 523 KB。
+
 单活动热区沿用完整边与固定 100×100 EPSG:3857 网格相交，再按活动内去重；同活动绕圈或多段同格计一次，不同活动累计。日期变更线、极区、零长度、单点、多段断点沿用既有语义。
 
 后台独立 Session 在线程执行，任务使用独立命名空间的数据库 advisory lock，不改变导入锁。生成期间不持有 users 行锁，发布时短锁复核源版本；并发编辑/导入/删除导致旧任务放弃发布。失败状态与退避持久化，停止时取消活动查询并释放连接，重启可补建。
