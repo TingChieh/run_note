@@ -1,5 +1,13 @@
 import { expect, it } from 'vitest';
-import { footprintSelection, footprintQuery, footprintRange, parseFootprints } from '../../src/lib/api/footprints';
+import {
+  footprintSelection,
+  footprintQuery,
+  footprintRange,
+  parseFootprints,
+  parseFootprintSnapshot,
+  readAllFootprints,
+} from '../../src/lib/api/footprints';
+import { encodeFootprints } from '../fixtures/footprint-encoding';
 import { isProtected } from '../../src/lib/api/auth';
 it('restores year and heatmap, validates inclusive range and leap dates', () => {
   expect(footprintSelection(new URLSearchParams('year=2024&mode=heatmap'), 2026)).toEqual({
@@ -276,11 +284,11 @@ it('parses ready all-record snapshots without requiring dates and rejects contra
   ])
     expect(() => parseFootprintSnapshot(invalid)).toThrow();
 });
-it('reads the all-record endpoint using only mode and maps expired sessions to a private-state-safe message', async () => {
+it('reads the all-record endpoint using only mode and encoding, and maps expired sessions to a private-state-safe message', async () => {
   const { readAllFootprints } = await import('../../src/lib/api/footprints');
   const signal = new AbortController().signal;
   const fetcher: typeof fetch = async (input, init) => {
-    expect(input).toBe('/api/v1/showcase/footprints/all?mode=heatmap');
+    expect(input).toBe('/api/v1/showcase/footprints/all?mode=heatmap&encoding=delta');
     expect(init).toMatchObject({ signal, cache: 'no-store', credentials: 'same-origin' });
     return new Response(
       JSON.stringify({ data: { status: 'pending', generated_at: null, refreshing: false, result: null }, error: null }),
@@ -290,4 +298,136 @@ it('reads the all-record endpoint using only mode and maps expired sessions to a
   await expect(
     readAllFootprints('tracks', signal, async () => new Response('not-json', { status: 401 })),
   ).rejects.toMatchObject({ status: 401, message: '登录已过期' });
+});
+const id = '00000000-0000-4000-8000-000000000001';
+const plainAll = {
+  scope: 'all',
+  type: 'FeatureCollection',
+  mode: 'tracks',
+  activity_count: 1,
+  visible_activity_count: 1,
+  unsupported_segment_count: 0,
+  grid_size_m: 100,
+  grid_crs: 'EPSG:3857',
+  count_basis: 'distinct_activity_per_cell',
+  max_count: 0,
+  features: [
+    { geometry: { type: 'Point', coordinates: [121.473701234, 31.230416789] } },
+    {
+      geometry: {
+        type: 'LineString',
+        coordinates: [
+          [-179.999999999, -85.05],
+          [179.5, 85.051128779],
+          [0.000000001, 0],
+        ],
+      },
+    },
+    {
+      geometry: {
+        type: 'MultiLineString',
+        coordinates: [
+          [
+            [1, 1],
+            [2, 2],
+          ],
+          [
+            [3, 3],
+            [4.5, 4.25],
+          ],
+        ],
+      },
+    },
+    {
+      geometry: {
+        type: 'GeometryCollection',
+        geometries: [
+          {
+            type: 'LineString',
+            coordinates: [
+              [10.5, 20.25],
+              [10.75, 20.125],
+            ],
+          },
+        ],
+      },
+    },
+  ].map((feature, index) => ({
+    type: 'Feature',
+    ...feature,
+    properties: { activity_id: id, title: '合成', activity_date: '2026-01-01', segment_index: index },
+  })),
+};
+const snapshot = (result: unknown) => ({
+  status: 'ready',
+  generated_at: '2026-10-15T00:00:00Z',
+  refreshing: false,
+  refresh_failed: false,
+  result,
+});
+it('decodes compact coordinates back to exactly the plain GeoJSON numbers', () => {
+  const encoded = encodeFootprints(plainAll);
+  const decoded = parseFootprintSnapshot(JSON.parse(JSON.stringify(snapshot(encoded))));
+  expect(decoded.result).toEqual(plainAll);
+  expect(decoded.result).not.toHaveProperty('coordinate_encoding');
+  // A plain response (older server, test fixtures) is still read as it was.
+  expect(parseFootprintSnapshot(snapshot(plainAll)).result).toEqual(plainAll);
+  const heat = {
+    ...plainAll,
+    mode: 'heatmap',
+    max_count: 2,
+    features: [
+      {
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [121.484, 31.233],
+              [121.485, 31.233],
+              [121.485, 31.234],
+              [121.484, 31.233],
+            ],
+          ],
+        },
+        properties: { i: 1, j: 2, count: 2 },
+      },
+    ],
+  };
+  expect(parseFootprintSnapshot(snapshot(encodeFootprints(heat))).result).toEqual(heat);
+});
+it('rejects malformed compact coordinates like any other invalid response', () => {
+  const encoded = encodeFootprints(plainAll);
+  const withGeometry = (geometry: unknown) =>
+    snapshot({ ...encoded, features: [{ ...encoded.features[0], geometry }] });
+  for (const bad of [
+    snapshot({ ...encoded, coordinate_encoding: 'delta-1e6' }),
+    withGeometry({ type: 'Point', delta: [1] }),
+    withGeometry({ type: 'Point', delta: [1, 2, 3, 4] }),
+    withGeometry({ type: 'LineString', delta: [1, 2.5] }),
+    withGeometry({ type: 'LineString', delta: ['1', '2'] }),
+    withGeometry({ type: 'LineString', delta: [] }),
+    withGeometry({ type: 'LineString', delta: [Number.MAX_SAFE_INTEGER, 0, 1, 0] }),
+    withGeometry({
+      type: 'LineString',
+      coordinates: [
+        [1, 2],
+        [3, 4],
+      ],
+    }),
+    withGeometry({ type: 'MultiPolygon', delta: [[[1, 2]]] }),
+    // Decoded values still pass the usual range checks: 200 degrees is outside any map.
+    withGeometry({ type: 'Point', delta: [200e9, 0] }),
+  ])
+    expect(() => parseFootprintSnapshot(bad)).toThrow('足迹服务返回了无效响应');
+});
+it('asks for compact coordinates', async () => {
+  let requested = '';
+  const fetcher = (async (input: string) => {
+    requested = input;
+    return new Response(JSON.stringify({ data: snapshot(encodeFootprints(plainAll)), error: null }));
+  }) as unknown as typeof fetch;
+  const result = await readAllFootprints('tracks', new AbortController().signal, fetcher);
+  expect(new URL(requested, 'http://x').searchParams.get('encoding')).toBe('delta');
+  expect(result.result).toEqual(plainAll);
 });

@@ -96,10 +96,59 @@ function geometry(v: unknown): boolean {
     return Array.isArray(v.coordinates) && v.coordinates.length > 0 && v.coordinates.every(ring);
   return false;
 }
-function parseCollection(v: unknown, all: boolean): FootprintCollection {
+// Same scheme as backend footprints/encoding.py: each run of positions is flat integer deltas in
+// 1e-9 degree. Dividing the running sums by the scale gives back the exact decimal GeoJSON numbers.
+const COORDINATE_ENCODING = 'delta-1e9';
+const COORDINATE_SCALE = 1e9;
+function decodeRun(flat: unknown): [number, number][] | null {
+  if (!Array.isArray(flat) || flat.length === 0 || flat.length % 2 !== 0) return null;
+  const positions: [number, number][] = [];
+  let x = 0,
+    y = 0;
+  for (let i = 0; i < flat.length; i += 2) {
+    const dx: unknown = flat[i],
+      dy: unknown = flat[i + 1];
+    if (!Number.isSafeInteger(dx) || !Number.isSafeInteger(dy)) return null;
+    x += dx as number;
+    y += dy as number;
+    if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y)) return null;
+    positions.push([x / COORDINATE_SCALE, y / COORDINATE_SCALE]);
+  }
+  return positions;
+}
+/** Returns plain GeoJSON, or null so that the regular geometry check rejects a malformed value. */
+function decodeGeometry(g: unknown): unknown {
+  if (!object(g) || 'coordinates' in g) return null;
+  if (g.type === 'GeometryCollection')
+    return Array.isArray(g.geometries) ? { type: g.type, geometries: g.geometries.map(decodeGeometry) } : null;
+  if (g.type === 'Point') {
+    const run = decodeRun(g.delta);
+    return run?.length === 1 ? { type: g.type, coordinates: run[0] } : null;
+  }
+  if (g.type === 'MultiPoint' || g.type === 'LineString') {
+    const run = decodeRun(g.delta);
+    return run ? { type: g.type, coordinates: run } : null;
+  }
+  if ((g.type === 'MultiLineString' || g.type === 'Polygon') && Array.isArray(g.delta)) {
+    const parts = g.delta.map(decodeRun);
+    return parts.every(Boolean) ? { type: g.type, coordinates: parts } : null;
+  }
+  return null;
+}
+function decodeCollection(v: unknown, invalid: () => never): unknown {
+  if (!object(v) || v.coordinate_encoding === undefined) return v;
+  if (v.coordinate_encoding !== COORDINATE_ENCODING || !Array.isArray(v.features)) invalid();
+  const { coordinate_encoding: _encoding, ...rest } = v;
+  return {
+    ...rest,
+    features: (v.features as unknown[]).map((f) => (object(f) ? { ...f, geometry: decodeGeometry(f.geometry) } : f)),
+  };
+}
+function parseCollection(input: unknown, all: boolean): FootprintCollection {
   const invalid: () => never = () => {
     throw new FootprintError('足迹服务返回了无效响应，请重试', 502);
   };
+  const v = decodeCollection(input, invalid);
   if (
     !object(v) ||
     v.type !== 'FeatureCollection' ||
@@ -186,11 +235,15 @@ export async function readAllFootprints(
   signal: AbortSignal,
   fetcher: typeof fetch = fetch,
 ): Promise<FootprintSnapshot> {
-  const response = await fetcher(`/api/v1/showcase/footprints/all?${new URLSearchParams({ mode })}`, {
-    cache: 'no-store',
-    credentials: 'same-origin',
-    signal,
-  });
+  // Compact coordinates: about half the compressed size of decimal GeoJSON, decoded losslessly above.
+  const response = await fetcher(
+    `/api/v1/showcase/footprints/all?${new URLSearchParams({ mode, encoding: 'delta' })}`,
+    {
+      cache: 'no-store',
+      credentials: 'same-origin',
+      signal,
+    },
+  );
   if (response.status === 401) throw new FootprintError('登录已过期', 401);
   let body: unknown;
   try {

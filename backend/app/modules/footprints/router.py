@@ -8,6 +8,7 @@ from app.api.dependencies import get_read_identity, get_session
 from app.core.errors import ApiError
 from app.core.responses import ApiResponse
 from app.modules.activities.router import envelope
+from app.modules.footprints.encoding import encode_collection
 from app.modules.footprints.provinces import province_summary
 from app.modules.footprints.schema import AllFootprintView
 from app.modules.footprints.service import footprints
@@ -22,11 +23,14 @@ def read_all(
     identity: Annotated[tuple, Depends(get_read_identity)],
     db: Annotated[Session, Depends(get_session)],
     mode: Literal["tracks", "heatmap"] = "tracks",
+    encoding: Literal["delta"] | None = None,
 ):
-    if set(request.query_params) - {"mode"}:
+    if set(request.query_params) - {"mode", "encoding"}:
         raise ApiError(422, "VALIDATION_ERROR", "足迹查询包含不支持的参数")
     data = read_all_footprints(db, identity[1].id, mode)
     db.commit()
+    if data["result"] is not None and encoding == "delta":
+        data["result"] = encode_collection(data["result"])
     return envelope(request, data)
 
 

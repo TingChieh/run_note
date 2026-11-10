@@ -21,6 +21,16 @@ def read(client, mode="tracks"):
     return response.json()["data"]
 
 
+def assert_encoded_matches(client, mode):
+    from tests.unit.test_footprint_encoding import decode_collection
+
+    plain = read(client, mode)["result"]
+    encoded = client.get(PATH + mode + "&encoding=delta")
+    assert encoded.status_code == 200, encoded.text
+    assert "coordinate_encoding" not in plain
+    assert decode_collection(encoded.json()["data"]["result"]) == plain
+
+
 def build(app, owner, now=NOW):
     from app.modules.footprints.snapshot import build_user_snapshot
 
@@ -31,7 +41,12 @@ def test_all_endpoint_requires_owner_and_rejects_filter_parameters(clients):
     a, b, _, app = clients
     assert a.get(PATH + "tracks").status_code == 401
     owner = register(a)
-    for query in ["mode=bad", "mode=tracks&owner=x", "mode=tracks&date_from=2024-01-01"]:
+    for query in [
+        "mode=bad",
+        "mode=tracks&owner=x",
+        "mode=tracks&date_from=2024-01-01",
+        "mode=tracks&encoding=gzip",
+    ]:
         assert a.get("/api/v1/footprints/all?" + query).status_code == 422
     initial = read(a)
     assert initial["status"] == "pending" and initial["result"] is None
@@ -81,6 +96,8 @@ def test_all_years_and_activity_dedup_preserve_full_spatial_semantics(clients):
     }
     heat = read(a, "heatmap")["result"]
     assert heat["max_count"] == 2
+    for mode in ("tracks", "heatmap"):
+        assert_encoded_matches(a, mode)
     assert {
         (f["properties"]["i"], f["properties"]["j"]): f["properties"]["count"]
         for f in heat["features"]
@@ -123,6 +140,7 @@ def test_snapshots_match_legacy_exact_geometry_without_losing_edge_cases(clients
             "max_count",
         ):
             assert new[key] == old[key]
+        assert_encoded_matches(a, mode)
 
 
 def test_imports_incremental_metadata_delete_and_old_snapshot_replacement(clients, monkeypatch):
