@@ -129,11 +129,12 @@ def listing(db, owner, limit, offset, activity_date=None, category=None, activit
 
 def route(db, owner, identifier):
     owned_activity(db, owner, identifier)
+    # 7 decimals is ~1 cm: display-only, and far shorter than full double precision.
     rows = db.execute(
-        text("""SELECT s.segment_index,s.point_count,ST_AsGeoJSON(s.geom,15)::json AS geometry,
-        (SELECT ST_AsGeoJSON(p.position,15)::json FROM activity_points p WHERE p.segment_id=s.id
+        text("""SELECT s.segment_index,s.point_count,ST_AsGeoJSON(s.geom,7)::json AS geometry,
+        (SELECT ST_AsGeoJSON(p.position,7)::json FROM activity_points p WHERE p.segment_id=s.id
          ORDER BY p.point_index LIMIT 1) AS first,
-        (SELECT ST_AsGeoJSON(p.position,15)::json FROM activity_points p WHERE p.segment_id=s.id
+        (SELECT ST_AsGeoJSON(p.position,7)::json FROM activity_points p WHERE p.segment_id=s.id
          ORDER BY p.point_index DESC LIMIT 1) AS last
         FROM activity_segments s JOIN activities a ON a.id=s.activity_id
         WHERE a.id=:id AND a.user_id=:owner ORDER BY s.segment_index"""),
