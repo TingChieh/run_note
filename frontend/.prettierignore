@@ -1,0 +1,9 @@
+# Generated or vendored data: regenerate with its script instead of reformatting.
+src/lib/data/
+static/
+build/
+.svelte-kit/
+node_modules/
+test-results/
+playwright-report/
+pnpm-lock.yaml
