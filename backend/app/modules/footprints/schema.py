@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 
 
 class AllFootprintCollection(BaseModel):
@@ -16,6 +16,15 @@ class AllFootprintCollection(BaseModel):
     grid_crs: Literal["EPSG:3857"]
     count_basis: Literal["distinct_activity_per_cell"]
     max_count: int = Field(ge=0)
+    # Present only for ?encoding=delta (footprints/encoding.py); plain GeoJSON omits the key.
+    coordinate_encoding: Literal["delta-1e9"] | None = None
+
+    @model_serializer(mode="wrap")
+    def _plain_omits_encoding(self, handler):
+        data = handler(self)
+        if data.get("coordinate_encoding") is None:
+            data.pop("coordinate_encoding", None)
+        return data
 
 
 class AllFootprintView(BaseModel):

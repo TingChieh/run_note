@@ -10,6 +10,7 @@ import {
   reduceTransparency,
 } from '../fixtures/segmented';
 import type { FootprintCollection } from '../../src/lib/api/footprints.ts';
+import { encodeFootprints } from '../fixtures/footprint-encoding';
 async function fixture(page: Page) {
   const state = {
     multipleCities: false,
@@ -104,6 +105,27 @@ async function fixture(page: Page) {
         },
         properties: { i: 129574, j: 48500, count: 2 },
       } as (typeof features)[number]);
+    const result = {
+      scope: 'all',
+      type: 'FeatureCollection',
+      features:
+        mode === 'heatmap'
+          ? features.flatMap((feature) =>
+              Array.from({ length: state.heatCells }, (_, index) => ({
+                ...feature,
+                properties: { ...feature.properties, i: 135236 + index },
+              })),
+            )
+          : features,
+      mode,
+      activity_count: empty ? 0 : records.length,
+      visible_activity_count: empty ? 0 : records.length,
+      unsupported_segment_count: 0,
+      grid_size_m: 100,
+      grid_crs: 'EPSG:3857',
+      count_basis: 'distinct_activity_per_cell',
+      max_count: empty ? 0 : mode === 'heatmap' ? 2 : 0,
+    };
     return route.fulfill({
       json: {
         data: {
@@ -111,27 +133,8 @@ async function fixture(page: Page) {
           generated_at: '2026-10-15T00:00:00Z',
           refreshing: state.refreshing,
           refresh_failed: state.refreshFailed,
-          result: {
-            scope: 'all',
-            type: 'FeatureCollection',
-            features:
-              mode === 'heatmap'
-                ? features.flatMap((feature) =>
-                    Array.from({ length: state.heatCells }, (_, index) => ({
-                      ...feature,
-                      properties: { ...feature.properties, i: 135236 + index },
-                    })),
-                  )
-                : features,
-            mode,
-            activity_count: empty ? 0 : records.length,
-            visible_activity_count: empty ? 0 : records.length,
-            unsupported_segment_count: 0,
-            grid_size_m: 100,
-            grid_crs: 'EPSG:3857',
-            count_basis: 'distinct_activity_per_cell',
-            max_count: empty ? 0 : mode === 'heatmap' ? 2 : 0,
-          },
+          // The page asks for compact coordinates; answer the way the API does.
+          result: url.searchParams.get('encoding') === 'delta' ? encodeFootprints(result) : result,
         },
         error: null,
       },
@@ -237,6 +240,16 @@ test('page loading skeleton follows the real request and respects reduced motion
   } finally {
     release();
   }
+});
+test('footprints arrive as compact coordinates and draw the same records', async ({ page }) => {
+  const state = await fixture(page);
+  state.multipleCities = true;
+  await loginRunner(page);
+  await page.goto('/footprints?mode=tracks');
+  await ready(page);
+  expect(state.requests.at(-1)?.searchParams.get('encoding')).toBe('delta');
+  await expect(page.getByTestId('footprint-summary')).toContainText('2');
+  await expect(page.getByRole('group', { name: '有记录的城市', exact: true }).getByRole('button')).toHaveCount(2);
 });
 test('the map library is requested while the footprint data is still on its way', async ({ page }) => {
   await fixture(page);
@@ -498,11 +511,11 @@ test('all records ignore old date URLs and both modes preserve map, legend and k
   await expect(page.getByLabel('时间筛选', { exact: true })).toHaveCount(0);
   await expect(page.getByTestId('footprint-summary')).toContainText('全部 2 条运动记录');
   await expect(page.getByTestId('footprint-generated')).toContainText('更新于');
-  expect(state.requests[0].search).toBe('?mode=tracks');
+  expect(state.requests[0].search).toBe('?mode=tracks&encoding=delta');
   await expect(page.getByRole('button', { name: '轨迹叠加', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: '运动热力图', exact: true }).click();
   await ready(page);
-  expect(state.requests.at(-1)?.search).toBe('?mode=heatmap');
+  expect(state.requests.at(-1)?.search).toBe('?mode=heatmap&encoding=delta');
   await expect(page.getByTestId('heat-legend')).toContainText('不同运动记录');
   await expect(page.getByTestId('heat-legend')).toContainText('GPS 点');
   await page.getByText('查看热区数据', { exact: false }).click();
@@ -540,7 +553,7 @@ test('switching back to a loaded mode reuses the live map and revalidates in the
   await expect(page.locator('.maplibregl-canvas[data-mark="live"]')).toHaveCount(1);
   await expect(page.getByTestId('footprint-map-ready')).toBeVisible();
   await expect.poll(() => state.requests.length).toBe(count + 1);
-  expect(state.requests.at(-1)?.search).toBe('?mode=tracks');
+  expect(state.requests.at(-1)?.search).toBe('?mode=tracks&encoding=delta');
   await expect(page.locator('.record-list summary')).toContainText('全部可显示记录');
   await expect(page.locator('.maplibregl-canvas[data-mark="live"]')).toHaveCount(1);
 });
@@ -663,7 +676,7 @@ test('late mode responses cannot replace the current map', async ({ page }) => {
   const started = new Promise<void>((resolve) => {
     entered = resolve;
   });
-  await page.route('**/api/v1/showcase/footprints/all?mode=heatmap', async (route) => {
+  await page.route('**/api/v1/showcase/footprints/all?mode=heatmap&encoding=delta', async (route) => {
     entered();
     await held;
     try {
@@ -933,7 +946,7 @@ test('generation taking more than five minutes still completes automatically', a
   await page.clock.fastForward(5000);
   await ready(page);
   expect(state.requests).toHaveLength(62);
-  expect(state.requests.at(-1)?.search).toBe('?mode=tracks');
+  expect(state.requests.at(-1)?.search).toBe('?mode=tracks&encoding=delta');
 });
 test('route-less manual records remain counted in the all-record summary', async ({ page }) => {
   await fixture(page);

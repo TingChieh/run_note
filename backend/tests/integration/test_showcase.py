@@ -205,6 +205,15 @@ def test_showcase_statistics_goals_footprints_and_report_reads(site):
     ]:
         response = visitor.get("/api/v1/showcase" + path)
         assert response.status_code == 200, (path, response.text)
+    plain = visitor.get("/api/v1/showcase/footprints/all").json()["data"]
+    encoded = visitor.get("/api/v1/showcase/footprints/all?encoding=delta").json()["data"]
+    if plain["result"] is not None:
+        from tests.unit.test_footprint_encoding import decode_collection
+
+        assert decode_collection(encoded["result"]) == plain["result"]
+    else:
+        assert encoded == plain
+    assert visitor.get("/api/v1/showcase/footprints/all?encoding=bad").status_code == 422
     reports = visitor.get("/api/v1/showcase/ai-reports").json()["data"]
     assert reports["total"] == 1 and reports["items"][0]["id"] == ids["owner"]
     for name in ["other", "pending"]:
