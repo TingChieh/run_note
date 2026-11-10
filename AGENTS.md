@@ -13,7 +13,7 @@
 - 后端：Python 3.12（`>=3.12,<3.13`）、FastAPI 0.143、Pydantic 2.14、SQLAlchemy 2.1（**同步**）、Alembic 1.20、psycopg3、GeoAlchemy2、gpxpy、defusedxml、argon2-cffi。依赖锁定在 `backend/requirements.lock`（`--require-hashes`）。
 - 前端：SvelteKit 3 / Svelte 5（runes）、TypeScript 6（`strict`）、Vite 8、Tailwind 4、Vitest 5、Playwright 1.64、echarts 6、maplibre-gl 5。包管理器固定为 pnpm 11.25.0，Node `^22.17 || ^24`。
 - 数据库：PostgreSQL 18 + PostGIS 3.6。
-- 代码风格：Ruff，`line-length = 100`，lint 规则 `E,F,I,UP,B`。
+- 代码风格：Ruff，`line-length = 100`，lint 规则 `E,F,I,UP,B`。前端用 Prettier（`frontend/.prettierrc.json`：单引号、`printWidth 120`、含 Svelte 插件），**渐进采用**：只格式化本次要改动的文件，不做全量重排；某个文件第一次格式化时，把纯格式化单独做成一个提交、放在功能改动之前，便于审阅。`src/lib/data/` 等生成数据在 `.prettierignore` 中排除。
 
 ## 2. 仓库结构
 
@@ -138,6 +138,8 @@ docs/              设计与验收记录（中文）；docs/design-system/ 为 U
 pnpm test                                      # Vitest 单元测试
 pnpm check                                     # svelte-kit sync + svelte-check 类型检查
 pnpm build                                     # 生产构建（adapter-node）
+pnpm format <文件…>                            # 用 Prettier 格式化指定文件（渐进采用，见第 1 节）
+pnpm format:check <文件…>                      # 只检查，不写入
 pnpm showcase                                  # 设计系统独立 showcase（不进生产）
 pnpm exec playwright test --config <file>      # 运行指定 Playwright 配置
 pnpm test:e2e                                  # 默认 e2e，需后端已启动且测试库 ready
