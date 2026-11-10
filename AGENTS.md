@@ -41,13 +41,13 @@ infra/native/      原生部署资产：systemd 单元、Caddyfile、env 模板�
 docs/              设计与验收记录（中文）；docs/design-system/ 为 UI 规范
 ```
 
-后端功能模块以 `backend/app/modules/` 目录为准（现有 activities、admin_users、ai_reports、auth、footprints、gpx、health、mifitness、running_goals、sharing、showcase、site_settings、statistics、tcx、users、wellbeing）；新增模块须按第 4 节注册。每个模块按自己的 `router/schema/service/model` 组织。**不要为每张表建立空壳 Repository/Manager/Factory**，简单查询直接写在模块 service 中；只有空间查询或确需复用的复杂查询才拆出 `queries.py`。
+后端功能模块以 `backend/app/modules/` 目录为准（现有 activities、admin_users、ai_reports、auth、footprints、gpx、health、mifitness、place_titles、route_groups、running_goals、sharing、showcase、site_settings、statistics、tcx、together、users、wellbeing）；新增模块须按第 4 节注册。每个模块按自己的 `router/schema/service/model` 组织。**不要为每张表建立空壳 Repository/Manager/Factory**，简单查询直接写在模块 service 中；只有空间查询或确需复用的复杂查询才拆出 `queries.py`。
 
 ## 3. 架构边界
 
 - **分层职责**：Router 只做 HTTP 参数、依赖、调用 service、返回信封；Service 承载业务规则、授权、SQL 与事务；Schema 只做校验；Model 只做映射。路由中**禁止**实现距离算法或多步骤事务。
 - **同步执行**：服务层一律是同步的普通函数（不是 class）。常规路由用 `def`，由 FastAPI 线程池执行。**禁止在 `async def` 中直接跑同步 DB 或重计算**；上传入口若要 async，必须用 `run_in_threadpool` 卸载阻塞工作。
-- **提交边界**：路由在 service 调用后 `db.commit()`；service 内部用 `db.flush()`。唯一例外是 AI 报告模块（它把 DB 写入与外部 HTTP 调用交错，自己在内部提交）。
+- **提交边界**：路由在 service 调用后 `db.commit()`；service 内部用 `db.flush()`。例外只有三类：AI 报告模块（把 DB 写入与外部 HTTP 调用交错，自己在内部提交）；轨迹导入 `gpx/service.py` 的 `import_track`（解析期间不占连接，解析后以 `with db.begin()` 做一次短写事务）；以及用 `session_factory` 自建会话的后台任务（footprints、place_titles、route_groups 的填充/重建）。
 - **会话**：每个请求一个 Session，通过 `get_session` 依赖提供，不存在全局 Session。不要新增 per-request commit 中间件。
 - **时间**：统一使用 `request.app.state.clock()`，不要在业务代码里直接调用 `datetime.now()`。
 - **权威数据在服务端**：前端不得成为唯一校验入口。地图（MapLibre）与图表（ECharts）只做呈现，**不生成权威运动指标**；距离、用时、配速以服务端聚合为准。前端 `lib/api/*` 是接口契约的消费者，不是业务逻辑的复制品。
