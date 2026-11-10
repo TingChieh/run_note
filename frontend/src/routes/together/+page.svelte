@@ -1,6 +1,7 @@
 <script lang="ts">
   import '#lib/styles/activity-timeline.css';
   import { onMount } from 'svelte';
+  import { warmMapLibrary } from '#lib/library-warmup.ts';
   import { page } from '$app/state';
   import { replaceState } from '$app/navigation';
   import { pageTitle } from '#lib/site.ts';
@@ -232,6 +233,7 @@
     query.addEventListener('change', sync);
     period = parsePeriod(page.url.searchParams.get('period'));
     void load();
+    warmMapLibrary();
     return () => {
       query.removeEventListener('change', sync);
       disposed = true;

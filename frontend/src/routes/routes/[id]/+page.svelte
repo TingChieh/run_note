@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { warmChartLibrary, warmMapLibrary } from '#lib/library-warmup.ts';
   import { page } from '$app/state';
   import { pageTitle } from '#lib/site.ts';
   import { useViewContext } from '#lib/view-context.ts';
@@ -50,6 +51,8 @@
   onMount(() => {
     disposed = false;
     void load();
+    warmMapLibrary();
+    warmChartLibrary();
     return () => {
       disposed = true;
       ++requestId;

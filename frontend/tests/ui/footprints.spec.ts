@@ -139,6 +139,8 @@ async function fixture(page: Page) {
   });
   return state;
 }
+// Vite dev serves the pre-bundled dependency under this name.
+const mapLibrary = /\/maplibre-gl\.js(\?|$)/;
 async function ready(page: Page) {
   await expect(page.getByTestId('footprint-map-ready')).toBeVisible();
 }
@@ -232,6 +234,53 @@ test('page loading skeleton follows the real request and respects reduced motion
     await ready(page);
     await expect(skeleton).toHaveCount(0);
     expect(await page.locator('.page-reveal').evaluate((el) => getComputedStyle(el).animationName)).toBe('none');
+  } finally {
+    release();
+  }
+});
+test('the map library is requested while the footprint data is still on its way', async ({ page }) => {
+  await fixture(page);
+  await loginRunner(page);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/api/v1/showcase/footprints/all?**', async (route) => {
+    await held;
+    await route.fallback();
+  });
+  try {
+    const library = page.waitForResponse((response) => mapLibrary.test(response.url()) && response.ok());
+    await page.goto('/footprints');
+    await library;
+    // The data is still held back, so the map component that imports the library is not mounted yet.
+    await expect(page.getByTestId('page-skeleton')).toBeVisible();
+    await expect(page.getByTestId('footprint-map-loading')).toHaveCount(0);
+    release();
+    await ready(page);
+  } finally {
+    release();
+  }
+});
+test('a map library download that fails early is fetched again by the map itself', async ({ page }) => {
+  await fixture(page);
+  await loginRunner(page);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/api/v1/showcase/footprints/all?**', async (route) => {
+    await held;
+    await route.fallback();
+  });
+  let attempts = 0;
+  await page.route(mapLibrary, (route) => (++attempts === 1 ? route.abort() : route.fallback()));
+  try {
+    await page.goto('/footprints');
+    await expect.poll(() => attempts).toBe(1);
+    release();
+    await ready(page);
+    expect(attempts).toBeGreaterThan(1);
   } finally {
     release();
   }
@@ -362,12 +411,10 @@ for (const mode of ['tracks', 'heatmap'])
         await page.emulateMedia({ colorScheme });
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         if (width === 390 || width === 1440)
-          await page
-            .locator('.map-section')
-            .screenshot({
-              path: `test-results/city-panel-${mode}-${width}-${colorScheme}.png`,
-              style: screenshotStyle,
-            });
+          await page.locator('.map-section').screenshot({
+            path: `test-results/city-panel-${mode}-${width}-${colorScheme}.png`,
+            style: screenshotStyle,
+          });
       }
       if (width < 1024) await page.getByRole('button', { name: '城市', exact: true }).click();
     }

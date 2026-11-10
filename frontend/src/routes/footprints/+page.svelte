@@ -9,6 +9,7 @@
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import PageSkeleton from '#lib/components/PageSkeleton.svelte';
   import { onMount } from 'svelte';
+  import { warmMapLibrary } from '#lib/library-warmup.ts';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import FootprintMap from '#lib/components/FootprintMap.svelte';
@@ -131,6 +132,7 @@
     mode = new URLSearchParams(window.location.search).get('mode') === 'heatmap' ? 'heatmap' : 'tracks';
     mounted = true;
     void load();
+    warmMapLibrary();
     return () => {
       disposed = true;
       ++requestId;

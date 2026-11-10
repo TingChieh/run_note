@@ -7,6 +7,7 @@
   const readRoute = view.bind(scoped_readRoute, 1);
 
   import { onMount, untrack } from 'svelte';
+  import { warmMapLibrary } from '#lib/library-warmup.ts';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import MetricSummary from '#lib/components/MetricSummary.svelte';
   import DeviceMetrics from '#lib/components/DeviceMetrics.svelte';
@@ -161,6 +162,7 @@
   }
   onMount(() => {
     mounted = true;
+    warmMapLibrary();
     return () => {
       disposed = true;
       activityToken++;
