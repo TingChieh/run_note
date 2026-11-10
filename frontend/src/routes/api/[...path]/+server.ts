@@ -1,6 +1,6 @@
 import type { RequestHandler } from './$types';
 import { backendRequest } from '#lib/server/backend.ts';
-import { isGpxUpload, readProxyBody, ProxyBodyError } from '#lib/server/proxy-policy.ts';
+import { isGpxUpload, readProxyBody, ProxyBodyError, proxyCacheControl } from '#lib/server/proxy-policy.ts';
 
 const proxy: RequestHandler = async ({ request, url }) => {
   try {
@@ -9,7 +9,7 @@ const proxy: RequestHandler = async ({ request, url }) => {
     const headers = new Headers(upstream.headers);
     headers.delete('content-length');
     headers.delete('content-encoding');
-    headers.set('Cache-Control', 'no-store');
+    headers.set('Cache-Control', proxyCacheControl(request.method, upstream.status, upstream.headers));
     return new Response(upstream.body, { status: upstream.status, headers });
   } catch (cause) {
     if (cause instanceof ProxyBodyError)

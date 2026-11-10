@@ -75,11 +75,11 @@ def profile(request: Request, owner: Owner):
 
 
 @router.get("/avatar")
-def avatar(owner: Owner, db: DB):
+def avatar(owner: Owner, db: DB, v: str | None = None):
     from app.modules.site_settings.router import png_response
     from app.modules.users.service import avatar_bytes
 
-    return png_response(avatar_bytes(db, owner.id))
+    return png_response(avatar_bytes(db, owner.id), v)
 
 
 @router.get("/activities", response_model=ApiResponse[ShowcaseActivityList])

@@ -39,3 +39,15 @@ export async function readProxyBody(request: Request, upload: boolean): Promise<
   }
   return body.buffer;
 }
+
+/** Exactly what the API sends for a content-addressed image whose `?v=` matches its bytes. */
+const CACHED_IMAGE = 'private, max-age=31536000, immutable';
+/** Every proxied response is `no-store`, except a successful image GET the API marked as cacheable. */
+export function proxyCacheControl(method: string, status: number, upstream: Headers): string {
+  const cachedImage =
+    method === 'GET' &&
+    status === 200 &&
+    upstream.get('content-type') === 'image/png' &&
+    upstream.get('cache-control') === CACHED_IMAGE;
+  return cachedImage ? CACHED_IMAGE : 'no-store';
+}

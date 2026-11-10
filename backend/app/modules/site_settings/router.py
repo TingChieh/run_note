@@ -1,3 +1,4 @@
+from hashlib import sha256
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
@@ -12,7 +13,7 @@ from app.core.errors import ApiError
 from app.core.responses import ApiResponse
 from app.modules.auth.router import envelope
 from app.modules.site_settings import service
-from app.modules.site_settings.images import MAX_IMAGE_BYTES
+from app.modules.site_settings.images import MAX_IMAGE_BYTES, image_version
 from app.modules.site_settings.schema import SitePatch, SiteView
 
 router = APIRouter(prefix="/api/v1/site", tags=["site"])
@@ -20,15 +21,19 @@ DB = Annotated[Session, Depends(get_session)]
 Write = Annotated[tuple, Depends(require_admin_write)]
 
 
-def png_response(data: bytes) -> Response:
-    return Response(
-        content=data,
-        media_type="image/png",
-        headers={
-            "X-Content-Type-Options": "nosniff",
-            "Content-Security-Policy": "default-src 'none'",
-        },
-    )
+# Image URLs carry ``?v=`` = the first 16 hex digits of the PNG's SHA-256, so a request whose
+# ``v`` matches the bytes served names exactly those bytes and may stay in the browser cache.
+CACHED_IMAGE = "private, max-age=31536000, immutable"
+
+
+def png_response(data: bytes, version: str | None = None) -> Response:
+    headers = {
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'",
+    }
+    if version is not None and version == image_version(sha256(data).hexdigest()):
+        headers["Cache-Control"] = CACHED_IMAGE
+    return Response(content=data, media_type="image/png", headers=headers)
 
 
 async def read_upload(request: Request) -> bytes:
@@ -79,5 +84,5 @@ def remove(kind: str, request: Request, db: DB, identity: Write):
 
 
 @router.get("/images/{kind}")
-def image(kind: str, db: DB):
-    return png_response(service.image_bytes(db, kind))
+def image(kind: str, db: DB, v: str | None = None):
+    return png_response(service.image_bytes(db, kind), v)

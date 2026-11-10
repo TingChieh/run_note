@@ -1,3 +1,4 @@
+import hashlib
 from io import BytesIO
 
 import pytest
@@ -6,6 +7,7 @@ from PIL import ExifTags, Image
 from app.core.errors import ApiError
 from app.modules.site_settings import images
 from app.modules.site_settings.images import image_version, normalize_image
+from app.modules.site_settings.router import png_response
 
 MALFORMED_EXIF = b"Exif\x00\x00II*\x00"
 
@@ -129,3 +131,14 @@ def test_decompression_bomb_is_rejected(monkeypatch):
         normalize_image(encoded((40, 40)), "avatar")  # 1600 px: above the limit
     assert error.value.code == "IMAGE_TOO_LARGE"
     assert images.MAX_IMAGE_BYTES == 5 * 1024 * 1024
+
+
+def test_png_response_is_cacheable_only_when_the_version_names_its_bytes():
+    png = encoded()
+    version = image_version(hashlib.sha256(png).hexdigest())
+    assert png_response(png, version).headers["cache-control"] == (
+        "private, max-age=31536000, immutable"
+    )
+    # Missing, stale or foreign versions leave the header to the no-store middleware.
+    for other in (None, "", "0" * 16, version[:-1], version.upper()):
+        assert "cache-control" not in png_response(png, other).headers

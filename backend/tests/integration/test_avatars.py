@@ -55,6 +55,8 @@ def test_avatar_lifecycle_and_public_boundary(site, monkeypatch):  # noqa: F811
         assert own.get("/api/v1/me").json()["data"]["avatar_url"] == url
         image = own.get(url)
         assert image.status_code == 200 and image.headers["content-type"] == "image/png"
+        # The account's own avatar stays out of the browser cache, even with its version.
+        assert image.headers["cache-control"] == "no-store"
         with Image.open(BytesIO(image.content)) as decoded:
             assert decoded.size == (256, 256)
 
@@ -68,13 +70,20 @@ def test_avatar_lifecycle_and_public_boundary(site, monkeypatch):  # noqa: F811
         )
         profile = visitor.get(named + "/profile").json()["data"]
         assert profile["avatar_url"] == f"{named}/avatar?v={url.split('=')[1]}"
-        assert visitor.get(profile["avatar_url"]).status_code == 200
+        public = visitor.get(profile["avatar_url"])
+        assert public.status_code == 200
+        # Content-addressed URL: cacheable only when ?v= names the bytes actually served.
+        assert public.headers["cache-control"] == "private, max-age=31536000, immutable"
+        for stale in (named + "/avatar", named + "/avatar?v=0000000000000000"):
+            assert visitor.get(stale).headers["cache-control"] == "no-store"
         listing = admin.get("/api/v1/admin/users", params={"search": payload["username"]})
         assert listing.json()["data"]["items"][0]["avatar_url"] is None
 
         removed = own.delete("/api/v1/me/avatar", headers=headers)
         assert removed.status_code == 200 and removed.json()["data"] == {"avatar_url": None}
         assert visitor.get(named + "/avatar").status_code == 404
+        gone = visitor.get(profile["avatar_url"])
+        assert gone.status_code == 404 and gone.headers["cache-control"] == "no-store"
         assert visitor.get(named + "/profile").json()["data"]["avatar_url"] is None
         own.put(
             "/api/v1/me/avatar", files={"file": ("a.jpg", jpeg(), "image/jpeg")}, headers=headers

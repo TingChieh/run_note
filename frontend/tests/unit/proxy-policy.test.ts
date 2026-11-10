@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { readProxyBody, upstreamTimeout } from '../../src/lib/server/proxy-policy';
+import { proxyCacheControl, readProxyBody, upstreamTimeout } from '../../src/lib/server/proxy-policy';
 it('protects exact Mi Fitness previews and saves with the existing upload bounds', async () => {
   const { isGpxUpload } = await import('../../src/lib/server/proxy-policy');
   expect(isGpxUpload('/api/v1/mifitness-imports?preview=true', 'POST')).toBe(true);
@@ -48,4 +48,23 @@ it('applies upload limits and deadline to the exact TCX endpoint', async () => {
   await expect(readProxyBody(request, isGpxUpload('/api/v1/tcx-imports', 'POST'))).rejects.toMatchObject({
     status: 413,
   });
+});
+it('keeps the browser cache only for an image the API marked cacheable', () => {
+  const cached = 'private, max-age=31536000, immutable';
+  const image = (cacheControl: string | null, type = 'image/png') => {
+    const headers = new Headers({ 'content-type': type });
+    if (cacheControl) headers.set('cache-control', cacheControl);
+    return headers;
+  };
+  expect(proxyCacheControl('GET', 200, image(cached))).toBe(cached);
+  // A stale or missing ?v= gets no cache header from the API, so the proxy keeps no-store.
+  expect(proxyCacheControl('GET', 200, image(null))).toBe('no-store');
+  expect(proxyCacheControl('GET', 200, image('no-store'))).toBe('no-store');
+  // Nothing else can opt in: other methods, statuses, types or any other cache policy.
+  expect(proxyCacheControl('HEAD', 200, image(cached))).toBe('no-store');
+  expect(proxyCacheControl('PUT', 200, image(cached))).toBe('no-store');
+  expect(proxyCacheControl('GET', 404, image(cached))).toBe('no-store');
+  expect(proxyCacheControl('GET', 200, image(cached, 'application/json'))).toBe('no-store');
+  expect(proxyCacheControl('GET', 200, image('public, max-age=31536000, immutable'))).toBe('no-store');
+  expect(proxyCacheControl('GET', 200, image('private, max-age=31536000'))).toBe('no-store');
 });

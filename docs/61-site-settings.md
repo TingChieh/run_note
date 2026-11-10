@@ -28,7 +28,7 @@
 - **存储**：`site_settings`（单行）、`site_images`、`user_avatars` 三张新表；`users.avatar_version`（sha256 前 16 位）与头像同事务更新。二进制不放入 `users`，常规查询不读大字段。头像随用户删除级联清除。
 - **新增字段**：`UserView.avatar_url`（`/me`、登录、会话；指向 `/api/v1/me/avatar?v=…` 或 `null`；管理员用户列表中恒为 `null`，避免指向错误对象）与 `ShowcaseProfile.avatar_url`（可公开时为带版本 URL，否则 `null`）。均为新增字段，既有字段不变。前端 `auth.ts`、`showcase.ts` 解析时按同源固定路径正则白名单校验。
 - **公开边界**：公开响应不含邮箱、账户用户名字段、用户 ID；图片 URL 只含版本 hash（具名展示路径中的 username 属公开标识例外）。头像与 logo 不进入外部底图请求或 AI 供应商请求。站点设置与头像写入不调用 `lock_owner`，不影响 `activity_data_version`，不会使 AI 报告变为过时。
-- **响应头与缓存**：图片 GET 响应带 `Content-Type: image/png`、`X-Content-Type-Options: nosniff`、`Content-Security-Policy: default-src 'none'`。SSR 代理（安全边界）**未做任何修改**，仍对所有 `/api/` 响应统一加 `no-store`，因此图片没有浏览器缓存；URL 中的 `?v=` 仅用于换图后绕过旧引用。代理对 PUT 的 8 秒超时同样不变，上传需在该时限内完成。
+- **响应头与缓存**：图片 GET 响应带 `Content-Type: image/png`、`X-Content-Type-Options: nosniff`、`Content-Security-Policy: default-src 'none'`。`?v=` 是 PNG 字节 SHA-256 的前 16 位，URL 与内容一一对应：站点图片（`/api/v1/site/images/{kind}`）和展示头像（`/api/v1/showcase/avatar`、`/api/v1/showcase/users/{username}/avatar`）只在请求的 `v` 与实际返回字节的版本一致时带 `Cache-Control: private, max-age=31536000, immutable`，缺少、过期或错误的 `v` 以及 404 仍为 `no-store`；本人头像 `/api/v1/me/avatar` 始终 `no-store`。后端中间件只给未设置缓存头的响应补 `no-store`；SSR 代理（安全边界）的请求头白名单与目标限制不变，只对“GET、200、`image/png` 且上游缓存头恰为上述值”的响应保留该头，其余一律改回 `no-store`（`proxyCacheControl`，见 `src/lib/server/proxy-policy.ts`）。展示关闭后，已访问过的浏览器里可能仍留有该头像的缓存副本，但页面不再引用它。代理对 PUT 的 8 秒超时同样不变，上传需在该时限内完成。
 - 响应信封、`StrictInput`、CSRF 与 Origin 校验沿用既有约定；前端写操作先取 `/api/v1/auth/csrf`。
 
 ## 部署注意
