@@ -1,7 +1,10 @@
 import { expect, it } from 'vitest';
 import { locateFootprintCities, type CityRegion } from '../../src/lib/map/footprint-cities.ts';
 import type { FootprintCollection } from '../../src/lib/api/footprints.ts';
-import atlas from '../../src/lib/data/china-cities.json';
+import encoded from '../../src/lib/data/china-cities.json';
+import { decodeCityAtlas, type EncodedAtlas } from '../../src/lib/map/city-atlas.ts';
+
+const atlas = decodeCityAtlas(encoded as EncodedAtlas);
 
 const regions: CityRegion[] = [
   {code:'a',name:'甲市',bounds:[[0,0],[2,2]],polygons:[[[[0,0],[2,0],[2,2],[0,2],[0,0]]]]},
@@ -37,8 +40,14 @@ it('uses the bundled atlas to group districts into recorded cities and omit unvi
     {type:'Point',coordinates:[121.485,31.235]},
     {type:'Point',coordinates:[116.397,39.908]},
     {type:'Point',coordinates:[113.264,23.129]},
-  ],atlas as CityRegion[]);
+  ],atlas);
   expect(result.cities.map(city=>city.name)).toEqual(['北京市','上海市','广州市']);
   expect(result.cities.some(city=>city.name==='深圳市')).toBe(false);
   expect(result.unlocatedBounds).toBeNull();
+});
+it('decodes delta-encoded rings back to the exact four-decimal coordinates',()=>{
+  const [region]=decodeCityAtlas({scale:10000,regions:[{code:'x',name:'某市',bounds:[[116.4436,39.8728],[116.4509,39.89]],polygons:[[[1164436,398728,5,172,68,2,-73,-174]]]}]});
+  expect(region.polygons).toEqual([[[[116.4436,39.8728],[116.4441,39.89],[116.4509,39.8902],[116.4436,39.8728]]]]);
+  expect(atlas).toHaveLength(369);
+  expect(atlas.every(city=>city.polygons.every(polygon=>polygon.every(ring=>ring.length>=4 && ring[0].join()===ring[ring.length-1].join())))).toBe(true);
 });

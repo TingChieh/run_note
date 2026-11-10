@@ -14,14 +14,23 @@ export const handle: Handle = async ({ event, resolve }) => {
   event.locals.showcase = null;
   event.locals.showcaseError = null;
   event.locals.site = SITE_DEFAULTS;
-  try {
-    const upstream = await backendRequest('/api/v1/site', event.request);
-    const body = upstream.ok ? await upstream.json() : null;
-    if (body?.data) event.locals.site = parseSite(body.data);
-  } catch { /* Settings are cosmetic: fall back to built-in defaults. */ }
-  try {
-    if (event.cookies.get('run_session') || event.cookies.get('__Host-run_session')) event.locals.user = await readSession(async () => backendRequest('/api/v1/auth/session', event.request));
-  } catch (cause) { event.locals.authError = cause instanceof Error ? cause.message : '认证服务暂不可用'; }
+  // Independent reads run together; the showcase profile below needs the session, so it waits.
+  const readSite = async () => {
+    try {
+      const upstream = await backendRequest('/api/v1/site', event.request);
+      const body = upstream.ok ? await upstream.json() : null;
+      if (body?.data) event.locals.site = parseSite(body.data);
+    } catch { /* Settings are cosmetic: fall back to built-in defaults. */ }
+  };
+  const readUser = async (): Promise<Pick<App.Locals, 'user' | 'authError'>> => {
+    try {
+      if (!event.cookies.get('run_session') && !event.cookies.get('__Host-run_session')) return { user: null, authError: null };
+      return { user: await readSession(async () => backendRequest('/api/v1/auth/session', event.request)), authError: null };
+    } catch (cause) { return { user: null, authError: cause instanceof Error ? cause.message : '认证服务暂不可用' }; }
+  };
+  const [, session] = await Promise.all([readSite(), readUser()]);
+  event.locals.user = session.user;
+  event.locals.authError = session.authError;
   if (/^\/(?:workspace\/)?wellbeing(?:\/|$)/.test(event.url.pathname) && event.locals.user && (!event.locals.user.wellbeing_allowed || !event.locals.user.wellbeing_enabled)) return new Response(null, { status: 303, headers: { Location: event.url.pathname.startsWith('/workspace/') ? '/workspace/dashboard' : '/dashboard', 'Cache-Control': 'no-store' } });
   // The diary is the signed-in person's own workspace page: only the site owner uses the root address.
   if (/^\/wellbeing\/?$/.test(event.url.pathname) && event.locals.user && !event.locals.user.is_admin) return new Response(null, { status: 303, headers: { Location: `/workspace/wellbeing${event.url.search}`, 'Cache-Control': 'no-store' } });

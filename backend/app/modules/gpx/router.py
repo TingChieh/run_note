@@ -30,7 +30,8 @@ async def import_file(request, identity, db, format):
     label = format.upper()
     allowed = {"file", "title", "timezone", "activity_date", "time_mode"}
     owner, default_timezone = identity[1].id, identity[1].timezone
-    db.commit()  # Authentication's user lock must not cover reading/parsing a file.
+    # Authentication's user lock must not cover reading/parsing a file.
+    await run_in_threadpool(db.commit)
     try:
         async with request.form(
             max_files=1, max_fields=len(allowed) - 1, max_part_size=4096

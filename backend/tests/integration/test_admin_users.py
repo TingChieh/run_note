@@ -594,3 +594,23 @@ def test_together_switches_and_public_filter(site, monkeypatch):  # noqa: F811
             == 200
         )
         assert not present()
+        assert (
+            user.patch(
+                "/api/v1/me", headers=user_headers, json={"together_enabled": True}
+            ).status_code
+            == 200
+        )
+        assert present()
+        assert payload["email"] not in visitor.get("/api/v1/together").text
+        # The named showcase must stay reachable: closing it or disabling the account hides them.
+        closed = admin.patch(endpoint, headers=admin_headers, json={"showcase_enabled": False})
+        assert closed.status_code == 200
+        assert not present()
+        reopened = admin.patch(endpoint, headers=admin_headers, json={"showcase_enabled": True})
+        assert reopened.status_code == 200
+        assert present()
+        assert (
+            admin.patch(endpoint, headers=admin_headers, json={"is_active": False}).status_code
+            == 200
+        )
+        assert not present()

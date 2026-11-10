@@ -52,6 +52,16 @@ test('page loading skeleton follows the real request and respects reduced motion
     expect(await page.locator('.page-reveal').evaluate(el=>getComputedStyle(el).animationName)).toBe('none');
   } finally {release();}
 });
+test('a failed city atlas download keeps the map usable and can be retried',async({page})=>{
+  const state=await fixture(page);state.multipleCities=true;await loginRunner(page);
+  await page.route('**/china-cities*.json*',route=>route.fulfill({status:503,body:''}));
+  await page.goto('/footprints?mode=tracks');await ready(page);
+  await expect(page.getByText('城市识别暂不可用，全部足迹仍可查看。')).toBeVisible();
+  await expect(page.getByRole('button',{name:'回到全部足迹',exact:true})).toBeEnabled();
+  await page.unroute('**/china-cities*.json*');
+  await page.getByRole('button',{name:'重试识别城市',exact:true}).click();
+  await expect(page.getByRole('group',{name:'有记录的城市',exact:true}).getByRole('button')).toHaveCount(2);
+});
 test('opens on every footprint rather than one city, also after city lookup finishes',async({page})=>{
   const state=await fixture(page);state.multipleCities=true;await loginRunner(page);
   await page.emulateMedia({reducedMotion:'reduce'});

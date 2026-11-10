@@ -29,7 +29,7 @@
     const stopTheme = watchSystemTheme(() => draw());
     void (async () => {
       try {
-        const ec = await import('./records-chart-runtime'); if (disposed) return;
+        const ec = await import('./trend-chart-runtime'); if (disposed) return;
         chart = ec.init(container); mounted = true; draw();
         observer = new ResizeObserver(() => chart?.resize()); observer.observe(container);
       } catch { if (!disposed) message = '图表暂时无法显示，下方数据表仍可查看。'; }
