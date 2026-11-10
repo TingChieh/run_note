@@ -87,7 +87,8 @@ async def upload_avatar(
     db: Annotated[Session, Depends(get_session)],
 ):
     owner = identity[1].id
-    db.commit()  # Release the identity lock before reading and decoding the upload.
+    # Release the identity lock before reading and decoding the upload.
+    await run_in_threadpool(db.commit)
     raw = await read_upload(request)
     url = await run_in_threadpool(service.put_avatar, db, owner, raw)
     await run_in_threadpool(db.commit)
