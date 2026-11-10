@@ -1,6 +1,6 @@
 <script lang="ts">
   import { pageTitle } from '#lib/site.ts';
-  import { useViewContext } from "#lib/view-context.ts";
+  import { useViewContext } from '#lib/view-context.ts';
   const view = useViewContext();
   const fetch = view.fetch;
   const readAllFootprints = view.bind(scoped_readAllFootprints, 2);
@@ -9,102 +9,320 @@
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import PageSkeleton from '#lib/components/PageSkeleton.svelte';
   import { onMount } from 'svelte';
+  import { warmMapLibrary } from '#lib/library-warmup.ts';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import FootprintMap from '#lib/components/FootprintMap.svelte';
   import { footprintDisplayData } from '#lib/map/footprint-display.ts';
   import { HEAT_LEVELS } from '#lib/map/footprint-colors.ts';
-  import { readAllFootprints as scoped_readAllFootprints,FootprintError } from '#lib/api/footprints.ts';
-  import type { Selection,FootprintsAll,FootprintSnapshot } from '#lib/api/footprints.ts';
-  let mode=$state<Selection['mode']>('tracks');
+  import { readAllFootprints as scoped_readAllFootprints, FootprintError } from '#lib/api/footprints.ts';
+  import type { Selection, FootprintsAll, FootprintSnapshot } from '#lib/api/footprints.ts';
+  let mode = $state<Selection['mode']>('tracks');
   // Raw: a 50k-point collection must not be deep-proxied; it is only ever replaced wholesale.
-  let data=$state.raw<FootprintsAll|null>(null), loading=$state(false), message=$state(''), requestId=0, mounted=$state(false);
-  let status=$state<FootprintSnapshot['status']|null>(null), generatedAt=$state<string|null>(null), refreshing=$state(false), refreshFailed=$state(false);
-  let controller:AbortController|undefined, timer:ReturnType<typeof setTimeout>|undefined, disposed=false;
-  let mapVersion=$state(0);
+  let data = $state.raw<FootprintsAll | null>(null),
+    loading = $state(false),
+    message = $state(''),
+    requestId = 0,
+    mounted = $state(false);
+  let status = $state<FootprintSnapshot['status'] | null>(null),
+    generatedAt = $state<string | null>(null),
+    refreshing = $state(false),
+    refreshFailed = $state(false);
+  let controller: AbortController | undefined,
+    timer: ReturnType<typeof setTimeout> | undefined,
+    disposed = false;
+  let mapVersion = $state(0);
   // Last ready result per mode: switching back renders instantly, then revalidates in the background.
-  type Cached={data:FootprintsAll;generatedAt:string|null;refreshing:boolean;refreshFailed:boolean};
-  const cache=new Map<Selection['mode'],Cached>();
-  const generatedLabel=$derived(generatedAt ? new Intl.DateTimeFormat('zh-CN',{timeZone:page.data.showcase?.timezone??'UTC',dateStyle:'medium',timeStyle:'short'}).format(new Date(generatedAt)) : '');
+  type Cached = { data: FootprintsAll; generatedAt: string | null; refreshing: boolean; refreshFailed: boolean };
+  const cache = new Map<Selection['mode'], Cached>();
+  const generatedLabel = $derived(
+    generatedAt
+      ? new Intl.DateTimeFormat('zh-CN', {
+          timeZone: page.data.showcase?.timezone ?? 'UTC',
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        }).format(new Date(generatedAt))
+      : '',
+  );
   function changeMode(next: Selection['mode']) {
-    if(mode===next)return; mode=next;
-    const hit=cache.get(next);
-    if(!hit){void load();return;}
-    clearTimeout(timer);loading=false;message='';status='ready';data=hit.data;generatedAt=hit.generatedAt;refreshing=hit.refreshing;refreshFailed=hit.refreshFailed;
+    if (mode === next) return;
+    mode = next;
+    const hit = cache.get(next);
+    if (!hit) {
+      void load();
+      return;
+    }
+    clearTimeout(timer);
+    loading = false;
+    message = '';
+    status = 'ready';
+    data = hit.data;
+    generatedAt = hit.generatedAt;
+    refreshing = hit.refreshing;
+    refreshFailed = hit.refreshFailed;
     void load(true);
   }
-  function reload() { cache.clear(); void load(); }
+  function reload() {
+    cache.clear();
+    void load();
+  }
   // silent: revalidate or poll without clearing what is already on screen.
-  async function load(silent=false) {
-    clearTimeout(timer);timer=undefined;
-    const id=++requestId;controller?.abort();controller=new AbortController();const signal=controller.signal;
-    if(!silent){loading=true;data=null;message='';status=null;generatedAt=null;refreshing=false;refreshFailed=false;}
-    const requested=mode;
+  async function load(silent = false) {
+    clearTimeout(timer);
+    timer = undefined;
+    const id = ++requestId;
+    controller?.abort();
+    controller = new AbortController();
+    const signal = controller.signal;
+    if (!silent) {
+      loading = true;
+      data = null;
+      message = '';
+      status = null;
+      generatedAt = null;
+      refreshing = false;
+      refreshFailed = false;
+    }
+    const requested = mode;
     try {
       // The URL update must not delay the request.
-      const navigation=goto(view.href(`/footprints?${new URLSearchParams({mode})}`),{state:page.state,shallow:true,replace:true}).catch(()=>{});
-      const result=await readAllFootprints(requested,signal);
+      const navigation = goto(view.href(`/footprints?${new URLSearchParams({ mode })}`), {
+        state: page.state,
+        shallow: true,
+        replace: true,
+      }).catch(() => {});
+      const result = await readAllFootprints(requested, signal);
       await navigation;
-      if(disposed || id!==requestId)return;
-      const next=result.result?footprintDisplayData(result.result):null;
+      if (disposed || id !== requestId) return;
+      const next = result.result ? footprintDisplayData(result.result) : null;
       // Keep the same object when nothing changed, so the live map is not redrawn.
-      if(!(next && data && generatedAt===result.generated_at))data=next;
-      status=result.status;generatedAt=result.generated_at;refreshing=result.refreshing;refreshFailed=result.refresh_failed;message='';
-      if(data)cache.set(requested,{data,generatedAt,refreshing,refreshFailed});else cache.delete(requested);
-      if(result.status==='failed')message='足迹生成暂未完成，请稍后重新读取';
-      if(result.status==='pending')timer=setTimeout(()=>{void load(true);},5000);
-    }catch(cause){
-      if(disposed || id!==requestId || signal.aborted)return;
-      if(cause instanceof FootprintError && cause.status===401){cache.clear();data=null;status=null;generatedAt=null;refreshing=false;refreshFailed=false;window.location.replace('/admin?reason=changed');return;}
-      if(silent && data)return;
-      message=cause instanceof Error?cause.message:'无法读取足迹，请重试';
-    }finally{if(!disposed && id===requestId)loading=false;}
+      if (!(next && data && generatedAt === result.generated_at)) data = next;
+      status = result.status;
+      generatedAt = result.generated_at;
+      refreshing = result.refreshing;
+      refreshFailed = result.refresh_failed;
+      message = '';
+      if (data) cache.set(requested, { data, generatedAt, refreshing, refreshFailed });
+      else cache.delete(requested);
+      if (result.status === 'failed') message = '足迹生成暂未完成，请稍后重新读取';
+      if (result.status === 'pending')
+        timer = setTimeout(() => {
+          void load(true);
+        }, 5000);
+    } catch (cause) {
+      if (disposed || id !== requestId || signal.aborted) return;
+      if (cause instanceof FootprintError && cause.status === 401) {
+        cache.clear();
+        data = null;
+        status = null;
+        generatedAt = null;
+        refreshing = false;
+        refreshFailed = false;
+        window.location.replace('/admin?reason=changed');
+        return;
+      }
+      if (silent && data) return;
+      message = cause instanceof Error ? cause.message : '无法读取足迹，请重试';
+    } finally {
+      if (!disposed && id === requestId) loading = false;
+    }
   }
-  onMount(()=>{
-    disposed=false;mode=new URLSearchParams(window.location.search).get('mode')==='heatmap'?'heatmap':'tracks';mounted=true;void load();
-    return()=>{disposed=true;++requestId;clearTimeout(timer);controller?.abort();};
+  onMount(() => {
+    disposed = false;
+    mode = new URLSearchParams(window.location.search).get('mode') === 'heatmap' ? 'heatmap' : 'tracks';
+    mounted = true;
+    void load();
+    warmMapLibrary();
+    return () => {
+      disposed = true;
+      ++requestId;
+      clearTimeout(timer);
+      controller?.abort();
+    };
   });
 </script>
+
 <svelte:head><title>{pageTitle('个人足迹', page.data.site)}</title></svelte:head>
 <PageHeader title="个人足迹" description="沿着跑过的路，看看你的运动版图。">
   {#snippet footer()}
-    <div class="settings-tabs" role="group" aria-label="地图模式"><button type="button" aria-pressed={mode==='tracks'} disabled={!mounted} onclick={()=>changeMode('tracks')}>轨迹叠加</button><button type="button" aria-pressed={mode==='heatmap'} disabled={!mounted} onclick={()=>changeMode('heatmap')}>运动热力图</button></div>
+    <div class="settings-tabs" role="group" aria-label="地图模式">
+      <button type="button" aria-pressed={mode === 'tracks'} disabled={!mounted} onclick={() => changeMode('tracks')}
+        >轨迹叠加</button
+      ><button type="button" aria-pressed={mode === 'heatmap'} disabled={!mounted} onclick={() => changeMode('heatmap')}
+        >运动热力图</button
+      >
+    </div>
   {/snippet}
 </PageHeader>
 <div class="footprints-page">
-  <p class="mode-hint" data-testid="footprint-mode-hint">{mode==='tracks'?'看每次跑步的路线':'看不同记录经过的区域'}</p>
+  <p class="mode-hint" data-testid="footprint-mode-hint">
+    {mode === 'tracks' ? '看每次跑步的路线' : '看不同记录经过的区域'}
+  </p>
   {#if loading}<PageSkeleton title="正在读取个人足迹…" />{/if}
-  {#if status==='pending'}<FeedbackState kind="loading" title="正在生成全部足迹…"><p>导入后会自动更新，完成后即可查看全部记录。页面会自动检查进度。</p><button onclick={reload} class="button-secondary mt-3">重新读取足迹</button></FeedbackState>{/if}
-  {#if message}<FeedbackState kind="error" title={message}><button onclick={reload} class="button-secondary">重新读取足迹</button></FeedbackState>{/if}
+  {#if status === 'pending'}<FeedbackState kind="loading" title="正在生成全部足迹…"
+      ><p>导入后会自动更新，完成后即可查看全部记录。页面会自动检查进度。</p>
+      <button onclick={reload} class="button-secondary mt-3">重新读取足迹</button></FeedbackState
+    >{/if}
+  {#if message}<FeedbackState kind="error" title={message}
+      ><button onclick={reload} class="button-secondary">重新读取足迹</button></FeedbackState
+    >{/if}
   {#if data}
-    {#if refreshFailed}<div data-testid="footprint-refresh-failed"><FeedbackState title="自动更新暂未完成，当前显示上次生成的足迹。"><p>后台会继续尝试更新，也可稍后重新读取。</p></FeedbackState></div>{/if}
-    <div class="result-summary" aria-live="polite"><p data-testid="footprint-summary">全部 <strong>{data.activity_count}</strong> 条运动记录，地图显示 <strong>{data.visible_activity_count}</strong> 条。</p><div class="snapshot-status"><p class="generated-label" data-testid="footprint-generated">更新于 {generatedLabel}{refreshing?' · 后台更新中':''}</p><button class="button-secondary" onclick={reload}>重新读取足迹</button></div></div>
-    {#if data.unsupported_segment_count}<FeedbackState title="部分轨迹超出地图支持范围">{data.unsupported_segment_count} 个轨迹段包含超出 ±85.051129° 的极区部分，地图仅显示支持范围。</FeedbackState>{/if}
-    {#if data.features.length===0}<FeedbackState title="还没有可显示的足迹"><p>导入带路线的运动记录后，足迹会自动生成。</p><a href={view.href("/activities")}  class="button-secondary mt-3">导入 GPX 或查看运动记录</a></FeedbackState>
+    {#if refreshFailed}<div data-testid="footprint-refresh-failed">
+        <FeedbackState title="自动更新暂未完成，当前显示上次生成的足迹。"
+          ><p>后台会继续尝试更新，也可稍后重新读取。</p></FeedbackState
+        >
+      </div>{/if}
+    <div class="result-summary" aria-live="polite">
+      <p data-testid="footprint-summary">
+        全部 <strong>{data.activity_count}</strong> 条运动记录，地图显示 <strong>{data.visible_activity_count}</strong> 条。
+      </p>
+      <div class="snapshot-status">
+        <p class="generated-label" data-testid="footprint-generated">
+          更新于 {generatedLabel}{refreshing ? ' · 后台更新中' : ''}
+        </p>
+        <button class="button-secondary" onclick={reload}>重新读取足迹</button>
+      </div>
+    </div>
+    {#if data.unsupported_segment_count}<FeedbackState title="部分轨迹超出地图支持范围"
+        >{data.unsupported_segment_count} 个轨迹段包含超出 ±85.051129° 的极区部分，地图仅显示支持范围。</FeedbackState
+      >{/if}
+    {#if data.features.length === 0}<FeedbackState title="还没有可显示的足迹"
+        ><p>导入带路线的运动记录后，足迹会自动生成。</p>
+        <a href={view.href('/activities')} class="button-secondary mt-3">导入 GPX 或查看运动记录</a></FeedbackState
+      >
     {:else}
-      {#key mapVersion}<FootprintMap {data} onretry={()=>{mapVersion++;}} />{/key}
-      {#if data.mode==='heatmap'}<section class="heat-legend" data-testid="heat-legend" aria-label="热度图例"><div class="legend-heading"><h2>每格经过的不同运动记录数</h2><span>当前最高 {data.max_count} 次</span></div><div class="legend-levels">{#each HEAT_LEVELS as level}<span><i style:background={level.color} aria-hidden="true"></i>{level.label}</span>{/each}</div><p>热度按不同运动记录计数，不按 GPS 点数量。同一记录在同一格内只计一次。</p></section>{/if}
+      {#key mapVersion}<FootprintMap
+          {data}
+          onretry={() => {
+            mapVersion++;
+          }}
+        />{/key}
+      {#if data.mode === 'heatmap'}<section class="heat-legend" data-testid="heat-legend" aria-label="热度图例">
+          <div class="legend-heading">
+            <h2>每格经过的不同运动记录数</h2>
+            <span>当前最高 {data.max_count} 次</span>
+          </div>
+          <div class="legend-levels">
+            {#each HEAT_LEVELS as level}<span
+                ><i style:background={level.color} aria-hidden="true"></i>{level.label}</span
+              >{/each}
+          </div>
+          <p>热度按不同运动记录计数，不按 GPS 点数量。同一记录在同一格内只计一次。</p>
+        </section>{/if}
     {/if}
   {/if}
-  <details class="map-notes"><summary>地图说明与统计口径</summary><div class="notes-content"><p>拖动地图探索，使用缩放按钮或键盘方向键移动；聚焦地图后按 + / − 缩放。轨迹模式可点击重叠路线选择记录，也可从下方记录列表定位并进入详情；热图可点击热区，或展开热区数据查看计数。</p><p>热图使用固定 100 × 100 投影米网格（EPSG:3857）；实际地面尺度随纬度变化。同次运动的采样、绕圈和多个段只计一次，不同记录再次经过才增加热度。网格及色阶不随地图缩放或年份变化。</p><p>历史日期按活动保存时的当地日期归属。不同 GPX 轨迹段保持独立，不跨断点连线。底图由 OpenFreeMap 提供，使用 OpenMapTiles 与 OpenStreetMap 数据；请求样式、字体、图标和当前视口瓦片，完整 GPX 不发送给底图服务。底图不可用时仍可查看足迹。</p></div></details>
+  <details class="map-notes">
+    <summary>地图说明与统计口径</summary>
+    <div class="notes-content">
+      <p>
+        拖动地图探索，使用缩放按钮或键盘方向键移动；聚焦地图后按 + / −
+        缩放。轨迹模式可点击重叠路线选择记录，也可从下方记录列表定位并进入详情；热图可点击热区，或展开热区数据查看计数。
+      </p>
+      <p>
+        热图使用固定 100 × 100
+        投影米网格（EPSG:3857）；实际地面尺度随纬度变化。同次运动的采样、绕圈和多个段只计一次，不同记录再次经过才增加热度。网格及色阶不随地图缩放或年份变化。
+      </p>
+      <p>
+        历史日期按活动保存时的当地日期归属。不同 GPX 轨迹段保持独立，不跨断点连线。底图由 OpenFreeMap 提供，使用
+        OpenMapTiles 与 OpenStreetMap 数据；请求样式、字体、图标和当前视口瓦片，完整 GPX
+        不发送给底图服务。底图不可用时仍可查看足迹。
+      </p>
+    </div>
+  </details>
 </div>
+
 <style>
-  .footprints-page { display: grid; gap: var(--space-4); margin-top: var(--space-6); min-width: 0; }
-  .mode-hint { color:var(--muted-foreground); font-size: var(--text-small); }
-  summary { cursor:pointer; font-weight: var(--weight-semibold); }
-  .snapshot-status { display:flex; align-items:center; flex-wrap:wrap; gap:.5rem; }
-  .result-summary { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:.5rem; font-size: var(--text-small); }
-  .generated-label { color:var(--muted-foreground); font-size: var(--text-small); }
-  .heat-legend { padding:.25rem .25rem .75rem; }
-  .legend-heading { display:flex; flex-wrap:wrap; justify-content:space-between; gap:.5rem; font-size: var(--text-small); }
-  .legend-heading h2 { font-weight: var(--weight-semibold); }
-  .legend-heading span { color:var(--muted-foreground); }
-  .legend-levels { display:flex; flex-wrap:wrap; gap:.5rem 1.25rem; margin-block:.75rem; font-size: var(--text-small); }
-  .legend-levels span { display:flex; align-items:center; gap:.5rem; }
-  .legend-levels i { width:1rem; height:1rem; border-radius:.2rem; }
-  .heat-legend p { color:var(--muted-foreground); font-size: var(--text-small); }
-  .map-notes { border-top:1px solid var(--border); padding-top:1rem; font-size: var(--text-small); }
-  .map-notes summary { color:var(--primary); }
-  .notes-content { display:grid; gap:.75rem; color:var(--muted-foreground); margin-top:.75rem; line-height: var(--line-height-body); }
-  @media(max-width:767px) { .mode-hint { display:none; } .result-summary { display:grid; gap:.5rem; } }
+  .footprints-page {
+    display: grid;
+    gap: var(--space-4);
+    margin-top: var(--space-6);
+    min-width: 0;
+  }
+  .mode-hint {
+    color: var(--muted-foreground);
+    font-size: var(--text-small);
+  }
+  summary {
+    cursor: pointer;
+    font-weight: var(--weight-semibold);
+  }
+  .snapshot-status {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .result-summary {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+    font-size: var(--text-small);
+  }
+  .generated-label {
+    color: var(--muted-foreground);
+    font-size: var(--text-small);
+  }
+  .heat-legend {
+    padding: 0.25rem 0.25rem 0.75rem;
+  }
+  .legend-heading {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: var(--text-small);
+  }
+  .legend-heading h2 {
+    font-weight: var(--weight-semibold);
+  }
+  .legend-heading span {
+    color: var(--muted-foreground);
+  }
+  .legend-levels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.25rem;
+    margin-block: 0.75rem;
+    font-size: var(--text-small);
+  }
+  .legend-levels span {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .legend-levels i {
+    width: 1rem;
+    height: 1rem;
+    border-radius: 0.2rem;
+  }
+  .heat-legend p {
+    color: var(--muted-foreground);
+    font-size: var(--text-small);
+  }
+  .map-notes {
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
+    font-size: var(--text-small);
+  }
+  .map-notes summary {
+    color: var(--primary);
+  }
+  .notes-content {
+    display: grid;
+    gap: 0.75rem;
+    color: var(--muted-foreground);
+    margin-top: 0.75rem;
+    line-height: var(--line-height-body);
+  }
+  @media (max-width: 767px) {
+    .mode-hint {
+      display: none;
+    }
+    .result-summary {
+      display: grid;
+      gap: 0.5rem;
+    }
+  }
 </style>
