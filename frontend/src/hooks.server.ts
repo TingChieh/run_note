@@ -6,6 +6,7 @@ import { isProtected, readSession } from '#lib/api/auth.ts';
 import { parseSite } from '#lib/api/site.ts';
 import { SITE_DEFAULTS } from '#lib/site.ts';
 import { pageNoindex } from '#lib/seo.ts';
+import { addModulePreloads, rootErrorImports } from '#lib/server/error-node-preload.ts';
 
 export const handle: Handle = async ({ event, resolve }) => {
   if (event.url.pathname.startsWith('/api/')) return resolve(event);
@@ -45,10 +46,11 @@ export const handle: Handle = async ({ event, resolve }) => {
   }
   const site = event.locals.site;
   const escape = (value: string) => value.replace(/[&<>"']/g, char => `&#${char.charCodeAt(0)};`);
+  const preloads = await rootErrorImports();
   const response = await resolve(event, {
-    transformPageChunk: ({ html }) => html
+    transformPageChunk: ({ html }) => addModulePreloads(html
       .replace('%runnote.favicon%', escape(site.favicon_url ?? '/favicon.ico'))
-      .replace('%runnote.theme%', site.default_theme),
+      .replace('%runnote.theme%', site.default_theme), preloads),
   });
   response.headers.set('Cache-Control', 'no-store');
   if (!event.locals.user) response.headers.set('Referrer-Policy','no-referrer');

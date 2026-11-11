@@ -1,7 +1,7 @@
 import base from './playwright.ui.config';
 export default {
   ...base,
-  testMatch: ['showcase.spec.ts'],
+  testMatch: ['showcase.spec.ts', 'build-preload.spec.ts'],
   webServer: [
     { command: 'node tests/fixtures/ui-api.mjs', url: 'http://127.0.0.1:8191/api/health', reuseExistingServer: false },
     {
