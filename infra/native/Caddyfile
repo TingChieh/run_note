@@ -30,7 +30,12 @@
 }
 
 (runnote_app) {
-	encode zstd gzip
+	# gzip 9 first: the default zstd level sends the all-record footprints (~3 MB of JSON) as about
+	# 613 KB, gzip 9 as about 480 KB. Listing order is the preference when a browser accepts both.
+	encode {
+		gzip 9
+		zstd
+	}
 	import security_headers
 
 	# Upload ceiling slightly above Node's BODY_SIZE_LIMIT (11M); the API enforces its own limits.
