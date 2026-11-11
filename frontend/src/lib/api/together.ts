@@ -254,10 +254,13 @@ export function parseTogether(value: unknown): Together {
     },
   };
 }
+/** Also the page's fetch preload, so both must stay the same URL. */
+export const togetherPath = (period: Period) => `/api/v1/together?period=${period}`;
+
 export async function readTogether(signal: AbortSignal, period: Period): Promise<Together> {
   let response: Response;
   try {
-    response = await fetch(`/api/v1/together?period=${period}`, { cache: 'no-store', signal });
+    response = await fetch(togetherPath(period), { cache: 'no-store', signal });
   } catch {
     throw new TogetherError('无法连接一起跑步服务', 503);
   }

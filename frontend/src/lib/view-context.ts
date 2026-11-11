@@ -14,6 +14,8 @@ export function useViewContext() {
       return current?.().manage ?? false;
     },
     href: (path: string) => (current ? contextPath(current(), path) : path),
+    /** The API address `fetch` below really requests for `path`. */
+    api: (path: string) => (current ? contextAPI(current(), path) : path),
     fetch: ((input: RequestInfo | URL, init?: RequestInit) =>
       globalThis.fetch(
         typeof input === 'string' && current ? contextAPI(current(), input) : input,

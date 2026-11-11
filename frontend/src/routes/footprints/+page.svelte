@@ -15,9 +15,15 @@
   import FootprintMap from '#lib/components/FootprintMap.svelte';
   import { footprintDisplayData } from '#lib/map/footprint-display.ts';
   import { HEAT_LEVELS } from '#lib/map/footprint-colors.ts';
-  import { readAllFootprints as scoped_readAllFootprints, FootprintError } from '#lib/api/footprints.ts';
+  import {
+    readAllFootprints as scoped_readAllFootprints,
+    allFootprintsPath,
+    FootprintError,
+  } from '#lib/api/footprints.ts';
   import type { Selection, FootprintsAll, FootprintSnapshot } from '#lib/api/footprints.ts';
   let mode = $state<Selection['mode']>('tracks');
+  // Requested by the HTML itself instead of after hydration; the first load() below reuses the response.
+  const firstRead = view.api(allFootprintsPath(page.url.searchParams.get('mode') === 'heatmap' ? 'heatmap' : 'tracks'));
   // Raw: a 50k-point collection must not be deep-proxied; it is only ever replaced wholesale.
   let data = $state.raw<FootprintsAll | null>(null),
     // Starts loading: the server already renders the screen-tall placeholder, so nothing moves on mount.
@@ -143,7 +149,10 @@
   });
 </script>
 
-<svelte:head><title>{pageTitle('个人足迹', page.data.site)}</title></svelte:head>
+<svelte:head>
+  <title>{pageTitle('个人足迹', page.data.site)}</title>
+  <link rel="preload" as="fetch" href={firstRead} crossorigin="anonymous" />
+</svelte:head>
 <PageHeader title="个人足迹" description="沿着跑过的路，看看你的运动版图。">
   {#snippet footer()}
     <div class="settings-tabs" role="group" aria-label="地图模式">
