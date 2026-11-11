@@ -12,11 +12,10 @@ from app.core.errors import ApiError
 from app.core.responses import ApiResponse
 from app.modules.activities import service as activities
 from app.modules.activities.router import envelope
-from app.modules.footprints.encoding import encode_collection
+from app.modules.footprints.cache import all_footprints_response
 from app.modules.footprints.provinces import province_summary
 from app.modules.footprints.schema import AllFootprintView
 from app.modules.footprints.service import footprints
-from app.modules.footprints.snapshot import read_all_footprints
 from app.modules.route_groups import service as route_groups
 from app.modules.route_groups.schema import RouteGroupDetail, RouteGroupList
 from app.modules.running_goals.schema import GoalsView
@@ -181,12 +180,7 @@ def all_footprints(
     mode: Literal["tracks", "heatmap"] = "tracks",
     encoding: Literal["delta"] | None = None,
 ):
-    result = read_all_footprints(db, owner.id, mode)
-    if result["result"] is not None:
-        result["result"] = service.footprint_view(result["result"])
-        if encoding == "delta":
-            result["result"] = encode_collection(result["result"])
-    return envelope(request, result)
+    return all_footprints_response(request, db, owner.id, mode, encoding, service.footprint_view)
 
 
 @router.get("/footprints/provinces", response_model=ApiResponse[dict])

@@ -8,11 +8,10 @@ from app.api.dependencies import get_read_identity, get_session
 from app.core.errors import ApiError
 from app.core.responses import ApiResponse
 from app.modules.activities.router import envelope
-from app.modules.footprints.encoding import encode_collection
+from app.modules.footprints.cache import all_footprints_response
 from app.modules.footprints.provinces import province_summary
 from app.modules.footprints.schema import AllFootprintView
 from app.modules.footprints.service import footprints
-from app.modules.footprints.snapshot import read_all_footprints
 
 router = APIRouter(prefix="/api/v1/footprints", tags=["footprints"])
 
@@ -27,11 +26,9 @@ def read_all(
 ):
     if set(request.query_params) - {"mode", "encoding"}:
         raise ApiError(422, "VALIDATION_ERROR", "足迹查询包含不支持的参数")
-    data = read_all_footprints(db, identity[1].id, mode)
+    response = all_footprints_response(request, db, identity[1].id, mode, encoding)
     db.commit()
-    if data["result"] is not None and encoding == "delta":
-        data["result"] = encode_collection(data["result"])
-    return envelope(request, data)
+    return response
 
 
 @router.get("/provinces")

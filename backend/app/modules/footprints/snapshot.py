@@ -84,14 +84,20 @@ def refresh_due(snapshot, version, now):
     )
 
 
-def snapshot_view(snapshot, version, mode):
-    current = (
+def snapshot_current(snapshot, version):
+    return (
         snapshot is not None
         and snapshot.source_version == version
         and snapshot.algorithm_version == ALGORITHM_VERSION
         and snapshot.generated_at is not None
     )
-    result = getattr(snapshot, mode) if current else None
+
+
+def snapshot_view(snapshot, version, mode, result=None):
+    # `result` is passed by a caller that already holds the current payload (footprints/cache.py),
+    # so the geometry column need not be loaded.
+    if result is None:
+        result = getattr(snapshot, mode) if snapshot_current(snapshot, version) else None
     return dict(
         status="ready"
         if result is not None
