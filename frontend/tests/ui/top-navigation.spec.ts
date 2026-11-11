@@ -9,7 +9,8 @@ async function noOverflow(page: Page) {
 
 test.describe('desktop top bar', () => {
   test.beforeEach(async ({ page }) => {
-    await installActivities(page); await loginRunner(page);
+    await installActivities(page);
+    await loginRunner(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/dashboard');
     await expect(bar(page)).toBeVisible();
@@ -19,7 +20,7 @@ test.describe('desktop top bar', () => {
     const box = (await bar(page).boundingBox())!;
     expect(box.y).toBeCloseTo(14, 0);
     expect(box.height).toBeCloseTo(64, 0);
-    expect(await bar(page).evaluate(el => getComputedStyle(el).position)).toBe('fixed');
+    expect(await bar(page).evaluate((el) => getComputedStyle(el).position)).toBe('fixed');
     const main = (await page.locator('main').boundingBox())!;
     expect(main.x, 'content starts near the left edge, no sidebar offset').toBeLessThan(100);
     expect(main.y).toBeGreaterThanOrEqual(box.y + box.height);
@@ -33,18 +34,26 @@ test.describe('desktop top bar', () => {
     await expect(nav.getByRole('link', { name: '数据汇总', exact: true })).toHaveAttribute('title', '数据汇总');
     const rects = await page.evaluate(() => {
       const top = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
-      return { brand: top('.desktop-brand'), nav: top('.app-sidebar nav'), account: top('.nav-account'), bar: top('.app-sidebar') };
+      return {
+        brand: top('.desktop-brand'),
+        nav: top('.app-sidebar nav'),
+        account: top('.nav-account'),
+        bar: top('.app-sidebar'),
+      };
     });
     expect(rects.brand.right).toBeLessThanOrEqual(rects.nav.left + 1);
     expect(rects.nav.right).toBeLessThanOrEqual(rects.account.left + 1);
-    expect(Math.abs((rects.nav.top + rects.nav.height / 2) - (rects.bar.top + rects.bar.height / 2))).toBeLessThan(2);
+    expect(Math.abs(rects.nav.top + rects.nav.height / 2 - (rects.bar.top + rects.bar.height / 2))).toBeLessThan(2);
   });
 
   test('the loading bar spans the full width', async ({ page }) => {
     const left = await page.evaluate(() => {
-      const probe = document.createElement('div'); probe.className = 'navigation-progress';
+      const probe = document.createElement('div');
+      probe.className = 'navigation-progress';
       document.querySelector('.app-shell')!.append(probe);
-      const value = getComputedStyle(probe).left; probe.remove(); return value;
+      const value = getComputedStyle(probe).left;
+      probe.remove();
+      return value;
     });
     expect(left).toBe('0px');
   });
@@ -52,7 +61,8 @@ test.describe('desktop top bar', () => {
 
 test.describe('goal ring', () => {
   test.beforeEach(async ({ page }) => {
-    await installActivities(page); await loginRunner(page);
+    await installActivities(page);
+    await loginRunner(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/dashboard');
   });
@@ -74,7 +84,10 @@ test.describe('goal ring', () => {
     let goal = await openGoalPanel(page);
     await goal.getByRole('button', { name: '设置', exact: true }).click();
     await goal.getByLabel('目标距离（km）', { exact: true }).fill('42');
-    await page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: '跑步记录', exact: true }).click();
+    await page
+      .getByRole('navigation', { name: '主要导航' })
+      .getByRole('link', { name: '跑步记录', exact: true })
+      .click();
     await expect(page.getByRole('heading', { name: '跑步记录', exact: true })).toBeVisible();
     goal = await openGoalPanel(page);
     await expect(goal.getByLabel('目标距离（km）', { exact: true })).toHaveValue('42');
@@ -85,7 +98,8 @@ test.describe('goal ring', () => {
 });
 
 test('on a phone the goal stays inline in the menu and the ring is hidden', async ({ page }) => {
-  await installActivities(page); await loginRunner(page);
+  await installActivities(page);
+  await loginRunner(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/dashboard');
   await expect(page.locator('.goal-container')).toBeAttached();
@@ -96,7 +110,8 @@ test('on a phone the goal stays inline in the menu and the ring is hidden', asyn
 
 test('the open phone menu exposes only one theme switch and one automatic control', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
-  await installActivities(page); await loginRunner(page);
+  await installActivities(page);
+  await loginRunner(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/dashboard');
   await expect(page.locator('header[data-auth-ready="true"]')).toHaveCount(1);
@@ -121,8 +136,11 @@ test('the open phone menu exposes only one theme switch and one automatic contro
   await expect(themeSwitch).toHaveCount(1);
 });
 
-test('resizing below the desktop breakpoint with the goal panel open leaves no stale popover state', async ({ page }) => {
-  await installActivities(page); await loginRunner(page);
+test('resizing below the desktop breakpoint with the goal panel open leaves no stale popover state', async ({
+  page,
+}) => {
+  await installActivities(page);
+  await loginRunner(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/dashboard');
   await openGoalPanel(page);
@@ -130,7 +148,8 @@ test('resizing below the desktop breakpoint with the goal panel open leaves no s
   const panel = page.locator('.goal-container .anchored-panel');
   await expect(ring).toHaveAttribute('aria-expanded', 'true');
   // attachMenuGlass paints the panel itself: an inline backdrop-filter (Chromium/Firefox) or the rn-static-glass class (WebKit).
-  const glassed = () => panel.evaluate(el => el.style.backdropFilter !== '' || el.classList.contains('rn-static-glass'));
+  const glassed = () =>
+    panel.evaluate((el) => el.style.backdropFilter !== '' || el.classList.contains('rn-static-glass'));
   expect(await glassed()).toBe(true);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(panel).not.toHaveAttribute('popover', /.*/);
@@ -145,7 +164,8 @@ test('resizing below the desktop breakpoint with the goal panel open leaves no s
 
 test.describe('horizontal lens', () => {
   test.beforeEach(async ({ page }) => {
-    await installActivities(page); await loginRunner(page);
+    await installActivities(page);
+    await loginRunner(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/dashboard');
   });
@@ -156,7 +176,7 @@ test.describe('horizontal lens', () => {
     const outline = nav.locator('.rn-moving-outline');
     const current = nav.getByRole('link', { name: '数据汇总', exact: true });
     const other = nav.getByRole('link', { name: '个人足迹', exact: true });
-    const x = () => outline.evaluate(el => el.getBoundingClientRect().x);
+    const x = () => outline.evaluate((el) => el.getBoundingClientRect().x);
     await expect.poll(x).toBeCloseTo((await current.boundingBox())!.x, 0);
     await other.hover();
     await expect.poll(x).toBeCloseTo((await other.boundingBox())!.x, 0);
@@ -166,14 +186,16 @@ test.describe('horizontal lens', () => {
 
   test('the lens never blurs the label copy it filters, whatever the glass blur default is', async ({ page }) => {
     const copy = page.getByRole('navigation', { name: '主要导航' }).locator('.rn-moving-copy');
-    await expect.poll(() => copy.evaluate(el => /^url\(/.test(el.style.filter))).toBe(true);
-    const blurs = await copy.evaluate(el => {
+    await expect.poll(() => copy.evaluate((el) => /^url\(/.test(el.style.filter))).toBe(true);
+    const blurs = await copy.evaluate((el) => {
       const id = /url\("?#([^")]+)"?\)/.exec(el.style.filter)?.[1] ?? '';
       const filter = document.getElementById(id);
-      return filter ? [...filter.querySelectorAll('feGaussianBlur')].map(node => node.getAttribute('stdDeviation')) : null;
+      return filter
+        ? [...filter.querySelectorAll('feGaussianBlur')].map((node) => node.getAttribute('stdDeviation'))
+        : null;
     });
     expect(blurs, 'the filter referenced by the lens copy must exist').not.toBeNull();
-    expect(blurs!.filter(value => (value ?? '').split(/\s+/).some(part => Number(part) > 0))).toEqual([]);
+    expect(blurs!.filter((value) => (value ?? '').split(/\s+/).some((part) => Number(part) > 0))).toEqual([]);
   });
 
   test('the lens is hidden on a page that has no navigation link', async ({ page }) => {
@@ -200,46 +222,91 @@ test.describe('horizontal lens', () => {
       await expect(nav).toHaveClass(/rn-liquid-navigation/);
       await expect(nav.getByRole('link', { name: '数据汇总', exact: true })).toHaveAttribute('aria-current', 'page');
       // The scheme switch starts a colour transition on the bar; read the colours only once it has finished (otherwise a mid-transition value like 235,235,232 is compared).
-      await page.evaluate(() => Promise.all(document.getAnimations().map(animation => animation.finished.catch(() => undefined))));
+      // Looping spinners (a map further down waits until it is scrolled near) never finish, so only finite animations count.
+      await page.evaluate(() =>
+        Promise.all(
+          document
+            .getAnimations()
+            .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+            .map((animation) => animation.finished.catch(() => undefined)),
+        ),
+      );
       const probe = await page.evaluate(() => {
         const rgb = (value: string) => {
-          const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
-          const ctx = canvas.getContext('2d')!; ctx.fillStyle = value; ctx.fillRect(0, 0, 1, 1);
+          const canvas = document.createElement('canvas');
+          canvas.width = canvas.height = 1;
+          const ctx = canvas.getContext('2d')!;
+          ctx.fillStyle = value;
+          ctx.fillRect(0, 0, 1, 1);
           return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3);
         };
         const link = document.querySelector('.app-sidebar nav > .nav-link[aria-current="page"]')!;
-        const ink = document.createElement('i'); ink.style.color = 'var(--sport-nav-active-ink)';
-        const surface = document.createElement('i'); surface.style.color = 'var(--surface)';
-        const host = document.querySelector('.app-sidebar')!; host.append(ink, surface);
-        const result = { link: rgb(getComputedStyle(link).color), ink: rgb(getComputedStyle(ink).color), surface: rgb(getComputedStyle(surface).color) };
-        ink.remove(); surface.remove(); return result;
+        const ink = document.createElement('i');
+        ink.style.color = 'var(--sport-nav-active-ink)';
+        const surface = document.createElement('i');
+        surface.style.color = 'var(--surface)';
+        const host = document.querySelector('.app-sidebar')!;
+        host.append(ink, surface);
+        const result = {
+          link: rgb(getComputedStyle(link).color),
+          ink: rgb(getComputedStyle(ink).color),
+          surface: rgb(getComputedStyle(surface).color),
+        };
+        ink.remove();
+        surface.remove();
+        return result;
       });
       expect(probe.link).toEqual(probe.ink);
-      const luminance = (c: number[]) => { const [r, g, b] = c.map(v => { const s = v / 255; return s <= .03928 ? s / 12.92 : ((s + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
+      const luminance = (c: number[]) => {
+        const [r, g, b] = c.map((v) => {
+          const s = v / 255;
+          return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      };
       const [light, dark] = [luminance(probe.link), luminance(probe.surface)].sort((a, b) => b - a);
-      expect((light + .05) / (dark + .05), 'current link contrast against the bar').toBeGreaterThanOrEqual(4.5);
+      expect((light + 0.05) / (dark + 0.05), 'current link contrast against the bar').toBeGreaterThanOrEqual(4.5);
     });
   }
 });
 
 test.describe('responsive steps', () => {
-  for (const [width, labelled] of [[1440, true], [1360, true], [1359, false], [1280, false], [1100, false], [1024, false], [800, false]] as const) {
-    test(`${width}px: links ${labelled ? 'show' : 'hide'} their text and the last link stays clear of the account row`, async ({ page }) => {
-      await installActivities(page); await loginRunner(page);
+  for (const [width, labelled] of [
+    [1440, true],
+    [1360, true],
+    [1359, false],
+    [1280, false],
+    [1100, false],
+    [1024, false],
+    [800, false],
+  ] as const) {
+    test(`${width}px: links ${labelled ? 'show' : 'hide'} their text and the last link stays clear of the account row`, async ({
+      page,
+    }) => {
+      await installActivities(page);
+      await loginRunner(page);
       await page.setViewportSize({ width, height: 900 });
       await page.goto('/dashboard');
       const nav = page.getByRole('navigation', { name: '主要导航' });
       const link = nav.getByRole('link', { name: '数据汇总', exact: true });
       const text = link.locator('span').first();
-      if (labelled) await expect(text).toBeVisible(); else await expect(text).toBeHidden();
+      if (labelled) await expect(text).toBeVisible();
+      else await expect(text).toBeHidden();
       await expect(link).toHaveAttribute('title', '数据汇总');
-      const metrics = await bar(page).evaluate(el => ({ scroll: el.scrollWidth, client: el.clientWidth, height: el.getBoundingClientRect().height }));
+      const metrics = await bar(page).evaluate((el) => ({
+        scroll: el.scrollWidth,
+        client: el.clientWidth,
+        height: el.getBoundingClientRect().height,
+      }));
       expect(metrics.scroll, 'bar content fits').toBeLessThanOrEqual(metrics.client);
       expect(metrics.height).toBeCloseTo(64, 0);
       // The bar is overflow: visible, so scrollWidth cannot see links that spill over the account row: compare the boxes.
       const gap = await page.evaluate(() => {
         const links = [...document.querySelectorAll('.app-sidebar nav .nav-link')];
-        return document.querySelector('.nav-account')!.getBoundingClientRect().left - links.at(-1)!.getBoundingClientRect().right;
+        return (
+          document.querySelector('.nav-account')!.getBoundingClientRect().left -
+          links.at(-1)!.getBoundingClientRect().right
+        );
       });
       expect(gap, 'the last link ends before the account row').toBeGreaterThanOrEqual(8);
       await noOverflow(page);
@@ -249,13 +316,19 @@ test.describe('responsive steps', () => {
 
 test.describe('horizontal page transition', () => {
   test.beforeEach(async ({ page }) => {
-    await installActivities(page); await loginRunner(page);
+    await installActivities(page);
+    await loginRunner(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/dashboard');
     // A click before hydration is a plain document navigation and carries no direction; the goal container only renders once the app is hydrated.
     await page.locator('.app-sidebar .goal-container:not([hidden])').waitFor({ state: 'attached' });
   });
-  const firstTransform = (page: Page) => page.locator('.page-reveal').evaluate(el => (el.getAnimations()[0]?.effect as KeyframeEffect | undefined)?.getKeyframes()[0]?.transform ?? '');
+  const firstTransform = (page: Page) =>
+    page
+      .locator('.page-reveal')
+      .evaluate(
+        (el) => (el.getAnimations()[0]?.effect as KeyframeEffect | undefined)?.getKeyframes()[0]?.transform ?? '',
+      );
 
   test('moving down the menu enters from the right, moving up enters from the left', async ({ page }) => {
     const nav = page.getByRole('navigation', { name: '主要导航' });
@@ -269,12 +342,24 @@ test.describe('horizontal page transition', () => {
 });
 
 // An ordinary enabled account gets nine links, ending with the longest label ("本人工作区"). They must stay clear of the account row at every desktop width.
-test('a signed-in ordinary account (nine links, the longest label last) stays clear of the account row at every desktop width', async ({ page, browser }) => {
-  await installActivities(page); await loginRunner(page);
+test('a signed-in ordinary account (nine links, the longest label last) stays clear of the account row at every desktop width', async ({
+  page,
+  browser,
+}) => {
+  await installActivities(page);
+  await loginRunner(page);
   const username = `ui_dense_${Date.now() % 1000000}`;
   const created = await page.request.post('/api/v1/admin/users', {
     headers: { Origin: new URL(page.url()).origin, 'X-CSRF-Token': 'ui-csrf' },
-    data: { email: `${username}@example.com`, username, display_name: `跑者 ${username}`, timezone: 'Asia/Shanghai', password: 'Synthetic-only-password', is_active: true, showcase_enabled: false },
+    data: {
+      email: `${username}@example.com`,
+      username,
+      display_name: `跑者 ${username}`,
+      timezone: 'Asia/Shanghai',
+      password: 'Synthetic-only-password',
+      is_active: true,
+      showcase_enabled: false,
+    },
   });
   expect(created.status()).toBe(201);
   const context = await browser.newContext();
@@ -294,43 +379,67 @@ test('a signed-in ordinary account (nine links, the longest label last) stays cl
       await expect(nav.locator(':scope > .nav-link'), `${width}px: nine links`).toHaveCount(9);
       await expect(nav.locator(':scope > .nav-link').last()).toHaveAttribute('title', '本人工作区');
       await expect(nav.getByRole('link', { name: '本人工作区', exact: true })).toHaveAttribute('title', '本人工作区');
-      if (width >= 1360) await expect(nav.getByRole('link', { name: '数据汇总', exact: true }).locator('span').first(), `${width}px: labelled`).toBeVisible();
-      else await expect(nav.getByRole('link', { name: '数据汇总', exact: true }).locator('span').first(), `${width}px: icon-only`).toBeHidden();
+      if (width >= 1360)
+        await expect(
+          nav.getByRole('link', { name: '数据汇总', exact: true }).locator('span').first(),
+          `${width}px: labelled`,
+        ).toBeVisible();
+      else
+        await expect(
+          nav.getByRole('link', { name: '数据汇总', exact: true }).locator('span').first(),
+          `${width}px: icon-only`,
+        ).toBeHidden();
       await expect(nav).toHaveAttribute('data-axis', 'x');
       const rects = await own.evaluate(() => {
-        const box = (node: Element) => { const rect = node.getBoundingClientRect(); return { left: rect.left, right: rect.right, width: rect.width }; };
+        const box = (node: Element) => {
+          const rect = node.getBoundingClientRect();
+          return { left: rect.left, right: rect.right, width: rect.width };
+        };
         const links = [...document.querySelectorAll('.app-sidebar nav > .nav-link')].map(box);
-        return { links, brand: box(document.querySelector('.desktop-brand')!), nav: box(document.querySelector('.app-sidebar nav')!), account: box(document.querySelector('.nav-account')!), bar: box(document.querySelector('.app-sidebar')!) };
+        return {
+          links,
+          brand: box(document.querySelector('.desktop-brand')!),
+          nav: box(document.querySelector('.app-sidebar nav')!),
+          account: box(document.querySelector('.nav-account')!),
+          bar: box(document.querySelector('.app-sidebar')!),
+        };
       });
-      expect(rects.links.at(-1)!.right, `${width}px: last link ends before the account row`).toBeLessThanOrEqual(rects.account.left - 8);
+      expect(rects.links.at(-1)!.right, `${width}px: last link ends before the account row`).toBeLessThanOrEqual(
+        rects.account.left - 8,
+      );
       expect(rects.brand.right, `${width}px: brand before nav`).toBeLessThanOrEqual(rects.nav.left + 1);
       expect(rects.nav.right, `${width}px: nav before account`).toBeLessThanOrEqual(rects.account.left + 1);
       expect(rects.account.right, `${width}px: account inside the bar`).toBeLessThanOrEqual(rects.bar.right + 1);
       // The lens follows the current link and hover with the current link widths, not with stale ones from the other layout.
       const outline = nav.locator('.rn-moving-outline');
-      const x = () => outline.evaluate(el => el.getBoundingClientRect().x);
-      const current = nav.getByRole('link', { name: '数据汇总', exact: true }), other = nav.getByRole('link', { name: '本人工作区', exact: true });
+      const x = () => outline.evaluate((el) => el.getBoundingClientRect().x);
+      const current = nav.getByRole('link', { name: '数据汇总', exact: true }),
+        other = nav.getByRole('link', { name: '本人工作区', exact: true });
       await expect.poll(x, `${width}px: lens under the current link`).toBeCloseTo((await current.boundingBox())!.x, 0);
       await other.hover();
       await expect.poll(x, `${width}px: lens follows hover`).toBeCloseTo((await other.boundingBox())!.x, 0);
       await own.getByRole('heading', { level: 1 }).hover();
       await noOverflow(own);
     }
-  } finally { await context.close(); }
+  } finally {
+    await context.close();
+  }
 });
 
 test.describe('floating glass state', () => {
   test.beforeEach(async ({ page }) => {
-    await installActivities(page); await loginRunner(page);
+    await installActivities(page);
+    await loginRunner(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/dashboard');
     await expect(bar(page)).toBeVisible();
   });
-  const alpha = (page: Page) => bar(page).evaluate(el => {
-    const value = getComputedStyle(el).backgroundColor;
-    const match = value.match(/\/\s*([\d.]+)\s*\)|rgba\([^)]*,\s*([\d.]+)\)/);
-    return match ? Number(match[1] ?? match[2]) : 1;
-  });
+  const alpha = (page: Page) =>
+    bar(page).evaluate((el) => {
+      const value = getComputedStyle(el).backgroundColor;
+      const match = value.match(/\/\s*([\d.]+)\s*\)|rgba\([^)]*,\s*([\d.]+)\)/);
+      return match ? Number(match[1] ?? match[2]) : 1;
+    });
 
   test('at the top, with nothing under it, the bar is a solid card', async ({ page }) => {
     await expect(bar(page)).not.toHaveAttribute('data-floating');
@@ -349,24 +458,40 @@ test.describe('floating glass state', () => {
   test('the floating bar text has no halo or glow around the glyphs', async ({ page }) => {
     await page.evaluate(() => window.scrollTo(0, 600));
     await expect(bar(page)).toHaveAttribute('data-floating', '');
-    const shadows = await bar(page).evaluate(el => [...el.querySelectorAll('.brand-name, nav .nav-link > span')].map(node => getComputedStyle(node).textShadow));
+    const shadows = await bar(page).evaluate((el) =>
+      [...el.querySelectorAll('.brand-name, nav .nav-link > span')].map((node) => getComputedStyle(node).textShadow),
+    );
     expect(shadows.length).toBeGreaterThan(0);
     for (const shadow of shadows) expect(shadow).toBe('none');
   });
 
   // Inactive labels and icons read in the full foreground colour while the bar floats (muted grey was too weak over the yellow header); docked they stay muted. The current link keeps its lens ink.
   for (const scheme of ['light', 'dark'] as const) {
-    test(`inactive links use the foreground colour while floating and the muted colour when docked, in ${scheme} mode`, async ({ page }) => {
+    test(`inactive links use the foreground colour while floating and the muted colour when docked, in ${scheme} mode`, async ({
+      page,
+    }) => {
       await page.emulateMedia({ colorScheme: scheme });
-      const resolve = (token: string) => bar(page).evaluate((el, name) => { const probe = document.createElement('i'); probe.style.color = `var(${name})`; el.append(probe); const value = getComputedStyle(probe).color; probe.remove(); return value; }, token);
-      const link = page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: '个人记录', exact: true });
-      const color = (target = link) => target.evaluate(el => getComputedStyle(el).color);
+      const resolve = (token: string) =>
+        bar(page).evaluate((el, name) => {
+          const probe = document.createElement('i');
+          probe.style.color = `var(${name})`;
+          el.append(probe);
+          const value = getComputedStyle(probe).color;
+          probe.remove();
+          return value;
+        }, token);
+      const link = page
+        .getByRole('navigation', { name: '主要导航' })
+        .getByRole('link', { name: '个人记录', exact: true });
+      const color = (target = link) => target.evaluate((el) => getComputedStyle(el).color);
       await expect(bar(page)).not.toHaveAttribute('data-floating');
       await expect.poll(color).toBe(await resolve('--muted-foreground'));
       await page.evaluate(() => window.scrollTo(0, 600));
       await expect(bar(page)).toHaveAttribute('data-floating', '');
       await expect.poll(color).toBe(await resolve('--foreground'));
-      const current = page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: '数据汇总', exact: true });
+      const current = page
+        .getByRole('navigation', { name: '主要导航' })
+        .getByRole('link', { name: '数据汇总', exact: true });
       await expect.poll(() => color(current)).toBe(await resolve('--sport-nav-active-ink'));
       await page.evaluate(() => window.scrollTo(0, 0));
       await expect(bar(page)).not.toHaveAttribute('data-floating');
@@ -378,7 +503,9 @@ test.describe('floating glass state', () => {
     await page.emulateMedia({ forcedColors: 'active' });
     await page.evaluate(() => window.scrollTo(0, 600));
     await expect(bar(page)).toHaveAttribute('data-floating', '');
-    expect(await bar(page).evaluate(el => el.style.backdropFilter || el.style.getPropertyValue('-webkit-backdrop-filter'))).toBe('');
+    expect(
+      await bar(page).evaluate((el) => el.style.backdropFilter || el.style.getPropertyValue('-webkit-backdrop-filter')),
+    ).toBe('');
   });
 
   test('the phone menu is not affected', async ({ page }) => {
@@ -391,10 +518,15 @@ test.describe('floating glass state', () => {
 // The shell breakpoint. CSS (app.css, liquid-glass-controls.css) and JS (enhanceNavigation, AppNavigation) cannot share a constant, so this test pins them all to the same width.
 const SHELL_BREAKPOINT = 800;
 test.describe('shell breakpoint', () => {
-  test.beforeEach(async ({ page }) => { await installActivities(page); await loginRunner(page); });
+  test.beforeEach(async ({ page }) => {
+    await installActivities(page);
+    await loginRunner(page);
+  });
   for (const width of [SHELL_BREAKPOINT - 1, SHELL_BREAKPOINT, SHELL_BREAKPOINT + 1, 1023, 1024]) {
     const top = width >= SHELL_BREAKPOINT;
-    test(`${width}px: ${top ? 'floating top bar, no mobile bar, lens on x' : 'mobile bar and closed menu, lens on y'}`, async ({ page }) => {
+    test(`${width}px: ${top ? 'floating top bar, no mobile bar, lens on x' : 'mobile bar and closed menu, lens on y'}`, async ({
+      page,
+    }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto('/dashboard');
       await page.locator('.app-sidebar .goal-container:not([hidden])').waitFor({ state: 'attached' });
@@ -402,7 +534,7 @@ test.describe('shell breakpoint', () => {
       if (top) {
         await expect(page.locator('.mobile-bar')).toBeHidden();
         await expect(bar(page)).toBeVisible();
-        expect(await bar(page).evaluate(el => getComputedStyle(el).position)).toBe('fixed');
+        expect(await bar(page).evaluate((el) => getComputedStyle(el).position)).toBe('fixed');
         await expect(nav).toHaveAttribute('data-axis', 'x');
         await expect(page.locator('.goal-container .anchored-trigger')).toBeVisible();
       } else {
@@ -410,7 +542,7 @@ test.describe('shell breakpoint', () => {
         await expect(bar(page)).toBeHidden();
         await page.getByRole('button', { name: '打开导航' }).click();
         await expect(bar(page)).toBeVisible();
-        expect(await bar(page).evaluate(el => getComputedStyle(el).position)).not.toBe('fixed');
+        expect(await bar(page).evaluate((el) => getComputedStyle(el).position)).not.toBe('fixed');
         await expect(nav).toHaveAttribute('data-axis', 'y');
         await expect(page.locator('.goal-container .anchored-trigger')).toBeHidden();
       }
@@ -437,7 +569,8 @@ test.describe('phone bar and menu colours', () => {
   for (const scheme of ['light', 'dark'] as const) {
     test(`361px ${scheme}: bar and menu sit on the card surface with legible text`, async ({ page }) => {
       await page.emulateMedia({ colorScheme: scheme });
-      await installActivities(page); await loginRunner(page);
+      await installActivities(page);
+      await loginRunner(page);
       await page.setViewportSize({ width: 361, height: 800 });
       await page.goto('/dashboard');
       await expect(page.locator('.mobile-bar')).toBeVisible();
@@ -445,23 +578,49 @@ test.describe('phone bar and menu colours', () => {
       await page.getByRole('button', { name: '打开导航' }).click();
       await expect(bar(page)).toBeVisible();
       await expect(page.getByRole('navigation', { name: '主要导航' })).toHaveAttribute('data-axis', 'y');
-      await page.locator('.app-sidebar').evaluate(el => Promise.all(el.getAnimations().map(animation => animation.finished.catch(() => undefined))));
+      await page
+        .locator('.app-sidebar')
+        .evaluate((el) =>
+          Promise.all(el.getAnimations().map((animation) => animation.finished.catch(() => undefined))),
+        );
       const probe = await page.evaluate(() => {
         const rgb = (value: string) => {
-          const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
-          const ctx = canvas.getContext('2d')!; ctx.fillStyle = value; ctx.fillRect(0, 0, 1, 1);
+          const canvas = document.createElement('canvas');
+          canvas.width = canvas.height = 1;
+          const ctx = canvas.getContext('2d')!;
+          ctx.fillStyle = value;
+          ctx.fillRect(0, 0, 1, 1);
           return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3);
         };
         // Tokens resolve inside .sport-theme, not on body.
-        const token = (name: string) => { const i = document.createElement('i'); i.style.color = `var(${name})`; document.querySelector('.mobile-bar')!.append(i); const value = rgb(getComputedStyle(i).color); i.remove(); return value; };
+        const token = (name: string) => {
+          const i = document.createElement('i');
+          i.style.color = `var(${name})`;
+          document.querySelector('.mobile-bar')!.append(i);
+          const value = rgb(getComputedStyle(i).color);
+          i.remove();
+          return value;
+        };
         const style = (selector: string) => getComputedStyle(document.querySelector(selector)!);
         const link = document.querySelector('.app-sidebar nav > .nav-link:not([aria-current="page"])')!;
         const mark = style('.mobile-bar .brand-mark');
         return {
-          surface: token('--surface'), border: token('--border'), foreground: token('--foreground'), muted: token('--muted-foreground'), brand: token('--sport-brand'), brandInk: token('--brand-foreground'), active: token('--sport-nav-active'), ink: token('--sport-nav-active-ink'),
-          barBackground: rgb(style('.mobile-bar').backgroundColor), barBorder: rgb(style('.mobile-bar').borderBottomColor), barText: rgb(style('.mobile-bar .brand-name').color),
-          markBackground: rgb(mark.backgroundColor), markText: rgb(mark.color),
-          menuBackground: rgb(style('.app-sidebar').backgroundColor), menuBorder: rgb(style('.app-sidebar').borderBottomColor), menuLink: rgb(getComputedStyle(link).color),
+          surface: token('--surface'),
+          border: token('--border'),
+          foreground: token('--foreground'),
+          muted: token('--muted-foreground'),
+          brand: token('--sport-brand'),
+          brandInk: token('--brand-foreground'),
+          active: token('--sport-nav-active'),
+          ink: token('--sport-nav-active-ink'),
+          barBackground: rgb(style('.mobile-bar').backgroundColor),
+          barBorder: rgb(style('.mobile-bar').borderBottomColor),
+          barText: rgb(style('.mobile-bar .brand-name').color),
+          markBackground: rgb(mark.backgroundColor),
+          markText: rgb(mark.color),
+          menuBackground: rgb(style('.app-sidebar').backgroundColor),
+          menuBorder: rgb(style('.app-sidebar').borderBottomColor),
+          menuLink: rgb(getComputedStyle(link).color),
           currentLink: rgb(style('.app-sidebar nav > .nav-link[aria-current="page"]').color),
           accountBorder: rgb(style('.app-sidebar .nav-account').borderTopColor),
         };
@@ -476,8 +635,17 @@ test.describe('phone bar and menu colours', () => {
       expect(probe.menuLink, 'menu link').toEqual(probe.muted);
       expect(probe.currentLink, 'current menu link').toEqual(probe.ink);
       expect(probe.accountBorder, 'account divider').toEqual(probe.border);
-      const luminance = (c: number[]) => { const [r, g, b] = c.map(v => { const s = v / 255; return s <= .03928 ? s / 12.92 : ((s + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
-      const contrast = (a: number[], b: number[]) => { const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x); return (hi + .05) / (lo + .05); };
+      const luminance = (c: number[]) => {
+        const [r, g, b] = c.map((v) => {
+          const s = v / 255;
+          return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      };
+      const contrast = (a: number[], b: number[]) => {
+        const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+        return (hi + 0.05) / (lo + 0.05);
+      };
       expect(contrast(probe.barText, probe.barBackground), 'bar text contrast').toBeGreaterThanOrEqual(4.5);
       expect(contrast(probe.menuLink, probe.menuBackground), 'menu link contrast').toBeGreaterThanOrEqual(4.5);
       expect(contrast(probe.currentLink, probe.active), 'current link on the active plate').toBeGreaterThanOrEqual(4.5);
@@ -488,7 +656,8 @@ test.describe('phone bar and menu colours', () => {
 
 test.describe('account menu', () => {
   test.beforeEach(async ({ page }) => {
-    await installActivities(page); await loginRunner(page);
+    await installActivities(page);
+    await loginRunner(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/dashboard');
   });
@@ -504,7 +673,9 @@ test.describe('account menu', () => {
     await expect(trigger).toBeFocused();
   });
 
-  test('a glass lens follows the pointer and keyboard focus across the options, and rests while neither is on them', async ({ page }) => {
+  test('a glass lens follows the pointer and keyboard focus across the options, and rests while neither is on them', async ({
+    page,
+  }) => {
     const menu = await openAccountMenu(page);
     const outline = menu.locator('> .rn-moving-outline');
     await expect(outline, 'the lens exists in the menu').toHaveCount(1);
@@ -517,9 +688,22 @@ test.describe('account menu', () => {
     const logout = menu.getByRole('button', { name: '退出登录', exact: true });
     await logout.hover();
     await expect(outline).toHaveCSS('opacity', '1');
-    await expect.poll(async () => { const { target, lens } = await lensAt('退出登录'); return Math.abs(lens.y - target.y) + Math.abs(lens.height - target.height); }, { message: 'the lens settles over the hovered option' }).toBeLessThan(4);
+    await expect
+      .poll(
+        async () => {
+          const { target, lens } = await lensAt('退出登录');
+          return Math.abs(lens.y - target.y) + Math.abs(lens.height - target.height);
+        },
+        { message: 'the lens settles over the hovered option' },
+      )
+      .toBeLessThan(4);
     await menu.getByRole('link', { name: '设置', exact: true }).hover();
-    await expect.poll(async () => { const { target, lens } = await lensAt('设置'); return Math.abs(lens.y - target.y); }).toBeLessThan(4);
+    await expect
+      .poll(async () => {
+        const { target, lens } = await lensAt('设置');
+        return Math.abs(lens.y - target.y);
+      })
+      .toBeLessThan(4);
     await page.mouse.move(5, 5);
     await expect(outline, 'the lens rests when the pointer leaves the menu').toHaveCSS('opacity', '0');
     await page.keyboard.press('Tab');
@@ -547,7 +731,8 @@ test.describe('account menu', () => {
   });
 
   test('the avatar carries a ring on the settings pages and none elsewhere', async ({ page }) => {
-    const ring = () => page.locator('.account-menu-host .account-avatar').evaluate(el => getComputedStyle(el).boxShadow);
+    const ring = () =>
+      page.locator('.account-menu-host .account-avatar').evaluate((el) => getComputedStyle(el).boxShadow);
     await expect(page.locator('.account-menu-host .anchored-trigger')).toBeVisible();
     expect(await ring()).toBe('none');
     await page.goto('/settings');
@@ -556,7 +741,9 @@ test.describe('account menu', () => {
     await expect(page.locator('.account-menu-host .account-avatar')).toHaveAttribute('data-current', '');
   });
 
-  test('pressing the avatar button squeezes the avatar together with the glass and releases it again', async ({ page }) => {
+  test('pressing the avatar button squeezes the avatar together with the glass and releases it again', async ({
+    page,
+  }) => {
     const trigger = page.locator('.account-menu-host .anchored-trigger');
     const avatar = page.locator('.account-menu-host .account-avatar');
     await expect(page.locator('.account-menu-host button.rn-menu-option')).toBeEnabled();
@@ -565,15 +752,21 @@ test.describe('account menu', () => {
     const box = (await trigger.boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
-    await expect.poll(async () => (await avatar.boundingBox())!.width, 'the avatar widens while pressed').toBeGreaterThan(rest.width + 1);
+    await expect
+      .poll(async () => (await avatar.boundingBox())!.width, 'the avatar widens while pressed')
+      .toBeGreaterThan(rest.width + 1);
     expect((await avatar.boundingBox())!.height, 'and flattens').toBeLessThan(rest.height - 0.5);
-    expect(await avatar.evaluate(el => getComputedStyle(el).transform)).not.toBe('none');
+    expect(await avatar.evaluate((el) => getComputedStyle(el).transform)).not.toBe('none');
     // Releasing away from the button is no click, so the menu stays closed.
     await page.mouse.move(box.x + box.width / 2, box.y + box.height + 120);
     await page.mouse.up();
-    await expect.poll(async () => Math.abs((await avatar.boundingBox())!.width - rest.width), 'the avatar springs back').toBeLessThan(0.5);
+    await expect
+      .poll(async () => Math.abs((await avatar.boundingBox())!.width - rest.width), 'the avatar springs back')
+      .toBeLessThan(0.5);
     // The spring snaps to exactly 0 only a moment after the width is within tolerance.
-    await expect.poll(() => avatar.evaluate(el => getComputedStyle(el).transform), 'and ends at rest').toBe('matrix(1, 0, 0, 1, 0, 0)');
+    await expect
+      .poll(() => avatar.evaluate((el) => getComputedStyle(el).transform), 'and ends at rest')
+      .toBe('matrix(1, 0, 0, 1, 0, 0)');
     await expect(page.getByRole('group', { name: '账户' })).toBeHidden();
   });
 
@@ -624,14 +817,17 @@ test.describe('avatar placeholder without an account menu (desktop)', () => {
   });
 
   test('the avatar keeps its place while the identity is being confirmed', async ({ page }) => {
-    await installActivities(page); await loginRunner(page);
+    await installActivities(page);
+    await loginRunner(page);
     await page.goto('/dashboard');
     const toggle = page.locator('.nav-account .appearance-row');
     // Enabled only once hydrated, i.e. once the focus listener that re-checks the session exists.
     await expect(page.locator('.account-menu-host button.rn-menu-option')).toBeEnabled();
     const trigger = (await page.locator('.account-menu-host .anchored-trigger').boundingBox())!;
     const signedIn = (await toggle.boundingBox())!;
-    await page.route('**/api/v1/auth/session', route => route.fulfill({ status: 503, json: { error: { message: '无法确认登录状态' } } }));
+    await page.route('**/api/v1/auth/session', (route) =>
+      route.fulfill({ status: 503, json: { error: { message: '无法确认登录状态' } } }),
+    );
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await expect(page.getByTestId('current-user')).toHaveText('正在确认身份…');
     await expect(page.getByRole('button', { name: '账户菜单' })).toHaveCount(0);
@@ -648,10 +844,16 @@ test.describe('avatar placeholder without an account menu (desktop)', () => {
 
 // The bar is fixed from 800px up: anything that sticks to the top of the viewport has to stick below it, and focus / skip links / scrollIntoView have to land below it too.
 test.describe('content below the fixed bar', () => {
-  const barBottom = async (page: Page) => { const box = (await bar(page).boundingBox())!; return box.y + box.height; };
+  const barBottom = async (page: Page) => {
+    const box = (await bar(page).boundingBox())!;
+    return box.y + box.height;
+  };
 
-  test('scroll-padding-top keeps focus and anchors below the bar on desktop and is untouched on a phone', async ({ page }) => {
-    await installActivities(page); await loginRunner(page);
+  test('scroll-padding-top keeps focus and anchors below the bar on desktop and is untouched on a phone', async ({
+    page,
+  }) => {
+    await installActivities(page);
+    await loginRunner(page);
     const padding = () => page.evaluate(() => getComputedStyle(document.documentElement).scrollPaddingTop);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/dashboard');
@@ -663,7 +865,8 @@ test.describe('content below the fixed bar', () => {
   });
 
   test('the wellbeing history calendar sticks below the bar, and is not sticky on a phone', async ({ page }) => {
-    await installActivities(page); await loginRunner(page);
+    await installActivities(page);
+    await loginRunner(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/wellbeing');
     // Hydration first: a click on the tab before it would be lost.
@@ -673,11 +876,14 @@ test.describe('content below the fixed bar', () => {
     const card = page.getByTestId('wellbeing-history').locator('section.card');
     await expect(card).toBeVisible();
     const past = new Date(Date.now() - 2 * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
-    if (await page.locator(`[data-testid="wellbeing-day"][data-date="${past}"]`).count() === 0) await page.getByRole('button', { name: '上个月' }).click();
+    if ((await page.locator(`[data-testid="wellbeing-day"][data-date="${past}"]`).count()) === 0)
+      await page.getByRole('button', { name: '上个月' }).click();
     await page.locator(`[data-testid="wellbeing-day"][data-date="${past}"]`).click();
     await expect(page.getByTestId('wellbeing-editor')).toHaveAttribute('data-day', past);
     await expect(page.getByTestId('wellbeing-status')).toBeVisible();
-    await page.evaluate(() => Promise.all(document.getAnimations().map(animation => animation.finished.catch(() => undefined))));
+    await page.evaluate(() =>
+      Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined))),
+    );
     await page.evaluate(() => window.scrollTo(0, 700));
     const bottom = await barBottom(page);
     await expect.poll(async () => (await card.boundingBox())!.y).toBeGreaterThanOrEqual(bottom + 4);
@@ -689,14 +895,15 @@ test.describe('content below the fixed bar', () => {
     // A phone: the card scrolls away with the page.
     await page.setViewportSize({ width: 390, height: 844 });
     await page.evaluate(() => window.scrollTo(0, 0));
-    expect(await card.evaluate(el => getComputedStyle(el).position)).toBe('static');
+    expect(await card.evaluate((el) => getComputedStyle(el).position)).toBe('static');
     const before = (await card.boundingBox())!.y;
     await page.evaluate(() => window.scrollTo(0, 300));
     await expect.poll(async () => Math.round(before - (await card.boundingBox())!.y)).toBe(300);
   });
 
   test('the site settings preview column sticks below the bar', async ({ page }) => {
-    await installActivities(page); await loginRunner(page);
+    await installActivities(page);
+    await loginRunner(page);
     // A short window, so the page scrolls far enough for the column to leave its natural place and actually stick.
     await page.setViewportSize({ width: 1440, height: 700 });
     await page.goto('/settings/site');
@@ -705,17 +912,22 @@ test.describe('content below the fixed bar', () => {
     const natural = (await aside.boundingBox())!.y;
     const bottom = await barBottom(page);
     // 40px past the point where the column reaches its stuck position (1rem under the bar): sticking, and not yet pushed up by the end of its row.
-    await page.evaluate(target => window.scrollTo(0, target), Math.round(natural - (bottom + 16) + 40));
+    await page.evaluate((target) => window.scrollTo(0, target), Math.round(natural - (bottom + 16) + 40));
     await expect.poll(async () => (await aside.boundingBox())!.y).toBeGreaterThanOrEqual(bottom + 4);
     expect((await aside.boundingBox())!.y).toBeLessThanOrEqual(bottom + 24);
   });
 });
 
 test('the goal ring draws no arc at 0% (a round cap on a zero-length dash would leave a dot)', async ({ page }) => {
-  await installActivities(page); await loginRunner(page);
+  await installActivities(page);
+  await loginRunner(page);
   const distance = { value: 0 };
-  await page.route('**/api/v1/*/running-goals', route => route.fulfill({ json: { data: { week: 20, month: null, year: null }, error: null } }));
-  await page.route('**/statistics/summary**', route => route.fulfill({ json: { data: { distance_m: distance.value }, error: null } }));
+  await page.route('**/api/v1/*/running-goals', (route) =>
+    route.fulfill({ json: { data: { week: 20, month: null, year: null }, error: null } }),
+  );
+  await page.route('**/statistics/summary**', (route) =>
+    route.fulfill({ json: { data: { distance_m: distance.value }, error: null } }),
+  );
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/dashboard');
   const ring = page.locator('.goal-container .anchored-trigger svg');
@@ -730,16 +942,27 @@ test('the goal ring draws no arc at 0% (a round cap on a zero-length dash would 
 
 test.describe('phone bar hides while scrolling down and returns on a short scroll up', () => {
   const mobileBar = (page: Page) => page.locator('.mobile-bar');
-  const scrollBy = async (page: Page, dy: number) => { await page.mouse.wheel(0, dy); await page.waitForTimeout(450); };
+  const scrollBy = async (page: Page, dy: number) => {
+    await page.mouse.wheel(0, dy);
+    await page.waitForTimeout(450);
+  };
   test.beforeEach(async ({ page }) => {
-    await installActivities(page); await loginRunner(page);
+    await installActivities(page);
+    await loginRunner(page);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/dashboard');
     await expect(mobileBar(page)).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollHeight), 'the page must be tall enough to scroll').toBeGreaterThan(1500);
+    // Scroll once the summary has loaded and the bar listens; a load-time layout jump used to replay early scrolls.
+    await expect(page.getByTestId('annual-distance')).toBeVisible();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollHeight),
+      'the page must be tall enough to scroll',
+    ).toBeGreaterThan(1500);
   });
 
-  test('scrolling down tucks the bar away, a short scroll up brings it back without reaching the top', async ({ page }) => {
+  test('scrolling down tucks the bar away, a short scroll up brings it back without reaching the top', async ({
+    page,
+  }) => {
     await scrollBy(page, 700);
     await expect(mobileBar(page)).toBeHidden();
     await scrollBy(page, 300);
@@ -747,7 +970,10 @@ test.describe('phone bar hides while scrolling down and returns on a short scrol
     await scrollBy(page, -40);
     await expect(mobileBar(page)).toBeVisible();
     expect(await page.evaluate(() => window.scrollY), 'still far from the top').toBeGreaterThan(500);
-    expect((await mobileBar(page).boundingBox())!.y, 'floats the same 14px below the top edge as the desktop bar').toBeCloseTo(14, 0);
+    expect(
+      (await mobileBar(page).boundingBox())!.y,
+      'floats the same 14px below the top edge as the desktop bar',
+    ).toBeCloseTo(14, 0);
     await scrollBy(page, 300);
     await expect(mobileBar(page)).toBeHidden();
   });
@@ -759,22 +985,39 @@ test.describe('phone bar hides while scrolling down and returns on a short scrol
     await expect(mobileBar(page)).toBeVisible();
     await page.waitForTimeout(500);
     await page.evaluate(() => {
-      const bar = document.querySelector('.mobile-bar')!, header = bar.parentElement!;
+      const bar = document.querySelector('.mobile-bar')!,
+        header = bar.parentElement!;
       (window as any).__frames = [] as { top: number; bottom: number; opacity: number; visibility: string }[];
       const t0 = performance.now();
-      const tick = () => { (window as any).__frames.push({ top: bar.getBoundingClientRect().top, bottom: bar.getBoundingClientRect().bottom, opacity: Number(getComputedStyle(header).opacity), visibility: getComputedStyle(header).visibility }); if (performance.now() - t0 < 900) requestAnimationFrame(tick); };
+      const tick = () => {
+        (window as any).__frames.push({
+          top: bar.getBoundingClientRect().top,
+          bottom: bar.getBoundingClientRect().bottom,
+          opacity: Number(getComputedStyle(header).opacity),
+          visibility: getComputedStyle(header).visibility,
+        });
+        if (performance.now() - t0 < 900) requestAnimationFrame(tick);
+      };
       requestAnimationFrame(tick);
     });
     await page.mouse.wheel(0, 80);
     await page.waitForTimeout(1000);
-    const frames = await page.evaluate(() => (window as any).__frames as { top: number; bottom: number; opacity: number; visibility: string }[]);
-    const halfway = frames.filter(frame => frame.visibility === 'visible' && frame.top < 14 && frame.top > -50);
+    const frames = await page.evaluate(
+      () => (window as any).__frames as { top: number; bottom: number; opacity: number; visibility: string }[],
+    );
+    const halfway = frames.filter((frame) => frame.visibility === 'visible' && frame.top < 14 && frame.top > -50);
     expect(halfway.length, 'the bar is seen sliding for several frames').toBeGreaterThanOrEqual(8);
     // No opacity on the header: it would make the header a backdrop root and the bar's glass would stop seeing the page behind it while it moves.
-    expect(frames.every(frame => frame.visibility === 'hidden' || frame.opacity === 1), 'the glass keeps its backdrop the whole way').toBe(true);
+    expect(
+      frames.every((frame) => frame.visibility === 'hidden' || frame.opacity === 1),
+      'the glass keeps its backdrop the whole way',
+    ).toBe(true);
     expect(frames.at(-1)!.visibility, 'and ends hidden').toBe('hidden');
-    const lastShown = frames.filter(frame => frame.visibility === 'visible').at(-1)!;
-    expect(lastShown.bottom, 'the bar and its shadow (about 2rem below it) are off screen before it is cut, so the shadow does not pop away').toBeLessThanOrEqual(-30);
+    const lastShown = frames.filter((frame) => frame.visibility === 'visible').at(-1)!;
+    expect(
+      lastShown.bottom,
+      'the bar and its shadow (about 2rem below it) are off screen before it is cut, so the shadow does not pop away',
+    ).toBeLessThanOrEqual(-30);
   });
 
   test('the menu can be opened from deep in the page and stays visible while open', async ({ page }) => {
@@ -785,7 +1028,8 @@ test.describe('phone bar hides while scrolling down and returns on a short scrol
     await scrollBy(page, 120);
     await expect(mobileBar(page)).toBeVisible();
     await expect(page.getByRole('button', { name: '关闭导航' })).toBeVisible();
-    const menu = (await bar(page).boundingBox())!, header = (await mobileBar(page).boundingBox())!;
+    const menu = (await bar(page).boundingBox())!,
+      header = (await mobileBar(page).boundingBox())!;
     expect(menu.y, 'the menu hangs a small gap below the bar').toBeCloseTo(header.y + header.height + 8, 0);
     expect(menu.y + menu.height, 'and fits the viewport').toBeLessThanOrEqual(844);
     await page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: '个人记录' }).click();
@@ -805,27 +1049,44 @@ test.describe('phone bar hides while scrolling down and returns on a short scrol
 });
 
 test.describe('page chrome per appearance', () => {
-  const chrome = (page: Page) => page.evaluate(() => {
-    const rgb = (value: string) => (value.match(/[\d.]+/g) ?? []).map(Number);
-    const chroma = ([r, g, b]: number[]) => Math.max(r, g, b) - Math.min(r, g, b);
-    // Tokens resolve inside .sport-theme, not on body.
-    const probe = (variable: string) => { const i = document.createElement('i'); i.style.color = `var(${variable})`; document.querySelector('.page-header')!.append(i); const value = rgb(getComputedStyle(i).color); i.remove(); return value; };
-    const header = rgb(getComputedStyle(document.querySelector('.page-header')!).backgroundColor);
-    return {
-      headerAlpha: header.length === 4 ? header[3] : 1, header: header.slice(0, 3), tint: probe('--header-tint').slice(0, 3),
-      logo: probe('--sport-brand'), logoChroma: chroma(probe('--sport-brand')), navChroma: chroma(probe('--sport-nav-active')),
-      lensChroma: chroma(probe('--segment-lens')), trackChroma: chroma(probe('--segment-track')), actionChroma: chroma(probe('--action')),
-    };
-  });
+  const chrome = (page: Page) =>
+    page.evaluate(() => {
+      const rgb = (value: string) => (value.match(/[\d.]+/g) ?? []).map(Number);
+      const chroma = ([r, g, b]: number[]) => Math.max(r, g, b) - Math.min(r, g, b);
+      // Tokens resolve inside .sport-theme, not on body.
+      const probe = (variable: string) => {
+        const i = document.createElement('i');
+        i.style.color = `var(${variable})`;
+        document.querySelector('.page-header')!.append(i);
+        const value = rgb(getComputedStyle(i).color);
+        i.remove();
+        return value;
+      };
+      const header = rgb(getComputedStyle(document.querySelector('.page-header')!).backgroundColor);
+      return {
+        headerAlpha: header.length === 4 ? header[3] : 1,
+        header: header.slice(0, 3),
+        tint: probe('--header-tint').slice(0, 3),
+        logo: probe('--sport-brand'),
+        logoChroma: chroma(probe('--sport-brand')),
+        navChroma: chroma(probe('--sport-nav-active')),
+        lensChroma: chroma(probe('--segment-lens')),
+        trackChroma: chroma(probe('--segment-track')),
+        actionChroma: chroma(probe('--action')),
+      };
+    });
   async function open(page: Page, scheme: 'light' | 'dark') {
     await page.emulateMedia({ colorScheme: scheme });
-    await installActivities(page); await loginRunner(page);
+    await installActivities(page);
+    await loginRunner(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/settings');
     await expect(page.locator('.page-header')).toBeVisible();
     await expect(page.locator('.settings-tabs')).toBeVisible();
   }
-  test('light: butter-yellow page header, brand-green logo, soft-green nav pill and lens, green actions', async ({ page }) => {
+  test('light: butter-yellow page header, brand-green logo, soft-green nav pill and lens, green actions', async ({
+    page,
+  }) => {
     await open(page, 'light');
     const c = await chrome(page);
     expect(c.headerAlpha, 'the header is a filled block').toBe(1);
@@ -835,21 +1096,41 @@ test.describe('page chrome per appearance', () => {
     expect(c.lensChroma, 'the segment lens is tinted').toBeGreaterThan(12);
     expect(c.actionChroma, 'actions are coloured').toBeGreaterThan(60);
   });
-  test('dark: the page header is a filled neutral block; logo, current nav, lens and actions are neutral greys', async ({ page }) => {
+  test('dark: the page header is a filled neutral block; logo, current nav, lens and actions are neutral greys', async ({
+    page,
+  }) => {
     await open(page, 'dark');
     const c = await chrome(page);
     expect(c.headerAlpha, 'the header is a filled block, like in light').toBe(1);
     expect(c.header, 'painted with the header tint').toEqual(c.tint);
     expect(Math.max(...c.header) - Math.min(...c.header), 'the block is a neutral grey').toBeLessThan(16);
-    for (const [name, value] of Object.entries({ logo: c.logoChroma, nav: c.navChroma, lens: c.lensChroma, track: c.trackChroma, action: c.actionChroma })) expect(value, `${name} is a neutral grey`).toBeLessThan(16);
+    for (const [name, value] of Object.entries({
+      logo: c.logoChroma,
+      nav: c.navChroma,
+      lens: c.lensChroma,
+      track: c.trackChroma,
+      action: c.actionChroma,
+    }))
+      expect(value, `${name} is a neutral grey`).toBeLessThan(16);
   });
   test('switching appearance never moves the page header or what follows it', async ({ page }) => {
-    const geometry = () => page.evaluate(() => {
-      const header = document.querySelector('.page-header')!, tabs = document.querySelector('.settings-tabs')!;
-      const box = (el: Element) => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map(Math.round); };
-      return { header: box(header), tabs: box(tabs), padding: getComputedStyle(header).padding, radius: getComputedStyle(header).borderRadius };
-    });
-    await open(page, 'light'); const light = await geometry();
+    const geometry = () =>
+      page.evaluate(() => {
+        const header = document.querySelector('.page-header')!,
+          tabs = document.querySelector('.settings-tabs')!;
+        const box = (el: Element) => {
+          const r = el.getBoundingClientRect();
+          return [r.left, r.top, r.width, r.height].map(Math.round);
+        };
+        return {
+          header: box(header),
+          tabs: box(tabs),
+          padding: getComputedStyle(header).padding,
+          radius: getComputedStyle(header).borderRadius,
+        };
+      });
+    await open(page, 'light');
+    const light = await geometry();
     await page.emulateMedia({ colorScheme: 'dark' });
     await page.goto('/settings');
     await expect(page.locator('.settings-tabs')).toBeVisible();
@@ -862,15 +1143,21 @@ test.describe('page chrome per appearance', () => {
 test.describe('segmented lens label', () => {
   for (const width of [361, 390, 1440]) {
     test(`${width}px: the label inside the lens sits exactly over the real label`, async ({ page }) => {
-      await installActivities(page); await loginRunner(page);
+      await installActivities(page);
+      await loginRunner(page);
       await page.setViewportSize({ width, height: 844 });
       await page.goto('/settings');
       const tabs = page.locator('.settings-tabs');
       await expect(tabs.locator('.rn-moving-copy')).toHaveCount(1);
       await page.waitForTimeout(600); // the lens spring has settled
       // On phones the tabs stretch (flex: 1 0 auto) and centre their text; the lens' copy of the label must centre it the same way.
-      const centres = await tabs.evaluate(el => {
-        const centre = (node: Element) => { const range = document.createRange(); range.selectNodeContents(node); const box = range.getBoundingClientRect(); return box.left + box.width / 2; };
+      const centres = await tabs.evaluate((el) => {
+        const centre = (node: Element) => {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          const box = range.getBoundingClientRect();
+          return box.left + box.width / 2;
+        };
         const current = el.querySelector(':scope > [aria-current="page"], :scope > [aria-pressed="true"]')!;
         const labels = [...el.querySelectorAll('.rn-moving-copy > .rn-moving-label')];
         const items = [...el.querySelectorAll(':scope > :is(a, button)')];
@@ -883,33 +1170,55 @@ test.describe('segmented lens label', () => {
 
 test.describe('phone bar looks like the desktop bar', () => {
   test.beforeEach(async ({ page }) => {
-    await installActivities(page); await loginRunner(page);
+    await installActivities(page);
+    await loginRunner(page);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/dashboard');
     await expect(page.locator('.mobile-bar')).toBeVisible();
     await page.locator('.app-sidebar .goal-container:not([hidden])').waitFor({ state: 'attached' }); // hydrated: an earlier click is not handled
   });
-  test('a rounded pill inset from the edges, solid at the top and clear glass once the page scrolls under it', async ({ page }) => {
+  test('a rounded pill inset from the edges, solid at the top and clear glass once the page scrolls under it', async ({
+    page,
+  }) => {
     const barBox = async () => (await page.locator('.mobile-bar').boundingBox())!;
     const box = await barBox();
     expect(box.x, 'inset from the left edge').toBeGreaterThanOrEqual(10);
     expect(box.x + box.width, 'inset from the right edge').toBeLessThanOrEqual(390 - 10);
-    const look = () => page.locator('.mobile-bar').evaluate(el => { const cs = getComputedStyle(el); return { radius: parseFloat(cs.borderTopLeftRadius), height: el.getBoundingClientRect().height, floating: el.hasAttribute('data-floating'), background: cs.backgroundColor }; });
+    const look = () =>
+      page.locator('.mobile-bar').evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return {
+          radius: parseFloat(cs.borderTopLeftRadius),
+          height: el.getBoundingClientRect().height,
+          floating: el.hasAttribute('data-floating'),
+          background: cs.backgroundColor,
+        };
+      });
     const docked = await look();
     expect(docked.radius, 'pill radius').toBeGreaterThanOrEqual(docked.height / 2 - 1);
     expect(docked.floating).toBe(false);
-    await page.mouse.wheel(0, 300); await page.waitForTimeout(500);
-    await page.mouse.wheel(0, -40); await page.waitForTimeout(500);
+    await page.mouse.wheel(0, 300);
+    await page.waitForTimeout(500);
+    await page.mouse.wheel(0, -40);
+    await page.waitForTimeout(500);
     const floating = await look();
     expect(floating.floating, 'floating once scrolled').toBe(true);
-    const alpha = (value: string) => { const m = value.match(/\/\s*([\d.]+)\s*\)|rgba\([^)]*,\s*([\d.]+)\)/); return m ? Number(m[1] ?? m[2]) : 1; };
+    const alpha = (value: string) => {
+      const m = value.match(/\/\s*([\d.]+)\s*\)|rgba\([^)]*,\s*([\d.]+)\)/);
+      return m ? Number(m[1] ?? m[2]) : 1;
+    };
     expect(alpha(docked.background), 'docked is solid').toBe(1);
-    expect(alpha(floating.background), 'floating is clear glass').toBeLessThan(.5);
+    expect(alpha(floating.background), 'floating is clear glass').toBeLessThan(0.5);
   });
-  test('the phone bar keeps its refraction prepared but only applies it once the page scrolls under it', async ({ page, browserName }) => {
+  test('the phone bar keeps its refraction prepared but only applies it once the page scrolls under it', async ({
+    page,
+    browserName,
+  }) => {
     test.skip(browserName !== 'chromium', 'only Chromium refracts through backdrop-filter: url()');
-    const filter = () => page.locator('.mobile-bar').evaluate(el => getComputedStyle(el).backdropFilter);
-    await expect.poll(() => page.locator('.mobile-bar').evaluate(el => el.style.backdropFilter), 'prepared before any scroll').toContain('url(');
+    const filter = () => page.locator('.mobile-bar').evaluate((el) => getComputedStyle(el).backdropFilter);
+    await expect
+      .poll(() => page.locator('.mobile-bar').evaluate((el) => el.style.backdropFilter), 'prepared before any scroll')
+      .toContain('url(');
     expect(await filter(), 'docked bar applies no backdrop filter').toBe('none');
     await page.mouse.wheel(0, 300);
     await expect(page.locator('.mobile-bar')).toHaveAttribute('data-floating', '');
@@ -921,8 +1230,19 @@ test.describe('phone bar looks like the desktop bar', () => {
   test('the menu is a rounded card with a full border', async ({ page }) => {
     await page.getByRole('button', { name: '打开导航' }).click();
     await expect(bar(page)).toBeVisible();
-    await page.locator('.app-sidebar').evaluate(el => Promise.all(el.getAnimations().map(animation => animation.finished.catch(() => undefined))));
-    const card = await bar(page).evaluate(el => { const cs = getComputedStyle(el); return { radius: parseFloat(cs.borderTopLeftRadius), top: cs.borderTopWidth, right: cs.borderRightWidth, left: cs.borderLeftWidth, bottom: cs.borderBottomWidth }; });
+    await page
+      .locator('.app-sidebar')
+      .evaluate((el) => Promise.all(el.getAnimations().map((animation) => animation.finished.catch(() => undefined))));
+    const card = await bar(page).evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return {
+        radius: parseFloat(cs.borderTopLeftRadius),
+        top: cs.borderTopWidth,
+        right: cs.borderRightWidth,
+        left: cs.borderLeftWidth,
+        bottom: cs.borderBottomWidth,
+      };
+    });
     expect(card.radius).toBeGreaterThanOrEqual(16);
     expect([card.top, card.right, card.bottom, card.left]).toEqual(['1px', '1px', '1px', '1px']);
   });

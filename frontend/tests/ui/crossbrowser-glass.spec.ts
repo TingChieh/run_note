@@ -20,27 +20,44 @@ async function seedStrip(page: Page) {
 
 /** Reject inside the page so a frozen compositor fails instead of hanging the worker. */
 async function frames(page: Page) {
-  return page.evaluate(() => new Promise<number>((resolve, reject) => {
-    const start = performance.now();
-    let count = 0;
-    const timer = window.setTimeout(() => reject(new Error('30 requestAnimationFrame callbacks did not finish within 3s')), 3000);
-    const step = () => {
-      count += 1;
-      if (count >= 30) { window.clearTimeout(timer); resolve(performance.now() - start); return; }
-      requestAnimationFrame(step);
-    };
-    requestAnimationFrame(step);
-  }));
+  return page.evaluate(
+    () =>
+      new Promise<number>((resolve, reject) => {
+        const start = performance.now();
+        let count = 0;
+        const timer = window.setTimeout(
+          () => reject(new Error('30 requestAnimationFrame callbacks did not finish within 3s')),
+          3000,
+        );
+        const step = () => {
+          count += 1;
+          if (count >= 30) {
+            window.clearTimeout(timer);
+            resolve(performance.now() - start);
+            return;
+          }
+          requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      }),
+  );
 }
 
 async function blurCount(page: Page) {
-  return page.evaluate(() => [...document.querySelectorAll('*')].filter(element => {
-    const value = getComputedStyle(element).backdropFilter;
-    return value !== 'none' && value !== '';
-  }).length);
+  return page.evaluate(
+    () =>
+      [...document.querySelectorAll('*')].filter((element) => {
+        const value = getComputedStyle(element).backdropFilter;
+        return value !== 'none' && value !== '';
+      }).length,
+  );
 }
 
-test('history cards stay sharp and thirty frames finish well under a second', async ({ page, browserName, isMobile }) => {
+test('history cards stay sharp and thirty frames finish well under a second', async ({
+  page,
+  browserName,
+  isMobile,
+}) => {
   await seedStrip(page);
   await page.goto('/dashboard');
   const cards = page.locator('button.history-card');
@@ -60,9 +77,11 @@ test('history cards stay sharp and thirty frames finish well under a second', as
   if (browserName === 'webkit' && !isMobile) {
     const copy = page.locator('.app-sidebar nav .rn-moving-copy');
     await expect(copy).toBeAttached();
-    await expect.poll(() => copy.evaluate(element => getComputedStyle(element).clipPath)).not.toBe('none');
-    expect(await copy.evaluate(element => getComputedStyle(element).filter)).toBe('none');
+    await expect.poll(() => copy.evaluate((element) => getComputedStyle(element).clipPath)).not.toBe('none');
+    expect(await copy.evaluate((element) => getComputedStyle(element).filter)).toBe('none');
   }
+  // The explorer map starts only once a reader scrolls near it.
+  await page.getByRole('region', { name: '运动足迹', exact: true }).scrollIntoViewIfNeeded();
   await expect(page.getByTestId('route-map-ready')).toBeVisible();
   const elapsed = await frames(page);
   expect(elapsed).toBeLessThan(1000);
@@ -87,7 +106,10 @@ test('an open dialog keeps the page from scrolling underneath', async ({ page, i
   if (isMobile) {
     await page.goto(`/activities/${sampleActivity.id}`);
     await expect(page.getByRole('button', { name: '生成分享图' })).toBeEnabled();
-    await page.evaluate(() => { document.body.style.minHeight = '240vh'; window.scrollTo(0, 240); });
+    await page.evaluate(() => {
+      document.body.style.minHeight = '240vh';
+      window.scrollTo(0, 240);
+    });
     await page.getByRole('button', { name: '生成分享图' }).click();
     const dialog = page.getByRole('dialog', { name: '生成分享图' });
     await expect(dialog).toBeVisible();
@@ -103,9 +125,13 @@ test('an open dialog keeps the page from scrolling underneath', async ({ page, i
     await expect(page.locator('html')).not.toHaveClass(/rn-dialog-lock/);
     return;
   }
-  await page.goto('/activities'); await openImport(page);
+  await page.goto('/activities');
+  await openImport(page);
   await expect(page.getByRole('button', { name: '编辑', exact: true })).toBeEnabled();
-  await page.evaluate(() => { document.body.style.minHeight = '300vh'; window.scrollTo(0, 420); });
+  await page.evaluate(() => {
+    document.body.style.minHeight = '300vh';
+    window.scrollTo(0, 420);
+  });
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(200);
   await page.getByRole('button', { name: '编辑', exact: true }).click();
   await page.getByRole('button', { name: '编辑 河畔晨跑', exact: true }).click();
@@ -125,7 +151,8 @@ test('a height-only resize keeps the menu and a width change closes it', async (
   test.skip(isMobile, 'phones keep the platform select');
   await installActivities(page);
   await loginRunner(page);
-  await page.goto('/activities'); await openImport(page);
+  await page.goto('/activities');
+  await openImport(page);
   const format = page.getByLabel('文件格式', { exact: true });
   await expect(format).toHaveClass(/rn-liquid-select/);
   await format.click({ position: { x: 12, y: 20 } });
@@ -149,13 +176,14 @@ test('coarse pointers do not stack a custom menu on the native select', async ({
   test.skip(!isMobile, 'desktop keeps the custom menu');
   await installActivities(page);
   await loginRunner(page);
-  await page.goto('/activities'); await openImport(page);
+  await page.goto('/activities');
+  await openImport(page);
   const format = page.getByLabel('文件格式', { exact: true });
   await expect(format).toBeVisible();
   await expect(format).not.toHaveClass(/rn-liquid-select/);
   const card = page.locator('.activity-card').first();
   await card.hover();
-  expect(await card.evaluate(element => getComputedStyle(element).transform)).toBe('none');
+  expect(await card.evaluate((element) => getComputedStyle(element).transform)).toBe('none');
 });
 
 test('engines without overflow-clip-margin let the glass rim paint', async ({ page, browserName }) => {
@@ -167,21 +195,31 @@ test('engines without overflow-clip-margin let the glass rim paint', async ({ pa
   const surface = page.locator('.rn-glass-surface').first();
   await expect(surface).toBeAttached();
   const supported = await page.evaluate(() => CSS.supports('overflow-clip-margin: 1px'));
-  const fallback = await page.evaluate(() => [...document.styleSheets].some(sheet => {
-    const visit = (rules: CSSRuleList): boolean => {
-      for (const rule of rules) {
-        if (rule instanceof CSSSupportsRule && visit(rule.cssRules)) return true;
-        if (rule.cssText.includes('overflow-clip-margin') && rule.cssText.includes('overflow: visible')) return true;
+  const fallback = await page.evaluate(() =>
+    [...document.styleSheets].some((sheet) => {
+      const visit = (rules: CSSRuleList): boolean => {
+        for (const rule of rules) {
+          if (rule instanceof CSSSupportsRule && visit(rule.cssRules)) return true;
+          if (rule.cssText.includes('overflow-clip-margin') && rule.cssText.includes('overflow: visible')) return true;
+        }
+        return false;
+      };
+      try {
+        return visit(sheet.cssRules);
+      } catch {
+        return false;
       }
-      return false;
-    };
-    try { return visit(sheet.cssRules); } catch { return false; }
-  }));
+    }),
+  );
   expect(fallback).toBe(true);
   if (!supported) await expect(surface).toHaveCSS('overflow', 'visible');
 });
 
-test('goal titles stay on one line and the progress bar drops the native chrome', async ({ page, isMobile, browserName }) => {
+test('goal titles stay on one line and the progress bar drops the native chrome', async ({
+  page,
+  isMobile,
+  browserName,
+}) => {
   test.skip(isMobile, 'the sidebar goal sits inside the closed phone navigation');
   await loginRunner(page);
   await page.goto('/dashboard');
@@ -196,7 +234,7 @@ test('goal titles stay on one line and the progress bar drops the native chrome'
   await expect(progress).toBeVisible();
   await expect(progress).toHaveCSS('appearance', 'none');
   if (browserName === 'firefox') {
-    const bar = await progress.evaluate(element => getComputedStyle(element, '::-moz-progress-bar').backgroundColor);
+    const bar = await progress.evaluate((element) => getComputedStyle(element, '::-moz-progress-bar').backgroundColor);
     expect(bar).not.toBe('');
     expect(bar).not.toBe('rgba(0, 0, 0, 0)');
   }
@@ -230,11 +268,16 @@ test('a browser without showPopover keeps the native select', async ({ page }) =
     delete element.hidePopover;
     delete element.togglePopover;
     const node = Element.prototype as { checkVisibility?: unknown };
-    try { delete node.checkVisibility; } catch { /* non-configurable in this engine */ }
+    try {
+      delete node.checkVisibility;
+    } catch {
+      /* non-configurable in this engine */
+    }
   });
   await installActivities(page);
   await loginRunner(page);
-  await page.goto('/activities'); await openImport(page);
+  await page.goto('/activities');
+  await openImport(page);
   const format = page.getByLabel('文件格式', { exact: true });
   await expect(format).toBeVisible();
   await expect(format).not.toHaveClass(/rn-liquid-select/);
@@ -244,18 +287,26 @@ test('a browser without showPopover keeps the native select', async ({ page }) =
 
 // WebKit cannot refract. A near-opaque static rim there let the content under the floating top bar ghost through unblurred ("two stacked cards"),
 // so the floating bar is frosted glass instead: a real backdrop blur and a clearly lower fill. Docked it stays a solid card.
-test('in WebKit the floating top bar is frosted glass, not a near-opaque card with ghosting content', async ({ page, browserName, isMobile }) => {
+test('in WebKit the floating top bar is frosted glass, not a near-opaque card with ghosting content', async ({
+  page,
+  browserName,
+  isMobile,
+}) => {
   test.skip(browserName !== 'webkit' || isMobile, 'the WebKit desktop fallback of the floating bar');
   await seedStrip(page);
   await loginRunner(page);
   await page.goto('/dashboard');
   const bar = page.locator('.app-sidebar');
   await expect(bar).toBeVisible();
-  const state = () => bar.evaluate(element => {
-    const style = getComputedStyle(element);
-    const match = style.backgroundColor.match(/\/\s*([\d.]+)\s*\)|rgba\([^)]*,\s*([\d.]+)\)/);
-    return { alpha: match ? Number(match[1] ?? match[2]) : 1, blur: style.backdropFilter || style.getPropertyValue('-webkit-backdrop-filter') || 'none' };
-  });
+  const state = () =>
+    bar.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const match = style.backgroundColor.match(/\/\s*([\d.]+)\s*\)|rgba\([^)]*,\s*([\d.]+)\)/);
+      return {
+        alpha: match ? Number(match[1] ?? match[2]) : 1,
+        blur: style.backdropFilter || style.getPropertyValue('-webkit-backdrop-filter') || 'none',
+      };
+    });
   await expect(bar).not.toHaveAttribute('data-floating');
   expect((await state()).alpha).toBe(1);
   await page.evaluate(() => window.scrollTo(0, 600));
