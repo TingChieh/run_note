@@ -230,20 +230,22 @@ export function parseFootprintSnapshot(v: unknown): FootprintSnapshot {
     result: null,
   };
 }
+/**
+ * Also the page's fetch preload, so both must stay the same URL. Compact coordinates: about half the
+ * compressed size of decimal GeoJSON, decoded losslessly above.
+ */
+export const allFootprintsPath = (mode: Selection['mode']) =>
+  `/api/v1/showcase/footprints/all?${new URLSearchParams({ mode, encoding: 'delta' })}`;
 export async function readAllFootprints(
   mode: Selection['mode'],
   signal: AbortSignal,
   fetcher: typeof fetch = fetch,
 ): Promise<FootprintSnapshot> {
-  // Compact coordinates: about half the compressed size of decimal GeoJSON, decoded losslessly above.
-  const response = await fetcher(
-    `/api/v1/showcase/footprints/all?${new URLSearchParams({ mode, encoding: 'delta' })}`,
-    {
-      cache: 'no-store',
-      credentials: 'same-origin',
-      signal,
-    },
-  );
+  const response = await fetcher(allFootprintsPath(mode), {
+    cache: 'no-store',
+    credentials: 'same-origin',
+    signal,
+  });
   if (response.status === 401) throw new FootprintError('登录已过期', 401);
   let body: unknown;
   try {

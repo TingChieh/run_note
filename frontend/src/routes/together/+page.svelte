@@ -27,6 +27,7 @@
     appendRecent,
     TogetherError,
     parsePeriod,
+    togetherPath,
     periodCopy,
     type Period,
     type Together,
@@ -38,6 +39,8 @@
     loading = $state(true),
     period = $state<Period>('week'),
     selected = $state('');
+  // Requested by the HTML itself instead of after hydration; the first load() below reuses the response.
+  const firstRead = togetherPath(parsePeriod(page.url.searchParams.get('period')));
   let disposed = false,
     token = 0,
     citiesStarted = false,
@@ -247,7 +250,10 @@
   });
 </script>
 
-<svelte:head><title>{pageTitle('一起跑步', page.data.site)}</title></svelte:head>
+<svelte:head>
+  <title>{pageTitle('一起跑步', page.data.site)}</title>
+  <link rel="preload" as="fetch" href={firstRead} crossorigin="anonymous" />
+</svelte:head>
 {#snippet avatar(runner: Together['participants'][number])}
   <span class="runner-avatar" aria-hidden="true"
     >{#if runner.avatar_version}<img
