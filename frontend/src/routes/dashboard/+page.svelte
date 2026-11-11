@@ -252,6 +252,10 @@
       >{cumulative.activity_count.toLocaleString('zh-CN')} 次活动<span>·</span>{cumulative.activity_days.toLocaleString(
         'zh-CN',
       )} 个活动日
+    </p>{:else if !cumulativeMessage}
+    <!-- Holds the line's height until the totals arrive, so the cards below do not jump. -->
+    <p class="cumulative placeholder" aria-hidden="true">
+      累计 <strong>0 km</strong><span>·</span>0 次活动<span>·</span>0 个活动日
     </p>{/if}
   {#if cumulativeMessage}<FeedbackState kind="error" title={cumulativeMessage}
       ><button
@@ -287,6 +291,16 @@
           <dd data-testid={card.id}>
             {card.value}{#if card.value === '—'}<span class="sr-only">（缺失或无法可靠计算）</span>{/if}
           </dd>
+        </div>
+      {/each}
+    </dl>
+  {:else if !message}
+    <!-- Same grid and cards with hidden text: the metrics keep their height while they load. -->
+    <dl class="annual-metrics placeholder" aria-hidden="true">
+      {#each ['年度距离', '运动次数', '活动天数', '可靠平均配速'] as label}
+        <div>
+          <dt><span class="annual-icon">↗</span>{label}</dt>
+          <dd>0 km</dd>
         </div>
       {/each}
     </dl>
@@ -580,6 +594,9 @@
     gap: var(--space-6);
     margin-top: var(--space-6);
     min-width: 0;
+  }
+  .placeholder {
+    visibility: hidden;
   }
   .cumulative {
     display: flex;

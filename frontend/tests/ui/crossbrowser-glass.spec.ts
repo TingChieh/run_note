@@ -80,6 +80,8 @@ test('history cards stay sharp and thirty frames finish well under a second', as
     await expect.poll(() => copy.evaluate((element) => getComputedStyle(element).clipPath)).not.toBe('none');
     expect(await copy.evaluate((element) => getComputedStyle(element).filter)).toBe('none');
   }
+  // The explorer map starts only once a reader scrolls near it.
+  await page.getByRole('region', { name: '运动足迹', exact: true }).scrollIntoViewIfNeeded();
   await expect(page.getByTestId('route-map-ready')).toBeVisible();
   const elapsed = await frames(page);
   expect(elapsed).toBeLessThan(1000);

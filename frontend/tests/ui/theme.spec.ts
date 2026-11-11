@@ -195,7 +195,10 @@ test('trend axes redraw for the device theme and preserve the selected metric', 
   await loginRunner(page);
   await page.goto('/dashboard?year=2026');
   await dark(page);
-  const canvas = page.locator('canvas');
+  // The trend chart starts when its card comes near the viewport, as when a reader scrolls down to it.
+  const trend = page.getByRole('region', { name: '运动趋势', exact: true });
+  await trend.scrollIntoViewIfNeeded();
+  const canvas = trend.locator('canvas');
   await expect(canvas).toBeVisible();
   const pace = page.getByRole('group', { name: '趋势指标' }).getByRole('button', { name: '配速', exact: true });
   await pace.click();

@@ -367,7 +367,7 @@
           onclick={() => void shiftRecord(1)}>{@render arrowIcon('right')}</button
         >
         <div class="explorer-route" aria-label={activity ? `${activity.title}的路线` : '运动路线'}>
-          {#if route}<RouteMap {route} embedded />
+          {#if route}<RouteMap {route} embedded lazy />
           {:else}<div class="route-empty">
               {#if routeLoading || detailLoading || listLoading}<FeedbackState kind="loading" title="正在读取路线…" />
               {:else if routeError}<FeedbackState kind="error" title={routeError}

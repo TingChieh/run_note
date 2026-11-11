@@ -222,8 +222,14 @@ test.describe('horizontal lens', () => {
       await expect(nav).toHaveClass(/rn-liquid-navigation/);
       await expect(nav.getByRole('link', { name: '数据汇总', exact: true })).toHaveAttribute('aria-current', 'page');
       // The scheme switch starts a colour transition on the bar; read the colours only once it has finished (otherwise a mid-transition value like 235,235,232 is compared).
+      // Looping spinners (a map further down waits until it is scrolled near) never finish, so only finite animations count.
       await page.evaluate(() =>
-        Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined))),
+        Promise.all(
+          document
+            .getAnimations()
+            .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+            .map((animation) => animation.finished.catch(() => undefined)),
+        ),
       );
       const probe = await page.evaluate(() => {
         const rgb = (value: string) => {
@@ -946,6 +952,8 @@ test.describe('phone bar hides while scrolling down and returns on a short scrol
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/dashboard');
     await expect(mobileBar(page)).toBeVisible();
+    // Scroll once the summary has loaded and the bar listens; a load-time layout jump used to replay early scrolls.
+    await expect(page.getByTestId('annual-distance')).toBeVisible();
     expect(
       await page.evaluate(() => document.documentElement.scrollHeight),
       'the page must be tall enough to scroll',

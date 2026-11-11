@@ -44,6 +44,8 @@ async function explorer(page: Page) {
   }));
   await loginRunner(page);
   await page.goto('/dashboard?year=2026');
+  // The explorer's map starts when it comes near the viewport, as when a reader scrolls down to it.
+  await page.getByRole('region', { name: '运动足迹', exact: true }).scrollIntoViewIfNeeded();
   return state;
 }
 

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Route } from '@playwright/test';
 import { installActivities, loginRunner, sampleActivity } from '../fixtures/activities';
 import { settingsLink } from '../fixtures/top-navigation';
 const empty = {
@@ -27,6 +27,12 @@ const populated = {
   avg_pace_seconds_per_km: '351.3',
   quality_warning_count: 1,
 };
+// The trend chart starts when its card comes near the viewport, as when a reader scrolls down to it.
+async function trendCanvas(page: Page) {
+  const region = page.getByRole('region', { name: '运动趋势', exact: true });
+  await region.scrollIntoViewIfNeeded();
+  return region.locator('canvas');
+}
 async function fixture(page: Page) {
   await installActivities(page);
   const state = {
@@ -184,7 +190,8 @@ test('populated dashboard: hierarchy, disclosure, calendar keyboard, date and ch
   await expect(page.getByTestId('annual-count')).toHaveText('2 次');
   await expect(page.getByText('已知耗时合计')).toBeHidden();
   await page.getByText('统计口径与数据质量', { exact: true }).click();
-  await expect(page.getByText(/未知 1 次/).first()).toBeVisible();
+  // Formatted markup may wrap the text between the number and its unit; it still renders as one space.
+  await expect(page.getByText(/未知\s+1\s+次/).first()).toBeVisible();
   await page.getByText('统计口径与数据质量', { exact: true }).click();
   const day = page.getByRole('button', { name: /2026-10-13，/ });
   await day.focus();
@@ -198,15 +205,15 @@ test('populated dashboard: hierarchy, disclosure, calendar keyboard, date and ch
   await page.getByLabel('日历维度').selectOption('count');
   await expect(page).toHaveURL(/metric=count/);
   await expect(day).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('region', { name: '运动趋势', exact: true }).locator('canvas')).toBeVisible();
+  await expect(await trendCanvas(page)).toBeVisible();
   const trendPeriod = page.getByRole('group', { name: '趋势周期' }),
     trendMetric = page.getByRole('group', { name: '趋势指标' });
   await trendPeriod.getByRole('button', { name: '周', exact: true }).click();
-  await expect(page.getByRole('region', { name: '运动趋势', exact: true }).locator('canvas')).toBeVisible();
+  await expect(await trendCanvas(page)).toBeVisible();
   await expect(page).toHaveURL(/period=week/);
   await trendMetric.getByRole('button', { name: '配速', exact: true }).click();
   await expect(trendMetric.getByRole('button', { name: '配速', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('region', { name: '运动趋势', exact: true }).locator('canvas')).toBeVisible();
+  await expect(await trendCanvas(page)).toBeVisible();
   await trendPeriod.getByRole('button', { name: '月', exact: true }).click();
   await trendMetric.getByRole('button', { name: '距离', exact: true }).click();
   await expect(page.getByText('查看每月数据')).toBeVisible();
@@ -267,7 +274,7 @@ test('statistics and date errors have independent retries; session expiry redire
   await expect(page.getByRole('button', { name: '重试累计统计', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: '重新读取统计', exact: true }).click();
   await expect(page.getByTestId('annual-distance')).toHaveText('10.2 km');
-  await expect(page.getByRole('region', { name: '运动趋势', exact: true }).locator('canvas')).toBeVisible();
+  await expect(await trendCanvas(page)).toBeVisible();
   state.dayFailures = 1;
   await page.getByRole('button', { name: /2026-10-13，/ }).click();
   await page.getByRole('button', { name: '重试当天活动' }).click();
@@ -283,7 +290,7 @@ test('statistics and date errors have independent retries; session expiry redire
   state.trendFailures = 1;
   await page.getByRole('group', { name: '趋势周期' }).getByRole('button', { name: '周', exact: true }).click();
   await page.getByRole('button', { name: '重新读取趋势' }).click();
-  await expect(page.getByRole('region', { name: '运动趋势', exact: true }).locator('canvas')).toBeVisible();
+  await expect(await trendCanvas(page)).toBeVisible();
   state.expired = true;
   await page.getByRole('button', { name: '上一年', exact: true }).click();
   await expect(page).toHaveURL(/admin\?reason=expired/);
@@ -326,4 +333,55 @@ test('year input, boundaries, URL date restore and slow previous-year response',
   await expect(page.getByRole('heading', { name: '2026 年运动日历', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /2026-10-13，/ })).toHaveCount(1);
   await expect(page.getByRole('button', { name: /2025-10-13，/ })).toHaveCount(0);
+});
+test('the explorer map and the trend chart start only when a reader scrolls near them', async ({ page }) => {
+  await fixture(page);
+  await loginRunner(page);
+  const mapLibrary: string[] = [];
+  page.on('request', (request) => {
+    if (/\/maplibre-gl\.js(\?|$)/.test(request.url())) mapLibrary.push(request.url());
+  });
+  await page.goto('/dashboard?year=2026');
+  await expect(page.getByTestId('annual-distance')).toHaveText('10.2 km');
+  const explorer = page.getByRole('region', { name: '运动足迹', exact: true });
+  const trend = page.getByRole('region', { name: '运动趋势', exact: true });
+  await expect(explorer.getByRole('button', { name: /选择运动/ }).first()).toBeAttached();
+  await page.waitForTimeout(800);
+  // Both sit below the first screen: nothing has been fetched or drawn for them yet.
+  expect(await explorer.evaluate((el) => el.getBoundingClientRect().top)).toBeGreaterThan(1000);
+  expect(mapLibrary).toEqual([]);
+  await expect(explorer.getByTestId('route-map-ready')).toHaveCount(0);
+  await expect(trend.locator('canvas')).toHaveCount(0);
+  await explorer.scrollIntoViewIfNeeded();
+  await expect(explorer.getByTestId('route-map-ready')).toBeVisible();
+  expect(mapLibrary.length).toBeGreaterThan(0);
+  await trend.scrollIntoViewIfNeeded();
+  await expect(trend.locator('canvas')).toBeVisible();
+});
+test('the summary keeps its place while the totals and yearly metrics load', async ({ page }) => {
+  await fixture(page);
+  await loginRunner(page);
+  for (const width of [1440, 390]) {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const hold = async (route: Route) => {
+      await held;
+      await route.fallback();
+    };
+    await page.route('**/api/v1/showcase/statistics/summary**', hold);
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/dashboard?year=2026');
+    const goals = page.locator('.milestone-section');
+    await expect(goals).toBeVisible();
+    const before = await goals.evaluate((el) => el.getBoundingClientRect().top + scrollY);
+    await expect(page.getByTestId('annual-distance')).toHaveCount(0);
+    release();
+    await expect(page.getByTestId('annual-distance')).toHaveText('10.2 km');
+    await expect(page.locator('.cumulative')).toHaveCount(1);
+    // Reserved, invisible placeholders kept the space: the goals did not move when the numbers arrived.
+    expect(await goals.evaluate((el) => el.getBoundingClientRect().top + scrollY)).toBe(before);
+    await page.unroute('**/api/v1/showcase/statistics/summary**', hold);
+  }
 });

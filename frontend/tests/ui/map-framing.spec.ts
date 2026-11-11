@@ -67,6 +67,8 @@ for (const view of ['detail', 'preview'])
   test(`small loops fill the ${view} map while staying fully visible`, async ({ page }, testInfo) => {
     await installLoop(page);
     await page.goto(view === 'detail' ? `/activities/${sampleActivity.id}` : '/dashboard?year=2026');
+    // On the data summary the explorer map starts only once a reader scrolls near it.
+    if (view === 'preview') await page.getByRole('region', { name: '运动足迹', exact: true }).scrollIntoViewIfNeeded();
     await expect(page.getByTestId('route-map-ready')).toBeVisible();
     for (const width of [1440, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
@@ -75,13 +77,11 @@ for (const view of ['detail', 'preview'])
       expect((await routeExtent(page)).margin).toBeGreaterThan(20);
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       if (width !== 320)
-        await page
-          .locator(view === 'detail' ? '.detail-workspace' : '.activity-explorer')
-          .screenshot({
-            path: testInfo.outputPath(`${view}-${width}.png`),
-            animations: 'disabled',
-            style: '.glass-tuner { visibility: hidden !important; }',
-          });
+        await page.locator(view === 'detail' ? '.detail-workspace' : '.activity-explorer').screenshot({
+          path: testInfo.outputPath(`${view}-${width}.png`),
+          animations: 'disabled',
+          style: '.glass-tuner { visibility: hidden !important; }',
+        });
     }
   });
 
@@ -160,10 +160,8 @@ for (const mode of ['tracks', 'heatmap'])
       .click();
     await expect.poll(async () => (await routeExtent(page)).ratio).toBeGreaterThan(0.6);
     expect((await routeExtent(page)).margin).toBeGreaterThan(20);
-    await page
-      .locator('.map-frame')
-      .screenshot({
-        path: testInfo.outputPath(`${mode}.png`),
-        style: '.glass-tuner { visibility: hidden !important; }',
-      });
+    await page.locator('.map-frame').screenshot({
+      path: testInfo.outputPath(`${mode}.png`),
+      style: '.glass-tuner { visibility: hidden !important; }',
+    });
   });

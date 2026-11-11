@@ -7,12 +7,21 @@
   import BasemapPicker from './BasemapPicker.svelte';
   import { createBasemapController } from '#lib/map/basemap-controller.ts';
   import { watchSystemTheme } from './system-theme';
+  import { whenNearViewport } from '#lib/near-viewport.ts';
   let {
     route,
     spacious = false,
     embedded = false,
     color,
-  }: { color?: string; route: Route; spacious?: boolean; embedded?: boolean } = $props();
+    lazy = false,
+  }: {
+    color?: string;
+    route: Route;
+    spacious?: boolean;
+    embedded?: boolean;
+    /** Load and start the map only when it scrolls near the viewport (a map below the first screen). */
+    lazy?: boolean;
+  } = $props();
   let container: HTMLDivElement;
   let map: MapLibreMap | undefined,
     markers: Marker[] = [],
@@ -46,7 +55,8 @@
   let fittedWidth = 0,
     fittedHeight = 0;
   let dark = false,
-    stopTheme: (() => void) | undefined;
+    stopTheme: (() => void) | undefined,
+    stopWaiting: (() => void) | undefined;
   function loadBasemap() {
     basemapController?.retry();
   }
@@ -89,146 +99,150 @@
       dark = value;
       if (map && !disposed && !basemapController) applyMapTheme(map, dark, color);
     });
-    void (async () => {
-      try {
-        // The map stylesheet travels with the library, not with the page: it is ~70 KB that would otherwise block first paint.
-        const [lib] = await Promise.all([import('maplibre-gl'), import('maplibre-gl/dist/maplibre-gl.css')]);
-        if (disposed) return;
-        map = new lib.Map({
-          container,
-          style: createRouteMapStyle(dark),
-          center: route.start,
-          zoom: 13,
-          attributionControl: false,
-          renderWorldCopies: true,
-          maxZoom: 19,
-        });
-        observer = new ResizeObserver(() => scheduleFit());
-        observer.observe(container);
-        map.addControl(new lib.AttributionControl({ compact: true }), 'bottom-right');
-        map.addControl(new lib.NavigationControl({ showCompass: false }), 'top-right');
-        // Wait for the local GeoJSON source to render, independently of external basemap resources.
-        map.on('render', () => {
-          if (map?.getLayer('route-lines'))
-            container.dataset.routeLineColor = String(map.getPaintProperty('route-lines', 'line-color'));
-          if (
-            !disposed &&
-            !error &&
-            map &&
-            routeInitialized &&
-            fittedWidth > 0 &&
-            fittedHeight > 0 &&
-            container.clientWidth === fittedWidth &&
-            container.clientHeight === fittedHeight &&
-            !map.isMoving() &&
-            map.isSourceLoaded('route')
-          ) {
-            loaded = true;
-            hasRendered = true;
-          }
-        });
-        map.on('webglcontextlost', () => {
-          basemapController?.destroy();
-          error = '地图绘图上下文已丢失，请刷新重试。活动指标不受影响。';
-        });
-        map.on('error', (event) => {
+    const start = () =>
+      void (async () => {
+        try {
+          // The map stylesheet travels with the library, not with the page: it is ~70 KB that would otherwise block first paint.
+          const [lib] = await Promise.all([import('maplibre-gl'), import('maplibre-gl/dist/maplibre-gl.css')]);
           if (disposed) return;
-          if (!('sourceId' in event) || event.sourceId !== 'route') return;
-          error = '地图绘制失败。可刷新重试，活动指标不受影响。';
-        });
-        map.on('load', () => {
-          if (!map || disposed) return;
-          map.addSource('route', { type: 'geojson', data: { type: 'FeatureCollection', features: route.features } });
-          map.addLayer({
-            id: 'route-lines',
-            type: 'line',
-            source: 'route',
-            filter: ['==', '$type', 'LineString'],
-            paint: { 'line-color': color ?? '#14785b', 'line-width': 4 },
-            layout: { 'line-join': 'round', 'line-cap': 'round' },
+          map = new lib.Map({
+            container,
+            style: createRouteMapStyle(dark),
+            center: route.start,
+            zoom: 13,
+            attributionControl: false,
+            renderWorldCopies: true,
+            maxZoom: 19,
           });
-          map.addLayer({
-            id: 'route-points',
-            type: 'circle',
-            source: 'route',
-            filter: ['==', '$type', 'Point'],
-            paint: { 'circle-radius': 5, 'circle-color': color ?? '#14785b' },
+          observer = new ResizeObserver(() => scheduleFit());
+          observer.observe(container);
+          map.addControl(new lib.AttributionControl({ compact: true }), 'bottom-right');
+          map.addControl(new lib.NavigationControl({ showCompass: false }), 'top-right');
+          // Wait for the local GeoJSON source to render, independently of external basemap resources.
+          map.on('render', () => {
+            if (map?.getLayer('route-lines'))
+              container.dataset.routeLineColor = String(map.getPaintProperty('route-lines', 'line-color'));
+            if (
+              !disposed &&
+              !error &&
+              map &&
+              routeInitialized &&
+              fittedWidth > 0 &&
+              fittedHeight > 0 &&
+              container.clientWidth === fittedWidth &&
+              container.clientHeight === fittedHeight &&
+              !map.isMoving() &&
+              map.isSourceLoaded('route')
+            ) {
+              loaded = true;
+              hasRendered = true;
+            }
           });
-          applyMapTheme(map, dark, color);
-          for (const [coordinate, label, markerColor] of [
-            [route.start, '起', color ?? '#14785b'],
-            [route.end, '终', '#bd4d29'],
-          ] as const) {
-            const element = document.createElement('span');
-            element.textContent = label;
-            element.setAttribute('aria-label', label === '起' ? '路线起点' : '路线终点');
-            Object.assign(element.style, {
-              background: markerColor,
-              color: 'white',
-              borderRadius: '50%',
-              width: '28px',
-              height: '28px',
-              lineHeight: '28px',
-              textAlign: 'center',
-              border: '2px solid white',
-              boxShadow: '0 1px 4px #0003',
-            });
-            markers.push(
-              new lib.Marker({ element, anchor: label === '起' ? 'bottom-right' : 'top-left' })
-                .setLngLat(coordinate)
-                .addTo(map),
-            );
-          }
-          updateRoute = (value: Route) => {
+          map.on('webglcontextlost', () => {
+            basemapController?.destroy();
+            error = '地图绘图上下文已丢失，请刷新重试。活动指标不受影响。';
+          });
+          map.on('error', (event) => {
+            if (disposed) return;
+            if (!('sourceId' in event) || event.sourceId !== 'route') return;
+            error = '地图绘制失败。可刷新重试，活动指标不受影响。';
+          });
+          map.on('load', () => {
             if (!map || disposed) return;
-            // Swapping routes on a live map glides to the new framing instead of jumping.
-            const animate =
-              renderedRoute !== undefined &&
-              renderedRoute !== value &&
-              !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-            renderedRoute = value;
-            map.stop();
-            (map.getSource('route') as import('maplibre-gl').GeoJSONSource).setData({
-              type: 'FeatureCollection',
-              features: value.features,
+            map.addSource('route', { type: 'geojson', data: { type: 'FeatureCollection', features: route.features } });
+            map.addLayer({
+              id: 'route-lines',
+              type: 'line',
+              source: 'route',
+              filter: ['==', '$type', 'LineString'],
+              paint: { 'line-color': color ?? '#14785b', 'line-width': 4 },
+              layout: { 'line-join': 'round', 'line-cap': 'round' },
             });
-            markers[0].setLngLat(value.start);
-            markers[1].setLngLat(value.end);
-            const points: Coordinate[] = value.features.flatMap((f) =>
-              f.geometry.type === 'Point' ? [f.geometry.coordinates] : f.geometry.coordinates,
-            );
-            bounds = new lib.LngLatBounds(points[0], points[0]);
-            for (const point of points) bounds.extend(point);
-            loaded = false;
-            fittedWidth = 0;
-            fittedHeight = 0;
-            scheduleFit(animate ? 280 : 0);
-          };
-          routeInitialized = true;
-          updateRoute(route);
-          routeReady = true;
-          // Fit locally before scheduling external viewport tile requests.
-          requestAnimationFrame(() => {
-            if (!disposed && map)
-              basemapController = createBasemapController(
-                map,
-                'route-lines',
-                (state) => {
-                  basemapStatus = state.status;
-                  basemapPreference = state.preference;
-                  basemapStyle = state.style;
-                },
-                () => color,
+            map.addLayer({
+              id: 'route-points',
+              type: 'circle',
+              source: 'route',
+              filter: ['==', '$type', 'Point'],
+              paint: { 'circle-radius': 5, 'circle-color': color ?? '#14785b' },
+            });
+            applyMapTheme(map, dark, color);
+            for (const [coordinate, label, markerColor] of [
+              [route.start, '起', color ?? '#14785b'],
+              [route.end, '终', '#bd4d29'],
+            ] as const) {
+              const element = document.createElement('span');
+              element.textContent = label;
+              element.setAttribute('aria-label', label === '起' ? '路线起点' : '路线终点');
+              Object.assign(element.style, {
+                background: markerColor,
+                color: 'white',
+                borderRadius: '50%',
+                width: '28px',
+                height: '28px',
+                lineHeight: '28px',
+                textAlign: 'center',
+                border: '2px solid white',
+                boxShadow: '0 1px 4px #0003',
+              });
+              markers.push(
+                new lib.Marker({ element, anchor: label === '起' ? 'bottom-right' : 'top-left' })
+                  .setLngLat(coordinate)
+                  .addTo(map),
               );
+            }
+            updateRoute = (value: Route) => {
+              if (!map || disposed) return;
+              // Swapping routes on a live map glides to the new framing instead of jumping.
+              const animate =
+                renderedRoute !== undefined &&
+                renderedRoute !== value &&
+                !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+              renderedRoute = value;
+              map.stop();
+              (map.getSource('route') as import('maplibre-gl').GeoJSONSource).setData({
+                type: 'FeatureCollection',
+                features: value.features,
+              });
+              markers[0].setLngLat(value.start);
+              markers[1].setLngLat(value.end);
+              const points: Coordinate[] = value.features.flatMap((f) =>
+                f.geometry.type === 'Point' ? [f.geometry.coordinates] : f.geometry.coordinates,
+              );
+              bounds = new lib.LngLatBounds(points[0], points[0]);
+              for (const point of points) bounds.extend(point);
+              loaded = false;
+              fittedWidth = 0;
+              fittedHeight = 0;
+              scheduleFit(animate ? 280 : 0);
+            };
+            routeInitialized = true;
+            updateRoute(route);
+            routeReady = true;
+            // Fit locally before scheduling external viewport tile requests.
+            requestAnimationFrame(() => {
+              if (!disposed && map)
+                basemapController = createBasemapController(
+                  map,
+                  'route-lines',
+                  (state) => {
+                    basemapStatus = state.status;
+                    basemapPreference = state.preference;
+                    basemapStyle = state.style;
+                  },
+                  () => color,
+                );
+            });
           });
-        });
-      } catch {
-        if (!disposed) error = '此浏览器无法初始化地图，请使用支持 WebGL 的浏览器。';
-      }
-    })();
+        } catch {
+          if (!disposed) error = '此浏览器无法初始化地图，请使用支持 WebGL 的浏览器。';
+        }
+      })();
+    if (lazy) stopWaiting = whenNearViewport(container, start);
+    else start();
   });
   onDestroy(() => {
     disposed = true;
+    stopWaiting?.();
     stopTheme?.();
     basemapController?.destroy();
     observer?.disconnect();

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { watchSystemTheme } from './system-theme';
+  import { whenNearViewport } from '#lib/near-viewport.ts';
   import type { Trends } from '#lib/api/statistics.ts';
   import { dashboardDistance } from '#lib/api/dashboard-format.ts';
   import { TREND_LABELS, trendChartOption, trendText, type TrendMetric } from './trend-chart';
@@ -43,21 +44,27 @@
     let disposed = false;
     let observer: ResizeObserver | undefined;
     const stopTheme = watchSystemTheme(() => draw());
-    void (async () => {
-      try {
-        const ec = await import('./trend-chart-runtime');
-        if (disposed) return;
-        chart = ec.init(container);
-        mounted = true;
-        draw();
-        observer = new ResizeObserver(() => chart?.resize());
-        observer.observe(container);
-      } catch {
-        if (!disposed) message = '图表暂时无法显示，下方数据表仍可查看。';
-      }
-    })();
+    // The trend card sits far down the data summary: load the chart library only when it is near.
+    const stopWaiting = whenNearViewport(
+      container,
+      () =>
+        void (async () => {
+          try {
+            const ec = await import('./trend-chart-runtime');
+            if (disposed) return;
+            chart = ec.init(container);
+            mounted = true;
+            draw();
+            observer = new ResizeObserver(() => chart?.resize());
+            observer.observe(container);
+          } catch {
+            if (!disposed) message = '图表暂时无法显示，下方数据表仍可查看。';
+          }
+        })(),
+    );
     return () => {
       disposed = true;
+      stopWaiting();
       stopTheme();
       observer?.disconnect();
       chart?.dispose();
