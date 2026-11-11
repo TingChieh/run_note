@@ -349,7 +349,7 @@ def test_get_remains_constant_query_count_without_reading_original_geometry(clie
     event.listen(engine, "before_cursor_execute", record)
     durations, query_counts = [], []
     try:
-        for _ in range(3):
+        for attempt in range(3):
             statements.clear()
             start = time.perf_counter()
             result = read(a)
@@ -358,7 +358,12 @@ def test_get_remains_constant_query_count_without_reading_original_geometry(clie
             selected = [
                 sql for sql in statements if "FROM users LEFT OUTER JOIN footprint_snapshots" in sql
             ]
-            assert len(selected) == 1 and "footprint_snapshots.heatmap" not in selected[0]
+            assert not any("footprint_snapshots.heatmap" in sql for sql in selected)
+            # The first read loads the payload once; later reads reuse its serialized form
+            # (footprints/cache.py) and fetch only the snapshot's version columns.
+            payload = [sql for sql in selected if "footprint_snapshots.tracks" in sql]
+            first = attempt == 0
+            assert len(payload) == (1 if first else 0) and len(selected) == (2 if first else 1)
             assert result["status"] == "ready"
             assert result["result"]["activity_count"] == 6
             assert (
@@ -369,7 +374,7 @@ def test_get_remains_constant_query_count_without_reading_original_geometry(clie
                 "activity_segments" in sql or "activity_points" in sql or "ST_Intersects" in sql
                 for sql in statements
             )
-        assert len(set(query_counts)) == 1 and query_counts[0] <= 6
+        assert len(set(query_counts[1:])) == 1 and query_counts[1] <= query_counts[0] <= 7
     finally:
         event.remove(engine, "before_cursor_execute", record)
     print(
