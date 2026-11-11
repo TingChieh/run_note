@@ -673,7 +673,7 @@
         />
       </div>
     </div>{/if}
-  {#if loading}<div class="mt-4"><PageSkeleton title="正在读取活动…" /></div>
+  {#if loading}<div class="page-loading mt-4"><PageSkeleton title="正在读取活动…" /></div>
   {:else if records}
     <div class="content-reveal">
       {#if !records.items.length}<div class="mt-4">

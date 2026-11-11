@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { warmChartLibrary, warmMapLibrary } from '#lib/library-warmup.ts';
+  import { afterNextPaint, warmChartLibrary, warmMapLibrary } from '#lib/library-warmup.ts';
   import { page } from '$app/state';
   import { pageTitle } from '#lib/site.ts';
   import { useViewContext } from '#lib/view-context.ts';
@@ -35,6 +35,10 @@
       const result = await readRouteGroup(page.params.id ?? '', controller.signal);
       if (disposed || id !== requestId) return;
       data = result;
+      afterNextPaint(() => {
+        warmMapLibrary();
+        warmChartLibrary();
+      });
     } catch (cause) {
       if (disposed || id !== requestId || controller.signal.aborted) return;
       if (cause instanceof RouteGroupError && cause.status === 401) {
@@ -51,8 +55,6 @@
   onMount(() => {
     disposed = false;
     void load();
-    warmMapLibrary();
-    warmChartLibrary();
     return () => {
       disposed = true;
       ++requestId;
@@ -68,7 +70,7 @@
 />
 <div class="detail">
   <a class="button-secondary back" href={view.href('/routes')}>返回常跑路线</a>
-  {#if loading}<PageSkeleton title="正在读取路线…" />{/if}
+  {#if loading}<div class="page-loading"><PageSkeleton title="正在读取路线…" /></div>{/if}
   {#if message}<FeedbackState kind="error" title={message}
       ><button class="button-secondary" onclick={load}>重新读取</button></FeedbackState
     >{/if}

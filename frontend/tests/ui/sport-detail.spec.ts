@@ -297,3 +297,51 @@ test('sidebar goals save separate periods, survive reload, reject invalid input 
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await capture(page, 'mobile-goal');
 });
+// The record and its route load separately; hold either one to see what the page does meanwhile.
+async function hold(page: Page, pattern: RegExp) {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route(pattern, async (route) => {
+    await held;
+    await route.fallback();
+  });
+  return release;
+}
+const recordPattern = new RegExp(`/api/v1/(showcase/)?activities/${sampleActivity.id}$`);
+const routePattern = new RegExp(`/api/v1/(showcase/)?activities/${sampleActivity.id}/route$`);
+test('on a phone the footer stays below the first screen while the record loads', async ({ page }) => {
+  await installActivities(page);
+  await loginRunner(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const release = await hold(page, recordPattern);
+  await page.goto(`/activities/${sampleActivity.id}`);
+  await expect(page.getByText('正在读取活动…')).toBeVisible();
+  const footerTop = () => page.locator('.app-footer').evaluate((el) => el.getBoundingClientRect().top);
+  // The loading state fills the screen, so the arriving record cannot push the footer off it (a layout shift).
+  expect(await footerTop()).toBeGreaterThanOrEqual(844);
+  release();
+  await expect(page.getByTestId('sport-hero')).toBeVisible();
+  expect(await footerTop()).toBeGreaterThanOrEqual(844);
+});
+test('the map library is fetched once the title is on screen, while the route is still on its way', async ({
+  page,
+}) => {
+  await installActivities(page);
+  await loginRunner(page);
+  const mapLibrary: string[] = [];
+  page.on('request', (request) => {
+    if (/\/maplibre-gl\.js(\?|$)/.test(request.url())) mapLibrary.push(request.url());
+  });
+  const releaseRecord = await hold(page, recordPattern);
+  const releaseRoute = await hold(page, routePattern);
+  await page.goto(`/activities/${sampleActivity.id}`);
+  await expect(page.getByText('正在读取活动…')).toBeVisible();
+  await page.waitForTimeout(300);
+  // Nothing competes with the first paint of the page's own text on a slow connection.
+  expect(mapLibrary).toEqual([]);
+  releaseRecord();
+  await expect(page.getByTestId('sport-hero')).toContainText('河畔晨跑');
+  await expect.poll(() => mapLibrary.length).toBeGreaterThan(0);
+  releaseRoute();
+  await ready(page);
+});

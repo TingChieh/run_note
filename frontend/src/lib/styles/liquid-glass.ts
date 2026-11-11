@@ -31,10 +31,22 @@ export function liquidGlass(root: HTMLElement) {
         const keepsBlur = (element: HTMLElement) =>
           element.matches('button.bg-primary, .button-primary, button.save, button.apply-button, a.button-primary');
         const motion = matchMedia('(prefers-reduced-motion: reduce)');
-        const controls = new Map<
-          HTMLElement,
-          { update(): void; render(): void; release(): void; surface: HTMLElement; destroy(): void }
-        >();
+        // Reads (measure) and writes (apply) are split so a batch of controls costs one layout, not one each.
+        type Metrics = { W: number; H: number; left: number; right: number; viewport: number; radius: string } | null;
+        type Control = {
+          prepare(): void;
+          measure(): Metrics;
+          apply(metrics: Metrics): void;
+          render(): void;
+          release(): void;
+          surface: HTMLElement;
+          destroy(): void;
+        };
+        const controls = new Map<HTMLElement, Control>();
+        const renderAll = (list: Control[]) => {
+          const metrics = list.map((control) => control.measure());
+          list.forEach((control, index) => control.apply(metrics[index]));
+        };
         const backdrops = new Map<HTMLElement, number>();
         const enhancements = new Map<HTMLElement, { update(settings: GlassSettings): void; destroy(): void }>();
         const enhancementSelector =
@@ -43,7 +55,7 @@ export function liquidGlass(root: HTMLElement) {
         const previousOpacity = root.style.getPropertyValue('--glass-opacity');
         let frame = 0;
         const resize = new ResizeObserver((entries) => {
-          for (const entry of entries) controls.get(entry.target as HTMLElement)?.render();
+          renderAll(entries.flatMap((entry) => controls.get(entry.target as HTMLElement) ?? []));
           align();
         });
         const optics = (element: HTMLElement) => {
@@ -79,7 +91,8 @@ export function liquidGlass(root: HTMLElement) {
               aligners.forEach((fn) => fn());
             });
         }
-        function enhance(element: HTMLElement) {
+        // `isStatic` is read by the caller for the whole batch before any control is changed.
+        function enhance(element: HTMLElement, isStatic: boolean): Control {
           const isZoomGroup = element.matches('.maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in)');
           const stableBackdrop = !!element.closest('[data-glass-stable]');
           const surface = span('rn-glass-surface');
@@ -94,7 +107,7 @@ export function liquidGlass(root: HTMLElement) {
           element.prepend(surface);
           element.classList.add('rn-glass-control');
           const previousPosition = element.style.position;
-          if (getComputedStyle(element).position === 'static') element.style.position = 'relative';
+          if (isStatic) element.style.position = 'relative';
           // Only the explicitly marked dev preview's CSS background is copied, never private DOM/maps.
           const source = element.closest<HTMLElement>('[data-glass-backdrop]');
           const copy = source ? span('rn-glass-copy') : null;
@@ -133,33 +146,56 @@ export function liquidGlass(root: HTMLElement) {
               transform: `translate(${rect.left - lr.left}px, ${rect.top - lr.top}px) scale(${1 + 0.06 * press}, ${1 - 0.025 * press})`,
             });
           };
-          let published = '';
-          function render() {
+          let published = '',
+            clipMargin = '',
+            surfaceTransform = '';
+          function measure(): Metrics {
+            const W = element.clientWidth,
+              H = element.clientHeight;
+            if (!alive || !W || !H) return null;
+            const bounds = element.getBoundingClientRect();
+            return {
+              W,
+              H,
+              left: bounds.left,
+              right: bounds.right,
+              viewport: document.documentElement.clientWidth,
+              radius: getComputedStyle(element).borderTopLeftRadius,
+            };
+          }
+          // Only changed values touch the styles, so an unchanged control leaves the layout clean for the next read.
+          function apply(metrics: Metrics) {
             if (!alive) return;
-            // Publish the spring so filled content (an avatar) can deform with the glass; text and line icons hide that. Only a changed value touches the style.
+            // Publish the spring so filled content (an avatar) can deform with the glass; text and line icons hide that.
             const pressed = press.toFixed(3);
             if (pressed !== published) {
               published = pressed;
               element.style.setProperty('--glass-press', pressed);
             }
-            const W = element.clientWidth,
-              H = element.clientHeight;
-            if (!W || !H) return;
+            if (!metrics) return;
+            const { W, H } = metrics;
             // Bleed is visual only; controls resting on a viewport edge must not widen the page.
-            const bounds = element.getBoundingClientRect();
-            surface.style.overflowClipMargin = `${Math.max(0, Math.min(bleed, bounds.left, document.documentElement.clientWidth - bounds.right))}px`;
+            const margin = `${Math.max(0, Math.min(bleed, metrics.left, metrics.viewport - metrics.right))}px`;
+            if (margin !== clipMargin) {
+              clipMargin = margin;
+              surface.style.overflowClipMargin = margin;
+            }
             // Updating an SVG backdrop URL every spring frame invalidates the
             // optical surface over a live WebGL map. Keep its atlas/clip stable and
             // composite the same pressure deformation on the existing surface.
             const lensPress = stableBackdrop ? 0 : press;
-            if (stableBackdrop)
-              surface.style.transform = `scale(${1 + (10 * press) / W}, ${Math.max(1, H - 4 * press) / H})`;
+            if (stableBackdrop) {
+              const transform = `scale(${1 + (10 * press) / W}, ${Math.max(1, H - 4 * press) / H})`;
+              if (transform !== surfaceTransform) {
+                surfaceTransform = transform;
+                surface.style.transform = transform;
+              }
+            }
             const x = bleed - 5 * lensPress,
               y = bleed + 2 * lensPress;
             const width = W + 10 * lensPress,
               height = Math.max(1, H - 4 * lensPress);
-            const cssRadius = getComputedStyle(element).borderTopLeftRadius;
-            const radius = Math.min(parseFloat(cssRadius) || 0, width / 2, height / 2);
+            const radius = Math.min(parseFloat(metrics.radius) || 0, width / 2, height / 2);
             const key = `${x}|${y}|${width}|${height}|${radius}`;
             if (key !== geometry) {
               geometry = key;
@@ -180,6 +216,9 @@ export function liquidGlass(root: HTMLElement) {
               if (!copied && engine !== 'blink') place(layer, x, y, width, height, radius);
             }
             syncCopy();
+          }
+          function render() {
+            apply(measure());
           }
           const spring = createSpring(
             0,
@@ -205,15 +244,19 @@ export function liquidGlass(root: HTMLElement) {
             element.addEventListener(type, release);
           element.addEventListener('keydown', keyDown);
           element.addEventListener('keyup', keyUp);
-          const update = () => {
-            geometry = '';
-            if (!copied && engine !== 'blink') {
-              const filter = staticGlass ? 'none' : fallback();
-              layer.style.backdropFilter = filter;
-              layer.style.setProperty('-webkit-backdrop-filter', filter);
+          // Before each render pass: new glass settings redraw the lens; the size is checked by the geometry key.
+          let preparedFor: GlassSettings | undefined;
+          const prepare = () => {
+            if (preparedFor !== settings) {
+              preparedFor = settings;
+              geometry = '';
+              if (!copied && engine !== 'blink') {
+                const filter = staticGlass ? 'none' : fallback();
+                layer.style.backdropFilter = filter;
+                layer.style.setProperty('-webkit-backdrop-filter', filter);
+              }
             }
             if (element.matches(':disabled, [aria-disabled="true"]')) release();
-            render();
           };
           if (source) {
             aligners.add(syncCopy);
@@ -221,10 +264,11 @@ export function liquidGlass(root: HTMLElement) {
             resize.observe(source);
           }
           resize.observe(element);
-          update();
           return {
             surface,
-            update,
+            prepare,
+            measure,
+            apply,
             render,
             release,
             destroy() {
@@ -288,11 +332,14 @@ export function liquidGlass(root: HTMLElement) {
             }
           }
           if (!enabled) return;
-          for (const element of root.querySelectorAll<HTMLElement>(selector)) {
-            const control = controls.get(element);
-            if (control) control.update();
-            else controls.set(element, enhance(element));
-          }
+          const found = [...root.querySelectorAll<HTMLElement>(selector)];
+          // Read every new control's position before the first one is changed: one style pass for the batch.
+          const fresh = found.filter((element) => !controls.has(element));
+          const statics = new Set(fresh.filter((element) => getComputedStyle(element).position === 'static'));
+          for (const element of fresh) controls.set(element, enhance(element, statics.has(element)));
+          const live = found.map((element) => controls.get(element)!);
+          live.forEach((control) => control.prepare());
+          renderAll(live);
           for (const element of root.querySelectorAll<HTMLElement>(enhancementSelector)) {
             const existing = enhancements.get(element);
             if (existing) {
@@ -354,7 +401,7 @@ export function liquidGlass(root: HTMLElement) {
         });
         const releaseAll = () => controls.forEach((control) => control.release());
         const relayout = () => {
-          controls.forEach((control) => control.render());
+          renderAll([...controls.values()]);
           align();
         };
         preferences.forEach((query) => query.addEventListener('change', schedule));

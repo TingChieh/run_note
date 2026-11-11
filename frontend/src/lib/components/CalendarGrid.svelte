@@ -1,7 +1,7 @@
 <script lang="ts">
   import { calendarCells, type Calendar, type CalendarMetric } from '#lib/api/statistics.ts';
   import { dashboardDistance } from '#lib/api/dashboard-format.ts';
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { formatDistance } from '#lib/api/activities.ts';
   let {
     calendar,
@@ -18,9 +18,12 @@
   } = $props();
   let focused = $state<string | null>(null);
   let daysElement = $state<HTMLDivElement>();
-  let monthly = $state(false);
+  // The grid only renders in the browser, once the year's data has arrived. Pick the phone layout up
+  // front instead of drawing all 371 cells as a strip and then rebuilding them as months.
+  const PHONE = '(max-width: 767px)';
+  let monthly = $state(untrack(() => enhanced) && typeof window !== 'undefined' && window.matchMedia(PHONE).matches);
   onMount(() => {
-    const media = window.matchMedia('(max-width: 767px)');
+    const media = window.matchMedia(PHONE);
     const update = () => {
       monthly = enhanced && media.matches;
     };

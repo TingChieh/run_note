@@ -31,7 +31,9 @@
     type Period,
     type Together,
   } from '#lib/api/together.ts';
-  let data = $state<Together | null>(null),
+  // Raw: every route coordinate of the feed and the map would otherwise be read through a reactive proxy.
+  // The page only ever replaces it wholesale.
+  let data = $state.raw<Together | null>(null),
     error = $state(''),
     loading = $state(true),
     period = $state<Period>('week'),
@@ -256,9 +258,10 @@
 {/snippet}
 <div class="together-stack">
   <PageHeader title="一起跑步" description="汇聚每一段脚步，一起探索跑过的地方。" />
-  {#if loading && !data}<PageSkeleton title="正在读取一起跑步…" />{:else if error}<FeedbackState
-      kind="error"
-      title={error}><button class="button-secondary" onclick={load}>重试</button></FeedbackState
+  {#if loading && !data}<div class="page-loading">
+      <PageSkeleton title="正在读取一起跑步…" />
+    </div>{:else if error}<FeedbackState kind="error" title={error}
+      ><button class="button-secondary" onclick={load}>重试</button></FeedbackState
     >{:else if data}
     {#if !data.participants.length}<section class="aux-panel section">
         {#if page.data.user}<p>还没有人加入一起跑步</p>

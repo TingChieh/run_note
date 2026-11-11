@@ -35,7 +35,8 @@
     listError = $state('');
   let selectedId = $state(''),
     activity = $state<Activity | null>(null),
-    route = $state<Route | null>(null);
+    // Raw: the map and the drawing read every coordinate; the route is only ever replaced.
+    route = $state.raw<Route | null>(null);
   let detailLoading = $state(false),
     detailError = $state(''),
     routeLoading = $state(false),

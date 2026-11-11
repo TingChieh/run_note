@@ -108,7 +108,7 @@
 <svelte:head><title>{pageTitle('个人记录', page.data.site)}</title></svelte:head>
 <PageHeader title="个人记录" description="全部历史的最佳成绩、每个月的里程与配速、逐年变化和训练规律。" />
 <div class="records-page" data-testid={data ? (empty ? 'records-empty' : 'records-ready') : undefined}>
-  {#if loading && !data}<PageSkeleton title="正在读取个人记录…" />{/if}
+  {#if loading && !data}<div class="page-loading"><PageSkeleton title="正在读取个人记录…" /></div>{/if}
   {#if message}
     <div data-testid="records-error">
       <FeedbackState kind="error" title={message}

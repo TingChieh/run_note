@@ -23,7 +23,8 @@
   ];
   let sort = $state<RouteSort>('count');
   let data = $state<RouteGroupList | null>(null),
-    loading = $state(false),
+    // Starts loading: the server already renders the screen-tall placeholder, so nothing moves on mount.
+    loading = $state(true),
     message = $state('');
   let requestId = 0,
     disposed = false,
@@ -102,7 +103,7 @@
   {/snippet}
 </PageHeader>
 <div class="routes-page">
-  {#if loading}<PageSkeleton title="正在读取常跑路线…" />{/if}
+  {#if loading}<div class="page-loading"><PageSkeleton title="正在读取常跑路线…" /></div>{/if}
   {#if message}<FeedbackState kind="error" title={message}
       ><button class="button-secondary" onclick={() => load()}>重新读取</button></FeedbackState
     >{/if}

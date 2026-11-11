@@ -605,6 +605,11 @@
       animation: none;
     }
   }
+  /* A page's first loading state fills the screen, so the footer starts below it and the arriving
+     content does not push it off screen (a layout shift on phones). */
+  .page-loading {
+    min-height: 100svh;
+  }
   .page-header {
     display: flex;
     flex-wrap: wrap;

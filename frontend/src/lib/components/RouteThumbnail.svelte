@@ -26,7 +26,8 @@
     color?: string;
     onauthrequired?: (cause: ActivityError) => void;
   } = $props();
-  let route = $state<Route | null>(null),
+  // Raw: drawing reads every coordinate, which must not go through a reactive proxy. Only ever replaced.
+  let route = $state.raw<Route | null>(null),
     loading = $state(true),
     error = $state('');
   let element: HTMLDivElement,
