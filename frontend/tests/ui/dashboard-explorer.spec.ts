@@ -322,6 +322,11 @@ for (const width of [390, 1440])
     const region = page.getByRole('region', { name: '运动足迹', exact: true });
     await expect(region.getByTestId('route-map-ready')).toBeVisible();
     await region.locator('.activity-strip').scrollIntoViewIfNeeded();
+    // A reader slides the record into view and taps it. locator.click() would first run its own
+    // scroll-into-view, which now and then scrolls the whole page and fails the geometry check below.
+    const target = region.locator('[data-id="11111111-1111-4111-8111-000000000003"]');
+    await target.evaluate((card) => card.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'instant' }));
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     const geometry = () =>
       region.evaluate((el) =>
         Object.fromEntries(
@@ -369,7 +374,8 @@ for (const width of [390, 1440])
       await held;
       await route.fallback();
     });
-    await region.locator('[data-id="11111111-1111-4111-8111-000000000003"]').click();
+    const box = (await target.boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     await started;
     expect(await geometry()).toEqual(before);
     await expect(region.locator('[data-original-map=yes]')).toHaveCount(1);

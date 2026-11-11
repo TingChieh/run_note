@@ -7,7 +7,7 @@
   const readRoute = view.bind(scoped_readRoute, 1);
 
   import { onMount, untrack } from 'svelte';
-  import { warmMapLibrary } from '#lib/library-warmup.ts';
+  import { afterNextPaint, warmMapLibrary } from '#lib/library-warmup.ts';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import MetricSummary from '#lib/components/MetricSummary.svelte';
   import DeviceMetrics from '#lib/components/DeviceMetrics.svelte';
@@ -34,7 +34,8 @@
     type Route,
   } from '#lib/api/activities.ts';
   let activity = $state<Activity | null>(null),
-    route = $state<Route | null>(null),
+    // Raw like mapRoute below: a route is only ever replaced, never edited in place.
+    route = $state.raw<Route | null>(null),
     loading = $state(true),
     routeLoading = $state(false),
     message = $state(''),
@@ -117,6 +118,8 @@
       const result = await readActivity(id, fetch, view.manage);
       if (disposed || token !== activityToken) return;
       activity = result;
+      // The title is on screen: fetch the map library while the route is still on its way.
+      if (result.has_route) afterNextPaint(warmMapLibrary);
       if (result.has_route) await loadRoute(result.id);
     } catch (cause) {
       if (!disposed && token === activityToken && !expired(cause))
@@ -162,7 +165,6 @@
   }
   onMount(() => {
     mounted = true;
-    warmMapLibrary();
     return () => {
       disposed = true;
       activityToken++;
@@ -337,7 +339,7 @@
     onswitch={switchActivity}
   />
   {#if view.manage}{#key activity.id}<SharePanel {activity} />{/key}{/if}
-{:else if loading}<div class="mt-6"><FeedbackState kind="loading" title="正在读取活动…" /></div>{/if}
+{:else if loading}<div class="page-loading mt-6"><FeedbackState kind="loading" title="正在读取活动…" /></div>{/if}
 
 <style>
   .hero-side {

@@ -20,7 +20,8 @@
   let mode = $state<Selection['mode']>('tracks');
   // Raw: a 50k-point collection must not be deep-proxied; it is only ever replaced wholesale.
   let data = $state.raw<FootprintsAll | null>(null),
-    loading = $state(false),
+    // Starts loading: the server already renders the screen-tall placeholder, so nothing moves on mount.
+    loading = $state(true),
     message = $state(''),
     requestId = 0,
     mounted = $state(false);
@@ -158,7 +159,7 @@
   <p class="mode-hint" data-testid="footprint-mode-hint">
     {mode === 'tracks' ? '看每次跑步的路线' : '看不同记录经过的区域'}
   </p>
-  {#if loading}<PageSkeleton title="正在读取个人足迹…" />{/if}
+  {#if loading}<div class="page-loading"><PageSkeleton title="正在读取个人足迹…" /></div>{/if}
   {#if status === 'pending'}<FeedbackState kind="loading" title="正在生成全部足迹…"
       ><p>导入后会自动更新，完成后即可查看全部记录。页面会自动检查进度。</p>
       <button onclick={reload} class="button-secondary mt-3">重新读取足迹</button></FeedbackState
