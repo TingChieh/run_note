@@ -1,3 +1,5 @@
+import json
+import zlib
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -160,3 +162,61 @@ def test_entries_are_bounded():
     assert len(cache._entries) == cache.MAX_ENTRIES
     assert cache._get((True, 0, "tracks", None), (1, ALGORITHM_VERSION, NOW)) is None
     cache._entries.clear()
+
+
+def raw_get(client, url, accept):
+    with client.stream("GET", url, headers={"Accept-Encoding": accept}) as response:
+        return response, b"".join(response.iter_raw())
+
+
+def test_a_cached_result_is_sent_as_one_valid_gzip_member(store, client):
+    url = SHOWCASE + "?encoding=delta"
+    for _ in range(2):
+        response, raw = raw_get(client, url, "br, gzip, zstd")
+        assert response.headers["content-encoding"] == "gzip"
+        assert response.headers["vary"] == "Accept-Encoding"
+        assert int(response.headers["content-length"]) == len(raw)
+        # wbits=31 checks the gzip header and the CRC/size trailer; nothing may follow the member.
+        inflater = zlib.decompressobj(31)
+        text = inflater.decompress(raw)
+        assert inflater.eof and not inflater.unused_data
+        body = json.loads(text)
+        assert body["data"] == expected(footprint_view, True) and body["error"] is None
+        _, plain = raw_get(client, url, "identity")
+        assert json.loads(plain)["data"] == body["data"]
+    assert len(store.reads) == 1
+
+
+@pytest.mark.parametrize("accept", ["identity", "br, zstd", "gzip;q=0", "gzip; q=0.0", ""])
+def test_clients_that_do_not_accept_gzip_get_plain_json(store, client, accept):
+    for _ in range(2):
+        response, raw = raw_get(client, SHOWCASE, accept)
+        assert "content-encoding" not in response.headers
+        assert response.headers["vary"] == "Accept-Encoding"
+        assert json.loads(raw)["data"] == expected(footprint_view, False)
+
+
+def test_an_uncached_response_is_left_to_the_edge_to_compress(store, client):
+    store.version = 4
+    response, raw = raw_get(client, SHOWCASE, "gzip")
+    assert "content-encoding" not in response.headers
+    assert json.loads(raw)["data"]["result"] is None
+
+
+@pytest.mark.parametrize(
+    ("header", "accepted"),
+    [
+        ("gzip", True),
+        ("GZip", True),
+        ("deflate, gzip;q=0.5", True),
+        ("gzip; q=1.0, br", True),
+        ("gzip;q=0", False),
+        ("gzip;q=0.000", False),
+        ("gzip;q=x", False),
+        ("x-gzip, br", False),
+        ("*", False),
+        ("", False),
+    ],
+)
+def test_accept_encoding_is_parsed_with_quality_values(header, accepted):
+    assert cache._accepts_gzip(header) is accepted
