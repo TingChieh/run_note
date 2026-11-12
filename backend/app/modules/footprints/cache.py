@@ -7,8 +7,15 @@ snapshot: its owner, source data version, algorithm version and generation time.
 content is a function of exactly those (every activity write bumps the data version, and a new
 algorithm ships with a restart), so a hit can never serve stale geometry. A hit reads only the
 snapshot's small columns.
+
+The stored result is also deflated once (level 9) so that a hit is sent gzip-encoded without
+compressing again: Caddy's on-the-fly gzip 9 made this response slower than not compressing at all,
+while its default zstd sends about 30% more bytes. A response is one gzip member, spliced from the
+per-request envelope around the stored deflate stream (Caddy passes an encoded response through).
 """
 
+import struct
+import zlib
 from collections import OrderedDict
 from threading import Lock
 
@@ -57,21 +64,61 @@ def _get(slot, identity):
         return entry[1]
 
 
-def _put(slot, identity, body):
+def _put(slot, identity, entry):
     with _lock:
-        _entries[slot] = (identity, body)
+        _entries[slot] = (identity, entry)
         _entries.move_to_end(slot)
         while len(_entries) > MAX_ENTRIES:
             _entries.popitem(last=False)
 
 
-def _respond(request, data, body):
+# Fixed gzip header (RFC 1952): deflate, no flags, no mtime, maximum compression, unknown OS.
+GZIP_HEADER = b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x02\xff"
+
+
+def _deflate(data, mode):
+    """Raw deflate. Z_SYNC_FLUSH ends on a byte boundary without a final block, so another
+    independently compressed stream may follow it in the same gzip member."""
+    compressor = zlib.compressobj(9, zlib.DEFLATED, -15)
+    return compressor.compress(data) + compressor.flush(mode)
+
+
+def _accepts_gzip(header):
+    for item in header.split(","):
+        name, _, params = item.partition(";")
+        if name.strip().lower() != "gzip":
+            continue
+        params = params.replace(" ", "").lower()
+        try:
+            return not params.startswith("q=") or float(params[2:]) > 0
+        except ValueError:
+            return False
+    return False
+
+
+def _respond(request, data, body, deflated=None):
     outer = ApiResponse[AllFootprintView](
         data={**data, "result": None}, meta=ResponseMeta(request_id=request.state.request_id)
     ).model_dump_json()
     # Inside JSON strings quotes are escaped, so this marker occurs once: the data's own result.
     head, marker, tail = outer.partition('"result":null}')
-    return Response(head + '"result":' + body + "}" + tail, media_type="application/json")
+    head, tail = (head + '"result":').encode(), ("}" + tail).encode()
+    headers = {"Vary": "Accept-Encoding"}
+    if deflated is None or not _accepts_gzip(request.headers.get("accept-encoding", "")):
+        return Response(head + body + tail, media_type="application/json", headers=headers)
+    crc = zlib.crc32(tail, zlib.crc32(body, zlib.crc32(head)))
+    size = (len(head) + len(body) + len(tail)) & 0xFFFFFFFF
+    content = b"".join(
+        (
+            GZIP_HEADER,
+            _deflate(head, zlib.Z_SYNC_FLUSH),
+            deflated,
+            _deflate(tail, zlib.Z_FINISH),
+            struct.pack("<II", crc, size),
+        )
+    )
+    headers["Content-Encoding"] = "gzip"
+    return Response(content, media_type="application/json", headers=headers)
 
 
 def all_footprints_response(request, db, owner, mode, encoding, view=None):
@@ -85,17 +132,19 @@ def all_footprints_response(request, db, owner, mode, encoding, view=None):
             snapshot.algorithm_version,
             snapshot.generated_at,
         )
-        body = _get(slot, identity)
-        if body is not None:
-            return _respond(request, snapshot_view(snapshot, version, mode, result=True), body)
+        entry = _get(slot, identity)
+        if entry is not None:
+            return _respond(request, snapshot_view(snapshot, version, mode, result=True), *entry)
     data = read_all_footprints(db, owner, mode)
     if data["result"] is None:
-        return _respond(request, data, "null")
+        return _respond(request, data, b"null")
     result = view(data["result"]) if view is not None else data["result"]
     if encoding == "delta":
         result = encode_collection(result)
-    body = AllFootprintCollection.model_validate(result).model_dump_json()
+    body = AllFootprintCollection.model_validate(result).model_dump_json().encode()
     # Rebuilt between the two reads: the payload is newer than `identity`, so it is not stored.
-    if identity is not None and data["generated_at"] == identity[2]:
-        _put(slot, identity, body)
-    return _respond(request, data, body)
+    if identity is None or data["generated_at"] != identity[2]:
+        return _respond(request, data, body)
+    entry = (body, _deflate(body, zlib.Z_SYNC_FLUSH))
+    _put(slot, identity, entry)
+    return _respond(request, data, *entry)
