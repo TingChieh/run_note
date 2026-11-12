@@ -6,6 +6,7 @@
 #   * a rendered "live" site proxies ONLY its own ports and needs no basic auth
 #   * the access limit of one site does not leak to the other
 #   * the client address handed to the application is the real peer, whatever X-Forwarded-For says
+#   * a response the API already compressed passes through untouched; a plain one is compressed
 #
 #   caddy-instances.sh      (needs caddy, python3, curl on PATH)
 set -euo pipefail
@@ -20,13 +21,24 @@ ok() { echo "ok: $*" >&2; }
 
 # four upstreams that say who they are and what client address they were told
 cat > "$T/upstream.py" <<'PY'
-import sys
+import gzip, sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 who = sys.argv[2]
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
-        body = f"{who} xff={self.headers.get('X-Forwarded-For', '-')} proto={self.headers.get('X-Forwarded-Proto', '-')}".encode()
-        self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+        # /encoded stands for the pre-compressed footprints response (backend footprints/cache.py)
+        extra = {}
+        if self.path.endswith("/encoded"):
+            body = gzip.compress(b'{"x":"' + b"x" * 4096 + b'"}', mtime=0)
+            extra = {"Content-Type": "application/json", "Content-Encoding": "gzip"}
+        elif self.path.endswith("/large"):
+            body = b'{"x":"' + b"x" * 4096 + b'"}'
+            extra = {"Content-Type": "application/json"}
+        else:
+            body = f"{who} xff={self.headers.get('X-Forwarded-For', '-')} proto={self.headers.get('X-Forwarded-Proto', '-')}".encode()
+        self.send_response(200); self.send_header("Content-Length", str(len(body)))
+        for name, value in extra.items(): self.send_header(name, value)
+        self.end_headers(); self.wfile.write(body)
     def log_message(self, *a): pass
 HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
 PY
@@ -135,5 +147,13 @@ case "$body" in *"xff=127.0.0.1"*) ;; *) fail "production API did not receive th
 body="$(get staging.example.test /api/v1/x -u staging:staging-test-password -H 'X-Forwarded-For: 203.0.113.9')"
 case "$body" in *"xff=203.0.113.9"*) fail "a spoofed X-Forwarded-For reached the legacy API: $body" ;; esac
 ok "X-Forwarded-For is overwritten with the real peer for both sites"
+accept='Accept-Encoding: gzip, deflate, br, zstd'
+get prod.example.test /api/v1/encoded -H "$accept" -D "$T/encoded.h" -o "$T/encoded.body"
+grep -iq '^content-encoding: gzip' "$T/encoded.h" || fail "an already compressed API response lost its gzip encoding"
+python3 -c 'import gzip, sys; sys.exit(gzip.decompress(open(sys.argv[1], "rb").read()) != b"{\"x\":\"" + b"x" * 4096 + b"\"}")' "$T/encoded.body" \
+  || fail "an already compressed API response was compressed again or altered"
+get prod.example.test /api/v1/large -H "$accept" -D "$T/large.h" -o /dev/null
+grep -iq '^content-encoding: zstd' "$T/large.h" || fail "a plain JSON response was not compressed with zstd"
+ok "pre-compressed API responses pass through unchanged; plain ones are compressed"
 stop_caddy
 echo "ALL CADDY INSTANCE CHECKS PASSED" >&2
