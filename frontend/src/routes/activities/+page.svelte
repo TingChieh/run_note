@@ -16,8 +16,8 @@
   import ActivityPreview from '#lib/components/ActivityPreview.svelte';
   import RoutePosterDialog from '#lib/components/RoutePosterDialog.svelte';
   import { page } from '$app/state';
-  import { onMount, tick, untrack } from 'svelte';
-  import { replaceState, snapshot } from '$app/navigation';
+  import { onMount, tick } from 'svelte';
+  import { goto, snapshot } from '$app/navigation';
   import ActivityEditor from '#lib/components/ActivityEditor.svelte';
   import MifitnessImport from '#lib/components/MifitnessImport.svelte';
   import ImportBatchPanel from '#lib/components/ImportBatchPanel.svelte';
@@ -94,27 +94,14 @@
   const controlsBusy = $derived(busy || managing || mifitnessBusy);
   const allSelected = $derived(!!records?.items.length && selected.length === records.items.length);
   const currentActivity = $derived(records?.items.find((item) => item.id === currentId) ?? null);
-  // The address carries ?id= so a refresh, Back or a shared link returns to the same record; an id that is not on this page falls back to the first record.
   function syncCurrent(list: ActivityList) {
-    const wanted = new URL(window.location.href).searchParams.get('id');
+    const url = new URL(window.location.href);
+    const wanted = url.searchParams.get('id') ?? currentId;
+    if (url.search) {
+      void goto(url.pathname, { state: page.state, shallow: true, replace: true }).catch(() => {});
+    }
     currentId = list.items.find((item) => item.id === wanted)?.id ?? list.items[0]?.id ?? null;
   }
-  $effect(() => {
-    const id = currentId;
-    // Not before the list is loaded: an id from the address must survive until syncCurrent has read it.
-    if (!mounted || !wide || !records) return;
-    untrack(() => {
-      const url = new URL(window.location.href);
-      if (id) {
-        if (url.searchParams.get('id') === id) return;
-        url.searchParams.set('id', id);
-      } else {
-        if (!url.searchParams.has('id')) return;
-        url.searchParams.delete('id');
-      }
-      replaceState(url, page.state);
-    });
-  });
   function openRecord(activity: Activity, event: MouseEvent) {
     if (
       !wide ||

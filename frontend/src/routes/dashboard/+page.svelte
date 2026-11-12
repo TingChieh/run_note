@@ -16,8 +16,8 @@
   import { slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import { page } from '$app/state';
-  import { replaceState } from '$app/navigation';
-  import { dashboardQuery, dashboardSelection } from '#lib/api/dashboard-query.ts';
+  import { goto } from '$app/navigation';
+  import { dashboardSelection } from '#lib/api/dashboard-query.ts';
   import {
     ActivityError,
     readActivities as scoped_readActivities,
@@ -101,17 +101,6 @@
     }
     return cause instanceof Error ? cause.message : '读取失败，请稍后重试';
   }
-  function saveSelection() {
-    if (disposed) return;
-    const url = new URL(window.location.href);
-    url.search = dashboardQuery(url.searchParams, {
-      year,
-      metric: calendarMetric,
-      period,
-      day: selectedDate,
-    }).toString();
-    replaceState(url, page.state);
-  }
   async function loadYear(restoreDay: string | null = null) {
     const token = ++yearRequest,
       requestedYear = year;
@@ -174,7 +163,6 @@
       shownDate = null;
     }
     selectedDate = date;
-    saveSelection();
     dayLoading = true;
     dayMessage = '';
     try {
@@ -198,7 +186,6 @@
     year = next;
     yearInput = String(next);
     selectedDate = null;
-    saveSelection();
     void loadYear();
   }
   function changeYear(value: string) {
@@ -218,16 +205,16 @@
   );
   let hasTrendActivities = $derived(trends?.buckets.some((bucket) => bucket.activity_count > 0) ?? false);
   onMount(() => {
-    const selection = dashboardSelection(
-      new URL(window.location.href).searchParams,
-      currentYear(page.data.showcase?.timezone ?? 'UTC'),
-    );
+    const url = new URL(window.location.href);
+    const selection = dashboardSelection(url.searchParams, currentYear(page.data.showcase?.timezone ?? 'UTC'));
+    if (url.search) {
+      void goto(url.pathname, { state: page.state, shallow: true, replace: true }).catch(() => {});
+    }
     year = selection.year;
     calendarMetric = selection.metric;
     period = selection.period;
     yearInput = String(year);
     selectedDate = selection.day;
-    saveSelection();
     void loadYear(selection.day);
     void loadCumulative();
     return () => {
@@ -349,7 +336,7 @@
     {#if yearMessage}<p id="year-error" role="alert" class="mt-3 text-destructive">{yearMessage}</p>{/if}
     <div class="calendar-toolbar">
       <label
-        >日历维度 <select aria-label="日历维度" bind:value={calendarMetric} onchange={saveSelection}
+        >日历维度 <select aria-label="日历维度" bind:value={calendarMetric}
           ><option value="distance">距离</option><option value="count">次数</option></select
         ></label
       >
@@ -389,7 +376,6 @@
                 records = null;
                 dayLoading = false;
                 dayMessage = '';
-                saveSelection();
               }}>收起当天记录</button
             >
           </div>
@@ -462,7 +448,6 @@
               onclick={() => {
                 if (period === value) return;
                 period = value as Trends['period'];
-                saveSelection();
                 void loadTrend();
               }}>{text}</button
             >{/each}

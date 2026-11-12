@@ -92,14 +92,7 @@
     }
     const requested = mode;
     try {
-      // The URL update must not delay the request.
-      const navigation = goto(view.href(`/footprints?${new URLSearchParams({ mode })}`), {
-        state: page.state,
-        shallow: true,
-        replace: true,
-      }).catch(() => {});
       const result = await readAllFootprints(requested, signal);
-      await navigation;
       if (disposed || id !== requestId) return;
       const next = result.result ? footprintDisplayData(result.result) : null;
       // Keep the same object when nothing changed, so the live map is not redrawn.
@@ -136,7 +129,11 @@
   }
   onMount(() => {
     disposed = false;
-    mode = new URLSearchParams(window.location.search).get('mode') === 'heatmap' ? 'heatmap' : 'tracks';
+    const url = new URL(window.location.href);
+    mode = url.searchParams.get('mode') === 'heatmap' ? 'heatmap' : 'tracks';
+    if (url.search) {
+      void goto(url.pathname, { state: page.state, shallow: true, replace: true }).catch(() => {});
+    }
     mounted = true;
     void load();
     warmMapLibrary();

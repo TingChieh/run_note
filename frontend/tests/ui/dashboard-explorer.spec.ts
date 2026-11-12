@@ -102,7 +102,7 @@ test('whole calendar fits every year and valid year input refreshes automaticall
   await page.getByLabel('年份', { exact: true }).fill('2024');
   await expect(page.locator('[data-date]')).toHaveCount(366);
   await expect(page.getByRole('button', { name: /2024-02-29，/ })).toHaveCount(1);
-  await expect(page).toHaveURL(/year=2024/);
+  await expect(page).not.toHaveURL(/year=2024/);
 });
 
 test('latest selection, private category history, twenty-record limit, keyboard and compact horizontal cards', async ({

@@ -357,7 +357,7 @@ test('all-record footprint map preserves selection while adapting to theme chang
     'aria-pressed',
     'true',
   );
-  await expect(page).toHaveURL(/\/footprints\?mode=tracks$/);
+  await expect(page).toHaveURL(/\/footprints$/);
   await page.getByRole('button', { name: '运动热力图', exact: true }).click();
   await expect(page.getByTestId('footprint-map-ready')).toBeVisible();
   await expect(page.getByTestId('heat-legend')).toContainText('2–3 次');

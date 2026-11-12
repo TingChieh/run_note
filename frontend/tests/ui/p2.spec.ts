@@ -45,9 +45,11 @@ test('AI mock report needs explicit consent, aggregate-only payload, history and
   const generate=page.getByRole('button',{name:'生成近期总结与下周建议'});await expect(generate).toBeDisabled();expect(state.calls).toHaveLength(0);
   await responsive(page,'ai-entry');await page.getByRole('checkbox').check();await generate.click();
   await expect(page.getByRole('region',{name:'当前报告'})).toContainText('近期保持稳定');
+  await expect(page).toHaveURL(/\/ai$/);
   expect(state.calls[0].body).toEqual({date_from:'2026-09-14',date_to:'2026-10-12',consent_to_send_summary:true});
   await expect(page.getByRole('table')).toBeHidden();await page.getByText('每周明细与统计口径',{exact:true}).click();await expect(page.getByRole('table')).toBeVisible();
   await responsive(page,'ai-report');await page.getByRole('button',{name:'查看报告'}).click();await expect(page.getByRole('region',{name:'当前报告'})).toBeVisible();
+  await expect(page).toHaveURL(/\/ai$/);
   page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'删除报告'}).click();await expect(page.getByText('尚无分析报告。',{exact:true})).toBeVisible();
 });
 test('AI unknown failure retries same request; read failures recover without generation',async({page})=>{

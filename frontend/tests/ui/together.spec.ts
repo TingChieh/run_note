@@ -238,7 +238,7 @@ test('单人单条记录的摘要、排行、地图和动态完整显示', async
   }
 });
 
-test('周期更新摘要和地址，刷新保留年份且动态不变', async ({page}) => {
+test('周期更新摘要且地址栏保持干净，动态不变', async ({page}) => {
   await page.route('**/api/v1/together?*', route => {
     const period = new URL(route.request().url()).searchParams.get('period');
     const distance = period === 'year' ? 13000 : period === 'month' ? 7000 : 4000;
@@ -248,13 +248,10 @@ test('周期更新摘要和地址，刷新保留年份且动态不变', async ({
   const recent = page.locator('#together-feed');
   await expect(page.getByText('本周我们一起跑了 4.00 公里')).toBeVisible();
   await page.getByRole('button',{name:'本月'}).click();
-  await expect(page).toHaveURL(/period=month/);
+  await expect(page).toHaveURL(/\/together$/);
   await expect(page.getByText('本月我们一起跑了 7.00 公里')).toBeVisible();
   await page.getByRole('button',{name:'今年'}).click();
-  await expect(page).toHaveURL(/period=year/);
-  await expect(page.getByText('今年我们一起跑了 13.00 公里')).toBeVisible();
-  await expect(recent.locator('.activity-card')).toContainText('合成甲');
-  await page.reload();
+  await expect(page).toHaveURL(/\/together$/);
   await expect(page.getByText('今年我们一起跑了 13.00 公里')).toBeVisible();
   await expect(recent.locator('.activity-card')).toContainText('合成甲');
 });

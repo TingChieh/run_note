@@ -3,7 +3,7 @@
   import { onMount } from 'svelte';
   import { warmMapLibrary } from '#lib/library-warmup.ts';
   import { page } from '$app/state';
-  import { replaceState } from '$app/navigation';
+  import { goto } from '$app/navigation';
   import { pageTitle } from '#lib/site.ts';
   import PageHeader from '#lib/components/PageHeader.svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
@@ -222,9 +222,6 @@
   function selectPeriod(value: Period) {
     if (period === value) return;
     period = value;
-    const url = new URL(window.location.href);
-    url.searchParams.set('period', value);
-    replaceState(url, page.state);
     void load();
   }
   onMount(() => {
@@ -236,7 +233,11 @@
     };
     sync();
     query.addEventListener('change', sync);
-    period = parsePeriod(page.url.searchParams.get('period'));
+    const url = new URL(window.location.href);
+    period = parsePeriod(url.searchParams.get('period'));
+    if (url.search) {
+      void goto(url.pathname, { state: page.state, shallow: true, replace: true }).catch(() => {});
+    }
     void load();
     warmMapLibrary();
     return () => {

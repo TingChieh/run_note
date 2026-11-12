@@ -11,7 +11,7 @@
 
   import { onMount } from 'svelte';
   import { page } from '$app/state';
-  import { replaceState } from '$app/navigation';
+  import { goto } from '$app/navigation';
   import { AIError, confirmedRequestOutcome, readContext as scoped_readContext, readReports as scoped_readReports, readReport as scoped_readReport, generateReport as scoped_generateReport, deleteReport as scoped_deleteReport, type Context, type Report, type ReportList, type Create } from '#lib/api/ai.ts';
   import PageHeader from '#lib/components/PageHeader.svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
@@ -36,7 +36,7 @@
     pending = value;
     try { if (value) sessionStorage.setItem(storageKey(),JSON.stringify(value)); else sessionStorage.removeItem(storageKey()); } catch { /* In-memory key still prevents resubmission in this page. */ }
   }
-  function selectURL(id: string | null) { const url = new URL(window.location.href); if (id) url.searchParams.set('report',id); else url.searchParams.delete('report'); replaceState(url,page.state); }
+  function selectURL(_id: string | null) { const url = new URL(window.location.href); if (url.search) void goto(url.pathname, { state: page.state, shallow: true, replace: true }).catch(() => {}); }
   async function loadContext(defaults = false) {
     const value = await readContext(defaults ? undefined : from, defaults ? undefined : to);
     if (disposed) return;
@@ -96,7 +96,7 @@
     const initial = async () => { try { await loadContext(!pending); } catch (cause) { if (!disposed) message = fail(cause); } finally { if (!disposed) loading = false; } };
     if (view.manage) void initial(); else loading = false;
     void refreshHistory(0);
-    const id = new URL(window.location.href).searchParams.get('report'); if (id) void openReport(id);
+    const url = new URL(window.location.href); const id = url.searchParams.get('report'); if (url.search) void goto(url.pathname, { state: page.state, shallow: true, replace: true }).catch(() => {}); if (id) void openReport(id);
     return () => { disposed = true; historyToken++; detailToken++; selected = null; context = null; history = null; };
   });
 </script>
