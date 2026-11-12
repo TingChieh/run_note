@@ -141,13 +141,13 @@ test('home opens data summary, preserves filters and reaches every section from 
   expect(new URL(redirect.headers().location ?? '', 'http://127.0.0.1').pathname).toBe('/');
   expect(new URL(redirect.headers().location ?? '', 'http://127.0.0.1').search).toBe('?year=2026&metric=count');
   await page.goto('/');
-  await expect(page).toHaveURL(/\/(\?|$)/);
+  await expect(page).toHaveURL(/\/$/);
   await fixture(page);
   await page.goto('/admin');
   await page.getByLabel('邮箱', { exact: true }).fill('runner@example.com');
   await page.getByLabel('密码', { exact: true }).fill('Synthetic-ui-password-2026');
   await page.getByRole('button', { name: '登录', exact: true }).click();
-  await expect(page).toHaveURL(/\/(\?|$)/);
+  await expect(page).toHaveURL(/\/$/);
   await page.goto('/?year=2026&metric=count');
   await expect(page.getByRole('heading', { level: 1, name: '数据汇总', exact: true })).toBeVisible();
   await expect(page.getByTestId('annual-distance')).toHaveText('10.2 km');
@@ -170,7 +170,7 @@ test('home opens data summary, preserves filters and reaches every section from 
   await page.keyboard.press('Escape');
   await nav.getByRole('link', { name: '个人足迹', exact: true }).focus();
   await page.keyboard.press('Enter');
-  await expect(page).toHaveURL(/\/footprints\?mode=tracks$/);
+  await expect(page).toHaveURL(/\/footprints$/);
   await page.getByRole('link', { name: 'RunNote 数据汇总', exact: true }).click();
   await expect(page.getByRole('heading', { level: 1, name: '数据汇总', exact: true })).toBeVisible();
   await expect(page.getByTestId('annual-distance')).toHaveText('10.2 km');
@@ -201,16 +201,16 @@ test('populated dashboard: hierarchy, disclosure, calendar keyboard, date and ch
   await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { name: /2026-10-13 的活动/ })).toBeVisible();
   await expect(page.locator('.day-activity').filter({ hasText: '河畔晨跑' })).toBeVisible();
-  await expect(page).toHaveURL(/day=2026-10-13/);
+  await expect(page).not.toHaveURL(/day=/);
   await page.getByLabel('日历维度').selectOption('count');
-  await expect(page).toHaveURL(/metric=count/);
+  await expect(page).not.toHaveURL(/metric=/);
   await expect(day).toHaveAttribute('aria-pressed', 'true');
   await expect(await trendCanvas(page)).toBeVisible();
   const trendPeriod = page.getByRole('group', { name: '趋势周期' }),
     trendMetric = page.getByRole('group', { name: '趋势指标' });
   await trendPeriod.getByRole('button', { name: '周', exact: true }).click();
   await expect(await trendCanvas(page)).toBeVisible();
-  await expect(page).toHaveURL(/period=week/);
+  await expect(page).not.toHaveURL(/period=/);
   await trendMetric.getByRole('button', { name: '配速', exact: true }).click();
   await expect(trendMetric.getByRole('button', { name: '配速', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(await trendCanvas(page)).toBeVisible();
@@ -250,8 +250,7 @@ test('empty years, leap year, year controls, activity navigation and reload', as
   await page.getByRole('button', { name: '上一年', exact: true }).click();
   await expect(page.getByRole('button', { name: /2024-02-29，/ })).toHaveCount(1);
   await page.getByRole('button', { name: '下一年', exact: true }).click();
-  await expect(page).toHaveURL(/year=2025/);
-  await page.reload();
+  await expect(page).toHaveURL(/\/$/);
   await expect(page.getByLabel('年份', { exact: true })).toHaveValue('2025');
   await page.setViewportSize({ width: 390, height: 1100 });
   await capture(page, 'mobile-empty');

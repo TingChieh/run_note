@@ -30,10 +30,11 @@
     if (next === tab || !canLeave()) return;
     direction = TABS.findIndex(item => item.id === next) > TABS.findIndex(item => item.id === tab) ? 1 : -1;
     unsaved = false; tab = next;
-    void goto(next === 'today' ? page.url.pathname : `?tab=${next}`, { state: {}, shallow: true, replace: true }).catch(() => { /* The address is a convenience only. */ });
   }
   beforeNavigate(({ cancel, willUnload }) => { if (unsaved && (willUnload || !window.confirm('有未保存的内容，离开后会丢失。确定离开吗？'))) cancel(); });
   onMount(() => {
+    const url = new URL(window.location.href);
+    if (url.search) void goto(url.pathname, { state: page.state, shallow: true, replace: true }).catch(() => {});
     const refresh = () => { if (document.visibilityState === 'visible' && !unsaved) today = todayIn(timezone); };
     document.addEventListener('visibilitychange', refresh);
     return () => document.removeEventListener('visibilitychange', refresh);

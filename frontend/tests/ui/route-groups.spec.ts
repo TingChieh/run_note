@@ -37,13 +37,13 @@ test('lists routes with counts and best time, and links to the detail', async ({
   await expect(page.getByTestId('route-run-row')).toHaveCount(2);
 });
 
-test('sorting asks the server and keeps the choice in the URL', async ({ page }) => {
+test('sorting asks the server and keeps the URL clean', async ({ page }) => {
   const requests = await fixture(page); await loginRunner(page);
   await page.goto('/routes');
   await expect(page.getByTestId('route-card').first()).toBeVisible();
   await page.getByRole('button', { name: '最近跑过' }).click();
   await expect.poll(() => requests.some(url => url.searchParams.get('sort') === 'recent')).toBe(true);
-  await expect(page).toHaveURL(/sort=recent/);
+  await expect(page).toHaveURL(/\/routes$/);
 });
 
 test('shows the empty state', async ({ page }) => {

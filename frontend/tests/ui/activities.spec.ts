@@ -157,8 +157,8 @@ test('successful imports update the persistent sidebar distance while keeping a 
   expect(summaryReads).toBe(2);
 });
 
-// On a wide screen the list keeps the chosen record in the address (?id=).
-const listUrl = /\/activities(\?id=[0-9a-f-]+)?$/;
+// On a wide screen the list keeps the address clean without exposing ?id=.
+const listUrl = /\/activities$/;
 for (const reload of [false, true]) {
   test(`detail back returns to the list on the same page${reload ? ' after reload' : ''}`, async ({page}) => {
     const state = await installActivities(page);
@@ -247,21 +247,18 @@ test.describe('records timeline with a preview pane', () => {
     await expect(page.locator('.timeline .month').first().getByTestId('month-total')).not.toHaveText(/^本页 /);
   });
 
-  test('the first record is chosen, the address follows the choice, and the preview shows its details', async ({ page }) => {
+  test('the first record is chosen, the address stays clean, and the preview shows its details', async ({ page }) => {
     await page.goto('/activities');
     const preview = page.getByTestId('activity-preview');
     await expect(preview).toContainText('十月三');
-    await expect(page).toHaveURL(new RegExp(`id=${months[0].id}$`));
+    await expect(page).toHaveURL(/\/activities$/);
     await expect(page.locator('.card-link[aria-current="true"]')).toHaveCount(1);
     await expect(preview.getByRole('link', { name: '查看完整详情 →' })).toHaveAttribute('href', `/activities/${months[0].id}`);
     await page.getByRole('link').filter({ has: page.getByRole('heading', { name: '九月二', exact: true }) }).click();
     await expect(preview).toContainText('九月二');
-    await expect(page).toHaveURL(new RegExp(`/activities\\?id=${months[3].id}$`));
+    await expect(page).toHaveURL(/\/activities$/);
     await expect(page.locator('.card-link[aria-current="true"]')).toHaveCount(1);
     await expect(preview.getByText(/^12(\.0)? km$/).first()).toBeVisible();
-    // A reload, Back or a shared link returns to the same record.
-    await page.reload();
-    await expect(page.getByTestId('activity-preview')).toContainText('九月二');
   });
 
   test('the preview card starts level with the first record, below the month heading', async ({ page }) => {

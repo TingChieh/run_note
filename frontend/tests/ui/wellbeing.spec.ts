@@ -930,9 +930,11 @@ test('switching sections slides the page left or right following the order of th
   const pane = '.wellbeing-page > .stage > .pane';
   // Today -> History: further right, so the new section comes in from the right.
   expect(await slideSide(page, pane, () => page.getByTestId('wellbeing-tab-history').click())).toBe(1);
+  await expect(page).toHaveURL(/\/wellbeing$/);
   await settled(page);
   // History -> Medications: further left, so it comes in from the left.
   expect(await slideSide(page, pane, () => page.getByTestId('wellbeing-tab-medications').click())).toBe(-1);
+  await expect(page).toHaveURL(/\/wellbeing$/);
   await settled(page);
   // While one slides out and the other in, the page never shows an empty gap: both are present, then only the new one.
   await expect(page.locator(pane)).toHaveCount(1);

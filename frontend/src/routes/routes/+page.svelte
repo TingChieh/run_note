@@ -71,16 +71,15 @@
     if (next === sort) return;
     sort = next;
     data = null;
-    void goto(view.href(`/routes?${new URLSearchParams({ sort })}`), {
-      state: page.state,
-      shallow: true,
-      replace: true,
-    }).catch(() => {});
     void load();
   }
   onMount(() => {
     disposed = false;
-    const requested = new URLSearchParams(window.location.search).get('sort');
+    const url = new URL(window.location.href);
+    const requested = url.searchParams.get('sort');
+    if (url.search) {
+      void goto(url.pathname, { state: page.state, shallow: true, replace: true }).catch(() => {});
+    }
     sort = SORTS.some((item) => item.value === requested) ? (requested as RouteSort) : 'count';
     void load();
     return () => {
