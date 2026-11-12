@@ -14,6 +14,7 @@ from app.modules.activities.schema import (
     ActivityUpdate,
     ActivityView,
 )
+from app.modules.footprints.worker import wake_footprint_worker
 
 router = APIRouter(prefix="/api/v1/activities", tags=["activities"])
 
@@ -63,6 +64,7 @@ def delete_activities(
 ):
     data = service.delete_activities(db, identity[1].id, payload.ids)
     db.commit()
+    wake_footprint_worker(request.app)
     return envelope(request, data)
 
 
@@ -90,6 +92,7 @@ def update_activity(
         db, identity[1].id, identifier, payload, request.app.state.clock()
     )
     db.commit()
+    wake_footprint_worker(request.app)
     return envelope(request, data)
 
 
@@ -102,6 +105,7 @@ def delete_activity(
 ):
     data = service.delete_activity(db, identity[1].id, identifier)
     db.commit()
+    wake_footprint_worker(request.app)
     return envelope(request, data)
 
 
