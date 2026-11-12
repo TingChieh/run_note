@@ -221,3 +221,67 @@ def test_interrupted_advisory_acquisition_discards_unknown_lock_connection():
     with pytest.raises(RuntimeError, match="interrupted acquisition"):
         build_user_snapshot(factory, UUID(int=1), NOW)
     assert invalidations == [True]
+
+
+def test_assemble_orders_tracks_by_date_descending_then_activity_and_segment():
+    from datetime import date
+    from uuid import UUID
+
+    from app.modules.footprints import snapshot
+
+    older_id = UUID("00000000-0000-4000-8000-000000000001")
+    newer_id = UUID("00000000-0000-4000-8000-000000000002")
+    rows = [
+        (
+            older_id,
+            "旧记录",
+            date(2024, 1, 2),
+            SimpleNamespace(
+                unsupported_segment_count=0,
+                tracks=[{"segment_index": 0, "geometry": {"type": "Point", "coordinates": [1, 2]}}],
+                cells=[],
+            ),
+        ),
+        (
+            newer_id,
+            "新记录",
+            date(2026, 5, 1),
+            SimpleNamespace(
+                unsupported_segment_count=0,
+                tracks=[
+                    {"segment_index": 1, "geometry": {"type": "Point", "coordinates": [3, 4]}},
+                    {"segment_index": 0, "geometry": {"type": "Point", "coordinates": [1, 2]}},
+                ],
+                cells=[],
+            ),
+        ),
+    ]
+    calls = 0
+
+    class DB:
+        def execute(self, *_args):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return None
+            return SimpleNamespace(all=lambda: rows if calls == 2 else [])
+
+        def expunge_all(self):
+            pass
+
+        def scalar(self, *_args):
+            return 2
+
+    tracks, _ = snapshot._assemble(DB(), UUID(int=1), None, float("inf"))
+    assert [
+        (
+            f["properties"]["activity_date"],
+            f["properties"]["activity_id"],
+            f["properties"]["segment_index"],
+        )
+        for f in tracks["features"]
+    ] == [
+        ("2026-05-01", str(newer_id), 0),
+        ("2026-05-01", str(newer_id), 1),
+        ("2024-01-02", str(older_id), 0),
+    ]

@@ -4,7 +4,7 @@ import hashlib
 import json
 import logging
 from collections import Counter
-from datetime import timedelta
+from datetime import date, timedelta
 from time import monotonic
 from uuid import uuid4
 
@@ -270,6 +270,13 @@ def _assemble(db, owner, stop_event, deadline):
         after = rows[-1][0]
         # Release loaded cache objects; memory remains bounded by result size and a batch.
         db.expunge_all()
+    tracks.sort(
+        key=lambda f: (
+            -date.fromisoformat(f["properties"]["activity_date"]).toordinal(),
+            f["properties"]["activity_id"],
+            f["properties"]["segment_index"],
+        )
+    )
     heat = [
         dict(type="Feature", geometry=geometries[i, j], properties=dict(i=i, j=j, count=count))
         for (i, j), count in sorted(counts.items())

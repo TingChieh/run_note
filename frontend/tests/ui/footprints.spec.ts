@@ -570,6 +570,11 @@ test('overlapping routes expose every hit and keyboard record selection links to
   await canvas.click({ position: { x: box.width / 2, y: box.height / 2 } });
   await expect(page.getByTestId('route-choices')).toContainText('2');
   await expect(page.getByTestId('route-choices').getByRole('link')).toHaveCount(2);
+  await page.getByTestId('route-choices').getByRole('button', { name: '定位路线', exact: true }).first().click();
+  await expect(page.getByTestId('route-choices').getByRole('link')).toHaveCount(2);
+  await expect(
+    page.getByTestId('route-choices').getByRole('button', { name: '定位路线', exact: true }).first(),
+  ).toHaveAttribute('aria-pressed', 'true');
   await page.getByText('全部可显示记录', { exact: false }).click();
   await page.getByRole('button', { name: `定位 ${sampleActivity.title}`, exact: true }).focus();
   await page.keyboard.press('Enter');

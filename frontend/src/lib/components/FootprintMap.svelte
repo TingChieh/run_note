@@ -41,6 +41,7 @@
     children?: Snippet;
     onclearRunner?: () => void;
   } = $props();
+  type RecordItem = { id: string; title: string; date: string; username?: string };
   let container: HTMLDivElement,
     frameEl: HTMLDivElement,
     map: LibreMap | undefined,
@@ -49,7 +50,7 @@
   let ready = $state(false),
     error = $state(''),
     basemap = $state<'loading' | 'ready' | 'failed'>('loading');
-  let choices = $state<{ id: string; title: string; date: string }[]>([]),
+  let choices = $state<RecordItem[]>([]),
     heat = $state<number | null>(null);
   let observer: ResizeObserver | undefined;
   let basemapPreference = $state<BasemapPreference>('auto'),
@@ -68,25 +69,36 @@
     unlocatedBounds = $state<CityLocations['unlocatedBounds']>(null);
   let cityLookup = $state<'loading' | 'ready' | 'failed'>('loading'),
     selectedCity = $state('');
-  let cityWorker: Worker | undefined, appliedData: FootprintCollection | undefined;
+  let cityWorker: Worker | undefined,
+    cityRequestId = 0,
+    appliedData: FootprintCollection | undefined;
+  const cityCache = new WeakMap<FootprintCollection, CityLocations>();
   const displayData = $derived(displayFootprints(data));
   const allBounds = $derived(geometryBounds(displayData.features.map((f) => f.geometry)));
   const records = $derived(
     data.mode === 'tracks'
       ? [
           ...new Map(
-            data.features.map((f) => [
-              String(f.properties!.activity_id),
-              {
-                id: String(f.properties!.activity_id),
-                title: String(f.properties!.title),
-                date: String(f.properties!.activity_date),
-              },
-            ]),
+            data.features.map((f) => {
+              const p = f.properties!;
+              return [
+                String(p.activity_id),
+                {
+                  id: String(p.activity_id),
+                  title: String(p.title),
+                  date: String(p.activity_date),
+                  username: typeof p.username === 'string' ? p.username : undefined,
+                },
+              ];
+            }),
           ).values(),
-        ]
+        ].sort((a, b) => b.date.localeCompare(a.date))
       : [],
   );
+  const recordHref = (record: RecordItem) =>
+    record.username
+      ? `/p/${encodeURIComponent(record.username)}/activities/${record.id}`
+      : view.href(`/activities/${record.id}`);
   // Equal insets keep a symmetric route's midpoint on the canvas centre.
   // 72px clears the top-right zoom control and the layer button.
   const cameraPadding = 72;
@@ -167,8 +179,7 @@
       5,
     ]);
   }
-  function selectRecord(record: { id: string; title: string; date: string }) {
-    choices = [record];
+  function focusRecord(record: RecordItem) {
     heat = null;
     highlight([record.id]);
     frame(
@@ -176,6 +187,10 @@
         displayData.features.filter((f) => f.properties?.activity_id === record.id).map((f) => f.geometry),
       ),
     );
+  }
+  function selectRecord(record: RecordItem) {
+    choices = [record];
+    focusRecord(record);
   }
   function selectHeat(index: number) {
     const feature = displayData.features[index];
@@ -205,28 +220,37 @@
     cityName = code;
     fit(city.bounds, animate);
   }
+  function applyCityLocations(locations: CityLocations) {
+    cities = locations.cities;
+    unlocatedBounds = locations.unlocatedBounds;
+    cityName = cities[0]?.code ?? (unlocatedBounds ? 'unlocated' : '');
+    cityLookup = 'ready';
+    syncCityMarkers();
+    requestAnimationFrame(() => {
+      if (!disposed && framing === 'auto') {
+        sizeCanvas();
+        map?.resize();
+        frameInitial();
+      }
+    });
+  }
   function loadCities() {
-    cityWorker?.terminate();
+    const currentData = data;
+    const cached = cityCache.get(currentData);
+    if (cached) {
+      applyCityLocations(cached);
+      return;
+    }
+    const requestId = ++cityRequestId;
     cityLookup = 'loading';
     try {
-      const worker = new Worker(new URL('../map/footprint-cities.worker.ts', import.meta.url), { type: 'module' });
+      const worker =
+        cityWorker ?? new Worker(new URL('../map/footprint-cities.worker.ts', import.meta.url), { type: 'module' });
       cityWorker = worker;
       worker.onmessage = (event: MessageEvent<CityLocations>) => {
-        if (disposed || cityWorker !== worker) return;
-        cities = event.data.cities;
-        unlocatedBounds = event.data.unlocatedBounds;
-        cityName = cities[0]?.code ?? (unlocatedBounds ? 'unlocated' : '');
-        cityLookup = 'ready';
-        syncCityMarkers();
-        requestAnimationFrame(() => {
-          if (!disposed && framing === 'auto') {
-            sizeCanvas();
-            map?.resize();
-            frameInitial();
-          }
-        });
-        worker.terminate();
-        cityWorker = undefined;
+        if (disposed || cityWorker !== worker || requestId !== cityRequestId) return;
+        cityCache.set(currentData, event.data);
+        applyCityLocations(event.data);
       };
       worker.onerror = () => {
         if (disposed || cityWorker !== worker) return;
@@ -235,7 +259,7 @@
         worker.terminate();
         cityWorker = undefined;
       };
-      worker.postMessage(data.features.map((feature) => feature.geometry));
+      worker.postMessage(currentData.features.map((feature) => feature.geometry));
     } catch {
       cityLookup = 'failed';
       frameInitial();
@@ -546,12 +570,17 @@
               ],
               { layers: ['footprint-lines', 'footprint-points', 'footprint-fill'] },
             );
-            const unique = new Map<string, { id: string; title: string; date: string }>();
+            const unique = new Map<string, RecordItem>();
             heat = null;
             for (const hit of hits) {
               const p = hit.properties;
               if (p?.activity_id)
-                unique.set(p.activity_id, { id: p.activity_id, title: p.title, date: p.activity_date });
+                unique.set(p.activity_id, {
+                  id: p.activity_id,
+                  title: p.title,
+                  date: p.activity_date,
+                  username: typeof p.username === 'string' && p.username ? p.username : undefined,
+                });
               else if (p?.count) heat = p.count;
             }
             choices = [...unique.values()];
@@ -680,16 +709,14 @@
       <ul>
         {#each choices as record}<li>
             <div>
-              <span class="record-date">{record.date}</span><a
-                href={data.features.find((f) => f.properties?.activity_id === record.id)?.properties?.username
-                  ? `/p/${encodeURIComponent(String(data.features.find((f) => f.properties?.activity_id === record.id)?.properties?.username))}/activities/${record.id}`
-                  : view.href(`/activities/${record.id}`)}>{record.title || '未命名活动'} · 查看详情</a
+              <span class="record-date">{record.date}</span><a href={recordHref(record)}
+                >{record.title || '未命名活动'} · 查看详情</a
               >
             </div>
             <button
               type="button"
               class="button-secondary"
-              onclick={() => selectRecord(record)}
+              onclick={() => focusRecord(record)}
               aria-pressed={selectedIds.length === 1 && selectedIds[0] === record.id}>定位路线</button
             >
           </li>{/each}
@@ -700,10 +727,8 @@
       <summary>全部可显示记录（{records.length}）· 详情入口</summary>{#if recordsOpen}<ul>
           {#each records as record}<li>
               <div>
-                <span class="record-date">{record.date}</span><a
-                  href={data.features.find((f) => f.properties?.activity_id === record.id)?.properties?.username
-                    ? `/p/${encodeURIComponent(String(data.features.find((f) => f.properties?.activity_id === record.id)?.properties?.username))}/activities/${record.id}`
-                    : view.href(`/activities/${record.id}`)}>{record.title || '未命名活动'}</a
+                <span class="record-date">{record.date}</span><a href={recordHref(record)}
+                  >{record.title || '未命名活动'}</a
                 >
               </div>
               <button
