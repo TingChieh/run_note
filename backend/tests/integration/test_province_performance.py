@@ -19,6 +19,8 @@ pytestmark = pytest.mark.integration
 
 def test_dense_cumulative_route_and_parallel_statistics_fit_query_budget(clients, monkeypatch):  # noqa: F811
     a, b, _, app = clients
+    a.app.state.footprint_worker.stop()
+    b.app.state.footprint_worker.stop()
     owner = register(a)
     b.app.state.settings.site_owner_email = a.app.state.settings.site_owner_email
     b.cookies.update(a.cookies)
@@ -85,7 +87,9 @@ def test_dense_cumulative_route_and_parallel_statistics_fit_query_budget(clients
 
 def test_cumulative_provinces_keep_working_past_the_former_point_budget(clients):  # noqa: F811
     """History growing past 250,000 points used to turn the all-time card into an error."""
-    a, _, _, app = clients
+    a, b, _, app = clients
+    a.app.state.footprint_worker.stop()
+    b.app.state.footprint_worker.stop()
     owner = register(a)
     with app.state.session_factory.begin() as db:
         activity = Activity(

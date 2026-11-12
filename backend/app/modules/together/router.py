@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_session
 from app.core.responses import ApiResponse
 from app.modules.auth.router import envelope
+from app.modules.together.cache import together_response
 from app.modules.together.schema import FeedPage, TogetherView
-from app.modules.together.service import feed, overview
+from app.modules.together.service import feed
 
 router = APIRouter(prefix="/api/v1/together", tags=["together"])
 
@@ -15,14 +16,14 @@ router = APIRouter(prefix="/api/v1/together", tags=["together"])
 @router.get("", response_model=ApiResponse[TogetherView])
 def together(
     request: Request,
-    response: Response,
     db: Annotated[Session, Depends(get_session)],
     period: Literal["week", "month", "year"] = "week",
 ):
-    response.headers["Cache-Control"] = "no-store"
-    data = overview(db, request.app.state.settings, request.app.state.clock(), period)
+    response = together_response(
+        request, db, request.app.state.settings, request.app.state.clock(), period
+    )
     db.commit()
-    return envelope(request, data)
+    return response
 
 
 @router.get("/feed", response_model=ApiResponse[FeedPage])
