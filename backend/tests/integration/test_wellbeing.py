@@ -814,9 +814,11 @@ def test_medicine_list_is_managed_once_and_keeps_history_independent(clients):  
 def test_supply_pace_uses_the_days_a_medicine_has_actually_been_taken(clients):  # noqa: F811
     a, _, _, _ = clients
     register(a)
+    # Pin to afternoon Shanghai time so "5 minutes ago" never crosses midnight (16:00-16:05 UTC).
+    now = datetime(2026, 10, 15, 6, 0, tzinfo=UTC)
+    a.app.state.clock = lambda: now
     med = post(a, "/medications", **med_body()).json()["data"]
     post(a, f"/medications/{med['id']}/stock/count", pills=60)
-    now = datetime.now(UTC)
 
     def take(days_ago, pills):
         taken = post(
@@ -848,6 +850,9 @@ def test_stock_is_a_ledger_that_follows_doses_restocks_and_counts(clients):  # n
     a, b, _, _ = clients
     register(a)
     register(b)
+    now = datetime(2026, 10, 15, 6, 0, tzinfo=UTC)
+    a.app.state.clock = lambda: now
+    b.app.state.clock = lambda: now
     med = post(a, "/medications", **med_body()).json()["data"]
     path = f"/medications/{med['id']}"
     assert stock(a, med["id"]) is None
@@ -857,7 +862,6 @@ def test_stock_is_a_ledger_that_follows_doses_restocks_and_counts(clients):  # n
     assert counted["avg_daily_pills"] is None and counted["days_left"] is None
     assert counted["avg_days"] is None
     # Each dose logged by pills takes from the stock; half a pill is fine.
-    now = datetime.now(UTC)
     first = post(
         a,
         "/doses",
