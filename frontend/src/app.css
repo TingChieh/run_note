@@ -963,6 +963,9 @@
         background-color var(--transition-control),
         border-color var(--transition-control),
         box-shadow var(--transition-control);
+      /* Keeps the bar's buttons above the absolute-positioned sidebar dropdown */
+      position: relative;
+      z-index: 1;
     }
     /* The whole header (bar + dropdown menu) sticks to the top and slides away while scrolling down; the menu hangs below the bar as an overlay instead of pushing the page down. */
     /* The hidden position is 2.5rem beyond the header so the floating bar's shadow (offset .5rem, blur 1.5rem) is off screen before visibility cuts. */
@@ -1066,7 +1069,8 @@
       gap: var(--space-2);
     }
     .public-navigation {
-      gap: var(--space-3);
+      gap: var(--space-2);
+      flex-wrap: nowrap;
     }
     .public-activities {
       display: none;
