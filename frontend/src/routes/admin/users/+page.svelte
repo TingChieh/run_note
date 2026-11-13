@@ -167,6 +167,7 @@
               <td><button type="button" role="switch" class="rn-switch" aria-checked={user.wellbeing_allowed} onclick={() => toggleSwitch(user, 'wellbeing_allowed')} aria-label={`身心健康 ${user.display_name}`}><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span></button></td>
               <td><button type="button" role="switch" class="rn-switch" aria-checked={user.together_allowed} onclick={() => toggleSwitch(user, 'together_allowed')} aria-label={`一起跑步 ${user.display_name}`}><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span></button></td>
               <td><div class="user-actions">
+                <a class="button-secondary button-compact" href={`/admin/users/${user.id}/activities`} aria-label={`查看记录 ${user.display_name}`}>查看记录</a>
                 <button type="button" class="button-secondary button-compact" disabled={busy} onclick={() => edit(user)} aria-label={`编辑 ${user.display_name}`}>编辑</button>
                 {#if user.is_admin}<span class="text-sm text-muted-foreground">受保护账号</span>{:else}
                   <button type="button" class="button-secondary button-compact" disabled={busy} onclick={() => confirm(user, 'password')} aria-label={`重置密码 ${user.display_name}`}>重置密码</button>

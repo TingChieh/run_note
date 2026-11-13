@@ -3,7 +3,7 @@ import { backendRequest } from '#lib/server/backend.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-async function statusOf(request: Request, path: string): Promise<number | null> {
+export async function statusOf(request: Request, path: string): Promise<number | null> {
   try {
     const response = await backendRequest(path, request);
     await response.body?.cancel();

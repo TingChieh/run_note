@@ -63,6 +63,11 @@ export async function readAdminUsers(filters: { search?: string; is_active?: boo
     value.items.length > Number(value.limit) || value.items.length > Number(value.total)) invalid();
   return { items: value.items.map(parseUser), total: Number(value.total), limit: Number(value.limit), offset: Number(value.offset) };
 }
+export async function readAdminUser(id: string, fetcher: typeof fetch = fetch): Promise<AdminUser> {
+  const user = parseUser(await read(`/api/v1/admin/users/${identifier(id)}`, {}, fetcher));
+  if (user.id !== id) invalid();
+  return user;
+}
 export async function createAdminUser(data: AdminUserCreate, fetcher: typeof fetch = fetch): Promise<AdminUser> {
   return parseUser(await write('/api/v1/admin/users', 'POST', data, fetcher));
 }
