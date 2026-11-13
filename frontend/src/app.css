@@ -684,6 +684,9 @@
     gap: var(--space-6);
     font-size: var(--text-small);
   }
+  .public-menu-toggle, .public-mobile-menu {
+    display: none;
+  }
   .public-navigation [aria-current='page'] {
     color: var(--primary);
     font-weight: var(--weight-semibold);
@@ -1064,16 +1067,75 @@
     }
   }
   @media (max-width: 639px) {
+    .public-shell > header {
+      position: sticky;
+      top: 0;
+      z-index: var(--z-top-navigation);
+      padding: var(--top-navigation-offset) var(--space-3) 0;
+      border: 0;
+      background: transparent;
+      pointer-events: none;
+    }
+    .public-shell > header > * {
+      pointer-events: auto;
+    }
     .public-header {
-      padding: var(--space-4);
-      gap: var(--space-2);
+      padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+      gap: var(--space-4);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-pill);
+      background: var(--surface);
+      position: relative;
+      z-index: 1;
+    }
+    .public-header .brand {
+      min-width: 0;
+      width: auto;
+      overflow: hidden;
+    }
+    .public-header .brand-mark {
+      flex: none;
+    }
+    .public-header .brand-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .public-navigation {
+      flex-shrink: 0;
       gap: var(--space-2);
-      flex-wrap: nowrap;
     }
-    .public-activities {
+    .public-navigation .public-account-action, .public-activities {
       display: none;
+    }
+    .public-menu-toggle {
+      display: inline-flex;
+    }
+    .public-mobile-menu {
+      display: flex;
+      flex-direction: column;
+      position: absolute;
+      inset: calc(100% + var(--space-2)) var(--space-3) auto;
+      padding: var(--space-4);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-card);
+      background: var(--surface);
+      box-shadow: 0 16px 28px color-mix(in srgb, var(--foreground) 12%, transparent);
+    }
+    .public-mobile-menu .nav-link {
+      width: 100%;
+      white-space: nowrap;
+      text-align: left;
+      background: transparent;
+      border: 0;
+      box-shadow: none;
+      font: inherit;
+    }
+    .public-mobile-menu .public-menu-logout {
+      color: var(--muted-foreground);
+      font-weight: var(--weight-regular);
+      opacity: 0.82;
     }
     .auth-content {
       padding-block: var(--space-8);
@@ -1100,11 +1162,13 @@
     white-space: nowrap;
   }
   @media (max-width: 479px) {
-    .mobile-bar .nav-toggle {
+    .mobile-bar .nav-toggle,
+    .public-header .nav-toggle {
       width: 2.75rem;
       padding: var(--space-2);
     }
-    .mobile-bar .nav-toggle > span:not(.rn-glass-surface) {
+    .mobile-bar .nav-toggle > span:not(.rn-glass-surface),
+    .public-header .nav-toggle > span:not(.rn-glass-surface) {
       display: none;
     }
   }

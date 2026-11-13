@@ -161,8 +161,13 @@ test('all P0 route shells fit narrow and desktop viewports; details retain paren
   for (const width of [320, 390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/public/activities/11111111-1111-4111-8111-111111111111');
+    await expect(page.locator('header')).toHaveAttribute('data-auth-ready', 'true');
     await expect(page.locator('.app-sidebar')).toHaveCount(0);
-    await expect(page.getByRole('link', { name: '我的运动统计' })).toBeVisible();
+    if (width <= 639) {
+      await page.getByRole('button', { name: '打开导航' }).click();
+      await expect(page.getByRole('navigation', { name: '公开页面导航' })).toBeVisible();
+    }
+    await expect(page.getByRole('link', { name: '我的运动统计' }).filter({ visible: true })).toBeVisible();
     await noOverflow(page);
   }
 });
