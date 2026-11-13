@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 const missingId = '00000000-0000-4000-8000-000000000404';
 
-test('server routes 404 missing resources, redirect the old home, and publish crawl rules', async ({ request }) => {
+test('server routes 404 missing resources, redirect the old home, and publish crawl rules', async ({ request, baseURL }) => {
   const activity = await request.get('/activities/example', { maxRedirects: 0 });
   expect(activity.status()).toBe(404);
   expect(await activity.text()).toContain('找不到这条活动');
@@ -43,14 +43,14 @@ test('server routes 404 missing resources, redirect the old home, and publish cr
     expect(rules).toContain(`Disallow: ${path}\n`);
   }
   expect(rules).not.toContain('Disallow: /\n');
-  expect(rules).toContain('Sitemap: http://127.0.0.1:5191/sitemap.xml');
+  expect(rules).toContain(`Sitemap: ${baseURL}/sitemap.xml`);
 
   const sitemap = await request.get('/sitemap.xml', { maxRedirects: 0 });
   expect(sitemap.status()).toBe(200);
   expect(sitemap.headers()['content-type']).toContain('xml');
   const xml = await sitemap.text();
   for (const path of ['/', '/activities', '/footprints', '/ai']) {
-    expect(xml).toContain(`<loc>http://127.0.0.1:5191${path}</loc>`);
+    expect(xml).toContain(`<loc>${baseURL}${path}</loc>`);
   }
   for (const path of ['/admin', '/settings', '/shared', '/public', '/workspace']) expect(xml).not.toContain(path);
 });
