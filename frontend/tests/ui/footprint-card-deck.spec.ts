@@ -292,9 +292,30 @@ test('switching records keeps the hero and map mounted and dims the old route un
   await page.goto(`/activities/${state.records[8].id}`);
   await expect(page.getByTestId('route-map-ready')).toBeVisible();
   const deck = page.getByRole('region', { name: '本次足迹卡片' });
+  await deck.scrollIntoViewIfNeeded();
   await expect(deck.locator('.preview-browser')).toHaveAttribute('aria-busy', 'false');
   const hero = await page.getByTestId('sport-hero').elementHandle();
   const canvas = await page.locator('.maplibregl-canvas').elementHandle();
+  await page.evaluate(() => {
+    const reveal = document.querySelector<HTMLElement>('.page-reveal')!;
+    const events = { skeleton: false, progress: false, revealHidden: false, minScrollY: window.scrollY };
+    const trackScroll = () => {
+      events.minScrollY = Math.min(events.minScrollY, window.scrollY);
+    };
+    const observer = new MutationObserver(() => {
+      if (document.querySelector('[data-testid="navigation-skeleton"]')) events.skeleton = true;
+      if (document.querySelector('[data-testid="navigation-progress"]')) events.progress = true;
+      if (reveal.hidden) events.revealHidden = true;
+    });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] });
+    window.addEventListener('scroll', trackScroll, { passive: true });
+    (window as unknown as { __deckSwitchProbe?: () => typeof events }).__deckSwitchProbe = () => {
+      trackScroll();
+      observer.disconnect();
+      window.removeEventListener('scroll', trackScroll);
+      return events;
+    };
+  });
   let release!: () => void;
   const hold = new Promise<void>(resolve => { release = resolve; });
   await page.route(`**/api/v1/showcase/activities/${state.records[9].id}/route`, async route => { await hold; await route.fallback(); });
@@ -310,6 +331,9 @@ test('switching records keeps the hero and map mounted and dims the old route un
   expect(await hero!.evaluate(el => el.isConnected)).toBe(true);
   expect(await canvas!.evaluate(el => el.isConnected)).toBe(true);
   await expect(page.locator('.maplibregl-canvas')).toHaveCount(1);
+  const probe = await page.evaluate(() => (window as unknown as { __deckSwitchProbe: () => { skeleton: boolean; progress: boolean; revealHidden: boolean; minScrollY: number } }).__deckSwitchProbe());
+  expect(probe).toMatchObject({ skeleton: false, progress: false, revealHidden: false });
+  expect(probe.minScrollY).toBeGreaterThan(0);
 });
 
 test('cards share one layout size, side cards recede, and the current record stays centered', async ({ page }) => {
