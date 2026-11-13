@@ -53,7 +53,8 @@
   const site = $derived(page.data.site ?? SITE_DEFAULTS);
   let logoFailed = $state(false);
   $effect(() => { void site.logo_url; logoFailed = false; });
-  const appLayout = $derived(/^\/(dashboard|activities|footprints|together|records|routes|ai|settings|wellbeing|admin|p|workspace)(\/|$)/.test(page.url.pathname) && page.url.pathname !== '/admin' || page.url.pathname === '/' || page.status >= 400 && !/^\/admin\/?$/.test(page.url.pathname));
+  const authPage = $derived(/^\/admin\/?$/.test(page.url.pathname) && !page.data.user);
+  const appLayout = $derived(!authPage && (/^\/(dashboard|activities|footprints|together|records|routes|ai|settings|wellbeing|admin|p|workspace)(\/|$)/.test(page.url.pathname) || page.url.pathname === '/' || page.status >= 400));
   const privateView = $derived(!!page.data.user || isProtected(page.url.pathname));
   setContext(VIEW_CONTEXT, () => {
     const context = viewContext(page.url.pathname, page.data.user?.is_admin === true);
@@ -63,7 +64,6 @@
   });
   const description = $derived(pageDescription(page.url.pathname, page.status, site.description));
   const noindex = $derived(pageNoindex(page.url.pathname, page.status));
-  const authPage = $derived(/^\/admin\/?$/.test(page.url.pathname));
   const routeLoading = $derived(!!navigating.to && !navigating.shallow && !navigating.willUnload && navigating.to.url.pathname !== page.url.pathname && !(settingsSection(page.url.pathname) && settingsSection(navigating.to.url.pathname)));
   async function logout() {
     if (busy) return; busy = true; message = '';
