@@ -3,6 +3,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.errors import ApiError
 from app.core.security import hash_password
+from app.modules.activities.model import Activity
 from app.modules.admin_users.schema import AdminUser, AdminUserList
 from app.modules.auth.model import AuthSession
 from app.modules.users.model import User
@@ -83,6 +84,20 @@ def locked_user(db, identifier):
     if user is None:
         raise ApiError(404, "RESOURCE_NOT_FOUND", "账号不存在")
     return user
+
+
+def read_user(db, identifier):
+    user = db.scalar(select(User).where(User.id == identifier))
+    if user is None:
+        raise ApiError(404, "RESOURCE_NOT_FOUND", "账号不存在")
+    return user
+
+
+def activity_owner(db, identifier):
+    owner = db.scalar(select(Activity.user_id).where(Activity.id == identifier))
+    if owner is None:
+        raise ApiError(404, "RESOURCE_NOT_FOUND", "记录不存在")
+    return {"user_id": owner}
 
 
 def revoke_sessions(db, user, now):

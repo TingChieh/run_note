@@ -11,6 +11,7 @@ from app.core.security import utc_now
 from app.db.schema import get_expected_revision
 from app.db.session import create_session_factory
 from app.modules.activities.router import router as activities_router
+from app.modules.admin_users.router import activity_router as admin_activities_router
 from app.modules.admin_users.router import router as admin_users_router
 from app.modules.ai_reports.provider import OpenAIProvider
 from app.modules.ai_reports.router import router as ai_router
@@ -78,6 +79,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(showcase_router)
     app.include_router(named_showcase_router)
     app.include_router(admin_users_router)
+    app.include_router(admin_activities_router)
     app.include_router(site_router)
     app.include_router(wellbeing_router)
     app.include_router(together_router)

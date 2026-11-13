@@ -146,6 +146,19 @@ createServer(async (req, res) => {
     if (!signedIn) return send(null,401);
     if (!current.is_admin) return send(null,403,'仅站主可管理用户');
     if (req.method === 'GET') {
+      const match = url.pathname.match(/^\/api\/v1\/admin\/users\/([^/]+)(?:\/activities(?:\/([^/]+)(\/route)?)?)?$/);
+      if (match) {
+        const account = accounts.find(item => item.id === match[1]);
+        if (!account) return send(null,404,'用户不存在');
+        if (!url.pathname.includes('/activities')) return send(clean(account));
+        const item = {id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',title:'合成河畔晨跑',notes:'合成备注',activity_date:'2026-10-13',timezone:'UTC',started_at:'2026-10-13T08:00:00Z',ended_at:null,distance_m:'1000',elapsed_seconds:'600',avg_pace_seconds_per_km:'600',avg_heart_rate_bpm:148,calories_kcal:120,steps:1800,temporal_quality:'manual',visibility:'private',allow_shared_route:false,quality_summary:{valid_point_count:2},metrics_version:'synthetic',has_route:true,created_at:'2026-10-13T00:00:00Z'};
+        const items = account.username.startsWith('readonly_') ? [item, {...item,id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',title:'合成长跑',has_route:false}] : [];
+        if (!match[2]) { const limit = Number(url.searchParams.get('limit') ?? 20), offset = Number(url.searchParams.get('offset') ?? 0); return send({items:items.slice(offset,offset+limit),total:items.length,limit,offset}); }
+        const activity = items.find(row => row.id === match[2]);
+        if (!activity) return send(null,404,'记录不存在');
+        if (match[3]) return send({type:'FeatureCollection',start:[0,0],end:[0.01,0.01],features:[{type:'Feature',geometry:{type:'LineString',coordinates:[[0,0],[0.01,0.01]]},properties:{segment_index:0,point_count:2}}]});
+        return send(activity);
+      }
       const search = (url.searchParams.get('search') ?? '').toLowerCase();
       const active = url.searchParams.get('is_active');
       const rows = accounts.filter(item => (!search || item.email.includes(search) || item.username.includes(search)) && (active === null || item.is_active === (active === 'true')));
@@ -185,6 +198,12 @@ createServer(async (req, res) => {
       return send(clean(account));
     }
     return send(null,405,'不支持的请求');
+  }
+  if (url.pathname === '/api/v1/admin/activities/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/owner') {
+    if (!signedIn) return send(null,401);
+    if (!current.is_admin) return send(null,403,'仅站主可管理用户');
+    const account = accounts.findLast(item => item.username.startsWith('readonly_'));
+    return account ? send({user_id:account.id}) : send(null,404,'记录不存在');
   }
   if (url.pathname === '/api/v1/together' && req.method === 'GET') return send({distance_m:0,count:0,participants:[],recent:[],tracks:[],next_cursor:null,tracks_truncated:false});
   const publicRead = req.method === 'GET' && (url.pathname.startsWith('/api/v1/public/') || url.pathname.startsWith('/api/v1/shared/'));
@@ -247,6 +266,7 @@ createServer(async (req, res) => {
   if (url.pathname.endsWith('/statistics/records')) return send(recordsFixture(url.searchParams.get('empty') === '1'));
   const missingActivity = '00000000-0000-4000-8000-000000000404';
   const activityDetail = url.pathname.match(/^\/api\/v1\/activities\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
+  if (activityDetail && !showcase && activityDetail[1] === 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa') return send(null,404,'活动不存在');
   if (activityDetail && req.method === 'GET' && activityDetail[1].toLowerCase() === missingActivity) return send(null, 404, '活动不存在');
   if (activityDetail && req.method === 'GET') return send({ id: activityDetail[1], title: '合成活动', activity_date: '2026-10-13', timezone: 'Asia/Shanghai', started_at: '2026-10-13T00:00:00Z', ended_at: '2026-10-13T00:30:00Z', distance_m: '1000', elapsed_seconds: '600', avg_pace_seconds_per_km: '600', temporal_quality: 'complete', visibility: 'public', allow_shared_route: false, quality_summary: {}, metrics_version: 'gpx-v1', has_route: false, created_at: '2026-10-13T01:00:00Z', notes: '', category: '', tags: [] });
   const publicActivity = url.pathname.match(/^\/api\/v1\/public\/activities\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
