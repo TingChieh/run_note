@@ -16,7 +16,17 @@
   let dialog: HTMLDialogElement;
   let editButton = $state<HTMLButtonElement>();
   let disposed = false;
+  let currentActivityId = '';
   const busy = $derived(saving || deleting);
+  $effect(() => {
+    const id = activity.id;
+    if (currentActivityId && id !== currentActivityId) {
+      editing = false;
+      deleteError = '';
+      if (dialog?.open) dialog.close();
+    }
+    currentActivityId = id;
+  });
   onMount(() => () => { disposed = true; });
 
   function fail(cause: unknown): string {

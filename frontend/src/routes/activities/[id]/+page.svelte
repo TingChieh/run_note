@@ -41,8 +41,7 @@
     message = $state(''),
     routeError = $state(''),
     disposed = false;
-  let switching = $state(false),
-    swapped = $state(false);
+  let switching = $state(false);
   // The map keeps showing the previous route while a switched record's route loads,
   // so the MapLibre instance is updated in place rather than torn down.
   let mapRoute = $state.raw<Route | null>(null);
@@ -113,7 +112,6 @@
     mapRoute = null;
     routeLoading = false;
     routeError = '';
-    swapped = false;
     try {
       const result = await readActivity(id, fetch, view.manage);
       if (disposed || token !== activityToken) return;
@@ -129,7 +127,7 @@
     }
   }
   async function switchActivity(id: string): Promise<boolean> {
-    if (disposed || switching) return false;
+    if (disposed) return false;
     if (id === activity?.id) return true;
     const token = ++activityToken;
     switching = true;
@@ -151,7 +149,6 @@
       routeError = '';
       routeLoading = false;
       loading = false;
-      swapped = true;
       if (!next.has_route) mapRoute = null;
       // Commit the record first; its heavier route loads independently on demand.
       if (next.has_route) void loadRoute(next.id);
@@ -207,88 +204,86 @@
     aria-labelledby="activity-title"
     aria-busy={switching}
   >
-    {#key activity.id}
-      <div class="hero-copy" class:detail-swap={swapped}>
-        <p class="hero-kicker">
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            aria-hidden="true"><path d="m5 19 5-5 4 3 4-7 M3 8h4 M3 12h2" /><circle cx="15" cy="5" r="2" /></svg
-          >跑步详情
-        </p>
-        <h1 id="activity-title">{activity.title || '未命名活动'}</h1>
-        <p class="hero-date">{formatDate(activity.activity_date)} <span>· {activity.timezone}</span></p>
+    <div class="hero-copy">
+      <p class="hero-kicker">
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          aria-hidden="true"><path d="m5 19 5-5 4 3 4-7 M3 8h4 M3 12h2" /><circle cx="15" cy="5" r="2" /></svg
+        >跑步详情
+      </p>
+      <h1 id="activity-title">{activity.title || '未命名活动'}</h1>
+      <p class="hero-date">{formatDate(activity.activity_date)} <span>· {activity.timezone}</span></p>
+    </div>
+    <div class="hero-side">
+      <div class="hero-distance" aria-hidden="true">
+        <span>本次距离</span><strong>{formatDistance(activity.distance_m)}</strong>
       </div>
-      <div class="hero-side">
-        <div class="hero-distance" class:detail-swap={swapped} aria-hidden="true">
-          <span>本次距离</span><strong>{formatDistance(activity.distance_m)}</strong>
-        </div>
-        {#if activity.has_route}<ActivityPosterDialog activityId={activity.id} />{/if}
-      </div>
-    {/key}
+      {#if activity.has_route}<ActivityPosterDialog activityId={activity.id} />{/if}
+    </div>
   </section>
-  {#key activity.id}{#if view.manage}<ActivityActions
-        {activity}
-        onupdated={(value) => {
-          activity = value;
-        }}
-      />{/if}{/key}
+  {#if view.manage}<ActivityActions
+      {activity}
+      onupdated={(value) => {
+        activity = value;
+      }}
+    />{/if}
   <div class="detail-workspace" class:switching aria-busy={switching}>
     <section class="metric-panel" aria-label="运动指标">
       <div class="panel-heading">
         <h2>每一步，都算数</h2>
         <p class="section-caption">本次运动概览</p>
       </div>
-      {#key activity.id}<div class="metric-swap" class:detail-swap={swapped}>
-          <div class="metric-cards">
-            <MetricSummary
-              stacked
-              appearance="sport"
-              items={[
-                {
-                  label: '距离',
-                  value: formatDistance(activity.distance_m),
-                  testId: 'activity-distance',
-                  icon: 'distance',
-                },
-                {
-                  label: activity.timer_seconds != null ? '设备用时' : '经过时间',
-                  value: formatDuration(activityDuration(activity)),
-                  icon: 'duration',
-                },
-                { label: '平均配速', value: formatPace(activity.avg_pace_seconds_per_km), icon: 'pace' },
-                ...(activity.timer_seconds != null
-                  ? [{ label: '经过时间', value: formatDuration(activity.elapsed_seconds), icon: 'elapsed' as const }]
-                  : []),
-                {
-                  label: '平均心率',
-                  value: activity.avg_heart_rate_bpm == null ? '—' : `${activity.avg_heart_rate_bpm} bpm`,
-                  icon: 'heart',
-                },
-                {
-                  label: '热量',
-                  value: activity.calories_kcal == null ? '—' : `${activity.calories_kcal} kcal`,
-                  icon: 'calories',
-                },
-                { label: '步数', value: activity.steps == null ? '—' : `${activity.steps} 步`, icon: 'steps' },
-              ]}
-            />
+      <div class="metric-swap">
+        <div class="metric-cards">
+          <MetricSummary
+            stacked
+            appearance="sport"
+            items={[
+              {
+                label: '距离',
+                value: formatDistance(activity.distance_m),
+                testId: 'activity-distance',
+                icon: 'distance',
+              },
+              {
+                label: activity.timer_seconds != null ? '设备用时' : '经过时间',
+                value: formatDuration(activityDuration(activity)),
+                icon: 'duration',
+              },
+              { label: '平均配速', value: formatPace(activity.avg_pace_seconds_per_km), icon: 'pace' },
+              ...(activity.timer_seconds != null
+                ? [{ label: '经过时间', value: formatDuration(activity.elapsed_seconds), icon: 'elapsed' as const }]
+                : []),
+              {
+                label: '平均心率',
+                value: activity.avg_heart_rate_bpm == null ? '—' : `${activity.avg_heart_rate_bpm} bpm`,
+                icon: 'heart',
+              },
+              {
+                label: '热量',
+                value: activity.calories_kcal == null ? '—' : `${activity.calories_kcal} kcal`,
+                icon: 'calories',
+              },
+              { label: '步数', value: activity.steps == null ? '—' : `${activity.steps} 步`, icon: 'steps' },
+            ]}
+          />
+        </div>
+        <dl class="start-time">
+          <div>
+            <dt>开始时间</dt>
+            <dd>{formatStartTime(activity.started_at, activity.timezone)} · {activity.timezone}</dd>
           </div>
-          <dl class="start-time">
-            <div>
-              <dt>开始时间</dt>
-              <dd>{formatStartTime(activity.started_at, activity.timezone)} · {activity.timezone}</dd>
-            </div>
-          </dl>
-          {#if activity.temporal_quality !== 'complete'}<p class="metric-note">
-              {qualityLabel(activity.temporal_quality)} · 缺失或无法可靠计算的指标以“—”显示，详情见数据质量说明。
-            </p>{/if}
-        </div>{/key}
+        </dl>
+        {#if activity.temporal_quality !== 'complete'}<p class="metric-note">
+            {qualityLabel(activity.temporal_quality)} · 缺失或无法可靠计算的指标以“—”显示，详情见数据质量说明。
+          </p>{/if}
+      </div>
     </section>
     <section class="route-panel" aria-labelledby="route-title">
       <div class="panel-heading">
@@ -338,7 +333,7 @@
     onauthrequired={expired}
     onswitch={switchActivity}
   />
-  {#if view.manage}{#key activity.id}<SharePanel {activity} />{/key}{/if}
+  {#if view.manage}<SharePanel {activity} />{/if}
 {:else if loading}<div class="page-loading mt-6"><FeedbackState kind="loading" title="正在读取活动…" /></div>{/if}
 
 <style>
@@ -415,35 +410,19 @@
   .route-panel {
     min-width: 0;
   }
-  /* Switching records keeps every surface in place: dim while reading, then lift the new values in. */
+  /* Switching records keeps every surface in place and only dims on genuinely slow reads. */
   .sport-hero > div,
   .detail-workspace {
     transition: opacity var(--motion-reveal);
   }
   .sport-hero.switching > div,
   .detail-workspace.switching {
-    opacity: 0.6;
+    opacity: 0.65;
+    transition-delay: 150ms;
   }
   .route-placeholder :global(.feedback),
   .route-stage :global(.feedback) {
     animation: none;
-  }
-  .detail-swap {
-    animation: detail-swap var(--motion-reveal) both;
-  }
-  .hero-distance.detail-swap,
-  .metric-swap.detail-swap {
-    animation-delay: 40ms;
-  }
-  @keyframes detail-swap {
-    from {
-      opacity: 0;
-      transform: translate3d(0, 0.375rem, 0);
-    }
-    to {
-      opacity: 1;
-      transform: none;
-    }
   }
   .route-stage {
     position: relative;
