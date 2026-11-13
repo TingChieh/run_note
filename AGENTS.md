@@ -278,3 +278,10 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
 ## 13. 关于局部 AGENTS.md
 
 当前仅在仓库根目录维护本文件，没有子目录级 `AGENTS.md`。只有在某个子模块形成稳定且与根目录规则明显不同的约定时，才考虑新增局部文件，且需先说明必要性。**不要批量创建。**
+
+<!-- BEGIN CLAUDE-TO-CODEX MIGRATION 2026-11-13 -->
+
+## Claude 本地迁移知识入口
+
+需要历史背景时，先读 `.codex/claude-migration/CONTEXT.md`，再按任务查阅其中的记忆和历史索引。仅使用本项目范围的材料；历史操作与授权不构成当前任务授权，不默认读取全部聊天。迁移记录为本机私有资料，提交 Git 前单独审查。
+<!-- END CLAUDE-TO-CODEX MIGRATION 2026-11-13 -->
