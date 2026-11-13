@@ -199,7 +199,8 @@
       selectedIndex = index; retryIndex = null;
       await tick();
       if (valid(token)) {
-        window.scrollBy({ top: section.getBoundingClientRect().top - top, behavior: 'instant' });
+        const delta = section.getBoundingClientRect().top - top;
+        if (Math.abs(delta) > 0.5) window.scrollBy({ top: delta, behavior: 'instant' });
         if (focusCard) section.querySelector<HTMLButtonElement>('.wall-card[aria-pressed="true"]')?.focus({ preventScroll: true });
       }
     } catch (cause) { failed(cause, token); }

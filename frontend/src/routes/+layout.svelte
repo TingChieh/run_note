@@ -30,6 +30,7 @@
   // Switching between the settings sections keeps the old page on screen and skips the skeleton and fade.
   const settingsSection = (path?: string) => !!path && /^(\/workspace)?\/(settings(\/site)?|admin\/users)\/?$/.test(path);
   let quietSwap = $state(false);
+  let shallowNavigation = $state(false);
   const settingsHeader = provideSettingsHeader();
   const settingsKind = $derived.by(() => {
     const path = page.url.pathname.replace(/^\/workspace/, '').replace(/\/$/, '');
@@ -38,9 +39,13 @@
   const settingsMeta = { account: ['设置', '管理账户资料与公开主页。'], site: ['站点设置', '管理站点名称、标语、默认外观和图标。'], users: ['用户管理', '管理账号、登录权限和独立个人展示链接。'] } as const;
   beforeNavigate(navigation => {
     publicMenuOpen = false;
+    shallowNavigation = navigation.shallow;
     quietSwap = settingsSection(navigation.from?.url.pathname) && settingsSection(navigation.to?.url.pathname);
     if (!menuNavigationPending) pageDirection = 0;
     menuNavigationPending = false;
+  });
+  $effect(() => {
+    if (!navigating.to) shallowNavigation = false;
   });
   onMount(initializeTheme);
   onMount(() => installDialogScrollLock());
@@ -64,7 +69,7 @@
   });
   const description = $derived(pageDescription(page.url.pathname, page.status, site.description));
   const noindex = $derived(pageNoindex(page.url.pathname, page.status));
-  const routeLoading = $derived(!!navigating.to && !navigating.shallow && !navigating.willUnload && navigating.to.url.pathname !== page.url.pathname && !(settingsSection(page.url.pathname) && settingsSection(navigating.to.url.pathname)));
+  const routeLoading = $derived(!!navigating.to && !shallowNavigation && !navigating.shallow && !navigating.willUnload && navigating.to.url.pathname !== page.url.pathname && !(settingsSection(page.url.pathname) && settingsSection(navigating.to.url.pathname)));
   async function logout() {
     if (busy) return; busy = true; message = '';
     try {
@@ -152,8 +157,8 @@
     {/if}
   </header>
   <div class="content-column">
-    {#if navigating.to && !navigating.shallow && !navigating.willUnload}<div class="navigation-progress" role="status" data-testid="navigation-progress"><span class="sr-only">正在加载页面…</span></div>{/if}
-    <main id="main" tabindex="-1" class="page-content" class:auth-content={authPage} aria-busy={!!navigating.to}>
+    {#if navigating.to && !shallowNavigation && !navigating.shallow && !navigating.willUnload}<div class="navigation-progress" role="status" data-testid="navigation-progress"><span class="sr-only">正在加载页面…</span></div>{/if}
+    <main id="main" tabindex="-1" class="page-content" class:auth-content={authPage} aria-busy={!!navigating.to && !shallowNavigation && !navigating.shallow}>
       {#if message || page.data.authError || page.data.showcaseError && page.status < 400}<div class="mb-5"><FeedbackState kind="error" title={message || page.data.authError || page.data.showcaseError || ''} /></div>{/if}
       {#if checking && privateView}
         <FeedbackState kind="loading" title="正在确认登录状态。若检查失败，请刷新重试。" />
