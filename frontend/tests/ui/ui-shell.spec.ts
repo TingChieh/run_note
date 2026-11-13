@@ -162,7 +162,7 @@ test('all P0 route shells fit narrow and desktop viewports; details retain paren
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/public/activities/11111111-1111-4111-8111-111111111111');
     await expect(page.locator('.app-sidebar')).toHaveCount(0);
-    await expect(page.getByRole('link', { name: '我的运动统计' })).toBeVisible();
+    await expect(page.getByRole('link', { name: '我的运动统计' }).filter({ visible: true })).toBeVisible();
     await noOverflow(page);
   }
 });

@@ -684,6 +684,9 @@
     gap: var(--space-6);
     font-size: var(--text-small);
   }
+  .public-mobile-actions, .public-mobile-only {
+    display: none;
+  }
   .public-navigation [aria-current='page'] {
     color: var(--primary);
     font-weight: var(--weight-semibold);
@@ -1068,9 +1071,41 @@
       padding: var(--space-4);
       gap: var(--space-2);
     }
+    .public-header .brand {
+      display: block;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .public-header .brand-mark {
+      display: inline-grid;
+      vertical-align: middle;
+      margin-right: 0.625rem;
+    }
     .public-navigation {
+      flex-shrink: 0;
       gap: var(--space-2);
-      flex-wrap: nowrap;
+    }
+    .public-navigation .public-account-action {
+      display: none;
+    }
+    .public-mobile-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+      padding: var(--space-4);
+    }
+    .public-mobile-only {
+      display: inline-flex;
+    }
+    .public-mobile-actions .button-secondary, .public-mobile-only {
+      white-space: nowrap;
+    }
+    .public-logout {
+      background: transparent;
+      border-color: transparent;
+      color: var(--muted-foreground);
     }
     .public-activities {
       display: none;

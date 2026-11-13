@@ -101,3 +101,7 @@ DashboardSection/SettingsGroup/FormSection/DetailPanel 是组合角色，目前�
 - 列表、指标卡、表格行容器加 `.stagger`，子项按序号错峰淡入上移。
 - 原生 `<dialog>` 用 `@starting-style` 加 `allow-discrete`（`overlay`、`display`）实现进出场与遮罩渐变。
 - 所有动效在 `prefers-reduced-motion: reduce` 下关闭。
+
+### 公开页面手机账户入口
+
+正常渲染公开顶栏的路由为 `/admin`（登录与站点管理）、`/shared/[token]` 和 `/public/activities/[id]`；`/p/[username]/*` 使用应用导航。手机上，已登录用户在管理页的“管理入口”中返回运动统计或退出，在其他公开页面的页脚前操作；桌面入口仍在顶栏。退出沿用布局的会话检查、错误提示与跳转逻辑。
