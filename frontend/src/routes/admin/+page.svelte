@@ -1,11 +1,8 @@
 <script lang="ts">
-  import { getContext } from 'svelte';
   import { pageTitle } from '#lib/site.ts';
   import { page } from '$app/state';
   import AuthForm from '#lib/components/AuthForm.svelte';
   import PageHeader from '#lib/components/PageHeader.svelte';
-  // Logout state and action come from the root layout so mobile and header buttons behave the same.
-  const auth = getContext<{ logout: () => void; readonly busy: boolean; readonly checking: boolean; readonly mounted: boolean }>('public-auth-actions');
 </script>
 <svelte:head><title>{pageTitle(page.data.user ? '站点管理' : '管理员登录', page.data.site)}</title></svelte:head>
 {#if page.data.user}
@@ -18,8 +15,6 @@
       <a class="button-secondary" href="/workspace/ai">管理 AI 分析</a>
       <a class="button-secondary" href="/workspace/settings">账户设置</a>
       {#if page.data.user.is_admin}<a class="button-secondary" href="/admin/users">用户管理</a>{/if}
-      <a class="button-secondary public-mobile-only" href="/" data-sveltekit-reload>我的运动统计</a>
-      {#if !auth.checking}<button type="button" class="button-secondary public-logout public-mobile-only" onclick={auth.logout} disabled={auth.busy || !auth.mounted}>{auth.busy ? '退出中…' : '退出登录'}</button>{/if}
     </nav>
   </section>
 {:else}<AuthForm />{/if}

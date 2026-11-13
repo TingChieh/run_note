@@ -24,6 +24,7 @@
   let { children }: { children: Snippet } = $props();
   let checking = $state(false), busy = $state(false), mounted = $state(false), message = $state('');
   let identityBlocked = $state(false);
+  let publicMenuOpen = $state(false);
   let pageDirection = $state<1 | -1 | 0>(0), menuNavigationPending = false;
   let GlassTuner = $state<Component | null>(null);
   // Switching between the settings sections keeps the old page on screen and skips the skeleton and fade.
@@ -36,6 +37,7 @@
   });
   const settingsMeta = { account: ['设置', '管理账户资料与公开主页。'], site: ['站点设置', '管理站点名称、标语、默认外观和图标。'], users: ['用户管理', '管理账号、登录权限和独立个人展示链接。'] } as const;
   beforeNavigate(navigation => {
+    publicMenuOpen = false;
     quietSwap = settingsSection(navigation.from?.url.pathname) && settingsSection(navigation.to?.url.pathname);
     if (!menuNavigationPending) pageDirection = 0;
     menuNavigationPending = false;
@@ -59,7 +61,6 @@
     if (context.kind === 'public' && !page.data.showcase) return viewContext('/', page.data.user?.is_admin === true);
     return context;
   });
-  setContext('public-auth-actions', { logout, get busy() { return busy; }, get checking() { return checking; }, get mounted() { return mounted; } });
   const description = $derived(pageDescription(page.url.pathname, page.status, site.description));
   const noindex = $derived(pageNoindex(page.url.pathname, page.status));
   const authPage = $derived(/^\/admin\/?$/.test(page.url.pathname));
@@ -118,6 +119,7 @@
     };
   });
 </script>
+<svelte:window onkeydown={(event) => { if (event.key === 'Escape' && publicMenuOpen) publicMenuOpen = false; }} />
 <svelte:head><meta name="description" content={description} />{#if noindex}<meta name="robots" content="noindex,nofollow" />{/if}</svelte:head>
 <a href="#main" class="skip-link">跳转到主要内容</a>
 <div use:liquidGlass class:app-shell={appLayout} class:public-shell={!appLayout} class="sport-theme">
@@ -126,15 +128,27 @@
       <AppNavigation pathname={page.url.pathname} user={page.data.user} profile={page.data.showcase} {checking} {busy} {mounted} {identityBlocked} sports onlogout={logout} onnav={(direction) => { menuNavigationPending = true; pageDirection = direction; }} />
     {:else}
       <div class="public-header">
-        <a href="/" class="brand">{#if site.logo_url && !logoFailed}<img class="brand-mark brand-logo" src={site.logo_url} alt="" width="32" height="32" onerror={() => { logoFailed = true; }} />{:else}<span class="brand-mark" aria-hidden="true">{brandInitial(site.title)}</span>{/if}{site.title}</a>
+        <a href="/" class="brand">{#if site.logo_url && !logoFailed}<img class="brand-mark brand-logo" src={site.logo_url} alt="" width="32" height="32" onerror={() => { logoFailed = true; }} />{:else}<span class="brand-mark" aria-hidden="true">{brandInitial(site.title)}</span>{/if}<span class="brand-name">{site.title}</span></a>
         <nav aria-label="主要导航" class="public-navigation">
           <ThemeToggle compact />
           <a href="/together" class="public-activities">一起跑步</a>
           {#if page.data.user}<a href="/" data-sveltekit-reload class="button-secondary public-account-action">我的运动统计</a>{#if !checking}<button type="button" onclick={logout} disabled={busy || !mounted} class="button-secondary public-account-action">{busy ? '退出中…' : '退出登录'}</button>{/if}
           {:else}<a href="/activities" data-sveltekit-reload class="public-activities">跑步记录</a>{/if}
+          <button type="button" class="nav-toggle public-menu-toggle" aria-expanded={publicMenuOpen} aria-controls="public-mobile-menu" aria-label={publicMenuOpen ? '关闭导航' : '打开导航'} onclick={() => { publicMenuOpen = !publicMenuOpen; }}>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d={publicMenuOpen ? 'm6 6 12 12 M6 18 18 6' : 'M4 6h16 M4 12h16 M4 18h16'} /></svg><span>导航</span>
+          </button>
         </nav>
         <span class="sr-only" data-testid="current-user">{checking ? '正在确认身份…' : page.data.user ? `已登录：${page.data.user.email}` : '未登录'}</span>
       </div>
+      {#if publicMenuOpen}
+        <nav id="public-mobile-menu" class="public-mobile-menu" aria-label="公开页面导航">
+          <a href="/together" class="nav-link">一起跑步</a>
+          {#if page.data.user}
+            <a href="/" data-sveltekit-reload class="nav-link">我的运动统计</a>
+            {#if !checking}<button type="button" class="nav-link rn-menu-option public-menu-logout" onclick={logout} disabled={busy || !mounted}>{busy ? '退出中…' : '退出登录'}</button>{/if}
+          {:else}<a href="/activities" data-sveltekit-reload class="nav-link">跑步记录</a>{/if}
+        </nav>
+      {/if}
     {/if}
   </header>
   <div class="content-column">
@@ -156,12 +170,6 @@
         {#key page.url.pathname}<div class="page-reveal" class:quiet-swap={quietSwap} class:page-enter-up={pageDirection === 1} class:page-enter-down={pageDirection === -1} hidden={routeLoading || checking && privateView} inert={routeLoading || checking && privateView}>{@render children()}</div>{/key}
       {/if}
     </main>
-    {#if !appLayout && !authPage && page.data.user}
-      <nav class="public-mobile-actions" aria-label="账户操作">
-        <a href="/" data-sveltekit-reload class="button-secondary">我的运动统计</a>
-        {#if !checking}<button type="button" onclick={logout} disabled={busy || !mounted} class="button-secondary public-logout">{busy ? '退出中…' : '退出登录'}</button>{/if}
-      </nav>
-    {/if}
     <footer class="app-footer"><span>{site.title}</span>{#if site.footer_tagline}<span>{site.footer_tagline}</span>{/if}<a class="app-footer-link" href={PROJECT_URL} target="_blank" rel="noopener noreferrer" aria-label="在 GitHub 上查看项目源码（在新窗口打开）"><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" /></svg>GitHub</a></footer>
   </div>
   {#if GlassTuner}<GlassTuner />{/if}
