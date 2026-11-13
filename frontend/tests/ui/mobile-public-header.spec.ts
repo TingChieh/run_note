@@ -32,7 +32,7 @@ for (const width of [375, 390]) {
   test(`手机 ${width}px 的公开页面操作与顶栏`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await login(page);
-    for (const path of ['/admin', ...paths]) {
+    for (const path of paths) {
       await page.goto(path);
       await ready(page);
       const header = page.locator('.public-header');
@@ -50,7 +50,7 @@ for (const width of [375, 390]) {
       await singleLine(actions.getByRole('link', { name: '我的运动统计' }));
       await singleLine(actions.getByRole('button', { name: '退出登录' }));
     }
-    await page.goto('/admin');
+    await page.goto(paths[0]);
     await ready(page);
     const measured = await page.locator('.public-header').evaluate((header, width) => {
       const name = header.querySelector('.brand-name') as HTMLElement;
@@ -70,7 +70,7 @@ for (const width of [375, 390]) {
     const menu = await openPublicMenu(page);
     await menu.getByRole('link', { name: '我的运动统计' }).click();
     await expect(page).toHaveURL(/\/$/);
-    await page.goto('/admin');
+    await page.goto(paths[0]);
     await ready(page);
     await (await openPublicMenu(page)).getByRole('button', { name: '退出登录' }).click();
     await expect(page.getByTestId('current-user')).toHaveText('未登录');
@@ -87,17 +87,13 @@ for (const width of [375, 390]) {
 }
 test('桌面保留顶栏操作，其他位置不显示', async ({ page }) => {
   await login(page);
-  for (const path of ['/admin', ...paths]) {
+  for (const path of paths) {
     await page.goto(path);
     await ready(page);
     const header = page.locator('.public-header');
     await expect(header.getByRole('link', { name: '我的运动统计' })).toBeVisible();
     await expect(header.getByRole('button', { name: '退出登录' })).toBeVisible();
-    if (path === '/admin') {
-      const actions = page.getByRole('navigation', { name: '管理入口' });
-      await expect(actions.getByText('我的运动统计')).toHaveCount(0);
-      await expect(actions.getByText('退出登录')).toHaveCount(0);
-    } else await expect(page.locator('.public-mobile-actions')).toHaveCount(0);
+    await expect(page.locator('.public-mobile-actions')).toHaveCount(0);
     await expect(header.locator('.nav-toggle')).toBeHidden();
   }
 });

@@ -208,11 +208,11 @@ test('long saved nickname stays inside navigation at mobile and desktop widths',
 
 test('unified sports shell spans every private route and keeps account widgets off public pages', async ({page}) => {
   await login(page);
-  for (const [route,title] of [['/','数据汇总'],['/activities','跑步记录'],['/dashboard','数据汇总'],['/footprints','个人足迹'],['/ai','AI 跑步分析'],['/settings','设置']]) {
+  for (const [route,title] of [['/','数据汇总'],['/activities','跑步记录'],['/dashboard','数据汇总'],['/footprints','个人足迹'],['/ai','AI 跑步分析'],['/settings','设置'],['/admin','站点管理']]) {
     await page.goto(route); await expect(page.getByRole('heading',{level:1,name:title,exact:true})).toBeVisible();
     await openGoalPanel(page);
-    // Exactly one visible current-page marker: a navigation link, or the avatar's ring on the settings pages (the menu's own link is hidden while closed).
-    await expect(page.locator('.app-sidebar :is([aria-current="page"], [data-current]):visible')).toHaveCount(1);
+    // Admin has no matching navigation entry; other routes mark a link or the settings avatar.
+    await expect(page.locator('.app-sidebar :is([aria-current="page"], [data-current]):visible')).toHaveCount(route === '/admin' ? 0 : 1);
     await expect(await settingsLink(page)).toHaveAttribute('href','/settings');
     await page.keyboard.press('Escape');
     // Docked at the top the bar is a plain card; the glass surface is what it becomes over content, so scroll it under the bar first (routes too short to scroll keep the card).
@@ -225,7 +225,7 @@ test('unified sports shell spans every private route and keeps account widgets o
   }
   await page.setViewportSize({width:390,height:900}); await page.goto('/');
   await page.screenshot({path:'test-results/unified-overview-mobile.png',fullPage:true});
-  for (const route of ['/admin','/public/activities/11111111-1111-4111-8111-111111111111','/shared/synthetic-token']) {
+  for (const route of ['/public/activities/11111111-1111-4111-8111-111111111111','/shared/synthetic-token']) {
     await page.goto(route); await expect(page.locator('.app-sidebar')).toHaveCount(0);
     await expect(page.getByRole('region',{name:'跑量目标'})).toHaveCount(0); await noOverflow(page);
   }

@@ -168,11 +168,14 @@ test('long titles, missing values, empty route and errors stay usable in the sam
   await expect(page.getByRole('alert')).toContainText('暂时无法读取');
   await page.getByRole('button', { name: '重新读取活动详情' }).click();
   await ready(page);
-  await page.route(`**/api/v1/activities/${sampleActivity.id}`, (route) =>
-    route.fulfill({ status: 401, json: { error: { message: '登录已过期' } } }),
-  );
+  await page.route(`**/api/v1/activities/${sampleActivity.id}`, async (route) => {
+    // The following SSR request to /admin must observe the expired session too.
+    await page.context().clearCookies({ name: 'run_session' });
+    await route.fulfill({ status: 401, json: { error: { message: '登录已过期' } } });
+  });
   await page.reload();
   await expect(page).toHaveURL(/admin\?reason=expired/);
+  await expect(page.getByRole('button', { name: '登录', exact: true })).toBeVisible();
   await expect(page.getByTestId('sport-hero')).toHaveCount(0);
   await expect(page.locator('.app-sidebar')).toHaveCount(0);
   await expect(page.getByRole('region', { name: '跑量目标' })).toHaveCount(0);
