@@ -53,12 +53,19 @@
   function newer(a: Activity, b: Activity) {
     return a.activity_date > b.activity_date || (a.activity_date === b.activity_date && a.id.toLowerCase() > b.id.toLowerCase());
   }
-  async function readWindow(index: number, total: number, token: number) {
+  function windowRange(index: number, countTotal: number) {
     const size = capacity;
     const radius = Math.floor(size / 2);
     const start = Math.max(0, index - radius - 1);
-    const count = Math.min(total, index + radius + 2) - start;
+    const count = Math.min(countTotal, index + radius + 2) - start;
     const needed = [...new Set(Array.from({ length: count }, (_, i) => Math.floor((start + i) / pageSize)))];
+    return { size, start, count, needed };
+  }
+  function windowCached(index: number, countTotal: number) {
+    return windowRange(index, countTotal).needed.every(page => pages.has(page));
+  }
+  async function readWindow(index: number, total: number, token: number) {
+    const { size, start, count, needed } = windowRange(index, total);
     const results = await Promise.all(needed.map(page => readPage(page, token)));
     if (!valid(token)) return null;
     if (results.some(page => page.total !== total)) throw changedHistory();
@@ -147,7 +154,8 @@
   async function browse(index: number, focusCard = false) {
     if (pending || index === browseIndex || index < 0 || index >= total) return;
     const token = ++requestToken;
-    pending = true; error = ''; retryIndex = index; retrySelection = false;
+    pending = !windowCached(index, total);
+    error = ''; retryIndex = index; retrySelection = false;
     browsing = true; queuedBrowse = { index, focus: focusCard };
     try {
       const next = await readWindow(index, total, token);
@@ -171,14 +179,24 @@
     if (pending || index < 0 || index >= total) return;
     if (index === selectedIndex) { await browse(index, focusCard); return; }
     const token = ++requestToken;
+    browsing = false; queuedBrowse = null;
     const top = section.getBoundingClientRect().top;
-    pending = true; error = ''; retryIndex = index; retrySelection = true;
+    pending = !windowCached(index, total);
+    error = ''; retryIndex = index; retrySelection = true;
     try {
       const next = await readWindow(index, total, token);
       if (!next || !valid(token)) return;
+      pending = false;
       const target = next.items.find(card => card.index === index)!;
+      // Slide the deck immediately while the detail and shallow route update run.
+      applyWindow(next, index, total);
+      if (focusCard) {
+        await tick();
+        if (!valid(token)) return;
+        section.querySelector<HTMLButtonElement>('.stack-slot.centered .wall-card')?.focus({ preventScroll: true });
+      }
       if (!await onswitch(target.activity.id) || !valid(token)) return;
-      selectedIndex = index; applyWindow(next, index, total); retryIndex = null;
+      selectedIndex = index; retryIndex = null;
       await tick();
       if (valid(token)) {
         window.scrollBy({ top: section.getBoundingClientRect().top - top, behavior: 'instant' });
@@ -252,8 +270,7 @@
   .preview-browser:global([data-dragging="true"]) .stack-viewport{cursor:grabbing;}
   /* Sunk side cards need room below the raised center card. */
   .card-stack{display:grid;grid-template-columns:var(--deck-card-width);justify-content:center;align-items:stretch;padding-block:var(--space-4) calc(var(--deck-card-width) * .5);}
-  .stack-slot{position:relative;grid-area:1/1;width:var(--deck-card-width);transform-origin:50% 100%;container-type:inline-size;}
-  .card-stack:global([data-moving="true"]) .stack-slot{will-change:transform,opacity;}
+  .stack-slot{position:relative;grid-area:1/1;width:var(--deck-card-width);transform-origin:50% 100%;container-type:inline-size;will-change:transform,opacity;}
   .preview-error{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2);margin-top:var(--space-3);font-size: var(--text-small);}
   @container (max-width:42rem){.preview-layout{padding:0;}.stack-viewport{--deck-card-width:10rem;}.preview-copy{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:var(--space-2);}.preview-copy p{display:none;}}
   @container (max-width:22rem){.stack-viewport{--deck-card-width:9rem;}}

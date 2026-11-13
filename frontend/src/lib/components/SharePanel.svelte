@@ -6,13 +6,36 @@
   let { activity }: { activity: Activity } = $props();
   let links = $state<Share[]>([]), busy = $state(false), loadingShares = $state(true), message = $state(''), error = $state('');
   let sharesError = $state('');
+  let activeId = '', shareToken = 0, disposed = false;
   async function reloadShares() { if (busy || loadingShares) return; loadingShares=true; sharesError=''; error=''; try { await refresh(); } catch(cause) { sharesError=cause instanceof Error?cause.message:'分享链接读取失败'; fail(cause); } finally { loadingShares=false; } }
   const base = $derived(`/api/v1/activities/${activity.id}`);
   function fail(cause: unknown) { error = cause instanceof Error ? cause.message : '操作失败，请重试'; if (cause instanceof ActivityError && cause.status === 401) window.location.replace('/admin?reason=expired'); }
-  async function refresh() { links = (await readShares(activity.id)).items; sharesError=''; }
+  async function refresh(id = activity.id) { links = (await readShares(id)).items; sharesError=''; }
   async function run(action: () => Promise<void>) { if (busy) return; busy=true;error='';message='';try { await action(); } catch(cause) { fail(cause); } finally { busy=false; } }
   function revoke(id: string) { void run(async () => { await sharingWrite(`${base}/shares/${id}`,'DELETE'); await refresh(); message='分享已撤销，旧链接立即失效。'; }); }
-  onMount(() => { void refresh().catch(cause => { sharesError=cause instanceof Error?cause.message:'分享链接读取失败'; fail(cause); }).finally(() => { loadingShares = false; }); });
+  onMount(() => () => { disposed = true; shareToken++; });
+  $effect(() => {
+    const id = activity.id;
+    if (id === activeId) return;
+    const initial = activeId === '';
+    activeId = id;
+    const token = ++shareToken;
+    if (initial) loadingShares = true;
+    sharesError = ''; error = ''; message = '';
+    void readShares(id)
+      .then((result) => {
+        if (disposed || token !== shareToken) return;
+        links = result.items; sharesError = '';
+      })
+      .catch((cause) => {
+        if (disposed || token !== shareToken) return;
+        sharesError = cause instanceof Error ? cause.message : '分享链接读取失败';
+        fail(cause);
+      })
+      .finally(() => {
+        if (!disposed && token === shareToken) loadingShares = false;
+      });
+  });
 </script>
 {#if loadingShares || sharesError || links.length}
 <section class="share-card" aria-labelledby="share-title" aria-busy={busy}>

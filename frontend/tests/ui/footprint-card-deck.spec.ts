@@ -274,7 +274,7 @@ test('wide decks show seven route previews while selected detail routes load ind
     await expect(page).toHaveURL(new RegExp(`${target.id}$`));
     await expect(deck.locator('.preview-browser')).toHaveAttribute('aria-busy', 'false');
     await expect(next).toHaveAttribute('aria-pressed', 'true');
-    await expect(next).toContainText('正在描绘足迹');
+    await expect(next.locator('svg[role="img"]')).toBeVisible();
     expect(detailReads).toEqual([state.records[8].id, target.id]);
   } finally { release(); }
   await expect(next.locator('svg[role="img"]')).toBeVisible();

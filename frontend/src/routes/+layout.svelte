@@ -152,7 +152,7 @@
     {/if}
   </header>
   <div class="content-column">
-    {#if navigating.to && !navigating.willUnload}<div class="navigation-progress" role="status" data-testid="navigation-progress"><span class="sr-only">正在加载页面…</span></div>{/if}
+    {#if navigating.to && !navigating.shallow && !navigating.willUnload}<div class="navigation-progress" role="status" data-testid="navigation-progress"><span class="sr-only">正在加载页面…</span></div>{/if}
     <main id="main" tabindex="-1" class="page-content" class:auth-content={authPage} aria-busy={!!navigating.to}>
       {#if message || page.data.authError || page.data.showcaseError && page.status < 400}<div class="mb-5"><FeedbackState kind="error" title={message || page.data.authError || page.data.showcaseError || ''} /></div>{/if}
       {#if checking && privateView}

@@ -31,64 +31,117 @@
     loading = $state(true),
     error = $state('');
   let element: HTMLDivElement,
-    active = false;
+    active = false,
+    mounted = $state(false),
+    loadedFor = '',
+    fetchingFor = '',
+    failedFor = '',
+    loadToken = 0,
+    observer: IntersectionObserver | undefined;
   let drawing = $derived(route ? routeDrawing(route, 360, 220, { tolerance: 0.8, digits: 1 }) : null);
-  $effect(() => {
-    if (managedRoute) {
-      route = initialRoute;
-      loading = routeLoading;
-      error = routeError;
-    } else if (initialRoute) {
-      route = initialRoute;
-      loading = false;
-      error = '';
-    }
-  });
-  async function load() {
+  function stopObserver() {
+    observer?.disconnect();
+    observer = undefined;
+  }
+  function startObserver(id: string) {
+    if (!active || observer || !element) return;
     loading = true;
     error = '';
-    try {
-      const data = await readRoute(activity.id);
-      if (active && !initialRoute) route = data;
-    } catch (cause) {
-      if (active) {
-        if (cause instanceof ActivityError && cause.status === 401) {
-          route = null;
-          if (onauthrequired) onauthrequired(cause);
-          else window.location.replace('/admin?reason=expired');
-          return;
-        }
-        error = '路线暂不可用';
-      }
-    } finally {
-      if (active) loading = false;
-    }
-  }
-  onMount(() => {
-    active = true;
-    if (managedRoute)
-      return () => {
-        active = false;
-      };
-    route = initialRoute;
-    loading = activity.has_route && !initialRoute;
-    if (!activity.has_route || initialRoute)
-      return () => {
-        active = false;
-      };
-    const observer = new IntersectionObserver(
+    observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((e) => e.isIntersecting)) {
-          observer.disconnect();
-          void load();
+          stopObserver();
+          void load(id);
         }
       },
       { rootMargin: '120px' },
     );
     observer.observe(element);
+  }
+  $effect(() => {
+    const id = activity.id;
+    const hasRoute = activity.has_route;
+    if (loadedFor && loadedFor !== id) {
+      route = null;
+      loadedFor = '';
+      failedFor = '';
+      error = '';
+      loading = hasRoute;
+      loadToken++;
+      stopObserver();
+    }
+    if (managedRoute) {
+      stopObserver();
+      if (initialRoute) {
+        route = initialRoute;
+        loadedFor = id;
+        loading = false;
+        error = '';
+      } else if (loadedFor !== id) {
+        // Keep an already-loaded thumbnail visible while the detail page fetches its full route.
+        route = null;
+        loading = routeLoading;
+        error = routeError;
+      }
+      return;
+    }
+    if (initialRoute) {
+      stopObserver();
+      route = initialRoute;
+      loadedFor = id;
+      loading = false;
+      error = '';
+      return;
+    }
+    if (!hasRoute) {
+      stopObserver();
+      route = null;
+      loadedFor = '';
+      loading = false;
+      error = '';
+      return;
+    }
+    if (mounted && loadedFor !== id && fetchingFor !== id && failedFor !== id && !observer) {
+      startObserver(id);
+    }
+  });
+  async function load(id = activity.id) {
+    const token = ++loadToken;
+    fetchingFor = id;
+    loading = true;
+    error = '';
+    try {
+      const data = await readRoute(id);
+      if (active && token === loadToken && activity.id === id) {
+        route = data;
+        loadedFor = id;
+      }
+    } catch (cause) {
+      if (active && token === loadToken && activity.id === id) {
+        if (cause instanceof ActivityError && cause.status === 401) {
+          route = null;
+          loadedFor = '';
+          if (onauthrequired) onauthrequired(cause);
+          else window.location.replace('/admin?reason=expired');
+          return;
+        }
+        failedFor = id;
+        error = '路线暂不可用';
+      }
+    } finally {
+      if (token === loadToken) {
+        fetchingFor = '';
+        if (active && !managedRoute) loading = false;
+      }
+    }
+  }
+  onMount(() => {
+    active = true;
+    mounted = true;
     return () => {
       active = false;
-      observer.disconnect();
+      loadToken++;
+      stopObserver();
     };
   });
 </script>
