@@ -107,8 +107,14 @@ test('saving twice on one day updates the same record and the rating can be clea
   await page.getByRole('button', { name: '保存今日状态' }).click();
   await expect(page.getByTestId('wellbeing-status')).toContainText('1/9');
   await page.getByTestId('wellbeing-tab-history').click();
-  await page.getByRole('button', { name: '列表' }).click();
-  await expect(page.getByTestId('wellbeing-entry')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '列表', exact: true })).toHaveCount(0);
+  const todayCell = page.locator(`[data-testid="wellbeing-day"][data-date="${today()}"]`);
+  await expect(todayCell).toHaveAttribute('aria-label', /有状态记录/);
+  await todayCell.click();
+  await expect(page.getByTestId('wellbeing-editor')).toHaveAttribute('data-day', today());
+  await expect(page.getByTestId('wellbeing-status')).toContainText('1/9');
+  await expect(scale(page, '精力').getByTestId('scale-value')).toHaveText('2');
+  await expect(scale(page, '焦虑').locator('.dial')).toHaveClass(/unset/);
 });
 
 test('an empty save is refused and unsaved changes can be discarded', async ({ page }) => {
