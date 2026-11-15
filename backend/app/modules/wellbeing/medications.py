@@ -6,6 +6,7 @@ with a pill count subtracts them. Editing or deleting a dose therefore corrects 
 
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from typing import NamedTuple
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
@@ -26,6 +27,7 @@ from app.modules.wellbeing.schema import (
     MedicationInput,
     MedicationPatch,
     MedicationView,
+    RecentDoseDayView,
     RestockInput,
     StockView,
 )
@@ -69,8 +71,17 @@ def _sums(db, model, owner: UUID, *conditions) -> dict[UUID, Decimal]:
     return {k: v for k, v in rows}
 
 
-def _pace(db, owner: UUID, today: date) -> dict[UUID, tuple[float, int]]:
-    """Average pills a day and the number of days it is based on, per medicine that has doses.
+class _Pace(NamedTuple):
+    average: float
+    basis: int
+    total: float
+    start: date
+    end: date
+    days: list[RecentDoseDayView]
+
+
+def _pace(db, owner: UUID, today: date) -> dict[UUID, _Pace]:
+    """Average pills a day and daily breakdown per medicine that has doses.
 
     Today is left out while it is still going (a daily medicine not yet taken this morning
     would otherwise drag the average down), unless the medicine was first taken today.
@@ -82,40 +93,75 @@ def _pace(db, owner: UUID, today: date) -> dict[UUID, tuple[float, int]]:
             .group_by(DoseEvent.medication_id)
         ).all()
     )
-    finished = _sums(
-        db,
-        DoseEvent,
-        owner,
-        DoseEvent.entry_date >= today - timedelta(days=RECENT_DAYS),
-        DoseEvent.entry_date < today,
+    rows = db.execute(
+        select(DoseEvent.medication_id, DoseEvent.entry_date, func.sum(DoseEvent.pills))
+        .where(
+            DoseEvent.user_id == owner,
+            DoseEvent.medication_id.is_not(None),
+            DoseEvent.pills.is_not(None),
+            DoseEvent.entry_date >= today - timedelta(days=RECENT_DAYS),
+            DoseEvent.entry_date <= today,
+        )
+        .group_by(DoseEvent.medication_id, DoseEvent.entry_date)
     )
-    so_far = _sums(db, DoseEvent, owner, DoseEvent.entry_date == today)
-    pace: dict[UUID, tuple[float, int]] = {}
+    by_day: dict[UUID, dict[date, Decimal]] = {}
+    for med_id, entry_date, total_pills in rows:
+        by_day.setdefault(med_id, {})[entry_date] = total_pills
+
+    pace: dict[UUID, _Pace] = {}
     for key, started in first.items():
-        days = min(RECENT_DAYS, (today - started).days)
-        pills = finished.get(key, ZERO) if days else so_far.get(key, ZERO)
-        days = max(days, 1)
-        pace[key] = (float(pills) / days, days)
+        span = (today - started).days
+        if span <= 0:
+            basis = 1
+            start = today
+            end = today
+        else:
+            basis = min(RECENT_DAYS, span)
+            start = today - timedelta(days=basis)
+            end = today - timedelta(days=1)
+        daily = by_day.get(key, {})
+        series = [
+            RecentDoseDayView(
+                date=(day := start + timedelta(days=offset)),
+                pills=round(float(daily.get(day, ZERO)), 2),
+            )
+            for offset in range(basis)
+        ]
+        total = round(float(sum((daily.get(item.date, ZERO) for item in series), ZERO)), 2)
+        pace[key] = _Pace(
+            average=total / basis,
+            basis=basis,
+            total=total,
+            start=start,
+            end=end,
+            days=series,
+        )
     return pace
 
 
-def _stock_view(med: Medication, ledger, taken, pace) -> StockView | None:
+def _stock_view(med: Medication, ledger, taken, pace: dict[UUID, _Pace]) -> StockView | None:
     if med.id not in ledger:
         return None
     pills = ledger[med.id] - taken.get(med.id, ZERO)
     box = med.pills_per_box
     boxes = int(pills // box) if box and pills >= 0 else None
     loose = float(pills - boxes * box) if boxes is not None else None
-    average, basis = pace.get(med.id, (0.0, 0))
+    entry = pace.get(med.id)
+    average = entry.average if entry is not None else 0.0
     days = None
     if average > 0:
         days = 0.0 if pills <= 0 else round(float(pills) / average, 1)
+    active = entry is not None and average > 0
     return StockView(
         pills=float(pills),
         boxes=boxes,
         loose_pills=loose,
-        avg_daily_pills=round(average, 2) if average > 0 else None,
-        avg_days=basis if average > 0 else None,
+        avg_daily_pills=round(average, 2) if active else None,
+        avg_days=entry.basis if active else None,
+        avg_total_pills=entry.total if active else None,
+        avg_from=entry.start if active else None,
+        avg_to=entry.end if active else None,
+        recent_days=entry.days if active else [],
         days_left=days,
     )
 

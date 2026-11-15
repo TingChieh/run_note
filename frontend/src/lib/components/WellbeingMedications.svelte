@@ -8,7 +8,7 @@
   import { ActivityError } from '#lib/api/activities.ts';
   import {
     COMMON_SYMPTOMS, COMMON_UNITS, COUNT_UNITS, addDays, batchDoses, countMedication, createDose, createMedication, deleteDose, deleteMedication, doseText, pillsText, readMedications,
-    restockMedication, stockText, supplyText, timeLabel, updateMedication, type Medication, type Regimen
+    restockMedication, shortDay, stockText, supplyText, timeLabel, updateMedication, type Medication, type Regimen
   } from '#lib/api/wellbeing.ts';
   // Medicines: set each one up once (box size, strength of a pill, usual pills, its side effects), keep the stock, log "taken N pills" in one tap, or back-fill several days.
   // Stock is the user's own count minus the pills logged since; the page only does the arithmetic and gives no dosing advice.
@@ -250,7 +250,26 @@
             {/if}
           {/snippet}
           <WellbeingStockRing fraction={ringFraction(med)} value={ringNumber(med)} unit={med.count_unit} {low} label={`${med.name} 剩余：${stockText(med)}`} />
-          <p class="line stock" class:low data-testid="wellbeing-stock"><span class="label">库存</span> {stockText(med)}{#if supplyText(med)}<span class="supply"> · {supplyText(med)}</span>{/if}</p>
+          <p class="line stock" class:low data-testid="wellbeing-stock"><span class="label">库存</span> {stockText(med)}{#if supplyText(med, today)}<span class="supply"> · {supplyText(med, today)}</span>{/if}</p>
+          {#if stock && stock.avg_daily_pills !== null && stock.days_left !== 0 && stock.recent_days.length}
+            {@const total = stock.avg_total_pills ?? 0}
+            {@const span = stock.avg_days ?? stock.recent_days.length}
+            {@const approx = Math.abs(total / span - stock.avg_daily_pills) < 1e-9 ? '=' : '≈'}
+            <details class="pace-details" data-testid="wellbeing-pace-details">
+              <summary>查看这 {stock.recent_days.length} 天每天颗数</summary>
+              <div class="pace-body">
+                <ul class="pace-days" aria-label={`${med.name} 这 ${stock.recent_days.length} 天每日服药颗数`}>
+                  {#each stock.recent_days as item (item.date)}
+                    <li class="pace-day" class:zero={item.pills === 0}>
+                      <span class="pace-date">{shortDay(item.date)}</span>
+                      <span class="pace-pills">{pillsText(item.pills, med.count_unit)}</span>
+                    </li>
+                  {/each}
+                </ul>
+                <p class="pace-formula">共 {pillsText(total, med.count_unit)} ÷ {span} 天 {approx} 每天 {pillsText(stock.avg_daily_pills, med.count_unit)}</p>
+              </div>
+            </details>
+          {/if}
           <p class="line meta"><span class="chip">{regimenName(med.regimen)}</span>{#if spec(med)} <span class="spec">{spec(med)}</span>{/if}</p>
           {#if med.side_effects.length}<p class="line effects-line" data-testid="wellbeing-med-effects"><span class="label">常见副作用</span> {med.side_effects.join('、')}</p>{/if}
           <button type="button" class="button-primary small took" disabled={busy} onclick={() => took(med)} data-testid="wellbeing-took" aria-label={`记录吃了 ${pillsText(med.default_pills ?? 1, med.count_unit)} ${med.name}`}>吃了 {pillsText(med.default_pills ?? 1, med.count_unit)}</button>
@@ -317,6 +336,17 @@
   .label { color: var(--muted-foreground); }
   .stock.low, .stock.low .supply { color: var(--warning); }
   .supply { color: var(--muted-foreground); }
+  .pace-details { width: 100%; font-size: var(--text-caption); color: var(--muted-foreground); }
+  .pace-details summary { display: inline-block; padding: var(--space-1) var(--space-2); border-radius: var(--radius-pill); color: var(--primary); font-weight: var(--weight-medium); cursor: pointer; }
+  .pace-details summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  .pace-body { display: grid; gap: var(--space-2); margin-top: var(--space-2); padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--muted); }
+  .pace-days { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+  .pace-day { display: inline-flex; align-items: baseline; gap: var(--space-1); padding: 0.125rem var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface); color: var(--foreground); font-variant-numeric: tabular-nums; }
+  .pace-day.zero { background: transparent; color: var(--muted-foreground); }
+  .pace-date { color: var(--muted-foreground); }
+  .pace-pills { font-weight: var(--weight-medium); }
+  .pace-day.zero .pace-pills { font-weight: var(--weight-regular); }
+  .pace-formula { margin: 0; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
   .took { flex: none; }
   .actions { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
   .small { min-height: 2.25rem; padding-inline: var(--space-3); font-size: var(--text-small); }

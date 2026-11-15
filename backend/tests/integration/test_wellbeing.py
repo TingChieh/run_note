@@ -838,11 +838,29 @@ def test_supply_pace_uses_the_days_a_medicine_has_actually_been_taken(clients): 
     started = stock(a, med["id"])
     assert started["pills"] == 55.0
     assert started["avg_daily_pills"] == 1.0 and started["avg_days"] == 3
+    assert started["avg_total_pills"] == 3.0
+    assert started["avg_from"] == "2026-10-12" and started["avg_to"] == "2026-10-14"
+    assert started["recent_days"] == [
+        {"date": "2026-10-12", "pills": 1.0},
+        {"date": "2026-10-13", "pills": 1.0},
+        {"date": "2026-10-14", "pills": 1.0},
+    ]
     assert started["days_left"] == 55.0
     # After a long time on it the pace is the last seven finished days: older doses drop out.
     take(9, 7)
     long_run = stock(a, med["id"])
     assert long_run["avg_days"] == 7
+    assert long_run["avg_total_pills"] == 3.0
+    assert long_run["avg_from"] == "2026-10-08" and long_run["avg_to"] == "2026-10-14"
+    assert long_run["recent_days"] == [
+        {"date": "2026-10-08", "pills": 0.0},
+        {"date": "2026-10-09", "pills": 0.0},
+        {"date": "2026-10-10", "pills": 0.0},
+        {"date": "2026-10-11", "pills": 0.0},
+        {"date": "2026-10-12", "pills": 1.0},
+        {"date": "2026-10-13", "pills": 1.0},
+        {"date": "2026-10-14", "pills": 1.0},
+    ]
     assert long_run["avg_daily_pills"] == round(3 / 7, 2)
 
 
@@ -861,6 +879,9 @@ def test_stock_is_a_ledger_that_follows_doses_restocks_and_counts(clients):  # n
     assert (counted["pills"], counted["boxes"], counted["loose_pills"]) == (61.0, 2, 5.0)
     assert counted["avg_daily_pills"] is None and counted["days_left"] is None
     assert counted["avg_days"] is None
+    assert counted["avg_total_pills"] is None
+    assert counted["avg_from"] is None and counted["avg_to"] is None
+    assert counted["recent_days"] == []
     # Each dose logged by pills takes from the stock; half a pill is fine.
     first = post(
         a,
@@ -884,6 +905,9 @@ def test_stock_is_a_ledger_that_follows_doses_restocks_and_counts(clients):  # n
     assert (after["pills"], after["boxes"], after["loose_pills"]) == (59.5, 2, 3.5)
     # First taken today: the pace is today's pills over one day, not diluted over a fortnight.
     assert after["avg_daily_pills"] == 1.5 and after["avg_days"] == 1
+    assert after["avg_total_pills"] == 1.5
+    assert after["avg_from"] == "2026-10-15" and after["avg_to"] == "2026-10-15"
+    assert after["recent_days"] == [{"date": "2026-10-15", "pills": 1.5}]
     assert after["days_left"] == round(59.5 / 1.5, 1)
     # Editing a dose corrects the stock by itself; so does deleting one.
     assert (

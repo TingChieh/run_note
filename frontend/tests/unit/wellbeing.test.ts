@@ -43,7 +43,12 @@ describe('response validation', () => {
 });
 
 describe('medicine list, stock and pill doses', () => {
-  const stock = (over: Record<string, unknown> = {}) => ({ pills: 61, boxes: 2, loose_pills: 5, avg_daily_pills: 1.5, avg_days: 7, days_left: 40.7, ...over });
+  const stock = (over: Record<string, unknown> = {}) => ({
+    pills: 61, boxes: 2, loose_pills: 5, avg_daily_pills: 1.5, avg_days: 7,
+    avg_total_pills: 10.5, avg_from: '2026-10-03', avg_to: '2026-10-09',
+    recent_days: Array.from({ length: 7 }, (_, i) => ({ date: addDays('2026-10-03', i), pills: 1.5 })),
+    days_left: 40.7, ...over,
+  });
   const med = (over: Record<string, unknown> = {}) => ({ id: ID, name: '示例药物', count_unit: '颗', pills_per_box: 28, strength_amount: 12.5, strength_unit: 'mg', default_pills: 1, regimen: 'scheduled', side_effects: ['恶心', '出汗'], dose_count: 2, last_taken_at: '2026-10-10T00:00:00Z', stock: stock(), ...over });
   it('accepts a full medicine, a bare one, and one with no stock yet', () => {
     expect(parseMedication(med()).stock?.pills).toBe(61);
@@ -51,11 +56,11 @@ describe('medicine list, stock and pill doses', () => {
     expect(parseMedication(med({ side_effects: [] })).side_effects).toEqual([]);
     const bare = parseMedication(med({ pills_per_box: null, strength_amount: null, strength_unit: null, default_pills: null, last_taken_at: null, dose_count: 0, stock: null }));
     expect(bare.stock).toBeNull();
-    expect(parseMedication(med({ stock: stock({ pills: -3, boxes: null, loose_pills: null, avg_daily_pills: null, avg_days: null, days_left: null }) })).stock?.pills).toBe(-3);
+    expect(parseMedication(med({ stock: stock({ pills: -3, boxes: null, loose_pills: null, avg_daily_pills: null, avg_days: null, avg_total_pills: null, avg_from: null, avg_to: null, recent_days: [], days_left: null }) })).stock?.pills).toBe(-3);
   });
   it('rejects bad box sizes, strengths, pill counts, stock and ids', () => {
     for (const bad of [med({ pills_per_box: 0 }), med({ pills_per_box: 2.5 }), med({ strength_unit: null }), med({ strength_amount: 0 }), med({ default_pills: 0 }), med({ default_pills: 1001 }), med({ count_unit: '' }), med({ id: 'nope' }), med({ name: '' }),
-      med({ regimen: 'daily' }), med({ dose_count: -1 }), med({ last_taken_at: 'soon' }), med({ stock: { pills: 'x' } }), med({ stock: stock({ days_left: -1 }) }), med({ stock: undefined }),
+      med({ regimen: 'daily' }), med({ dose_count: -1 }), med({ last_taken_at: 'soon' }), med({ stock: { pills: 'x' } }), med({ stock: stock({ days_left: -1 }) }), med({ stock: stock({ avg_from: '2026-10-10', avg_to: '2026-10-09' }) }), med({ stock: stock({ recent_days: [{ date: '2026-10-09', pills: -1 }] }) }), med({ stock: undefined }),
       med({ side_effects: undefined }), med({ side_effects: '恶心' }), med({ side_effects: [''] }), med({ side_effects: [3] }), med({ side_effects: ['x'.repeat(41)] }), med({ side_effects: Array.from({ length: 21 }, (_, i) => `s${i}`) })])
       expect(() => parseMedication(bad)).toThrow(ActivityError);
   });
@@ -76,9 +81,10 @@ describe('medicine list, stock and pill doses', () => {
     expect(stockText({ count_unit: '片', stock: stock({ pills: 12, boxes: null, loose_pills: null }) })).toBe('12 片');
     expect(stockText({ count_unit: '颗', stock: stock({ pills: 0, boxes: 0, loose_pills: 0 }) })).toBe('已用完（0 颗）');
     expect(stockText({ count_unit: '颗', stock: stock({ pills: -3, boxes: null, loose_pills: null }) })).toContain('请盘点');
-    expect(supplyText({ count_unit: '颗', stock: stock() })).toBe('按近 7 天平均每天 1.5 颗，约可吃 40.7 天');
-    expect(supplyText({ count_unit: '颗', stock: stock({ avg_days: 3 }) })).toBe('按已吃的 3 天平均每天 1.5 颗，约可吃 40.7 天');
-    expect(supplyText({ count_unit: '颗', stock: stock({ avg_daily_pills: null, avg_days: null, days_left: null }) })).toBe('');
+    expect(supplyText({ count_unit: '颗', stock: stock() })).toBe('按截至昨天近 7 天（10/3–10/9，共 10.5 颗）平均每天 1.5 颗，约可吃 40.7 天');
+    expect(supplyText({ count_unit: '颗', stock: stock({ avg_days: 3, avg_total_pills: 4.5, avg_from: '2026-10-07', avg_to: '2026-10-09' }) })).toBe('按截至昨天已吃的 3 天（10/7–10/9，共 4.5 颗）平均每天 1.5 颗，约可吃 40.7 天');
+    expect(supplyText({ count_unit: '颗', stock: stock({ avg_days: 1, avg_total_pills: 1.5, avg_from: '2026-10-10', avg_to: '2026-10-10' }) }, '2026-10-10')).toBe('按今天已吃的 1 天（10/10，共 1.5 颗）平均每天 1.5 颗，约可吃 40.7 天');
+    expect(supplyText({ count_unit: '颗', stock: stock({ avg_daily_pills: null, avg_days: null, avg_total_pills: null, avg_from: null, avg_to: null, recent_days: [], days_left: null }) })).toBe('');
     expect(supplyText({ count_unit: '颗', stock: stock({ pills: 0, days_left: 0 }) })).toBe('');
     expect(supplyText({ count_unit: '颗', stock: null })).toBe('');
   });
@@ -122,7 +128,7 @@ describe('requests', () => {
       if (url === '/api/v1/auth/csrf') return ok({ csrf_token: 't' });
       calls.push({ url, body: init?.body ? JSON.parse(init.body as string) : null });
       if (url.endsWith('/doses/batch')) return ok({ created: 14, skipped_existing: 0, skipped_future: 0 }, 201);
-      if (url.includes('/stock')) return ok({ id: ID, name: 'a', count_unit: '颗', pills_per_box: 28, strength_amount: null, strength_unit: null, default_pills: null, regimen: 'scheduled', side_effects: [], dose_count: 0, last_taken_at: null, stock: { pills: 61, boxes: 2, loose_pills: 5, avg_daily_pills: null, avg_days: null, days_left: null } });
+      if (url.includes('/stock')) return ok({ id: ID, name: 'a', count_unit: '颗', pills_per_box: 28, strength_amount: null, strength_unit: null, default_pills: null, regimen: 'scheduled', side_effects: [], dose_count: 0, last_taken_at: null, stock: { pills: 61, boxes: 2, loose_pills: 5, avg_daily_pills: null, avg_days: null, avg_total_pills: null, avg_from: null, avg_to: null, recent_days: [], days_left: null } });
       return ok(dose({ pills: 1, medication_id: ID }), 201);
     }) as unknown as typeof fetch;
     await createDose({ medication_name: '示例药物', medication_id: ID, pills: 1, taken_at: '2026-10-10T00:00:00Z', regimen: 'scheduled', note: null }, fetcher);

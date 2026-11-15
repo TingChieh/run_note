@@ -1773,7 +1773,7 @@ test('one tap logs "taken", can be undone, and restock and count keep the stock 
   await expect(stock).toContainText('0 盒 27 颗（共 27 颗）');
   await expect(ring).toHaveAttribute('data-fraction', '0.964');
   await expect(ring).toContainText('27');
-  await expect(card).toContainText('按已吃的 1 天平均每天 1 颗');
+  await expect(card).toContainText('共 1 颗）平均每天 1 颗');
   await page.getByTestId('wellbeing-med-undo').getByRole('button', { name: '撤销' }).click();
   await expect(stock).toContainText('1 盒 0 颗（共 28 颗）');
   await expect(page.getByTestId('wellbeing-med-notice')).toContainText('库存已恢复');
@@ -1834,6 +1834,12 @@ test('several days can be back-filled at once, and repeating it adds nothing', a
   await panel.getByRole('button', { name: '生成记录' }).click();
   await expect(page.getByTestId('wellbeing-med-notice')).toContainText('已补录 6 条');
   await expect(card.getByTestId('wellbeing-stock')).toContainText('0 盒 22 颗（共 22 颗）');
+  await expect(card.getByTestId('wellbeing-stock')).toContainText('按截至昨天已吃的 3 天');
+  await expect(card.getByTestId('wellbeing-stock')).toContainText('共 6 颗）平均每天 2 颗，约可吃 11 天');
+  const paceDetails = card.getByTestId('wellbeing-pace-details');
+  await paceDetails.locator('summary').click();
+  await expect(paceDetails.locator('.pace-day')).toHaveCount(3);
+  await expect(paceDetails).toContainText('共 6 颗 ÷ 3 天 = 每天 2 颗');
   // The same request again is a no-op.
   await card.getByRole('button', { name: '补录 示例药物 多天记录' }).click();
   await panel.getByLabel('开始日期').fill(addDays(today(), -3));
