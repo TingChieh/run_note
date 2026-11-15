@@ -16,7 +16,11 @@ export interface DayMark { date: string; has_entry: boolean; dose_count: number;
 export interface EntryList { items: Entry[]; total: number; limit: number; offset: number }
 /** A medicine on the user's own list, with its usual dose. History keeps its own copy of the name. */
 /** Pills on hand = restocks and counts minus the pills of the doses logged against the medicine; `null` until a first count or restock. */
-export interface Stock { pills: number; boxes: number | null; loose_pills: number | null; avg_daily_pills: number | null; avg_days: number | null; days_left: number | null }
+export interface RecentDoseDay { date: string; pills: number }
+export interface Stock {
+  pills: number; boxes: number | null; loose_pills: number | null; avg_daily_pills: number | null; avg_days: number | null;
+  avg_total_pills: number | null; avg_from: string | null; avg_to: string | null; recent_days: RecentDoseDay[]; days_left: number | null;
+}
 export interface Medication { id: string; name: string; count_unit: string; pills_per_box: number | null; strength_amount: number | null; strength_unit: string | null; default_pills: number | null; regimen: Regimen; side_effects: string[]; dose_count: number; last_taken_at: string | null; stock: Stock | null }
 export interface MedicationDraft { name: string; count_unit: string; pills_per_box: number | null; strength_amount: number | null; strength_unit: string | null; default_pills: number | null; regimen: Regimen; side_effects: string[] }
 export interface BatchResult { created: number; skipped_existing: number; skipped_future: number }
@@ -112,11 +116,21 @@ export function parseEntryList(v: unknown, limit: number, offset: number): Entry
   if (!object(v) || !count(v.total) || v.limit !== limit || v.offset !== offset) invalid();
   return { items: list(v.items, parseEntry), total: v.total as number, limit, offset };
 }
+const parseRecentDay = (v: unknown): RecentDoseDay => {
+  if (!object(v) || !isoDate(v.date) || !finite(v.pills) || Number(v.pills) < 0) invalid();
+  return v as unknown as RecentDoseDay;
+};
 function parseStock(v: unknown): Stock | null {
   if (v === null) return null;
   if (!object(v) || !finite(v.pills) || !(v.boxes === null || count(v.boxes)) || !(v.loose_pills === null || (finite(v.loose_pills) && Number(v.loose_pills) >= 0))
-    || !(v.avg_daily_pills === null || (finite(v.avg_daily_pills) && Number(v.avg_daily_pills) > 0)) || !(v.avg_days === null || (typeof v.avg_days === 'number' && Number.isInteger(v.avg_days) && v.avg_days >= 1 && v.avg_days <= 7)) || !(v.days_left === null || (finite(v.days_left) && Number(v.days_left) >= 0))) invalid();
-  return v as unknown as Stock;
+    || !(v.avg_daily_pills === null || (finite(v.avg_daily_pills) && Number(v.avg_daily_pills) > 0))
+    || !(v.avg_days === null || (typeof v.avg_days === 'number' && Number.isInteger(v.avg_days) && v.avg_days >= 1 && v.avg_days <= 7))
+    || !(v.avg_total_pills === null || (finite(v.avg_total_pills) && Number(v.avg_total_pills) >= 0))
+    || !(v.avg_from === null || isoDate(v.avg_from)) || !(v.avg_to === null || isoDate(v.avg_to))
+    || (v.avg_from === null) !== (v.avg_to === null) || (v.avg_from !== null && (v.avg_from as string) > (v.avg_to as string))
+    || !(v.days_left === null || (finite(v.days_left) && Number(v.days_left) >= 0))) invalid();
+  const recent_days = list(v.recent_days, parseRecentDay);
+  return { ...(v as unknown as Stock), recent_days };
 }
 export function parseMedication(v: unknown): Medication {
   if (!object(v) || typeof v.id !== 'string' || !uuid.test(v.id) || !text(v.name, 80) || !(v.name as string).length || !text(v.count_unit, 8) || !(v.count_unit as string).length
@@ -347,13 +361,31 @@ export function stockText(med: Pick<Medication, 'count_unit' | 'stock'>): string
   const total = pillsText(stock.pills, med.count_unit);
   return stock.boxes !== null && stock.loose_pills !== null ? `${stock.boxes} 盒 ${trim(stock.loose_pills, 2)} ${med.count_unit}（共 ${total}）` : total;
 }
+export function shortDay(iso: string): string {
+  const [, month, day] = iso.split('-');
+  return `${Number(month)}/${Number(day)}`;
+}
 /** How long the stock lasts at the pace of the last 7 finished days, or of the days a newer medicine has been taken. Arithmetic on the user's own log, not advice. */
-export function supplyText(med: Pick<Medication, 'count_unit' | 'stock'>): string {
+export function supplyText(med: Pick<Medication, 'count_unit' | 'stock'>, today?: string): string {
   const stock = med.stock;
   if (!stock || stock.avg_daily_pills === null) return '';
   if (stock.days_left === 0) return '';
-  const basis = stock.avg_days !== null && stock.avg_days < 7 ? `已吃的 ${stock.avg_days} 天` : '近 7 天';
-  return `按${basis}平均每天 ${trim(stock.avg_daily_pills, 2)} ${med.count_unit}，约可吃 ${trim(stock.days_left ?? 0, 1)} 天`;
+  let basis: string;
+  if (stock.avg_days !== null && stock.avg_days < 7) {
+    if (stock.avg_days === 1) {
+      basis = today && stock.avg_to === today ? '今天已吃的 1 天' : today && stock.avg_to && stock.avg_to < today ? '昨天 1 天' : '已吃的 1 天';
+    } else {
+      basis = `截至昨天已吃的 ${stock.avg_days} 天`;
+    }
+  } else {
+    basis = '截至昨天近 7 天';
+  }
+  let detail = '';
+  if (stock.avg_from && stock.avg_to && stock.avg_total_pills !== null) {
+    const range = stock.avg_from === stock.avg_to ? shortDay(stock.avg_from) : `${shortDay(stock.avg_from)}–${shortDay(stock.avg_to)}`;
+    detail = `（${range}，共 ${pillsText(stock.avg_total_pills, med.count_unit)}）`;
+  }
+  return `按${basis}${detail}平均每天 ${trim(stock.avg_daily_pills, 2)} ${med.count_unit}，约可吃 ${trim(stock.days_left ?? 0, 1)} 天`;
 }
 
 /**

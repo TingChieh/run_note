@@ -93,11 +93,29 @@ export function createWellbeing(getUser) {
         const dayNumber = (/** @type {string} */ date) => Date.parse(`${date}T00:00:00Z`) / 86400000;
         const started = own.map(d => d.entry_date).sort()[0];
         const span = started ? dayNumber(today) - dayNumber(started) : 0;
-        const basis = Math.max(1, Math.min(7, span));
-        const counted = own.filter(d => d.pills !== null && (span ? d.entry_date < today && dayNumber(d.entry_date) >= dayNumber(today) - 7 : d.entry_date === today));
-        const avg = started ? counted.reduce((sum, d) => sum + d.pills, 0) / basis : 0;
+        const basis = span <= 0 ? 1 : Math.min(7, span);
+        const avgFrom = span <= 0 ? today : addDays(today, -basis);
+        const avgTo = span <= 0 ? today : addDays(today, -1);
+        const recentDays = started ? Array.from({ length: basis }, (_, i) => {
+          const date = addDays(avgFrom, i);
+          const dayPills = Math.round(own.filter(d => d.pills !== null && d.entry_date === date).reduce((sum, d) => sum + d.pills, 0) * 100) / 100;
+          return { date, pills: dayPills };
+        }) : [];
+        const avgTotal = Math.round(recentDays.reduce((sum, d) => sum + d.pills, 0) * 100) / 100;
+        const avg = started ? avgTotal / basis : 0;
         const boxes = med.pills_per_box && pills >= 0 ? Math.floor(pills / med.pills_per_box) : null;
-        stock = { pills, boxes, loose_pills: boxes === null ? null : Math.round((pills - boxes * med.pills_per_box) * 100) / 100, avg_daily_pills: avg > 0 ? Math.round(avg * 100) / 100 : null, avg_days: avg > 0 ? basis : null, days_left: avg > 0 ? (pills <= 0 ? 0 : Math.round(pills / avg * 10) / 10) : null };
+        stock = {
+          pills,
+          boxes,
+          loose_pills: boxes === null ? null : Math.round((pills - boxes * med.pills_per_box) * 100) / 100,
+          avg_daily_pills: avg > 0 ? Math.round(avg * 100) / 100 : null,
+          avg_days: avg > 0 ? basis : null,
+          avg_total_pills: avg > 0 ? avgTotal : null,
+          avg_from: avg > 0 ? avgFrom : null,
+          avg_to: avg > 0 ? avgTo : null,
+          recent_days: avg > 0 ? recentDays : [],
+          days_left: avg > 0 ? (pills <= 0 ? 0 : Math.round(pills / avg * 10) / 10) : null,
+        };
       }
       return { ...med, dose_count: own.length, last_taken_at: own[0]?.taken_at ?? null, stock };
     };

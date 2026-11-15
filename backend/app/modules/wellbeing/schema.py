@@ -386,12 +386,21 @@ class SymptomNameView(BaseModel):
     event_count: int
 
 
+class RecentDoseDayView(BaseModel):
+    date: date
+    pills: float
+
+
 class StockView(BaseModel):
     pills: float
     boxes: int | None
     loose_pills: float | None
     avg_daily_pills: float | None
     avg_days: int | None
+    avg_total_pills: float | None = None
+    avg_from: date | None = None
+    avg_to: date | None = None
+    recent_days: list[RecentDoseDayView] = []
     days_left: float | None
 
 
