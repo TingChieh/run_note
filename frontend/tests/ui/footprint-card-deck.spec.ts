@@ -404,6 +404,59 @@ test('mixed missing and complete metrics keep card heights and fact rows aligned
   })).toBeLessThan(1);
 });
 
+test('mixed short and long titles keep card height and metrics aligned across windows', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const state = await installActivities(page);
+  state.records = Array.from({ length: 20 }, (_, index) => ({
+    ...sampleActivity,
+    id: `${(20 - index).toString(16).padStart(8, '0')}-1111-4111-8111-111111111111`,
+    title: index === 0 ? '超长标题跑步记录：黄昏环湖十公里耐力训练与坡度测试全纪录' : index === 1 ? '上海世纪公园晨跑' : '跑步',
+    distance_m: index === 1 ? '100250' : '5100',
+    has_route: index % 2 === 0
+  }));
+  await loginRunner(page);
+  await page.goto(`/activities/${state.records[0].id}`);
+  const deck = page.getByRole('region', { name: '本次足迹卡片' });
+  await expect(deck.locator('.preview-browser')).toHaveAttribute('aria-busy', 'false');
+
+  for (const width of [1920, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await deck.scrollIntoViewIfNeeded();
+    await expect(deck.locator('.preview-browser')).toHaveAttribute('aria-busy', 'false');
+
+    const measure = () => deck.locator('.stack-slot .wall-card').evaluateAll(cards => cards.map(card => ({
+      height: (card as HTMLElement).offsetHeight,
+      titleHeight: (card.querySelector('.wall-title') as HTMLElement).offsetHeight,
+      distanceTop: (card.querySelector('.wall-distance') as HTMLElement).offsetTop,
+      factsTop: (card.querySelector('.wall-facts') as HTMLElement).offsetTop
+    })));
+
+    const initial = await measure();
+    for (const card of initial) {
+      expect(Math.abs(card.height - initial[0].height)).toBeLessThan(1);
+      expect(Math.abs(card.titleHeight - initial[0].titleHeight)).toBeLessThan(1);
+      expect(Math.abs(card.distanceTop - initial[0].distanceTop)).toBeLessThan(1);
+      expect(Math.abs(card.factsTop - initial[0].factsTop)).toBeLessThan(1);
+    }
+
+    // Browse far enough to prune the long-title card out of the window, then verify height stays unchanged.
+    const nextButton = deck.getByRole('button', { name: '较旧一条' });
+    for (let step = 0; step < 6; step++) {
+      await nextButton.click();
+      await expect(deck.locator('.preview-browser')).toHaveAttribute('aria-busy', 'false');
+    }
+    const afterPrune = await measure();
+    expect(Math.abs(afterPrune[0].height - initial[0].height)).toBeLessThan(1);
+
+    // Return to the first record so the next viewport iteration starts with the same window.
+    const prevButton = deck.getByRole('button', { name: '较新一条' });
+    for (let step = 0; step < 6; step++) {
+      await prevButton.click();
+      await expect(deck.locator('.preview-browser')).toHaveAttribute('aria-busy', 'false');
+    }
+  }
+});
+
 test('another record can be selected while its predecessor route is still loading', async ({ page }) => {
   const { deck, state } = await setup(page, 20, 8);
   state.records[9].has_route = true;

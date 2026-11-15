@@ -48,10 +48,10 @@
   .interactive :global(.route-watermark){display:none;}
   .interactive :global(.route-thumbnail svg){padding:var(--space-1);}
   .interactive :global(.route-thumbnail svg path){stroke-width:3.5;}
-  .interactive .wall-date{font-size: var(--text-caption);}
-  .interactive .wall-title{font-size: var(--text-body-fluid);white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;}
-  .interactive .wall-distance{font-size: var(--text-stat-fluid);}
-  .interactive .wall-facts{flex-wrap:nowrap;justify-content:flex-start;white-space:nowrap;font-size: var(--text-caption-fluid);}
+  .interactive .wall-date{font-size: var(--text-caption);white-space:nowrap;overflow:hidden;}
+  .interactive .wall-title{font-size: var(--text-body-fluid);line-height: var(--line-height-heading);white-space:normal;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;height:calc(var(--line-height-heading) * 2em);}
+  .interactive .wall-distance{font-size: var(--text-stat-fluid);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .interactive .wall-facts{flex-wrap:nowrap;justify-content:flex-start;white-space:nowrap;overflow:hidden;font-size: var(--text-caption-fluid);}
   .interactive .fact-separator{display:inline;}
   .interactive :global(.thumbnail-empty>span){font-size: var(--text-stat);line-height: var(--line-height-solid);}
   .interactive :global(.thumbnail-empty p){font-size: var(--text-caption);line-height: var(--line-height-title);}
