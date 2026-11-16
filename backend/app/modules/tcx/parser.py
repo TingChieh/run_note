@@ -36,7 +36,7 @@ def summary_number(element, path, *, integer=False, heart_rate=False):
         if heart_rate and not 1 <= value <= 300:
             raise ValueError
         return int(value) if integer else value
-    except (InvalidOperation, ValueError, AttributeError):
+    except InvalidOperation, ValueError, AttributeError:
         raise ApiError(422, "TCX_SUMMARY_INVALID", "TCX 设备汇总指标不合法") from None
 
 
@@ -47,11 +47,11 @@ def parse_tcx(raw: bytes, timezone="UTC", time_mode="absolute") -> ParsedTCX:
         raise ApiError(422, "VALIDATION_ERROR", "时间解释方式不合法")
     try:
         zone = ZoneInfo(timezone)
-    except (ZoneInfoNotFoundError, ValueError):
+    except ZoneInfoNotFoundError, ValueError:
         raise ApiError(422, "VALIDATION_ERROR", "时区不合法") from None
     try:
         root = SafeET.fromstring(raw, forbid_dtd=True, forbid_entities=True, forbid_external=True)
-    except (ET.ParseError, DefusedXmlException, ValueError):
+    except ET.ParseError, DefusedXmlException, ValueError:
         raise ApiError(400, "TCX_XML_INVALID", "TCX XML 不合法") from None
     if root.tag != NS + "TrainingCenterDatabase":
         raise ApiError(400, "TCX_XML_INVALID", "仅支持 TCX v2 训练记录")

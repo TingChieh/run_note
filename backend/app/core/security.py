@@ -30,7 +30,7 @@ def hash_password(password: str) -> str:
 def verify_password(encoded: str | None, password: str) -> bool:
     try:
         valid = PASSWORD_HASHER.verify(encoded or _DUMMY_HASH, password)
-    except (VerificationError, InvalidHashError):
+    except VerificationError, InvalidHashError:
         return False
     return bool(encoded and valid)
 

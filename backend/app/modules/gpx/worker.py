@@ -78,7 +78,7 @@ def bounded_parse(
             raise ApiError(503, f"{prefix}_PROCESSING_TIMEOUT", "轨迹解析超时")
         try:
             kind, result = receiver.recv()
-        except (EOFError, OSError):
+        except EOFError, OSError:
             if expired.is_set() or time.monotonic() >= deadline:
                 raise ApiError(503, f"{prefix}_PROCESSING_TIMEOUT", "轨迹解析超时") from None
             raise ApiError(503, f"{prefix}_PROCESSING_FAILED", "轨迹解析失败") from None

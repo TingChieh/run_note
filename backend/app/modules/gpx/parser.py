@@ -28,7 +28,7 @@ def number(text: str | None, limit: float | None = None) -> float | None:
         if not math.isfinite(value) or (limit is not None and abs(decimal) > limit):
             return None
         return value
-    except (ValueError, TypeError, OverflowError, InvalidOperation):
+    except ValueError, TypeError, OverflowError, InvalidOperation:
         return None
 
 
@@ -38,7 +38,7 @@ def timestamp(text: str | None) -> datetime | None:
     try:
         result = datetime.fromisoformat(text.strip().replace("Z", "+00:00")).astimezone(UTC)
         return result
-    except (ValueError, OverflowError):
+    except ValueError, OverflowError:
         return None
 
 
@@ -73,11 +73,11 @@ def parse_gpx(raw: bytes, timezone="UTC", time_mode="absolute") -> ParsedGPX:
         raise ApiError(422, "VALIDATION_ERROR", "时间解释方式不合法")
     try:
         zone = ZoneInfo(timezone)
-    except (ZoneInfoNotFoundError, ValueError):
+    except ZoneInfoNotFoundError, ValueError:
         raise ApiError(422, "VALIDATION_ERROR", "时区不合法") from None
     try:
         root = SafeET.fromstring(raw, forbid_dtd=True, forbid_entities=True, forbid_external=True)
-    except (ET.ParseError, DefusedXmlException, ValueError):
+    except ET.ParseError, DefusedXmlException, ValueError:
         raise ApiError(400, "GPX_XML_INVALID", "GPX XML 不合法") from None
     version = root.get("version")
     namespaces = {

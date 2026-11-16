@@ -46,7 +46,7 @@ class SourceMetrics(StrictInput):
         try:
             datetime.fromtimestamp(self.start_time, UTC)
             datetime.fromtimestamp(self.end_time, UTC)
-        except (ValueError, OverflowError, OSError):
+        except ValueError, OverflowError, OSError:
             raise ValueError("Valid UTC epoch seconds required") from None
         if self.end_time < self.start_time:
             raise ValueError("End time must not precede start time")

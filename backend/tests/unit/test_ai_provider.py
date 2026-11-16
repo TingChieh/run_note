@@ -243,7 +243,7 @@ def test_real_adapter_against_local_mock_http(mode, code, caplog):
                 body = b"x" * 65537
             try:
                 self.wfile.write(body)
-            except (BrokenPipeError, ConnectionResetError):
+            except BrokenPipeError, ConnectionResetError:
                 pass
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)

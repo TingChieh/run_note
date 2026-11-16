@@ -26,7 +26,7 @@ def round_metric(value) -> Decimal:
         if not result.is_finite() or result < 0 or result >= Decimal("1000000000"):
             raise InvalidOperation
         return result
-    except (InvalidOperation, ValueError, TypeError):
+    except InvalidOperation, ValueError, TypeError:
         raise ApiError(422, "GPX_METRIC_INVALID", "指标超过支持范围") from None
 
 

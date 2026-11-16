@@ -54,7 +54,7 @@ def decode(raw: bytes) -> Image.Image:
                 return ImageOps.exif_transpose(source).convert("RGBA")
     except ApiError:
         raise
-    except (Image.DecompressionBombError, Image.DecompressionBombWarning):
+    except Image.DecompressionBombError, Image.DecompressionBombWarning:
         raise ApiError(422, "IMAGE_TOO_LARGE", "图片像素过多，请缩小后再上传") from None
     except UnidentifiedImageError:
         raise ApiError(415, "IMAGE_UNSUPPORTED", "仅支持 PNG、JPEG 或 WebP 图片") from None

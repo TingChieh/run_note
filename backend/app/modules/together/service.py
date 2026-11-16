@@ -33,7 +33,7 @@ def feed(db, settings, before=None, limit=20):
             day, identifier = raw.split("|")
             params.update(day=date.fromisoformat(day), identifier=UUID(identifier))
             predicate = "AND (a.activity_date, a.id) < (:day, :identifier)"
-        except (ValueError, UnicodeError, binascii.Error):
+        except ValueError, UnicodeError, binascii.Error:
             raise ApiError(422, "INVALID_CURSOR", "动态游标无效") from None
     rows = (
         db.execute(
