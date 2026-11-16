@@ -1,4 +1,4 @@
-import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
+import type { DataDrivenPropertyValueSpecification, Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
 
 export type BasemapStyle = 'positron' | 'dark' | 'liberty';
 export type BasemapPreference = BasemapStyle | 'auto';
@@ -133,7 +133,7 @@ export function applyMapTheme(map: MapLibreMap, dark: boolean, routeColor?: stri
   if (map.getLayer('route-points'))
     map.setPaintProperty('route-points', 'circle-color', routeColor ?? (dark ? '#77d4ac' : '#14785b'));
   // Keep each route's identity, making all six hues readable on the dark map.
-  const colors = dark
+  const colors: DataDrivenPropertyValueSpecification<string> = dark
     ? [
         'match',
         ['get', 'color'],

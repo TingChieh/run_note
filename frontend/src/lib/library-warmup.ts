@@ -12,8 +12,7 @@ export function afterNextPaint(run: () => void): void {
 }
 
 export function warmMapLibrary(): void {
-  void import('maplibre-gl').catch(() => {});
-  void import('maplibre-gl/dist/maplibre-gl.css').catch(() => {});
+  void import('#lib/map/maplibre.ts').then(({ loadMapLibre }) => loadMapLibre()).catch(() => {});
 }
 
 export function warmChartLibrary(): void {

@@ -106,8 +106,9 @@ export async function observeMaps(page: Page) {
     const lib = await import(/* @vite-ignore */ moduleUrl);
     const root = window as typeof window & { __maps: import('maplibre-gl').Map[] };
     root.__maps = [];
-    const original = lib.default.Map.prototype.fire;
-    lib.default.Map.prototype.fire = function (...args: unknown[]) {
+    const MapClass = (lib.default ?? lib).Map;
+    const original = MapClass.prototype.fire;
+    MapClass.prototype.fire = function (...args: unknown[]) {
       if (!root.__maps.includes(this)) root.__maps.push(this);
       return original.apply(this, args);
     };
