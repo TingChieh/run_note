@@ -6,6 +6,7 @@
   import { createRouteMapStyle, applyMapTheme, type BasemapPreference, type BasemapStyle } from '#lib/api/map-style.ts';
   import BasemapPicker from './BasemapPicker.svelte';
   import { createBasemapController } from '#lib/map/basemap-controller.ts';
+  import { loadMapLibre } from '#lib/map/maplibre.ts';
   import { watchSystemTheme } from './system-theme';
   import { whenNearViewport } from '#lib/near-viewport.ts';
   let {
@@ -103,7 +104,7 @@
       void (async () => {
         try {
           // The map stylesheet travels with the library, not with the page: it is ~70 KB that would otherwise block first paint.
-          const [lib] = await Promise.all([import('maplibre-gl'), import('maplibre-gl/dist/maplibre-gl.css')]);
+          const lib = await loadMapLibre();
           if (disposed) return;
           map = new lib.Map({
             container,

@@ -13,6 +13,7 @@
   import { createRouteMapStyle, applyMapTheme, type BasemapPreference, type BasemapStyle } from '#lib/api/map-style.ts';
   import BasemapPicker from './BasemapPicker.svelte';
   import { createBasemapController } from '#lib/map/basemap-controller.ts';
+  import { loadMapLibre } from '#lib/map/maplibre.ts';
   import { watchSystemTheme } from './system-theme';
   let {
     data,
@@ -440,7 +441,7 @@
     });
     void (async () => {
       try {
-        const [lib] = await Promise.all([import('maplibre-gl'), import('maplibre-gl/dist/maplibre-gl.css')]);
+        const lib = await loadMapLibre();
         if (disposed) return;
         // Start on the overview so no high-zoom tiles load before the first fit.
         const camera = allBounds
