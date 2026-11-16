@@ -252,7 +252,7 @@ def load_log(log_path: Path) -> list[dict]:
     """Read and validate a revert log; raises BackfillLogError before anything is changed."""
     try:
         data = json.loads(log_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         raise BackfillLogError("无法读取还原日志，或日志不是有效的 JSON") from None
     if not isinstance(data, list):
         raise BackfillLogError("还原日志格式不正确")

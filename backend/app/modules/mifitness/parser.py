@@ -18,7 +18,7 @@ def parse_mifitness_gpx(raw: bytes) -> ParsedGPX:
         raise ApiError(413, "GPX_TOO_LARGE", "GPX 文件超过大小限制")
     try:
         root = SafeET.fromstring(raw, forbid_dtd=True, forbid_entities=True, forbid_external=True)
-    except (ET.ParseError, DefusedXmlException, ValueError):
+    except ET.ParseError, DefusedXmlException, ValueError:
         raise ApiError(400, "GPX_XML_INVALID", "GPX XML 不合法") from None
     if root.tag != "gpx" or root.get("version") != "1.1":
         return gpx_parser.parse_gpx(raw)

@@ -140,7 +140,7 @@ class IntegrationSettings(Settings):
     test_database_allowed_targets: str = ""
 
     @model_validator(mode="after")
-    def validate_test_target(self) -> "IntegrationSettings":
+    def validate_test_target(self) -> IntegrationSettings:
         if not self.test_database_url:
             return self
         self.validate_database_url(self.test_database_url)

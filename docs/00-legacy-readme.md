@@ -34,7 +34,7 @@
 
 ## 本地启动
 
-本项目统一使用非容器化方案：macOS + Homebrew PostgreSQL 18 / PostGIS 3.6、Python 3.12 独立虚拟环境、Node.js 22.17+（22 LTS）或 24 LTS、pnpm 11.25.0。当前本机数据库版本为 PostgreSQL 18.6 / PostGIS 3.6.4。
+本项目统一使用非容器化方案：macOS + Homebrew PostgreSQL 18 / PostGIS 3.7、Python 3.14 独立虚拟环境、Node.js 24 LTS、pnpm 11.25.0。当前本机数据库版本为 PostgreSQL 18.7 / PostGIS 3.7.0。
 
 以下命令从仓库根目录开始。已有 `.env` 时不要复制覆盖。
 
@@ -57,7 +57,7 @@ brew services list
 当前数据库 `running_note` 已可用，无需重新安装、初始化或修改服务配置。**仅在全新 macOS 环境**，先核对 Homebrew 配方、依赖和 PostgreSQL 主版本，再安装并启动：
 
 ```bash
-brew install postgresql@18 postgis python@3.12 node@22
+brew install postgresql@18 postgis python@3.14 node@24
 brew services start postgresql@18
 ```
 
@@ -79,7 +79,7 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 
 ```bash
 cd backend
-python3.12 -m venv .venv
+python3.14 -m venv .venv
 .venv/bin/python -m pip install --require-hashes -r requirements.lock
 .venv/bin/alembic current
 # 本机开发库现为 0005_ai_reports；启动前核对目标数据库和当前 revision。

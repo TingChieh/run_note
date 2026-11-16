@@ -13,7 +13,7 @@ class StrictInput(BaseModel):
 def valid_timezone(value: str) -> str:
     try:
         ZoneInfo(value)
-    except (ZoneInfoNotFoundError, ValueError):
+    except ZoneInfoNotFoundError, ValueError:
         raise ValueError("Valid IANA timezone required") from None
     return value
 

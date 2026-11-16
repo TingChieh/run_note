@@ -87,7 +87,7 @@ async def import_mifitness(
                 confirm_similar=confirm == "true",
                 enrich_activity_id=enrich,
             )
-    except (HTTPException, ValidationError, ValueError):
+    except HTTPException, ValidationError, ValueError:
         raise ApiError(422, "VALIDATION_ERROR", "请检查设备汇总、时区及单个轨迹文件") from None
     if preview:
         response.status_code = 200

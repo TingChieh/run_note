@@ -178,7 +178,7 @@ def bounded_request(url, key, body, timeout, *, target=None):
             raise ApiError(503, "AI_TIMEOUT", "AI分析超时，请查看历史后再主动重试")
         try:
             kind, result = receiver.recv()
-        except (EOFError, OSError):
+        except EOFError, OSError:
             code = (
                 "AI_TIMEOUT"
                 if expired.is_set() or time.monotonic() >= deadline
@@ -233,7 +233,7 @@ class OpenAIProvider:
                 input_tokens=usage.get("prompt_tokens"),
                 output_tokens=usage.get("completion_tokens"),
             )
-        except (ValueError, TypeError, KeyError, IndexError, ValidationError):
+        except ValueError, TypeError, KeyError, IndexError, ValidationError:
             raise ApiError(
                 502, "AI_OUTPUT_INVALID", "AI返回了不符合要求的分析，未展示内容"
             ) from None

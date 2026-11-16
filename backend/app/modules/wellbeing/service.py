@@ -46,7 +46,7 @@ RATING_FIELDS = ("mood", "anxiety", "energy", "focus", "functioning", "sleep_qua
 def account_zone(user) -> ZoneInfo:
     try:
         return ZoneInfo(user.timezone)
-    except (ZoneInfoNotFoundError, ValueError):
+    except ZoneInfoNotFoundError, ValueError:
         return ZoneInfo("UTC")
 
 

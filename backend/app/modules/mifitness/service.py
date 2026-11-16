@@ -145,7 +145,7 @@ def import_record(
             summary["elapsed_seconds"] = round_metric(summary["elapsed_seconds"])
             try:
                 activity_date = summary["started_at"].astimezone(ZoneInfo(timezone)).date()
-            except (OverflowError, ValueError):
+            except OverflowError, ValueError:
                 raise ApiError(422, "MIFITNESS_SUMMARY_INVALID", "活动日期不合法") from None
             if not 1900 <= activity_date.year <= 2100:
                 raise ApiError(422, "MIFITNESS_SUMMARY_INVALID", "活动日期不合法")

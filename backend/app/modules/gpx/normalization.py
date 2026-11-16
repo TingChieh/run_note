@@ -70,7 +70,7 @@ def derive(
 ) -> Derived:
     try:
         zone = ZoneInfo(timezone)
-    except (ZoneInfoNotFoundError, ValueError, TypeError):
+    except ZoneInfoNotFoundError, ValueError, TypeError:
         raise ApiError(422, "VALIDATION_ERROR", "时区不合法") from None
     points = source_points(parsed)
     quality = temporal_quality(points)
