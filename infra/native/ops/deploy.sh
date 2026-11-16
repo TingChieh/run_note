@@ -34,11 +34,11 @@ while [ $# -gt 0 ]; do
 done
 if [ -z "$tarball" ] || [ ! -f "$tarball" ]; then die "usage: deploy.sh [--migrate] RELEASE.tar.gz"; fi
 [ "$(id -u)" -eq 0 ] || [ -n "${RUNNOTE_ALLOW_NONROOT:-}" ] || die "run as root (sudo)"
-require_cmd tar curl flock "${PYTHON:-python3.12}"
+require_cmd tar curl flock "${PYTHON:-python3.14}"
 
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
 KEEP_RELEASES="${KEEP_RELEASES:-5}"
-PYTHON="${PYTHON:-python3.12}"
+PYTHON="${PYTHON:-python3.14}"
 releases="$RUNNOTE_ROOT/releases"
 mkdir -p "$releases"
 install -d -m 700 "$BACKUP_DIR"

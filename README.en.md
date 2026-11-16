@@ -9,7 +9,7 @@ Turn GPX / TCX / Mi Fitness runs into calendars, trends, footprint maps and shar
 
 [![CI](https://github.com/TingChieh/run_note/actions/workflows/ci.yml/badge.svg)](https://github.com/TingChieh/run_note/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)
 ![SvelteKit](https://img.shields.io/badge/SvelteKit-3-FF3E00?logo=svelte&logoColor=white)
 ![PostGIS](https://img.shields.io/badge/PostgreSQL-18%20%2B%20PostGIS-336791?logo=postgresql&logoColor=white)
 
@@ -82,22 +82,22 @@ Turn GPX / TCX / Mi Fitness runs into calendars, trends, footprint maps and shar
 ## Stack and architecture
 
 ```text
-Browser ──► Caddy (HTTPS) ─┬─ /api/*  ──► FastAPI (Uvicorn)  ──► PostgreSQL 18 + PostGIS 3.6
+Browser ──► Caddy (HTTPS) ─┬─ /api/*  ──► FastAPI (Uvicorn)  ──► PostgreSQL 18 + PostGIS 3.7
                            └─ others  ──► SvelteKit (Node)   ──► same-origin /api proxy ──┘
 ```
 
 | Layer | Technology |
 | --- | --- |
 | Frontend | SvelteKit 3, Svelte 5 (runes), TypeScript, Tailwind 4, MapLibre GL, ECharts |
-| Backend | Python 3.12, FastAPI, Pydantic 2, SQLAlchemy 2 (sync), Alembic, GeoAlchemy2, gpxpy |
-| Database | PostgreSQL 18 + PostGIS 3.6, the single source of truth |
+| Backend | Python 3.14, FastAPI, Pydantic 2, SQLAlchemy 2 (sync), Alembic, GeoAlchemy2, gpxpy |
+| Database | PostgreSQL 18 + PostGIS 3.7, the single source of truth |
 | Deployment | Native install (systemd + Caddy), **no Docker**; scripted release, migration, backup and restore drills |
 
 The backend is a modular monolith. Each feature module (activities, footprints, gpx, tcx, mifitness, statistics, ai_reports, sharing, showcase, …) is organised as `router / service / schema / model`, and every response uses the `{data, error, meta.request_id}` envelope.
 
 ## Quick start
 
-Requirements: macOS or Linux, PostgreSQL 18 + PostGIS 3.6, Python 3.12, Node.js 22.17+ or 24, pnpm 11.25.0.
+Requirements: macOS or Linux, PostgreSQL 18 + PostGIS 3.7, Python 3.14, Node.js 24, pnpm 11.25.0.
 
 ```bash
 # 1. Configure (edit .env: database URL, etc.)
@@ -105,7 +105,7 @@ test -e .env || cp .env.example .env
 
 # 2. Database: create it, enable PostGIS, then migrate
 cd backend
-python3.12 -m venv .venv
+python3.14 -m venv .venv
 .venv/bin/python -m pip install --require-hashes -r requirements.lock
 .venv/bin/alembic upgrade head
 cd ..

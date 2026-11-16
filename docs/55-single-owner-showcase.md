@@ -30,7 +30,7 @@
 
 `infra/native/` 提供 Linux systemd 的 API/Web unit 和 Caddyfile 模板，路径假定 `/opt/run-note`、低权限用户 `runnote`，Node 路径需按主机安装位置核对。本次仅新增模板，尚未安装 unit、启动生产服务或配置公网域名。
 
-1. 原生安装 PostgreSQL/PostGIS、Python 3.12、Node（满足前端 engines）、pnpm 11.25.0 和 Caddy。依赖使用后端锁文件与 `pnpm install --frozen-lockfile`，前端运行 `pnpm build`。
+1. 原生安装 PostgreSQL/PostGIS、Python 3.14、Node（满足前端 engines）、pnpm 11.25.0 和 Caddy。依赖使用后端锁文件与 `pnpm install --frozen-lockfile`，前端运行 `pnpm build`。
 2. 优先恢复包含原站主与运动数据的受控备份。部署前备份并恢复演练，动态检查 `alembic heads/current`；需要升级时由操作者受控执行一次，禁止每个 worker 自动迁移。本功能没有新增数据库 Schema 或迁移。
 3. 后端环境文件 `/etc/run-note/backend.env`（权限 600）由运维安全提供：`DATABASE_URL`、`APP_ENV=production`、`SITE_OWNER_EMAIL`、`SITE_ORIGIN=https://你的域名`、稳定的 `AUTH_RATE_HASH_KEY`（至少 32 字节）。可选 AI 变量仅提供给后端。不得把这些凭据复制进源码、unit 或前端环境。
 4. 前端环境文件 `/etc/run-note/frontend.env` 只需 `INTERNAL_API_BASE_URL=http://127.0.0.1:8000`。Web unit 将 Node 绑定 loopback、设置 `PROTOCOL_HEADER=x-forwarded-proto` 与 `BODY_SIZE_LIMIT=11M`。该协议头只允许来自受控 Caddy，Caddy 模板会覆盖为 https；不开放 Node 端口，不扩大 SSR 头白名单、不配置宽松 trustedOrigins。

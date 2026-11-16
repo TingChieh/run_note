@@ -6,7 +6,7 @@
 #   ops-e2e-instances.sh RELEASE_TARBALL      (needs PG_BIN, PYTHON; optional WORK)
 #
 # PG_BIN  directory with initdb/pg_ctl/psql/... for PostgreSQL 18 + PostGIS installed
-# PYTHON  python3.12 used to create each release's virtualenv
+# PYTHON  python3.14 used to create each release's virtualenv
 # Stand-ins (inside $WORK/shims, every call logged): systemctl, runuser, chown, useradd, groupadd,
 # getent, caddy, and on macOS flock / mv -T. Nothing touches /opt, /etc or a real service.
 # shellcheck disable=SC2012 # listing names this script generated

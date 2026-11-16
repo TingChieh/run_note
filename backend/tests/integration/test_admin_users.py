@@ -507,8 +507,8 @@ def test_together_switches_and_public_filter(site, monkeypatch):  # noqa: F811
         assert "SECRET_WELLBEING" not in result.text
         invalid = visitor.get("/api/v1/together?period=bad")
         assert invalid.status_code == 422 and invalid.json()["error"]
-        monkeypatch.setattr(
-            visitor.app.state, "clock", lambda: datetime(2023, 12, 31, 16, tzinfo=UTC)
+        monkeypatch.setitem(
+            visitor.app.state._state, "clock", lambda: datetime(2023, 12, 31, 16, tzinfo=UTC)
         )
         for day, included in [(date(2023, 12, 31), False), (date(2024, 1, 1), True)]:
             with engine.begin() as connection:
@@ -527,8 +527,8 @@ def test_together_switches_and_public_filter(site, monkeypatch):  # noqa: F811
                 assert (person["count"] == 1) == included
                 assert any(row["activity_id"] == activity_id for row in view["tracks"]) == included
                 assert any(row["id"] == activity_id for row in view["recent"])
-        monkeypatch.setattr(
-            visitor.app.state, "clock", lambda: datetime(2024, 2, 5, 12, tzinfo=UTC)
+        monkeypatch.setitem(
+            visitor.app.state._state, "clock", lambda: datetime(2024, 2, 5, 12, tzinfo=UTC)
         )
         for day, period, included in [
             (date(2024, 1, 31), "month", False),

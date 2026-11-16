@@ -27,7 +27,7 @@ PostgreSQL 18 + PostGIS 3.6（仅本机） ←  每晚 pg_dump + 真实恢复演
 ### 一次性准备（以下命令尚未在真实服务器执行）
 
 1. 用户与目录：`useradd --system --home /opt/run-note --shell /usr/sbin/nologin runnote`；`install -d -o root -g root /opt/run-note/releases /etc/run-note`。
-2. 软件：PostgreSQL 18 + PostGIS（PGDG apt 源）、Python 3.12、Node（满足 `^22.17 || ^24`，如 NodeSource，二进制须位于 `/usr/bin/node`）、Caddy（官方 apt 源）、`restic`、`curl`。pnpm 只在构建机需要。
+2. 软件：PostgreSQL 18 + PostGIS（PGDG apt 源）、Python 3.14（Debian/Ubuntu 需另行安装）、Node（满足 `^24`，如 NodeSource，二进制须位于 `/usr/bin/node`）、Caddy（官方 apt 源）、`restic`、`curl`。pnpm 只在构建机需要。
 3. **数据库必须先由超级用户建好扩展**：迁移 `0001` 执行 `CREATE EXTENSION IF NOT EXISTS postgis`，而 PostGIS 不是 trusted extension，应用角色无权创建。
 
    ```bash

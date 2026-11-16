@@ -9,7 +9,7 @@
 
 [![CI](https://github.com/TingChieh/run_note/actions/workflows/ci.yml/badge.svg)](https://github.com/TingChieh/run_note/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)
 ![SvelteKit](https://img.shields.io/badge/SvelteKit-3-FF3E00?logo=svelte&logoColor=white)
 ![PostGIS](https://img.shields.io/badge/PostgreSQL-18%20%2B%20PostGIS-336791?logo=postgresql&logoColor=white)
 
@@ -80,22 +80,22 @@
 ## 技术栈与架构
 
 ```text
-浏览器 ──► Caddy (HTTPS) ─┬─ /api/*  ──► FastAPI (Uvicorn)  ──► PostgreSQL 18 + PostGIS 3.6
+浏览器 ──► Caddy (HTTPS) ─┬─ /api/*  ──► FastAPI (Uvicorn)  ──► PostgreSQL 18 + PostGIS 3.7
                           └─ 其他    ──► SvelteKit (Node)   ──► 同源 /api 代理 ──┘
 ```
 
 | 层 | 技术 |
 | --- | --- |
 | 前端 | SvelteKit 3、Svelte 5（runes）、TypeScript、Tailwind 4、MapLibre GL、ECharts |
-| 后端 | Python 3.12、FastAPI、Pydantic 2、SQLAlchemy 2（同步）、Alembic、GeoAlchemy2、gpxpy |
-| 数据库 | PostgreSQL 18 + PostGIS 3.6，唯一持久化中心 |
+| 后端 | Python 3.14、FastAPI、Pydantic 2、SQLAlchemy 2（同步）、Alembic、GeoAlchemy2、gpxpy |
+| 数据库 | PostgreSQL 18 + PostGIS 3.7，唯一持久化中心 |
 | 部署 | 原生安装（systemd + Caddy），**不使用 Docker**；脚本化发布、迁移、备份与恢复演练 |
 
 后端是模块化单体：每个功能模块（activities、footprints、gpx、tcx、mifitness、statistics、ai_reports、sharing、showcase……）按 `router / service / schema / model` 组织，响应统一为 `{data, error, meta.request_id}`。
 
 ## 快速开始
 
-环境：macOS 或 Linux、PostgreSQL 18 + PostGIS 3.6、Python 3.12、Node.js 22.17+ 或 24、pnpm 11.25.0。
+环境：macOS 或 Linux、PostgreSQL 18 + PostGIS 3.7、Python 3.14、Node.js 24、pnpm 11.25.0。
 
 ```bash
 # 1. 配置（编辑 .env，填入数据库连接串等）
@@ -103,7 +103,7 @@ test -e .env || cp .env.example .env
 
 # 2. 数据库：创建库并启用 PostGIS，然后迁移
 cd backend
-python3.12 -m venv .venv
+python3.14 -m venv .venv
 .venv/bin/python -m pip install --require-hashes -r requirements.lock
 .venv/bin/alembic upgrade head
 cd ..
