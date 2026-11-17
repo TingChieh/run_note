@@ -201,6 +201,7 @@ def test_showcase_statistics_goals_footprints_and_report_reads(site):
         "/running-goals",
         "/footprints/all",
         "/footprints/provinces",
+        "/footprints/global",
         "/footprints?date_from=2023-01-01&date_to=2027-01-01",
     ]:
         response = visitor.get("/api/v1/showcase" + path)

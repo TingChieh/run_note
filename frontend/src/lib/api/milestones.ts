@@ -1,20 +1,96 @@
+import type { GeoJSONSourceSpecification } from 'maplibre-gl';
 import { ActivityError, request, type Metric } from './activities';
 import { goalRange, type GoalPeriod } from './running-goal';
 import { parseSummary, type Summary } from './statistics';
 
-export interface DateRange { from: string; to: string }
-export interface Streaks { today: string; current_days: number; longest_days: number; current_weeks: number; longest_weeks: number; week: { date: string; active: boolean }[] }
-export interface Provinces { year: number | null; total: number; provinces: { code: number; name: string; activity_count: number }[]; activity_count: number; located_activity_count: number }
+type GeoCollection = Exclude<GeoJSONSourceSpecification['data'], string>;
+type GeoFeature = GeoCollection extends { features: (infer F)[] } ? F : never;
+type GeoGeometry = GeoFeature['geometry'];
+
+export interface DateRange {
+  from: string;
+  to: string;
+}
+export interface Streaks {
+  today: string;
+  current_days: number;
+  longest_days: number;
+  current_weeks: number;
+  longest_weeks: number;
+  week: { date: string; active: boolean }[];
+}
+export interface Provinces {
+  year: number | null;
+  total: number;
+  provinces: { code: number; name: string; activity_count: number }[];
+  activity_count: number;
+  located_activity_count: number;
+}
+export interface GlobalFootprintCity {
+  code: string;
+  name: string;
+  short_name: string;
+  activity_count: number;
+  distance_m?: number;
+  lon: number;
+  lat: number;
+}
+export interface GlobalFootprintRegion {
+  code: string;
+  name: string;
+  short_name: string;
+  activity_count: number;
+  distance_m?: number;
+  bounds: [number, number, number, number];
+  center: [number, number];
+  cities: GlobalFootprintCity[];
+}
+export interface GlobalFootprintCountry {
+  code: string;
+  name: string;
+  activity_count: number;
+  distance_m?: number;
+  region_count: number;
+  city_count: number;
+  bounds: [number, number, number, number] | null;
+  regions: GlobalFootprintRegion[];
+}
+export interface GlobalRegionFeature {
+  type: 'Feature';
+  properties: { code: string; name: string; short_name: string; country_code: string; activity_count: number };
+  geometry: GeoGeometry;
+}
+export interface GlobalFootprints {
+  year: number | null;
+  activity_count: number;
+  located_activity_count: number;
+  region_count: number;
+  city_count: number;
+  countries: GlobalFootprintCountry[];
+  region_features: { type: 'FeatureCollection'; features: GlobalRegionFeature[] };
+}
 const iso = (date: Date) => date.toISOString().slice(0, 10);
 const shift = (date: string, days: number) => iso(new Date(Date.parse(date) + days * 86400000));
-const date = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(v)) && iso(new Date(v)) === v;
+const date = (v: unknown): v is string =>
+  typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(v)) && iso(new Date(v)) === v;
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const count = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
-function invalid(): never { throw new ActivityError('运动汇总返回了无效数据，请重试', 502, 'INVALID_RESPONSE'); }
+function invalid(): never {
+  throw new ActivityError('运动汇总返回了无效数据，请重试', 502, 'INVALID_RESPONSE');
+}
 
-export function comparisonWindow(period: GoalPeriod, timezone: string, now = new Date()): { current: DateRange; previous: DateRange } {
+export function comparisonWindow(
+  period: GoalPeriod,
+  timezone: string,
+  now = new Date(),
+): { current: DateRange; previous: DateRange } {
   const full = goalRange(period, timezone, now);
-  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  const today = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
   const current = { from: full.from, to: shift(today, 1) };
   if (period === 'week') return { current, previous: { from: shift(current.from, -7), to: shift(current.to, -7) } };
   const previousStart = new Date(`${full.from}T00:00:00Z`);
@@ -27,24 +103,201 @@ export function comparisonWindow(period: GoalPeriod, timezone: string, now = new
   const previousEnd = new Date(Date.UTC(previousYear, previousMonth, Math.min(day.getUTCDate(), lastDay) + 1));
   return { current, previous: { from: iso(previousStart), to: iso(previousEnd) } };
 }
-export function goalTotals(summary: { distance_m: Metric; duration_sum_seconds: Metric; activity_count: number }, target: number | null) {
+export function goalTotals(
+  summary: { distance_m: Metric; duration_sum_seconds: Metric; activity_count: number },
+  target: number | null,
+) {
   const km = Number(summary.distance_m) / 1000;
-  return { km, hours: summary.duration_sum_seconds === null ? null : Number(summary.duration_sum_seconds) / 3600, count: summary.activity_count, percent: target === null ? null : Math.min(100, km / target * 100) };
+  return {
+    km,
+    hours: summary.duration_sum_seconds === null ? null : Number(summary.duration_sum_seconds) / 3600,
+    count: summary.activity_count,
+    percent: target === null ? null : Math.min(100, (km / target) * 100),
+  };
 }
 export async function readRange(range: DateRange, fetcher: typeof fetch = fetch): Promise<Summary> {
-  return parseSummary(await request(`/api/v1/showcase/statistics/summary?date_from=${range.from}&date_to=${range.to}`, {}, fetcher));
+  return parseSummary(
+    await request(`/api/v1/showcase/statistics/summary?date_from=${range.from}&date_to=${range.to}`, {}, fetcher),
+  );
 }
 export function parseStreaks(v: unknown): Streaks {
-  if (!object(v) || !date(v.today) || !['current_days','longest_days','current_weeks','longest_weeks'].every(k => count(v[k])) || Number(v.current_days) > Number(v.longest_days) || Number(v.current_weeks) > Number(v.longest_weeks) || !Array.isArray(v.week) || v.week.length !== 7) invalid();
-  const today = new Date(`${v.today}T00:00:00Z`), monday = shift(v.today, -(today.getUTCDay() + 6) % 7);
-  if (!v.week.every((d, i) => object(d) && d.date === shift(monday, i) && typeof d.active === 'boolean' && !(d.active && String(d.date) > String(v.today)))) invalid();
+  if (
+    !object(v) ||
+    !date(v.today) ||
+    !['current_days', 'longest_days', 'current_weeks', 'longest_weeks'].every((k) => count(v[k])) ||
+    Number(v.current_days) > Number(v.longest_days) ||
+    Number(v.current_weeks) > Number(v.longest_weeks) ||
+    !Array.isArray(v.week) ||
+    v.week.length !== 7
+  )
+    invalid();
+  const today = new Date(`${v.today}T00:00:00Z`),
+    monday = shift(v.today, -(today.getUTCDay() + 6) % 7);
+  if (
+    !v.week.every(
+      (d, i) =>
+        object(d) &&
+        d.date === shift(monday, i) &&
+        typeof d.active === 'boolean' &&
+        !(d.active && String(d.date) > String(v.today)),
+    )
+  )
+    invalid();
   return v as unknown as Streaks;
 }
-export async function readStreaks(fetcher: typeof fetch = fetch): Promise<Streaks> { return parseStreaks(await request('/api/v1/showcase/statistics/streaks', {}, fetcher)); }
+export async function readStreaks(fetcher: typeof fetch = fetch): Promise<Streaks> {
+  return parseStreaks(await request('/api/v1/showcase/statistics/streaks', {}, fetcher));
+}
 export function parseProvinces(v: unknown, year: number | null = null): Provinces {
-  if (!object(v) || v.year !== year || v.total !== 34 || !count(v.activity_count) || !count(v.located_activity_count) || v.located_activity_count > v.activity_count || !Array.isArray(v.provinces) || v.provinces.length > 34) invalid();
+  if (
+    !object(v) ||
+    v.year !== year ||
+    v.total !== 34 ||
+    !count(v.activity_count) ||
+    !count(v.located_activity_count) ||
+    v.located_activity_count > v.activity_count ||
+    !Array.isArray(v.provinces) ||
+    v.provinces.length > 34
+  )
+    invalid();
   const seen = new Set<number>();
-  for (const p of v.provinces) { if (!object(p) || !count(p.code) || p.code < 110000 || p.code > 820000 || p.code % 10000 !== 0 || seen.has(p.code) || typeof p.name !== 'string' || !count(p.activity_count) || p.activity_count < 1 || p.activity_count > v.located_activity_count) invalid(); seen.add(p.code); }
+  for (const p of v.provinces) {
+    if (
+      !object(p) ||
+      !count(p.code) ||
+      p.code < 110000 ||
+      p.code > 820000 ||
+      p.code % 10000 !== 0 ||
+      seen.has(p.code) ||
+      typeof p.name !== 'string' ||
+      !count(p.activity_count) ||
+      p.activity_count < 1 ||
+      p.activity_count > v.located_activity_count
+    )
+      invalid();
+    seen.add(p.code);
+  }
   return v as unknown as Provinces;
 }
-export async function readProvinces(year: number | null = null, fetcher: typeof fetch = fetch): Promise<Provinces> { return parseProvinces(await request(`/api/v1/showcase/footprints/provinces${year === null ? '' : `?year=${year}`}`, {}, fetcher), year); }
+export async function readProvinces(year: number | null = null, fetcher: typeof fetch = fetch): Promise<Provinces> {
+  return parseProvinces(
+    await request(`/api/v1/showcase/footprints/provinces${year === null ? '' : `?year=${year}`}`, {}, fetcher),
+    year,
+  );
+}
+
+const finiteNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const optionalDist = (v: unknown): boolean => v === undefined || (finiteNum(v) && v >= 0);
+const isBounds = (v: unknown): v is [number, number, number, number] =>
+  Array.isArray(v) && v.length === 4 && v.every(finiteNum);
+const isCenter = (v: unknown): v is [number, number] => Array.isArray(v) && v.length === 2 && v.every(finiteNum);
+
+export function parseGlobalFootprints(v: unknown, year: number | null = null): GlobalFootprints {
+  if (
+    !object(v) ||
+    v.year !== year ||
+    !count(v.activity_count) ||
+    !count(v.located_activity_count) ||
+    v.located_activity_count > v.activity_count ||
+    !count(v.region_count) ||
+    !count(v.city_count) ||
+    !Array.isArray(v.countries) ||
+    !object(v.region_features) ||
+    v.region_features.type !== 'FeatureCollection' ||
+    !Array.isArray(v.region_features.features)
+  )
+    invalid();
+
+  const seenCountries = new Set<string>();
+  const seenRegions = new Set<string>();
+  const seenCities = new Set<string>();
+  for (const country of v.countries) {
+    if (
+      !object(country) ||
+      typeof country.code !== 'string' ||
+      !country.code ||
+      seenCountries.has(country.code) ||
+      typeof country.name !== 'string' ||
+      !country.name ||
+      !count(country.activity_count) ||
+      country.activity_count < 1 ||
+      !optionalDist(country.distance_m) ||
+      !count(country.region_count) ||
+      !count(country.city_count) ||
+      (country.bounds !== null && !isBounds(country.bounds)) ||
+      !Array.isArray(country.regions) ||
+      country.regions.length !== country.region_count
+    )
+      invalid();
+    seenCountries.add(country.code);
+    let countryCities = 0;
+    for (const region of country.regions) {
+      if (
+        !object(region) ||
+        typeof region.code !== 'string' ||
+        !region.code ||
+        seenRegions.has(region.code) ||
+        typeof region.name !== 'string' ||
+        !region.name ||
+        typeof region.short_name !== 'string' ||
+        !region.short_name ||
+        !count(region.activity_count) ||
+        region.activity_count < 1 ||
+        !optionalDist(region.distance_m) ||
+        !isBounds(region.bounds) ||
+        !isCenter(region.center) ||
+        !Array.isArray(region.cities)
+      )
+        invalid();
+      seenRegions.add(region.code);
+      countryCities += region.cities.length;
+      for (const city of region.cities) {
+        if (
+          !object(city) ||
+          typeof city.code !== 'string' ||
+          !city.code ||
+          seenCities.has(city.code) ||
+          typeof city.name !== 'string' ||
+          !city.name ||
+          typeof city.short_name !== 'string' ||
+          !city.short_name ||
+          !count(city.activity_count) ||
+          city.activity_count < 1 ||
+          !optionalDist(city.distance_m) ||
+          !finiteNum(city.lon) ||
+          !finiteNum(city.lat)
+        )
+          invalid();
+        seenCities.add(city.code);
+      }
+    }
+    if (countryCities !== country.city_count) invalid();
+  }
+  if (seenRegions.size !== v.region_count || seenCities.size !== v.city_count) invalid();
+  for (const feature of v.region_features.features) {
+    if (
+      !object(feature) ||
+      feature.type !== 'Feature' ||
+      !object(feature.properties) ||
+      typeof feature.properties.code !== 'string' ||
+      typeof feature.properties.name !== 'string' ||
+      typeof feature.properties.short_name !== 'string' ||
+      typeof feature.properties.country_code !== 'string' ||
+      !count(feature.properties.activity_count) ||
+      !object(feature.geometry) ||
+      (feature.geometry.type !== 'Polygon' && feature.geometry.type !== 'MultiPolygon')
+    )
+      invalid();
+  }
+  return v as unknown as GlobalFootprints;
+}
+
+export async function readGlobalFootprints(
+  year: number | null = null,
+  fetcher: typeof fetch = fetch,
+): Promise<GlobalFootprints> {
+  return parseGlobalFootprints(
+    await request(`/api/v1/showcase/footprints/global${year === null ? '' : `?year=${year}`}`, {}, fetcher),
+    year,
+  );
+}

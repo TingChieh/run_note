@@ -4,7 +4,7 @@ import pytest
 def test_release_head_follows_complete_chain():
     from app.db.schema import get_expected_revision
 
-    assert get_expected_revision() == "0029_wellbeing_sleep_wakeups"
+    assert get_expected_revision() == "0030_global_footprint_caches"
 
 
 @pytest.mark.parametrize("revisions", [[], [("a", None), ("b", None)]])
@@ -39,6 +39,7 @@ def test_model_registry_and_autogenerate_preserve_unmanaged_tables():
         "activity_segments",
         "activity_points",
         "activity_province_caches",
+        "activity_global_footprint_caches",
         "footprint_activity_caches",
         "footprint_snapshots",
         "site_settings",
@@ -68,4 +69,4 @@ def test_revision_discovery_does_not_depend_on_working_directory(tmp_path, monke
     from app.db.schema import get_expected_revision
 
     monkeypatch.chdir(tmp_path)
-    assert get_expected_revision() == "0029_wellbeing_sleep_wakeups"
+    assert get_expected_revision() == "0030_global_footprint_caches"

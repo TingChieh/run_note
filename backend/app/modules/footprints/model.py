@@ -63,6 +63,28 @@ class ActivityProvinceCache(Base):
     )
 
 
+class ActivityGlobalFootprintCache(Base):
+    """Global admin-1 regions and cities one activity touches; derived from stored segments."""
+
+    __tablename__ = "activity_global_footprint_caches"
+    __table_args__ = (
+        UniqueConstraint("activity_id"),
+        ForeignKeyConstraint(
+            ["activity_id", "user_id"], ["activities.id", "activities.user_id"], ondelete="CASCADE"
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    activity_id: Mapped[UUID] = mapped_column()
+    atlas_version: Mapped[str] = mapped_column(String(64))
+    region_codes: Mapped[list[str]] = mapped_column(ARRAY(String(32)))
+    city_codes: Mapped[list[str]] = mapped_column(ARRAY(String(32)))
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class FootprintSnapshot(Base):
     __tablename__ = "footprint_snapshots"
     __table_args__ = (

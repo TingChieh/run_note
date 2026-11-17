@@ -5,6 +5,7 @@ from threading import Event, Lock, Thread
 
 from sqlalchemy import and_, or_, select, text
 
+from app.modules.footprints.global_atlas import fill_global_footprint_caches
 from app.modules.footprints.model import FootprintSnapshot
 from app.modules.footprints.provinces import fill_province_caches
 from app.modules.footprints.snapshot import (
@@ -95,6 +96,11 @@ def run_scan(session_factory, now, expected_revision, *, limit=10, stop_event=No
     except Exception as error:
         # Reads compute missing rows themselves; the next scan retries without leaking details.
         logger.warning("Province cache fill unavailable (%s)", type(error).__name__)
+    try:
+        fill_global_footprint_caches(session_factory, max_batches=5, stop_event=stop_event)
+    except Exception as error:
+        # Reads compute missing rows themselves; the next scan retries without leaking details.
+        logger.warning("Global footprint cache fill unavailable (%s)", type(error).__name__)
     try:
         fill_route_groups(session_factory, stop_event=stop_event)
     except Exception as error:

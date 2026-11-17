@@ -336,9 +336,9 @@ test('year input, boundaries, URL date restore and slow previous-year response',
 test('the explorer map and the trend chart start only when a reader scrolls near them', async ({ page }) => {
   await fixture(page);
   await loginRunner(page);
-  const mapLibrary: string[] = [];
+  const chartLibrary: string[] = [];
   page.on('request', (request) => {
-    if (/\/maplibre-gl\.js(\?|$)/.test(request.url())) mapLibrary.push(request.url());
+    if (/\/echarts/.test(request.url())) chartLibrary.push(request.url());
   });
   await page.goto('/dashboard?year=2026');
   await expect(page.getByTestId('annual-distance')).toHaveText('10.2 km');
@@ -346,16 +346,18 @@ test('the explorer map and the trend chart start only when a reader scrolls near
   const trend = page.getByRole('region', { name: '运动趋势', exact: true });
   await expect(explorer.getByRole('button', { name: /选择运动/ }).first()).toBeAttached();
   await page.waitForTimeout(800);
-  // Both sit below the first screen: nothing has been fetched or drawn for them yet.
+  // Both sit below the first screen: explorer has not mounted its map canvas and trend has not loaded echarts yet.
   expect(await explorer.evaluate((el) => el.getBoundingClientRect().top)).toBeGreaterThan(1000);
-  expect(mapLibrary).toEqual([]);
+  expect(chartLibrary).toEqual([]);
   await expect(explorer.getByTestId('route-map-ready')).toHaveCount(0);
+  await expect(explorer.locator('canvas')).toHaveCount(0);
   await expect(trend.locator('canvas')).toHaveCount(0);
   await explorer.scrollIntoViewIfNeeded();
   await expect(explorer.getByTestId('route-map-ready')).toBeVisible();
-  expect(mapLibrary.length).toBeGreaterThan(0);
+  await expect(explorer.locator('canvas')).toBeVisible();
   await trend.scrollIntoViewIfNeeded();
   await expect(trend.locator('canvas')).toBeVisible();
+  expect(chartLibrary.length).toBeGreaterThan(0);
 });
 test('the summary keeps its place while the totals and yearly metrics load', async ({ page }) => {
   await fixture(page);

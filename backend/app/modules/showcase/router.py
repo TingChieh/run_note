@@ -13,6 +13,7 @@ from app.core.responses import ApiResponse
 from app.modules.activities import service as activities
 from app.modules.activities.router import envelope
 from app.modules.footprints.cache import all_footprints_response
+from app.modules.footprints.global_atlas import global_summary
 from app.modules.footprints.provinces import province_summary
 from app.modules.footprints.schema import AllFootprintView
 from app.modules.footprints.service import footprints
@@ -191,6 +192,16 @@ def provinces(
     year: Annotated[int | None, Query(ge=1900, le=2100)] = None,
 ):
     return envelope(request, province_summary(db, owner.id, year))
+
+
+@router.get("/footprints/global", response_model=ApiResponse[dict])
+def global_footprints(
+    request: Request,
+    db: DB,
+    owner: Owner,
+    year: Annotated[int | None, Query(ge=1900, le=2100)] = None,
+):
+    return envelope(request, global_summary(db, owner.id, year))
 
 
 @router.get("/footprints", response_model=ApiResponse[dict])
