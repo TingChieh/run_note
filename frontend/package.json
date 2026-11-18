@@ -31,6 +31,7 @@
     "@sveltejs/vite-plugin-svelte": "7.3.1",
     "@tailwindcss/vite": "4.3.5",
     "@types/node": "24.19.2",
+    "@types/three": "^0.187.0",
     "postcss-html": "2.0.0",
     "prettier": "3.10.1",
     "prettier-plugin-svelte": "4.1.1",
@@ -43,7 +44,9 @@
     "vitest": "5.1.0"
   },
   "dependencies": {
+    "earcut": "^3.2.4",
     "echarts": "6.1.0",
-    "maplibre-gl": "6.18.0"
+    "maplibre-gl": "6.18.0",
+    "three": "^0.187.0"
   }
 }

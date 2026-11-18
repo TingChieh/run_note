@@ -5,6 +5,7 @@ from app.modules.activities.model import Activity
 from app.modules.ai_reports.model import AIReport
 from app.modules.auth.model import AuthRateBucket, AuthSession
 from app.modules.footprints.model import (
+    ActivityGlobalFootprintCache,
     ActivityProvinceCache,
     FootprintActivityCache,
     FootprintSnapshot,
@@ -44,6 +45,7 @@ __all__ = [
     "MifitnessImport",
     "ActivitySegment",
     "ActivityPoint",
+    "ActivityGlobalFootprintCache",
     "ActivityProvinceCache",
     "FootprintActivityCache",
     "FootprintSnapshot",

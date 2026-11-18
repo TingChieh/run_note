@@ -9,6 +9,7 @@ from app.core.errors import ApiError
 from app.core.responses import ApiResponse
 from app.modules.activities.router import envelope
 from app.modules.footprints.cache import all_footprints_response
+from app.modules.footprints.global_atlas import global_summary
 from app.modules.footprints.provinces import province_summary
 from app.modules.footprints.schema import AllFootprintView
 from app.modules.footprints.service import footprints
@@ -39,6 +40,18 @@ def provinces(
     year: Annotated[int | None, Query(ge=1900, le=2100)] = None,
 ):
     data = province_summary(db, identity[1].id, year)
+    db.commit()
+    return envelope(request, data)
+
+
+@router.get("/global")
+def global_footprints(
+    request: Request,
+    identity: Annotated[tuple, Depends(get_read_identity)],
+    db: Annotated[Session, Depends(get_session)],
+    year: Annotated[int | None, Query(ge=1900, le=2100)] = None,
+):
+    data = global_summary(db, identity[1].id, year)
     db.commit()
     return envelope(request, data)
 
