@@ -28,7 +28,8 @@ test('desktop sidebar highlights route, keyboard skip works, session survives na
   await expect(page.getByRole('status').filter({ hasText: '正在读取' })).toHaveCount(0);
   await expect(page.locator('.calendar-scroll')).toBeVisible();
   await expect(page.getByTestId('trend-empty')).toBeVisible();
-  await expect(page.locator('canvas')).toHaveCount(0);
+  // Empty trend data draws no chart; the footprint map's WebGL canvas is not a chart.
+  await expect(page.locator('canvas:not(.globe-canvas > canvas)')).toHaveCount(0);
   await expect((await openAccountMenu(page)).getByRole('button', {name:'退出登录',exact:true})).toBeEnabled();
   await page.keyboard.press('Escape');
   await page.screenshot({ path: 'test-results/ui-desktop-dashboard.png', fullPage: true });
