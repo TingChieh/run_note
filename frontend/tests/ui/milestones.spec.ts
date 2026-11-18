@@ -426,7 +426,9 @@ test('home has real period goals, streaks, province lighting and a private wall 
   await expect(goals.getByRole('progressbar', { name: '年度目标进度' })).toHaveAttribute('value', /^51\.2/);
   await expect(page.getByRole('region', { name: '连续记录' })).toContainText('最长 5 天 / 7 周');
   const map = page.getByRole('region', { name: '足迹地图' });
-  await expect(map.getByTestId('global-summary')).toContainText('累计点亮 3 个省/州、3 座城市');
+  const summary = map.getByTestId('global-summary');
+  await expect(summary.locator('dt')).toHaveText(['省/州', '城市']);
+  await expect(summary.locator('dd')).toHaveText(['3', '3']);
   const countryRail = map.getByRole('group', { name: '已点亮国家或地区' });
   await expect(countryRail.getByRole('button', { name: /全部/ })).toHaveCount(0);
   await expect(countryRail).toContainText('中国');
@@ -437,17 +439,23 @@ test('home has real period goals, streaks, province lighting and a private wall 
   await expect(regionRail).toContainText('台湾');
   await regionRail.getByRole('button', { name: /台湾/ }).click();
   await expect(map.getByRole('group', { name: '台湾已点亮城市' })).toContainText('台北');
-  await expect(map.getByTestId('global-focus-pill')).toContainText('台湾 1 次活动 10 km');
+  await expect(map.getByTestId('global-focus')).toHaveText(/^台湾\s+1 次活动\s+10 km$/);
+  await expect(regionRail.getByRole('button', { name: /台湾/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(regionRail.getByRole('button', { name: /上海/ })).toHaveAttribute('aria-pressed', 'false');
   await map.getByRole('group', { name: '台湾已点亮城市' }).getByRole('button', { name: /台北/ }).click();
-  await expect(map.getByTestId('global-focus-pill')).toContainText('台湾 · 台北 1 次活动 10 km');
+  await expect(map.getByTestId('global-focus')).toHaveText(/^台湾 · 台北\s+1 次活动\s+10 km$/);
   await countryRail.getByRole('button', { name: /日本/ }).click();
   await expect(map.getByRole('group', { name: '东京都已点亮城市' })).toContainText('东京');
   await countryRail.getByRole('button', { name: /中国/ }).click();
+  // Opens in 3D; the last choice is remembered on this device.
+  await expect(map.getByRole('button', { name: '切换为 2D 平面地图' })).toBeVisible();
+  await map.getByRole('button', { name: '切换为 2D 平面地图' }).click();
   await expect(map.getByRole('button', { name: '切换为 3D 地球' })).toBeVisible();
   await map.getByRole('button', { name: '切换为 3D 地球' }).click();
   await expect(map.getByRole('button', { name: '切换为 2D 平面地图' })).toBeVisible();
   await map.getByRole('button', { name: '切换为 2D 平面地图' }).click();
   await expect(map.getByRole('button', { name: '切换为 3D 地球' })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('runnote-footprint-view'))).toBe('mercator');
   const resetBtn = map.getByRole('button', { name: '回到全局' });
   await expect(resetBtn).toBeDisabled();
   const canvasBox = (await map.getByTestId('global-map-ready').boundingBox())!;
@@ -483,12 +491,37 @@ test('home has real period goals, streaks, province lighting and a private wall 
     }
   }
   await page.reload();
+  await expect(map.getByRole('button', { name: '切换为 3D 地球' })).toBeVisible();
   await expect(goals).toContainText('/ 20 km');
   await page.getByRole('button', { name: '上一年', exact: true }).click();
-  await expect(map.getByTestId('global-summary')).toContainText('3 个省/州');
+  await expect(map.getByTestId('global-summary').locator('dd').first()).toHaveText('3');
   await expect(map).toContainText('上海');
   await expect(map).toContainText('全部时间');
-  await expect(map.getByRole('link', { name: '探索详细路线' })).toHaveAttribute('href', '/footprints');
+});
+
+test('footprint map names the visited place under the pointer', async ({ page }) => {
+  await installMilestones(page);
+  await loginRunner(page);
+  await page.goto('/dashboard');
+  const map = page.getByRole('region', { name: '足迹地图' });
+  await expect(map.getByTestId('global-map-ready')).toBeVisible();
+
+  // Choosing a region flies the camera to centre it, so the stage centre is over that region.
+  await map.getByRole('group', { name: '中国已点亮省/州' }).getByRole('button', { name: /台湾/ }).click();
+  const box = (await map.getByTestId('global-map-ready').boundingBox())!;
+  let jitter = 0;
+  await expect
+    .poll(
+      async () => {
+        jitter = jitter ? 0 : 1;
+        await page.mouse.move(box.x + box.width / 2 + jitter, box.y + box.height / 2);
+        return (await map.getByTestId('global-hover').allTextContents()).join('');
+      },
+      { timeout: 5000 },
+    )
+    .toMatch(/台湾\s*1 次活动/);
+  await page.mouse.move(box.x - 40, box.y - 40);
+  await expect(map.getByTestId('global-hover')).toHaveCount(0);
 });
 
 test('the four goal cards share one size on desktop and the page carries no footnote under them', async ({ page }) => {
@@ -517,8 +550,10 @@ test('goals sync with sidebar and province/streak failures can retry independent
   state.streakFailures = 1;
   await loginRunner(page);
   await page.goto('/dashboard');
+  // A failed read is missing data, not zero.
+  await expect(page.getByTestId('global-summary').locator('dd')).toHaveText(['—', '—']);
   await page.getByRole('button', { name: '重试足迹地图' }).click();
-  await expect(page.getByTestId('global-summary')).toContainText('3 个省/州');
+  await expect(page.getByTestId('global-summary').locator('dd').first()).toHaveText('3');
   await page.getByRole('button', { name: '重试连续记录' }).click();
   await expect(page.getByRole('region', { name: '连续记录' })).toContainText('最长 5 天 / 7 周');
   const sidebar = await openGoalPanel(page);
