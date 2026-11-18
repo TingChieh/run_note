@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildGraticuleLines,
+  buildLandDots,
   buildOceanGrid,
   buildSubdividedLines,
   buildSubdividedPolygons,
@@ -99,6 +100,12 @@ describe('globe geometry helpers', () => {
     const ocean = buildOceanGrid(0.996, -0.02);
     expect(ocean.sphere.length).toBeGreaterThan(0);
     expect(ocean.flat.length).toBe(ocean.sphere.length);
+    // The globe's ocean reaches both poles, while the flat map stays inside the Mercator band.
+    const ys = Array.from({ length: ocean.sphere.length / 3 }, (_, i) => ocean.sphere[i * 3 + 1]);
+    expect(Math.max(...ys)).toBeCloseTo(0.996, 5);
+    expect(Math.min(...ys)).toBeCloseTo(-0.996, 5);
+    const flatYs = Array.from({ length: ocean.flat.length / 3 }, (_, i) => ocean.flat[i * 3 + 1]);
+    expect(Math.max(...flatYs)).toBeLessThanOrEqual(MERCATOR_MAX_Y + 1e-6);
 
     const grat = buildGraticuleLines(0.998, -0.01);
     expect(grat.sphere.length).toBeGreaterThan(0);
@@ -152,5 +159,63 @@ describe('globe geometry helpers', () => {
     expect((features[0].properties as { code: string }).code).toBe('310000');
     expect(pointInGeoFeature(121.5, 31.5, features[0])).toBe(true);
     expect(pointInGeoFeature(118.5, 31.5, features[0])).toBe(false);
+  });
+
+  it('frames the same visible area at any field of view, clamps included', () => {
+    const visible = (dist: number, fov: number) => dist * Math.tan((fov * Math.PI) / 360);
+    // Ordinary, too small (minimum clamp) and too large (maximum clamp) extents.
+    for (const bounds of [
+      [103.6, 24.6, 121.9, 35.1],
+      [121.4, 31.2, 121.41, 31.21],
+      [-179, -80, 179, 80],
+    ] as const) {
+      const flatWide = fitBoundsMercator2D([...bounds], 2.2, 32, 0.01);
+      const flatNarrow = fitBoundsMercator2D([...bounds], 2.2, 12, 0.01);
+      expect(visible(flatNarrow.dist, 12)).toBeCloseTo(visible(flatWide.dist, 32), 6);
+      const globeWide = fitBoundsGlobe3D([...bounds], 2.2, 32, 0.01);
+      const globeNarrow = fitBoundsGlobe3D([...bounds], 2.2, 12, 0.01);
+      expect(visible(globeNarrow.dist - 1, 12)).toBeCloseTo(visible(globeWide.dist - 1, 32), 6);
+    }
+  });
+
+  it('scatters evenly spaced land dots only inside polygons and outside their holes', () => {
+    const square: GeoFeature = {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [0.3, 0.3],
+            [20.3, 0.3],
+            [20.3, 20.3],
+            [0.3, 20.3],
+            [0.3, 0.3],
+          ],
+          [
+            [8.3, 8.3],
+            [12.3, 8.3],
+            [12.3, 12.3],
+            [8.3, 12.3],
+            [8.3, 8.3],
+          ],
+        ],
+      },
+    };
+    // Edges sit off the dot grid: a dot exactly on an edge is a tie either way.
+    const dots = buildLandDots([square], 2, 1, 0);
+    const count = dots.sphere.length / 3;
+    expect(dots.flat).toHaveLength(dots.sphere.length);
+    // About 20° x 20° at 2° spacing, minus the 4° x 4° hole.
+    expect(count).toBeGreaterThan(80);
+    expect(count).toBeLessThan(110);
+    for (let i = 0; i < count; i++) {
+      const [lon, lat] = spherePointToLonLat(dots.sphere[i * 3], dots.sphere[i * 3 + 1], dots.sphere[i * 3 + 2]);
+      expect(pointInGeoFeature(lon, lat, square)).toBe(true);
+      const [mlon, mlat] = mercator2DToLonLat(dots.flat[i * 3], dots.flat[i * 3 + 1]);
+      expect(mlon).toBeCloseTo(lon, 4);
+      expect(mlat).toBeCloseTo(lat, 4);
+    }
+    expect(buildLandDots([], 2, 1, 0).sphere).toHaveLength(0);
   });
 });

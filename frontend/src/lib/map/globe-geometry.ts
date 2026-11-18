@@ -161,6 +161,14 @@ export function mergeGeoBounds(list: readonly (GeoBounds | null | undefined)[]):
 }
 
 /** Compute camera `(panX, panY, dist)` in Mercator 2D space so `bounds` fits cleanly inside viewport. */
+/**
+ * Distance limits below are tuned for a 32° field of view; this scales them so they cover the same visible
+ * area at any field of view (a narrower lens has to stand further back to see as much).
+ */
+export function fovReach(halfTan: number): number {
+  return Math.tan(16 * DEG_TO_RAD) / halfTan;
+}
+
 export function fitBoundsMercator2D(
   bounds: GeoBounds,
   aspect: number,
@@ -188,7 +196,8 @@ export function fitBoundsMercator2D(
   const halfTan = Math.tan(fovDeg * DEG_TO_RAD * 0.5);
   const distForH = bh / 0.62 / (2 * halfTan);
   const distForW = bw / 0.72 / (2 * halfTan * Math.max(0.5, aspect));
-  const dist = Math.max(0.024, Math.min(4.6, Math.max(distForH, distForW)));
+  const reach = fovReach(halfTan);
+  const dist = Math.max(0.024 * reach, Math.min(4.6 * reach, Math.max(distForH, distForW)));
   return { panX, panY, dist };
 }
 
@@ -210,7 +219,8 @@ export function fitBoundsGlobe3D(
   const halfTan = Math.tan(fovDeg * DEG_TO_RAD * 0.5);
   const dSurfH = arcH / 0.58 / (2 * halfTan);
   const dSurfW = arcW / 0.68 / (2 * halfTan * Math.max(0.5, aspect));
-  const dSurf = Math.max(0.045, Math.min(2.6, Math.max(dSurfH, dSurfW)));
+  const reach = fovReach(halfTan);
+  const dSurf = Math.max(0.045 * reach, Math.min(2.6 * reach, Math.max(dSurfH, dSurfW)));
   return { lon, lat, dist: 1.0 + dSurf };
 }
 
@@ -404,6 +414,80 @@ export function buildOceanGrid(rSphere: number, zFlat: number): DualPositionArra
         sPos.push(s[0], s[1], s[2]);
         fPos.push(f[0], f[1], f[2]);
       }
+    }
+    // Polar caps close the globe past the Mercator limit; flattened they clamp onto the edge with no area.
+    for (const pole of [MAX_MERCATOR_LAT, -MAX_MERCATOR_LAT]) {
+      const tip = pole > 0 ? 90 : -90;
+      for (const [lon, lat] of [
+        [l0, pole],
+        [l1, pole],
+        [(l0 + l1) / 2, tip],
+      ] as const) {
+        const s = lonLatToSphere(lon, lat, rSphere);
+        const f = lonLatToMercator2D(lon, lat, zFlat);
+        sPos.push(s[0], s[1], s[2]);
+        fPos.push(f[0], f[1], f[2]);
+      }
+    }
+  }
+  return { sphere: new Float32Array(sPos), flat: new Float32Array(fPos) };
+}
+
+/**
+ * Evenly spaced dots on land for the halftone globe. Rows run every `spacingDeg` of latitude; each row's
+ * longitude step widens by 1/cos(lat) so dots stay evenly spaced on the sphere, and alternate rows shift
+ * half a step. Land is found by an even-odd scanline per row, which holds because country polygons do
+ * not overlap.
+ */
+export function buildLandDots(
+  features: readonly GeoFeature[],
+  spacingDeg: number,
+  rSphere: number,
+  zFlat: number,
+): DualPositionArrays {
+  const rings: Ring[] = [];
+  for (const feature of features) {
+    const geom = feature.geometry;
+    if (!geom || (geom.type !== 'Polygon' && geom.type !== 'MultiPolygon')) continue;
+    const polys = geom.type === 'Polygon' ? [geom.coordinates as Ring[]] : (geom.coordinates as Ring[][]);
+    for (const poly of polys) rings.push(...poly);
+  }
+  const lat0 = -MAX_MERCATOR_LAT + spacingDeg / 2;
+  const rows = Math.ceil((MAX_MERCATOR_LAT - lat0) / spacingDeg);
+  const rowLat = (row: number) => lat0 + row * spacingDeg;
+  // Most edges are shorter than a row, so bucket each edge into only the rows it crosses.
+  const crossingsByRow: number[][] = Array.from({ length: rows }, () => []);
+  for (const ring of rings) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i];
+      const [xj, yj] = ring[j];
+      const first = Math.max(0, Math.ceil((Math.min(yi, yj) - lat0) / spacingDeg) - 1);
+      const last = Math.min(rows - 1, Math.floor((Math.max(yi, yj) - lat0) / spacingDeg) + 1);
+      for (let row = first; row <= last; row++) {
+        const lat = rowLat(row);
+        if (yi > lat !== yj > lat) crossingsByRow[row].push(xi + ((lat - yi) * (xj - xi)) / (yj - yi));
+      }
+    }
+  }
+  const sPos: number[] = [];
+  const fPos: number[] = [];
+  for (let row = 0; row < rows; row++) {
+    const lat = rowLat(row);
+    const crossings = crossingsByRow[row];
+    if (!crossings.length) continue;
+    crossings.sort((a, b) => a - b);
+    const count = Math.max(1, Math.round((360 * Math.max(Math.cos(lat * DEG_TO_RAD), 0.15)) / spacingDeg));
+    const step = 360 / count;
+    const offset = row % 2 ? step / 2 : 0;
+    let passed = 0;
+    for (let k = 0; k < count; k++) {
+      const lon = -180 + offset + k * step;
+      while (passed < crossings.length && crossings[passed] < lon) passed++;
+      if (passed % 2 === 0) continue;
+      const s = lonLatToSphere(lon, lat, rSphere);
+      const f = lonLatToMercator2D(lon, lat, zFlat);
+      sPos.push(s[0], s[1], s[2]);
+      fPos.push(f[0], f[1], f[2]);
     }
   }
   return { sphere: new Float32Array(sPos), flat: new Float32Array(fPos) };
