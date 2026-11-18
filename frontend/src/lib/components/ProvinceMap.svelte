@@ -315,7 +315,19 @@
             powerPreference: 'high-performance',
           });
           renderer.autoClear = false;
-          renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+          // WebGL drawn on the CPU (no GPU: SwiftShader, llvmpipe) makes every frame expensive enough to slow
+          // the whole page, so there the globe draws at 1x and does not spin on its own.
+          const softwareGl = (() => {
+            try {
+              const gl = renderer.getContext();
+              const info = gl.getExtension('WEBGL_debug_renderer_info');
+              const name = gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER);
+              return /swiftshader|llvmpipe|software/i.test(String(name));
+            } catch {
+              return false;
+            }
+          })();
+          renderer.setPixelRatio(softwareGl ? 1 : Math.min(window.devicePixelRatio || 1, 2));
           renderer.domElement.style.cssText = 'display:block;width:100%;height:100%;';
           hostEl.appendChild(renderer.domElement);
           const scene = new THREE.Scene();
@@ -1102,6 +1114,10 @@
             landShadowMat.uniforms.uColor.value.copy(paletteColor.ocean).lerp(paletteColor.landShadow, detail);
             borderMat.uniforms.uColor.value.copy(paletteColor.ocean).lerp(paletteColor.border, detail);
             borderMesh.visible = detail > 0.01;
+            // Fully faded layers are not drawn: far out the world's land mesh, by far the heaviest, is
+            // invisible, and skipping it keeps the turning globe cheap.
+            landMesh.visible = detail > 0.01;
+            landShadowMesh.visible = detail > 0.01 && morph > 0.01;
             dotsMat.uniforms.uOpacity.value = dotOpacity;
             dotsMesh.visible = dotOpacity > 0.01;
             extraDotsMesh.visible = dotsMesh.visible;
@@ -1113,10 +1129,13 @@
             const easeOut = (x: number) => 1 - (1 - x) * (1 - x);
             dotsMat.uniforms.uReveal.value = easeOut(Math.min(reveal, replay));
             dotsMat.uniforms.uFacing.value = spin / SPIN_SPEED;
+            const fillFade = detail * easeOut(reveal);
             for (const mat of [litRegMat, litCityMat]) {
-              mat.uniforms.uFade.value = detail * easeOut(reveal);
+              mat.uniforms.uFade.value = fillFade;
               mat.uniforms.uFadeColor.value.copy(landMat.uniforms.uColor.value);
             }
+            litRegMesh.visible = fillFade > 0.01 && !!litRegMesh.geometry.getAttribute('position');
+            litCityMesh.visible = fillFade > 0.01 && !!litCityMesh.geometry.getAttribute('position');
             // The land's shadow keeps a fixed screen offset (down and a little right) whatever the zoom.
             const unitsPerPx = alt / pxPerUnit;
             landShadowMat.uniforms.uOffset.value.set(1 * unitsPerPx, -2.5 * unitsPerPx);
@@ -1159,6 +1178,7 @@
             }
             const canSpin =
               !reducedMotion &&
+              !softwareGl &&
               stageVisible &&
               !document.hidden &&
               !pointerInside &&
