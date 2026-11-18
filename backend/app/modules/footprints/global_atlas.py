@@ -300,10 +300,15 @@ def fill_global_footprint_caches(
             by_owner: dict = {}
             for row_owner, activity_id in rows:
                 by_owner.setdefault(row_owner, []).append(activity_id)
-            for row_owner, ids in by_owner.items():
-                store_global_footprint_codes(
-                    db, row_owner, compute_global_codes(db, row_owner, ids)
-                )
+            # Match everything first, then write and commit at once. Each insert takes a key-share
+            # lock on its owner's users row (the foreign key) until commit; interleaving would hold
+            # it through the next owner's slow geometry matching and time out that user's requests.
+            computed = [
+                (row_owner, compute_global_codes(db, row_owner, ids))
+                for row_owner, ids in by_owner.items()
+            ]
+            for row_owner, codes in computed:
+                store_global_footprint_codes(db, row_owner, codes)
             db.commit()
             filled += len(rows)
             batches += 1

@@ -109,3 +109,32 @@ def test_worker_scan_fills_global_footprint_caches(clients):  # noqa: F401
         limit=0,
     )
     assert cache_rows(app, owner) == 1
+
+
+def test_global_fill_holds_no_user_row_lock_while_matching(clients, monkeypatch):  # noqa: F401
+    """Requests lock their user row (FOR UPDATE, 3 s statement timeout). A fill batch that spans
+    two owners must not hold the first owner's row (the cache's foreign key takes a key-share lock)
+    through the second owner's slow geometry matching."""
+    a, b, _, app = clients
+    quiet(a, b)
+    owners = [UUID(register(a)), UUID(register(b))]
+    for owner in owners:
+        add_activity(app, owner, [SHANGHAI], geographic=True)
+    original = module.compute_global_codes
+    probed = []
+
+    def probe(db, owner, ids):
+        # From another connection, every owner's row must be lockable at once while matching runs.
+        with app.state.session_factory() as other:
+            other.execute(text("SET LOCAL lock_timeout = '200ms'"))
+            other.execute(
+                text("SELECT id FROM users WHERE id = ANY(:ids) FOR UPDATE"), {"ids": owners}
+            )
+            other.rollback()
+        probed.append(owner)
+        return original(db, owner, ids)
+
+    monkeypatch.setattr(module, "compute_global_codes", probe)
+    module.fill_global_footprint_caches(app.state.session_factory, max_batches=1)
+    assert set(owners) <= set(probed)
+    assert all(cache_rows(app, str(owner)) == 1 for owner in owners)
