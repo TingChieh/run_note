@@ -9,7 +9,13 @@ from app.api.dependencies import get_identity, get_session, require_write
 from app.core.responses import ApiResponse
 from app.modules.activities.router import envelope
 from app.modules.ai_reports import service
-from app.modules.ai_reports.schema import AnalysisContext, ReportCreate, ReportList, ReportView
+from app.modules.ai_reports.schema import (
+    AnalysisContext,
+    ReportCreate,
+    ReportDeleted,
+    ReportList,
+    ReportView,
+)
 
 router = APIRouter(prefix="/api/v1/ai-reports", tags=["AI reports"])
 DB = Annotated[Session, Depends(get_session)]
@@ -87,7 +93,7 @@ def detail(identifier: UUID, request: Request, identity: Read, db: DB):
     )
 
 
-@router.delete("/{identifier}")
+@router.delete("/{identifier}", response_model=ApiResponse[ReportDeleted])
 def remove(identifier: UUID, request: Request, identity: Write, db: DB):
     return envelope(
         request,

@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.conftest import clients, headers, register, upload  # noqa: F401
+from tests.conftest import headers, register, upload
 
 pytestmark = pytest.mark.integration
 
@@ -15,7 +15,7 @@ def patch(a, identifier, visibility):
     )
 
 
-def test_public_matrix_and_revocation(clients):  # noqa: F811 -- imported pytest fixture
+def test_public_matrix_and_revocation(clients):
     a, b, _, app = clients
     register(a)
     register(b)
@@ -93,7 +93,7 @@ def test_public_matrix_and_revocation(clients):  # noqa: F811 -- imported pytest
         assert token not in stored.token_hash and len(stored.token_hash) == 64
 
 
-def test_private_revokes_all_and_expiry(clients):  # noqa: F811 -- imported pytest fixture
+def test_private_revokes_all_and_expiry(clients):
     a, b, _, app = clients
     register(a)
     register(b)
@@ -114,7 +114,7 @@ def test_private_revokes_all_and_expiry(clients):  # noqa: F811 -- imported pyte
         assert anon.get("/api/v1/shared/" + link["share_url"].rsplit("/", 1)[1]).status_code == 404
 
 
-def test_strict_writes_and_filtering(clients):  # noqa: F811 -- imported pytest fixture
+def test_strict_writes_and_filtering(clients):
     a, b, _, app = clients
     register(a)
     register(b)
@@ -161,7 +161,7 @@ def test_strict_writes_and_filtering(clients):  # noqa: F811 -- imported pytest 
         assert anon.get("/api/v1/public/activities/" + other).status_code == 404
 
 
-def test_multiple_links_unrelated_ids_defaults_and_logs(clients, caplog):  # noqa: F811
+def test_multiple_links_unrelated_ids_defaults_and_logs(clients, caplog):
     import logging
 
     a, b, _, app = clients
@@ -194,7 +194,7 @@ def test_multiple_links_unrelated_ids_defaults_and_logs(clients, caplog):  # noq
     assert a.delete(base + "/" + str(link["link_id"]), headers=headers(a)).status_code == 200
 
 
-def test_concurrent_private_transition_cannot_leave_live_share(clients):  # noqa: F811
+def test_concurrent_private_transition_cannot_leave_live_share(clients):
     from concurrent.futures import ThreadPoolExecutor
 
     a, b, _, app = clients

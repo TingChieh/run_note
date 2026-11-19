@@ -1,6 +1,5 @@
 """Category browsing uses all owned history, never another runner's labels."""
 
-# ruff: noqa: F811
 from datetime import date
 from uuid import UUID
 
@@ -8,7 +7,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.modules.activities.model import Activity
-from tests.conftest import clients, register  # noqa: F401
+from tests.conftest import register
 
 pytestmark = pytest.mark.integration
 

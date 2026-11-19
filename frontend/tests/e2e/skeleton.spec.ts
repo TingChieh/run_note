@@ -1,17 +1,24 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures';
 
-test('anonymous home reaches the protected data summary through a server redirect', async ({ page, request }) => {
-  const response = await request.get('/?year=2026', { maxRedirects: 0 });
-  expect(response.status()).toBe(303);
-  expect(response.headers().location).toBe('/dashboard?year=2026');
+test('the real stack is wired: health through the proxy, closed registration, public home', async ({
+  page,
+  request,
+  baseURL,
+}) => {
+  const health = await request.get('/api/health');
+  expect(health.status()).toBe(200);
+  expect((await health.json()).data).toMatchObject({ status: 'ok', database: 'connected', schema: 'current' });
+
+  for (const path of ['/login', '/register']) expect((await request.get(path)).status()).toBe(404);
+  const register = await request.post('/api/v1/auth/register', {
+    headers: { Origin: baseURL! },
+    data: { email: 'nobody@example.com', username: 'nobody', password: 'Synthetic-password-2026' },
+  });
+  expect(register.status()).toBe(403);
+  expect((await register.json()).error.code).toBe('REGISTRATION_DISABLED');
+
+  // Anonymous visitors see the site owner's showcase; the owner has no records yet in a fresh run.
   await page.goto('/');
-  await expect(page).toHaveURL(/\/login\?next=%2Fdashboard/);
-  await expect(page.getByRole('heading', { name: '登录', exact: true })).toBeVisible();
-  await expect(page.getByTestId('annual-distance')).toHaveCount(0);
-});
-
-test('health remains available through the frontend proxy', async ({ request }) => {
-  const response = await request.get('/api/health');
-  expect(response.status()).toBe(200);
-  expect((await response.json()).data.status).toBe('ok');
+  await expect(page.locator('header')).toHaveAttribute('data-auth-ready', 'true');
+  await expect(page.getByRole('link', { name: '站点管理' })).toHaveCount(0);
 });

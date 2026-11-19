@@ -43,7 +43,7 @@ class H(BaseHTTPRequestHandler):
 HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
 PY
 for spec in "18000 legacy-api" "18001 legacy-web" "18100 prod-api" "18101 prod-web"; do
-  # shellcheck disable=SC2086
+  # shellcheck disable=SC2086 # split "port name" into two arguments on purpose
   python3 "$T/upstream.py" $spec & pids="$pids $!"
 done
 

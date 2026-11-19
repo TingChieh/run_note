@@ -1,144 +1,152 @@
-import { expect, test, type Page } from '@playwright/test';
-import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import type { BrowserContext, Page } from '@playwright/test';
+import { openAccountMenu } from '../fixtures/top-navigation';
+import { expect, login, newContext, owner, test } from './support/fixtures';
 
-const password = 'Synthetic-local-password-2026';
-const identity = () => { const key = randomUUID().replaceAll('-', '').slice(0, 16); return { email: `${key}@example.com`, username: `u_${key}` }; };
-async function register(page: Page, user: ReturnType<typeof identity>) {
-  await page.goto('/register');
-  await page.getByLabel('邮箱', { exact: true }).fill(user.email);
-  await page.getByLabel('用户名', { exact: true }).fill(user.username);
-  await page.getByLabel('密码', { exact: true }).fill(password);
-  await page.getByRole('button', { name: '注册', exact: true }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByTestId('current-user')).toContainText(user.email);
-}
 async function logout(page: Page) {
-  await page.getByRole('button', { name: '退出登录', exact: true }).click();
-  await expect(page).toHaveURL(/\/login\?reason=logout$/);
-  await expect(page.getByTestId('current-user')).toContainText('未登录');
-}
-async function login(page: Page, email: string, secret = password) {
-  await page.getByLabel('邮箱', { exact: true }).fill(email);
-  await page.getByLabel('密码', { exact: true }).fill(secret);
-  await page.getByRole('button', { name: '登录', exact: true }).click();
+  // The button turns into "退出中…" at once; wait for the real response and the reload after it.
+  const done = page.waitForResponse((response) => response.url().endsWith('/api/v1/auth/logout'));
+  const reloaded = page.waitForEvent('load');
+  await (await openAccountMenu(page)).getByRole('button', { name: '退出登录', exact: true }).click();
+  expect((await done).status()).toBe(200);
+  await reloaded;
 }
 
-test('anonymous direct SSR access is protected and external redirects are rejected', async ({ page, request }) => {
-  for (const path of ['/settings', '/activities', '/dashboard']) {
+async function signedIn(context: BrowserContext): Promise<string | null> {
+  const response = await context.request.get('/api/v1/auth/session');
+  return response.status() === 200 ? (await response.json()).data.user.email : null;
+}
+
+test('private pages redirect anonymous requests on the server, uncached', async ({ page, request }) => {
+  for (const path of ['/settings', '/workspace/activities', '/admin/users', '/wellbeing']) {
     const response = await request.get(path, { maxRedirects: 0 });
-    expect(response.status()).toBe(303);
-    expect(response.headers().location).toContain('/login?next=');
+    expect(response.status(), path).toBe(303);
+    expect(response.headers().location).toBe(`/admin?next=${encodeURIComponent(path)}`);
     expect(response.headers()['cache-control']).toContain('no-store');
   }
   await page.goto('/settings');
-  await expect(page).toHaveURL(/\/login\?next=/);
+  await expect(page).toHaveURL(/\/admin\?next=%2Fsettings$/);
   await expect(page.getByRole('heading', { name: '登录', exact: true })).toBeVisible();
+  await expect(page.getByText('请登录后继续', { exact: false })).toBeVisible();
 });
 
-test('real registration, duplicate error, wrong password, login, refresh, logout and Cookie/CSRF security', async ({ page, context, baseURL }) => {
-  const user = identity();
-  await register(page, user);
-  const cookie = (await context.cookies()).find(c => c.name === 'run_session');
+test('login rejects a wrong password, ignores an off-site next, sets a protected cookie, and logout needs CSRF and Origin', async ({
+  page,
+  context,
+  baseURL,
+  member,
+}) => {
+  await page.goto('/admin?next=//evil.example');
+  await expect(page.getByRole('button', { name: '登录', exact: true })).toBeEnabled();
+  await page.getByLabel('邮箱', { exact: true }).fill(member.email);
+  await page.getByLabel('密码', { exact: true }).fill('Incorrect-password-2026');
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('邮箱或密码不正确');
+  expect(await signedIn(context)).toBeNull();
+
+  await page.getByLabel('密码', { exact: true }).fill(member.password);
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await expect(page).toHaveURL(`${baseURL}/`);
+  const cookie = (await context.cookies()).find((item) => item.name === 'run_session');
   expect(cookie?.httpOnly).toBe(true);
   expect(cookie?.sameSite).toBe('Lax');
   expect(await page.evaluate(() => document.cookie)).not.toContain('run_session');
-  await page.screenshot({ path: 'test-results/auth-settings.png', fullPage: true });
   await page.reload();
-  await expect(page.getByTestId('current-user')).toContainText(user.email);
-  await page.getByRole('link', { name: '跑步记录', exact: true }).first().click();
-  await expect(page.getByRole('heading', { name: '跑步记录', exact: true })).toBeVisible();
-  const csrf = await page.evaluate(async () => (await (await fetch('/api/v1/auth/csrf')).json()).data.csrf_token);
-  const denied = await context.request.post('/api/v1/auth/logout', { headers: { Origin: baseURL!, 'X-CSRF-Token': 'invalid' }, data: {} });
-  expect(denied.status()).toBe(403);
-  const wrongOrigin = await context.request.post('/api/v1/auth/logout', { headers: { Origin: 'https://evil.example', 'X-CSRF-Token': csrf }, data: {} });
-  expect(wrongOrigin.status()).toBe(403);
-  const absentOrigin = await context.request.post('/api/v1/auth/logout', { headers: { 'X-CSRF-Token': csrf }, data: {} });
-  expect(absentOrigin.status()).toBe(403);
+  expect(await signedIn(context)).toBe(member.email);
+
+  const token: string = (await (await context.request.get('/api/v1/auth/csrf')).json()).data.csrf_token;
+  const rejected: Record<string, string>[] = [
+    { Origin: baseURL!, 'X-CSRF-Token': 'invalid' },
+    { Origin: 'https://evil.example', 'X-CSRF-Token': token },
+    { 'X-CSRF-Token': token },
+  ];
+  for (const headers of rejected) {
+    expect((await context.request.post('/api/v1/auth/logout', { headers, data: {} })).status()).toBe(403);
+  }
+  expect(await signedIn(context)).toBe(member.email);
+
+  await page.goto('/workspace/settings');
   await logout(page);
-  await page.goto('/register');
-  await page.getByLabel('邮箱', { exact: true }).fill(user.email);
-  await page.getByLabel('用户名', { exact: true }).fill(identity().username);
-  await page.getByLabel('密码', { exact: true }).fill(password);
-  await page.getByRole('button', { name: '注册', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('邮箱已被注册');
-  await page.goto('/login?next=//evil.example');
-  await login(page, user.email, 'Incorrect-password-2026');
-  await expect(page.getByRole('alert')).toContainText('邮箱或密码不正确');
-  await login(page, user.email);
-  await expect(page).toHaveURL(/\/dashboard$/);
-  await page.reload();
-  await expect(page.getByTestId('current-user')).toContainText(user.email);
-  await logout(page);
-  expect((await context.cookies()).some(c => c.name === 'run_session')).toBe(false);
-  await page.goto('/settings');
-  await expect(page).toHaveURL(/\/login\?next=/);
+  expect(await signedIn(context)).toBeNull();
+  await page.goto('/workspace/settings');
+  await expect(page).toHaveURL(/\/admin\?next=%2Fworkspace%2Fsettings$/);
 });
 
-test('two users, SSR requests and identity changes in another tab never reuse private state', async ({ browser, baseURL }) => {
-  const a = await browser.newContext({ baseURL });
-  const b = await browser.newContext({ baseURL });
-  try {
-    const pa = await a.newPage(), pb = await b.newPage();
-    const ua = identity(), ub = identity();
-    await register(pa, ua); await register(pb, ub);
-    const [ra, rb] = await Promise.all([a.request.get('/settings'), b.request.get('/settings')]);
-    const [ha, hb] = await Promise.all([ra.text(), rb.text()]);
-    expect(ha).toContain(ua.email); expect(ha).not.toContain(ub.email);
-    expect(hb).toContain(ub.email); expect(hb).not.toContain(ua.email);
-    const second = await a.newPage(); await second.goto('/settings');
-    await expect(second.locator('header')).toHaveAttribute('data-auth-ready', 'true');
-    // Hold A's successful identity response while another tab logs out.
-    // The broadcast must queue a second check instead of accepting the stale response.
-    let release!: () => void, captured!: () => void;
-    const held = new Promise<void>(resolve => { release = resolve; });
-    const received = new Promise<void>(resolve => { captured = resolve; });
-    let first = true;
-    await second.route('**/api/v1/auth/session', async route => {
-      const response = await route.fetch();
-      if (first) { first = false; captured(); await held; }
-      await route.fulfill({ response });
-    });
-    await second.evaluate(() => window.dispatchEvent(new Event('focus')));
-    await received;
-    await logout(pa);
-    release();
-    await expect(second).toHaveURL(/\/login\?reason=changed/);
-    await expect(second.getByTestId('current-user')).not.toContainText(ua.email);
-    await expect(pb.getByTestId('current-user')).toContainText(ub.email);
-    await login(pa, ub.email);
-    await expect(pa).toHaveURL(/\/dashboard$/);
-    await expect(pa.getByTestId('current-user')).toContainText(ub.email);
-    await expect(pa.locator('body')).not.toContainText(ua.email);
-    // Back/forward cache must not resurrect A's page after switching to B.
-    await pa.goBack(); await pa.goto('/settings');
-    await expect(pa.locator('body')).not.toContainText(ua.email);
-    await logout(pa); await logout(pb);
-  } finally { await a.close(); await b.close(); }
-});
+test('two accounts never see each other in server-rendered pages, and a logout in another tab is not undone by a stale check', async ({
+  page,
+  browser,
+  baseURL,
+  member,
+}) => {
+  await login(page, owner, '/settings');
+  const other = await newContext(browser, baseURL);
+  const memberPage = await other.newPage();
+  await login(memberPage, member, '/workspace/settings');
+  const [ownerHtml, memberHtml] = await Promise.all([
+    page
+      .context()
+      .request.get('/settings')
+      .then((r) => r.text()),
+    other.request.get('/workspace/settings').then((r) => r.text()),
+  ]);
+  expect(ownerHtml).toContain(owner.email);
+  expect(ownerHtml).not.toContain(member.email);
+  expect(memberHtml).toContain(member.email);
+  expect(memberHtml).not.toContain(owner.email);
 
-test('a genuinely expired backend session clears the browser identity and redirects protected pages', async ({ page, context }) => {
-  const user = identity(); await register(page, user);
-  const token = (await context.cookies()).find(c => c.name === 'run_session')!.value;
-  // Require an explicitly allowlisted isolated database before expiring this test session.
-  const script = `from app.core.config import IntegrationSettings\nfrom app.core.security import token_hash\nfrom sqlalchemy import create_engine,text\nfrom sqlalchemy.engine import make_url\nimport os\ns=IntegrationSettings()\nif not s.test_database_url:\n raise RuntimeError("Explicit TEST_DATABASE_URL and TEST_DATABASE_ALLOWED_TARGETS are required")\nu=make_url(s.test_database_url)\ne=create_engine(s.test_database_url,hide_parameters=True)\nwith e.begin() as c:\n assert c.execute(text("SELECT current_database(),inet_server_port()")).one()==(u.database,u.port or 5432)\n r=c.execute(text("UPDATE auth_sessions SET expires_at=now()-interval '1 second' WHERE token_hash=:token"), {'token':token_hash(os.environ['RUNNOTE_TEST_SESSION'])})\n assert r.rowcount==1\ne.dispose()`;
-  const result = spawnSync('.venv/bin/python', ['-c', script], { cwd: '../backend', env: { ...process.env, RUNNOTE_TEST_SESSION: token }, encoding: 'utf8' });
-  expect(result.status, 'test session expiry injection succeeded').toBe(0);
-  await page.reload();
-  await expect(page).toHaveURL(/\/login\?next=/);
-  await expect(page.getByTestId('current-user')).toContainText('未登录');
-  await expect(page.getByRole('status').last()).toContainText('登录');
-});
-
- test('without JavaScript, auth forms cannot submit credentials into a URL', async ({ browser, baseURL }) => {
-  const context = await browser.newContext({ baseURL, javaScriptEnabled: false });
-  try {
-    const page = await context.newPage();
-    for (const path of ['/login', '/register']) {
-      await page.goto(path);
-      await expect(page.getByRole('button', { name: path === '/login' ? '登录' : '注册', exact: true })).toBeDisabled();
-      await expect(page.locator('form')).toHaveAttribute('method', 'POST');
-      await expect(page.getByRole('alert')).toContainText('JavaScript');
+  // Hold the second tab's identity check while the first tab logs out; the queued re-check must
+  // win over the stale successful response.
+  const second = await page.context().newPage();
+  await second.goto('/settings');
+  await expect(second.locator('header')).toHaveAttribute('data-auth-ready', 'true');
+  let release!: () => void;
+  let captured!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const received = new Promise<void>((resolve) => (captured = resolve));
+  let first = true;
+  await second.route('**/api/v1/auth/session', async (route) => {
+    const response = await route.fetch();
+    if (first) {
+      first = false;
+      captured();
+      await held;
     }
-  } finally { await context.close(); }
+    await route.fulfill({ response });
+  });
+  await second.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await received;
+  await logout(page);
+  release();
+  await expect(second).toHaveURL(/\/admin\?reason=changed$/);
+  await expect(second.locator('body')).not.toContainText(owner.email);
+  expect(await signedIn(other)).toBe(member.email);
+  await other.close();
+});
+
+test('a session that expired in the database signs the browser out of private pages', async ({
+  page,
+  context,
+  member,
+}) => {
+  await login(page, member, '/workspace/settings');
+  const token = (await context.cookies()).find((item) => item.name === 'run_session')!.value;
+  const expired = spawnSync('.venv/bin/python', ['-m', 'tests.e2e_accounts', 'expire-session'], {
+    cwd: '../backend',
+    env: { ...process.env, RUNNOTE_TEST_SESSION: token },
+    encoding: 'utf8',
+  });
+  expect(expired.status, expired.stderr).toBe(0);
+  await page.reload();
+  await expect(page).toHaveURL(/\/admin\?next=%2Fworkspace%2Fsettings$/);
+  expect(await signedIn(context)).toBeNull();
+});
+
+test('without JavaScript the login form cannot submit credentials into a URL', async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ baseURL, javaScriptEnabled: false });
+  const page = await context.newPage();
+  await page.goto('/admin');
+  await expect(page.getByRole('button', { name: '登录', exact: true })).toBeDisabled();
+  await expect(page.locator('form')).toHaveAttribute('method', 'POST');
+  await expect(page.getByRole('alert')).toContainText('JavaScript');
+  await context.close();
 });

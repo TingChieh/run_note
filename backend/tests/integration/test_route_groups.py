@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from app.modules.activities.model import Activity
 from app.modules.route_groups import groups
-from tests.conftest import clients, register  # noqa: F401
+from tests.conftest import register
 
 pytestmark = pytest.mark.integration  # clients is requested by name
 
@@ -91,7 +91,7 @@ def members(app, owner):
     return {str(activity): group for activity, group in rows}
 
 
-def test_same_loop_reversed_rotated_and_jittered_shares_one_group(clients):  # noqa: F811
+def test_same_loop_reversed_rotated_and_jittered_shares_one_group(clients):
     a, b, _, app = clients
     quiet(a, b)
     owner = register(a)
@@ -104,7 +104,7 @@ def test_same_loop_reversed_rotated_and_jittered_shares_one_group(clients):  # n
     assert len(set(found.values())) == 1
 
 
-def test_a_shifted_loop_or_a_very_different_length_is_a_different_route(clients):  # noqa: F811
+def test_a_shifted_loop_or_a_very_different_length_is_a_different_route(clients):
     a, b, _, app = clients
     quiet(a, b)
     owner = register(a)
@@ -116,7 +116,7 @@ def test_a_shifted_loop_or_a_very_different_length_is_a_different_route(clients)
     assert len({found[base], found[shifted], found[longer]}) == 3
 
 
-def test_short_and_trackless_runs_get_an_empty_fingerprint_and_no_group(clients):  # noqa: F811
+def test_short_and_trackless_runs_get_an_empty_fingerprint_and_no_group(clients):
     a, b, _, app = clients
     quiet(a, b)
     owner = register(a)
@@ -132,7 +132,7 @@ def test_short_and_trackless_runs_get_an_empty_fingerprint_and_no_group(clients)
     assert groups.fill_route_groups(app.state.session_factory) == 0  # nothing is recomputed
 
 
-def test_a_loop_shifted_within_the_buffer_joins_and_one_beyond_it_does_not(clients):  # noqa: F811
+def test_a_loop_shifted_within_the_buffer_joins_and_one_beyond_it_does_not(clients):
     a, b, _, app = clients
     quiet(a, b)
     owner = register(a)
@@ -145,7 +145,7 @@ def test_a_loop_shifted_within_the_buffer_joins_and_one_beyond_it_does_not(clien
     assert found[far] != found[base]
 
 
-def test_deleting_runs_removes_members_and_empty_groups_on_the_next_fill(clients):  # noqa: F811
+def test_deleting_runs_removes_members_and_empty_groups_on_the_next_fill(clients):
     a, b, _, app = clients
     quiet(a, b)
     owner = register(a)
@@ -162,7 +162,7 @@ def test_deleting_runs_removes_members_and_empty_groups_on_the_next_fill(clients
     assert remaining == 0
 
 
-def test_grouping_never_crosses_owners(clients):  # noqa: F811
+def test_grouping_never_crosses_owners(clients):
     a, b, _, app_a = clients
     quiet(a, b)
     owner_a = register(a)
@@ -173,7 +173,7 @@ def test_grouping_never_crosses_owners(clients):  # noqa: F811
     assert members(app_a, owner_a)[mine] != members(app_a, owner_b)[theirs]
 
 
-def test_the_footprint_worker_scan_also_fills_route_groups(clients):  # noqa: F811
+def test_the_footprint_worker_scan_also_fills_route_groups(clients):
     from app.db.schema import get_expected_revision
     from app.modules.footprints.worker import run_scan
 
@@ -193,7 +193,7 @@ def long_wave(*, north=0.0, points=100_000):
     ]
 
 
-def test_a_very_long_dense_track_makes_a_small_fingerprint_and_groups(clients):  # noqa: F811
+def test_a_very_long_dense_track_makes_a_small_fingerprint_and_groups(clients):
     a, b, _, app = clients
     quiet(a, b)
     owner = register(a)
@@ -225,7 +225,7 @@ def test_a_very_long_dense_track_makes_a_small_fingerprint_and_groups(clients): 
     assert found[first] == found[second]
 
 
-def test_a_run_without_a_track_gets_an_empty_fingerprint_and_no_group(clients):  # noqa: F811
+def test_a_run_without_a_track_gets_an_empty_fingerprint_and_no_group(clients):
     a, b, _, app = clients
     quiet(a, b)
     owner = register(a)
@@ -258,7 +258,7 @@ def test_a_run_without_a_track_gets_an_empty_fingerprint_and_no_group(clients): 
     assert geom_is_null is True
 
 
-def test_an_eighty_metre_shift_is_not_the_same_route(clients):  # noqa: F811
+def test_an_eighty_metre_shift_is_not_the_same_route(clients):
     a, b, _, app = clients
     quiet(a, b)
     owner = register(a)
@@ -269,7 +269,7 @@ def test_an_eighty_metre_shift_is_not_the_same_route(clients):  # noqa: F811
     assert found[base] != found[shifted]
 
 
-def test_a_stationary_track_does_not_stop_other_runs_from_being_grouped(clients):  # noqa: F811
+def test_a_stationary_track_does_not_stop_other_runs_from_being_grouped(clients):
     a, b, _, app = clients
     quiet(a, b)
     owner = register(a)
@@ -297,7 +297,7 @@ def group_ids(app, owner):
         )
 
 
-def test_a_run_that_matches_two_groups_merges_them_into_the_earliest(clients):  # noqa: F811
+def test_a_run_that_matches_two_groups_merges_them_into_the_earliest(clients):
     a, b, _, app = clients
     quiet(a, b)
     owner = register(a)
@@ -327,7 +327,7 @@ def read(client, path):
     return response.json()["data"]
 
 
-def test_listing_shows_only_routes_run_at_least_twice_with_aggregates(clients):  # noqa: F811
+def test_listing_shows_only_routes_run_at_least_twice_with_aggregates(clients):
     a, b, _, app = clients
     quiet(a, b)
     owner = register(a)
@@ -357,7 +357,7 @@ def test_listing_shows_only_routes_run_at_least_twice_with_aggregates(clients): 
     }
 
 
-def test_detail_lists_runs_newest_first_and_other_owners_get_404(clients):  # noqa: F811
+def test_detail_lists_runs_newest_first_and_other_owners_get_404(clients):
     a, b, _, app = clients
     quiet(a, b)
     owner = register(a)
@@ -374,7 +374,7 @@ def test_detail_lists_runs_newest_first_and_other_owners_get_404(clients):  # no
     assert a.get(f"/api/v1/routes/groups/{uuid4()}").status_code == 404
 
 
-def test_listing_pages_sorts_and_flags_unprocessed_runs_as_building(clients):  # noqa: F811
+def test_listing_pages_sorts_and_flags_unprocessed_runs_as_building(clients):
     a, b, _, app = clients
     quiet(a, b)
     owner = register(a)
@@ -422,7 +422,7 @@ def username_of(app, owner):
         return db.scalar(text("SELECT username FROM users WHERE id = :o"), {"o": UUID(owner)})
 
 
-def test_showcase_serves_only_the_site_owner_and_rejects_owner_overrides(clients):  # noqa: F811
+def test_showcase_serves_only_the_site_owner_and_rejects_owner_overrides(clients):
     a, b, _, app = clients
     quiet(a, b)
     owner = register(a)
@@ -448,7 +448,7 @@ def test_showcase_serves_only_the_site_owner_and_rejects_owner_overrides(clients
     assert a.get(f"/api/v1/showcase/routes/groups/{other_group}").status_code == 404
 
 
-def test_named_showcase_follows_showcase_enabled_and_never_leaks_other_users(clients):  # noqa: F811
+def test_named_showcase_follows_showcase_enabled_and_never_leaks_other_users(clients):
     a, b, _, app = clients
     quiet(a, b)
     owner = register(a)
@@ -483,7 +483,7 @@ def test_named_showcase_follows_showcase_enabled_and_never_leaks_other_users(cli
     )
 
 
-def test_a_run_that_only_timed_out_is_retried_later_while_a_broken_one_is_marked(clients):  # noqa: F811
+def test_a_run_that_only_timed_out_is_retried_later_while_a_broken_one_is_marked(clients):
     import psycopg.errors
     from sqlalchemy.exc import OperationalError
 

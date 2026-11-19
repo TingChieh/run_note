@@ -1,7 +1,5 @@
 """Per-activity global region & city cache: live vs cached parity and Taiwan attribution."""
 
-# ruff: noqa: F811
-
 from datetime import date
 from uuid import UUID
 
@@ -9,7 +7,7 @@ import pytest
 from sqlalchemy import text
 
 from app.modules.footprints import global_atlas as module
-from tests.conftest import clients, register  # noqa: F401
+from tests.conftest import register
 from tests.integration.test_footprints import add_activity
 
 pytestmark = pytest.mark.integration
@@ -38,7 +36,7 @@ def read(client, year=None):
     return response.json()["data"]
 
 
-def test_taipei_lights_up_china_and_taiwan_province_without_separate_country(clients):  # noqa: F401
+def test_taipei_lights_up_china_and_taiwan_province_without_separate_country(clients):
     a, b, _, app = clients
     quiet(a, b)
     owner = register(a)
@@ -94,7 +92,7 @@ def test_taipei_lights_up_china_and_taiwan_province_without_separate_country(cli
     assert [c["code"] for c in y2026["countries"]] == ["JPN"]
 
 
-def test_worker_scan_fills_global_footprint_caches(clients):  # noqa: F401
+def test_worker_scan_fills_global_footprint_caches(clients):
     from app.modules.footprints.worker import run_scan
 
     a, b, _, app = clients
@@ -111,7 +109,7 @@ def test_worker_scan_fills_global_footprint_caches(clients):  # noqa: F401
     assert cache_rows(app, owner) == 1
 
 
-def test_global_fill_holds_no_user_row_lock_while_matching(clients, monkeypatch):  # noqa: F401
+def test_global_fill_holds_no_user_row_lock_while_matching(clients, monkeypatch):
     """Requests lock their user row (FOR UPDATE, 3 s statement timeout). A fill batch that spans
     two owners must not hold the first owner's row (the cache's foreign key takes a key-share lock)
     through the second owner's slow geometry matching."""
@@ -123,7 +121,7 @@ def test_global_fill_holds_no_user_row_lock_while_matching(clients, monkeypatch)
     original = module.compute_global_codes
     probed = []
 
-    def probe(db, owner, ids):
+    def probe(db, owner, ids, **options):
         # From another connection, every owner's row must be lockable at once while matching runs.
         with app.state.session_factory() as other:
             other.execute(text("SET LOCAL lock_timeout = '200ms'"))
@@ -132,9 +130,96 @@ def test_global_fill_holds_no_user_row_lock_while_matching(clients, monkeypatch)
             )
             other.rollback()
         probed.append(owner)
-        return original(db, owner, ids)
+        return original(db, owner, ids, **options)
 
     monkeypatch.setattr(module, "compute_global_codes", probe)
-    module.fill_global_footprint_caches(app.state.session_factory, max_batches=1)
+    # limit=2: exactly these two newest activities, whatever older rows a shared test database
+    # still has uncached (another test's 200,000-point route would exceed the statement budget).
+    module.fill_global_footprint_caches(app.state.session_factory, limit=2, max_batches=1)
     assert set(owners) <= set(probed)
     assert all(cache_rows(app, str(owner)) == 1 for owner in owners)
+
+
+def test_stopping_the_worker_cancels_a_running_global_fill_statement(clients, monkeypatch):
+    """Shutdown (deploys, tests) must not wait for a slow geometry match to finish."""
+    from threading import Thread
+    from time import monotonic
+
+    from app.modules.footprints.worker import WorkerStop
+
+    a, b, _, app = clients
+    quiet(a, b)
+    owner = register(a)
+    add_activity(app, owner, [SHANGHAI], geographic=True)
+    started = []
+
+    def slow(db, row_owner, ids, **options):
+        started.append(monotonic())
+        db.execute(text("SELECT pg_sleep(4)"))
+        return {}
+
+    monkeypatch.setattr(module, "compute_global_codes", slow)
+    stop, outcome = WorkerStop(), {}
+
+    def fill():
+        try:
+            outcome["filled"] = module.fill_global_footprint_caches(
+                app.state.session_factory, max_batches=1, owner=UUID(owner), stop_event=stop
+            )
+        except Exception as error:  # surfaced below
+            outcome["error"] = error
+
+    thread = Thread(target=fill)
+    thread.start()
+    deadline = monotonic() + 3
+    while not started and monotonic() < deadline:
+        thread.join(0.05)
+    assert started, "the fill never reached the geometry match"
+    stop.set()
+    thread.join(1.5)
+    assert not thread.is_alive(), "stop did not cancel the running statement"
+    assert outcome == {"filled": 0}
+    assert cache_rows(app, owner) == 0
+
+
+def test_a_degenerate_dense_track_matches_within_the_fill_budget(clients):
+    """200 segments of 1,000 points bouncing between Beijing and Shanghai (within the point
+    budget) took ~30 s to match unsimplified, past the fill's 5 s statement timeout."""
+    from time import monotonic
+
+    a, b, _, app = clients
+    quiet(a, b)
+    owner = register(a)
+    bounce = [(116.405, 39.9) if i % 2 else (121.48, 31.23) for i in range(1000)]
+    activity = add_activity(app, owner, [bounce] * 200, geographic=True)
+    with app.state.session_factory() as db:
+        db.execute(text("SET LOCAL statement_timeout = '5000ms'"))
+        started = monotonic()
+        regions, _ = module.compute_global_codes(db, UUID(owner), [UUID(activity)])[UUID(activity)]
+        elapsed = monotonic() - started
+    assert elapsed < 3, f"matching took {elapsed:.1f}s"
+    assert {"CN-110000", "CN-310000"} <= set(regions)
+
+
+def test_an_owner_whose_matching_times_out_does_not_block_others(clients, monkeypatch):
+    a, b, _, app = clients
+    quiet(a, b)
+    slow_owner, other = UUID(register(a)), UUID(register(b))
+    add_activity(app, slow_owner, [SHANGHAI], geographic=True)
+    add_activity(app, other, [TOKYO], geographic=True)
+    original = module.compute_global_codes
+    attempts = []
+
+    def flaky(db, row_owner, ids, **options):
+        attempts.append(row_owner)
+        if row_owner == slow_owner:
+            db.execute(text("SET LOCAL statement_timeout = '50ms'"))
+            db.execute(text("SELECT pg_sleep(1)"))
+        return original(db, row_owner, ids, **options)
+
+    monkeypatch.setattr(module, "compute_global_codes", flaky)
+    filled = module.fill_global_footprint_caches(app.state.session_factory, limit=2, max_batches=1)
+    assert filled == 1
+    assert cache_rows(app, str(other)) == 1
+    assert cache_rows(app, str(slow_owner)) == 0
+    assert attempts.count(slow_owner) == 1

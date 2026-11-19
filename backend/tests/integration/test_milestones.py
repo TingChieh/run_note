@@ -7,12 +7,12 @@ from geoalchemy2.elements import WKTElement
 
 from app.modules.activities.model import Activity
 from app.modules.gpx.model import ActivityPoint, ActivitySegment
-from tests.conftest import clients, register  # noqa: F401
+from tests.conftest import register
 
 pytestmark = pytest.mark.integration
 
 
-def test_milestones_use_owner_history_and_never_return_raw_coordinates(clients):  # noqa: F811
+def test_milestones_use_owner_history_and_never_return_raw_coordinates(clients):
     a, b, _, app = clients
     owner, other = register(a), register(b)
     app.state.clock = lambda: datetime(2026, 10, 14, 15, tzinfo=UTC)

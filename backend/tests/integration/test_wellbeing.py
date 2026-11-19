@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from sqlalchemy import text
 
-from tests.conftest import ORIGIN, clients, headers, register  # noqa: F401
+from tests.conftest import ORIGIN, headers, register
 
 pytestmark = pytest.mark.integration
 BASE = "/api/v1/me/wellbeing"
@@ -44,7 +44,7 @@ def rows(engine, sql, **params):
         return db.execute(text(sql), params).all()
 
 
-def test_every_route_requires_the_signed_in_owner_and_csrf_for_writes(clients):  # noqa: F811
+def test_every_route_requires_the_signed_in_owner_and_csrf_for_writes(clients):
     a, _, _, _ = clients
     day = "2026-10-10"
     reads = [
@@ -94,7 +94,7 @@ def test_every_route_requires_the_signed_in_owner_and_csrf_for_writes(clients): 
 
 
 def test_same_day_save_is_idempotent_replaces_the_record_and_keeps_unanswered_as_null(
-    clients,  # noqa: F811
+    clients,
 ):
     a, _, engine, _ = clients
     owner = register(a)
@@ -120,7 +120,7 @@ def test_same_day_save_is_idempotent_replaces_the_record_and_keeps_unanswered_as
 
 
 def test_entry_validation_rejects_bad_dates_ranges_and_never_echoes_private_text(
-    clients,  # noqa: F811
+    clients,
     caplog,
 ):
     a, _, engine, _ = clients
@@ -150,7 +150,7 @@ def test_entry_validation_rejects_bad_dates_ranges_and_never_echoes_private_text
     assert stored == [(0,)]
 
 
-def test_delete_entry_removes_only_the_state_and_missing_days_are_404(clients):  # noqa: F811
+def test_delete_entry_removes_only_the_state_and_missing_days_are_404(clients):
     a, _, _, _ = clients
     register(a)
     day = today(a)
@@ -165,7 +165,7 @@ def test_delete_entry_removes_only_the_state_and_missing_days_are_404(clients): 
 
 
 def test_one_day_can_hold_many_doses_of_the_same_medicine_and_they_edit_and_delete(
-    clients,  # noqa: F811
+    clients,
 ):
     a, _, engine, _ = clients
     owner = register(a)
@@ -216,7 +216,7 @@ def test_one_day_can_hold_many_doses_of_the_same_medicine_and_they_edit_and_dele
     assert meds["按需药乙"]["regimen"] == "as_needed"
 
 
-def test_dose_validation_and_future_times(clients):  # noqa: F811
+def test_dose_validation_and_future_times(clients):
     a, _, _, _ = clients
     register(a)
     for override in (
@@ -235,7 +235,7 @@ def test_dose_validation_and_future_times(clients):  # noqa: F811
     assert post(a, "/doses", **dose_body(taken_at="1999-01-01T00:00:00+00:00")).status_code == 422
 
 
-def test_the_dose_day_follows_the_account_timezone_across_midnight(clients):  # noqa: F811
+def test_the_dose_day_follows_the_account_timezone_across_midnight(clients):
     a, _, engine, _ = clients
     owner = register(a)
     instant = "2026-10-10T16:30:00+00:00"  # 00:30 on the 11th in Shanghai, 12:30 on the 10th in NY
@@ -269,7 +269,7 @@ def test_the_dose_day_follows_the_account_timezone_across_midnight(clients):  # 
     )
 
 
-def test_symptoms_create_edit_clear_optional_fields_and_delete(clients):  # noqa: F811
+def test_symptoms_create_edit_clear_optional_fields_and_delete(clients):
     a, _, _, _ = clients
     register(a)
     body = {
@@ -315,7 +315,7 @@ def test_symptoms_create_edit_clear_optional_fields_and_delete(clients):  # noqa
     assert a.get(f"{BASE}/days/2026-10-10").json()["data"]["symptoms"] == []
 
 
-def test_side_effects_belong_to_their_dose_follow_its_day_and_go_with_it(clients):  # noqa: F811
+def test_side_effects_belong_to_their_dose_follow_its_day_and_go_with_it(clients):
     a, b, _, _ = clients
     register(a)
     register(b)
@@ -365,7 +365,7 @@ def test_side_effects_belong_to_their_dose_follow_its_day_and_go_with_it(clients
     assert len(a.get(f"{BASE}/days/2026-10-10").json()["data"]["symptoms"]) == 1
 
 
-def test_users_cannot_read_or_change_each_others_records_and_get_404_not_403(clients):  # noqa: F811
+def test_users_cannot_read_or_change_each_others_records_and_get_404_not_403(clients):
     a, b, _, _ = clients
     register(a)
     register(b)
@@ -402,7 +402,7 @@ def test_users_cannot_read_or_change_each_others_records_and_get_404_not_403(cli
     assert len(a.get(f"{BASE}/days/2026-10-10").json()["data"]["doses"]) == 1
 
 
-def test_history_lists_filter_by_range_and_paginate_newest_first(clients):  # noqa: F811
+def test_history_lists_filter_by_range_and_paginate_newest_first(clients):
     a, _, _, _ = clients
     register(a)
     for day in range(1, 8):
@@ -432,7 +432,7 @@ def test_history_lists_filter_by_range_and_paginate_newest_first(clients):  # no
     )
 
 
-def test_trends_leave_missing_days_empty_and_summarise_symptoms(clients):  # noqa: F811
+def test_trends_leave_missing_days_empty_and_summarise_symptoms(clients):
     a, _, _, _ = clients
     register(a)
     end = today(a)
@@ -479,7 +479,7 @@ def test_trends_leave_missing_days_empty_and_summarise_symptoms(clients):  # noq
     assert unscored_day["symptom_count"] == 1 and unscored_day["symptom_max_severity"] is None
 
 
-def test_report_summarises_only_what_was_logged_and_reports_the_gaps(clients):  # noqa: F811
+def test_report_summarises_only_what_was_logged_and_reports_the_gaps(clients):
     a, _, _, _ = clients
     register(a)
     put_entry(a, "2026-10-01", mood=6, anxiety=4, sleep_hours=6.0, sleep_quality=3, note="入睡慢")
@@ -559,7 +559,7 @@ def parse(response):
     return list(csv.reader(io.StringIO(response.content.decode("utf-8-sig"))))
 
 
-def test_csv_exports_match_the_records_and_neutralise_formulas(clients):  # noqa: F811
+def test_csv_exports_match_the_records_and_neutralise_formulas(clients):
     a, _, _, _ = clients
     register(a)
     put_entry(
@@ -615,7 +615,7 @@ def test_csv_exports_match_the_records_and_neutralise_formulas(clients):  # noqa
     assert "wellbeing-entries-2026-10-01_2026-10-31.csv" in name
 
 
-def test_journal_writes_do_not_make_running_ai_reports_stale(clients):  # noqa: F811
+def test_journal_writes_do_not_make_running_ai_reports_stale(clients):
     a, _, engine, _ = clients
     owner = register(a)
     version = "SELECT activity_data_version FROM users WHERE id=:u"
@@ -631,7 +631,7 @@ def test_journal_writes_do_not_make_running_ai_reports_stale(clients):  # noqa: 
     assert rows(engine, version, u=UUID(owner)) == before
 
 
-def test_no_public_owner_or_ai_surface_exposes_the_journal(clients):  # noqa: F811
+def test_no_public_owner_or_ai_surface_exposes_the_journal(clients):
     a, _, engine, _ = clients
     owner = register(a)
     put_entry(a, "2026-10-10", mood=9, note=SENTINEL)
@@ -671,7 +671,7 @@ def test_no_public_owner_or_ai_surface_exposes_the_journal(clients):  # noqa: F8
     assert anonymous.get(f"/api/v1/public/users/{username}/wellbeing").status_code == 404
 
 
-def test_deleting_an_account_removes_its_diary(clients):  # noqa: F811
+def test_deleting_an_account_removes_its_diary(clients):
     a, _, engine, _ = clients
     owner = register(a)
     put_entry(a, "2026-10-10", mood=1)
@@ -687,7 +687,7 @@ def test_deleting_an_account_removes_its_diary(clients):  # noqa: F811
         ]
 
 
-def test_a_stale_editor_gets_409_instead_of_overwriting_a_newer_save(clients):  # noqa: F811
+def test_a_stale_editor_gets_409_instead_of_overwriting_a_newer_save(clients):
     a, _, _, _ = clients
     register(a)
     day = today(a)
@@ -725,7 +725,7 @@ def stock(client, med_id):
     return next(m for m in listing if m["id"] == med_id)["stock"]
 
 
-def test_medicine_list_is_managed_once_and_keeps_history_independent(clients):  # noqa: F811
+def test_medicine_list_is_managed_once_and_keeps_history_independent(clients):
     a, b, engine, _ = clients
     owner = register(a)
     register(b)
@@ -811,7 +811,7 @@ def test_medicine_list_is_managed_once_and_keeps_history_independent(clients):  
     assert count == [(3,)]
 
 
-def test_supply_pace_uses_the_days_a_medicine_has_actually_been_taken(clients):  # noqa: F811
+def test_supply_pace_uses_the_days_a_medicine_has_actually_been_taken(clients):
     a, _, _, _ = clients
     register(a)
     # Pin to afternoon Shanghai time so "5 minutes ago" never crosses midnight (16:00-16:05 UTC).
@@ -864,7 +864,7 @@ def test_supply_pace_uses_the_days_a_medicine_has_actually_been_taken(clients): 
     assert long_run["avg_daily_pills"] == round(3 / 7, 2)
 
 
-def test_stock_is_a_ledger_that_follows_doses_restocks_and_counts(clients):  # noqa: F811
+def test_stock_is_a_ledger_that_follows_doses_restocks_and_counts(clients):
     a, b, _, _ = clients
     register(a)
     register(b)
@@ -962,7 +962,7 @@ def test_stock_is_a_ledger_that_follows_doses_restocks_and_counts(clients):  # n
     assert foreign.status_code == 404
 
 
-def test_a_dose_resolves_its_medicine_by_id_or_name_and_converts_pills(clients):  # noqa: F811
+def test_a_dose_resolves_its_medicine_by_id_or_name_and_converts_pills(clients):
     a, _, engine, _ = clients
     owner = register(a)
     taken = (datetime.now(UTC) - timedelta(minutes=30)).isoformat()
@@ -1013,7 +1013,7 @@ def test_a_dose_resolves_its_medicine_by_id_or_name_and_converts_pills(clients):
     assert count == [(3,)]
 
 
-def test_editing_a_dose_can_send_its_medicine_and_relink_it(clients):  # noqa: F811
+def test_editing_a_dose_can_send_its_medicine_and_relink_it(clients):
     a, b, _, _ = clients
     register(a)
     register(b)
@@ -1060,7 +1060,7 @@ def test_editing_a_dose_can_send_its_medicine_and_relink_it(clients):  # noqa: F
     assert a.patch(path, headers=headers(a), json={"surprise": 1}).status_code == 422
 
 
-def test_batch_back_fill_creates_each_time_on_each_day_once(clients):  # noqa: F811
+def test_batch_back_fill_creates_each_time_on_each_day_once(clients):
     a, b, engine, _ = clients
     owner = register(a)
     register(b)
@@ -1151,7 +1151,7 @@ def test_batch_back_fill_creates_each_time_on_each_day_once(clients):  # noqa: F
     assert total == [(21 + (1 if late else 0),)]
 
 
-def test_report_and_csv_carry_pill_counts(clients):  # noqa: F811
+def test_report_and_csv_carry_pill_counts(clients):
     a, _, _, _ = clients
     register(a)
     med = post(a, "/medications", **med_body()).json()["data"]
@@ -1183,7 +1183,7 @@ def test_report_and_csv_carry_pill_counts(clients):  # noqa: F811
     assert [row[4] for row in doses[1:]] == ["12.5", "18.75"] and doses[1][5] == "mg"
 
 
-def test_side_effect_names_are_listed_once_and_managed_like_medicines(clients):  # noqa: F811
+def test_side_effect_names_are_listed_once_and_managed_like_medicines(clients):
     a, b, _, _ = clients
     register(a)
     register(b)
@@ -1219,7 +1219,7 @@ def test_side_effect_names_are_listed_once_and_managed_like_medicines(clients): 
     assert post(b, "/symptom-names", name="口干").status_code == 201
 
 
-def test_sleep_duration_keeps_whole_minutes_exactly(clients):  # noqa: F811
+def test_sleep_duration_keeps_whole_minutes_exactly(clients):
     a, _, _, _ = clients
     register(a)
     for hours, minutes in ((7.42, 445), (0.08, 5), (8.0, 480), (23.98, 1439), (0, 0)):
@@ -1234,7 +1234,7 @@ def test_sleep_duration_keeps_whole_minutes_exactly(clients):  # noqa: F811
 
 
 def test_night_wakeups_are_optional_bounded_and_reach_trends_report_and_csv(
-    clients,  # noqa: F811
+    clients,
 ):
     a, b, _, _ = clients
     register(a)
@@ -1270,7 +1270,7 @@ def test_night_wakeups_are_optional_bounded_and_reach_trends_report_and_csv(
     assert empty["mean_wakeups"] is None and empty["wakeups_answered_days"] == 0
 
 
-def test_a_medicine_carries_its_own_side_effects(clients):  # noqa: F811
+def test_a_medicine_carries_its_own_side_effects(clients):
     a, b, _, _ = clients
     register(a)
     register(b)

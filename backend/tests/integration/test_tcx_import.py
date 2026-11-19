@@ -1,12 +1,11 @@
 """TCX persistence/identity tests on a dedicated guarded synthetic database."""
 
-# ruff: noqa: F811 -- pytest fixture imported for local registration
 from decimal import Decimal
 
 import pytest
 from sqlalchemy import text
 
-from tests.conftest import clients, headers, register, upload  # noqa: F401
+from tests.conftest import headers, register, upload
 from tests.unit.test_tcx_parser import lap, tcx
 
 pytestmark = pytest.mark.integration

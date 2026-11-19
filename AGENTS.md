@@ -23,11 +23,13 @@ backend/app/
   api/        依赖注入（get_session / get_identity / require_write）
   db/         Base、命名约定、会话工厂、schema 版本校验
   models/     模型集中注册入口
+  contract/   从 OpenAPI 生成前端 TypeScript 契约（typescript.py）
   modules/<feature>/   router / service / schema / model
 backend/migrations/versions/   Alembic 版本（手写）
 backend/tests/                 unit（无 DB）与 integration（真实 PostGIS）
 frontend/src/
   lib/api/         按领域划分的接口层与响应校验（含 map-style 等地图样式逻辑）
+  lib/api/generated/api.ts   生成的后端契约类型与路由清单（禁止手改）
   lib/server/      SSR 代理与后端调用（安全边界）
   lib/components/  Svelte 组件（含 system-theme.ts）
   lib/map/         底图控制器、足迹显示与配色
@@ -35,10 +37,10 @@ frontend/src/
   lib/styles/      液态玻璃、弹层/卡片动效等共享样式与运行时
   settings-header.svelte.ts   设置页共享头部状态（与 SettingsTabs 配套）
   routes/          页面与 /api 代理端点
-frontend/tests/    unit / ui / e2e / fixtures
-scripts/           离线运维脚本（local-auth.py、site-owner.py）
+frontend/tests/    unit / ui / e2e / fixtures；contract/ 为编译期契约断言
+scripts/           verify.py（统一验证入口）与离线运维脚本（local-auth.py、site-owner.py）
 infra/native/      原生部署资产：systemd 单元、Caddyfile、env 模板、ops/ 发布与备份脚本、tests/（见 docs/66）
-docs/              设计与验收记录（中文）；docs/design-system/ 为 UI 规范
+docs/              设计与验收记录（中文）；docs/design-system/ 为 UI 规范；docs/engineering/ 为质量基线
 ```
 
 后端功能模块以 `backend/app/modules/` 目录为准（现有 activities、admin_users、ai_reports、auth、footprints、gpx、health、mifitness、place_titles、route_groups、running_goals、sharing、showcase、site_settings、statistics、tcx、together、users、wellbeing）；新增模块须按第 4 节注册。每个模块按自己的 `router/schema/service/model` 组织。**不要为每张表建立空壳 Repository/Manager/Factory**，简单查询直接写在模块 service 中；只有空间查询或确需复用的复杂查询才拆出 `queries.py`。
@@ -52,7 +54,20 @@ docs/              设计与验收记录（中文）；docs/design-system/ 为 U
 - **时间**：统一使用 `request.app.state.clock()`，不要在业务代码里直接调用 `datetime.now()`。
 - **权威数据在服务端**：前端不得成为唯一校验入口。地图（MapLibre）与图表（ECharts）只做呈现，**不生成权威运动指标**；距离、用时、配速以服务端聚合为准。前端 `lib/api/*` 是接口契约的消费者，不是业务逻辑的复制品。
 
+**唯一事实源**（派生物不得手改，改源头后重新生成或同步）：
+
+| 事实 | 源头 | 派生物 / 守护 |
+| --- | --- | --- |
+| API 请求与响应结构 | 后端 Pydantic schema 与路由 | `frontend/src/lib/api/generated/api.ts`（`cd backend && .venv/bin/python -m app.contract.typescript`）；`tests/unit/test_api_contract.py` 防过期，`frontend/tests/contract/api-types.ts` 与 `tests/unit/api-contract.test.ts` 防前端漂移 |
+| 距离、用时、配速 | `gpx/metrics.py` 与 `gpx/queries.py`（PostGIS） | 前端只格式化 |
+| CI 按路径跳过的规则 | `.github/scripts/changed_areas.py` | `scripts/verify.py` 直接复用 |
+| 检查命令 | `.github/workflows/ci.yml` | `scripts/verify.py`（`infra/native/tests/test_verify_script.py` 保持一致） |
+| 迁移 head、库版本 | `alembic heads` / `alembic current` | 不引用文档里的 revision |
+| 配置 | `app/core/config.py` 的 `Settings` + 根目录 `.env` | — |
+
 ## 4. 后端编码规范
+
+本节与第 3、6、8 节中可机械判断的规则（路由/模型注册、时钟、`relationship()`、`envelope`、`StrictInput`、`response_model`、CSRF 与匿名路由、管理员依赖、跨用户 404 测试登记、公开响应字段、wellbeing 隔离、`details` 键、错误码、迁移命名与降级保护）由 `backend/tests/unit/test_architecture.py` 强制。报错信息即修复指引；其中的例外清单只允许缩小。
 
 ### 响应、错误与输入
 
@@ -78,6 +93,8 @@ docs/              设计与验收记录（中文）；docs/design-system/ 为 U
 - 公开数据的接口规则见第 8 节。
 
 ## 5. 前端编码规范
+
+runes/禁用 store、`#lib` 导入、重型库按需加载、禁用 `map.setStyle`、`lib/server` 边界由 `frontend/tests/unit/architecture.test.ts` 强制；接口路径与查询参数是否存在于后端由 `tests/unit/api-contract.test.ts` 检查。
 
 ### 框架与数据加载
 
@@ -121,6 +138,18 @@ docs/              设计与验收记录（中文）；docs/design-system/ 为 U
 
 ## 7. 常用命令
 
+统一入口（仓库根目录；命令与 CI 一致，区域判定复用 CI 规则，结尾汇总 PASS/FAIL/NOT RUN）：
+
+```bash
+python3 scripts/verify.py                         # 按本分支与工作区改动的区域快速检查
+python3 scripts/verify.py --full                  # 全部区域 + 生产构建 + 合成 API 浏览器测试
+python3 scripts/verify.py --test-db <名字>_test    # 追加后端集成测试；加 --migrate-test-db 先把该测试库升到 head
+python3 scripts/verify.py --e2e --test-db <名字>_test   # 再加真实后端浏览器 e2e（--full 配 --test-db 时自动包含）
+python3 scripts/verify.py --list                  # 只打印计划
+```
+
+`verify.py` 会自动改用 Node 24（Homebrew `node@24` 或 `RUNNOTE_NODE_BIN`），找不到就失败。改了后端 schema 或路由后，先运行 `cd backend && .venv/bin/python -m app.contract.typescript` 重新生成前端契约，再跑 `pnpm check` 查看哪些前端类型需要跟着改。
+
 后端（工作目录 `backend/`，使用仓库内虚拟环境）：
 
 ```bash
@@ -142,7 +171,7 @@ pnpm format <文件…>                            # 用 Prettier 格式化指�
 pnpm format:check <文件…>                      # 只检查，不写入
 pnpm showcase                                  # 设计系统独立 showcase（不进生产）
 pnpm exec playwright test --config <file>      # 运行指定 Playwright 配置
-pnpm test:e2e                                  # 默认 e2e，需后端已启动且测试库 ready
+pnpm test:e2e                                  # 真实后端 e2e：自启后端与前端，需进程变量 TEST_DATABASE_URL / TEST_DATABASE_ALLOWED_TARGETS（库须在 head）
 ```
 
 部署资产自检（仓库根目录；全部在隔离环境，不连生产）：
@@ -200,7 +229,7 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
 
 - `frontend/tests/unit` — Vitest，纯逻辑，`environment: 'node'`。
 - `frontend/tests/ui` — 由 `playwright.ui.config.ts` 驱动：`node tests/fixtures/ui-api.mjs` 起**合成 API**（8191）+ vite dev（5191）+ 真实 Chrome。**不连真实后端、不碰数据库。**
-- `frontend/tests/e2e` — `playwright.config.ts`，需要**真实后端与 ready 的独立测试数据库**。历史多用户用例仍依赖注册，当前模式运行前需改为离线预置站主与受管合成账号，不得重开注册。
+- `frontend/tests/e2e` — `playwright.config.ts`，自行启动真实后端（8297）与 vite（5297），只接受在允许名单内、已到 head 的 `_test` 库。站主由 `backend/tests/e2e_accounts.py` 在后端启动前离线预置；其余账号由站主经管理员接口为每个用例新建（`tests/e2e/support/fixtures.ts` 的 `member`），不重开注册。所有第三方请求被拒绝，未捕获的页面错误会让用例失败。新增 e2e 用例从 `./support/fixtures` 导入 `test`。
 
 后端：`backend/tests/unit` 不访问数据库；`backend/tests/integration` 需要独立 PostGIS 测试库。
 
@@ -209,7 +238,7 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
 `frontend/` 下有多份 `playwright.*.config.ts`（完整清单以 `ls frontend/playwright.*.ts` 为准），均无对应 npm script，用 `pnpm exec playwright test --config <file>` 显式运行：
 
 - 多数（如 `activity-*`、`tcx`、`basemaps`、`route-poster`、`site-settings`、`dashboard-explorer`、`popover-motion`、`ai-*`）继承 `playwright.ui.config.ts`，仅收窄 `testMatch`，走合成 API。
-- `*-e2e.config.ts` 需要真实后端与测试库，适用下方数据库保护规则。
+- `*-e2e.config.ts` 只是在 `playwright.config.ts` 上收窄 `testMatch`，适用下方数据库保护规则。
 - `*-build.config.ts`（如 `showcase-build`、`admin-users-build`）是合成构建验收。
 - `design-system.config.ts` 独立启动 showcase（5193）做像素级截图对比。
 - `basemaps-live.config.ts` 会访问**真实底图供应商网络**，仅在需要验证外部服务时运行，不作为常规回归。
@@ -218,7 +247,7 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
 
 ### 数据库保护
 
-后端集成测试与 `playwright.*-e2e.config.ts` 适用同一规则：
+后端集成测试与 `playwright.config.ts` / `playwright.*-e2e.config.ts` 适用同一规则：
 
 - 只允许名字以 `_test` 结尾、且显式列入 `TEST_DATABASE_ALLOWED_TARGETS` 的库；`backend/tests/conftest.py` 会以只读连接核对实际库名与端口，不匹配直接拒绝。
 - 优先复用既有测试库；确需新建时按 `docs/00-legacy-readme.md` 的步骤创建，库名必须以 `_test` 结尾并加入允许目标，绝不能改用开发库。
@@ -231,6 +260,13 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
 - 被跳过的任务显示为 skipped，`ship.py` 视为通过。**不要用 `[skip ci]`、`paths-ignore` 或其它让整个工作流不运行的做法**：`main` 上没有运行时 `ship.py` 会拒绝发布。
 - 小改动（纯文档、文案、样式微调，不涉及后端、迁移、依赖、鉴权、公共接口或部署脚本）：本地跑过相关检查（前端至少 `pnpm check` 与对应的 Playwright 配置）后，经用户明确要求，可以不等 PR 上的 CI 就合并；其余改动一律等 PR 的 CI 全绿再合并。合并仍须用户授权。
 - 无论哪种，部署前都要等 `main` 上该提交的 CI 全绿（`ship.py` 强制检查），这一关不放松。
+
+### 完成标准与回归测试
+
+- **完成**＝`scripts/verify.py` 全部 PASS，且交付说明逐项列出 NOT RUN 项。改动涉及数据库或权限时加 `--test-db`；涉及 UI 时再跑对应的 Playwright 配置，涉及导入、认证、地图或代理的真实链路时加 `--e2e`；改动 API 时契约已重新生成且 `pnpm check` 通过。
+- **发现缺陷**：先在能复现它的最低一层写一个失败测试（unit → integration → 合成 UI → 真实 e2e），确认它因该缺陷失败，再修复并确认转绿。不要只断言 HTTP 200，要断言数据、归属与副作用（参考 `tests/integration/test_cross_user_access.py`）。
+- **同类错误会反复出现时**，把规则写进 `test_architecture.py` / `architecture.test.ts` / 契约检查，而不是只往本文件加一段话。
+- 新增按 ID 访问本人资源的路由时，写出“他人 ID 返回 404 且数据不变”的集成测试，并登记到 `test_architecture.py` 的 `CROSS_USER_TESTS`。
 
 ### 验证纪律
 
@@ -252,6 +288,10 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
    - 实施计划：`docs/superpowers/plans/YYYY-MM-DD-<slug>.md`
    - 完成后追加编号特性文档 `docs/NN-<slug>.md`：编号取 `docs/` 下已用最大编号 +1，用 `ls docs/` 现场确认，不要沿用文档里写死的编号。
    - 文档使用中文，需包含"使用方式 / 接口与隐私 / 验证记录"并给出真实证据。
+7. **注释**：先用命名、类型、函数拆分与模块边界表达意图，不写复述代码行为的注释。保留代码推导不出的信息：算法依据、坐标系与精度约束、外部协议限制、安全原因、设计取舍。公共 API 文档、许可证与合规声明照常保留。修改代码时顺带检查相邻注释是否过时，但不做全仓库批量删注释。以下由检查强制（`test_architecture.py`、`architecture.test.ts`、`test_shell_style.py`、Ruff `RUF100`）：
+   - TODO/FIXME/HACK/XXX 必须关联可追踪问题，写作 `TODO(#12)`；能立即修的直接修根因。
+   - 压制检查的注释必须在同一行写明原因（`# noqa: CODE  原因`、`svelte-ignore 规则 (原因)`、`# shellcheck disable=SCxxxx # 原因`）；多余的 `noqa` 会被 Ruff 报错；禁止 `@ts-ignore` 与 `eslint-disable`。
+   - 不得用注释为临时绕过、跳过校验或架构违规辩护。同一类警告反复出现时，修根因或加约束（例如共享夹具放进 `conftest.py`，而不是在每个测试里压制 F811）。
 
 ## 11. 安全与禁止操作
 
@@ -277,7 +317,7 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
 
 ## 13. 关于局部 AGENTS.md
 
-当前仅在仓库根目录维护本文件，没有子目录级 `AGENTS.md`。只有在某个子模块形成稳定且与根目录规则明显不同的约定时，才考虑新增局部文件，且需先说明必要性。**不要批量创建。**
+当前仅在仓库根目录维护本文件，没有子目录级 `AGENTS.md`。Claude Code 直接读取本文件，不要另建内容重复的 `CLAUDE.md`。只有在某个子模块形成稳定且与根目录规则明显不同的约定时，才考虑新增局部文件，且需先说明必要性。**不要批量创建。**
 
 <!-- BEGIN CLAUDE-TO-CODEX MIGRATION 2026-11-13 -->
 

@@ -5,7 +5,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.core.responses import ExactView, LonLat
 from app.modules.users.schema import StrictInput
+
+# The same sets as the activities table's CHECK constraints.
+TemporalQuality = Literal["complete", "incomplete", "invalid", "manual"]
+Visibility = Literal["private", "unlisted", "public"]
 
 
 class ActivityView(BaseModel):
@@ -33,10 +38,10 @@ class ActivityView(BaseModel):
     aerobic_training_effect: Decimal | None = None
     anaerobic_training_effect: Decimal | None = None
     avg_pace_seconds_per_km: Decimal | None
-    temporal_quality: str
+    temporal_quality: TemporalQuality
     quality_summary: dict[str, Any]
     metrics_version: str
-    visibility: str
+    visibility: Visibility
     allow_shared_route: bool
     has_route: bool
     created_at: datetime
@@ -52,7 +57,7 @@ class ActivityList(BaseModel):
 class ActivityUpdate(StrictInput):
     title: str = Field(default=None, min_length=1, max_length=120)
     notes: str = Field(default=None, max_length=5000)
-    visibility: Literal["private", "unlisted", "public"] = None
+    visibility: Visibility = None
     category: str = Field(default=None, max_length=30)
     tags: list[Annotated[str, Field(min_length=1, max_length=30)]] = Field(
         default=None, max_length=10
@@ -105,3 +110,40 @@ class ActivityBatchDelete(StrictInput):
         if len(set(value)) != len(value):
             raise ValueError("Activity ids must be unique")
         return value
+
+
+class ActivityDeleted(ExactView):
+    deleted: Literal[True]
+
+
+class ActivitiesDeleted(ExactView):
+    deleted: Literal[True]
+    deleted_count: int
+
+
+class LineStringGeometry(ExactView):
+    type: Literal["LineString"]
+    coordinates: list[LonLat]
+
+
+class PointGeometry(ExactView):
+    type: Literal["Point"]
+    coordinates: LonLat
+
+
+class RouteSegment(ExactView):
+    segment_index: int
+    point_count: int
+
+
+class RouteFeature(ExactView):
+    type: Literal["Feature"]
+    geometry: LineStringGeometry | PointGeometry
+    properties: RouteSegment
+
+
+class RouteView(ExactView):
+    type: Literal["FeatureCollection"]
+    features: list[RouteFeature]
+    start: LonLat | None
+    end: LonLat | None

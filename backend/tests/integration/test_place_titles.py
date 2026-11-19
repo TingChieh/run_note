@@ -13,7 +13,7 @@ from sqlalchemy.exc import DBAPIError, OperationalError
 
 from app.modules.activities.model import Activity
 from app.modules.place_titles import queue, rules, service
-from tests.conftest import clients, register, upload  # noqa: F401
+from tests.conftest import register, upload
 from tests.integration.test_mifitness_import import record, send, track
 
 pytestmark = pytest.mark.integration  # clients is requested by name
@@ -92,7 +92,7 @@ def clear_places(app, region):
 
 
 @pytest.fixture
-def region(clients):  # noqa: F811
+def region(clients):
     """A region label unique to the test; only its own features are removed afterwards."""
     label = f"synthetic-{uuid4().hex[:12]}"
     yield label
@@ -133,7 +133,7 @@ def fill(app):
     return service.fill_place_titles(app.state.session_factory)
 
 
-def test_a_run_along_a_lake_is_renamed_and_the_data_version_moves(clients, region):  # noqa: F811
+def test_a_run_along_a_lake_is_renamed_and_the_data_version_moves(clients, region):
     a, b, _, app = clients
     quiet(a, b)
     add_place(app, "lake", box_around_ring(margin_m=0), region)
@@ -154,7 +154,7 @@ def test_a_run_along_a_lake_is_renamed_and_the_data_version_moves(clients, regio
     assert after == before + 1
 
 
-def test_far_from_any_place_or_too_short_or_user_named_is_left_alone(clients, region):  # noqa: F811
+def test_far_from_any_place_or_too_short_or_user_named_is_left_alone(clients, region):
     a, b, _, app = clients
     quiet(a, b)
     add_place(app, "lake", box_around_ring(margin_m=0, shift_east_m=5000), region)  # 5 km away
@@ -171,7 +171,7 @@ def test_far_from_any_place_or_too_short_or_user_named_is_left_alone(clients, re
     assert [queue_state(app, x)[0] for x in (far, short, named)] == ["skipped"] * 3
 
 
-def test_an_empty_place_table_keeps_the_queue_pending(clients):  # noqa: F811
+def test_an_empty_place_table_keeps_the_queue_pending(clients):
     a, b, _, app = clients
     quiet(a, b)
     with app.state.session_factory() as db:
@@ -184,7 +184,7 @@ def test_an_empty_place_table_keeps_the_queue_pending(clients):  # noqa: F811
     assert queue_state(app, activity)[0] == "pending"
 
 
-def test_the_priority_between_categories_follows_the_share(clients, region):  # noqa: F811
+def test_the_priority_between_categories_follows_the_share(clients, region):
     a, b, _, app = clients
     quiet(a, b)
     add_place(app, "park", box_around_ring(margin_m=0), region)
@@ -196,7 +196,7 @@ def test_the_priority_between_categories_follows_the_share(clients, region):  # 
     assert title_of(app, activity) == "海边跑步"
 
 
-def test_a_title_edited_after_queueing_is_not_overwritten(clients, region):  # noqa: F811
+def test_a_title_edited_after_queueing_is_not_overwritten(clients, region):
     a, b, _, app = clients
     quiet(a, b)
     add_place(app, "river", box_around_ring(margin_m=0), region)
@@ -210,7 +210,7 @@ def test_a_title_edited_after_queueing_is_not_overwritten(clients, region):  # n
     assert queue_state(app, activity)[0] == "skipped"
 
 
-def test_imports_without_a_title_are_queued_and_titled_imports_are_not(clients):  # noqa: F811
+def test_imports_without_a_title_are_queued_and_titled_imports_are_not(clients):
     a, b, _, app = clients
     quiet(a, b)
     register(a)
@@ -224,7 +224,7 @@ def test_imports_without_a_title_are_queued_and_titled_imports_are_not(clients):
     assert queue_state(app, titled.json()["data"]["activity"]["id"]) is None
 
 
-def test_a_mifitness_import_with_a_route_is_queued(clients):  # noqa: F811
+def test_a_mifitness_import_with_a_route_is_queued(clients):
     a, b, _, app = clients
     quiet(a, b)
     register(a)
@@ -235,7 +235,7 @@ def test_a_mifitness_import_with_a_route_is_queued(clients):  # noqa: F811
     assert queue_state(app, activity["id"])[0] == "pending"
 
 
-def test_the_sql_default_title_matches_the_importer_default(clients):  # noqa: F811
+def test_the_sql_default_title_matches_the_importer_default(clients):
     _, _, _, app = clients
     with app.state.session_factory() as db:
         for day in (date(2025, 1, 2), date(2024, 12, 31), date(999, 3, 4)):
@@ -249,7 +249,7 @@ def test_the_sql_default_title_matches_the_importer_default(clients):  # noqa: F
             assert sql == rules.default_title(day)
 
 
-def test_the_footprint_scan_also_names_pending_runs(clients, region):  # noqa: F811
+def test_the_footprint_scan_also_names_pending_runs(clients, region):
     from app.db.schema import get_expected_revision
     from app.modules.footprints.worker import run_scan
 
@@ -263,7 +263,7 @@ def test_the_footprint_scan_also_names_pending_runs(clients, region):  # noqa: F
     assert title_of(app, activity) == "湖边跑步"
 
 
-def test_a_very_long_track_is_sampled_within_the_bound(clients, region):  # noqa: F811
+def test_a_very_long_track_is_sampled_within_the_bound(clients, region):
     """A ~95 km, 100 000 point track: bounded samples, no non-linear geometry, a few seconds."""
     a, b, _, app = clients
     quiet(a, b)
@@ -315,7 +315,7 @@ def test_a_very_long_track_is_sampled_within_the_bound(clients, region):  # noqa
     assert 0 < near["lake"] < total
 
 
-def test_many_segments_still_yield_a_bounded_sample_set(clients, region):  # noqa: F811
+def test_many_segments_still_yield_a_bounded_sample_set(clients, region):
     """3000 two-point segments: every segment would add samples without the final thinning."""
     a, b, _, app = clients
     quiet(a, b)
@@ -382,7 +382,7 @@ def failing_resolve(failing, error):
 
 
 def test_a_failing_run_is_skipped_and_does_not_block_the_others(
-    clients,  # noqa: F811
+    clients,
     region,
     monkeypatch,
 ):
@@ -402,7 +402,7 @@ def test_a_failing_run_is_skipped_and_does_not_block_the_others(
 
 
 def test_a_timed_out_run_stays_pending_and_is_tried_once_per_pass(
-    clients,  # noqa: F811
+    clients,
     region,
     monkeypatch,
 ):
@@ -430,7 +430,7 @@ def test_a_timed_out_run_stays_pending_and_is_tried_once_per_pass(
     assert title_of(app, slow) == rules.default_title(date(2025, 9, 1))
 
 
-def test_a_real_database_error_aborts_only_that_run(clients, region, monkeypatch):  # noqa: F811
+def test_a_real_database_error_aborts_only_that_run(clients, region, monkeypatch):
     a, b, _, app = clients
     quiet(a, b)
     add_place(app, "lake", box_around_ring(margin_m=0), region)
@@ -452,7 +452,7 @@ def test_a_real_database_error_aborts_only_that_run(clients, region, monkeypatch
     assert queue_state(app, good)[0] == "done"
 
 
-def test_a_run_deleted_after_measuring_is_dropped_without_error(clients, region, monkeypatch):  # noqa: F811
+def test_a_run_deleted_after_measuring_is_dropped_without_error(clients, region, monkeypatch):
     a, b, _, app = clients
     quiet(a, b)
     add_place(app, "lake", box_around_ring(margin_m=0), region)
@@ -485,7 +485,7 @@ def square(lon, lat, size):
     return [[lon, lat], [lon, lat + size], [lon + size, lat + size], [lon + size, lat], [lon, lat]]
 
 
-def test_import_region_replaces_filters_by_area_and_stores_no_tags(clients):  # noqa: F811
+def test_import_region_replaces_filters_by_area_and_stores_no_tags(clients):
     from collections import Counter
 
     from app.modules.place_titles import osm
@@ -493,7 +493,10 @@ def test_import_region_replaces_filters_by_area_and_stores_no_tags(clients):  # 
     a, b, _, app = clients
     quiet(a, b)
     lake = {"natural": "water", "water": "lake"}
-    polygon = lambda ring_: {"type": "Polygon", "coordinates": [ring_]}  # noqa: E731
+
+    def polygon(ring_):
+        return {"type": "Polygon", "coordinates": [ring_]}
+
     lines = [
         osm_line({**lake, "name": "x"}, polygon(square(121.0, 31.0, 0.01))),
         osm_line(lake, polygon(square(121.0, 31.0, 0.0001))),  # below the area threshold
@@ -524,7 +527,7 @@ def test_import_region_replaces_filters_by_area_and_stores_no_tags(clients):  # 
         clear_places(app, region)
 
 
-def test_import_region_isolates_bad_and_oversized_features(clients, monkeypatch):  # noqa: F811
+def test_import_region_isolates_bad_and_oversized_features(clients, monkeypatch):
     from collections import Counter
 
     from app.modules.place_titles import osm
@@ -567,7 +570,7 @@ def region_categories(app, region):
         )
 
 
-def test_import_region_stores_multipolygons_rivers_and_coastlines(clients):  # noqa: F811
+def test_import_region_stores_multipolygons_rivers_and_coastlines(clients):
     from app.modules.place_titles import osm
 
     a, b, _, app = clients
@@ -594,7 +597,7 @@ def test_import_region_stores_multipolygons_rivers_and_coastlines(clients):  # n
         clear_places(app, region)
 
 
-def test_reimporting_one_region_leaves_other_regions_alone(clients):  # noqa: F811
+def test_reimporting_one_region_leaves_other_regions_alone(clients):
     from app.modules.place_titles import osm
 
     a, b, _, app = clients
@@ -615,7 +618,7 @@ def test_reimporting_one_region_leaves_other_regions_alone(clients):  # noqa: F8
         clear_places(app, second)
 
 
-def test_a_systemic_error_rolls_back_and_keeps_the_previous_region(clients):  # noqa: F811
+def test_a_systemic_error_rolls_back_and_keeps_the_previous_region(clients):
     from app.modules.place_titles import osm
 
     a, b, _, app = clients
@@ -651,7 +654,7 @@ def test_a_systemic_error_rolls_back_and_keeps_the_previous_region(clients):  # 
         clear_places(app, region)
 
 
-def test_a_mostly_invalid_file_trips_the_circuit_breaker(clients):  # noqa: F811
+def test_a_mostly_invalid_file_trips_the_circuit_breaker(clients):
     from app.modules.place_titles import osm
 
     a, b, _, app = clients
@@ -684,7 +687,7 @@ def version_of(app, owner):
         )
 
 
-def test_backfill_previews_without_writing_then_applies_and_reverts(clients, region, tmp_path):  # noqa: F811
+def test_backfill_previews_without_writing_then_applies_and_reverts(clients, region, tmp_path):
     from app.modules.place_titles import backfill
 
     a, b, _, app = clients
@@ -732,7 +735,7 @@ def test_backfill_previews_without_writing_then_applies_and_reverts(clients, reg
 
 
 def test_backfill_unmatched_stay_retryable_and_edited_titles_are_not_overwritten(
-    clients,  # noqa: F811
+    clients,
     region,
     tmp_path,
 ):
@@ -761,7 +764,7 @@ def test_backfill_unmatched_stay_retryable_and_edited_titles_are_not_overwritten
 
 
 def test_backfill_one_failing_run_is_counted_and_the_others_still_apply(
-    clients,  # noqa: F811
+    clients,
     region,
     tmp_path,
     monkeypatch,
@@ -793,7 +796,7 @@ def test_backfill_one_failing_run_is_counted_and_the_others_still_apply(
     assert not (tmp_path / "log.json.tmp").exists()
 
 
-def test_backfill_pages_through_candidates_and_honours_the_limit(clients, region):  # noqa: F811
+def test_backfill_pages_through_candidates_and_honours_the_limit(clients, region):
     from app.modules.place_titles import backfill
 
     a, b, _, app = clients
@@ -813,7 +816,7 @@ def test_backfill_pages_through_candidates_and_honours_the_limit(clients, region
         backfill.PAGE_SIZE = original
 
 
-def test_backfill_rejects_a_malformed_log_before_changing_anything(clients, region, tmp_path):  # noqa: F811
+def test_backfill_rejects_a_malformed_log_before_changing_anything(clients, region, tmp_path):
     from app.modules.place_titles import backfill
 
     a, b, _, app = clients
@@ -844,7 +847,7 @@ def test_backfill_rejects_a_malformed_log_before_changing_anything(clients, regi
     assert backfill.revert_log(app.state.session_factory, gone)["skipped"] == 1
 
 
-def test_backfill_classifies_why_a_run_is_not_matched(clients, region):  # noqa: F811
+def test_backfill_classifies_why_a_run_is_not_matched(clients, region):
     a, b, _, app = clients
     quiet(a, b)
     add_place(app, "lake", box_around_ring(margin_m=0), region)
@@ -868,7 +871,7 @@ def test_backfill_classifies_why_a_run_is_not_matched(clients, region):  # noqa:
     )
 
 
-def test_backfill_reports_timeouts_and_errors_separately(clients, region, monkeypatch):  # noqa: F811
+def test_backfill_reports_timeouts_and_errors_separately(clients, region, monkeypatch):
     a, b, _, app = clients
     quiet(a, b)
     add_place(app, "lake", box_around_ring(margin_m=0), region)
@@ -892,7 +895,7 @@ def test_backfill_reports_timeouts_and_errors_separately(clients, region, monkey
 
 
 def test_a_transient_error_leaves_the_queue_row_pending_but_other_errors_skip_it(
-    clients,  # noqa: F811
+    clients,
     region,
     monkeypatch,
 ):
@@ -922,7 +925,7 @@ def test_a_transient_error_leaves_the_queue_row_pending_but_other_errors_skip_it
     assert queue_state(app, plain)[0] == "skipped"
 
 
-def test_apply_overwrites_skipped_and_pending_queue_rows(clients, region, tmp_path):  # noqa: F811
+def test_apply_overwrites_skipped_and_pending_queue_rows(clients, region, tmp_path):
     from app.modules.place_titles import backfill
 
     a, b, _, app = clients
@@ -949,7 +952,7 @@ def test_apply_overwrites_skipped_and_pending_queue_rows(clients, region, tmp_pa
 
 
 def test_backfill_log_failure_stops_loudly_and_a_readonly_dir_fails_before_any_change(
-    clients,  # noqa: F811
+    clients,
     region,
     tmp_path,
     monkeypatch,
@@ -995,7 +998,7 @@ def test_backfill_log_failure_stops_loudly_and_a_readonly_dir_fails_before_any_c
     assert calls == [0, 1]
 
 
-def test_an_untitled_gpx_import_gets_exactly_the_default_title_the_sql_matches(clients):  # noqa: F811
+def test_an_untitled_gpx_import_gets_exactly_the_default_title_the_sql_matches(clients):
     a, b, _, app = clients
     quiet(a, b)
     register(a)

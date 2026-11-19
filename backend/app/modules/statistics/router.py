@@ -10,7 +10,7 @@ from app.core.responses import ApiResponse
 from app.modules.activities.router import envelope
 from app.modules.statistics import service
 from app.modules.statistics.records import build_records
-from app.modules.statistics.schema import Calendar, Records, Summary, Trends
+from app.modules.statistics.schema import Calendar, Records, Streaks, Summary, Trends
 from app.modules.statistics.streaks import read_streaks
 
 router = APIRouter(prefix="/api/v1/statistics", tags=["statistics"])
@@ -18,7 +18,7 @@ Identity = Annotated[tuple, Depends(get_read_identity)]
 Database = Annotated[Session, Depends(get_session)]
 
 
-@router.get("/streaks")
+@router.get("/streaks", response_model=ApiResponse[Streaks])
 def streaks(request: Request, identity: Identity, db: Database):
     today = request.app.state.clock().astimezone(ZoneInfo(identity[1].timezone)).date()
     data = read_streaks(db, identity[1].id, today)

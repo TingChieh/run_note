@@ -156,14 +156,14 @@
           <section class="states" aria-label="状态">
             <h5>状态</h5>
             {#if values.length}
-              <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+              <!-- svelte-ignore a11y_no_noninteractive_tabindex (Scrollable region needs keyboard access.) -->
               <div class="scroller" role="region" aria-label="这天的各项状态" tabindex="0" data-testid="wellbeing-report-state-list"><ul class="rows">{#each values as item (item.key)}<li style:--tone={`var(${COLORS[item.key]})`}><span class="name">{item.label}</span><strong>{item.text}</strong><span class="meter" aria-hidden="true"><span style:width={`${Math.max(4, item.ratio * 100)}%`}></span></span></li>{/each}</ul></div>
             {:else}<p class="none boxed">这天没有{lack.has(day.date) ? '状态' : '评分'}记录。</p>{/if}
           </section>
           <section class="doses" aria-label="服药">
             <h5>服药{#if dayDoses.length}<span class="count"> · {dayDoses.length} 次</span>{/if}</h5>
             {#if dayDoses.length}
-              <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+              <!-- svelte-ignore a11y_no_noninteractive_tabindex (Scrollable region needs keyboard access.) -->
               <div class="scroller" role="region" aria-label="这天的服药时间线" tabindex="0" data-testid="wellbeing-report-dose-timeline">
                 <ol class="steps">{#each dayDoses as dose (dose.id)}<li data-testid="wellbeing-report-dose" class:changed={isChanged(dose)}><span class="time">{timeLabel(dose.taken_at, timezone)}</span><span class="node" aria-hidden="true"></span><div class="what"><strong>{dose.medication_name}</strong> {doseText(dose)}<span class="faint"> · {dose.regimen === 'scheduled' ? '常规' : '按需'}</span>{#if isChanged(dose)}<span class="tag" title="和上一次记录的剂量不同">剂量变化</span>{/if}</div></li>{/each}</ol>
               </div>

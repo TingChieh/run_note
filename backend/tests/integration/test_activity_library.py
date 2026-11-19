@@ -1,13 +1,12 @@
 """Private labels and atomic current-page deletion on isolated synthetic data."""
 
-# ruff: noqa: F811
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
 
 from app.db.schema import get_expected_revision
-from tests.conftest import clients, headers, register, upload  # noqa: F401
+from tests.conftest import headers, register, upload
 from tests.integration.test_activity_management import version
 from tests.integration.test_tcx_import import upload_tcx
 

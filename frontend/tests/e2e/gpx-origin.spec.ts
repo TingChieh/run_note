@@ -1,83 +1,57 @@
-import { expect, test, type Page } from '@playwright/test';
-import { randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
+import { apiSession, expect, login, newContext, owner, test, write } from './support/fixtures';
+import { apiPath, equatorGpx, importTrack } from './support/tracks';
 
-const password = 'Synthetic-GPX-check-2026';
-const identity = () => {
-  const id = randomUUID().replaceAll('-', '').slice(0, 16);
-  return { email: `${id}@example.com`, username: `u_${id}` };
-};
+test('owner GPX import draws the route with every third-party request refused; forged, token-less and cross-user writes are blocked', async ({
+  page,
+  context,
+  browser,
+  baseURL,
+  member,
+}) => {
+  await login(page, owner, '/activities');
+  const session = (await context.cookies()).find((cookie) => cookie.name === 'run_session');
+  expect(session?.httpOnly).toBe(true);
+  expect(session?.sameSite).toBe('Lax');
 
-async function register(page: Page, user: ReturnType<typeof identity>) {
-  await page.goto('/register');
-  await page.getByLabel('邮箱', { exact: true }).fill(user.email);
-  await page.getByLabel('用户名', { exact: true }).fill(user.username);
-  await page.getByLabel('密码', { exact: true }).fill(password);
-  await page.getByRole('button', { name: '注册', exact: true }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
-}
+  const path = await importTrack(page, equatorGpx());
+  await page.goto(path);
+  await expect(page.getByTestId('activity-distance')).toBeVisible();
+  // The basemap provider is unreachable (fixtures refuse non-local hosts); the track still renders.
+  await expect(page.getByTestId('route-map-ready')).toBeVisible();
 
-test('GPX upload works while forged Origin, missing CSRF and cross-user writes stay blocked', async ({ browser, baseURL }) => {
-  const ownerContext = await browser.newContext({ baseURL });
-  const otherContext = await browser.newContext({ baseURL });
-  try {
-    const ownerPage = await ownerContext.newPage();
-    const otherPage = await otherContext.newPage();
-    const owner = identity();
-    const other = identity();
-    await register(ownerPage, owner);
-    const sessionCookie = (await ownerContext.cookies()).find(cookie => cookie.name === 'run_session');
-    expect(sessionCookie?.httpOnly).toBe(true);
-    expect(sessionCookie?.sameSite).toBe('Lax');
+  const file = {
+    name: 'forged.gpx',
+    mimeType: 'application/gpx+xml',
+    buffer: Buffer.from('<gpx version="1.1"></gpx>'),
+  };
+  const token = (await (await context.request.get('/api/v1/auth/csrf')).json()).data.csrf_token;
+  const forged = await context.request.post('/api/v1/gpx-imports', {
+    headers: { Origin: 'https://attacker.invalid', 'X-CSRF-Token': token },
+    multipart: { file },
+  });
+  expect(forged.status()).toBe(403);
+  const tokenless = await context.request.post('/api/v1/gpx-imports', {
+    headers: { Origin: baseURL! },
+    multipart: { file },
+  });
+  expect(tokenless.status()).toBe(403);
 
-    await ownerPage.goto('/activities');
-    await ownerPage.locator('input[type="file"][name="file"]').setInputFiles(
-      resolve(process.cwd(), '../backend/tests/fixtures/gpx/equator-six.gpx')
-    );
-    await ownerPage.getByRole('button', { name: '导入 GPX', exact: true }).click();
-    await expect(ownerPage.getByRole('status').filter({ hasText: '导入成功' })).toBeVisible({ timeout: 15000 });
-    const activityLink = ownerPage.getByRole('status').getByRole('link', { name: '查看活动与路线' });
-    const activityPath = await activityLink.getAttribute('href');
-    expect(activityPath).toMatch(/^\/activities\/[0-9a-f-]{36}$/i);
-    await activityLink.click();
-    await expect(ownerPage.getByTestId('activity-distance')).toBeVisible();
-    await expect(ownerPage.getByTestId('route-map-ready')).toBeVisible({ timeout: 15000 });
+  // Another account sees nothing and can change nothing (404, never 403).
+  const other = await apiSession(baseURL!, member);
+  expect((await other.get(apiPath(path))).status()).toBe(404);
+  expect((await write(other, 'PATCH', apiPath(path), { visibility: 'public' })).status()).toBe(404);
+  expect((await write(other, 'DELETE', apiPath(path))).status()).toBe(404);
+  await other.dispose();
 
-    const csrf = await ownerPage.evaluate(async () => {
-      const response = await fetch('/api/v1/auth/csrf', { credentials: 'same-origin' });
-      return (await response.json()).data.csrf_token as string;
-    });
-    const file = {
-      name: 'equator-six.gpx',
-      mimeType: 'application/gpx+xml',
-      buffer: Buffer.from('<gpx version="1.1" creator="RunNote synthetic"></gpx>')
-    };
-    const forgedOrigin = await ownerContext.request.post('/api/v1/gpx-imports', {
-      headers: { Origin: 'https://attacker.invalid', 'X-CSRF-Token': csrf },
-      multipart: { file }
-    });
-    expect(forgedOrigin.status()).toBe(403);
+  // The site owner's showcase is public: an anonymous visitor reads it, without management controls.
+  const visitor = await newContext(browser, baseURL);
+  const anonymous = await visitor.newPage();
+  await anonymous.goto(path);
+  await expect(anonymous.getByTestId('activity-distance')).toBeVisible();
+  await expect(anonymous.getByTestId('route-map-ready')).toBeVisible();
+  await expect(anonymous.getByRole('button', { name: '编辑记录', exact: true })).toHaveCount(0);
+  await visitor.close();
 
-    const missingCsrf = await ownerContext.request.post('/api/v1/gpx-imports', {
-      headers: { Origin: baseURL! },
-      multipart: { file }
-    });
-    expect(missingCsrf.status()).toBe(403);
-
-    await register(otherPage, other);
-    const otherCsrf = await otherPage.evaluate(async () => {
-      const response = await fetch('/api/v1/auth/csrf', { credentials: 'same-origin' });
-      return (await response.json()).data.csrf_token as string;
-    });
-    const crossUserWrite = await otherContext.request.patch(`/api/v1${activityPath}`, {
-      headers: { Origin: baseURL!, 'X-CSRF-Token': otherCsrf },
-      data: { visibility: 'public' }
-    });
-    expect(crossUserWrite.status()).toBe(404);
-
-    await expect(ownerPage.getByTestId('activity-distance')).toBeVisible();
-  } finally {
-    await ownerContext.close();
-    await otherContext.close();
-  }
+  const stored = (await (await context.request.get(apiPath(path))).json()).data;
+  expect(stored.visibility).toBe('private');
 });

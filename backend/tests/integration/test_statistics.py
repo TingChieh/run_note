@@ -4,13 +4,13 @@ from decimal import Decimal
 import pytest
 
 from app.modules.activities.model import Activity
-from tests.conftest import clients, register  # noqa: F401
+from tests.conftest import register
 
 pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
-def history(clients):  # noqa: F811 -- imported pytest fixture
+def history(clients):
     a, b, engine, app = clients
     owner, other = register(a), register(b)
     with app.state.session_factory.begin() as db:

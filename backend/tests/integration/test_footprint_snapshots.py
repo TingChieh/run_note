@@ -1,13 +1,12 @@
 """All synthetic history, snapshots and concurrency on the guarded PostGIS test database."""
 
-# ruff: noqa: F811
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 import pytest
 from sqlalchemy import event, select
 
-from tests.conftest import clients, headers, register, upload  # noqa: F401
+from tests.conftest import headers, register, upload
 from tests.integration.test_footprints import add_activity
 
 pytestmark = pytest.mark.integration

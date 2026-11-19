@@ -11,7 +11,12 @@ from app.modules.activities.router import envelope
 from app.modules.footprints.cache import all_footprints_response
 from app.modules.footprints.global_atlas import global_summary
 from app.modules.footprints.provinces import province_summary
-from app.modules.footprints.schema import AllFootprintView
+from app.modules.footprints.schema import (
+    AllFootprintView,
+    FootprintCollection,
+    GlobalFootprintSummary,
+    ProvinceSummary,
+)
 from app.modules.footprints.service import footprints
 
 router = APIRouter(prefix="/api/v1/footprints", tags=["footprints"])
@@ -32,7 +37,7 @@ def read_all(
     return response
 
 
-@router.get("/provinces")
+@router.get("/provinces", response_model=ApiResponse[ProvinceSummary])
 def provinces(
     request: Request,
     identity: Annotated[tuple, Depends(get_read_identity)],
@@ -44,7 +49,7 @@ def provinces(
     return envelope(request, data)
 
 
-@router.get("/global")
+@router.get("/global", response_model=ApiResponse[GlobalFootprintSummary])
 def global_footprints(
     request: Request,
     identity: Annotated[tuple, Depends(get_read_identity)],
@@ -56,7 +61,7 @@ def global_footprints(
     return envelope(request, data)
 
 
-@router.get("")
+@router.get("", response_model=ApiResponse[FootprintCollection])
 def read_footprints(
     request: Request,
     identity: Annotated[tuple, Depends(get_read_identity)],

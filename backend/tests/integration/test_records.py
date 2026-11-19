@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import select
 
 from app.modules.activities.model import Activity
-from tests.conftest import clients, register  # noqa: F401
+from tests.conftest import register
 
 pytestmark = pytest.mark.integration
 
@@ -54,7 +54,7 @@ def add_run(db, user, day, distance, seconds, quality, started=None):
 
 
 @pytest.fixture
-def records_history(clients):  # noqa: F811 -- imported pytest fixture
+def records_history(clients):
     a, b, engine, app = clients
     owner, other = register(a), register(b)
     ids = {}
@@ -117,7 +117,7 @@ def test_first_run_is_the_earliest_reliable_run_in_each_band(records_history):
     }
 
 
-def test_first_run_skips_unreliable_activities_like_the_best_does(clients):  # noqa: F811
+def test_first_run_skips_unreliable_activities_like_the_best_does(clients):
     a, _, _, app = clients
     owner = register(a)
     with app.state.session_factory.begin() as db:
@@ -135,7 +135,7 @@ def test_first_run_skips_unreliable_activities_like_the_best_does(clients):  # n
     assert Decimal(five["pace_gain_seconds_per_km"]) == Decimal("20")
 
 
-def test_first_run_on_a_shared_date_is_the_one_that_started_first(clients):  # noqa: F811
+def test_first_run_on_a_shared_date_is_the_one_that_started_first(clients):
     a, _, _, app = clients
     owner = register(a)
     with app.state.session_factory.begin() as db:
@@ -157,7 +157,7 @@ def test_first_run_on_a_shared_date_is_the_one_that_started_first(clients):  # n
     assert five["first"]["activity_id"] == str(ids[-1])
 
 
-def test_a_single_qualifying_run_has_no_pace_gain(clients):  # noqa: F811
+def test_a_single_qualifying_run_has_no_pace_gain(clients):
     a, _, _, app = clients
     owner = register(a)
     with app.state.session_factory.begin() as db:
@@ -261,7 +261,7 @@ def test_the_current_year_is_partial_and_compares_with_last_years_same_period(re
     assert Decimal(current["delta"]["avg_pace_seconds_per_km"]) == Decimal("-10")
 
 
-def test_a_current_year_without_runs_still_has_a_row(clients):  # noqa: F811
+def test_a_current_year_without_runs_still_has_a_row(clients):
     a, _, _, app = clients
     owner = register(a)
     with app.state.session_factory.begin() as db:
@@ -339,7 +339,7 @@ def test_showcase_serves_the_site_owner_and_rejects_owner_parameters(records_his
         assert forbidden not in text
 
 
-def test_user_without_any_run_has_empty_overview_shapes(clients):  # noqa: F811
+def test_user_without_any_run_has_empty_overview_shapes(clients):
     a, b, _, app = clients
     register(a)
     register(b)

@@ -12,12 +12,12 @@ from sqlalchemy import text
 from app.modules.activities.model import Activity
 from app.modules.footprints import router
 from app.modules.gpx.model import ActivitySegment
-from tests.conftest import clients, register  # noqa: F401
+from tests.conftest import register
 
 pytestmark = pytest.mark.integration
 
 
-def test_dense_cumulative_route_and_parallel_statistics_fit_query_budget(clients, monkeypatch):  # noqa: F811
+def test_dense_cumulative_route_and_parallel_statistics_fit_query_budget(clients, monkeypatch):
     a, b, _, app = clients
     a.app.state.footprint_worker.stop()
     b.app.state.footprint_worker.stop()
@@ -85,7 +85,7 @@ def test_dense_cumulative_route_and_parallel_statistics_fit_query_budget(clients
     assert statistics_response.json()["data"]["activity_count"] == 1
 
 
-def test_cumulative_provinces_keep_working_past_the_former_point_budget(clients):  # noqa: F811
+def test_cumulative_provinces_keep_working_past_the_former_point_budget(clients):
     """History growing past 250,000 points used to turn the all-time card into an error."""
     a, b, _, app = clients
     a.app.state.footprint_worker.stop()

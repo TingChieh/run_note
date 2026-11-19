@@ -45,7 +45,7 @@ def sample_view(period="week") -> TogetherView:
                 "title": "晨跑",
                 "category": "outdoor",
                 "tags": ["轻松跑"],
-                "temporal_quality": "full",
+                "temporal_quality": "complete",
                 "activity_date": date(2026, 10, 15),
                 "distance_m": 5000.0,
                 "avg_pace_seconds_per_km": 300.0,

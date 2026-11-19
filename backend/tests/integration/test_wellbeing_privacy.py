@@ -9,9 +9,8 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import text
 
-from tests.conftest import (  # noqa: F401
+from tests.conftest import (
     ORIGIN,
-    clients,
     headers,
     register,
     upload,
@@ -132,7 +131,7 @@ def seed(client, label):
         ("get", f"/report.csv?{QUERY}", None),
     ],
 )
-def test_anonymous_journal_routes_are_denied(clients, method, path, body):  # noqa: F811
+def test_anonymous_journal_routes_are_denied(clients, method, path, body):
     client, _, _, _ = clients
     response = client.request(method, BASE + path, **({} if body is None else {"json": body}))
     assert response.status_code in ((401,) if method == "get" else (401, 403)), (
@@ -142,7 +141,7 @@ def test_anonymous_journal_routes_are_denied(clients, method, path, body):  # no
     )
 
 
-def test_other_user_cannot_read_or_change_journal_by_date_or_id(clients):  # noqa: F811
+def test_other_user_cannot_read_or_change_journal_by_date_or_id(clients):
     a, b, engine, _ = clients
     owner = register(a)
     register(b)
@@ -185,7 +184,7 @@ def test_other_user_cannot_read_or_change_journal_by_date_or_id(clients):  # noq
 
 
 @pytest.mark.parametrize("kind,index", [("entries", 0), ("doses", 1), ("symptoms", 2)])
-def test_csv_exports_only_current_users_rows(clients, kind, index):  # noqa: F811
+def test_csv_exports_only_current_users_rows(clients, kind, index):
     a, b, _, _ = clients
     owner_a = register(a)
     owner_b = register(b)
@@ -211,7 +210,7 @@ def test_csv_exports_only_current_users_rows(clients, kind, index):  # noqa: F81
         assert all(marker not in override.text for marker in other)
 
 
-def test_admin_deleting_user_cascades_wellbeing_without_affecting_other_user(clients):  # noqa: F811
+def test_admin_deleting_user_cascades_wellbeing_without_affecting_other_user(clients):
     # There is no user self-deletion API; account removal uses admin batch-delete.
     admin, victim, engine, _ = clients
     admin_id = register(admin)
@@ -259,7 +258,7 @@ def test_admin_deleting_user_cascades_wellbeing_without_affecting_other_user(cli
     assert victim.get("/api/v1/me").status_code == 401
 
 
-def test_public_sharing_showcase_poster_sources_and_ai_exclude_journal(clients):  # noqa: F811
+def test_public_sharing_showcase_poster_sources_and_ai_exclude_journal(clients):
     a, _, _, app = clients
     register(a)
     markers, *_ = seed(a, f"privacy-{uuid4().hex[:16]}")
@@ -365,7 +364,7 @@ def test_public_sharing_showcase_poster_sources_and_ai_exclude_journal(clients):
         assert_private_absent(response.json(), markers)
 
 
-def test_other_user_cannot_change_medication_stock_or_symptom_names(clients):  # noqa: F811
+def test_other_user_cannot_change_medication_stock_or_symptom_names(clients):
     a, b, _, _ = clients
     register(a)
     register(b)

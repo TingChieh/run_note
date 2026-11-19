@@ -6,11 +6,10 @@ from uuid import uuid4
 import pytest
 
 # Imported fixture is intentionally requested by name.
-# ruff: noqa: F811
 from sqlalchemy import text
 
 from app.modules.activities.model import Activity
-from tests.conftest import clients, register  # noqa: F401
+from tests.conftest import register
 
 pytestmark = pytest.mark.integration
 PATH = "/api/v1/footprints?date_from=2024-01-01&date_to=2025-01-01&mode="

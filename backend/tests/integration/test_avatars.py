@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from app.main import create_app
 from app.modules.users.model import UserAvatar
 from tests.integration.test_admin_users import login, write_headers
-from tests.integration.test_showcase import ORIGIN, PASSWORD, site  # noqa: F401
+from tests.integration.test_showcase import ORIGIN, PASSWORD
 
 pytestmark = pytest.mark.integration
 
@@ -22,7 +22,7 @@ def jpeg():
     return buffer.getvalue()
 
 
-def test_avatar_lifecycle_and_public_boundary(site, monkeypatch):  # noqa: F811
+def test_avatar_lifecycle_and_public_boundary(site, monkeypatch):
     monkeypatch.setattr("app.main.FootprintWorker.start", lambda self: None)
     admin, visitor, _, admin_headers, _, _, _, settings, _ = site
     suffix = uuid4().hex[:18]

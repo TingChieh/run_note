@@ -41,12 +41,27 @@ class ShellStyle(unittest.TestCase):
                     continue
                 code = strip_quoted(line)
                 if re.search(r"&&.*\|\|", code):
-                    offenders.append(f"{path.relative_to(NATIVE.parents[1])}:{number}: {raw.strip()}")
+                    offenders.append(
+                        f"{path.relative_to(NATIVE.parents[1])}:{number}: {raw.strip()}"
+                    )
         self.assertEqual(
             offenders,
             [],
             "write `if ...; then ...; fi` instead of `A && B || C` (SC2015 on CI's ShellCheck)",
         )
+
+    def test_suppressions_say_why_and_markers_are_tracked(self):
+        # AGENTS.md "注释": a disabled check states its reason on the same line; a TODO/FIXME/
+        # HACK/XXX names a tracked issue, e.g. TODO(#12).
+        offenders = []
+        for path in SCRIPTS:
+            for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                where = f"{path.relative_to(NATIVE.parents[1])}:{number}: {raw.strip()}"
+                if re.search(r"#\s*shellcheck disable=[A-Z0-9,]+\s*$", raw):
+                    offenders.append(where)
+                if re.search(r"#.*\b(TODO|FIXME|HACK|XXX)\b(?!\(#\d+\))", raw):
+                    offenders.append(where)
+        self.assertEqual(offenders, [], "add `# reason` after the directive, or link an issue")
 
 
 if __name__ == "__main__":

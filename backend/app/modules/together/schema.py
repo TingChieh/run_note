@@ -3,6 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from app.modules.activities.schema import LineStringGeometry, TemporalQuality
+
 
 class Participant(BaseModel):
     user_id: UUID
@@ -23,14 +25,14 @@ class Recent(BaseModel):
     title: str
     category: str
     tags: list[str]
-    temporal_quality: str
+    temporal_quality: TemporalQuality
     activity_date: date
     distance_m: float
     avg_pace_seconds_per_km: float | None
     elapsed_seconds: float | None
     timer_seconds: float | None
     avg_heart_rate_bpm: int | None
-    geometry: list[dict]
+    geometry: list[LineStringGeometry]
 
 
 class Track(BaseModel):
@@ -39,7 +41,7 @@ class Track(BaseModel):
     title: str
     activity_date: date
     segment_index: int
-    geometry: dict
+    geometry: LineStringGeometry
 
 
 class FeedPage(BaseModel):

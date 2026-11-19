@@ -3,6 +3,7 @@ from uuid import UUID
 
 from pydantic import Field, field_validator, model_validator
 
+from app.core.responses import ExactView
 from app.modules.auth.schema import LoginInput, RegisterInput
 from app.modules.users.schema import StrictInput, UserView, valid_timezone
 
@@ -67,3 +68,7 @@ class UserBatchDelete(StrictInput):
 class UserBatchDeleteResult(StrictInput):
     deleted: bool = True
     deleted_count: int
+
+
+class ActivityOwner(ExactView):
+    user_id: UUID
