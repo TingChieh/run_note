@@ -60,7 +60,10 @@ export PATH="$WORK/shims:$PG_BIN:$PATH"
 
 # ---- throw-away database ---------------------------------------------------------------
 "$PG_BIN/initdb" -D "$WORK/pg" -U postgres -A trust --no-locale -E UTF8 >/dev/null
-"$PG_BIN/pg_ctl" -D "$WORK/pg" -l "$WORK/pg.log" -o "-h 127.0.0.1 -p $port -k $sock" -w start >/dev/null
+if ! "$PG_BIN/pg_ctl" -D "$WORK/pg" -l "$WORK/pg.log" -o "-h 127.0.0.1 -p $port -k $sock" -w start >/dev/null; then
+  cat "$WORK/pg.log" >&2
+  fail "PostgreSQL did not start on port $port (its log is above)"
+fi
 export PGHOST=127.0.0.1 PGPORT=$port PGUSER=postgres
 createdb rn_e2e
 dburl="postgresql+psycopg://postgres:pw@127.0.0.1:$port/rn_e2e"
