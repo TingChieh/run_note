@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.core.responses import LonLat
+
 
 class RouteGroupItem(BaseModel):
     id: UUID
@@ -15,8 +17,8 @@ class RouteGroupItem(BaseModel):
     avg_duration_seconds: Decimal | None
     best_pace_seconds_per_km: Decimal | None
     avg_pace_seconds_per_km: Decimal | None
-    # Lines of [lon, lat] pairs, simplified; used for thumbnails and the detail map.
-    shape: list[list[list[float]]]
+    # Simplified lines, used for thumbnails and the detail map.
+    shape: list[list[LonLat]]
 
 
 class RouteGroupList(BaseModel):

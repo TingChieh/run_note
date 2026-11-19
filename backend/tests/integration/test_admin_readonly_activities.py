@@ -8,12 +8,12 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 from app.modules.activities.model import Activity
 from tests.integration.test_admin_users import login, write_headers
-from tests.integration.test_showcase import ORIGIN, PASSWORD, site  # noqa: F401
+from tests.integration.test_showcase import ORIGIN, PASSWORD
 
 pytestmark = pytest.mark.integration
 
 
-def test_admin_readonly_activity_access(site):  # noqa: F811
+def test_admin_readonly_activity_access(site):
     admin, visitor, _, headers, own_activity, _, engine, settings, _ = site
     suffix = uuid4().hex[:18]
     payload = dict(
@@ -116,7 +116,7 @@ def test_admin_readonly_activity_access(site):  # noqa: F811
         assert ordinary.get(f"/api/v1/activities/{activity_id}").status_code == 200
 
 
-def test_readonly_endpoints_refresh_admin_session(site):  # noqa: F811
+def test_readonly_endpoints_refresh_admin_session(site):
     from datetime import timedelta
 
     from sqlalchemy import select, update

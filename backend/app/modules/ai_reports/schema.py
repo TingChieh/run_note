@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.core.responses import ExactView
+
 
 class AnalysisText(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
@@ -96,3 +98,7 @@ class ProviderResult(BaseModel):
     analysis: AnalysisText
     input_tokens: int | None = Field(default=None, ge=0, le=10000000)
     output_tokens: int | None = Field(default=None, ge=0, le=10000000)
+
+
+class ReportDeleted(ExactView):
+    deleted: Literal[True]

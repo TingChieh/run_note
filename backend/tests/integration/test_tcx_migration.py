@@ -4,14 +4,14 @@ import pytest
 from sqlalchemy import text
 
 from app.db.schema import get_expected_revision
-from tests.conftest import clients, register  # noqa: F401
+from tests.conftest import register
 from tests.integration.test_migrations import assert_downgrade_guard
 from tests.integration.test_tcx_import import upload_tcx
 
 pytestmark = pytest.mark.integration
 
 
-def test_downgrade_refuses_to_discard_imported_tcx(clients):  # noqa: F811
+def test_downgrade_refuses_to_discard_imported_tcx(clients):
     a, _, engine, _ = clients
     register(a)
     response = upload_tcx(a)

@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from app.core.responses import ExactView
+
 
 class Summary(BaseModel):
     activity_count: int
@@ -127,3 +129,17 @@ class Records(BaseModel):
     weekday: list[WeekdayPoint]
     yearly: list[YearRow]
     date_assignment: Literal["activity_local_date"] = "activity_local_date"
+
+
+class StreakDay(ExactView):
+    date: str
+    active: bool
+
+
+class Streaks(ExactView):
+    today: str
+    current_days: int
+    longest_days: int
+    current_weeks: int
+    longest_weeks: int
+    week: list[StreakDay]

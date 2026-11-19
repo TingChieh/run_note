@@ -12,10 +12,16 @@ from app.core.errors import ApiError
 from app.core.responses import ApiResponse
 from app.modules.activities import service as activities
 from app.modules.activities.router import envelope
+from app.modules.activities.schema import RouteView
 from app.modules.footprints.cache import all_footprints_response
 from app.modules.footprints.global_atlas import global_summary
 from app.modules.footprints.provinces import province_summary
-from app.modules.footprints.schema import AllFootprintView
+from app.modules.footprints.schema import (
+    AllFootprintView,
+    FootprintCollection,
+    GlobalFootprintSummary,
+    ProvinceSummary,
+)
 from app.modules.footprints.service import footprints
 from app.modules.route_groups import service as route_groups
 from app.modules.route_groups.schema import RouteGroupDetail, RouteGroupList
@@ -30,7 +36,7 @@ from app.modules.showcase.schema import (
 )
 from app.modules.statistics import service as statistics
 from app.modules.statistics.records import build_records
-from app.modules.statistics.schema import Calendar, Records, Summary, Trends
+from app.modules.statistics.schema import Calendar, Records, Streaks, Summary, Trends
 from app.modules.statistics.streaks import read_streaks
 from app.modules.users.model import User
 
@@ -113,7 +119,7 @@ def activity(identifier: UUID, request: Request, db: DB, owner: Owner):
     return envelope(request, service.activity_detail(db, owner.id, identifier))
 
 
-@router.get("/activities/{identifier}/route", response_model=ApiResponse[dict])
+@router.get("/activities/{identifier}/route", response_model=ApiResponse[RouteView])
 def route(identifier: UUID, request: Request, db: DB, owner: Owner):
     return envelope(request, service.route_view(activities.route(db, owner.id, identifier)))
 
@@ -162,7 +168,7 @@ def records(
     return envelope(request, build_records(db, owner.id, today))
 
 
-@router.get("/statistics/streaks", response_model=ApiResponse[dict])
+@router.get("/statistics/streaks", response_model=ApiResponse[Streaks])
 def streaks(request: Request, db: DB, owner: Owner):
     today = request.app.state.clock().astimezone(ZoneInfo(owner.timezone)).date()
     return envelope(request, read_streaks(db, owner.id, today))
@@ -184,7 +190,7 @@ def all_footprints(
     return all_footprints_response(request, db, owner.id, mode, encoding, service.footprint_view)
 
 
-@router.get("/footprints/provinces", response_model=ApiResponse[dict])
+@router.get("/footprints/provinces", response_model=ApiResponse[ProvinceSummary])
 def provinces(
     request: Request,
     db: DB,
@@ -194,7 +200,7 @@ def provinces(
     return envelope(request, province_summary(db, owner.id, year))
 
 
-@router.get("/footprints/global", response_model=ApiResponse[dict])
+@router.get("/footprints/global", response_model=ApiResponse[GlobalFootprintSummary])
 def global_footprints(
     request: Request,
     db: DB,
@@ -204,7 +210,7 @@ def global_footprints(
     return envelope(request, global_summary(db, owner.id, year))
 
 
-@router.get("/footprints", response_model=ApiResponse[dict])
+@router.get("/footprints", response_model=ApiResponse[FootprintCollection])
 def footprint_range(
     request: Request,
     db: DB,

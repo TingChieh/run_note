@@ -5,6 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.responses import ExactView
 from app.modules.statistics.schema import Summary
 from app.modules.users.schema import StrictInput
 
@@ -69,3 +70,7 @@ class ShareCreated(BaseModel):
 
 class ShareList(BaseModel):
     items: list[ShareView] = Field(default_factory=list)
+
+
+class ShareRevoked(ExactView):
+    revoked: Literal[True]

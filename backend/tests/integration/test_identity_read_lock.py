@@ -10,12 +10,12 @@ from sqlalchemy.exc import OperationalError
 
 from app.modules.footprints import router
 from app.modules.users.model import User
-from tests.conftest import clients, register  # noqa: F401
+from tests.conftest import register
 
 pytestmark = pytest.mark.integration
 
 
-def test_a_slow_read_does_not_block_another_read_of_the_same_user(clients, monkeypatch):  # noqa: F811
+def test_a_slow_read_does_not_block_another_read_of_the_same_user(clients, monkeypatch):
     a, b, _, _ = clients
     register(a)
     b.app.state.settings.site_owner_email = a.app.state.settings.site_owner_email
@@ -41,7 +41,7 @@ def test_a_slow_read_does_not_block_another_read_of_the_same_user(clients, monke
         assert province.result(timeout=20).status_code == 200
 
 
-def test_shared_identity_lock_still_excludes_writers_but_not_other_readers(clients):  # noqa: F811
+def test_shared_identity_lock_still_excludes_writers_but_not_other_readers(clients):
     a, _, _, app = clients
     owner = UUID(register(a))
     query = select(User.id).where(User.id == owner)

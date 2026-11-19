@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import text
 
 from app.modules.footprints import provinces as module
-from tests.conftest import clients, register  # noqa: F401
+from tests.conftest import register
 from tests.integration.test_footprints import add_activity
 
 pytestmark = pytest.mark.integration  # clients is requested by name
@@ -41,7 +41,7 @@ def counts(data):
     return {p["code"]: p["activity_count"] for p in data["provinces"]}
 
 
-def test_compute_and_fill_store_the_codes_each_activity_passes_through(clients):  # noqa: F811
+def test_compute_and_fill_store_the_codes_each_activity_passes_through(clients):
     a, b, _, app = clients
     quiet(a, b)
     owner = register(a)
@@ -67,7 +67,7 @@ def test_compute_and_fill_store_the_codes_each_activity_passes_through(clients):
     assert stored == {UUID(both): [110000, 310000], UUID(abroad): []}
 
 
-def test_cached_summary_equals_the_live_one_and_skips_the_spatial_pass(clients, monkeypatch):  # noqa: F811
+def test_cached_summary_equals_the_live_one_and_skips_the_spatial_pass(clients, monkeypatch):
     a, b, _, app = clients
     quiet(a, b)
     owner = register(a)
@@ -91,7 +91,7 @@ def test_cached_summary_equals_the_live_one_and_skips_the_spatial_pass(clients, 
     assert read(a) == live
 
 
-def test_missing_activities_are_computed_for_the_request_without_writing(clients):  # noqa: F811
+def test_missing_activities_are_computed_for_the_request_without_writing(clients):
     a, b, _, app = clients
     quiet(a, b)
     owner = register(a)
@@ -107,7 +107,7 @@ def test_missing_activities_are_computed_for_the_request_without_writing(clients
     assert cache_rows(app, owner) == 1  # a GET never writes
 
 
-def test_outdated_atlas_versions_count_as_missing_and_are_refreshed(clients, monkeypatch):  # noqa: F811
+def test_outdated_atlas_versions_count_as_missing_and_are_refreshed(clients, monkeypatch):
     a, b, _, app = clients
     quiet(a, b)
     owner = register(a)
@@ -136,7 +136,7 @@ def test_outdated_atlas_versions_count_as_missing_and_are_refreshed(clients, mon
     assert versions == [module.atlas_version()]
 
 
-def test_year_filter_and_deleted_activities(clients):  # noqa: F811
+def test_year_filter_and_deleted_activities(clients):
     a, b, _, app = clients
     quiet(a, b)
     owner = register(a)
@@ -152,7 +152,7 @@ def test_year_filter_and_deleted_activities(clients):  # noqa: F811
     assert counts(read(a)) == {110000: 1}
 
 
-def test_a_worker_scan_fills_missing_province_rows(clients):  # noqa: F811
+def test_a_worker_scan_fills_missing_province_rows(clients):
     from app.modules.footprints.worker import run_scan
 
     a, b, _, app = clients

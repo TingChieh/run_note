@@ -1,6 +1,5 @@
 """Only synthetic records on the explicitly guarded test database."""
 
-# ruff: noqa: F811 -- register existing database/client fixtures
 import json
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -10,7 +9,7 @@ import pytest
 from sqlalchemy import text
 
 from app.db.schema import get_expected_revision
-from tests.conftest import clients, headers, register, upload  # noqa: F401
+from tests.conftest import headers, register, upload
 
 pytestmark = pytest.mark.integration
 PATH = "/api/v1/mifitness-imports"

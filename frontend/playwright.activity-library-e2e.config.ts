@@ -1,2 +1,2 @@
-import base from './playwright.tcx-e2e.config';
+import base from './playwright.config';
 export default { ...base, testMatch: ['activity-management.spec.ts', 'activity-library.spec.ts'] };

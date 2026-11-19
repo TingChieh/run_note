@@ -4,13 +4,13 @@ from uuid import UUID
 import pytest
 from sqlalchemy import text
 
-from tests.conftest import clients, headers, register  # noqa: F401
+from tests.conftest import headers, register
 
 pytestmark = pytest.mark.integration
 PATH = "/api/v1/me/running-goals"
 
 
-def test_goals_persist_across_sessions_and_are_private(clients):  # noqa: F811
+def test_goals_persist_across_sessions_and_are_private(clients):
     a, b, engine, _ = clients
     owner = register(a)
     register(b)
@@ -51,7 +51,7 @@ def test_goals_persist_across_sessions_and_are_private(clients):  # noqa: F811
 
 
 @pytest.mark.parametrize("value", [0, -1, 100001, 5.55, "5", True, None])
-def test_goal_validation_does_not_change_saved_value(clients, value):  # noqa: F811
+def test_goal_validation_does_not_change_saved_value(clients, value):
     a, _, _, _ = clients
     register(a)
     assert a.put(f"{PATH}/week", headers=headers(a), json={"target_km": 5}).status_code == 200
@@ -60,7 +60,7 @@ def test_goal_validation_does_not_change_saved_value(clients, value):  # noqa: F
     assert float(a.get(PATH).json()["data"]["week"]) == 5
 
 
-def test_goal_writes_require_csrf_and_reject_owner_override(clients):  # noqa: F811
+def test_goal_writes_require_csrf_and_reject_owner_override(clients):
     a, b, _, _ = clients
     register(a)
     other = register(b)
@@ -74,7 +74,7 @@ def test_goal_writes_require_csrf_and_reject_owner_override(clients):  # noqa: F
     assert a.get(PATH).json()["data"]["week"] is None
 
 
-def test_first_concurrent_saves_keep_one_goal_per_period(clients):  # noqa: F811
+def test_first_concurrent_saves_keep_one_goal_per_period(clients):
     from concurrent.futures import ThreadPoolExecutor
 
     a, _, engine, _ = clients

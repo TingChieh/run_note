@@ -7,6 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.modules.activities.schema import TemporalQuality
 from app.modules.ai_reports.schema import AnalysisText
 from app.modules.statistics.schema import Bucket, Summary
 
@@ -41,7 +42,7 @@ class ShowcaseActivity(BaseModel):
     aerobic_training_effect: Decimal | None = None
     anaerobic_training_effect: Decimal | None = None
     avg_pace_seconds_per_km: Decimal | None
-    temporal_quality: str
+    temporal_quality: TemporalQuality
     metrics_version: str
     has_route: bool
     created_at: datetime

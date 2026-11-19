@@ -16,6 +16,7 @@ from app.modules.sharing.schema import (
     ShareCreate,
     ShareCreated,
     ShareList,
+    ShareRevoked,
 )
 from app.modules.statistics import service as statistics
 from app.modules.statistics.schema import Calendar
@@ -49,7 +50,9 @@ def shares(identifier: UUID, request: Request, identity: Read, db: DB):
     return envelope(request, data)
 
 
-@router.delete("/activities/{identifier}/shares/{link_id}")
+@router.delete(
+    "/activities/{identifier}/shares/{link_id}", response_model=ApiResponse[ShareRevoked]
+)
 def revoke(identifier: UUID, link_id: UUID, request: Request, identity: Write, db: DB):
     data = service.revoke(db, identity[1].id, identifier, link_id, request.app.state.clock())
     db.commit()

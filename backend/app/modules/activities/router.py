@@ -9,10 +9,13 @@ from app.api.dependencies import get_identity, get_session, require_write
 from app.core.responses import ApiResponse, ResponseMeta
 from app.modules.activities import service
 from app.modules.activities.schema import (
+    ActivitiesDeleted,
     ActivityBatchDelete,
+    ActivityDeleted,
     ActivityList,
     ActivityUpdate,
     ActivityView,
+    RouteView,
 )
 from app.modules.footprints.worker import wake_footprint_worker
 
@@ -55,7 +58,7 @@ def categories(
     return envelope(request, data)
 
 
-@router.post("/batch-delete")
+@router.post("/batch-delete", response_model=ApiResponse[ActivitiesDeleted])
 def delete_activities(
     payload: ActivityBatchDelete,
     request: Request,
@@ -96,7 +99,7 @@ def update_activity(
     return envelope(request, data)
 
 
-@router.delete("/{identifier}")
+@router.delete("/{identifier}", response_model=ApiResponse[ActivityDeleted])
 def delete_activity(
     identifier: UUID,
     request: Request,
@@ -109,7 +112,7 @@ def delete_activity(
     return envelope(request, data)
 
 
-@router.get("/{identifier}/route")
+@router.get("/{identifier}/route", response_model=ApiResponse[RouteView])
 def route(
     identifier: UUID,
     request: Request,

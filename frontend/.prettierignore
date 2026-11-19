@@ -1,5 +1,6 @@
 # Generated or vendored data: regenerate with its script instead of reformatting.
 src/lib/data/
+src/lib/api/generated/
 static/
 build/
 .svelte-kit/

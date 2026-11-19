@@ -8,9 +8,10 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_session, require_admin, require_admin_write
 from app.core.responses import ApiResponse
 from app.modules.activities import service as activities
-from app.modules.activities.schema import ActivityList, ActivityView
+from app.modules.activities.schema import ActivityList, ActivityView, RouteView
 from app.modules.admin_users import service
 from app.modules.admin_users.schema import (
+    ActivityOwner,
     AdminUser,
     AdminUserList,
     PasswordReset,
@@ -29,7 +30,7 @@ Read = Annotated[tuple, Depends(require_admin)]
 Write = Annotated[tuple, Depends(require_admin_write)]
 
 
-@activity_router.get("/{activity_id}/owner")
+@activity_router.get("/{activity_id}/owner", response_model=ApiResponse[ActivityOwner])
 def activity_owner(activity_id: UUID, request: Request, db: DB, identity: Read):
     data = service.activity_owner(db, activity_id)
     db.commit()
@@ -72,7 +73,7 @@ def activity_detail(user_id: UUID, activity_id: UUID, request: Request, db: DB, 
     return envelope(request, data)
 
 
-@router.get("/{user_id}/activities/{activity_id}/route")
+@router.get("/{user_id}/activities/{activity_id}/route", response_model=ApiResponse[RouteView])
 def activity_route(user_id: UUID, activity_id: UUID, request: Request, db: DB, identity: Read):
     service.read_user(db, user_id)
     data = activities.route(db, user_id, activity_id)

@@ -13,7 +13,7 @@ from app.modules.activities.model import Activity
 from app.modules.auth.model import AuthSession
 from app.modules.gpx.model import GpxImport
 from app.modules.users.model import User
-from tests.integration.test_showcase import ORIGIN, PASSWORD, site  # noqa: F401
+from tests.integration.test_showcase import ORIGIN, PASSWORD
 
 pytestmark = pytest.mark.integration
 
@@ -32,7 +32,7 @@ def write_headers(response):
     return {"Origin": ORIGIN, "X-CSRF-Token": response.json()["data"]["csrf_token"]}
 
 
-def test_admin_accounts_sessions_named_isolation_and_legacy_revocation(site, monkeypatch):  # noqa: F811
+def test_admin_accounts_sessions_named_isolation_and_legacy_revocation(site, monkeypatch):
     monkeypatch.setattr("app.main.FootprintWorker.start", lambda self: None)
     admin, visitor, old, admin_headers, owner_activity, _, engine, settings, _ = site
     prefix = "/api/v1/admin/users"
@@ -193,7 +193,7 @@ def test_admin_accounts_sessions_named_isolation_and_legacy_revocation(site, mon
         assert persisted.email_normalized == new_email
 
 
-def test_batch_delete_cascades_protects_owner_and_requires_admin(site, monkeypatch):  # noqa: F811
+def test_batch_delete_cascades_protects_owner_and_requires_admin(site, monkeypatch):
     monkeypatch.setattr("app.main.FootprintWorker.start", lambda self: None)
     admin, visitor, _, admin_headers, _, _, _, settings, _ = site
     prefix = "/api/v1/admin/users"
@@ -271,7 +271,7 @@ def test_batch_delete_cascades_protects_owner_and_requires_admin(site, monkeypat
         assert db.get(User, UUID(owner_id)) is not None
 
 
-def test_wellbeing_switches_preserve_private_records(site):  # noqa: F811
+def test_wellbeing_switches_preserve_private_records(site):
     admin, _, _, admin_headers, _, _, _, settings, _ = site
     suffix = uuid4().hex[:18]
     payload = dict(
@@ -335,7 +335,7 @@ def test_wellbeing_switches_preserve_private_records(site):  # noqa: F811
         assert response.json()["data"]["entry"]["mood"] == 5
 
 
-def test_together_switches_and_public_filter(site, monkeypatch):  # noqa: F811
+def test_together_switches_and_public_filter(site, monkeypatch):
     admin, visitor, _, admin_headers, _, _, engine, settings, _ = site
     suffix = uuid4().hex[:18]
     payload = dict(

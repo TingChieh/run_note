@@ -3,6 +3,7 @@
 import gzip
 import hashlib
 import json
+import logging
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
@@ -18,10 +19,16 @@ from app.modules.footprints.model import ActivityGlobalFootprintCache
 DATA_DIR = Path(__file__).parent / "data"
 REGIONS_FILE = DATA_DIR / "world-regions.json.gz"
 CITIES_FILE = DATA_DIR / "world-cities.json.gz"
+logger = logging.getLogger(__name__)
 FILL_BATCH = 10
 CITY_PROXIMITY_M = 10_000
 CITY_FALLBACK_RADIUS_M = 35_000
 POINT_CITY_DEG_MARGIN = 0.5
+# Tracks are Douglas-Peucker simplified to ~11 m before polygon matching. The atlas boundaries are
+# themselves simplified at 0.015 deg and rounded to 0.001 deg (~110 m; data/README.md), so this
+# changes no realistic hit, while a degenerate track (long overlapping edges) drops from ~30 s
+# to well under a second.
+TRACK_SIMPLIFY_DEG = 0.0001
 
 
 @lru_cache(maxsize=1)
@@ -99,15 +106,19 @@ REGION_HITS_SQL = """WITH regions AS MATERIALIZED (
     SELECT r->>'code' AS code,
         ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON(r->'geometry'), 4326)) AS geom
     FROM jsonb_array_elements(CAST(:regions AS jsonb)) r
-), selected AS MATERIALIZED (
-    SELECT a.id AS activity_id, s.point_count, COALESCE(s.geom, p.position) AS geom,
-        COALESCE(s.geom, p.position) IS NOT NULL
-        AND ST_XMax(Box3D(COALESCE(s.geom, p.position)))
-            - ST_XMin(Box3D(COALESCE(s.geom, p.position))) > 180 AS crosses
+), tracks AS (
+    SELECT a.id AS activity_id, s.point_count,
+        CASE WHEN s.point_count > 1 THEN ST_Simplify(s.geom, :tolerance, true)
+            ELSE COALESCE(s.geom, p.position)
+        END AS geom
     FROM activities a JOIN activity_segments s ON s.activity_id=a.id
     LEFT JOIN activity_points p ON p.segment_id=s.id
         AND s.point_count=1 AND p.point_index=0
     WHERE a.user_id=:owner AND a.id=ANY(:ids)
+), selected AS MATERIALIZED (
+    SELECT activity_id, point_count, geom,
+        geom IS NOT NULL AND ST_XMax(Box3D(geom)) - ST_XMin(Box3D(geom)) > 180 AS crosses
+    FROM tracks
 ), crossing_edges AS MATERIALIZED (
     SELECT s.activity_id, e.geom,
         ST_XMax(Box3D(e.geom)) - ST_XMin(Box3D(e.geom)) > 180 AS edge_crosses
@@ -167,7 +178,20 @@ POINT_CITY_HITS_SQL = """WITH pts AS MATERIALIZED (
 SELECT activity_id, code FROM ranked WHERE dist_m <= :near_m OR rn = 1"""
 
 
-def compute_global_codes(db, owner, activity_ids) -> dict:
+class FillStopped(Exception):
+    """The worker is stopping; raised between statements, where a cancel request cannot land."""
+
+
+def _timed_out(error: DBAPIError) -> bool:
+    return getattr(error.orig, "sqlstate", None) == "57014"
+
+
+def _check(stop_event) -> None:
+    if stop_event is not None and stop_event.is_set():
+        raise FillStopped
+
+
+def compute_global_codes(db, owner, activity_ids, *, stop_event=None) -> dict:
     """Return {activity_id: (sorted_region_codes, sorted_city_codes)} for every requested ID."""
     result = {activity_id: ([], []) for activity_id in activity_ids}
     if not activity_ids:
@@ -211,20 +235,33 @@ def compute_global_codes(db, owner, activity_ids) -> dict:
     city_hits: dict = {aid: set() for aid in activity_ids}
 
     if cand_regions:
+        _check(stop_event)
         for aid, code in db.execute(
             text(REGION_HITS_SQL),
-            {"owner": owner, "ids": list(activity_ids), "regions": json.dumps(cand_regions)},
+            {
+                "owner": owner,
+                "ids": list(activity_ids),
+                "regions": json.dumps(cand_regions),
+                "tolerance": TRACK_SIMPLIFY_DEG,
+            },
         ):
             region_hits[aid].add(code)
 
     if cand_poly_cities:
+        _check(stop_event)
         for aid, code in db.execute(
             text(REGION_HITS_SQL),
-            {"owner": owner, "ids": list(activity_ids), "regions": json.dumps(cand_poly_cities)},
+            {
+                "owner": owner,
+                "ids": list(activity_ids),
+                "regions": json.dumps(cand_poly_cities),
+                "tolerance": TRACK_SIMPLIFY_DEG,
+            },
         ):
             city_hits[aid].add(code)
 
     if cand_point_cities:
+        _check(stop_event)
         pt_payload = [
             {"code": c["code"], "lon": c["lon"], "lat": c["lat"]} for c in cand_point_cities
         ]
@@ -275,42 +312,73 @@ def store_global_footprint_codes(db, owner, codes: dict) -> None:
 def fill_global_footprint_caches(
     session_factory, *, limit=FILL_BATCH, max_batches=None, owner=None, stop_event=None
 ) -> int:
-    """Compute rows that are missing or outdated, newest activities first."""
+    """Compute rows that are missing or outdated, newest activities first.
+
+    An owner whose matching exceeds the statement budget is rolled back alone and skipped for
+    the rest of this call, so one pathological track cannot stall everyone else's rows.
+    """
     filled = 0
     batches = 0
+    skipped: set = set()
     owner_filter = " AND a.user_id=:owner" if owner is not None else ""
     while (stop_event is None or not stop_event.is_set()) and (
         max_batches is None or batches < max_batches
     ):
         with session_factory() as db:
-            db.execute(text("SET LOCAL statement_timeout = '5000ms'"))
-            params: dict = {"version": atlas_version(), "limit": limit}
-            if owner is not None:
-                params["owner"] = owner
-            rows = db.execute(
-                text(f"""SELECT a.user_id, a.id FROM activities a
-                    LEFT JOIN activity_global_footprint_caches c
-                        ON c.activity_id=a.id AND c.atlas_version=:version
-                    WHERE c.id IS NULL{owner_filter}
-                    ORDER BY a.created_at DESC, a.id DESC LIMIT :limit"""),
-                params,
-            ).all()
-            if not rows:
-                return filled
-            by_owner: dict = {}
-            for row_owner, activity_id in rows:
-                by_owner.setdefault(row_owner, []).append(activity_id)
-            # Match everything first, then write and commit at once. Each insert takes a key-share
-            # lock on its owner's users row (the foreign key) until commit; interleaving would hold
-            # it through the next owner's slow geometry matching and time out that user's requests.
-            computed = [
-                (row_owner, compute_global_codes(db, row_owner, ids))
-                for row_owner, ids in by_owner.items()
-            ]
-            for row_owner, codes in computed:
-                store_global_footprint_codes(db, row_owner, codes)
-            db.commit()
-            filled += len(rows)
+            # Stopping the worker cancels the statement in flight (see footprints/worker.py); a
+            # stop that arrives between statements is caught by the checks before each one.
+            if hasattr(stop_event, "attach"):
+                stop_event.attach(db.connection())
+            try:
+                _check(stop_event)
+                db.execute(text("SET LOCAL statement_timeout = '5000ms'"))
+                params: dict = {"version": atlas_version(), "limit": limit, "skip": list(skipped)}
+                if owner is not None:
+                    params["owner"] = owner
+                rows = db.execute(
+                    text(f"""SELECT a.user_id, a.id FROM activities a
+                        LEFT JOIN activity_global_footprint_caches c
+                            ON c.activity_id=a.id AND c.atlas_version=:version
+                        WHERE c.id IS NULL AND a.id <> ALL(CAST(:skip AS uuid[])){owner_filter}
+                        ORDER BY a.created_at DESC, a.id DESC LIMIT :limit"""),
+                    params,
+                ).all()
+                if not rows:
+                    return filled
+                by_owner: dict = {}
+                for row_owner, activity_id in rows:
+                    by_owner.setdefault(row_owner, []).append(activity_id)
+                # Match everything first, then write and commit at once. Each insert takes a
+                # key-share lock on its owner's users row (the foreign key) until commit;
+                # interleaving would hold it through the next owner's slow geometry matching and
+                # time out that user's requests.
+                computed = []
+                for row_owner, ids in by_owner.items():
+                    try:
+                        with db.begin_nested():
+                            codes = compute_global_codes(db, row_owner, ids, stop_event=stop_event)
+                    except DBAPIError as error:
+                        if not _timed_out(error) or (
+                            stop_event is not None and stop_event.is_set()
+                        ):
+                            raise
+                        skipped.update(ids)
+                        logger.warning("Global footprint match exceeded its budget; skipped")
+                        continue
+                    computed.append((row_owner, codes))
+                for row_owner, codes in computed:
+                    store_global_footprint_codes(db, row_owner, codes)
+                db.commit()
+            except FillStopped:
+                return filled  # nothing of this batch was committed; the next scan resumes
+            except DBAPIError:
+                if stop_event is not None and stop_event.is_set():
+                    return filled  # cancelled by shutdown; nothing of this batch was committed
+                raise
+            finally:
+                if hasattr(stop_event, "detach"):
+                    stop_event.detach()
+            filled += sum(len(codes) for _, codes in computed)
             batches += 1
     return filled
 

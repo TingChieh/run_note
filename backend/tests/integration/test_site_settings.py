@@ -11,7 +11,7 @@ from sqlalchemy import delete
 from app.main import create_app
 from app.modules.site_settings.model import DEFAULTS, SiteImage, SiteSettings
 from tests.integration.test_admin_users import login, write_headers
-from tests.integration.test_showcase import ORIGIN, PASSWORD, site  # noqa: F401
+from tests.integration.test_showcase import ORIGIN, PASSWORD
 
 pytestmark = pytest.mark.integration
 
@@ -23,7 +23,7 @@ def png(size=(300, 200)):
 
 
 @pytest.fixture
-def restore_site(site):  # noqa: F811
+def restore_site(site):
     yield site
     app = site[0].app
     with app.state.session_factory.begin() as db:
