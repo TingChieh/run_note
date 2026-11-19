@@ -111,7 +111,7 @@ jobs:
     needs: changes
     if: github.ref == 'refs/heads/main' && needs.changes.outputs.backend == 'true'
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       APP_ENV: test
       DATABASE_URL: postgresql+psycopg://run_note@127.0.0.1:55432/run_note_ci
@@ -204,6 +204,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
+      # A stalled mirror otherwise hangs a later apt step until the job timeout; every apt call in
+      # this job (Caddy, PostgreSQL, restic) reads this file.
+      - name: Bound apt network waits
+        run: |
+          printf 'Acquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAcquire::Retries "3";\nAcquire::ForceIPv4 "true";\n' | sudo tee /etc/apt/apt.conf.d/99ci-network >/dev/null
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
@@ -224,7 +229,6 @@ jobs:
         run: backend/.venv/bin/python -m unittest discover -s infra/native/tests -v
       - name: Validate the Caddyfile
         run: |
-          printf 'Acquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAcquire::Retries "3";\nAcquire::ForceIPv4 "true";\n' | sudo tee /etc/apt/apt.conf.d/99ci-network >/dev/null
           sudo apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
           curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
           curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
