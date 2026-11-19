@@ -27,6 +27,7 @@ jobs:
   # .github/scripts/changed_areas.py and docs/74-ci-path-filters.md.
   changes:
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     outputs:
       backend: ${{ steps.areas.outputs.backend }}
       frontend: ${{ steps.areas.outputs.frontend }}
@@ -47,6 +48,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
       APP_ENV: test
       # A disposable native cluster with loopback-only trust; never use for deployment.
@@ -63,6 +65,7 @@ jobs:
           python-version: '3.14'
       - name: Install PostgreSQL 18 + PostGIS from the PGDG apt repository
         run: |
+          printf 'Acquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAcquire::Retries "3";\nAcquire::ForceIPv4 "true";\n' | sudo tee /etc/apt/apt.conf.d/99ci-network >/dev/null
           sudo apt-get update
           sudo apt-get install -y postgresql-common
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
@@ -108,6 +111,7 @@ jobs:
     needs: changes
     if: github.ref == 'refs/heads/main' && needs.changes.outputs.backend == 'true'
     runs-on: macos-latest
+    timeout-minutes: 30
     env:
       APP_ENV: test
       DATABASE_URL: postgresql+psycopg://run_note@127.0.0.1:55432/run_note_ci
@@ -146,6 +150,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
@@ -167,6 +172,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: frontend
@@ -196,6 +202,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.infra == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -217,6 +224,7 @@ jobs:
         run: backend/.venv/bin/python -m unittest discover -s infra/native/tests -v
       - name: Validate the Caddyfile
         run: |
+          printf 'Acquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAcquire::Retries "3";\nAcquire::ForceIPv4 "true";\n' | sudo tee /etc/apt/apt.conf.d/99ci-network >/dev/null
           sudo apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
           curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
           curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
