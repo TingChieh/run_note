@@ -43,7 +43,7 @@ infra/native/      原生部署资产：systemd 单元、Caddyfile、env 模板�
 docs/              设计与验收记录（中文）；docs/design-system/ 为 UI 规范；docs/engineering/ 为质量基线
 ```
 
-后端功能模块以 `backend/app/modules/` 目录为准（现有 activities、admin_users、ai_reports、auth、footprints、gpx、health、mifitness、place_titles、route_groups、running_goals、sharing、showcase、site_settings、statistics、tcx、together、users、wellbeing）；新增模块须按第 4 节注册。每个模块按自己的 `router/schema/service/model` 组织。**不要为每张表建立空壳 Repository/Manager/Factory**，简单查询直接写在模块 service 中；只有空间查询或确需复用的复杂查询才拆出 `queries.py`。
+后端功能模块以 `backend/app/modules/` 目录为准（现有 activities、admin_users、ai_reports、auth、footprints、gpx、health、mifitness、place_titles、route_groups、running_goals、sharing、showcase、site_settings、statistics、tcx、together、users、version、wellbeing）；新增模块须按第 4 节注册。每个模块按自己的 `router/schema/service/model` 组织。**不要为每张表建立空壳 Repository/Manager/Factory**，简单查询直接写在模块 service 中；只有空间查询或确需复用的复杂查询才拆出 `queries.py`。
 
 ## 3. 架构边界
 
@@ -59,6 +59,7 @@ docs/              设计与验收记录（中文）；docs/design-system/ 为 U
 | 事实 | 源头 | 派生物 / 守护 |
 | --- | --- | --- |
 | API 请求与响应结构 | 后端 Pydantic schema 与路由 | `frontend/src/lib/api/generated/api.ts`（`cd backend && .venv/bin/python -m app.contract.typescript`）；`tests/unit/test_api_contract.py` 防过期，`frontend/tests/contract/api-types.ts` 与 `tests/unit/api-contract.test.ts` 防前端漂移 |
+| 应用版本号 | `backend/pyproject.toml` 的 `[project] version`（`MAJOR.MINOR.PATCH`；本版为 1.0.0） | `frontend/package.json` 的 `version` 必须相同；`GET /api/v1/admin/version`（仅站主）连同发布包的 `RELEASE` 构建信息在“设置 → 站点设置”展示；`tests/unit/test_version.py` 守护 |
 | 距离、用时、配速 | `gpx/metrics.py` 与 `gpx/queries.py`（PostGIS） | 前端只格式化 |
 | CI 按路径跳过的规则 | `.github/scripts/changed_areas.py` | `scripts/verify.py` 直接复用 |
 | 检查命令 | `.github/workflows/ci.yml` | `scripts/verify.py`（`infra/native/tests/test_verify_script.py` 保持一致） |

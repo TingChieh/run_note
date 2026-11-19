@@ -142,6 +142,11 @@ createServer(async (req, res) => {
     if (current.is_admin) Object.assign(user, clean(current));
     return send({avatar_url: current.avatar_url});
   }
+  if (url.pathname === '/api/v1/admin/version' && req.method === 'GET') {
+    if (!signedIn) return send(null,401);
+    if (!current.is_admin) return send(null,403,'仅站主可管理账号');
+    return send({ version: '1.0.0', build: { release_id: '20261119163755-2d1d6c553e57', git_sha: '2d1d6c553e57', built_at: '2026-11-19T16:37:55Z' } });
+  }
   if (url.pathname.startsWith('/api/v1/admin/users')) {
     if (!signedIn) return send(null,401);
     if (!current.is_admin) return send(null,403,'仅站主可管理用户');
