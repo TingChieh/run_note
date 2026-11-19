@@ -128,6 +128,24 @@ test('saving the default theme applies it to the current page without a reload',
   await page.evaluate(() => localStorage.removeItem('runnote-theme'));
 });
 
+test('site settings show the app version and how this release was built', async ({ page }) => {
+  await loginRunner(page);
+  await page.goto('/settings/site');
+  const card = page.getByTestId('version-info');
+  await expect(card.getByRole('heading', { name: '版本信息', exact: true })).toBeVisible();
+  await expect(card.getByTestId('app-version')).toHaveText('v1.0.0');
+  await expect(card.getByTestId('app-commit')).toHaveText('2d1d6c553e57');
+  await expect(card).toContainText('2026-11-19 16:37 UTC');
+});
+
+test('a failed version read does not block the rest of site settings', async ({ page }) => {
+  await loginRunner(page);
+  await page.route('**/api/v1/admin/version', route => route.fulfill({ status: 500, json: { data: null, error: { code: 'INTERNAL', message: '内部错误' } } }));
+  await page.goto('/settings/site');
+  await expect(page.getByTestId('version-info').getByRole('status')).toHaveText('版本信息暂时无法读取。');
+  await expect(page.getByLabel('站点标题', { exact: true })).toBeEnabled();
+});
+
 test('account settings upload and remove the avatar', async ({ page }) => {
   await loginRunner(page);
   await page.goto('/settings');
@@ -153,5 +171,6 @@ test('ordinary users have no site settings entry and get 403', async ({ page, br
     await expect(own.getByRole('navigation', { name: '设置分区' }).getByRole('link', { name: '站点设置' })).toHaveCount(0);
     await expect(own.getByLabel('上传头像')).toBeEnabled();
     expect((await own.goto('/settings/site'))?.status()).toBe(403);
+    expect((await own.request.get('/api/v1/admin/version')).status()).toBe(403);
   } finally { await context.close(); }
 });

@@ -7,12 +7,14 @@
   import SaveBar from '#lib/components/SaveBar.svelte';
   import { applySiteDefaultTheme } from '#lib/components/system-theme.ts';
   import { SiteError, readSite, removeSiteImage, updateSite, uploadSiteImage } from '#lib/api/site.ts';
+  import { builtAtLabel, readVersion, type VersionInfo } from '#lib/api/version.ts';
   import { brandInitial, pageTitle, type Site, type SiteTheme } from '#lib/site.ts';
 
   let site = $state<Site | null>(null), loading = $state(true), loadError = $state('');
   let title = $state(''), subtitle = $state(''), tagline = $state(''), description = $state(''), theme = $state<SiteTheme>('system');
   let slow = $state(false), saving = $state(false), notice = $state(''), error = $state('');
   let imageBusy = $state<'favicon' | 'logo' | null>(null), imageError = $state<Record<string, string>>({});
+  let version = $state<VersionInfo | null>(null), versionError = $state(false);
   let disposed = false, token = 0, noticeTimer: ReturnType<typeof setTimeout> | undefined;
   const dirty = $derived(!!site && (title !== site.title || subtitle !== site.subtitle || tagline !== site.footer_tagline || description !== site.description || theme !== site.default_theme));
   $effect(() => { if (dirty) notice = ''; });
@@ -27,7 +29,11 @@
     catch (cause) { if (disposed || request !== token || expired(cause)) return; loadError = cause instanceof Error ? cause.message : '站点设置读取失败'; }
     finally { if (!disposed && request === token) loading = false; }
   }
-  onMount(() => { const wait = setTimeout(() => { slow = true; }, 250); void load(); return () => { disposed = true; token++; clearTimeout(noticeTimer); clearTimeout(wait); }; });
+  async function loadVersion() {
+    try { const value = await readVersion(); if (!disposed) version = value; }
+    catch { if (!disposed) versionError = true; }
+  }
+  onMount(() => { const wait = setTimeout(() => { slow = true; }, 250); void load(); void loadVersion(); return () => { disposed = true; token++; clearTimeout(noticeTimer); clearTimeout(wait); }; });
   async function save(event: SubmitEvent) {
     event.preventDefault(); if (saving) return; saving = true; notice = ''; error = ''; clearTimeout(noticeTimer);
     try { const value = await updateSite({ title, subtitle, footer_tagline: tagline, description, default_theme: theme }); if (disposed) return; fill(value); applySiteDefaultTheme(value.default_theme); notice = '站点设置已保存。'; await invalidateAll(); }
@@ -68,6 +74,25 @@
         </label>{/each}
       </div>
     </fieldset>
+    <section class="aux-panel settings-block" aria-labelledby="version-title" data-testid="version-info">
+      <h2 id="version-title">版本信息</h2>
+      {#if version}
+        <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+          <dt class="text-muted-foreground">版本</dt><dd data-testid="app-version">v{version.version}</dd>
+          {#if version.build}
+            <dt class="text-muted-foreground">提交</dt><dd class="font-mono" data-testid="app-commit">{version.build.git_sha}</dd>
+            <dt class="text-muted-foreground">构建时间</dt><dd>{builtAtLabel(version.build.built_at)}</dd>
+            <dt class="text-muted-foreground">发布 ID</dt><dd class="font-mono break-all">{version.build.release_id}</dd>
+          {:else}
+            <dt class="text-muted-foreground">来源</dt><dd>本地源码运行（非发布包）</dd>
+          {/if}
+        </dl>
+      {:else if versionError}
+        <p class="block-hint" role="status">版本信息暂时无法读取。</p>
+      {:else}
+        <p class="block-hint">正在读取版本信息…</p>
+      {/if}
+    </section>
   </form>
   <aside class="settings-stack" aria-label="预览与图标">
     <section class="aux-panel settings-block" aria-labelledby="site-preview-title">

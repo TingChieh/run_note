@@ -1188,6 +1188,17 @@ export interface UsernameUpdate {
   username: string;
 }
 
+export interface VersionBuild {
+  release_id: string;
+  git_sha: string;
+  built_at: string;
+}
+
+export interface VersionInfo {
+  version: string;
+  build: VersionBuild | null;
+}
+
 export interface WeekPoint {
   week_start: string;
   active_days: number;
@@ -1293,6 +1304,9 @@ export interface ApiOperations {
   };
   '/api/v1/admin/users/{user_id}/activities/{activity_id}/route': {
     get: { body: never; response: RouteView };
+  };
+  '/api/v1/admin/version': {
+    get: { body: never; response: VersionInfo };
   };
   '/api/v1/ai-reports': {
     get: { body: never; response: ReportList };
@@ -1662,6 +1676,9 @@ export const API_OPERATIONS = {
     get: [],
   },
   '/api/v1/admin/users/{user_id}/activities/{activity_id}/route': {
+    get: [],
+  },
+  '/api/v1/admin/version': {
     get: [],
   },
   '/api/v1/ai-reports': {
