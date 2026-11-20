@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>跑步回顾 · RunNote</title>
+    <link rel="icon" href="data:,">
+    <script>document.documentElement.dataset.theme = new URLSearchParams(location.search).get('theme') === 'dark' ? 'dark' : 'light';</script>
+    <link rel="stylesheet" href="recap.css">
+    <script defer src="recap.js"></script>
+  </head>
+  <body>
+    <a class="skip" href="#recap">跳到跑步回顾</a>
+    <header class="app-bar">
+      <div class="brand"><b class="brand-mark" aria-hidden="true">R</b><b>RunNote</b></div>
+      <span class="app-section">个人记录</span>
+      <a id="theme-link" class="theme" aria-label="切换外观" title="切换外观" href="?theme=dark">
+        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.621.46.379.784a6.5 6.5 0 0 0 8.31 8.31c.325-.242.806-.026.784.378"/></svg>
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg>
+      </a>
+    </header>
+
+    <main id="recap" class="recap">
+      <header class="recap-head">
+        <div class="recap-title">
+          <h1 data-field="title">2025 年跑步回顾</h1>
+          <p data-field="range">2025.01.01 – 2025.12.31</p>
+        </div>
+        <nav class="periods" aria-label="报告周期">
+          <a id="month-link" href="?period=month">月度</a>
+          <a id="year-link" href="?period=year" aria-current="page">年度</a>
+        </nav>
+      </header>
+
+      <section class="overview" aria-labelledby="distance-heading">
+        <div class="distance">
+          <h2 id="distance-heading">总里程</h2>
+          <p><strong data-field="distance">956.2</strong><span>km</span></p>
+        </div>
+        <dl class="metrics">
+          <div><dt>跑步次数</dt><dd><strong data-field="count">132</strong> <span>次</span></dd></div>
+          <div><dt>跑步天数</dt><dd><strong data-field="days">106</strong> <span>天</span></dd></div>
+          <div><dt>总用时</dt><dd><strong data-field="duration">98:40</strong> <span>时:分</span></dd></div>
+          <div><dt>平均配速</dt><dd><strong data-field="pace">6′11″</strong> <span>/km</span></dd></div>
+        </dl>
+      </section>
+
+      <section class="rhythm" aria-labelledby="rhythm-heading">
+        <header class="section-head">
+          <div>
+            <h2 id="rhythm-heading" data-field="chartTitle">每月里程</h2>
+            <p data-field="peak">10 月里程最高 · 118.4 km</p>
+          </div>
+          <button id="share-button" class="primary" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3m-4 4 4-4 4 4M7 10H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-2"/></svg>
+            生成分享图
+          </button>
+        </header>
+        <div class="chart" aria-hidden="true">
+          <ol class="ticks"></ol>
+          <div class="plot"><div class="gridlines"></div><ol class="bars"></ol></div>
+        </div>
+        <details class="data-table"><summary>查看数据表</summary>
+          <table><caption class="sr-only" data-field="chartTitle">每月里程</caption><thead><tr><th scope="col" data-field="bucket">月份</th><th scope="col">里程（km）</th></tr></thead><tbody></tbody></table>
+        </details>
+      </section>
+    </main>
+
+    <dialog id="share-dialog" aria-labelledby="share-heading">
+      <header class="section-head"><h2 id="share-heading">分享图片</h2><form method="dialog"><button class="secondary" autofocus>关闭</button></form></header>
+      <img id="poster-preview" width="1080" height="1920" alt="">
+      <a id="download" class="primary" download>保存 PNG</a>
+    </dialog>
+  </body>
+</html>

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>跑步回顾分享图 · RunNote</title>
+    <link rel="icon" href="data:,">
+    <script>document.documentElement.dataset.theme = new URLSearchParams(location.search).get('theme') === 'dark' ? 'dark' : 'light';</script>
+    <link rel="stylesheet" href="recap.css">
+    <script defer src="recap.js"></script>
+  </head>
+  <body class="poster-page">
+    <main class="poster" aria-labelledby="poster-title">
+      <header class="poster-head">
+        <div class="brand"><b class="brand-mark" aria-hidden="true">R</b><b>RunNote</b></div>
+        <p data-field="range">2025.01.01 – 2025.12.31</p>
+      </header>
+      <h1 id="poster-title" data-field="title">2025 年跑步回顾</h1>
+      <div class="poster-distance"><p>总里程</p><div><strong data-field="distance">956.2</strong><span>km</span></div></div>
+      <section class="poster-rhythm" aria-labelledby="poster-chart">
+        <h2 id="poster-chart" data-field="chartTitle">每月里程</h2>
+        <p data-field="peak">10 月里程最高 · 118.4 km</p>
+        <div class="chart" aria-hidden="true"><div class="plot"><ol class="bars"></ol></div></div>
+      </section>
+      <dl class="poster-metrics">
+        <div><dt>跑步次数</dt><dd><strong data-field="count">132</strong> <span>次</span></dd></div>
+        <div><dt>跑步天数</dt><dd><strong data-field="days">106</strong> <span>天</span></dd></div>
+        <div><dt>总用时</dt><dd><strong data-field="duration">98:40</strong> <span>时:分</span></dd></div>
+        <div><dt>平均配速</dt><dd><strong data-field="pace">6′11″</strong> <span>/km</span></dd></div>
+      </dl>
+    </main>
+  </body>
+</html>
