@@ -95,10 +95,42 @@ describe('TouchGestureTracker', () => {
     const tracker = new TouchGestureTracker();
     tracker.down(1, 150, 150);
     tracker.down(2, 151, 150); // span = 1 < MIN_PINCH_SPAN_PX
+    const m0 = tracker.move(2, 152, 150); // still < MIN_PINCH_SPAN_PX
+    expect(m0.kind === 'pinch-move' && m0.scaleFactor).toBe(1);
     const m1 = tracker.move(2, 170, 150); // establishes valid baseline at span 20
     expect(m1.kind === 'pinch-move' && m1.scaleFactor).toBe(1);
     const m2 = tracker.move(2, 190, 150); // span 20 -> 40 => factor 0.5
     expect(m2.kind === 'pinch-move' && m2.scaleFactor).toBeCloseTo(0.5, 6);
+  });
+
+  it('recovers smoothly without backward jump after collapsing below MIN_PINCH_SPAN_PX mid-pinch', () => {
+    const tracker = new TouchGestureTracker();
+    tracker.down(1, 100, 150);
+    tracker.down(2, 180, 150); // span = 80 (spanReady = true)
+
+    // Collapse rapidly below MIN_PINCH_SPAN_PX (span 80 -> 2), then even to 0, then spread back 2 -> 5 -> 80
+    const collapse = tracker.move(2, 102, 150);
+    expect(collapse.kind === 'pinch-move' && collapse.scaleFactor).toBeCloseTo(80 / 4, 6);
+
+    const zero = tracker.move(2, 100, 150);
+    expect(zero.kind === 'pinch-move' && zero.scaleFactor).toBe(1);
+
+    const recover = tracker.move(2, 105, 150);
+    // Spreading fingers apart (2 -> 5) must zoom IN (scaleFactor < 1), never jump 16x OUT
+    expect(recover.kind === 'pinch-move' && recover.scaleFactor).toBeCloseTo(4 / 5, 6);
+
+    const expand = tracker.move(2, 180, 150);
+    expect(expand.kind === 'pinch-move' && expand.scaleFactor).toBeCloseTo(5 / 80, 6);
+
+    // Telescoping product across collapse and full recovery equals 1.0
+    if (
+      collapse.kind === 'pinch-move' &&
+      zero.kind === 'pinch-move' &&
+      recover.kind === 'pinch-move' &&
+      expand.kind === 'pinch-move'
+    ) {
+      expect(collapse.scaleFactor * zero.scaleFactor * recover.scaleFactor * expand.scaleFactor).toBeCloseTo(1.0, 6);
+    }
   });
 });
 

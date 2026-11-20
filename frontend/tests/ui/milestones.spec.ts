@@ -874,6 +874,46 @@ test.describe('province map mobile touch and pinch gestures', () => {
     expect(afterSingleDrag.gesture).toBe('idle');
     expect(Math.abs(afterSingleDrag.yaw - afterDrop.yaw)).toBeGreaterThan(0.02);
 
+    // 3b. Collapse pinch span below MIN_PINCH_SPAN_PX (80px -> 2px) and recover (2px -> 6px -> 60px):
+    // recovery spread must zoom IN (decrease alt), never jump backward
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [
+        { x: Math.round(cx - 40), y: Math.round(cy), id: 1 },
+        { x: Math.round(cx + 40), y: Math.round(cy), id: 2 },
+      ],
+    });
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [
+        { x: Math.round(cx - 1), y: Math.round(cy), id: 1 },
+        { x: Math.round(cx + 1), y: Math.round(cy), id: 2 },
+      ],
+    });
+    await waitIdleFrame(page);
+    const atTinySpan = await readView(canvas);
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [
+        { x: Math.round(cx - 3), y: Math.round(cy), id: 1 },
+        { x: Math.round(cx + 3), y: Math.round(cy), id: 2 },
+      ],
+    });
+    await waitIdleFrame(page);
+    const afterTinyRecover = await readView(canvas);
+    expect(afterTinyRecover.alt).toBeLessThanOrEqual(atTinySpan.alt);
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [
+        { x: Math.round(cx - 30), y: Math.round(cy), id: 1 },
+        { x: Math.round(cx + 30), y: Math.round(cy), id: 2 },
+      ],
+    });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await waitIdleFrame(page);
+    const afterFullRecover = await readView(canvas);
+    expect(afterFullRecover.alt).toBeLessThan(afterTinyRecover.alt);
+
     // 4. Boundary zoom clamp (min and max) + touchCancel recovery
     for (let k = 0; k < 2; k++) {
       await touchPinch(

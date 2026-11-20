@@ -132,15 +132,19 @@ export class TouchGestureTracker {
       const dMidX = curr.midX - prevMidX;
       const dMidY = curr.midY - prevMidY;
       let scaleFactor = 1;
-      if (curr.span < MIN_PINCH_SPAN_PX) {
-        // Freeze baseline span when fingers are nearly touching so division never blows up.
-        this.prevPinch = { midX: curr.midX, midY: curr.midY, span: this.prevPinch.span };
-      } else if (!this.spanReady) {
-        this.prevPinch = curr;
-        this.spanReady = true;
+      if (!this.spanReady) {
+        if (curr.span < MIN_PINCH_SPAN_PX) {
+          this.prevPinch = { midX: curr.midX, midY: curr.midY, span: curr.span };
+        } else {
+          // Establish baseline once fingers separate cleanly past MIN_PINCH_SPAN_PX without a startup spike.
+          this.prevPinch = curr;
+          this.spanReady = true;
+        }
       } else {
-        scaleFactor = this.prevPinch.span / curr.span;
-        this.prevPinch = curr;
+        // Clamp below MIN_PINCH_SPAN_PX while keeping prevPinch.span in sync so recovery never jumps backward.
+        const effectiveSpan = Math.max(MIN_PINCH_SPAN_PX, curr.span);
+        scaleFactor = this.prevPinch.span / effectiveSpan;
+        this.prevPinch = { midX: curr.midX, midY: curr.midY, span: effectiveSpan };
       }
       return {
         kind: 'pinch-move',
