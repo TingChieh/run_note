@@ -25,7 +25,7 @@ PY
 )
 if [ -z "$HEAD_REV" ] || [ -z "$OLD_REV" ]; then echo "cannot derive migration revisions" >&2; exit 1; fi
 WORK="${WORK:-$(mktemp -d)}"
-port="${PG_PORT:-55441}" api_port=18000 web_port=18001
+port="${PG_PORT:-15441}" api_port=18000 web_port=18001  # below Linux's ephemeral range (32768-60999): a loopback client socket can hold a port inside it
 rm -rf "$WORK"; mkdir -p "$WORK"/{shims,etc,root,backups}
 sock="$(mktemp -d /tmp/rnsock.XXXXXX)"  # unix socket paths are limited to ~100 bytes
 fail() { echo "E2E FAIL: $*" >&2; exit 1; }
