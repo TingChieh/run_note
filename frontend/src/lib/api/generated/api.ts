@@ -1558,9 +1558,6 @@ export interface ApiOperations {
   '/api/v1/showcase/statistics/records': {
     get: { body: never; response: Records };
   };
-  '/api/v1/showcase/statistics/report': {
-    get: { body: never; response: PeriodReport };
-  };
   '/api/v1/showcase/statistics/streaks': {
     get: { body: never; response: Streaks };
   };
@@ -1623,9 +1620,6 @@ export interface ApiOperations {
   };
   '/api/v1/showcase/users/{username}/statistics/records': {
     get: { body: never; response: Records };
-  };
-  '/api/v1/showcase/users/{username}/statistics/report': {
-    get: { body: never; response: PeriodReport };
   };
   '/api/v1/showcase/users/{username}/statistics/streaks': {
     get: { body: never; response: Streaks };
@@ -1949,9 +1943,6 @@ export const API_OPERATIONS = {
   '/api/v1/showcase/statistics/records': {
     get: [],
   },
-  '/api/v1/showcase/statistics/report': {
-    get: ['month', 'period', 'year'],
-  },
   '/api/v1/showcase/statistics/streaks': {
     get: [],
   },
@@ -2014,9 +2005,6 @@ export const API_OPERATIONS = {
   },
   '/api/v1/showcase/users/{username}/statistics/records': {
     get: [],
-  },
-  '/api/v1/showcase/users/{username}/statistics/report': {
-    get: ['month', 'period', 'year'],
   },
   '/api/v1/showcase/users/{username}/statistics/streaks': {
     get: [],

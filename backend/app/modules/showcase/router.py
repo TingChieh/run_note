@@ -36,14 +36,7 @@ from app.modules.showcase.schema import (
 )
 from app.modules.statistics import service as statistics
 from app.modules.statistics.records import build_records
-from app.modules.statistics.schema import (
-    Calendar,
-    PeriodReport,
-    Records,
-    Streaks,
-    Summary,
-    Trends,
-)
+from app.modules.statistics.schema import Calendar, Records, Streaks, Summary, Trends
 from app.modules.statistics.streaks import read_streaks
 from app.modules.users.model import User
 
@@ -178,19 +171,6 @@ def records(
 ):
     today = request.app.state.clock().astimezone(ZoneInfo(owner.timezone)).date()
     return envelope(request, build_records(db, owner.id, today))
-
-
-@router.get("/statistics/report", response_model=ApiResponse[PeriodReport])
-def period_report(
-    request: Request,
-    db: DB,
-    owner: Owner,
-    period: Literal["month", "year"],
-    year: Annotated[int, Query(ge=1900, le=2100)],
-    month: Annotated[int | None, Query(ge=1, le=12)] = None,
-):
-    today = request.app.state.clock().astimezone(ZoneInfo(owner.timezone)).date()
-    return envelope(request, statistics.period_report(db, owner.id, period, year, month, today))
 
 
 @router.get("/statistics/streaks", response_model=ApiResponse[Streaks])

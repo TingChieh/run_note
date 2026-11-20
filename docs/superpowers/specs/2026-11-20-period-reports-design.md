@@ -22,18 +22,17 @@
   - 平均配速：距离加权 `(sum(eligible_duration) * 1000 / sum(pace_eligible_distance_m))`，`ROUND_HALF_EVEN` 量化到 `0.001` 秒/公里；无有效记录为 `null`。
   - 总用时：`known_duration_count == 0` 时为 `null`，否则为已知用时之和。
 - **权限与隐私不变**：
-  - 本人工作区：`/api/v1/statistics/report`（需认证 `get_read_identity`，仅查本人）。
-  - 根展示：`/api/v1/showcase/statistics/report`（站主，受 `reject_owner_override` 保护）。
-  - 具名展示：`/api/v1/showcase/users/{username}/statistics/report`（通过 `named_router` 自动注册，仅限站主或 `is_active AND showcase_enabled` 用户）。
+  - 本次仅面向**已登录用户查看本人记录**开放（遵循 Issue #103 授权范围与 `AGENTS.md` 公开接口白名单约定），不新增匿名或具名展示的周期报告接口：
+    - 后端仅注册本人只读端点 `GET /api/v1/statistics/report`（需认证 `get_read_identity`，仅查本人，未登录返回 401）。
+    - `/api/v1/showcase/statistics/report` 与 `/api/v1/showcase/users/{username}/statistics/report` 不存在（返回 404）。
+    - 前端在 `records/+page.svelte` 中通过 `viewsOwnRecords(page.url.pathname, page.data.user)` 门控（仅本人工作区 `/workspace/records`、站主登录看 `/records`、本人登录看 `/p/{username}/records` 渲染 `PeriodReportCard` 并直连 `/api/v1/statistics/report`）；匿名访问或登录非本人展示页时保持原有公开「个人记录」布局与文案不变。
   - 响应仅包含聚合指标与日期范围，不含标题、备注、文件名、坐标、邮箱或身心健康字段。
 
 ## 后端接口设计
 
 ### 路由与参数
 
-- `GET /api/v1/statistics/report`
-- `GET /api/v1/showcase/statistics/report`
-- `GET /api/v1/showcase/users/{username}/statistics/report`
+- `GET /api/v1/statistics/report`（仅已登录本人，未登录返回 401）
 
 查询参数：
 - `period`: `"month" | "year"`（必填）
@@ -82,7 +81,7 @@ PeriodReport(Summary)
   - 工具栏复用 `DatePicker granularity="month"` 选月、原生年份下拉 + 上下步进按钮选年，以及非当前周期时的「回到本月 / 回到今年」快捷按钮。
   - 四项首要指标（跑步次数、总里程、总用时、平均配速）采用与数据汇总 `.annual-metrics` / `RecordsBanner` 一致的发丝线分隔横条 + 圆形运动色图标（`--sport-blue` / `--sport-green` / `--sport-yellow-accent` / `--sport-coral`），缺失值显示 `—` 并附 `.sr-only` 说明。
   - 响应式容器查询：宽屏 4 列、平板 2×2、手机 1 列堆叠，不出现横向溢出。
-  - 状态完整区分：初次加载（`FeedbackState kind="loading"`）、保留旧数据刷新（降不透明度 + `aria-busy`）、空周期（`FeedbackState kind="empty"`）、错误与重试（`FeedbackState kind="error"`，不影响页面其余区块）、401 清理私人状态并跳转 `/admin?reason=expired&next=...`。
+  - 状态完整区分：初次加载（`FeedbackState kind="loading"`，显示所请求周期）、保留旧数据刷新（显示已加载报告的周期标题、日期范围、`aria-label` 与指标并降不透明度，同时以 `role="status"` 状态标签明确提示「正在读取 `<目标周期>`…」避免标题与数据错配）、空周期（`FeedbackState kind="empty"`）、错误与重试（`FeedbackState kind="error"`，清除旧数据且不影响页面其余区块）、401 清理私人状态并跳转 `/admin?reason=expired&next=...`、乱序响应丢弃过期令牌。
 - **API 契约层**：新增 `frontend/src/lib/api/period-report.ts`，通过 `parsePeriodReport` 做严格运行时校验，并同步重新生成 `frontend/src/lib/api/generated/api.ts`、补充 `frontend/tests/contract/api-types.ts` 与 `frontend/tests/fixtures/ui-api.mjs`。
 
 ## 验证计划

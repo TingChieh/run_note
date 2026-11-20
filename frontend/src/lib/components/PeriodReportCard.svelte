@@ -43,7 +43,10 @@
 
   const selectedYear = $derived(period === 'month' ? Number(monthValue.slice(0, 4)) : yearValue);
   const selectedMonth = $derived(period === 'month' ? Number(monthValue.slice(5, 7)) : null);
-  const periodTitle = $derived(formatPeriodTitle(period, selectedYear, selectedMonth));
+  const requestedTitle = $derived(formatPeriodTitle(period, selectedYear, selectedMonth));
+  // Every displayed heading, range, aria-label and empty title stays bound to the loaded report so
+  // in-flight period switches never label previous-period metrics with the newly selected period.
+  const shownTitle = $derived(report ? formatPeriodTitle(report.period, report.year, report.month) : '');
   const isCurrentSelection = $derived(period === 'month' ? monthValue === maxMonth : yearValue === maxYear);
   const rangeText = $derived(report ? formatReportRange(report) : '');
 
@@ -134,7 +137,16 @@
 
   function selectYear(value: number) {
     const clamped = Math.min(maxYear, Math.max(1900, value));
-    if (clamped === yearValue && period === 'year' && report) return;
+    if (
+      clamped === yearValue &&
+      period === 'year' &&
+      !loading &&
+      report &&
+      report.period === 'year' &&
+      report.year === clamped
+    ) {
+      return;
+    }
     yearValue = clamped;
     loadCurrent();
   }
@@ -265,15 +277,27 @@
     </div>
 
     <p class="report-meta" data-testid="period-report-range">
-      <strong class="period-name">{periodTitle}</strong>
-      {#if report?.is_partial}<span class="tag" data-testid="period-report-partial">进行中</span>{/if}
-      {#if rangeText}<span class="range-text">{rangeText}</span>{/if}
+      {#if report}
+        <strong class="period-name">{shownTitle}</strong>
+        {#if report.is_partial}<span class="tag" data-testid="period-report-partial">进行中</span>{/if}
+        <span class="range-text">{rangeText}</span>
+        {#if loading}
+          <span class="tag loading-tag" role="status" data-testid="period-report-refreshing">
+            正在读取 {requestedTitle}…
+          </span>
+        {/if}
+      {:else if loading}
+        <strong class="period-name">{requestedTitle}</strong>
+        <span class="range-text">正在读取…</span>
+      {:else}
+        <strong class="period-name">{requestedTitle}</strong>
+      {/if}
     </p>
   </div>
 
   {#if loading && !report}
     <div class="report-state" data-testid="period-report-loading">
-      <FeedbackState kind="loading" title="正在读取周期报告…" />
+      <FeedbackState kind="loading" title={`正在读取 ${requestedTitle} 报告…`} />
     </div>
   {:else if error}
     <div class="report-state" data-testid="period-report-error">
@@ -289,16 +313,15 @@
       </FeedbackState>
     </div>
   {:else if report}
-    {#if loading}<p class="sr-only" role="status">正在更新{periodTitle}报告…</p>{/if}
     {#if report.activity_count === 0}
       <div class="report-state" class:refreshing={loading} data-testid="period-report-empty">
-        <FeedbackState kind="empty" title={`${periodTitle}没有跑步记录`}>
+        <FeedbackState kind="empty" title={`${shownTitle}没有跑步记录`}>
           <p class="empty-note">{emptyNote}</p>
         </FeedbackState>
       </div>
     {:else}
       <div class="report-body" class:refreshing={loading} data-testid="period-report-ready">
-        <dl class="report-metrics" aria-label={`${periodTitle}跑步报告核心指标`} data-testid="period-report-metrics">
+        <dl class="report-metrics" aria-label={`${shownTitle}跑步报告核心指标`} data-testid="period-report-metrics">
           <div class="metric-cell" data-kind="count">
             <dt>
               <span class="metric-chip" aria-hidden="true">
@@ -502,6 +525,10 @@
     color: var(--foreground);
     font-size: var(--text-caption);
     line-height: var(--line-height-heading);
+  }
+  .loading-tag {
+    border-color: var(--primary);
+    color: var(--primary);
   }
 
   .report-state {

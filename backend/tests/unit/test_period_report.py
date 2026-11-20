@@ -121,13 +121,11 @@ def test_invalid_period_arguments_raise_422(period, year, month):
     assert error.value.code == "VALIDATION_ERROR"
 
 
-def test_report_route_is_registered_for_owner_showcase_and_named_showcase():
+def test_report_route_is_registered_only_for_authenticated_owner():
     from app.modules.showcase.router import named_router
     from app.modules.showcase.router import router as showcase_router
     from app.modules.statistics.router import router as statistics_router
 
-    for router in (statistics_router, showcase_router, named_router):
-        assert any(
-            route.path.endswith("/statistics/report") or route.path == "/api/v1/statistics/report"
-            for route in router.routes
-        )
+    assert any(route.path == "/api/v1/statistics/report" for route in statistics_router.routes)
+    for public_router in (showcase_router, named_router):
+        assert not any(route.path.endswith("/statistics/report") for route in public_router.routes)

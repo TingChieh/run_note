@@ -86,8 +86,8 @@ export async function readPeriodReport(
 ): Promise<PeriodReport> {
   const path =
     period === 'month'
-      ? `/api/v1/showcase/statistics/report?period=month&year=${year}&month=${month}`
-      : `/api/v1/showcase/statistics/report?period=year&year=${year}`;
+      ? `/api/v1/statistics/report?period=month&year=${year}&month=${month}`
+      : `/api/v1/statistics/report?period=year&year=${year}`;
   return parsePeriodReport(await request(path, {}, fetcher));
 }
 

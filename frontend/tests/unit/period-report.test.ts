@@ -193,7 +193,7 @@ describe('period report contract', () => {
     expect(() => parsePeriodReport(null)).toThrow('无效响应');
   });
 
-  it('requests the showcase report path with query params and maps 401', async () => {
+  it('requests the authenticated owner report path with query params and maps 401', async () => {
     const seen: string[] = [];
     await readPeriodReport('month', 2024, 1, async (url, init) => {
       seen.push(String(url));
@@ -205,8 +205,8 @@ describe('period report contract', () => {
       return Response.json({ data: validYear(), error: null });
     });
     expect(seen).toEqual([
-      '/api/v1/showcase/statistics/report?period=month&year=2024&month=1',
-      '/api/v1/showcase/statistics/report?period=year&year=2024',
+      '/api/v1/statistics/report?period=month&year=2024&month=1',
+      '/api/v1/statistics/report?period=year&year=2024',
     ]);
     await expect(
       readPeriodReport('year', 2024, undefined, async () => new Response('x', { status: 401 })),

@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { loginRunner } from '../fixtures/activities';
 
 const box = async (locator: Locator) => { const value = await locator.boundingBox(); expect(value).not.toBeNull(); return value!; };
 const noOverflow = (page: Page) => expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
@@ -156,12 +157,32 @@ test('navigation lists the records entry and the phone layout does not overflow'
   expect(Math.abs(years.width - rhythm.width)).toBeLessThanOrEqual(1);
 });
 
-const REPORT = '**/api/v1/showcase/statistics/report**';
+const REPORT = '**/api/v1/statistics/report**';
 
-test('the period report switches between month and year and shows 2024, leap-day, and empty periods', async ({ page }) => {
+function gate() {
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  return { pending, release };
+}
+
+test('anonymous public /records keeps the existing layout without period report UI or report requests', async ({ page }) => {
+  const reportRequests: string[] = [];
+  page.on('request', req => {
+    if (req.url().includes('/statistics/report')) reportRequests.push(req.url());
+  });
+  await page.goto('/records');
+  await expect(page.getByTestId('records-ready')).toBeVisible();
+  await expect(page.getByTestId('period-report')).toHaveCount(0);
+  expect(reportRequests).toEqual([]);
+  expect((await page.request.get('/api/v1/statistics/report?period=year&year=2024')).status()).toBe(401);
+  expect((await page.request.get('/api/v1/showcase/statistics/report?period=year&year=2024')).status()).toBe(404);
+});
+
+test('the period report switches between month and year for signed-in users and shows 2024, leap-day, and empty periods', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto('/records');
+  await loginRunner(page);
+  await page.goto('/workspace/records');
   const card = page.getByTestId('period-report');
   await expect(card).toBeVisible();
   await expect(card.getByTestId('period-report-ready')).toBeVisible();
@@ -207,22 +228,110 @@ test('the period report switches between month and year and shows 2024, leap-day
   expect(errors).toEqual([]);
 });
 
+test('in-flight switches keep heading, aria-label, dates and data consistent across non-empty, empty, error/retry and out-of-order responses', async ({ page }) => {
+  await loginRunner(page);
+  await page.goto('/workspace/records');
+  const card = page.getByTestId('period-report');
+  await expect(card.getByTestId('period-report-ready')).toBeVisible();
+
+  // Start at non-empty 2024-01.
+  await card.getByLabel('选择月份', { exact: true }).fill('2024-01');
+  await expect(card.getByTestId('period-report-count')).toHaveText('3 次');
+
+  // 1) Delayed non-empty -> non-empty (2024-01 -> 2024 year): retained January heading, aria-label, dates & metrics stay aligned.
+  const annualGate = gate();
+  let holdAnnual = true;
+  const annualHandler = async (route: Parameters<Parameters<Page['route']>[1]>[0]) => {
+    const url = new URL(route.request().url());
+    if (holdAnnual && url.searchParams.get('period') === 'year' && url.searchParams.get('year') === '2024') {
+      holdAnnual = false;
+      await annualGate.pending;
+    }
+    return route.fallback();
+  };
+  await page.route(REPORT, annualHandler);
+  await card.getByTestId('period-report-mode').getByRole('button', { name: '年度' }).click();
+  await expect(card).toHaveAttribute('aria-busy', 'true');
+  const range = card.getByTestId('period-report-range');
+  await expect(range.locator('.period-name')).toHaveText('2024 年 1 月');
+  await expect(range).toContainText('2024-01-01 至 2024-01-31');
+  await expect(card.getByTestId('period-report-refreshing')).toHaveText('正在读取 2024 年…');
+  await expect(card.getByTestId('period-report-metrics')).toHaveAttribute('aria-label', '2024 年 1 月跑步报告核心指标');
+  await expect(card.getByTestId('period-report-count')).toHaveText('3 次');
+  annualGate.release();
+  await expect(card).toHaveAttribute('aria-busy', 'false');
+  await expect(range.locator('.period-name')).toHaveText('2024 年');
+  await expect(range).toContainText('2024-01-01 至 2024-12-31');
+  await expect(card.getByTestId('period-report-metrics')).toHaveAttribute('aria-label', '2024 年跑步报告核心指标');
+  await expect(card.getByTestId('period-report-count')).toHaveText('4 次');
+  await page.unroute(REPORT, annualHandler);
+
+  // 2) Delayed empty -> non-empty (2023 -> 2024): empty heading & range stay 2023 until 2024 resolves.
+  await card.getByRole('button', { name: '上一年' }).click();
+  await expect(card.getByTestId('period-report-empty')).toContainText('2023 年没有跑步记录');
+  const emptyToFilledGate = gate();
+  let hold2024 = true;
+  const emptyToFilledHandler = async (route: Parameters<Parameters<Page['route']>[1]>[0]) => {
+    const url = new URL(route.request().url());
+    if (hold2024 && url.searchParams.get('period') === 'year' && url.searchParams.get('year') === '2024') {
+      hold2024 = false;
+      await emptyToFilledGate.pending;
+    }
+    return route.fallback();
+  };
+  await page.route(REPORT, emptyToFilledHandler);
+  await card.getByRole('button', { name: '下一年' }).click();
+  await expect(card).toHaveAttribute('aria-busy', 'true');
+  await expect(range.locator('.period-name')).toHaveText('2023 年');
+  await expect(card.getByTestId('period-report-empty')).toContainText('2023 年没有跑步记录');
+  await expect(card.getByTestId('period-report-refreshing')).toHaveText('正在读取 2024 年…');
+  emptyToFilledGate.release();
+  await expect(card.getByTestId('period-report-ready')).toBeVisible();
+  await expect(range.locator('.period-name')).toHaveText('2024 年');
+  await expect(card.getByTestId('period-report-count')).toHaveText('4 次');
+  await page.unroute(REPORT, emptyToFilledHandler);
+
+  // 3) Out-of-order rapid switches (2024 -> 2025 slow -> 2026 fast; late 2025 must not overwrite 2026).
+  const slow2025 = gate();
+  const raceHandler = async (route: Parameters<Parameters<Page['route']>[1]>[0]) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get('period') === 'year' && url.searchParams.get('year') === '2025') {
+      await slow2025.pending;
+    }
+    return route.fallback();
+  };
+  await page.route(REPORT, raceHandler);
+  const yearSelect = card.getByLabel('选择年份', { exact: true });
+  await yearSelect.selectOption('2025');
+  await expect(card.getByTestId('period-report-refreshing')).toHaveText('正在读取 2025 年…');
+  await yearSelect.selectOption('2026');
+  await expect(card).toHaveAttribute('aria-busy', 'false');
+  await expect(range.locator('.period-name')).toHaveText('2026 年');
+  await expect(card.getByTestId('period-report-count')).toHaveText('20 次');
+  slow2025.release();
+  await page.waitForTimeout(200);
+  await expect(range.locator('.period-name')).toHaveText('2026 年');
+  await expect(card.getByTestId('period-report-count')).toHaveText('20 次');
+  await expect(card.getByTestId('period-report-metrics')).toHaveAttribute('aria-label', '2026 年跑步报告核心指标');
+  await page.unroute(REPORT, raceHandler);
+});
+
 test('the period report handles loading, retryable error, and 401 without breaking the page', async ({ page }) => {
-  let release!: () => void;
-  const hold = new Promise<void>(resolve => { release = resolve; });
+  await loginRunner(page);
+  const initialGate = gate();
   let calls = 0;
   await page.route(REPORT, async route => {
     calls++;
     if (calls === 1) {
-      await hold;
+      await initialGate.pending;
       return route.fulfill({ status: 503, json: { data: null, error: { code: 'UNAVAILABLE', message: '报告服务暂时不可用' } } });
     }
     return route.fallback();
   });
-  await page.goto('/records');
+  await page.goto('/workspace/records');
   await expect(page.getByTestId('records-ready')).toBeVisible();
   await expect(page.getByTestId('period-report-loading')).toBeVisible();
-  release();
+  initialGate.release();
   const error = page.getByTestId('period-report-error');
   await expect(error).toBeVisible();
   await expect(error).toContainText('报告服务暂时不可用');
@@ -236,7 +345,7 @@ test('the period report handles loading, retryable error, and 401 without breaki
   // 401 on subsequent report request redirects to login.
   await page.route(REPORT, route => route.fulfill({ status: 401, json: { data: null, error: { message: '会话已过期' } } }));
   await page.getByTestId('period-report-mode').getByRole('button', { name: '年度' }).click();
-  await expect(page).toHaveURL(/\/admin\?reason=expired&next=%2Frecords$/);
+  await expect(page).toHaveURL(/\/admin\?reason=expired&next=%2Fworkspace%2Frecords$/);
 });
 
 test('the period report renders cleanly across desktop, tablet, and mobile in light and dark themes', async ({ page }) => {
@@ -245,10 +354,11 @@ test('the period report renders cleanly across desktop, tablet, and mobile in li
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
 
-  for (const [width, height, theme] of [[1440, 900, 'light'], [1440, 900, 'dark'], [768, 1024, 'light'], [390, 844, 'light'], [390, 844, 'dark']] as const) {
+  await loginRunner(page);
+  for (const [width, height, theme] of [[1440, 900, 'light'], [1440, 900, 'dark'], [768, 1024, 'light'], [768, 1024, 'dark'], [390, 844, 'light'], [390, 844, 'dark']] as const) {
     await page.setViewportSize({ width, height });
     await page.addInitScript(t => localStorage.setItem('runnote-theme', t), theme);
-    await page.goto('/records');
+    await page.goto('/workspace/records');
     await expect(page.getByTestId('period-report-ready')).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     await noOverflow(page);

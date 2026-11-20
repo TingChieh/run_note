@@ -190,7 +190,7 @@ def test_current_period_cuts_off_future_activities_using_owner_timezone_clock(cl
     assert rolled["activity_count"] == 3 and Decimal(rolled["distance_m"]) == 10000
 
 
-def test_cross_account_isolation_auth_validation_and_showcase_privacy(report_history):
+def test_cross_account_isolation_auth_validation_and_no_anonymous_report_endpoint(report_history):
     a, b, app, _, other = report_history
 
     mine = a.get(f"{OWNER_URL}?period=month&year=2024&month=1").json()["data"]
@@ -199,15 +199,8 @@ def test_cross_account_isolation_auth_validation_and_showcase_privacy(report_his
     assert theirs["activity_count"] == 1 and Decimal(theirs["distance_m"]) == 10000
     assert Decimal(theirs["duration_sum_seconds"]) == 3600
 
-    # Root showcase matches site owner and never leaks private fields or accepts owner overrides.
-    shown = a.get(f"{SHOWCASE_URL}?period=month&year=2024&month=1")
-    assert shown.status_code == 200 and shown.json()["data"] == mine
-    for forbidden in ("Synthetic report run", "private-note-never-leaked", "email", "filename"):
-        assert forbidden not in shown.text
-    for key in ("owner", "user_id", "email", "username"):
-        assert a.get(f"{SHOWCASE_URL}?period=month&year=2024&month=1&{key}=x").status_code == 422
-
-    # Named showcase serves only enabled accounts and isolates their data.
+    # Period reports are authenticated-only (Issue #103): no root or named showcase report routes.
+    assert a.get(f"{SHOWCASE_URL}?period=month&year=2024&month=1").status_code == 404
     with app.state.session_factory.begin() as db:
         other_user = db.scalar(select(User).where(User.id == other))
         other_username = other_user.username
@@ -220,10 +213,15 @@ def test_cross_account_isolation_auth_validation_and_showcase_privacy(report_his
     with app.state.session_factory.begin() as db:
         other_user = db.scalar(select(User).where(User.id == other))
         other_user.showcase_enabled = True
-    named = a.get(
-        f"/api/v1/showcase/users/{other_username}/statistics/report?period=month&year=2024&month=1"
+    assert (
+        a.get(
+            f"/api/v1/showcase/users/{other_username}/statistics/report?period=month&year=2024&month=1"
+        ).status_code
+        == 404
     )
-    assert named.status_code == 200 and named.json()["data"] == theirs
+    # Existing public personal records endpoints remain available and unchanged.
+    assert a.get("/api/v1/showcase/statistics/records").status_code == 200
+    assert a.get(f"/api/v1/showcase/users/{other_username}/statistics/records").status_code == 200
 
     # Query validation and auth guard.
     for query in [
@@ -237,3 +235,4 @@ def test_cross_account_isolation_auth_validation_and_showcase_privacy(report_his
         assert a.get(f"{OWNER_URL}?{query}").status_code == 422
     b.cookies.clear()
     assert b.get(f"{OWNER_URL}?period=month&year=2024&month=1").status_code == 401
+    assert b.get(f"{SHOWCASE_URL}?period=month&year=2024&month=1").status_code == 404

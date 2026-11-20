@@ -322,6 +322,8 @@ createServer(async (req, res) => {
   }
   if (url.pathname.endsWith('/statistics/records')) return send(recordsFixture(url.searchParams.get('empty') === '1'));
   if (url.pathname.endsWith('/statistics/report')) {
+    if (showcase) return send(null, 404, '接口不存在');
+    if (!signedIn) return send(null, 401);
     const period = url.searchParams.get('period');
     const year = Number(url.searchParams.get('year'));
     const monthParam = url.searchParams.get('month');

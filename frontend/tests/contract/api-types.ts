@@ -42,7 +42,6 @@ export const responses = {
   trends: (v: ResponseData<'/api/v1/statistics/trends', 'get'>): Narrowed<Trends, 'period'> => v,
   records: (v: ResponseData<'/api/v1/statistics/records', 'get'>): Records => v,
   periodReport: (v: ResponseData<'/api/v1/statistics/report', 'get'>): PeriodReport => v,
-  showcasePeriodReport: (v: ResponseData<'/api/v1/showcase/statistics/report', 'get'>): PeriodReport => v,
   me: (v: ResponseData<'/api/v1/me', 'get'>): User => v,
   // An activity without segments sends start/end null; readRoute rejects that, and callers only
   // read routes when has_route is true.
