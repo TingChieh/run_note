@@ -35,9 +35,7 @@
     if (matchMedia('(prefers-reduced-transparency: reduce)').matches || matchMedia('(forced-colors: active)').matches) return;
     // The same optics as the glass buttons (full refraction and the default 2px backdrop blur), so it reads like them rather than like frosted glass.
     const optics = (value: ReturnType<typeof readGlassSettings>) => ({ ...glassOptics(value, 1), chroma: 0 });
-    const initial = readGlassSettings();
-    const handle = attachMenuGlass(bar, initial);
-    handle.update(optics(initial));
+    const handle = attachMenuGlass(bar, readGlassSettings(), 1);
     const stop = watchGlassSettings(value => handle.update(optics(value)));
     return () => { stop(); handle.destroy(); };
   });

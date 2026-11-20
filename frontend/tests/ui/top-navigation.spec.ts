@@ -444,6 +444,25 @@ test.describe('floating glass state', () => {
   test('at the top, with nothing under it, the bar is a solid card', async ({ page }) => {
     await expect(bar(page)).not.toHaveAttribute('data-floating');
     expect(await alpha(page)).toBe(1);
+    await expect(bar(page)).toHaveCSS('backdrop-filter', 'none');
+  });
+
+  test('the desktop bar keeps its refraction prepared before scrolling and applies it once floating', async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== 'chromium', 'only Chromium refracts through backdrop-filter: url()');
+    const filter = () => bar(page).evaluate((el) => getComputedStyle(el).backdropFilter);
+    await expect
+      .poll(() => bar(page).evaluate((el) => el.style.backdropFilter), 'prepared before any scroll')
+      .toContain('url(');
+    expect(await filter(), 'docked bar applies no backdrop filter').toBe('none');
+    await page.evaluate(() => window.scrollTo(0, 600));
+    await expect(bar(page)).toHaveAttribute('data-floating', '');
+    expect(await filter(), 'floating bar refracts the page').toContain('url(');
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(bar(page)).not.toHaveAttribute('data-floating');
+    expect(await filter(), 'back at the top it is paused again').toBe('none');
   });
 
   test('content scrolling under the bar makes it clear glass, and it settles back at the top', async ({ page }) => {

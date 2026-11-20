@@ -2,10 +2,10 @@ import { createGlass, engine } from '../vendor/liquidglass/liquid-glass.js';
 import { glassOptics, readGlassSettings, watchGlassSettings, type GlassSettings } from './liquid-glass-settings.ts';
 
 /** Chromium refracts the menu. Firefox keeps the CSS blur. WebKit uses the static rim. */
-export function attachMenuGlass(panel: HTMLElement, settings: GlassSettings) {
+export function attachMenuGlass(panel: HTMLElement, settings: GlassSettings, scale = .7) {
   if (engine !== 'webkit') {
     return createGlass(panel, {
-      mode: 'backdrop', fit: true, radius: 24, ...glassOptics(settings, .7), chroma: 0,
+      mode: 'backdrop', fit: true, radius: 24, ...glassOptics(settings, scale), chroma: 0,
       fallback: `blur(${16 + settings.blur}px) saturate(1.6)`,
     });
   }
@@ -28,15 +28,23 @@ export function attachMenuGlass(panel: HTMLElement, settings: GlassSettings) {
  * the `rn-frosted-glass` class (a real CSS backdrop blur and a low fill, see app.css). No inline backdrop-filter is set, so the stylesheet decides.
  */
 export function attachFloatingGlass(node: HTMLElement): () => void {
-  if (matchMedia('(prefers-reduced-transparency: reduce)').matches || matchMedia('(forced-colors: active)').matches) return () => {};
-  if (engine === 'webkit') {
-    node.classList.add('rn-frosted-glass');
-    return () => node.classList.remove('rn-frosted-glass');
-  }
+  const queries = [matchMedia('(prefers-reduced-transparency: reduce)'), matchMedia('(forced-colors: active)')];
   const optics = (value: GlassSettings) => ({ ...glassOptics(value, 1), chroma: 0 });
-  const initial = readGlassSettings();
-  const handle = attachMenuGlass(node, initial);
-  handle.update(optics(initial));
-  const stop = watchGlassSettings(value => handle.update(optics(value)));
-  return () => { stop(); handle.destroy(); };
+  let handle: ReturnType<typeof attachMenuGlass> | undefined;
+  let stop: (() => void) | undefined;
+  const detach = () => {
+    stop?.(); stop = undefined;
+    handle?.destroy(); handle = undefined;
+    node.classList.remove('rn-frosted-glass');
+  };
+  const sync = () => {
+    if (queries.some(query => query.matches)) { detach(); return; }
+    if (engine === 'webkit') { node.classList.add('rn-frosted-glass'); return; }
+    if (handle) return;
+    handle = attachMenuGlass(node, readGlassSettings(), 1);
+    stop = watchGlassSettings(value => handle?.update(optics(value)));
+  };
+  queries.forEach(query => query.addEventListener('change', sync));
+  sync();
+  return () => { queries.forEach(query => query.removeEventListener('change', sync)); detach(); };
 }

@@ -58,6 +58,20 @@ export function liquidGlass(root: HTMLElement) {
           renderAll(entries.flatMap((entry) => controls.get(entry.target as HTMLElement) ?? []));
           align();
         });
+        const visibility =
+          typeof IntersectionObserver === 'function'
+            ? new IntersectionObserver(
+                (entries) => {
+                  for (const entry of entries) {
+                    const control = controls.get(entry.target as HTMLElement);
+                    control?.surface.classList.toggle('rn-glass-offscreen', !entry.isIntersecting);
+                  }
+                },
+                { rootMargin: '160px 0px' },
+              )
+            : null;
+        let appliedSettings: GlassSettings | undefined;
+        const dirtyDisabled = new Set<HTMLElement>();
         const optics = (element: HTMLElement) => {
           const grouped = !!element.closest('.mode-switch');
           return {
@@ -94,7 +108,6 @@ export function liquidGlass(root: HTMLElement) {
         // `isStatic` is read by the caller for the whole batch before any control is changed.
         function enhance(element: HTMLElement, isStatic: boolean): Control {
           const isZoomGroup = element.matches('.maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in)');
-          const stableBackdrop = !!element.closest('[data-glass-stable]');
           const surface = span('rn-glass-surface');
           surface.setAttribute('aria-hidden', 'true');
           const body = span('rn-glass-body');
@@ -111,7 +124,10 @@ export function liquidGlass(root: HTMLElement) {
           // Only the explicitly marked dev preview's CSS background is copied, never private DOM/maps.
           const source = element.closest<HTMLElement>('[data-glass-backdrop]');
           const copy = source ? span('rn-glass-copy') : null;
-          if (copy) layer.append(copy);
+          if (copy) {
+            layer.append(copy);
+            element.classList.add('rn-glass-copied');
+          }
           const copied = !!copy;
           // Backdrop URL filters exist only in Chromium. A blur on every control freezes WebKit,
           // so only its primary actions stay frosted. Firefox keeps the original CSS blur fallback.
@@ -125,7 +141,12 @@ export function liquidGlass(root: HTMLElement) {
             chroma: copied ? settings.chroma : 0,
             fallback: frosted ? fallback() : 'none',
           });
-          const bleed = 12;
+          // Only the dev preview's copied-backdrop mode needs 12px inner canvas bleed to expand
+          // the lens in place. Standard backdrop controls fit exact W x H (cutting 35-60% of
+          // backdrop-filter pixels) and composite press deformation via GPU transform on `surface`.
+          const bleed = copied ? 12 : 0;
+          const clipPad = 12;
+          const transformPress = !copied;
           let press = 0,
             alive = true,
             geometry = '';
@@ -175,17 +196,16 @@ export function liquidGlass(root: HTMLElement) {
             if (!metrics) return;
             const { W, H } = metrics;
             // Bleed is visual only; controls resting on a viewport edge must not widen the page.
-            const margin = `${Math.max(0, Math.min(bleed, metrics.left, metrics.viewport - metrics.right))}px`;
+            const margin = `${Math.max(0, Math.min(clipPad, metrics.left, metrics.viewport - metrics.right))}px`;
             if (margin !== clipMargin) {
               clipMargin = margin;
               surface.style.overflowClipMargin = margin;
             }
-            // Updating an SVG backdrop URL every spring frame invalidates the
-            // optical surface over a live WebGL map. Keep its atlas/clip stable and
-            // composite the same pressure deformation on the existing surface.
-            const lensPress = stableBackdrop ? 0 : press;
-            if (stableBackdrop) {
-              const transform = `scale(${1 + (10 * press) / W}, ${Math.max(1, H - 4 * press) / H})`;
+            // Keep the optical surface and its PNG map stable during press frames, and composite
+            // the same pressure deformation on the existing surface layer on the GPU.
+            const lensPress = transformPress ? 0 : press;
+            if (transformPress) {
+              const transform = press > 0 ? `scale(${1 + (10 * press) / W}, ${Math.max(1, H - 4 * press) / H})` : '';
               if (transform !== surfaceTransform) {
                 surfaceTransform = transform;
                 surface.style.transform = transform;
@@ -264,6 +284,7 @@ export function liquidGlass(root: HTMLElement) {
             resize.observe(source);
           }
           resize.observe(element);
+          visibility?.observe(element);
           return {
             surface,
             prepare,
@@ -277,6 +298,7 @@ export function liquidGlass(root: HTMLElement) {
               element.style.removeProperty('--glass-press');
               glass.destroy();
               resize.unobserve(element);
+              visibility?.unobserve(element);
               aligners.delete(syncCopy);
               if (source) {
                 const remaining = (backdrops.get(source) ?? 1) - 1;
@@ -292,7 +314,7 @@ export function liquidGlass(root: HTMLElement) {
               element.removeEventListener('keydown', keyDown);
               element.removeEventListener('keyup', keyUp);
               surface.remove();
-              element.classList.remove('rn-glass-control');
+              element.classList.remove('rn-glass-control', 'rn-glass-copied', 'rn-glass-static');
               element.style.position = previousPosition;
             },
           };
@@ -332,18 +354,35 @@ export function liquidGlass(root: HTMLElement) {
             }
           }
           if (!enabled) return;
+          const settingsChanged = appliedSettings !== settings;
+          appliedSettings = settings;
           const found = [...root.querySelectorAll<HTMLElement>(selector)];
           // Read every new control's position before the first one is changed: one style pass for the batch.
           const fresh = found.filter((element) => !controls.has(element));
           const statics = new Set(fresh.filter((element) => getComputedStyle(element).position === 'static'));
           for (const element of fresh) controls.set(element, enhance(element, statics.has(element)));
-          const live = found.map((element) => controls.get(element)!);
-          live.forEach((control) => control.prepare());
-          renderAll(live);
+          if (settingsChanged) {
+            const live = found.map((element) => controls.get(element)!);
+            live.forEach((control) => control.prepare());
+            renderAll(live);
+          } else {
+            if (fresh.length) {
+              const created = fresh.map((element) => controls.get(element)!);
+              created.forEach((control) => control.prepare());
+              renderAll(created);
+            }
+            for (const element of dirtyDisabled) controls.get(element)?.prepare();
+          }
           for (const element of root.querySelectorAll<HTMLElement>(enhancementSelector)) {
             const existing = enhancements.get(element);
             if (existing) {
-              existing.update(settings);
+              if (
+                settingsChanged ||
+                dirtyDisabled.has(element) ||
+                element.matches('.app-sidebar nav, .settings-tabs, .compact-switch')
+              ) {
+                existing.update(settings);
+              }
               continue;
             }
             if (element instanceof HTMLSelectElement) {
@@ -361,6 +400,7 @@ export function liquidGlass(root: HTMLElement) {
               enhancements.set(element, enhanceSegmented(element, settings));
             else enhancements.set(element, enhanceNavigation(element, settings));
           }
+          dirtyDisabled.clear();
         }
         const schedule = () => {
           if (!frame) frame = requestAnimationFrame(reconcile);
@@ -370,28 +410,33 @@ export function liquidGlass(root: HTMLElement) {
           schedule();
         });
         const observer = new MutationObserver((records) => {
-          if (
-            records.some(
-              (record) =>
-                !(
-                  record.target instanceof Element &&
-                  record.target.closest(
-                    '.rn-moving-copy, .rn-slider-decoration, .rn-switch-decoration, .rn-glass-menu, .rn-select-toggle',
-                  )
-                ) &&
-                (record.type === 'attributes' ||
-                  [...record.addedNodes, ...record.removedNodes].some(
-                    (node) =>
-                      !(
-                        node instanceof HTMLElement &&
-                        node.matches(
-                          '.rn-glass-surface, .rn-moving-copy, .rn-moving-outline, .rn-slider-decoration, .rn-switch-decoration, .rn-glass-menu, .rn-select-toggle',
-                        )
-                      ),
-                  )),
+          let relevant = false;
+          for (const record of records) {
+            if (
+              record.target instanceof Element &&
+              record.target.closest(
+                '.rn-moving-copy, .rn-slider-decoration, .rn-switch-decoration, .rn-glass-menu, .rn-select-toggle',
+              )
             )
-          )
-            schedule();
+              continue;
+            if (record.type === 'attributes') {
+              if (record.target instanceof HTMLElement) dirtyDisabled.add(record.target);
+              relevant = true;
+              continue;
+            }
+            for (const node of [...record.addedNodes, ...record.removedNodes]) {
+              if (!(node instanceof HTMLElement)) continue;
+              if (
+                node.matches(
+                  '.rn-glass-surface, .rn-moving-copy, .rn-moving-outline, .rn-slider-decoration, .rn-switch-decoration, .rn-glass-menu, .rn-select-toggle',
+                )
+              )
+                continue;
+              relevant = true;
+              break;
+            }
+          }
+          if (relevant) schedule();
         });
         observer.observe(root, {
           childList: true,
@@ -415,6 +460,7 @@ export function liquidGlass(root: HTMLElement) {
         cleanup = () => {
           observer.disconnect();
           resize.disconnect();
+          visibility?.disconnect();
           unwatch();
           preferences.forEach((query) => query.removeEventListener('change', schedule));
           nativeSelect.removeEventListener('change', schedule);

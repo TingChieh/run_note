@@ -21,7 +21,7 @@ export function attachKnobGlass(host: HTMLElement, source: () => SVGSVGElement |
     layer.style.visibility = shown ? 'visible' : 'hidden'; // an unset dial has no knob, and no lens either
     thumb.style.opacity = String(1 - Math.min(1, Math.max(0, press)));
     shadow.style.opacity = String(Math.min(1, Math.max(0, press)));
-    glass.update({ x: x - size / 2 + bleed, y: y - size / 2 + bleed, width: size, height: size, radius: size / 2 });
+    glass.update({ x: x - size / 2 + bleed, y: y - size / 2 + bleed, width: size, height: size, radius: size / 2, mapWidth: rest, mapHeight: rest, mapRadius: rest / 2 });
   }
   const pressure = createSpring(0, (value: number) => { press = value; render(); }, { stiffness: 600, damping: 36 });
   /** Refreshes the lens's copy of the ring, so what is bent under the knob is the ring as it is now. */

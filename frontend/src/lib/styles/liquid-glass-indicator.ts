@@ -34,7 +34,7 @@ export function createIndicator(host: HTMLElement, items: HTMLElement[], initial
     const x = horizontal ? pos - stretch / 2 + 2 * press : item.offsetLeft + 2 * press;
     const top = horizontal ? item.offsetTop - 3 * press : pos - stretch / 2 - 3 * press;
     const lensX = x + bleed, lensY = top - host.scrollTop + bleed;
-    if (glass) glass.update({ x: lensX, y: lensY, width, height, radius: height / 2 });
+    if (glass) glass.update({ x: lensX, y: lensY, width, height, radius: height / 2, mapWidth: item.offsetWidth, mapHeight: item.offsetHeight, mapRadius: item.offsetHeight / 2 });
     else clipCopy(lensX, lensY, width, height, height / 2);
     Object.assign(outline.style, { width: `${width}px`, height: `${height}px`, borderRadius: `${height / 2}px`, transform: `translate(${x}px, ${top}px)` });
   }
