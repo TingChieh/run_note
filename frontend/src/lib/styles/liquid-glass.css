@@ -331,12 +331,20 @@
 }
 .rn-glass-body {
   position: absolute;
+  inset: 0;
+}
+.rn-glass-copied > .rn-glass-surface > .rn-glass-body {
   inset: -12px;
 }
 .rn-glass-layer {
   position: absolute;
   inset: 0;
   overflow: hidden;
+}
+/* Offscreen controls keep their DOM/filter warm but pause live backdrop work until near the viewport. */
+.rn-glass-offscreen .rn-glass-layer {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }
 /* Paused while the page scrolls: a rigid backdrop (see liquid-glass.ts) renders the same image each frame, so the live filter is wasted work. */
 .rn-scrolling [data-glass-rigid] .rn-glass-layer {

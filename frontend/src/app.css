@@ -684,7 +684,8 @@
     gap: var(--space-6);
     font-size: var(--text-small);
   }
-  .public-menu-toggle, .public-mobile-menu {
+  .public-menu-toggle,
+  .public-mobile-menu {
     display: none;
   }
   .public-navigation [aria-current='page'] {
@@ -1106,7 +1107,8 @@
       flex-shrink: 0;
       gap: var(--space-2);
     }
-    .public-navigation .public-account-action, .public-activities {
+    .public-navigation .public-account-action,
+    .public-activities {
       display: none;
     }
     .public-menu-toggle {
@@ -1561,6 +1563,10 @@
         background-color var(--transition-control),
         border-color var(--transition-control),
         box-shadow var(--transition-control);
+    }
+    .sport-theme.app-shell .app-sidebar:not([data-floating]) {
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
     }
     .sport-theme.app-shell .app-sidebar[data-floating] {
       border-color: var(--glass-edge);

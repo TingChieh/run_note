@@ -3,6 +3,9 @@ export type GlassOptions = {
   y?: number;
   width?: number;
   height?: number;
+  mapWidth?: number;
+  mapHeight?: number;
+  mapRadius?: number;
   clip?: boolean;
   fit?: boolean;
   mode?: 'content' | 'backdrop';

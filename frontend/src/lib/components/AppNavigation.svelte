@@ -32,21 +32,27 @@
   $effect(() => {
     if (mobile || !sidebar) { floating = false; return; }
     const main = document.getElementById('main');
-    let frame = 0;
+    let frame = 0, paddingTop = 0, barBottom = 0;
+    const readMetrics = () => {
+      if (!main || !sidebar) return;
+      paddingTop = parseFloat(getComputedStyle(main).paddingTop) || 0;
+      barBottom = sidebar.getBoundingClientRect().bottom;
+    };
     const measure = () => {
       frame = 0;
       if (!main || !sidebar) return;
-      const contentTop = main.getBoundingClientRect().top + (parseFloat(getComputedStyle(main).paddingTop) || 0);
-      floating = contentTop < sidebar.getBoundingClientRect().bottom;
+      floating = main.getBoundingClientRect().top + paddingTop < barBottom;
     };
+    const onResize = () => { readMetrics(); schedule(); };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(measure); };
     window.addEventListener('scroll', schedule, { passive: true });
-    window.addEventListener('resize', schedule);
+    window.addEventListener('resize', onResize);
+    readMetrics();
     measure();
-    return () => { cancelAnimationFrame(frame); window.removeEventListener('scroll', schedule); window.removeEventListener('resize', schedule); };
+    return () => { cancelAnimationFrame(frame); window.removeEventListener('scroll', schedule); window.removeEventListener('resize', onResize); };
   });
-  $effect(() => { if (!floating || mobile || !sidebar) return; return attachFloatingGlass(sidebar); });
-  // The phone bar's glass stays attached (CSS keeps its backdrop-filter off until data-floating): building the lens map and filter on the first scrolled frame, and tearing them down at the top, stalled the start of every scroll.
+  // Both bars keep their glass attached (CSS turns backdrop-filter off until data-floating): building the wide lens map and filter on the first scrolled frame, and tearing them down at the top, stalled the start of every scroll.
+  $effect(() => { if (mobile || !sidebar) return; return attachFloatingGlass(sidebar); });
   $effect(() => { if (!mobile || !bar) return; return attachFloatingGlass(bar); });
   // Phone bar: scrolling down tucks it away, scrolling back up a little brings it straight back (no need to reach the top of the page). It stays while the menu is open.
   $effect(() => { if (open) hidden = false; });

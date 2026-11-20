@@ -25,7 +25,8 @@ export function enhanceSlider(input: HTMLInputElement, settings: GlassSettings) 
     for (const node of [thumb, shadow]) Object.assign(node.style, { width: `${w}px`, height: `${h}px`, borderRadius: `${h / 2}px`, transform: `translate(${x}px, ${y}px)` });
     thumb.style.opacity = String(1 - Math.min(1, Math.max(0, press)));
     shadow.style.opacity = String(Math.min(1, Math.max(0, press)));
-    glass.update({ x: x + bleed, y: y + bleed, width: w, height: h, radius: h / 2 });
+    const mapW = press > .5 ? 52 : 36, mapH = press > .5 ? 32 : 24;
+    glass.update({ x: x + bleed, y: y + bleed, width: w, height: h, radius: h / 2, mapWidth: mapW, mapHeight: mapH, mapRadius: mapH / 2 });
   }
   const position = createSpring(t, (value, speed) => { t = value; velocity = speed; render(); }, { stiffness: 900, damping: 50 });
   const pressure = createSpring(0, value => { press = value; render(); }, { stiffness: 600, damping: 36 });

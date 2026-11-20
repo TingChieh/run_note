@@ -528,3 +528,65 @@ test('glass buttons sample their displacement map at device resolution on high-d
   expect(ratio).toBeGreaterThanOrEqual(1.9);
   await context.close();
 });
+
+test('clipped glass filters stay compact, skip per-frame PNG re-encoding on press/nav, and pause offscreen controls', async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
+  const page = await context.newPage();
+  await page.addInitScript(() => {
+    (window as unknown as { __glassPngEncodes: number }).__glassPngEncodes = 0;
+    const original = HTMLCanvasElement.prototype.toDataURL;
+    HTMLCanvasElement.prototype.toDataURL = function (...args) {
+      (window as unknown as { __glassPngEncodes: number }).__glassPngEncodes += 1;
+      return original.apply(this, args);
+    };
+  });
+  await installActivities(page); await loginRunner(page); await page.goto('/dashboard');
+  const belowFold = page.getByRole('link', { name: /查看全部/ }).first();
+  await expect(belowFold).toBeVisible();
+  await expect.poll(() => page.locator('.app-sidebar').evaluate(el => el.style.backdropFilter)).toMatch(/url\("?#lg/);
+  await page.waitForTimeout(250);
+  const sidebarMetrics = await page.locator('.app-sidebar').evaluate(async el => {
+    const id = el.style.backdropFilter.match(/#(lg\d+-v\d+)/)![1];
+    const filter = document.getElementById(id)!;
+    const href = filter.querySelector('feImage')!.getAttribute('href')!;
+    const image = new Image(); image.src = href; await image.decode();
+    return { primitives: filter.children.length, naturalWidth: image.naturalWidth };
+  });
+  // Clipped/fitted filters skip feFlood and trailing in/out/over composites (<= 5 primitives).
+  expect(sidebarMetrics.primitives).toBeLessThanOrEqual(5);
+  // Wide floating bars cap their displacement map at <= 1536px to stay below GPU texture tile limits.
+  expect(sidebarMetrics.naturalWidth).toBeLessThanOrEqual(1536);
+
+  // Hovering across navigation links stretches cached resting maps instead of re-encoding every spring frame.
+  const navLinks = page.locator('.app-sidebar nav .nav-link');
+  const navCount = Math.min(await navLinks.count(), 4);
+  for (let i = 0; i < navCount; i++) {
+    await navLinks.nth(i).hover();
+    await page.waitForTimeout(80);
+  }
+  await page.evaluate(() => { (window as unknown as { __glassPngEncodes: number }).__glassPngEncodes = 0; });
+  for (let i = navCount - 1; i >= 0; i--) {
+    await navLinks.nth(i).hover();
+    await page.waitForTimeout(80);
+  }
+  expect(await page.evaluate(() => (window as unknown as { __glassPngEncodes: number }).__glassPngEncodes)).toBe(0);
+
+  // Pressing a button composites scale on .rn-glass-surface without re-encoding displacement PNGs.
+  const button = page.locator('.app-sidebar .theme-toggle');
+  const box = (await button.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(180);
+  await page.mouse.up();
+  expect(await page.evaluate(() => (window as unknown as { __glassPngEncodes: number }).__glassPngEncodes)).toBe(0);
+
+  // Offscreen controls pause their backdrop-filter and restore it when scrolled into view.
+  await page.setViewportSize({ width: 1440, height: 500 });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(belowFold.locator('.rn-glass-surface')).toHaveClass(/rn-glass-offscreen/);
+  await expect(belowFold.locator('.rn-glass-layer')).toHaveCSS('backdrop-filter', 'none');
+  await belowFold.scrollIntoViewIfNeeded();
+  await expect(belowFold.locator('.rn-glass-surface')).not.toHaveClass(/rn-glass-offscreen/);
+  await expect.poll(() => belowFold.locator('.rn-glass-layer').evaluate(el => getComputedStyle(el).backdropFilter)).toMatch(/url\("?#lg/);
+  await context.close();
+});

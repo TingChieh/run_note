@@ -4,8 +4,13 @@
 - 文档：https://liquidglass.dev/docs/
 - 版本：源码标识 v1.0.0
 - 固定提交：`068ad226f53e1ca62d857f78bdc32f58f3c5fce7`
-- 原始文件：`lib/liquid-glass.js`，完整保留，未修改。
-- SHA-256：`92a62e5b80cfa7e03912b13bdc53aff1c0ae367a5f296de1327e0f62f0579210`
+- 原始文件：`lib/liquid-glass.js`（原始 SHA-256：`92a62e5b80cfa7e03912b13bdc53aff1c0ae367a5f296de1327e0f62f0579210`）。
+- 本地性能优化补丁（保持光学模型与视觉输出一致）：
+  - `clip` / `fit` 模式下将中性灰底色预烘焙进位移图，省略 `feFlood` 与尾部的 `in/out/over` 全画幅合成节点（9 Pass → 5 Pass，单 Pass 保持原 SVG `feGaussianBlur`）；
+  - 宽大浮层（如 1376px 桌面悬浮顶栏）的位移图分辨率自动回落至 1x（≤1536px），避免超 2048px GPU 纹理瓦片阈值拖垮核显帧率，小按钮仍保持 2x DPR 锐利圆角；
+  - `specular` 强度改由 `feColorMatrix` 动态系数控制，不再触发位移图 PNG 重绘；
+  - 新增 `mapWidth` / `mapHeight` / `mapRadius` 以便动画拉伸复用已缓存的静止贴图；
+  - 仅在 WebKit 引擎下执行 `settle()` 二次重绘与 `filter.id` 递增刷新。
 - 许可：同目录 `LICENSE`（MIT，Copyright 2026 gentpan）。
 
 采用零依赖核心模块，不注册自定义元素组件或加载示例图片。
