@@ -375,6 +375,8 @@ test('dynamic edit buttons get glass and removed dialogs release their lenses', 
     await expect(button).toHaveCSS('backdrop-filter', 'none');
     await expect(button).toHaveCSS('box-shadow', 'none');
   }
+  expect(await zoom.evaluate(el => getComputedStyle(el).borderRadius)).toBe('9999px 9999px 0px 0px');
+  expect(await zoomOut.evaluate(el => getComputedStyle(el).borderRadius)).toBe('0px 0px 9999px 9999px');
   const zoomSize = await zoom.boundingBox();
   const zoomOutSize = await zoomOut.boundingBox();
   expect(zoomSize).not.toBeNull(); expect(zoomOutSize).not.toBeNull();
