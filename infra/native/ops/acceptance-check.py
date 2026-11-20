@@ -3,7 +3,9 @@
 """Authenticated acceptance probe for a Run Note site (standard library only).
 
 Logs in as the site owner, imports ONE synthetic GPX, checks the private and the anonymous views,
-deletes the synthetic activity again, logs out and proves the old session is dead. It is safe on a
+deletes the synthetic activity again, logs out and proves the old session is dead. Run from an
+unpacked release (`<release>/ops/`), it also checks that the site reports that release's RELEASE
+id, i.e. that the deployed release is the one actually serving. It is safe on a
 site that already holds real data: every assertion is made inside a probe date (2000-01-15) and
 probe year (2000) that must be empty beforehand, and counts are compared with a baseline taken
 before the import, never with absolute numbers. The synthetic activity is removed in a `finally`
@@ -34,6 +36,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from pathlib import Path
 
 PROBE_DATE = "2000-01-15"
 PROBE_YEAR = "2000"
@@ -61,6 +64,26 @@ def read_kv(path: str) -> dict[str, str]:
     except OSError:
         pass
     return out
+
+
+RELEASE_FILE = Path(__file__).resolve().parent.parent / "RELEASE"  # <release>/ops/ -> <release>/
+
+
+def this_release(release_file: Path = RELEASE_FILE) -> str:
+    """The id in the RELEASE file of the release this tool was unpacked from; "" in a checkout."""
+    return read_kv(str(release_file)).get("id", "")
+
+
+def version_check(data, expected_release: str) -> tuple[bool, str]:
+    """The site must run a built release (not source), and the expected one when it is known."""
+    info = data.get("data") if isinstance(data, dict) else None
+    build = info.get("build") if isinstance(info, dict) else None
+    if not isinstance(build, dict):
+        return False, "no release build info (running from source?)"
+    running = str(build.get("release_id", ""))
+    if expected_release and running != expected_release:
+        return False, f"running {running}, this tool's release is {expected_release}"
+    return True, f"v{info.get('version', '?')} {running}"
 
 
 def code_of(data) -> str:
@@ -246,6 +269,9 @@ def run(args) -> int:
     record("login did not leak the password in any response", password.encode() not in raw)
     status, _, _ = owner.json("GET", "/api/v1/admin/users")
     record("owner can use administrator endpoints", status == 200, str(status))
+    status, data, _ = owner.json("GET", "/api/v1/admin/version")
+    ok, detail = version_check(data, this_release()) if status == 200 else (False, str(status))
+    record("the site reports the deployed release", ok, detail)
     status, data, _ = owner.json("PATCH", "/api/v1/me", {"display_name": "x"}, csrf=False)
     record(
         "write without CSRF token rejected",
