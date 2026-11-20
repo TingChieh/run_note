@@ -314,13 +314,13 @@
     </div>
   {:else if report}
     {#if report.activity_count === 0}
-      <div class="report-state" class:refreshing={loading} data-testid="period-report-empty">
+      <div class="report-state" data-testid="period-report-empty">
         <FeedbackState kind="empty" title={`${shownTitle}没有跑步记录`}>
           <p class="empty-note">{emptyNote}</p>
         </FeedbackState>
       </div>
     {:else}
-      <div class="report-body" class:refreshing={loading} data-testid="period-report-ready">
+      <div class="report-body" data-testid="period-report-ready">
         <dl class="report-metrics" aria-label={`${shownTitle}跑步报告核心指标`} data-testid="period-report-metrics">
           <div class="metric-cell" data-kind="count">
             <dt>
@@ -545,10 +545,6 @@
 
   .report-body {
     margin-top: var(--space-6);
-    transition: opacity var(--motion-reveal);
-  }
-  .refreshing {
-    opacity: 0.6;
   }
 
   .report-metrics {

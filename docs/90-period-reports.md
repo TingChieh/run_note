@@ -16,7 +16,7 @@
   - 缺少有效用时或有效距离时显示 `—` 并附 `.sr-only` 说明；底部附注列出活动天数、有效计时覆盖说明与当前周期截止日期。
 - **状态与切换一致性**：
   - 初次加载显示 `FeedbackState kind="loading"`，标题标明所请求周期。
-  - 周期切换请求在途时，保留旧报告版面（降不透明度），但显示的周期标题、日期范围、`进行中` 标记、空状态标题与指标容器 `aria-label` 全部严格绑定已加载的 `report`，绝不用新周期标签标注旧周期数据；同时以可见且带 `role="status"` 的状态标签（`正在读取 <目标周期>…`）明确告知正在加载的新周期；快速切换时通过单调请求令牌丢弃乱序旧响应。
+  - 周期切换请求在途时，保留旧报告版面并维持原有完整文字对比度（不对内容区施加整体透明度衰减），显示的周期标题、日期范围、`进行中` 标记、空状态标题与指标容器 `aria-label` 全部严格绑定已加载的 `report`，绝不用新周期标签标注旧周期数据；同时以可见且带 `role="status"` 的状态标签（`正在读取 <目标周期>…`）明确告知正在加载的新周期；快速切换时通过单调请求令牌丢弃乱序旧响应。
   - 空周期显示 `FeedbackState kind="empty"`；读取失败清除旧数据并仅在报告区块内显示错误与「重试」按钮，不影响页面其余内容；401 清空私人状态并跳转 `/admin?reason=expired&next=...`。
 
 ## 接口与隐私
@@ -41,7 +41,7 @@
 
 后端集成测试与真实后端 E2E 均在隔离临时 PostgreSQL 18 + PostGIS 3.7 集群（独立 `run_note_test` 库，进程环境变量注入）中执行，未修改 `.env`，未触碰开发库；完成后已停止并清理临时集群。
 
-### 实际运行（2026-11-20，一轮审查修复后复验）
+### 实际运行（2026-11-20，二轮审查修复后复验）
 
 | 命令 | 结果 |
 | --- | --- |
@@ -49,17 +49,15 @@
 | `cd backend && .venv/bin/ruff check app migrations tests` | All checks passed |
 | `cd backend && .venv/bin/ruff format --check app migrations tests` | 261 files already formatted |
 | `cd backend && .venv/bin/alembic heads`（只读） | `0030_global_footprint_caches (head)` |
-| 后端定向单元 `pytest tests/unit/test_period_report.py tests/unit/test_architecture.py tests/unit/test_api_contract.py -q` | 40 passed（1.83 s） |
-| 后端定向 PostGIS 18 集成 `pytest tests/integration/test_period_report.py tests/integration/test_statistics.py tests/integration/test_records.py tests/integration/test_showcase.py -q -rs` | 31 passed（12.18 s） |
-| 后端全量 `pytest -q -rs`（单元 + 独立 PostGIS 18 集成） | 978 passed, 1 skipped（`test_migrations.py` 快照库未配置）, 0 failed（317.38 s） |
+| 后端全量 `pytest -q -rs`（一轮修复后对未改动后端代码执行；单元 + 独立 PostGIS 18 集成） | 978 passed, 1 skipped（`test_migrations.py` 快照库未配置）, 0 failed（317.38 s） |
 | `cd frontend && pnpm test` | 57 test files, 377 passed, 0 failed |
 | `cd frontend && pnpm check` | 0 errors, 0 warnings |
 | `cd frontend && pnpm lint:style` | 退出码 0 |
 | `cd frontend && pnpm build` | 构建成功（adapter-node；既有大体积 chunk 提示未新增错误） |
-| 定向 UI 测试 `playwright.ui.config.ts tests/ui/records.spec.ts tests/ui/records-banner.spec.ts --reporter=list` | 24 passed, 0 failed（28.3 s；含匿名无入口、非空→非空、空→非空、失败重试、乱序响应与三档视口明暗主题） |
-| 全量合成 API UI 测试 `playwright.ui.config.ts --reporter=line` | 356 passed, 4 skipped, 0 failed（14.5 m） |
-| 全量真实后端 E2E `pnpm test:e2e --reporter=line`（含 `tests/e2e/period-report.spec.ts`） | 14 passed, 0 failed（52.9 s） |
-| 视觉检查（隔离合成 API + Vite，Chromium）：1440×900 / 768×1024 / 390×844 × 浅/深色（共 18 张：匿名页、延迟切换刷新态、切换完成态） | 全部 0 横向溢出、0 console error、0 page error；已人工复核截图，匿名页与基线一致，切换刷新态标题/范围/`aria-label`/指标完全对齐 |
+| 定向 UI 测试 `playwright.ui.config.ts tests/ui/records.spec.ts tests/ui/records-banner.spec.ts --reporter=list` | 24 passed, 0 failed（含匿名无入口、非空→非空/空→非空刷新态 `opacity: 1` 与标题/范围/`aria-label`/指标一致性、失败重试、乱序响应与三档视口明暗主题） |
+| 全量合成 API UI 测试 `playwright.ui.config.ts --reporter=line`（一轮修复后执行；二轮仅移除刷新态 `opacity: 0.6` 并以定向 UI + CI 全量覆盖） | 356 passed, 4 skipped, 0 failed（14.5 m） |
+| 全量真实后端 E2E `pnpm test:e2e --reporter=line`（一轮修复后执行） | 14 passed, 0 failed（52.9 s） |
+| 视觉检查与 PNG 像素对比度实测（隔离合成 API + Vite，Chromium）：1440×900 / 768×1024 / 390×844 × 浅/深色（共 18 张：匿名页、在途刷新态、完成态） | 全部 0 横向溢出、0 console/page error；刷新态实测对比度：浅色 `--primary` 5.692:1、`--muted-foreground` 5.773:1、`--foreground` 14.373:1；深色 `--primary` 7.277:1、`--muted-foreground` 5.750:1、`--foreground` 11.396:1（全部 ≥ 4.5:1） |
 
 ### 未运行
 

@@ -258,6 +258,7 @@ test('in-flight switches keep heading, aria-label, dates and data consistent acr
   await expect(card.getByTestId('period-report-refreshing')).toHaveText('正在读取 2024 年…');
   await expect(card.getByTestId('period-report-metrics')).toHaveAttribute('aria-label', '2024 年 1 月跑步报告核心指标');
   await expect(card.getByTestId('period-report-count')).toHaveText('3 次');
+  await expect(card.getByTestId('period-report-ready')).toHaveCSS('opacity', '1');
   annualGate.release();
   await expect(card).toHaveAttribute('aria-busy', 'false');
   await expect(range.locator('.period-name')).toHaveText('2024 年');
@@ -284,6 +285,7 @@ test('in-flight switches keep heading, aria-label, dates and data consistent acr
   await expect(card).toHaveAttribute('aria-busy', 'true');
   await expect(range.locator('.period-name')).toHaveText('2023 年');
   await expect(card.getByTestId('period-report-empty')).toContainText('2023 年没有跑步记录');
+  await expect(card.getByTestId('period-report-empty')).toHaveCSS('opacity', '1');
   await expect(card.getByTestId('period-report-refreshing')).toHaveText('正在读取 2024 年…');
   emptyToFilledGate.release();
   await expect(card.getByTestId('period-report-ready')).toBeVisible();
