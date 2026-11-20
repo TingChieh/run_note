@@ -146,6 +146,13 @@ test('a failed version read does not block the rest of site settings', async ({ 
   await expect(page.getByLabel('站点标题', { exact: true })).toBeEnabled();
 });
 
+test('an expired session on the version read sends the owner to sign in again', async ({ page }) => {
+  await loginRunner(page);
+  await page.route('**/api/v1/admin/version', route => route.fulfill({ status: 401, json: { data: null, error: { code: 'AUTH_REQUIRED', message: '会话已过期' } } }));
+  await page.goto('/settings/site');
+  await expect(page).toHaveURL(/\/admin\?reason=expired/);
+});
+
 test('account settings upload and remove the avatar', async ({ page }) => {
   await loginRunner(page);
   await page.goto('/settings');
