@@ -1,5 +1,6 @@
-import { ActivityError, request, type Metric } from './activities';
+import { ActivityError, calendarDate, number, request, type Metric } from './activities';
 import type { Calendar, Summary } from './statistics';
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export interface PublicActivity {
   id: string;
   title: string;
@@ -34,34 +35,64 @@ export interface CreatedShare {
   share_url: string;
   expires_at: string | null;
 }
+function decimalMetric(value: unknown): value is Exclude<Metric, null> {
+  return (typeof value === 'number' || typeof value === 'string') && number(value) !== null;
+}
+function invalidShare(): never {
+  throw new ActivityError('分享服务返回了无效响应，请刷新重试', 502, 'INVALID_RESPONSE');
+}
+const instant = (value: unknown): value is string => typeof value === 'string' && Number.isFinite(Date.parse(value));
 export function parsePublicActivity(value: unknown): PublicActivity {
-  const v = value as PublicActivity;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ActivityError('公开服务返回无效响应', 502);
+  const v = value as Record<string, unknown>;
+  const author = v.author;
   if (
-    !v ||
     typeof v.id !== 'string' ||
+    !uuid.test(v.id) ||
     typeof v.title !== 'string' ||
-    !/^\d{4}-\d{2}-\d{2}$/.test(v.activity_date) ||
-    typeof v.author?.username !== 'string' ||
-    typeof v.author?.display_name !== 'string' ||
+    !calendarDate(v.activity_date) ||
+    !author ||
+    typeof author !== 'object' ||
+    Array.isArray(author) ||
     v.has_shared_route !== false
   )
     throw new ActivityError('公开服务返回无效响应', 502);
-  for (const key of ['distance_m', 'elapsed_seconds', 'avg_pace_seconds_per_km'] as const) {
-    const n = v[key];
-    if (n === null && key !== 'distance_m') continue;
-    if ((typeof n !== 'number' && typeof n !== 'string') || n === '' || !Number.isFinite(Number(n)) || Number(n) < 0)
-      throw new ActivityError('公开指标无效', 502);
-  }
+  const person = author as Record<string, unknown>;
+  const distance = v.distance_m;
+  const elapsed = v.elapsed_seconds;
+  const pace = v.avg_pace_seconds_per_km;
+  if (typeof person.username !== 'string' || typeof person.display_name !== 'string')
+    throw new ActivityError('公开服务返回无效响应', 502);
+  if (!decimalMetric(distance)) throw new ActivityError('公开指标无效', 502);
+  if (elapsed !== null && !decimalMetric(elapsed)) throw new ActivityError('公开指标无效', 502);
+  if (pace !== null && !decimalMetric(pace)) throw new ActivityError('公开指标无效', 502);
   // Construct only the public whitelist; do not propagate unexpected backend fields.
   return {
     id: v.id,
     title: v.title,
     activity_date: v.activity_date,
-    distance_m: v.distance_m,
-    elapsed_seconds: v.elapsed_seconds,
-    avg_pace_seconds_per_km: v.avg_pace_seconds_per_km,
-    author: { username: v.author.username, display_name: v.author.display_name },
+    distance_m: distance,
+    elapsed_seconds: elapsed,
+    avg_pace_seconds_per_km: pace,
+    author: { username: person.username, display_name: person.display_name },
     has_shared_route: false,
+  };
+}
+export function parseShares(value: unknown): { items: Share[] } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) invalidShare();
+  const items = (value as { items?: unknown }).items;
+  if (!Array.isArray(items)) invalidShare();
+  return {
+    items: items.map((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) invalidShare();
+      const row = item as Record<string, unknown>;
+      const { link_id, created_at, expires_at, revoked_at, status } = row;
+      if (typeof link_id !== 'string' || !uuid.test(link_id) || !instant(created_at)) invalidShare();
+      if (expires_at !== null && !instant(expires_at)) invalidShare();
+      if (revoked_at !== null && !instant(revoked_at)) invalidShare();
+      if (status !== 'active' && status !== 'revoked' && status !== 'expired') invalidShare();
+      return { link_id, created_at, expires_at, revoked_at, status };
+    }),
   };
 }
 export async function sharingWrite<T>(
@@ -96,5 +127,6 @@ export async function readPublicList(username: string, offset: number, day: stri
   if (!Array.isArray(v?.items) || !Number.isInteger(v.total)) throw new ActivityError('公开列表无效', 502);
   return { ...v, items: v.items.map(parsePublicActivity) };
 }
-export const readShares = async (id: string) =>
-  (await request(`/api/v1/activities/${id}/shares`, {}, fetch)) as { items: Share[] };
+export async function readShares(id: string, fetcher: typeof fetch = fetch): Promise<{ items: Share[] }> {
+  return parseShares(await request(`/api/v1/activities/${id}/shares`, {}, fetcher));
+}
