@@ -85,9 +85,7 @@ def run_values(row) -> dict:
         "activity_date": row.activity_date,
         "distance_m": distance,
         "duration_seconds": seconds,
-        "avg_pace_seconds_per_km": (seconds * 1000 / distance).quantize(
-            PACE_STEP, rounding=ROUND_HALF_EVEN
-        ),
+        "avg_pace_seconds_per_km": service.pace_seconds_per_km(seconds, distance),
     }
 
 

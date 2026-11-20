@@ -83,6 +83,15 @@ def query(db, owner, start=None, end=None, *, daily=False, public_only=False):
     return [dict(row) for row in db.execute(statement).mappings()]
 
 
+def pace_seconds_per_km(elapsed: Decimal, distance: Decimal) -> Decimal:
+    """Seconds per kilometre, half-even to three decimals.
+
+    Summaries and single-run records both call this, so a rounding change cannot
+    make the same distance and time report two different paces.
+    """
+    return (elapsed * 1000 / distance).quantize(Decimal(".001"), rounding=ROUND_HALF_EVEN)
+
+
 def finalize(raw):
     values = {
         key: raw.get(key, 0)
@@ -95,9 +104,7 @@ def finalize(raw):
     distance = Decimal(values["pace_eligible_distance_m"])
     elapsed = Decimal(raw.get("eligible_duration", 0))
     values["avg_pace_seconds_per_km"] = (
-        (elapsed * 1000 / distance).quantize(Decimal(".001"), rounding=ROUND_HALF_EVEN)
-        if distance > 0 and elapsed > 0
-        else None
+        pace_seconds_per_km(elapsed, distance) if distance > 0 and elapsed > 0 else None
     )
     return Summary(**values)
 
