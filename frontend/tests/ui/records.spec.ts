@@ -155,3 +155,104 @@ test('navigation lists the records entry and the phone layout does not overflow'
   expect(rhythm.y).toBeGreaterThanOrEqual(years.y + years.height - 1);
   expect(Math.abs(years.width - rhythm.width)).toBeLessThanOrEqual(1);
 });
+
+const REPORT = '**/api/v1/showcase/statistics/report**';
+
+test('the period report switches between month and year and shows 2024, leap-day, and empty periods', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/records');
+  const card = page.getByTestId('period-report');
+  await expect(card).toBeVisible();
+  await expect(card.getByTestId('period-report-ready')).toBeVisible();
+  await expect(card.getByTestId('period-report-partial')).toHaveText('进行中');
+
+  // Switch to 2024-01 (3 runs / 6 km / 1500 s = 25:00 / 375 s/km = 6:15 /km).
+  const monthInput = card.getByLabel('选择月份', { exact: true });
+  await monthInput.fill('2024-01');
+  await expect(card.getByTestId('period-report-count')).toHaveText('3 次');
+  await expect(card.getByTestId('period-report-distance')).toHaveText('6 km');
+  await expect(card.getByTestId('period-report-duration')).toHaveText('25:00');
+  await expect(card.getByTestId('period-report-pace')).toContainText('6:15 /km');
+  await expect(card.getByTestId('period-report-range')).toContainText('2024-01-01 至 2024-01-31');
+  await expect(card.getByTestId('period-report-footnote')).toContainText('缺少有效用时');
+
+  // Step forward to leap month 2024-02 (1 run / 0 km / 0:00 / missing pace).
+  await card.getByRole('button', { name: '下一个月' }).click();
+  await expect(card.getByTestId('period-report-count')).toHaveText('1 次');
+  await expect(card.getByTestId('period-report-distance')).toHaveText('0 km');
+  await expect(card.getByTestId('period-report-duration')).toHaveText('0:00');
+  await expect(card.getByTestId('period-report-pace')).toContainText('—');
+  await expect(card.getByTestId('period-report-range')).toContainText('2024-02-01 至 2024-02-29');
+
+  // Switch to yearly mode for 2024 (4 runs / 6 km / 25:00 / 6:15 /km).
+  const mode = card.getByTestId('period-report-mode');
+  await mode.getByRole('button', { name: '年度' }).click();
+  await expect(mode.getByRole('button', { name: '年度' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(card.getByTestId('period-report-count')).toHaveText('4 次');
+  await expect(card.getByTestId('period-report-distance')).toHaveText('6 km');
+  await expect(card.getByTestId('period-report-duration')).toHaveText('25:00');
+  await expect(card.getByTestId('period-report-pace')).toContainText('6:15 /km');
+  await expect(card.getByTestId('period-report-range')).toContainText('2024-01-01 至 2024-12-31');
+
+  // Step to empty year 2023.
+  await card.getByRole('button', { name: '上一年' }).click();
+  await expect(card.getByTestId('period-report-empty')).toBeVisible();
+  await expect(card.getByTestId('period-report-empty')).toContainText('2023 年没有跑步记录');
+
+  // Jump back to current year (partial).
+  await card.getByRole('button', { name: '回到今年' }).click();
+  await expect(card.getByTestId('period-report-ready')).toBeVisible();
+  await expect(card.getByTestId('period-report-partial')).toHaveText('进行中');
+  expect(errors).toEqual([]);
+});
+
+test('the period report handles loading, retryable error, and 401 without breaking the page', async ({ page }) => {
+  let release!: () => void;
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  let calls = 0;
+  await page.route(REPORT, async route => {
+    calls++;
+    if (calls === 1) {
+      await hold;
+      return route.fulfill({ status: 503, json: { data: null, error: { code: 'UNAVAILABLE', message: '报告服务暂时不可用' } } });
+    }
+    return route.fallback();
+  });
+  await page.goto('/records');
+  await expect(page.getByTestId('records-ready')).toBeVisible();
+  await expect(page.getByTestId('period-report-loading')).toBeVisible();
+  release();
+  const error = page.getByTestId('period-report-error');
+  await expect(error).toBeVisible();
+  await expect(error).toContainText('报告服务暂时不可用');
+  // Rest of the records page remains unaffected.
+  await expect(page.getByTestId('records-monthly')).toBeVisible();
+  await error.getByRole('button', { name: '重试' }).click();
+  await expect(page.getByTestId('period-report-ready')).toBeVisible();
+  await expect(error).toHaveCount(0);
+  expect(calls).toBe(2);
+
+  // 401 on subsequent report request redirects to login.
+  await page.route(REPORT, route => route.fulfill({ status: 401, json: { data: null, error: { message: '会话已过期' } } }));
+  await page.getByTestId('period-report-mode').getByRole('button', { name: '年度' }).click();
+  await expect(page).toHaveURL(/\/admin\?reason=expired&next=%2Frecords$/);
+});
+
+test('the period report renders cleanly across desktop, tablet, and mobile in light and dark themes', async ({ page }) => {
+  const errors: string[] = [];
+  const consoleErrors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
+
+  for (const [width, height, theme] of [[1440, 900, 'light'], [1440, 900, 'dark'], [768, 1024, 'light'], [390, 844, 'light'], [390, 844, 'dark']] as const) {
+    await page.setViewportSize({ width, height });
+    await page.addInitScript(t => localStorage.setItem('runnote-theme', t), theme);
+    await page.goto('/records');
+    await expect(page.getByTestId('period-report-ready')).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    await noOverflow(page);
+  }
+  expect(errors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});

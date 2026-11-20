@@ -63,6 +63,57 @@ function recordsFixture(empty) {
     yearly
   };
 }
+/**
+ * Deterministic monthly/yearly period report fixture mirroring backend half-open and cutoff rules.
+ * @param {string | null} period
+ * @param {number} year
+ * @param {number | null} month
+ * @param {boolean} empty
+ */
+function reportFixture(period, year, month, empty) {
+  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: user.timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const nextDay = (/** @type {string} */ iso) => new Date(Date.parse(`${iso}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+  const start = period === 'month' ? `${year}-${String(month).padStart(2, '0')}-01` : `${year}-01-01`;
+  const end = period === 'year' ? `${year + 1}-01-01` : month === 12 ? `${year + 1}-01-01` : `${year}-${String(Number(month) + 1).padStart(2, '0')}-01`;
+  const isFuture = start > today;
+  const isPartial = !isFuture && start <= today && today < end;
+  const tomorrow = nextDay(today);
+  const dateFrom = start;
+  const dateTo = isFuture ? start : isPartial ? (tomorrow < end ? tomorrow : end) : end;
+  const cutoffDate = isPartial ? today : null;
+  const base = { period, year, month: period === 'month' ? month : null, date_from: dateFrom, date_to: dateTo, is_partial: isPartial, cutoff_date: cutoffDate, today };
+  if (empty || isFuture) return { ...summary, ...base };
+  // Exact 2024 sample from backend test_statistics.py (Jan: 3/6km/1500s/375; Feb leap: 1/0km/0s/null; 2024: 4/6km/1500s/375).
+  if (period === 'month' && year === 2024 && month === 1) {
+    return { ...summary, ...base, activity_count: 3, distance_m: '6000.000', activity_days: 2, duration_sum_seconds: '1500.000', known_duration_count: 2, missing_duration_count: 1, pace_eligible_count: 2, pace_eligible_distance_m: '4000.000', avg_pace_seconds_per_km: '375.000', quality_warning_count: 1 };
+  }
+  if (period === 'month' && year === 2024 && month === 2) {
+    return { ...summary, ...base, activity_count: 1, distance_m: '0.000', activity_days: 1, duration_sum_seconds: '0.000', known_duration_count: 1, missing_duration_count: 0, pace_eligible_count: 0, pace_eligible_distance_m: '0.000', avg_pace_seconds_per_km: null, quality_warning_count: 0 };
+  }
+  if (period === 'year' && year === 2024) {
+    return { ...summary, ...base, activity_count: 4, distance_m: '6000.000', activity_days: 3, duration_sum_seconds: '1500.000', known_duration_count: 3, missing_duration_count: 1, pace_eligible_count: 2, pace_eligible_distance_m: '4000.000', avg_pace_seconds_per_km: '375.000', quality_warning_count: 1 };
+  }
+  if (period === 'month' && month !== null && year === 2025 && month >= 1 && month <= 12) {
+    const distance = 10000 + (month - 1) * 1000;
+    const pace = 372 - (month - 1) * 2;
+    const duration = Math.round((distance / 1000) * pace);
+    return { ...summary, ...base, activity_count: 2, distance_m: `${distance}.000`, activity_days: 2, duration_sum_seconds: `${duration}.000`, known_duration_count: 2, missing_duration_count: 0, pace_eligible_count: 2, pace_eligible_distance_m: `${distance}.000`, avg_pace_seconds_per_km: `${pace}.000`, quality_warning_count: 0 };
+  }
+  if (period === 'month' && month !== null && year === 2026 && month >= 1 && month <= Number(today.slice(5, 7))) {
+    const idx = 12 + (month - 1);
+    const distance = 10000 + idx * 1000;
+    const pace = 372 - idx * 2;
+    const duration = Math.round((distance / 1000) * pace);
+    return { ...summary, ...base, activity_count: 2, distance_m: `${distance}.000`, activity_days: 2, duration_sum_seconds: `${duration}.000`, known_duration_count: 2, missing_duration_count: 0, pace_eligible_count: 2, pace_eligible_distance_m: `${distance}.000`, avg_pace_seconds_per_km: `${pace}.000`, quality_warning_count: 0 };
+  }
+  if (period === 'year' && year === 2025) {
+    return { ...summary, ...base, activity_count: 24, distance_m: '186000.000', activity_days: 24, duration_sum_seconds: '66960.000', known_duration_count: 24, missing_duration_count: 0, pace_eligible_count: 24, pace_eligible_distance_m: '186000.000', avg_pace_seconds_per_km: '360.000', quality_warning_count: 0 };
+  }
+  if (period === 'year' && year === 2026) {
+    return { ...summary, ...base, activity_count: 20, distance_m: '265000.000', activity_days: 18, duration_sum_seconds: '88775.000', known_duration_count: 20, missing_duration_count: 0, pace_eligible_count: 20, pace_eligible_distance_m: '265000.000', avg_pace_seconds_per_km: '335.000', quality_warning_count: 0 };
+  }
+  return { ...summary, ...base };
+}
 createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1');
   const avatarRoute = url.pathname.match(/^\/api\/v1\/showcase(?:\/users\/([a-z0-9_]+))?\/avatar$/);
@@ -270,6 +321,16 @@ createServer(async (req, res) => {
     return send({ period: url.searchParams.get('period'), date_from: from, date_to: to, week_start: 'monday', date_assignment: 'activity_local_date', buckets: [{ ...summary, bucket_start: from, bucket_end: to, is_partial: true }] });
   }
   if (url.pathname.endsWith('/statistics/records')) return send(recordsFixture(url.searchParams.get('empty') === '1'));
+  if (url.pathname.endsWith('/statistics/report')) {
+    const period = url.searchParams.get('period');
+    const year = Number(url.searchParams.get('year'));
+    const monthParam = url.searchParams.get('month');
+    const month = monthParam === null ? null : Number(monthParam);
+    if ((period !== 'month' && period !== 'year') || !Number.isInteger(year) || year < 1900 || year > 2100) return send(null, 422, '报告查询参数不合法');
+    if (period === 'month' && (!Number.isInteger(month) || Number(month) < 1 || Number(month) > 12)) return send(null, 422, '月度报告需要提供 1–12 的月份');
+    if (period === 'year' && month !== null) return send(null, 422, '年度报告不支持月份参数');
+    return send(reportFixture(period, year, month, url.searchParams.get('empty') === '1'));
+  }
   const missingActivity = '00000000-0000-4000-8000-000000000404';
   const activityDetail = url.pathname.match(/^\/api\/v1\/activities\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
   if (activityDetail && !showcase && activityDetail[1] === 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa') return send(null,404,'活动不存在');

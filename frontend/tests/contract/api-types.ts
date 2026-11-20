@@ -12,6 +12,7 @@ import type { AdminUserList } from '#lib/api/admin-users.ts';
 import type { Context, Create, Report, ReportList } from '#lib/api/ai.ts';
 import type { User } from '#lib/api/auth.ts';
 import type { GlobalFootprints, Provinces, Streaks } from '#lib/api/milestones.ts';
+import type { PeriodReport } from '#lib/api/period-report.ts';
 import type { Records } from '#lib/api/records.ts';
 import type { ReplayData } from '#lib/api/replay.ts';
 import type { RouteGroupDetail, RouteGroupList } from '#lib/api/route-groups.ts';
@@ -40,6 +41,8 @@ export const responses = {
   // The frontend only requests week/month; the backend also accepts year.
   trends: (v: ResponseData<'/api/v1/statistics/trends', 'get'>): Narrowed<Trends, 'period'> => v,
   records: (v: ResponseData<'/api/v1/statistics/records', 'get'>): Records => v,
+  periodReport: (v: ResponseData<'/api/v1/statistics/report', 'get'>): PeriodReport => v,
+  showcasePeriodReport: (v: ResponseData<'/api/v1/showcase/statistics/report', 'get'>): PeriodReport => v,
   me: (v: ResponseData<'/api/v1/me', 'get'>): User => v,
   // An activity without segments sends start/end null; readRoute rejects that, and callers only
   // read routes when has_route is true.
