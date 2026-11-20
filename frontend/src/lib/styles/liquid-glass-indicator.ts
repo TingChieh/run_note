@@ -4,9 +4,10 @@ import { contentOptics, type GlassSettings } from './liquid-glass-settings.ts';
 /** Decorative copy of known navigation/option labels; never copies arbitrary page content. */
 export function createIndicator(host: HTMLElement, items: HTMLElement[], initial: GlassSettings, axis: 'x' | 'y' = 'y', start = 0, bleed = 0) {
   const horizontal = axis === 'x';
+  const bleedX = horizontal ? bleed : 0, bleedY = bleed;
   const copy = document.createElement('span'), outline = document.createElement('span');
   copy.className = 'rn-moving-copy'; outline.className = 'rn-moving-outline';
-  if (bleed) copy.style.maxWidth = 'none';
+  if (bleedX) copy.style.maxWidth = 'none';
   for (const node of [copy, outline]) node.setAttribute('aria-hidden', 'true');
   const labels = items.map(item => {
     const label = document.createElement('span'); label.className = 'rn-moving-label';
@@ -33,7 +34,7 @@ export function createIndicator(host: HTMLElement, items: HTMLElement[], initial
     const height = item.offsetHeight + (horizontal ? 0 : stretch) + 6 * press;
     const x = horizontal ? pos - stretch / 2 + 2 * press : item.offsetLeft + 2 * press;
     const top = horizontal ? item.offsetTop - 3 * press : pos - stretch / 2 - 3 * press;
-    const lensX = x + bleed, lensY = top - host.scrollTop + bleed;
+    const lensX = x + bleedX, lensY = top - host.scrollTop + bleedY;
     if (glass) glass.update({ x: lensX, y: lensY, width, height, radius: height / 2, mapWidth: item.offsetWidth, mapHeight: item.offsetHeight, mapRadius: item.offsetHeight / 2 });
     else clipCopy(lensX, lensY, width, height, height / 2);
     Object.assign(outline.style, { width: `${width}px`, height: `${height}px`, borderRadius: `${height / 2}px`, transform: `translate(${x}px, ${top}px)` });
@@ -45,11 +46,11 @@ export function createIndicator(host: HTMLElement, items: HTMLElement[], initial
     index = next; spring.set(horizontal ? items[next].offsetLeft : items[next].offsetTop, { immediate: immediate || motion.matches });
   }
   function refresh() {
-    // Navigation needs room for squish/stretch beyond its first/last item. Scrolling menus keep bleed=0 and stay viewport-sized.
-    Object.assign(copy.style, { height: `${host.clientHeight + 2 * bleed}px`, width: `${host.clientWidth + 2 * bleed}px`, transform: `translate(${-bleed}px, ${host.scrollTop - bleed}px)` });
+    // Navigation needs room for squish/stretch beyond its first/last item along its travel axis. Scrolling menus keep bleed=0 and stay viewport-sized.
+    Object.assign(copy.style, { height: `${host.clientHeight + 2 * bleedY}px`, width: `${host.clientWidth + 2 * bleedX}px`, transform: `translate(${-bleedX}px, ${host.scrollTop - bleedY}px)` });
     items.forEach((item, i) => {
       const style = getComputedStyle(item);
-      Object.assign(labels[i].style, { left: `${item.offsetLeft + bleed}px`, top: `${item.offsetTop - host.scrollTop + bleed}px`, width: `${item.offsetWidth}px`, height: `${item.offsetHeight}px`, padding: style.padding, gap: style.gap, justifyContent: style.justifyContent, font: style.font, letterSpacing: style.letterSpacing });
+      Object.assign(labels[i].style, { left: `${item.offsetLeft + bleedX}px`, top: `${item.offsetTop - host.scrollTop + bleedY}px`, width: `${item.offsetWidth}px`, height: `${item.offsetHeight}px`, padding: style.padding, gap: style.gap, justifyContent: style.justifyContent, font: style.font, letterSpacing: style.letterSpacing });
     });
     move(index, true);
   }

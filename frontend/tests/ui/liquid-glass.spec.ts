@@ -366,6 +366,7 @@ test('dynamic edit buttons get glass and removed dialogs release their lenses', 
   await expect(zoom).not.toHaveClass(/rn-glass-control/);
   await expect.poll(() => zoomGroup.locator('.rn-glass-layer').evaluate(el => getComputedStyle(el).backdropFilter)).toMatch(/url\("?#lg/);
   await expect.poll(() => zoomGroup.locator('.rn-glass-layer').evaluate(el => getComputedStyle(el).clipPath)).toMatch(/round 16px/);
+  await expect.poll(() => zoomGroup.locator('.rn-glass-layer').evaluate(el => getComputedStyle(el).borderRadius)).toBe('16px');
   expect(await zoomGroup.locator('.rn-glass-tint').evaluate(el => getComputedStyle(el).backgroundImage)).toContain('linear-gradient');
   expect(await zoomGroup.locator('.rn-glass-shadow').evaluate(el => getComputedStyle(el).boxShadow)).toContain('inset');
   for (const button of [zoom, zoomOut]) {

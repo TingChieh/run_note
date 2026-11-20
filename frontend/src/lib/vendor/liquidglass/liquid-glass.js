@@ -422,6 +422,7 @@ export function createGlass(target, options = {}) {
   let frame = 0;
   let settleTimers = [];
   let destroyed = false;
+  let setRadius = false;
   let box = { width: target.offsetWidth, height: target.offsetHeight };
 
   // Filter coordinates are fractions of the element box, so every resize has to re-flush.
@@ -516,6 +517,13 @@ export function createGlass(target, options = {}) {
       const r = Math.min(p.radius, w / 2, h / 2);
       const nextClip = `inset(${y}px ${W - x - w}px ${H - y - h}px ${x}px round ${r}px)`;
       if (target.style.clipPath !== nextClip) target.style.clipPath = nextClip;
+      // Chromium clips backdrop-filter to border-radius rather than clip-path alone; without a
+      // matching border-radius, blurred rim highlights leak into the four square corners on dark grounds.
+      if (useBackdropURL && x === 0 && y === 0 && w === W && h === H) {
+        const nextRadius = `${r}px`;
+        if (target.style.borderRadius !== nextRadius) target.style.borderRadius = nextRadius;
+        setRadius = true;
+      }
     }
     if (!shown.key) return; // first map not ready yet: leave the element unfiltered
 
@@ -588,6 +596,7 @@ export function createGlass(target, options = {}) {
       target.style.backdropFilter = '';
       target.style.webkitBackdropFilter = '';
       if (flags.clip) target.style.clipPath = '';
+      if (setRadius) target.style.borderRadius = '';
     },
   };
 }

@@ -233,7 +233,10 @@ export function liquidGlass(root: HTMLElement) {
                 specular: base.specular * (1 + 0.2 * lensPress),
                 chroma: copied ? settings.chroma : 0,
               });
-              if (!copied && engine !== 'blink') place(layer, x, y, width, height, radius);
+              if (!copied) {
+                if (engine === 'blink') layer.style.borderRadius = `${radius}px`;
+                else place(layer, x, y, width, height, radius);
+              }
             }
             syncCopy();
           }
