@@ -578,6 +578,28 @@ export interface PasswordUpdate {
   new_password: string;
 }
 
+export interface PeriodReport {
+  activity_count: number;
+  distance_m: string;
+  activity_days: number;
+  duration_sum_seconds: string | null;
+  known_duration_count: number;
+  missing_duration_count: number;
+  pace_eligible_count: number;
+  pace_eligible_distance_m: string;
+  avg_pace_seconds_per_km: string | null;
+  quality_warning_count: number;
+  date_assignment: 'activity_local_date';
+  period: 'month' | 'year';
+  year: number;
+  month: number | null;
+  date_from: string;
+  date_to: string;
+  is_partial: boolean;
+  cutoff_date: string | null;
+  today: string;
+}
+
 export interface PersonalBest {
   activity_id: string;
   activity_date: string;
@@ -1623,6 +1645,9 @@ export interface ApiOperations {
   '/api/v1/statistics/records': {
     get: { body: never; response: Records };
   };
+  '/api/v1/statistics/report': {
+    get: { body: never; response: PeriodReport };
+  };
   '/api/v1/statistics/streaks': {
     get: { body: never; response: Streaks };
   };
@@ -2004,6 +2029,9 @@ export const API_OPERATIONS = {
   },
   '/api/v1/statistics/records': {
     get: [],
+  },
+  '/api/v1/statistics/report': {
+    get: ['month', 'period', 'year'],
   },
   '/api/v1/statistics/streaks': {
     get: [],

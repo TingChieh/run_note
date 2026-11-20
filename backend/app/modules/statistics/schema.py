@@ -46,6 +46,17 @@ class Bucket(Summary):
     is_partial: bool
 
 
+class PeriodReport(Summary):
+    period: Literal["month", "year"]
+    year: int
+    month: int | None
+    date_from: date
+    date_to: date
+    is_partial: bool
+    cutoff_date: date | None
+    today: date
+
+
 class Trends(BaseModel):
     period: Literal["week", "month", "year"]
     date_from: date

@@ -3,14 +3,17 @@
   import { page } from '$app/state';
   import { pageTitle } from '#lib/site.ts';
   import { useViewContext } from '#lib/view-context.ts';
+  import { viewsOwnRecords } from '#lib/api/view-context.ts';
   import PageHeader from '#lib/components/PageHeader.svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import PageSkeleton from '#lib/components/PageSkeleton.svelte';
   import RecordsBanner from '#lib/components/RecordsBanner.svelte';
+  import PeriodReportCard from '#lib/components/PeriodReportCard.svelte';
   import RecordsChart from '#lib/components/RecordsChart.svelte';
   import type { MonthlyMetric } from '#lib/components/records-chart.ts';
   import { ActivityError, formatPace } from '#lib/api/activities.ts';
   import { dashboardDistance } from '#lib/api/dashboard-format.ts';
+  import { readPeriodReport } from '#lib/api/period-report.ts';
   import { currentYear } from '#lib/api/statistics.ts';
   import {
     readRecords as scoped_readRecords,
@@ -29,7 +32,16 @@
   let metric = $state<MonthlyMetric>('distance');
   let disposed = false,
     token = 0;
-  const year = $derived(currentYear(page.data.showcase?.timezone ?? 'UTC'));
+  const showPeriodReport = $derived(viewsOwnRecords(page.url.pathname, page.data.user));
+  const timezone = $derived(page.data.showcase?.timezone ?? page.data.user?.timezone ?? 'UTC');
+  const year = $derived(currentYear(timezone));
+
+  function redirectExpired() {
+    disposed = true;
+    token++;
+    data = null;
+    window.location.replace('/admin?reason=expired&next=' + encodeURIComponent(window.location.pathname));
+  }
 
   async function load() {
     const mine = ++token;
@@ -42,10 +54,7 @@
     } catch (cause) {
       if (disposed || mine !== token) return;
       if (cause instanceof ActivityError && cause.status === 401) {
-        disposed = true;
-        token++;
-        data = null;
-        window.location.replace('/admin?reason=expired&next=' + encodeURIComponent(window.location.pathname));
+        redirectExpired();
         return;
       }
       data = null;
@@ -106,7 +115,12 @@
 </script>
 
 <svelte:head><title>{pageTitle('个人记录', page.data.site)}</title></svelte:head>
-<PageHeader title="个人记录" description="全部历史的最佳成绩、每个月的里程与配速、逐年变化和训练规律。" />
+<PageHeader
+  title="个人记录"
+  description={showPeriodReport
+    ? '全部历史的最佳成绩、按月或按年的跑步报告、月度趋势、逐年变化和训练规律。'
+    : '全部历史的最佳成绩、每个月的里程与配速、逐年变化和训练规律。'}
+/>
 <div class="records-page" data-testid={data ? (empty ? 'records-empty' : 'records-ready') : undefined}>
   {#if loading && !data}<div class="page-loading"><PageSkeleton title="正在读取个人记录…" /></div>{/if}
   {#if message}
@@ -132,6 +146,14 @@
       </p>
       {#if empty}<p><a class="button-secondary" href={view.href('/activities')}>查看跑步记录</a></p>{/if}
     </div>
+
+    {#if showPeriodReport}
+      <PeriodReportCard
+        {timezone}
+        readReport={(period, reportYear, reportMonth) => readPeriodReport(period, reportYear, reportMonth)}
+        onauthrequired={redirectExpired}
+      />
+    {/if}
 
     {#if !empty}
       <section class="records-card" aria-labelledby="monthly-title" data-testid="records-monthly">

@@ -2,12 +2,20 @@
 
 from datetime import date, timedelta
 from decimal import ROUND_HALF_EVEN, Decimal
+from typing import Literal
 
 from sqlalchemy import case, func, select
 
 from app.core.errors import ApiError
 from app.modules.activities.model import Activity as A
-from app.modules.statistics.schema import Bucket, Calendar, CalendarDay, Summary, Trends
+from app.modules.statistics.schema import (
+    Bucket,
+    Calendar,
+    CalendarDay,
+    PeriodReport,
+    Summary,
+    Trends,
+)
 
 
 def validate_range(start, end, *, optional=False):
@@ -97,6 +105,60 @@ def finalize(raw):
 def summary(db, owner, start=None, end=None, *, public_only=False):
     validate_range(start, end, optional=True)
     return finalize(query(db, owner, start, end, public_only=public_only)[0])
+
+
+def period_bounds(
+    period: Literal["month", "year"],
+    year: int,
+    month: int | None,
+    *,
+    today: date,
+) -> tuple[date, date, bool, date | None]:
+    """Resolve natural month/year half-open bounds [date_from, date_to) capped at today."""
+    if year < 1900 or year > 2100:
+        raise ApiError(422, "VALIDATION_ERROR", "统计日期支持1900–2100年")
+    if period == "month":
+        if month is None or month < 1 or month > 12:
+            raise ApiError(422, "VALIDATION_ERROR", "月度报告需要提供 1–12 的月份")
+        period_start = date(year, month, 1)
+        period_end = date(year + (month == 12), month % 12 + 1, 1)
+    elif period == "year":
+        if month is not None:
+            raise ApiError(422, "VALIDATION_ERROR", "年度报告不支持月份参数")
+        period_start = date(year, 1, 1)
+        period_end = date(year + 1, 1, 1)
+    else:
+        raise ApiError(422, "VALIDATION_ERROR", "报告周期仅支持月度或年度")
+
+    if period_start > today:
+        return period_start, period_start, False, None
+    is_partial = period_start <= today < period_end
+    if is_partial:
+        return period_start, min(period_end, today + timedelta(days=1)), True, today
+    return period_start, period_end, False, None
+
+
+def period_report(
+    db,
+    owner,
+    period: Literal["month", "year"],
+    year: int,
+    month: int | None,
+    today: date,
+) -> PeriodReport:
+    date_from, date_to, is_partial, cutoff_date = period_bounds(period, year, month, today=today)
+    totals = finalize({}) if date_from == date_to else summary(db, owner, date_from, date_to)
+    return PeriodReport(
+        period=period,
+        year=year,
+        month=month,
+        date_from=date_from,
+        date_to=date_to,
+        is_partial=is_partial,
+        cutoff_date=cutoff_date,
+        today=today,
+        **totals.model_dump(),
+    )
 
 
 def calendar(db, owner, year, metric, *, public_only=False):
