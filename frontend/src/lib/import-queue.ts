@@ -80,13 +80,18 @@ export async function runImportQueue(initial: ImportItem[], options: QueueOption
     onupdate(items);
   };
   let stopped = false, authExpired = false;
-  for (let index = 0; index < items.length && !authExpired; index++) {
+  for (let index = 0; index < items.length && !stopped && !authExpired; index++) {
     if (items[index].status !== 'pending') continue;
     if (signal?.aborted) { stopped = true; break; }
     const file = items[index].file;
     if (file.size > MAX_IMPORT_BYTES) { publish(index, { status: 'failed', message: '轨迹文件不能超过 10 MiB' }); continue; }
     publish(index, { status: 'running' });
     for (let attempt = 0; ; attempt++) {
+      if (signal?.aborted) {
+        stopped = true;
+        publish(index, { status: 'skipped' });
+        break;
+      }
       try {
         const result = await importOne(file);
         publish(index, { status: 'success', warnings: result.warnings });

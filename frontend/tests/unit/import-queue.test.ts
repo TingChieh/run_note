@@ -72,6 +72,24 @@ describe('runImportQueue', () => {
     expect(states(outcome.items)).toEqual(['a.gpx:failed', 'b.gpx:success']);
   });
 
+  it('does not resend the current file or send later files when stopped during IMPORT_BUSY backoff', async () => {
+    const controller = new AbortController();
+    const calls: string[] = [];
+    const outcome = await runImportQueue(createItems([file('a.gpx'), file('b.gpx')]), {
+      importOne: async (f) => {
+        calls.push(f.name);
+        throw new ActivityError('忙', 429, 'IMPORT_BUSY');
+      },
+      onupdate: () => {},
+      signal: controller.signal,
+      sleep: async () => controller.abort(),
+    });
+
+    expect(calls).toEqual(['a.gpx']);
+    expect(states(outcome.items)).toEqual(['a.gpx:skipped', 'b.gpx:skipped']);
+    expect(outcome).toMatchObject({ stopped: true, authExpired: false });
+  });
+
   it('stops everything on 401 and marks the rest as not processed', async () => {
     const calls: string[] = [];
     const outcome = await runImportQueue(createItems([file('a.gpx'), file('b.gpx'), file('c.gpx')]), {
