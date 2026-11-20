@@ -59,7 +59,7 @@ docs/              设计与验收记录（中文）；docs/design-system/ 为 U
 | 事实 | 源头 | 派生物 / 守护 |
 | --- | --- | --- |
 | API 请求与响应结构 | 后端 Pydantic schema 与路由 | `frontend/src/lib/api/generated/api.ts`（`cd backend && .venv/bin/python -m app.contract.typescript`）；`tests/unit/test_api_contract.py` 防过期，`frontend/tests/contract/api-types.ts` 与 `tests/unit/api-contract.test.ts` 防前端漂移 |
-| 应用版本号 | `backend/pyproject.toml` 的 `[project] version`（`MAJOR.MINOR.PATCH`；本版为 1.0.0） | `frontend/package.json` 的 `version` 必须相同；`GET /api/v1/admin/version`（仅站主）连同发布包的 `RELEASE` 构建信息在“设置 → 站点设置”展示；`tests/unit/test_version.py` 守护 |
+| 应用版本号 | `backend/pyproject.toml` 的 `[project] version`（`MAJOR.MINOR.PATCH`；本版为 1.0.1） | `frontend/package.json` 的 `version` 必须相同；`GET /api/v1/admin/version`（仅站主）连同发布包的 `RELEASE` 构建信息在“设置 → 站点设置”展示；`tests/unit/test_version.py` 守护 |
 | 距离、用时、配速 | `gpx/metrics.py` 与 `gpx/queries.py`（PostGIS） | 前端只格式化 |
 | CI 按路径跳过的规则 | `.github/scripts/changed_areas.py` | `scripts/verify.py` 直接复用 |
 | 检查命令 | `.github/workflows/ci.yml` | `scripts/verify.py`（`infra/native/tests/test_verify_script.py` 保持一致） |

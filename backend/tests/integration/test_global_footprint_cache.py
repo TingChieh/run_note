@@ -1,5 +1,6 @@
 """Per-activity global region & city cache: live vs cached parity and Taiwan attribution."""
 
+import json
 from datetime import date
 from uuid import UUID
 
@@ -223,3 +224,61 @@ def test_an_owner_whose_matching_times_out_does_not_block_others(clients, monkey
     assert cache_rows(app, str(other)) == 1
     assert cache_rows(app, str(slow_owner)) == 0
     assert attempts.count(slow_owner) == 1
+
+
+def test_a_track_grazing_a_region_boundary_still_counts_the_region(clients):
+    """A and B lie just outside Shanghai's boundary; P pokes ~3 m inside. P is closer to the
+    chord A-B than the simplification tolerance, so matching only the simplified track drops it."""
+    a, b, _, app = clients
+    quiet(a, b)
+    owner = register(a)
+    grazing = [(121.7899996, 30.816517), (121.7930007, 30.81653), (121.7959981, 30.8163831)]
+    activity = add_activity(app, owner, [grazing], geographic=True)
+    with app.state.session_factory() as db:
+        inside = db.scalar(
+            text("""SELECT ST_Intersects(
+                ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON(:region), 4326)),
+                ST_SetSRID(ST_MakePoint(:x, :y), 4326))"""),
+            {
+                "region": json.dumps(module._atlas()["regions_by_code"]["CN-310000"]["geometry"]),
+                "x": grazing[1][0],
+                "y": grazing[1][1],
+            },
+        )
+        assert inside, "the synthetic track no longer reaches into the bundled boundary"
+        regions, _ = module.compute_global_codes(db, UUID(owner), [UUID(activity)])[UUID(activity)]
+    assert "CN-310000" in regions
+
+
+def test_a_slow_track_does_not_hold_back_the_same_owners_other_activities(clients, monkeypatch):
+    a, b, _, app = clients
+    quiet(a, b)
+    owner = UUID(register(a))
+    slow = UUID(add_activity(app, owner, [SHANGHAI], geographic=True))
+    fast = UUID(add_activity(app, owner, [TOKYO], geographic=True))
+    original = module.compute_global_codes
+    attempts = []
+
+    def flaky(db, row_owner, ids, **options):
+        attempts.append(sorted(ids))
+        if slow in ids:
+            db.execute(text("SET LOCAL statement_timeout = '50ms'"))
+            db.execute(text("SELECT pg_sleep(1)"))
+        return original(db, row_owner, ids, **options)
+
+    def cached():
+        with app.state.session_factory() as db:
+            rows = db.scalars(
+                text("SELECT activity_id FROM activity_global_footprint_caches WHERE user_id=:o"),
+                {"o": owner},
+            )
+            return set(rows)
+
+    monkeypatch.setattr(module, "compute_global_codes", flaky)
+    for _scan in range(2):
+        module.fill_global_footprint_caches(
+            app.state.session_factory, limit=2, max_batches=1, owner=owner
+        )
+        assert cached() == {fast}
+    # The second scan only retries the slow track, alone.
+    assert attempts[-1] == [slow]

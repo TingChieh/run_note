@@ -24,10 +24,9 @@ FILL_BATCH = 10
 CITY_PROXIMITY_M = 10_000
 CITY_FALLBACK_RADIUS_M = 35_000
 POINT_CITY_DEG_MARGIN = 0.5
-# Tracks are Douglas-Peucker simplified to ~11 m before polygon matching. The atlas boundaries are
-# themselves simplified at 0.015 deg and rounded to 0.001 deg (~110 m; data/README.md), so this
-# changes no realistic hit, while a degenerate track (long overlapping edges) drops from ~30 s
-# to well under a second.
+# Tracks are Douglas-Peucker simplified to ~11 m before polygon matching: a degenerate track (long
+# overlapping edges) drops from ~30 s to well under a second. Simplification alone can miss a region
+# the track only grazes, so REGION_HITS_SQL re-checks the original track for those (see there).
 TRACK_SIMPLIFY_DEG = 0.0001
 
 
@@ -62,10 +61,19 @@ def _atlas():
 
 @lru_cache(maxsize=1)
 def atlas_version() -> str:
-    """Content hash: replacing either bundled atlas invalidates cached rows."""
+    """Content hash of the atlases and the matching rules: changing either invalidates cached rows,
+    so cached and live-computed results never come from different algorithms."""
     hasher = hashlib.sha256()
     hasher.update(REGIONS_FILE.read_bytes())
     hasher.update(CITIES_FILE.read_bytes())
+    matching = (
+        REGION_HITS_SQL,
+        POINT_CITY_HITS_SQL,
+        TRACK_SIMPLIFY_DEG,
+        CITY_PROXIMITY_M,
+        CITY_FALLBACK_RADIUS_M,
+    )
+    hasher.update(repr(matching).encode())
     return hasher.hexdigest()[:16]
 
 
@@ -107,7 +115,7 @@ REGION_HITS_SQL = """WITH regions AS MATERIALIZED (
         ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON(r->'geometry'), 4326)) AS geom
     FROM jsonb_array_elements(CAST(:regions AS jsonb)) r
 ), tracks AS (
-    SELECT a.id AS activity_id, s.point_count,
+    SELECT a.id AS activity_id, s.point_count, s.geom AS original,
         CASE WHEN s.point_count > 1 THEN ST_Simplify(s.geom, :tolerance, true)
             ELSE COALESCE(s.geom, p.position)
         END AS geom
@@ -116,7 +124,7 @@ REGION_HITS_SQL = """WITH regions AS MATERIALIZED (
         AND s.point_count=1 AND p.point_index=0
     WHERE a.user_id=:owner AND a.id=ANY(:ids)
 ), selected AS MATERIALIZED (
-    SELECT activity_id, point_count, geom,
+    SELECT activity_id, point_count, geom, original,
         geom IS NOT NULL AND ST_XMax(Box3D(geom)) - ST_XMin(Box3D(geom)) > 180 AS crosses
     FROM tracks
 ), crossing_edges AS MATERIALIZED (
@@ -138,6 +146,16 @@ WHERE EXISTS (
       AND NOT s.crosses
       AND r.geom && s.geom
       AND ST_Intersects(r.geom, s.geom)
+) OR EXISTS (
+    -- Douglas-Peucker keeps every original point within :tolerance of the simplified line, so a
+    -- region the original track touches lies within :tolerance of the simplified one (doubled
+    -- against floating-point error). Only those near misses pay for the original geometry.
+    SELECT 1 FROM selected s
+    WHERE s.activity_id = p.activity_id
+      AND s.point_count > 1
+      AND NOT s.crosses
+      AND ST_DWithin(r.geom, s.geom, 2 * :tolerance)
+      AND ST_Intersects(r.geom, s.original)
 ) OR EXISTS (
     SELECT 1 FROM crossing_edges e
     WHERE e.activity_id = p.activity_id
@@ -314,8 +332,9 @@ def fill_global_footprint_caches(
 ) -> int:
     """Compute rows that are missing or outdated, newest activities first.
 
-    An owner whose matching exceeds the statement budget is rolled back alone and skipped for
-    the rest of this call, so one pathological track cannot stall everyone else's rows.
+    An owner whose matching exceeds the statement budget is rolled back alone and retried one
+    activity at a time; only activities that still time out alone are skipped for the rest of this
+    call, so one pathological track cannot stall anyone's other rows.
     """
     filled = 0
     batches = 0
@@ -354,18 +373,26 @@ def fill_global_footprint_caches(
                 # time out that user's requests.
                 computed = []
                 for row_owner, ids in by_owner.items():
-                    try:
-                        with db.begin_nested():
-                            codes = compute_global_codes(db, row_owner, ids, stop_event=stop_event)
-                    except DBAPIError as error:
-                        if not _timed_out(error) or (
-                            stop_event is not None and stop_event.is_set()
-                        ):
-                            raise
-                        skipped.update(ids)
-                        logger.warning("Global footprint match exceeded its budget; skipped")
-                        continue
-                    computed.append((row_owner, codes))
+                    pending = [ids]
+                    while pending:
+                        group = pending.pop()
+                        try:
+                            with db.begin_nested():
+                                codes = compute_global_codes(
+                                    db, row_owner, group, stop_event=stop_event
+                                )
+                        except DBAPIError as error:
+                            if not _timed_out(error) or (
+                                stop_event is not None and stop_event.is_set()
+                            ):
+                                raise
+                            if len(group) > 1:
+                                pending.extend([activity_id] for activity_id in group)
+                                continue
+                            skipped.update(group)
+                            logger.warning("Global footprint match exceeded its budget; skipped")
+                            continue
+                        computed.append((row_owner, codes))
                 for row_owner, codes in computed:
                     store_global_footprint_codes(db, row_owner, codes)
                 db.commit()

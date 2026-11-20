@@ -1,5 +1,7 @@
 """Offline global atlas integrity and Taiwan attribution checks."""
 
+import pytest
+
 from app.modules.footprints import global_atlas as module
 
 
@@ -42,3 +44,19 @@ def test_boxes_overlap_handles_normal_and_antimeridian_boxes():
     assert module._boxes_overlap([120.0, 24.0, 122.0, 26.0], [119.0, 21.0, 123.0, 26.0])
     assert not module._boxes_overlap([10.0, 40.0, 11.0, 41.0], [119.0, 21.0, 123.0, 26.0])
     assert module._boxes_overlap([-179.5, -18.0, 179.5, -16.0], [177.0, -19.0, 180.0, -15.0])
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [("REGION_HITS_SQL", module.REGION_HITS_SQL + " "), ("TRACK_SIMPLIFY_DEG", 0.0002)],
+)
+def test_changing_the_matching_rules_invalidates_cached_rows(monkeypatch, name, value):
+    module.atlas_version.cache_clear()
+    before = module.atlas_version()
+    monkeypatch.setattr(module, name, value)
+    module.atlas_version.cache_clear()
+    try:
+        assert module.atlas_version() != before
+    finally:
+        monkeypatch.undo()
+        module.atlas_version.cache_clear()

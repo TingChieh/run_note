@@ -7,7 +7,7 @@
   import SaveBar from '#lib/components/SaveBar.svelte';
   import { applySiteDefaultTheme } from '#lib/components/system-theme.ts';
   import { SiteError, readSite, removeSiteImage, updateSite, uploadSiteImage } from '#lib/api/site.ts';
-  import { builtAtLabel, readVersion, type VersionInfo } from '#lib/api/version.ts';
+  import { VersionError, builtAtLabel, readVersion, type VersionInfo } from '#lib/api/version.ts';
   import { brandInitial, pageTitle, type Site, type SiteTheme } from '#lib/site.ts';
 
   let site = $state<Site | null>(null), loading = $state(true), loadError = $state('');
@@ -22,7 +22,7 @@
   const themes: { value: SiteTheme; label: string }[] = [{ value: 'system', label: '跟随系统' }, { value: 'light', label: '浅色' }, { value: 'dark', label: '深色' }];
 
   function fill(value: Site) { site = value; title = value.title; subtitle = value.subtitle; tagline = value.footer_tagline; description = value.description; theme = value.default_theme; }
-  function expired(cause: unknown) { if (cause instanceof SiteError && cause.status === 401) { window.location.replace('/admin?reason=expired'); return true; } return false; }
+  function expired(cause: unknown) { if ((cause instanceof SiteError || cause instanceof VersionError) && cause.status === 401) { window.location.replace('/admin?reason=expired'); return true; } return false; }
   async function load() {
     const request = ++token; loading = true; loadError = '';
     try { const value = await readSite(); if (disposed || request !== token) return; fill(value); }
@@ -31,7 +31,7 @@
   }
   async function loadVersion() {
     try { const value = await readVersion(); if (!disposed) version = value; }
-    catch { if (!disposed) versionError = true; }
+    catch (cause) { if (disposed || expired(cause)) return; versionError = true; }
   }
   onMount(() => { const wait = setTimeout(() => { slow = true; }, 250); void load(); void loadVersion(); return () => { disposed = true; token++; clearTimeout(noticeTimer); clearTimeout(wait); }; });
   async function save(event: SubmitEvent) {

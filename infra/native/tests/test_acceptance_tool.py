@@ -180,3 +180,40 @@ class LoopbackClient(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReleaseVersion(unittest.TestCase):
+    RUNNING = "20261119163755-2d1d6c553e57"
+
+    def info(self, build):
+        return {"data": {"version": "1.0.0", "build": build}}
+
+    def test_the_deployed_release_passes(self):
+        ok, detail = acc.version_check(self.info({"release_id": self.RUNNING}), self.RUNNING)
+        self.assertTrue(ok)
+        self.assertIn(self.RUNNING, detail)
+
+    def test_another_release_serving_fails_and_names_both(self):
+        ok, detail = acc.version_check(
+            self.info({"release_id": self.RUNNING}), "20261120000000-aaaaaaaaaaaa"
+        )
+        self.assertFalse(ok)
+        self.assertIn(self.RUNNING, detail)
+        self.assertIn("20261120000000-aaaaaaaaaaaa", detail)
+
+    def test_a_site_running_from_source_fails(self):
+        self.assertFalse(acc.version_check(self.info(None), "")[0])
+        self.assertFalse(acc.version_check({}, "")[0])
+
+    def test_from_a_checkout_any_built_release_passes(self):
+        self.assertTrue(acc.version_check(self.info({"release_id": self.RUNNING}), "")[0])
+
+    def test_this_release_reads_the_id_next_to_ops(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as root:
+            release = Path(root) / "RELEASE"
+            release.write_text(f"id={self.RUNNING}\ngit_sha=2d1d6c553e57\n", encoding="utf-8")
+            self.assertEqual(acc.this_release(release), self.RUNNING)
+            self.assertEqual(acc.this_release(Path(root) / "missing"), "")
+        self.assertEqual(acc.this_release(), "", "a repository checkout has no RELEASE file")
