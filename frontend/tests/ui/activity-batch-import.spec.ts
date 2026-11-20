@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { installActivities, loginRunner, incompleteActivity, sampleActivity, openImport } from '../fixtures/activities';
 
-type Plan = 'ok' | 'duplicate' | 'error' | 'hold';
+type Plan = 'ok' | 'duplicate' | 'error' | 'hold' | 'busy-once' | 'expired';
 const gpx = (name: string) => ({ name, mimeType: 'application/gpx+xml', buffer: Buffer.from('<gpx version="1.1" creator="synthetic"></gpx>') });
 const tcx = (name: string) => ({ name, mimeType: 'application/xml', buffer: Buffer.from('<TrainingCenterDatabase></TrainingCenterDatabase>') });
 async function noOverflow(page: Page) { await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); }
@@ -12,9 +12,16 @@ async function batchApi(page: Page, plan: Record<string, Plan>) {
   let release!: () => void; const hold = new Promise<void>(resolve => { release = resolve; });
   await page.route('**/api/v1/gpx-imports', async route => {
     const name = /filename="([^"]+)"/.exec(route.request().postData() ?? '')?.[1] ?? '';
+    const firstAttempt = !uploaded.includes(name);
     uploaded.push(name);
     const mode = plan[name] ?? 'ok';
     if (mode === 'hold') await hold;
+    if (mode === 'busy-once' && firstAttempt) {
+      return route.fulfill({ status: 429, json: { error: { code: 'IMPORT_BUSY', message: '已有文件正在导入' } } });
+    }
+    if (mode === 'expired') {
+      return route.fulfill({ status: 401, json: { error: { code: 'AUTH_REQUIRED', message: '会话已过期' } } });
+    }
     if (mode === 'error') return route.fulfill({ status: 503, json: { error: { code: 'DEPENDENCY_UNAVAILABLE', message: '保存暂时失败，请稍后重试' } } });
     if (mode === 'duplicate') return route.fulfill({ status: 409, json: { error: { code: 'GPX_DUPLICATE', message: '此运动记录已经导入', details: [{ existing_activity_id: sampleActivity.id, duplicate_kind: 'raw' }] } } });
     const imported = { ...incompleteActivity, id: '44444444-4444-4444-8444-444444444444', title: name, visibility: 'private' as const };
@@ -94,4 +101,64 @@ test('a single file keeps the existing flow and the summary fits a phone screen'
   await picker(page).setInputFiles([gpx('long-name-for-a-phone-layout-check-0001.gpx'), gpx('b.gpx')]);
   await page.getByRole('button', { name: '导入 2 个 GPX', exact: true }).click();
   await expect(status(page)).toContainText('失败 1'); await noOverflow(page);
+});
+
+test('every TCX file uses the selected time zone and interpretation', async ({ page }) => {
+  await open(page);
+  const gpxApi = await batchApi(page, {});
+  const uploads: { file: string | undefined; timezone: FormDataEntryValue | null; mode: FormDataEntryValue | null; csrf: string | undefined }[] = [];
+  await page.route('**/api/v1/tcx-imports', async route => {
+    const request = route.request();
+    const headers = request.headers();
+    const body = request.postDataBuffer();
+    const form = await new Response(body ? Uint8Array.from(body) : null, { headers }).formData();
+    const file = form.get('file');
+    uploads.push({
+      file: file instanceof File ? file.name : undefined,
+      timezone: form.get('timezone'),
+      mode: form.get('time_mode'),
+      csrf: headers['x-csrf-token'],
+    });
+    return route.fulfill({ status: 201, json: { data: { activity: incompleteActivity, warnings: [] }, error: null } });
+  });
+  await openActivities(page);
+
+  await picker(page).setInputFiles([tcx('first.tcx'), tcx('second.tcx')]);
+  await page.getByLabel('时间解释', { exact: true }).selectOption('absolute');
+  await page.getByText('补充导入信息', { exact: true }).click();
+  await page.getByLabel('时区（可选）', { exact: true }).fill('Pacific/Auckland');
+  await page.getByRole('button', { name: '导入 2 个 TCX', exact: true }).click();
+
+  await expect(status(page)).toContainText('成功 2 · 重复跳过 0 · 失败 0');
+  expect(gpxApi.uploaded).toEqual([]);
+  expect(uploads).toEqual([
+    { file: 'first.tcx', timezone: 'Pacific/Auckland', mode: 'absolute', csrf: 'ui-csrf' },
+    { file: 'second.tcx', timezone: 'Pacific/Auckland', mode: 'absolute', csrf: 'ui-csrf' },
+  ]);
+});
+
+test('a busy import retries the same file before advancing the batch', async ({ page }) => {
+  await open(page);
+  const api = await batchApi(page, { 'busy.gpx': 'busy-once' });
+  await openActivities(page);
+
+  await picker(page).setInputFiles([gpx('busy.gpx'), gpx('next.gpx')]);
+  await page.getByRole('button', { name: '导入 2 个 GPX', exact: true }).click();
+
+  await expect(status(page)).toContainText('成功 2 · 重复跳过 0 · 失败 0');
+  await expect(page.getByRole('button', { name: '重试失败项', exact: true })).toHaveCount(0);
+  expect(api.uploaded).toEqual(['busy.gpx', 'busy.gpx', 'next.gpx']);
+});
+
+test('session expiry during a batch stops uploads and returns to sign-in', async ({ page }) => {
+  await open(page);
+  const api = await batchApi(page, { 'expired.gpx': 'expired' });
+  await openActivities(page);
+
+  await picker(page).setInputFiles([gpx('first.gpx'), gpx('expired.gpx'), gpx('unsent.gpx')]);
+  await page.getByRole('button', { name: '导入 3 个 GPX', exact: true }).click();
+
+  await expect(page).toHaveURL(/\/admin\?reason=expired&next=%2Factivities$/);
+  await expect(page.getByTestId('import-batch')).toHaveCount(0);
+  expect(api.uploaded).toEqual(['first.gpx', 'expired.gpx']);
 });
