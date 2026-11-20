@@ -51,10 +51,12 @@ jobs:
     timeout-minutes: 30
     env:
       APP_ENV: test
-      # A disposable native cluster with loopback-only trust; never use for deployment.
-      DATABASE_URL: postgresql+psycopg://run_note@127.0.0.1:55432/run_note_ci
-      TEST_DATABASE_URL: postgresql+psycopg://run_note@127.0.0.1:55432/run_note_test
-      TEST_DATABASE_ALLOWED_TARGETS: 127.0.0.1:55432/run_note_test
+      # A disposable native cluster with loopback-only trust; never use for deployment. The port
+      # stays below the ephemeral ranges (Linux 32768-60999, macOS 49152-65535), where any client
+      # socket can hold it.
+      DATABASE_URL: postgresql+psycopg://run_note@127.0.0.1:15432/run_note_ci
+      TEST_DATABASE_URL: postgresql+psycopg://run_note@127.0.0.1:15432/run_note_test
+      TEST_DATABASE_ALLOWED_TARGETS: 127.0.0.1:15432/run_note_test
     defaults:
       run:
         working-directory: backend
@@ -79,9 +81,9 @@ jobs:
           # jit=off: PGDG packages are built with LLVM (Homebrew's are not), so on Linux the planner
           # JIT-compiles expensive PostGIS queries on first use, which can exceed this suite's 3-5 s
           # statement budgets. It is also the recommended production setting (docs/66).
-          "$pg_bin/pg_ctl" -D "$RUNNER_TEMP/run-note-pg" -l "$RUNNER_TEMP/run-note-pg.log" -o "-h 127.0.0.1 -p 55432 -k $RUNNER_TEMP -c jit=off" -w start
-          "$pg_bin/createdb" -h 127.0.0.1 -p 55432 -U run_note run_note_ci
-          "$pg_bin/createdb" -h 127.0.0.1 -p 55432 -U run_note run_note_test
+          "$pg_bin/pg_ctl" -D "$RUNNER_TEMP/run-note-pg" -l "$RUNNER_TEMP/run-note-pg.log" -o "-h 127.0.0.1 -p 15432 -k $RUNNER_TEMP -c jit=off" -w start
+          "$pg_bin/createdb" -h 127.0.0.1 -p 15432 -U run_note run_note_ci
+          "$pg_bin/createdb" -h 127.0.0.1 -p 15432 -U run_note run_note_test
       - run: python -m venv .venv
       - run: .venv/bin/python -m pip install --require-hashes -r requirements.lock
       # Most integration modules assume an already-migrated isolated test database (README
@@ -114,9 +116,9 @@ jobs:
     timeout-minutes: 45
     env:
       APP_ENV: test
-      DATABASE_URL: postgresql+psycopg://run_note@127.0.0.1:55432/run_note_ci
-      TEST_DATABASE_URL: postgresql+psycopg://run_note@127.0.0.1:55432/run_note_test
-      TEST_DATABASE_ALLOWED_TARGETS: 127.0.0.1:55432/run_note_test
+      DATABASE_URL: postgresql+psycopg://run_note@127.0.0.1:15432/run_note_ci
+      TEST_DATABASE_URL: postgresql+psycopg://run_note@127.0.0.1:15432/run_note_test
+      TEST_DATABASE_ALLOWED_TARGETS: 127.0.0.1:15432/run_note_test
     defaults:
       run:
         working-directory: backend
@@ -130,9 +132,9 @@ jobs:
           brew install postgresql@18 postgis
           pg_bin="$(brew --prefix postgresql@18)/bin"
           "$pg_bin/initdb" -D "$RUNNER_TEMP/run-note-pg" -U run_note -A trust --no-locale -E UTF8
-          "$pg_bin/pg_ctl" -D "$RUNNER_TEMP/run-note-pg" -l "$RUNNER_TEMP/run-note-pg.log" -o "-h 127.0.0.1 -p 55432 -k $RUNNER_TEMP" -w start
-          "$pg_bin/createdb" -h 127.0.0.1 -p 55432 -U run_note run_note_ci
-          "$pg_bin/createdb" -h 127.0.0.1 -p 55432 -U run_note run_note_test
+          "$pg_bin/pg_ctl" -D "$RUNNER_TEMP/run-note-pg" -l "$RUNNER_TEMP/run-note-pg.log" -o "-h 127.0.0.1 -p 15432 -k $RUNNER_TEMP" -w start
+          "$pg_bin/createdb" -h 127.0.0.1 -p 15432 -U run_note run_note_ci
+          "$pg_bin/createdb" -h 127.0.0.1 -p 15432 -U run_note run_note_test
       - run: python -m venv .venv
       - run: .venv/bin/python -m pip install --require-hashes -r requirements.lock
       - name: Migrate the isolated test database to head
