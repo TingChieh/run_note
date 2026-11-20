@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 from uuid import uuid4
 
 from app.modules.statistics import service
@@ -9,6 +10,7 @@ from app.modules.statistics.records import (
     build_year_rows,
     fill_months,
     pace_gain,
+    run_values,
     shift_to_year,
     weekday_counts,
     weekly_active_days,
@@ -68,6 +70,19 @@ def first(pace, activity_id=None):
         duration_seconds=Decimal(pace) * 5,
         avg_pace_seconds_per_km=Decimal(pace),
     )
+
+
+def test_summary_and_single_run_share_half_even_pace():
+    assert service.pace_seconds_per_km(Decimal("1.0005"), Decimal(1000)) == Decimal("1.000")
+    assert service.pace_seconds_per_km(Decimal("1.0015"), Decimal(1000)) == Decimal("1.002")
+    assert summary(1, 1000, "1.0005").avg_pace_seconds_per_km == Decimal("1.000")
+    row = SimpleNamespace(
+        id=uuid4(),
+        activity_date=date(2026, 1, 2),
+        distance_m=Decimal(1000),
+        duration_seconds=Decimal("1.0015"),
+    )
+    assert run_values(row)["avg_pace_seconds_per_km"] == Decimal("1.002")
 
 
 def test_best_bands_follow_the_distance_classifier():

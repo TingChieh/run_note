@@ -23,8 +23,8 @@ export class ActivityError extends Error {
   constructor(message: string, public status: number, public code = 'REQUEST_FAILED', public existingActivityId: string | null = null, public duplicateKind: string | null = null) { super(message); }
 }
 function invalid(): never { throw new ActivityError('活动服务返回了无效响应，请刷新重试', 502, 'INVALID_RESPONSE'); }
-const calendarDate = (value: unknown): value is string => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
-function number(value: Metric): number | null {
+export const calendarDate = (value: unknown): value is string => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
+export function number(value: Metric): number | null {
   if (value === null || (typeof value === 'string' && !/^\d+(\.\d+)?$/.test(value))) return null;
   const parsed = Number(value); return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
