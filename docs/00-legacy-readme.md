@@ -96,13 +96,14 @@ S2-03 认证还需在服务端进程环境安全配置 `AUTH_RATE_HASH_KEY`（�
 
 本轮保留原有8000/5173服务（认证缺密钥），可用认证实例为 **http://127.0.0.1:5183**（API8001）。实例仍运行时直接访问，不重复启动；停止后分别从仓库根目录启动：
 
-日常测试可以双击根目录 `backend.command`，在菜单中启动、关闭、重启后端或查看状态/日志。该脚本只管理本仓库的后端，默认端口8001、前端来源5183；复用现有 `.env` 与本地密钥，不执行数据库迁移或重置。前端仍使用下方的独立启动命令。
+日常测试可以双击根目录 `backend.command`，在菜单中启动、关闭、重启后端或查看状态/日志。该脚本只管理本仓库的后端，默认端口8001、前端来源5183；复用现有 `.env` 与本地密钥，不执行数据库迁移或重置。启动前会只读核对数据库版本：需要迁移时不启动，并列出待执行的迁移和升级命令（`check` 可单独执行这项检查）。启动和查看状态时，如果本仓库的前端开发服务端口与后端接受的来源不一致，会给出提示和修正命令：`pnpm dev` 默认 5173，脚本默认来源 5183，用 `pnpm dev --port 5183` 或 `SITE_ORIGIN=http://127.0.0.1:5173 ./backend.command restart` 对齐。前端仍使用下方的独立启动命令。
 
 ```bash
 ./backend.command start
 ./backend.command stop
 ./backend.command restart
 ./backend.command status
+./backend.command check
 ./backend.command logs
 # 可选：使用另一后端端口/前端来源（后续关闭也需传入同一端口）
 BACKEND_PORT=8002 SITE_ORIGIN=http://127.0.0.1:5184 ./backend.command start

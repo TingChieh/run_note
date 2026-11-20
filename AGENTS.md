@@ -189,7 +189,7 @@ infra/native/tests/offsite-e2e.sh                                   # 需 PG_BIN
 infra/native/tests/caddy-instances.sh                                # 需 caddy；沙箱里的真实 Caddy 进程，验证 staging Basic Auth / production 维护页与上线
 ```
 
-本地后端生命周期（仓库根目录，仅管理本仓库后端，默认端口 8001）：`./backend.command start|stop|restart|status|logs`。
+本地后端生命周期（仓库根目录，仅管理本仓库后端，默认端口 8001）：`./backend.command start|stop|restart|status|check|logs`。`check` 只读核对数据库 revision 与迁移 head；`start`/`restart` 先做同样的检查，数据库落后、未初始化或比代码新时拒绝启动并列出待执行的迁移，**从不自动迁移**（开发库升级仍按第 6、11 节先获授权并备份）。`start`/`status` 还会比对本仓库正在运行的 vite 开发服务端口与 `SITE_ORIGIN`：不一致时提示（否则登录报“请求来源或CSRF令牌不合法”）。`pnpm dev` 默认端口是 5173，脚本默认来源是 5183，二者需显式对齐。
 
 **Shell 脚本写法（`infra/native/`）**：不要写 `A && B || C`（如 `[ -f x ] && [ -n y ] || die "…"`），一律用 `if …; then …; fi`。CI 上的 ShellCheck 版本比开发机旧，会对这种写法报 SC2015，而本机的 ShellCheck 放过它，结果只有推送后才发现。`tests/test_shell_style.py` 在本机就会拦住这个写法；推送前仍需跑上面的 `shellcheck` 命令与 `unittest`。macOS 自带 bash 3.2：不要用 `mapfile`，也没有 `timeout`。
 
