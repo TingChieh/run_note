@@ -1,6 +1,7 @@
 import json
 from calendar import monthrange
 from datetime import date
+from itertools import groupby
 from uuid import UUID
 
 from sqlalchemy import func, select, text, update
@@ -9,6 +10,8 @@ from app.core.errors import ApiError
 from app.modules.activities.model import Activity
 from app.modules.activities.schema import ActivityList, ActivityView
 from app.modules.gpx.model import ActivitySegment
+from app.modules.gpx.queries import replay_points
+from app.modules.gpx.replay import ReplayPoint, build_replay
 from app.modules.sharing.model import ActivityShareLink
 from app.modules.users.model import User
 
@@ -158,6 +161,19 @@ def route(db, owner, identifier):
         "start": rows[0].first["coordinates"] if rows else None,
         "end": rows[-1].last["coordinates"] if rows else None,
     }
+
+
+def replay(db, owner, identifier):
+    activity = owned_activity(db, owner, identifier)
+    rows = replay_points(db, owner, identifier)
+    if not rows:
+        raise ApiError(404, "REPLAY_UNAVAILABLE", "此活动没有可回放的轨迹")
+    segments = [
+        (index, [ReplayPoint(r.lon, r.lat, r.recorded_at, r.edge_m) for r in group])
+        for index, group in groupby(rows, key=lambda r: r.segment_index)
+    ]
+    pace = activity.avg_pace_seconds_per_km
+    return build_replay(segments, float(pace) if pace else None)
 
 
 def delete_activities(db, owner, identifiers):

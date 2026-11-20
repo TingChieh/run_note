@@ -6,7 +6,7 @@
   import { createRouteMapStyle, applyMapTheme, type BasemapPreference, type BasemapStyle } from '#lib/api/map-style.ts';
   import BasemapPicker from './BasemapPicker.svelte';
   import { createBasemapController } from '#lib/map/basemap-controller.ts';
-  import { loadMapLibre } from '#lib/map/maplibre.ts';
+  import { loadMapLibre, startAttributionCollapsed } from '#lib/map/maplibre.ts';
   import { watchSystemTheme } from './system-theme';
   import { whenNearViewport } from '#lib/near-viewport.ts';
   let {
@@ -57,7 +57,8 @@
     fittedHeight = 0;
   let dark = false,
     stopTheme: (() => void) | undefined,
-    stopWaiting: (() => void) | undefined;
+    stopWaiting: (() => void) | undefined,
+    stopAttribution: (() => void) | undefined;
   function loadBasemap() {
     basemapController?.retry();
   }
@@ -118,6 +119,7 @@
           observer = new ResizeObserver(() => scheduleFit());
           observer.observe(container);
           map.addControl(new lib.AttributionControl({ compact: true }), 'bottom-right');
+          stopAttribution = startAttributionCollapsed(container);
           map.addControl(new lib.NavigationControl({ showCompass: false }), 'top-right');
           // Wait for the local GeoJSON source to render, independently of external basemap resources.
           map.on('render', () => {
@@ -245,6 +247,7 @@
     disposed = true;
     stopWaiting?.();
     stopTheme?.();
+    stopAttribution?.();
     basemapController?.destroy();
     observer?.disconnect();
     if (resizeFrame) cancelAnimationFrame(resizeFrame);

@@ -8,6 +8,21 @@ export const sampleActivity: Activity = {
   metrics_version: 'gpx-v1', has_route: true, created_at: '2026-10-13T01:00:00Z'
 };
 export const incompleteActivity: Activity = { ...sampleActivity, id: '22222222-2222-4222-8222-222222222222', title: '缺少时间的长标题记录，用于检查手机布局和质量提示', activity_date: '2026-10-12', elapsed_seconds: null, avg_pace_seconds_per_km: null, temporal_quality: 'incomplete', visibility: 'unlisted', has_route: false, quality_summary: { missing_time_count: 2, warnings: ['TIME_INCOMPLETE'] } };
+/** 121 synthetic points over 10 minutes at ~3 m/s in one segment, then a 2-minute signal gap and a short second segment. */
+export function syntheticReplay(mode: 'real' | 'simulated' = 'real') {
+  const segment = (index: number, from: number, count: number, start: number, distance: number, lon: number) => ({
+    segment_index: index,
+    coordinates: Array.from({ length: count }, (_, i) => [lon + i * 0.00006, 31.23 + Math.sin(i / 12) * 0.0006]),
+    elapsed_s: Array.from({ length: count }, (_, i) => start + i * 5),
+    moving_s: Array.from({ length: count }, (_, i) => from + i * 5),
+    distance_m: Array.from({ length: count }, (_, i) => distance + i * 15),
+    pace_s_per_km: mode === 'real' ? Array.from({ length: count }, (_, i) => (i ? 333.3 : null)) : null,
+  });
+  return {
+    mode, point_count: 141, interpolated_point_count: 0, distance_m: 2085, elapsed_seconds: 815, moving_seconds: 695,
+    segments: [segment(0, 0, 121, 0, 0, 121.48), segment(1, 600, 20, 720, 1800, 121.4875)],
+  };
+}
 export async function loginRunner(page: Page) {
   await page.goto('/admin?next=%2Fsettings');
   await expect(page.getByRole('button', { name: '登录', exact: true })).toBeEnabled();
@@ -41,6 +56,7 @@ export async function installActivities(page: Page) {
       state.records = state.records.filter(record => !ids.includes(record.id));
       return send({ deleted: true, deleted_count: ids.length });
     }
+    if (path.endsWith('/replay')) return send(syntheticReplay());
     if (path.endsWith('/route')) return send({ type: 'FeatureCollection', start: [121.48,31.23], end: [121.49,31.237], features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: [[121.48,31.23],[121.485,31.235],[121.49,31.237]] }, properties: { segment_index: 0, point_count: 3 } }] });
     if (path.endsWith('/shares') && req.method() === 'GET') return send({ items: state.links });
     if (path.endsWith('/shares') && req.method() === 'POST') {

@@ -4,9 +4,12 @@ import { BASEMAP_TIMEOUT_MS, BASEMAP_URL, applyMapTheme, prepareBasemapStyle, re
 import { watchSystemTheme } from '#lib/components/system-theme.ts';
 
 // Owns external layers only. Local sources, markers, selections, camera and handlers survive.
+// Video export only: `fixed` pins one style regardless of the saved preference and site theme.
 export function createBasemapController(map: LibreMap, beforeLayer: string,
-  update: (state: { status: BasemapStatus; preference: BasemapPreference; style: BasemapStyle }) => void, routeColor?: () => string | undefined) {
+  update: (state: { status: BasemapStatus; preference: BasemapPreference; style: BasemapStyle }) => void, routeColor?: () => string | undefined,
+  { fixed }: { fixed?: BasemapStyle } = {}) {
   let preference = savedBasemapPreference(), dark = false, disposed = false;
+  const chosen = () => fixed ?? resolveBasemap(preference, dark);
   let retryAssets = false;
   let installing = false;
   let atlas: { url: string; ready: Promise<void> } | undefined;
@@ -15,7 +18,7 @@ export function createBasemapController(map: LibreMap, beforeLayer: string,
   let abort: AbortController | undefined, timer: ReturnType<typeof setTimeout> | undefined;
   const publish = () => {
     applyMapTheme(map, status === 'failed' ? dark : active === 'dark', routeColor?.());
-    update({ status, preference, style: resolveBasemap(preference, dark) });
+    update({ status, preference, style: chosen() });
   };
   function clear() {
     generation++; abort?.abort(); abort = undefined; clearTimeout(timer); timer = undefined;
@@ -30,7 +33,7 @@ export function createBasemapController(map: LibreMap, beforeLayer: string,
   }
   async function load() {
     if (disposed) return;
-    clear(); active = resolveBasemap(preference, dark); status = 'loading'; publish();
+    clear(); active = chosen(); status = 'loading'; publish();
     const token = generation, controller = new AbortController(); abort = controller;
     timer = setTimeout(() => fail(token), BASEMAP_TIMEOUT_MS);
     try {
@@ -90,12 +93,12 @@ export function createBasemapController(map: LibreMap, beforeLayer: string,
   let initialized = false;
   const stopPreference = watchBasemapPreference(value => {
     preference = value;
-    if (initialized && active !== resolveBasemap(preference, dark)) void load();
+    if (initialized && active !== chosen()) void load();
     else if (initialized) publish();
   });
   const stopTheme = watchSystemTheme(value => {
     dark = value;
-    if (initialized && active !== resolveBasemap(preference, dark)) void load();
+    if (initialized && active !== chosen()) void load();
     else if (initialized) publish();
   });
   initialized = true; void load();

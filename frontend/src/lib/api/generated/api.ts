@@ -706,6 +706,25 @@ export interface RegisterInput {
   timezone?: string;
 }
 
+export interface ReplaySegment {
+  segment_index: number;
+  coordinates: ([number, number])[];
+  elapsed_s: number[];
+  moving_s: number[];
+  distance_m: number[];
+  pace_s_per_km: (number | null)[] | null;
+}
+
+export interface ReplayView {
+  mode: 'real' | 'simulated';
+  point_count: number;
+  interpolated_point_count: number;
+  distance_m: number;
+  elapsed_seconds: number;
+  moving_seconds: number;
+  segments: ReplaySegment[];
+}
+
 export interface Report {
   start: string;
   end: string;
@@ -1267,6 +1286,9 @@ export interface ApiOperations {
     patch: { body: ActivityUpdate; response: ActivityView };
     delete: { body: never; response: ActivityDeleted };
   };
+  '/api/v1/activities/{identifier}/replay': {
+    get: { body: never; response: ReplayView };
+  };
   '/api/v1/activities/{identifier}/route': {
     get: { body: never; response: RouteView };
   };
@@ -1469,6 +1491,9 @@ export interface ApiOperations {
   '/api/v1/showcase/activities/{identifier}': {
     get: { body: never; response: ShowcaseActivity };
   };
+  '/api/v1/showcase/activities/{identifier}/replay': {
+    get: { body: never; response: ReplayView };
+  };
   '/api/v1/showcase/activities/{identifier}/route': {
     get: { body: never; response: RouteView };
   };
@@ -1528,6 +1553,9 @@ export interface ApiOperations {
   };
   '/api/v1/showcase/users/{username}/activities/{identifier}': {
     get: { body: never; response: ShowcaseActivity };
+  };
+  '/api/v1/showcase/users/{username}/activities/{identifier}/replay': {
+    get: { body: never; response: ReplayView };
   };
   '/api/v1/showcase/users/{username}/activities/{identifier}/route': {
     get: { body: never; response: RouteView };
@@ -1639,6 +1667,9 @@ export const API_OPERATIONS = {
     get: [],
     patch: [],
     delete: [],
+  },
+  '/api/v1/activities/{identifier}/replay': {
+    get: [],
   },
   '/api/v1/activities/{identifier}/route': {
     get: [],
@@ -1842,6 +1873,9 @@ export const API_OPERATIONS = {
   '/api/v1/showcase/activities/{identifier}': {
     get: [],
   },
+  '/api/v1/showcase/activities/{identifier}/replay': {
+    get: [],
+  },
   '/api/v1/showcase/activities/{identifier}/route': {
     get: [],
   },
@@ -1900,6 +1934,9 @@ export const API_OPERATIONS = {
     get: [],
   },
   '/api/v1/showcase/users/{username}/activities/{identifier}': {
+    get: [],
+  },
+  '/api/v1/showcase/users/{username}/activities/{identifier}/replay': {
     get: [],
   },
   '/api/v1/showcase/users/{username}/activities/{identifier}/route': {

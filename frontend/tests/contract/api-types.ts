@@ -13,6 +13,7 @@ import type { Context, Create, Report, ReportList } from '#lib/api/ai.ts';
 import type { User } from '#lib/api/auth.ts';
 import type { GlobalFootprints, Provinces, Streaks } from '#lib/api/milestones.ts';
 import type { Records } from '#lib/api/records.ts';
+import type { ReplayData } from '#lib/api/replay.ts';
 import type { RouteGroupDetail, RouteGroupList } from '#lib/api/route-groups.ts';
 import type { CreatedShare, PublicActivity, Share } from '#lib/api/sharing.ts';
 import type { ShowcaseProfile } from '#lib/api/showcase.ts';
@@ -45,6 +46,8 @@ export const responses = {
   route: (v: ResponseData<'/api/v1/activities/{identifier}/route', 'get'>): RouteShape => v,
   showcaseRoute: (v: ResponseData<'/api/v1/showcase/activities/{identifier}/route', 'get'>): RouteShape => v,
   adminRoute: (v: ResponseData<'/api/v1/admin/users/{user_id}/activities/{activity_id}/route', 'get'>): RouteShape => v,
+  replay: (v: ResponseData<'/api/v1/activities/{identifier}/replay', 'get'>): ReplayData => v,
+  showcaseReplay: (v: ResponseData<'/api/v1/showcase/activities/{identifier}/replay', 'get'>): ReplayData => v,
   footprints: (v: ResponseData<'/api/v1/footprints', 'get'>): Footprints => v,
   showcaseFootprints: (v: ResponseData<'/api/v1/showcase/footprints', 'get'>): Footprints => v,
   global: (v: ResponseData<'/api/v1/footprints/global', 'get'>): GlobalFootprints => v,

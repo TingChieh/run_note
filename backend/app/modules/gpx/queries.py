@@ -55,3 +55,24 @@ def route_distance(db, segments: list[Segment]) -> Decimal:
         ).scalars()
         total += sum((Decimal(str(value)) for value in lengths), Decimal(0))
     return total
+
+
+def replay_points(db, owner, activity_id) -> list:
+    """Stored points in route order, each with the geodesic length of the edge ending at it.
+
+    ST_Distance on geography is the same spheroid measure as route_distance's ST_Length, so the
+    summed edges reproduce the stored track distance instead of a client-side approximation.
+    """
+    return db.execute(
+        text("""SELECT s.segment_index, ST_X(p.position) AS lon, ST_Y(p.position) AS lat,
+        p.recorded_at,
+        COALESCE(ST_Distance(p.position::geography,
+                 (LAG(p.position) OVER w)::geography), 0) AS edge_m
+        FROM activity_segments s
+        JOIN activities a ON a.id = s.activity_id
+        JOIN activity_points p ON p.segment_id = s.id
+        WHERE a.id = :id AND a.user_id = :owner
+        WINDOW w AS (PARTITION BY s.id ORDER BY p.point_index)
+        ORDER BY s.segment_index, p.point_index"""),
+        {"id": activity_id, "owner": owner},
+    ).all()

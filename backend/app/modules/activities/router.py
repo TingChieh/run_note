@@ -15,6 +15,7 @@ from app.modules.activities.schema import (
     ActivityList,
     ActivityUpdate,
     ActivityView,
+    ReplayView,
     RouteView,
 )
 from app.modules.footprints.worker import wake_footprint_worker
@@ -120,5 +121,17 @@ def route(
     db: Annotated[Session, Depends(get_session)],
 ):
     data = service.route(db, identity[1].id, identifier)
+    db.commit()
+    return envelope(request, data)
+
+
+@router.get("/{identifier}/replay", response_model=ApiResponse[ReplayView])
+def replay(
+    identifier: UUID,
+    request: Request,
+    identity: Annotated[tuple, Depends(get_identity)],
+    db: Annotated[Session, Depends(get_session)],
+):
+    data = service.replay(db, identity[1].id, identifier)
     db.commit()
     return envelope(request, data)

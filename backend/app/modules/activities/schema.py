@@ -147,3 +147,22 @@ class RouteView(ExactView):
     features: list[RouteFeature]
     start: LonLat | None
     end: LonLat | None
+
+
+class ReplaySegment(ExactView):
+    segment_index: int
+    coordinates: list[LonLat]
+    elapsed_s: list[float]
+    moving_s: list[float]
+    distance_m: list[float]
+    pace_s_per_km: list[float | None] | None
+
+
+class ReplayView(ExactView):
+    mode: Literal["real", "simulated"]
+    point_count: int
+    interpolated_point_count: int
+    distance_m: float
+    elapsed_seconds: float
+    moving_seconds: float
+    segments: list[ReplaySegment]
