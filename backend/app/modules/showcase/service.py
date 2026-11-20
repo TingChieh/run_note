@@ -127,6 +127,32 @@ def route_view(value):
     }
 
 
+REPLAY_KEYS = (
+    "mode",
+    "point_count",
+    "interpolated_point_count",
+    "distance_m",
+    "elapsed_seconds",
+    "moving_seconds",
+)
+REPLAY_SEGMENT_KEYS = (
+    "segment_index",
+    "coordinates",
+    "elapsed_s",
+    "moving_s",
+    "distance_m",
+    "pace_s_per_km",
+)
+
+
+def replay_view(value):
+    return {key: value[key] for key in REPLAY_KEYS} | {
+        "segments": [
+            {key: segment[key] for key in REPLAY_SEGMENT_KEYS} for segment in value["segments"]
+        ]
+    }
+
+
 def footprint_view(value):
     keys = (
         "type",

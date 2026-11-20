@@ -178,7 +178,7 @@ def test_all_owner_records_and_precise_route_are_public_but_private_fields_are_n
     for key in ["email", "user_id", "password_hash", "filename"]:
         assert key not in public.json()["data"]
     assert visitor.get(prefix + f"/activities/{uuid4()}").status_code == 404
-    for suffix in ["", "/route"]:
+    for suffix in ["", "/route", "/replay"]:
         assert (
             visitor.get(prefix + "/activities/" + ids["other_activity"] + suffix).status_code == 404
         )
@@ -188,6 +188,11 @@ def test_all_owner_records_and_precise_route_are_public_but_private_fields_are_n
     assert route.json()["data"]["features"]
     assert route.headers["cache-control"] == "no-store"
     assert "set-cookie" not in route.headers
+    path = f"/activities/{activity['id']}/replay"
+    replay = visitor.get(prefix + path)
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["data"] == admin.get("/api/v1" + path).json()["data"]
+    assert replay.json()["data"]["segments"]
 
 
 def test_showcase_statistics_goals_footprints_and_report_reads(site):

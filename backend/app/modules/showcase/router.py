@@ -12,7 +12,7 @@ from app.core.errors import ApiError
 from app.core.responses import ApiResponse
 from app.modules.activities import service as activities
 from app.modules.activities.router import envelope
-from app.modules.activities.schema import RouteView
+from app.modules.activities.schema import ReplayView, RouteView
 from app.modules.footprints.cache import all_footprints_response
 from app.modules.footprints.global_atlas import global_summary
 from app.modules.footprints.provinces import province_summary
@@ -122,6 +122,11 @@ def activity(identifier: UUID, request: Request, db: DB, owner: Owner):
 @router.get("/activities/{identifier}/route", response_model=ApiResponse[RouteView])
 def route(identifier: UUID, request: Request, db: DB, owner: Owner):
     return envelope(request, service.route_view(activities.route(db, owner.id, identifier)))
+
+
+@router.get("/activities/{identifier}/replay", response_model=ApiResponse[ReplayView])
+def replay(identifier: UUID, request: Request, db: DB, owner: Owner):
+    return envelope(request, service.replay_view(activities.replay(db, owner.id, identifier)))
 
 
 @router.get("/statistics/summary", response_model=ApiResponse[Summary])

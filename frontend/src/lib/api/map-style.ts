@@ -155,3 +155,20 @@ export function applyMapTheme(map: MapLibreMap, dark: boolean, routeColor?: stri
   if (map.getLayer('footprint-lines')) map.setPaintProperty('footprint-lines', 'line-color', colors);
   if (map.getLayer('footprint-points')) map.setPaintProperty('footprint-points', 'circle-color', colors);
 }
+
+// Replay layers: the untravelled track recedes, the travelled part takes the route colour.
+const replayPalette = (dark: boolean) => ({
+  base: dark ? '#6f6a64' : '#a7b8af',
+  progress: dark ? '#77d4ac' : '#14785b',
+});
+export const REPLAY_BASE_LAYERS = ['replay-base', 'replay-base-points'] as const;
+export const REPLAY_PROGRESS_LAYERS = ['replay-done', 'replay-done-points', 'replay-tip'] as const;
+
+export function applyReplayTheme(map: MapLibreMap, dark: boolean): void {
+  const palette = replayPalette(dark);
+  for (const id of [...REPLAY_BASE_LAYERS, ...REPLAY_PROGRESS_LAYERS]) {
+    if (!map.getLayer(id)) continue;
+    const color = (REPLAY_BASE_LAYERS as readonly string[]).includes(id) ? palette.base : palette.progress;
+    map.setPaintProperty(id, id.endsWith('points') ? 'circle-color' : 'line-color', color);
+  }
+}

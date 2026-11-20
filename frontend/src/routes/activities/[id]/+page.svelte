@@ -18,6 +18,8 @@
   import ActivityWallPreview from '#lib/components/ActivityWallPreview.svelte';
   import ActivityActions from '#lib/components/ActivityActions.svelte';
   import ActivityPosterDialog from '#lib/components/ActivityPosterDialog.svelte';
+  import ActivityReplayDialog from '#lib/components/ActivityReplayDialog.svelte';
+  import ActivityShareMenu from '#lib/components/ActivityShareMenu.svelte';
   import {
     ActivityError,
     readActivity as scoped_readActivity,
@@ -45,6 +47,22 @@
   // The map keeps showing the previous route while a switched record's route loads,
   // so the MapLibre instance is updated in place rather than torn down.
   let mapRoute = $state.raw<Route | null>(null);
+  // The record's date and totals for the exported video's summary row; missing values are left out.
+  const videoFacts = $derived.by((): [string, string][] => {
+    if (!activity) return [];
+    const facts: [string, string][] = [
+      ['日期', formatDate(activity.activity_date)],
+      ['总距离', formatDistance(activity.distance_m)],
+      [activity.timer_seconds != null ? '设备用时' : '经过时间', formatDuration(activityDuration(activity))],
+      ['平均配速', formatPace(activity.avg_pace_seconds_per_km)],
+      ['平均心率', activity.avg_heart_rate_bpm == null ? '—' : `${activity.avg_heart_rate_bpm} bpm`],
+      ['热量', activity.calories_kcal == null ? '—' : `${activity.calories_kcal} kcal`],
+      ['步数', activity.steps == null ? '—' : `${activity.steps} 步`],
+    ];
+    return facts.filter(([, value]) => value !== '—');
+  });
+  let poster = $state<ReturnType<typeof ActivityPosterDialog>>(),
+    replay = $state<ReturnType<typeof ActivityReplayDialog>>();
   let mounted = $state(false),
     activityToken = 0,
     routeToken = 0;
@@ -224,7 +242,10 @@
       <div class="hero-distance" aria-hidden="true">
         <span>本次距离</span><strong>{formatDistance(activity.distance_m)}</strong>
       </div>
-      {#if activity.has_route}<ActivityPosterDialog activityId={activity.id} />{/if}
+      {#if activity.has_route}<ActivityShareMenu
+          onposter={(from) => poster?.open(from)}
+          onvideo={(from) => replay?.openExport(from)}
+        /><ActivityPosterDialog bind:this={poster} activityId={activity.id} showTrigger={false} />{/if}
     </div>
   </section>
   {#if view.manage}<ActivityActions
@@ -286,12 +307,20 @@
       </div>
     </section>
     <section class="route-panel" aria-labelledby="route-title">
-      <div class="panel-heading">
-        <div class="route-heading">
+      <div class="panel-heading route-panel-heading">
+        <div>
           <h2 id="route-title">路线</h2>
-          <span class="route-tag">{activity.has_route ? '个人轨迹' : '运动记录'}</span>
+          <p class="section-caption">本次运动轨迹</p>
         </div>
-        <p class="section-caption">本次运动轨迹</p>
+        <div class="route-actions">
+          <span class="route-tag">{activity.has_route ? '个人轨迹' : '运动记录'}</span>
+          {#if activity.has_route}<ActivityReplayDialog
+              bind:this={replay}
+              activityId={activity.id}
+              facts={videoFacts}
+              onauthrequired={expired}
+            />{/if}
+        </div>
       </div>
       {#if mapRoute}<div class="route-stage" class:stale={!route}>
           <RouteMap route={mapRoute} spacious />{#if !route && routeLoading}<p class="route-swap-status" role="status">
@@ -525,12 +554,17 @@
     color: var(--muted-foreground);
     font-size: var(--text-small);
   }
-  .route-heading {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-    justify-content: space-between;
+  /* Tag and replay button share a column beside title and caption, so the heading keeps the metric panel's height. */
+  .route-panel-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
+    column-gap: var(--space-4);
+  }
+  .route-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
   }
   .route-tag {
     padding: 0.25rem 0.625rem;

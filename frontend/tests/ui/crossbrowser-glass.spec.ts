@@ -105,12 +105,13 @@ test('an open dialog keeps the page from scrolling underneath', async ({ page, i
   await loginRunner(page);
   if (isMobile) {
     await page.goto(`/activities/${sampleActivity.id}`);
-    await expect(page.getByRole('button', { name: '生成分享图' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: '分享', exact: true })).toBeEnabled();
     await page.evaluate(() => {
       document.body.style.minHeight = '240vh';
       window.scrollTo(0, 240);
     });
-    await page.getByRole('button', { name: '生成分享图' }).click();
+    await page.getByRole('button', { name: '分享', exact: true }).click();
+    await page.getByRole('button', { name: '生成分享图', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: '生成分享图' });
     await expect(dialog).toBeVisible();
     await expect(dialog).toHaveCSS('opacity', '1');
@@ -252,9 +253,10 @@ test('phone navigation and the share dialog finish fully visible', async ({ page
   await expect(nav).toHaveCSS('opacity', '1');
   await page.screenshot({ path: 'test-results/after-iphone-nav.png' });
   await page.getByRole('button', { name: '关闭导航' }).click();
-  const share = page.getByRole('button', { name: '生成分享图' });
+  const share = page.getByRole('button', { name: '分享', exact: true });
   await expect(share).toBeEnabled();
   await share.click();
+  await page.getByRole('button', { name: '生成分享图', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '生成分享图' });
   await expect(dialog).toBeVisible();
   await expect(dialog).toHaveCSS('opacity', '1');

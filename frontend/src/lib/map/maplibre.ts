@@ -8,3 +8,20 @@ export async function loadMapLibre() {
   lib.setWorkerUrl(worker.default);
   return lib;
 }
+
+/**
+ * MapLibre expands the compact attribution the first time it receives content (when the basemap
+ * arrives). Collapse that one automatic expansion so the map starts with just the ⓘ button; the
+ * attribution stays one click away and toggles normally afterwards.
+ */
+export function startAttributionCollapsed(container: HTMLElement): () => void {
+  const element = container.querySelector('.maplibregl-ctrl-attrib');
+  if (!element) return () => {};
+  const observer = new MutationObserver(() => {
+    if (!element.classList.contains('maplibregl-compact-show')) return;
+    element.classList.remove('maplibregl-compact-show');
+    observer.disconnect();
+  });
+  observer.observe(element, { attributes: true, attributeFilter: ['class'] });
+  return () => observer.disconnect();
+}

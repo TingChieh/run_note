@@ -2,19 +2,18 @@
   import { onMount, tick } from 'svelte';
   import { watchSystemTheme } from '#lib/components/system-theme.ts';
   import { page } from '$app/state';
-  import { contextAPI, viewContext } from '#lib/api/view-context.ts';
+  import { contextAPI, viewContext, viewsOwnRecords } from '#lib/api/view-context.ts';
   import { ActivityError } from '#lib/api/activities.ts';
   import { loadActivityPoster, type ActivityPosterData } from '#lib/share/activity-poster-data.ts';
   import { activityPosterHasRoute, activityPosterStyles, renderActivityPoster, type ActivityPosterStyle } from '#lib/share/activity-poster-render.ts';
   import { loadPosterLogo, posterPalette } from '#lib/share/route-poster-render.ts';
 
-  let { activityId, label = '生成分享图' }: { activityId: string; label?: string } = $props();
+  // `showTrigger={false}` when another control (the share menu) opens it through `open()`.
+  let { activityId, label = '生成分享图', showTrigger = true }: { activityId: string; label?: string; showTrigger?: boolean } = $props();
 
   // Only a signed-in viewer looking at their own record may create a share image:
   // their workspace, the root showcase as site owner, or their own named showcase.
-  const subject = $derived(viewContext(page.url.pathname, page.data.user?.is_admin === true));
-  const allowed = $derived(!!page.data.user && (subject.kind === 'workspace' ||
-    (subject.kind === 'root' && page.data.user.is_admin) || (subject.kind === 'public' && subject.username === page.data.user.username)));
+  const allowed = $derived(viewsOwnRecords(page.url.pathname, page.data.user));
   // Always read through the authenticated own-data API so the backend enforces session and owner scope.
   const own = viewContext('/workspace');
   const ownFetch: typeof fetch = (input, init) => fetch(typeof input === 'string' ? contextAPI(own, input) : input, init);
@@ -42,7 +41,9 @@
   function stop() { controller?.abort(); controller = null; ++loadToken; ++renderToken; loading = false; error = ''; release(); data = null; dataFor = ''; }
   // Leaving one's own view (logout, another subject) or switching record drops cached data and images.
   $effect(() => { if (!allowed || (dataFor && dataFor !== activityId)) { stop(); visible = false; if (dialog?.open) dialog.close(); } });
-  function open() { stop(); visible = true; dialog.showModal(); void load(); }
+  let returnFocus: HTMLElement | null = null;
+  /** Opens the dialog; focus goes back to `from` (default: this component's own button) on close. */
+  export function open(from: HTMLElement | null = null) { if (!allowed || !mounted) return; returnFocus = from ?? trigger; stop(); visible = true; dialog.showModal(); void load(); }
   function close() { stop(); visible = false; dialog.close(); }
   async function load() {
     const request = ++loadToken, id = activityId;
@@ -111,10 +112,10 @@
 <!-- Hidden token probe, present only for a fixed appearance: resolves it without switching the site theme
      and keeps the page's single `.sport-theme` shell unique otherwise. -->
 {#if visible && theme !== 'auto'}<div hidden data-poster-theme={theme}><div class="sport-theme" bind:this={themeProbe}></div></div>{/if}
-<button bind:this={trigger} type="button" class="button-secondary" disabled={!mounted} onclick={open}>{label}</button>
+{#if showTrigger}<button bind:this={trigger} type="button" class="button-secondary" disabled={!mounted} onclick={() => open()}>{label}</button>{/if}
 <dialog bind:this={dialog} class="poster-dialog" aria-labelledby="activity-poster-title" aria-describedby="activity-poster-description"
   oncancel={(event) => { event.preventDefault(); close(); }}
-  onclose={() => { if (dialog.open) return; stop(); visible = false; trigger?.focus(); }}>
+  onclose={() => { if (dialog.open) return; stop(); visible = false; returnFocus?.focus(); }}>
   <div class="poster-heading"><h2 id="activity-poster-title">生成分享图</h2><button type="button" class="button-secondary" onclick={close}>关闭</button></div>
   <p id="activity-poster-description" class="poster-help">把这次跑步，变成一张可以珍藏的图片。</p>
   <div class="poster-workspace">

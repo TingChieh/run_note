@@ -10,6 +10,11 @@ test('switches real vector layers while preserving multisegment routes, camera a
     { type: 'Feature', geometry: { type: 'LineString', coordinates: [[121.487,31.236],[121.49,31.237]] }, properties: { segment_index: 1, point_count: 2 } }
   ] }, error: null } }));
   await page.goto(`/activities/${sampleActivity.id}`); await expect(page.getByTestId('route-map-ready')).toBeVisible(); await basemapReady(page, 'positron'); await observeMaps(page);
+  // The data attribution starts collapsed behind its ⓘ button and still opens on demand.
+  const attribution = page.locator('.maplibregl-ctrl-attrib');
+  await expect(attribution).toContainText('OpenMapTiles'); await expect(attribution).not.toHaveClass(/maplibregl-compact-show/);
+  await attribution.locator('.maplibregl-ctrl-attrib-button').click(); await expect(attribution).toHaveClass(/maplibregl-compact-show/);
+  await attribution.locator('.maplibregl-ctrl-attrib-button').click();
   await page.evaluate(() => (window as any).__maps.at(-1).jumpTo({ bearing: 22, pitch: 35, zoom: 13 }));
   const before = await mapState(page); const canvas = await page.locator('.maplibregl-canvas').elementHandle();
   const marker = await page.getByLabel('路线起点').boundingBox();
