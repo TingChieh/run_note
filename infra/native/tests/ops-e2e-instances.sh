@@ -16,7 +16,7 @@ tarball="${1:?usage: ops-e2e-instances.sh RELEASE_TARBALL}"
 here="$(cd "$(dirname "$0")" && pwd)"
 WORK="${WORK:-$(mktemp -d)}"
 rm -rf "$WORK"; mkdir -p "$WORK"; WORK="$(cd "$WORK" && pwd -P)"
-port="${PG_PORT:-55442}"
+port="${PG_PORT:-15442}"  # below Linux's ephemeral range (32768-60999): a loopback client socket can hold a port inside it
 L_API=18200 L_WEB=18201   # legacy ("staging") listeners
 P_API=18300 P_WEB=18301   # production instance listeners
 sock="$(mktemp -d /tmp/rnsock.XXXXXX)"  # unix socket paths are limited to ~100 bytes

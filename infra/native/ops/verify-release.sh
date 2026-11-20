@@ -33,6 +33,21 @@ with tarfile.open(sys.argv[1]) as t:
 if [ -n "$junk" ]; then
   fail "release contains macOS metadata files (._* / .DS_Store): $(printf '%s\n' "$junk" | wc -l | tr -d ' ') found, e.g. $(printf '%s\n' "$junk" | sed -n '1,3p' | tr '\n' ' ')"
 fi
+# ---- every entry readable by the service accounts ----------------------------------------
+# tar keeps the build tree's modes, and deploy.sh chowns the unpacked release to root, so the
+# service accounts read it as "other". A build under umask 077 ships owner-only files and the
+# deploy then fails on the server with "Permission denied".
+unreadable="$(python3 -c '
+import sys, tarfile
+with tarfile.open(sys.argv[1]) as t:
+    for m in t.getmembers():
+        need = 0o005 if m.isdir() else 0o004 if m.isfile() else 0
+        if m.mode & need != need:
+            print(f"{m.name} ({m.mode & 0o777:o})")
+' "$tarball")"
+if [ -n "$unreadable" ]; then
+  fail "release has entries not readable by other users (check out and build under umask 022): $(printf '%s\n' "$unreadable" | wc -l | tr -d ' ') found, e.g. $(printf '%s\n' "$unreadable" | sed -n '1,3p' | tr '\n' ' ')"
+fi
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 tar -xzf "$tarball" -C "$work" --strip-components=1

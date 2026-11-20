@@ -11,7 +11,7 @@ command -v restic >/dev/null || { echo "restic is required" >&2; exit 1; }
 here="$(cd "$(dirname "$0")" && pwd)"
 ops="$here/../ops"
 WORK="$(mktemp -d)"
-port="${PG_PORT:-55451}"
+port="${PG_PORT:-15451}"  # below Linux's ephemeral range (32768-60999): a loopback client socket can hold a port inside it
 sock="$(mktemp -d /tmp/rnsock.XXXXXX)"
 fail() { echo "OFFSITE E2E FAIL: $*" >&2; exit 1; }
 step() { echo "=== $*" >&2; }

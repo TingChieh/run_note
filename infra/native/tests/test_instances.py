@@ -4,6 +4,7 @@ envfile.py instance expectations). No database, network, root or real secrets.
     backend/.venv/bin/python -m unittest discover -s infra/native/tests -v
 """
 
+import os
 import shutil
 import subprocess
 import sys
@@ -479,6 +480,8 @@ class VerifyRelease(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
+        # The fixture trees must not inherit a restrictive umask from whoever runs the tests.
+        self.addCleanup(os.umask, os.umask(0o022))
 
     def pack(self, release: Path) -> Path:
         tarball = self.root / "release.tar.gz"
@@ -594,6 +597,25 @@ class VerifyRelease(unittest.TestCase):
 
     def test_a_missing_file_or_empty_archive_is_refused(self):
         self.assertNotEqual(self.verify(self.root / "nope.tar.gz").returncode, 0)
+
+    def test_entries_the_service_accounts_cannot_read_are_refused_and_named(self):
+        # deploy.sh unpacks as root and chowns the release to root, so the service accounts read it
+        # as "other". A build under umask 077 once shipped 269 such files; deploy.sh then failed
+        # with "ops/envfile.py: Permission denied".
+        cases = {
+            "unreadable file": ("ops/envfile.py", 0o700),
+            "file readable by its owner only": ("backend/requirements.lock", 0o640),
+            "untraversable directory": ("infra/native/templates", 0o750),
+        }
+        for name, (rel, mode) in cases.items():
+            with self.subTest(case=name):
+                shutil.rmtree(self.root / "release", ignore_errors=True)
+                release = make_release_tree(self.root)
+                (release / rel).chmod(mode)
+                result = self.verify(self.pack(release))
+                self.assertNotEqual(result.returncode, 0, result.stderr)
+                self.assertIn("not readable by other users", result.stderr)
+                self.assertIn(f"rel-1/{rel}", result.stderr)
 
 
 class LibInInstanceMode(unittest.TestCase):
