@@ -21,6 +21,12 @@
   } from '#lib/map/globe-geometry.ts';
   import FeedbackState from './FeedbackState.svelte';
   import { watchSystemTheme } from './system-theme';
+  import {
+    applyGlobePinchPan,
+    applyGlobePinchZoom,
+    applyMercatorPinch,
+    TouchGestureTracker,
+  } from '#lib/map/province-touch.ts';
 
   const view = useViewContext();
   const readGlobalFootprints = view.bind(scoped_readGlobalFootprints, 1);
@@ -328,7 +334,7 @@
             }
           })();
           renderer.setPixelRatio(softwareGl ? 1 : Math.min(window.devicePixelRatio || 1, 2));
-          renderer.domElement.style.cssText = 'display:block;width:100%;height:100%;';
+          renderer.domElement.style.cssText = 'display:block;width:100%;height:100%;touch-action:none;';
           hostEl.appendChild(renderer.domElement);
           const scene = new THREE.Scene();
           const camera = new THREE.PerspectiveCamera(FOV_DEG, 1.35, 0.02, 40);
@@ -675,7 +681,8 @@
           let tPanY = 0;
           let morph = projectionMode === 'mercator' ? 1.0 : 0.0;
           let tMorph = morph;
-          let dragging = false;
+          const touchTracker = new TouchGestureTracker();
+          const isGestureActive = () => touchTracker.mode !== 'idle';
           let needsRender = true;
           let frameId = 0;
           let revealStart = -1;
@@ -1068,6 +1075,7 @@
               camDist = tDist = 1 + tr.to.alt;
               panY = tPanY = fy;
             }
+            renderAlt = Math.max(0.005, tr.toMorph ? camDist : camDist - 1);
             needsRender = true;
           };
 
@@ -1160,6 +1168,13 @@
             }
 
             updateMovedFlag();
+            hostEl.dataset.viewMode = projectionMode;
+            hostEl.dataset.viewAlt = alt.toFixed(5);
+            hostEl.dataset.viewYaw = yaw.toFixed(5);
+            hostEl.dataset.viewPitch = pitch.toFixed(5);
+            hostEl.dataset.viewPanX = panX.toFixed(5);
+            hostEl.dataset.viewPanY = panY.toFixed(5);
+            hostEl.dataset.viewGesture = touchTracker.mode;
             needsRender = false;
           };
 
@@ -1169,7 +1184,7 @@
             const dt = Math.min(50, now - lastFrameAt);
             lastFrameAt = now;
             if (transition) stepTransition(transition);
-            else if (!dragging && (flingX || flingY)) {
+            else if (!isGestureActive() && (flingX || flingY)) {
               dragBy(flingX * dt, flingY * dt);
               const decay = 0.92 ** (dt / 16);
               flingX *= decay;
@@ -1184,7 +1199,7 @@
               !pointerInside &&
               projectionMode === 'globe' &&
               !transition &&
-              !dragging &&
+              !isGestureActive() &&
               !flingX &&
               !flingY &&
               morph < 0.01 &&
@@ -1202,7 +1217,7 @@
             const dPX = tPanX - panX;
             const dPY = tPanY - panY;
             const dM = tMorph - morph;
-            const speed = reducedMotion ? 1.0 : dragging ? 0.38 : 0.18;
+            const speed = reducedMotion ? 1.0 : isGestureActive() ? 0.38 : 0.18;
 
             if (
               !transition &&
@@ -1256,17 +1271,22 @@
           resize();
 
           const raycaster = new THREE.Raycaster();
-          let lastX = 0;
-          let lastY = 0;
-          let movedPx = 0;
           // Recent pointer moves, for the release velocity.
           const dragSamples: { t: number; dx: number; dy: number }[] = [];
+
+          const currentAlt = () => Math.max(0.005, projectionMode === 'globe' ? camDist - 1 : camDist);
+
+          const syncCameraForPick = () => {
+            camera.position.set(0, 0, 1 + currentAlt());
+            camera.updateMatrixWorld(true);
+            viewUniforms.uRot.value.setFromMatrix4(rotX.makeRotationX(pitch).multiply(rotY.makeRotationY(yaw)));
+          };
 
           // Moves the view with the pointer, 1:1 at the view centre: the plane by the units a pixel spans, the
           // globe by the arc a pixel spans (wider in longitude away from the equator).
           const dragBy = (dx: number, dy: number) => {
             const pxPerUnit = Math.max(220, hostEl.clientHeight || 344) / 2 / TAN_HALF_FOV;
-            const perPx = renderAlt / pxPerUnit;
+            const perPx = currentAlt() / pxPerUnit;
             if (projectionMode === 'globe') {
               tYaw = yaw = tYaw + (dx * perPx) / Math.max(0.3, Math.cos(tPitch));
               tPitch = pitch = Math.max(-1.25, Math.min(1.25, tPitch + dy * perPx));
@@ -1278,33 +1298,77 @@
           };
 
           const onPointerDown = (event: PointerEvent) => {
+            if (event.pointerType === 'mouse' && event.button !== 0) return;
             clearHover();
             takeOver();
-            dragging = true;
             stopFling();
             dragSamples.length = 0;
-            lastX = event.clientX;
-            lastY = event.clientY;
-            movedPx = 0;
-            hostEl.setPointerCapture(event.pointerId);
+            const res = touchTracker.down(event.pointerId, event.clientX, event.clientY);
+            hostEl.dataset.viewGesture = touchTracker.mode;
+            if (res.kind !== 'ignore') {
+              try {
+                hostEl.setPointerCapture(event.pointerId);
+              } catch {
+                // Synthetic pointer events without an active browser pointer cannot be captured.
+              }
+            }
           };
 
           const onPointerMove = (event: PointerEvent) => {
-            if (!dragging) {
+            const res = touchTracker.move(event.pointerId, event.clientX, event.clientY);
+            if (res.kind === 'hover') {
               if (event.pointerType !== 'mouse') return;
               hoverX = event.clientX;
               hoverY = event.clientY;
               if (!hoverFrame) hoverFrame = requestAnimationFrame(updateHover);
               return;
             }
-            const dx = event.clientX - lastX;
-            const dy = event.clientY - lastY;
-            lastX = event.clientX;
-            lastY = event.clientY;
-            movedPx += Math.hypot(dx, dy);
-            dragBy(dx, dy);
-            dragSamples.push({ t: event.timeStamp, dx, dy });
-            while (dragSamples.length && event.timeStamp - dragSamples[0].t > 100) dragSamples.shift();
+            if (res.kind === 'ignore') return;
+            lastInputAt = performance.now();
+            if (res.kind === 'drag-move') {
+              dragBy(res.dx, res.dy);
+              dragSamples.push({ t: event.timeStamp, dx: res.dx, dy: res.dy });
+              while (dragSamples.length && event.timeStamp - dragSamples[0].t > 100) dragSamples.shift();
+              return;
+            }
+            stopFling();
+            if (projectionMode === 'globe') {
+              const panned = applyGlobePinchPan(
+                { yaw, pitch, dist: camDist },
+                res.dMidX,
+                res.dMidY,
+                hostEl.clientHeight || 344,
+                TAN_HALF_FOV,
+                clampGlobeAlt,
+              );
+              yaw = tYaw = panned.yaw;
+              pitch = tPitch = panned.pitch;
+              const prevAlt = clampGlobeAlt(camDist - 1.0);
+              const nextAlt = clampGlobeAlt(prevAlt * res.scaleFactor);
+              let target: [number, number] | null = null;
+              if (nextAlt < prevAlt) {
+                syncCameraForPick();
+                target = pointerLonLat(res.currMidX, res.currMidY);
+              }
+              const zoomed = applyGlobePinchZoom({ yaw, pitch, dist: camDist }, res.scaleFactor, clampGlobeAlt, target);
+              yaw = tYaw = zoomed.yaw;
+              pitch = tPitch = zoomed.pitch;
+              camDist = tDist = zoomed.dist;
+            } else {
+              const rect = hostEl.getBoundingClientRect();
+              const next = applyMercatorPinch(
+                { panX, panY, dist: camDist },
+                res,
+                rect,
+                TAN_HALF_FOV,
+                clampFlatDist,
+                clampMercatorPanY,
+              );
+              panX = tPanX = next.panX;
+              panY = tPanY = next.panY;
+              camDist = tDist = next.dist;
+            }
+            needsRender = true;
           };
 
           const onWheel = (event: WheelEvent) => {
@@ -1405,9 +1469,15 @@
           };
 
           const onPointerUp = (event: PointerEvent) => {
-            if (!dragging) return;
-            dragging = false;
-            if (movedPx >= 6) {
+            const res = touchTracker.up(event.pointerId);
+            hostEl.dataset.viewGesture = touchTracker.mode;
+            if (res.kind === 'pinch-to-drag' || res.kind === 'pinch-reanchor') {
+              dragSamples.length = 0;
+              stopFling();
+              return;
+            }
+            if (res.kind !== 'end') return;
+            if (res.canFling) {
               // Fling with the speed of the last 80 ms of the drag, unless the pointer had already come to rest.
               const recent = dragSamples.filter((sample) => event.timeStamp - sample.t <= 80);
               if (!reducedMotion && recent.length >= 2 && event.timeStamp - recent[recent.length - 1].t < 40) {
@@ -1418,9 +1488,11 @@
               }
               return;
             }
-            const picked = pickAt(event.clientX, event.clientY);
-            if (picked?.city) selectCity(picked.city.city, picked.city.region.code, picked.city.country.code);
-            else if (picked?.region && picked.country) selectRegion(picked.region, picked.country.code);
+            if (res.wasTap) {
+              const picked = pickAt(event.clientX, event.clientY);
+              if (picked?.city) selectCity(picked.city.city, picked.city.region.code, picked.city.country.code);
+              else if (picked?.region && picked.country) selectRegion(picked.region, picked.country.code);
+            }
           };
 
           let hoverFrame = 0;
@@ -1467,8 +1539,19 @@
             clearHover();
           };
 
-          const onPointerCancel = () => {
-            dragging = false;
+          const clearPointer = (pointerId: number) => {
+            const res = touchTracker.cancel(pointerId);
+            hostEl.dataset.viewGesture = touchTracker.mode;
+            if (res.kind === 'ignore') return;
+            dragSamples.length = 0;
+            stopFling();
+          };
+          const onPointerCancel = (event: PointerEvent) => clearPointer(event.pointerId);
+          const onLostPointerCapture = (event: PointerEvent) => clearPointer(event.pointerId);
+          const onWindowBlur = () => {
+            touchTracker.reset();
+            hostEl.dataset.viewGesture = touchTracker.mode;
+            dragSamples.length = 0;
             stopFling();
           };
 
@@ -1477,6 +1560,8 @@
           hostEl.addEventListener('pointermove', onPointerMove);
           hostEl.addEventListener('pointerup', onPointerUp);
           hostEl.addEventListener('pointercancel', onPointerCancel);
+          hostEl.addEventListener('lostpointercapture', onLostPointerCapture);
+          window.addEventListener('blur', onWindowBlur);
           hostEl.addEventListener('pointerenter', onHoverEnter);
           hostEl.addEventListener('pointerleave', onHoverLeave);
           hostEl.addEventListener('wheel', onWheel, { passive: false });
@@ -1604,6 +1689,8 @@
             hostEl.removeEventListener('pointermove', onPointerMove);
             hostEl.removeEventListener('pointerup', onPointerUp);
             hostEl.removeEventListener('pointercancel', onPointerCancel);
+            hostEl.removeEventListener('lostpointercapture', onLostPointerCapture);
+            window.removeEventListener('blur', onWindowBlur);
             hostEl.removeEventListener('pointerenter', onHoverEnter);
             hostEl.removeEventListener('pointerleave', onHoverLeave);
             clearHover();
