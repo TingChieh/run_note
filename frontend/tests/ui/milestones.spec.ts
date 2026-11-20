@@ -671,3 +671,517 @@ test('detail route retry also refreshes the footprint card without duplicate rea
   await expect(card.getByRole('img', { name: /路线轮廓/ })).toBeVisible();
   expect(reads).toBe(3);
 });
+
+test.describe('province map mobile touch and pinch gestures', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  async function readView(canvas: import('@playwright/test').Locator) {
+    return canvas.evaluate((el) => ({
+      mode: el.dataset.viewMode ?? '',
+      alt: Number(el.dataset.viewAlt),
+      yaw: Number(el.dataset.viewYaw),
+      pitch: Number(el.dataset.viewPitch),
+      panX: Number(el.dataset.viewPanX),
+      panY: Number(el.dataset.viewPanY),
+      gesture: el.dataset.viewGesture ?? '',
+    }));
+  }
+
+  async function waitIdleFrame(page: import('@playwright/test').Page) {
+    await page.evaluate(
+      () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+    );
+  }
+
+  async function touchPinch(
+    cdp: import('@playwright/test').CDPSession,
+    page: import('@playwright/test').Page,
+    pts0: [{ x: number; y: number }, { x: number; y: number }],
+    pts1: [{ x: number; y: number }, { x: number; y: number }],
+    options: { steps?: number; release?: boolean; cancel?: boolean } = {},
+  ) {
+    const steps = options.steps ?? 8;
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [
+        { x: Math.round(pts0[0].x), y: Math.round(pts0[0].y), id: 1 },
+        { x: Math.round(pts0[1].x), y: Math.round(pts0[1].y), id: 2 },
+      ],
+    });
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [
+          {
+            x: Math.round(pts0[0].x + (pts1[0].x - pts0[0].x) * t),
+            y: Math.round(pts0[0].y + (pts1[0].y - pts0[0].y) * t),
+            id: 1,
+          },
+          {
+            x: Math.round(pts0[1].x + (pts1[1].x - pts0[1].x) * t),
+            y: Math.round(pts0[1].y + (pts1[1].y - pts0[1].y) * t),
+            id: 2,
+          },
+        ],
+      });
+      await page.waitForTimeout(16);
+    }
+    if (options.cancel) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
+    } else if (options.release !== false) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    }
+    await waitIdleFrame(page);
+  }
+
+  async function setupMobileMap(page: import('@playwright/test').Page) {
+    const errors: string[] = [];
+    page.on('pageerror', (err) => errors.push(err.message));
+    await installMilestones(page);
+    await loginRunner(page);
+    await page.goto('/dashboard');
+    const map = page.getByRole('region', { name: '足迹地图' });
+    await expect(map.getByTestId('global-summary').locator('dd').first()).toHaveText('3');
+    const stage = map.locator('[data-testid="global-map-loading"], [data-testid="global-map-ready"]');
+    await stage.scrollIntoViewIfNeeded();
+    const canvas = map.getByTestId('global-map-ready');
+    await expect(canvas).toBeVisible({ timeout: 15000 });
+    await waitIdleFrame(page);
+    const box = (await canvas.boundingBox())!;
+    return { map, canvas, box, errors };
+  }
+
+  test('supports 3D pinch zoom in/out, continuous gestures, midpoint pan, 1-finger drag, pointer changes, boundaries, cancel, and scroll isolation', async ({
+    page,
+  }) => {
+    const cdp = await page.context().newCDPSession(page);
+    const { map, canvas, box, errors } = await setupMobileMap(page);
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    const resetBtn = map.getByRole('button', { name: '回到全局' });
+    const scrollBefore = await page.evaluate(() => window.scrollY);
+
+    const v0 = await readView(canvas);
+    expect(v0.mode).toBe('globe');
+    expect(v0.gesture).toBe('idle');
+
+    // 1. Pinch out (zoom in) + continuous pinch back in without lifting
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [
+        { x: Math.round(cx - 25), y: Math.round(cy), id: 1 },
+        { x: Math.round(cx + 25), y: Math.round(cy), id: 2 },
+      ],
+    });
+    for (let i = 1; i <= 8; i++) {
+      const half = 25 + (100 - 25) * (i / 8);
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [
+          { x: Math.round(cx - half), y: Math.round(cy), id: 1 },
+          { x: Math.round(cx + half), y: Math.round(cy), id: 2 },
+        ],
+      });
+      await page.waitForTimeout(16);
+    }
+    await waitIdleFrame(page);
+    const vZoomIn = await readView(canvas);
+    expect(vZoomIn.gesture).toBe('pinch');
+    expect(vZoomIn.alt).toBeLessThan(v0.alt * 0.45);
+    await expect(resetBtn).toBeEnabled();
+
+    // Continuous pinch back in (zoom out) without releasing
+    for (let i = 1; i <= 8; i++) {
+      const half = 100 - (100 - 35) * (i / 8);
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [
+          { x: Math.round(cx - half), y: Math.round(cy), id: 1 },
+          { x: Math.round(cx + half), y: Math.round(cy), id: 2 },
+        ],
+      });
+      await page.waitForTimeout(16);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await waitIdleFrame(page);
+    const vZoomOut = await readView(canvas);
+    expect(vZoomOut.gesture).toBe('idle');
+    expect(vZoomOut.alt).toBeGreaterThan(vZoomIn.alt * 1.8);
+    // Lifting pinch fingers must not accidentally select a province/city
+    await expect(
+      map.getByRole('group', { name: '中国已点亮省/州' }).getByRole('button', { name: /台湾/ }),
+    ).toHaveAttribute('aria-pressed', 'false');
+
+    // 2. Two-finger midpoint displacement rotates globe
+    const beforeMidPan = await readView(canvas);
+    await touchPinch(
+      cdp,
+      page,
+      [
+        { x: cx - 35, y: cy },
+        { x: cx + 35, y: cy },
+      ],
+      [
+        { x: cx + 25, y: cy - 20 },
+        { x: cx + 95, y: cy - 20 },
+      ],
+    );
+    const afterMidPan = await readView(canvas);
+    expect(Math.abs(afterMidPan.yaw - beforeMidPan.yaw)).toBeGreaterThan(0.05);
+    expect(Math.abs(afterMidPan.pitch - beforeMidPan.pitch)).toBeGreaterThan(0.01);
+
+    // 3. Mid-gesture pointer change: 2 fingers -> lift 1 -> drag with remaining 1 -> lift
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [
+        { x: Math.round(cx - 40), y: Math.round(cy), id: 1 },
+        { x: Math.round(cx + 40), y: Math.round(cy), id: 2 },
+      ],
+    });
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [
+        { x: Math.round(cx - 60), y: Math.round(cy), id: 1 },
+        { x: Math.round(cx + 60), y: Math.round(cy), id: 2 },
+      ],
+    });
+    await waitIdleFrame(page);
+    const beforeDrop = await readView(canvas);
+    expect(beforeDrop.gesture).toBe('pinch');
+    // Lift finger 2, keep finger 1
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchEnd',
+      touchPoints: [{ x: Math.round(cx + 60), y: Math.round(cy), id: 2 }],
+    });
+    await waitIdleFrame(page);
+    const afterDrop = await readView(canvas);
+    expect(afterDrop.gesture).toBe('drag');
+    expect(Math.abs(afterDrop.yaw - beforeDrop.yaw)).toBeLessThan(0.01);
+    // Drag remaining finger smoothly (move further in 2 steps so yaw delta is unmistakable even at zoomed-in alt)
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{ x: Math.round(cx + 20), y: Math.round(cy + 25), id: 1 }],
+    });
+    await page.waitForTimeout(16);
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{ x: Math.round(cx + 80), y: Math.round(cy + 40), id: 1 }],
+    });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await waitIdleFrame(page);
+    const afterSingleDrag = await readView(canvas);
+    expect(afterSingleDrag.gesture).toBe('idle');
+    expect(Math.abs(afterSingleDrag.yaw - afterDrop.yaw)).toBeGreaterThan(0.02);
+
+    // 3b. Collapse pinch span below MIN_PINCH_SPAN_PX (80px -> 2px) and recover (2px -> 6px -> 60px):
+    // recovery spread must zoom IN (decrease alt), never jump backward
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [
+        { x: Math.round(cx - 40), y: Math.round(cy), id: 1 },
+        { x: Math.round(cx + 40), y: Math.round(cy), id: 2 },
+      ],
+    });
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [
+        { x: Math.round(cx - 1), y: Math.round(cy), id: 1 },
+        { x: Math.round(cx + 1), y: Math.round(cy), id: 2 },
+      ],
+    });
+    await waitIdleFrame(page);
+    const atTinySpan = await readView(canvas);
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [
+        { x: Math.round(cx - 3), y: Math.round(cy), id: 1 },
+        { x: Math.round(cx + 3), y: Math.round(cy), id: 2 },
+      ],
+    });
+    await waitIdleFrame(page);
+    const afterTinyRecover = await readView(canvas);
+    expect(afterTinyRecover.alt).toBeLessThanOrEqual(atTinySpan.alt);
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [
+        { x: Math.round(cx - 30), y: Math.round(cy), id: 1 },
+        { x: Math.round(cx + 30), y: Math.round(cy), id: 2 },
+      ],
+    });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await waitIdleFrame(page);
+    const afterFullRecover = await readView(canvas);
+    expect(afterFullRecover.alt).toBeLessThan(afterTinyRecover.alt);
+
+    // 4. Boundary zoom clamp (min and max) + touchCancel recovery
+    for (let k = 0; k < 2; k++) {
+      await touchPinch(
+        cdp,
+        page,
+        [
+          { x: cx - 10, y: cy },
+          { x: cx + 10, y: cy },
+        ],
+        [
+          { x: cx - 160, y: cy },
+          { x: cx + 160, y: cy },
+        ],
+      );
+    }
+    const minZoom1 = await readView(canvas);
+    await touchPinch(
+      cdp,
+      page,
+      [
+        { x: cx - 10, y: cy },
+        { x: cx + 10, y: cy },
+      ],
+      [
+        { x: cx - 160, y: cy },
+        { x: cx + 160, y: cy },
+      ],
+    );
+    const minZoom2 = await readView(canvas);
+    expect(Number.isFinite(minZoom2.alt)).toBe(true);
+    expect(minZoom2.alt).toBeGreaterThan(0.01);
+    expect(minZoom2.alt).toBeCloseTo(minZoom1.alt, 2);
+
+    // Pinch in to max boundary, verify clamp, then cancel mid-gesture
+    for (let k = 0; k < 3; k++) {
+      await touchPinch(
+        cdp,
+        page,
+        [
+          { x: cx - 150, y: cy },
+          { x: cx + 150, y: cy },
+        ],
+        [
+          { x: cx - 15, y: cy },
+          { x: cx + 15, y: cy },
+        ],
+      );
+    }
+    const maxZoom1 = await readView(canvas);
+    await touchPinch(
+      cdp,
+      page,
+      [
+        { x: cx - 150, y: cy },
+        { x: cx + 150, y: cy },
+      ],
+      [
+        { x: cx - 15, y: cy },
+        { x: cx + 15, y: cy },
+      ],
+      { cancel: true },
+    );
+    const afterCancel = await readView(canvas);
+    expect(afterCancel.gesture).toBe('idle');
+    expect(Number.isFinite(afterCancel.alt)).toBe(true);
+    expect(afterCancel.alt).toBeCloseTo(maxZoom1.alt, 2);
+
+    // 5. Mobile page scroll isolation inside vs outside canvas
+    const scrollAfterMapGestures = await page.evaluate(() => ({
+      scrollY: window.scrollY,
+      vvScale: window.visualViewport?.scale ?? 1,
+    }));
+    expect(scrollAfterMapGestures.scrollY).toBe(scrollBefore);
+    expect(scrollAfterMapGestures.vvScale).toBe(1);
+
+    // 1-finger vertical swipe outside the map canvas must still scroll the page
+    const headingBox = (await map.locator('.map-heading').boundingBox())!;
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x: Math.round(headingBox.x + 80), y: Math.round(headingBox.y + 10), id: 1 }],
+    });
+    for (let i = 1; i <= 5; i++) {
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x: Math.round(headingBox.x + 80), y: Math.round(headingBox.y + 10 + i * 30), id: 1 }],
+      });
+      await page.waitForTimeout(16);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(150);
+    const scrollAfterOutsideSwipe = await page.evaluate(() => window.scrollY);
+    expect(scrollAfterOutsideSwipe).not.toBe(scrollBefore);
+    expect(errors).toEqual([]);
+  });
+
+  test('supports 2D pinch zoom in/out, continuous gestures, off-center midpoint anchor, 1-finger drag, pointer changes, boundaries, and cancel', async ({
+    page,
+  }) => {
+    const cdp = await page.context().newCDPSession(page);
+    const { map, canvas, box, errors } = await setupMobileMap(page);
+    await map.getByRole('button', { name: '切换为 2D 平面地图' }).click();
+    await page.waitForTimeout(1250);
+    await waitIdleFrame(page);
+
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    const resetBtn = map.getByRole('button', { name: '回到全局' });
+    const scrollBefore = await page.evaluate(() => window.scrollY);
+
+    const v0 = await readView(canvas);
+    expect(v0.mode).toBe('mercator');
+    expect(v0.gesture).toBe('idle');
+
+    // 1. Off-center pinch out (zoom in) then continuous pinch back in
+    const anchorX = box.x + box.width * 0.7;
+    const anchorY = box.y + box.height * 0.4;
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [
+        { x: Math.round(anchorX - 20), y: Math.round(anchorY), id: 1 },
+        { x: Math.round(anchorX + 20), y: Math.round(anchorY), id: 2 },
+      ],
+    });
+    for (let i = 1; i <= 8; i++) {
+      const half = 20 + (90 - 20) * (i / 8);
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [
+          { x: Math.round(anchorX - half), y: Math.round(anchorY), id: 1 },
+          { x: Math.round(anchorX + half), y: Math.round(anchorY), id: 2 },
+        ],
+      });
+      await page.waitForTimeout(16);
+    }
+    await waitIdleFrame(page);
+    const vZoomIn = await readView(canvas);
+    expect(vZoomIn.gesture).toBe('pinch');
+    expect(vZoomIn.alt).toBeLessThan(v0.alt * 0.4);
+    // Off-center anchor shifts pan toward the right-top pinch midpoint
+    expect(vZoomIn.panX).toBeGreaterThan(v0.panX);
+    await expect(resetBtn).toBeEnabled();
+
+    // Continuous pinch back in without lifting
+    for (let i = 1; i <= 8; i++) {
+      const half = 90 - (90 - 25) * (i / 8);
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [
+          { x: Math.round(anchorX - half), y: Math.round(anchorY), id: 1 },
+          { x: Math.round(anchorX + half), y: Math.round(anchorY), id: 2 },
+        ],
+      });
+      await page.waitForTimeout(16);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await waitIdleFrame(page);
+    const vZoomOut = await readView(canvas);
+    expect(vZoomOut.gesture).toBe('idle');
+    expect(vZoomOut.alt).toBeGreaterThan(vZoomIn.alt * 2.0);
+
+    // 2. Two-finger midpoint displacement pans 2D map
+    const beforeMidPan = await readView(canvas);
+    await touchPinch(
+      cdp,
+      page,
+      [
+        { x: cx - 35, y: cy },
+        { x: cx + 35, y: cy },
+      ],
+      [
+        { x: cx - 85, y: cy + 30 },
+        { x: cx - 15, y: cy + 30 },
+      ],
+    );
+    const afterMidPan = await readView(canvas);
+    expect(afterMidPan.panX).toBeGreaterThan(beforeMidPan.panX);
+    expect(afterMidPan.panY).toBeGreaterThan(beforeMidPan.panY);
+
+    // 3. One-finger drag pans 2D map without scrolling page
+    const beforeSingle = await readView(canvas);
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x: Math.round(cx), y: Math.round(cy), id: 1 }],
+    });
+    for (let i = 1; i <= 5; i++) {
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x: Math.round(cx + i * 12), y: Math.round(cy + i * 10), id: 1 }],
+      });
+      await page.waitForTimeout(16);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await waitIdleFrame(page);
+    const afterSingle = await readView(canvas);
+    expect(afterSingle.gesture).toBe('idle');
+    expect(afterSingle.panX).toBeLessThan(beforeSingle.panX);
+
+    // 3b. Mid-gesture pointer change in 2D: 2 fingers -> lift 1 -> drag remaining 1 -> lift
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [
+        { x: Math.round(cx - 40), y: Math.round(cy), id: 1 },
+        { x: Math.round(cx + 40), y: Math.round(cy), id: 2 },
+      ],
+    });
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [
+        { x: Math.round(cx - 60), y: Math.round(cy), id: 1 },
+        { x: Math.round(cx + 60), y: Math.round(cy), id: 2 },
+      ],
+    });
+    await waitIdleFrame(page);
+    const before2dDrop = await readView(canvas);
+    expect(before2dDrop.gesture).toBe('pinch');
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchEnd',
+      touchPoints: [{ x: Math.round(cx + 60), y: Math.round(cy), id: 2 }],
+    });
+    await waitIdleFrame(page);
+    const after2dDrop = await readView(canvas);
+    expect(after2dDrop.gesture).toBe('drag');
+    expect(Math.abs(after2dDrop.panX - before2dDrop.panX)).toBeLessThan(0.005);
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{ x: Math.round(cx + 20), y: Math.round(cy + 20), id: 1 }],
+    });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await waitIdleFrame(page);
+    const after2dSingle = await readView(canvas);
+    expect(after2dSingle.gesture).toBe('idle');
+    expect(after2dSingle.panX).toBeLessThan(after2dDrop.panX);
+
+    // 4. Boundary zoom clamp (min clamp reached, subsequent pinch stays clamped) + touchCancel
+    for (let k = 0; k < 2; k++) {
+      await touchPinch(
+        cdp,
+        page,
+        [
+          { x: cx - 15, y: cy },
+          { x: cx + 15, y: cy },
+        ],
+        [
+          { x: cx - 160, y: cy },
+          { x: cx + 160, y: cy },
+        ],
+      );
+    }
+    const min2d1 = await readView(canvas);
+    await touchPinch(
+      cdp,
+      page,
+      [
+        { x: cx - 15, y: cy },
+        { x: cx + 15, y: cy },
+      ],
+      [
+        { x: cx - 160, y: cy },
+        { x: cx + 160, y: cy },
+      ],
+      { cancel: true },
+    );
+    const min2d2 = await readView(canvas);
+    expect(min2d2.gesture).toBe('idle');
+    expect(min2d2.alt).toBeCloseTo(min2d1.alt, 2);
+
+    const scrollAfter = await page.evaluate(() => window.scrollY);
+    expect(scrollAfter).toBe(scrollBefore);
+    expect(errors).toEqual([]);
+  });
+});
