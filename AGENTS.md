@@ -59,7 +59,7 @@ docs/              设计与验收记录（中文）；docs/design-system/ 为 U
 | 事实 | 源头 | 派生物 / 守护 |
 | --- | --- | --- |
 | API 请求与响应结构 | 后端 Pydantic schema 与路由 | `frontend/src/lib/api/generated/api.ts`（`cd backend && .venv/bin/python -m app.contract.typescript`）；`tests/unit/test_api_contract.py` 防过期，`frontend/tests/contract/api-types.ts` 与 `tests/unit/api-contract.test.ts` 防前端漂移 |
-| 应用版本号 | `backend/pyproject.toml` 的 `[project] version`（`MAJOR.MINOR.PATCH`；本版为 1.0.1） | `frontend/package.json` 的 `version` 必须相同；`GET /api/v1/admin/version`（仅站主）连同发布包的 `RELEASE` 构建信息在“设置 → 站点设置”展示；`tests/unit/test_version.py` 守护 |
+| 应用版本号 | `backend/pyproject.toml` 的 `[project] version`（`MAJOR.MINOR.PATCH`；本版为 1.1.0） | `frontend/package.json` 的 `version` 必须相同；`GET /api/v1/admin/version`（仅站主）连同发布包的 `RELEASE` 构建信息在“设置 → 站点设置”展示；`tests/unit/test_version.py` 守护 |
 | 距离、用时、配速 | `gpx/metrics.py` 与 `gpx/queries.py`（PostGIS） | 前端只格式化 |
 | CI 按路径跳过的规则 | `.github/scripts/changed_areas.py` | `scripts/verify.py` 直接复用 |
 | 检查命令 | `.github/workflows/ci.yml` | `scripts/verify.py`（`infra/native/tests/test_verify_script.py` 保持一致） |
@@ -259,7 +259,8 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
 
 - CI（`.github/workflows/ci.yml`）只在 PR 与 `main` 的 push 上运行（分支有 PR 时不再重复跑一遍），并由 `.github/scripts/changed_areas.py` 按改动路径跳过无关任务：仅文档（`docs/`、`*.md`、`LICENSE`）不跑任何测试任务；仅前端不跑 backend、macOS、infra；仅后端不跑 frontend-ui；改动含迁移、`scripts/`、依赖清单或 `infra/` 时跑 infra；改了 `.github/`、不认识的路径或算不出差异时全部运行。判断逻辑改动须同步改 `infra/native/tests/test_ci_changes.py`；说明见 `docs/74-ci-path-filters.md`。
 - 被跳过的任务显示为 skipped，`ship.py` 视为通过。**不要用 `[skip ci]`、`paths-ignore` 或其它让整个工作流不运行的做法**：`main` 上没有运行时 `ship.py` 会拒绝发布。
-- 小改动（纯文档、文案、样式微调，不涉及后端、迁移、依赖、鉴权、公共接口或部署脚本）：本地跑过相关检查（前端至少 `pnpm check` 与对应的 Playwright 配置）后，经用户明确要求，可以不等 PR 上的 CI 就合并；其余改动一律等 PR 的 CI 全绿再合并。合并仍须用户授权。
+- 小改动（纯文档、文案、样式微调，不涉及后端、迁移、依赖、鉴权、公共接口或部署脚本）：本地跑过相关检查（前端至少 `pnpm check` 与对应的 Playwright 配置）后，经用户明确要求，可以不等 PR 上的 CI 就合并；其余改动一律等 PR 的 CI 全绿再合并。
+- **开 PR 后的固定流程（用户长期授权，2026-11-20）**：开 PR 后持续盯 CI；全部任务通过（跳过的任务视为通过）就直接 squash 合并，标题沿用 PR 标题并带 `(#PR号)`，有版本号变化时在标题里注明 `(vX.Y.Z)`。CI 失败时先查原因、修复并推送后继续盯，不合并失败的提交。新增功能或修复要上线的 PR，合并前按语义化版本更新版本号（见第 3 节“应用版本号”）。此授权只覆盖合并，部署与生产操作仍须用户单独授权。
 - 无论哪种，部署前都要等 `main` 上该提交的 CI 全绿（`ship.py` 强制检查），这一关不放松。
 
 ### 完成标准与回归测试
@@ -296,7 +297,7 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
 
 ## 11. 安全与禁止操作
 
-- **不执行** `git commit` / `push` / `merge` / `rebase` / 建 tag，也不部署或操作生产环境，除非用户显式授权。获授权提交时显式选择文件，不要使用 `git add -A`；排除密钥、数据库归档、合成账号密码与临时浏览器证据。
+- **不执行** `git commit` / `push` / `merge` / `rebase` / 建 tag，也不部署或操作生产环境，除非用户显式授权（例外：按第 9 节“开 PR 后的固定流程”，CI 全绿的 PR 可直接合并）。获授权提交时显式选择文件，不要使用 `git add -A`；排除密钥、数据库归档、合成账号密码与临时浏览器证据。
 - **不在开发库执行迁移**。开发库升级必须先获得用户明确授权，并遵循"备份 → 恢复演练 → 受控单次升级 → 复核"的顺序；降级不是默认回滚手段。
 - 绝不清理、改写或删除开发库中的数据；任何测试写入都不得落在开发库。
 - 绝不读取、输出或提交 `.env`、`.env.auth-rate.key` 等密钥文件内容，不把密钥写入代码、命令行参数、日志或文档。
