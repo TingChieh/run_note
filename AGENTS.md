@@ -59,7 +59,7 @@ docs/              设计与验收记录（中文）；docs/design-system/ 为 U
 | 事实 | 源头 | 派生物 / 守护 |
 | --- | --- | --- |
 | API 请求与响应结构 | 后端 Pydantic schema 与路由 | `frontend/src/lib/api/generated/api.ts`（`cd backend && .venv/bin/python -m app.contract.typescript`）；`tests/unit/test_api_contract.py` 防过期，`frontend/tests/contract/api-types.ts` 与 `tests/unit/api-contract.test.ts` 防前端漂移 |
-| 应用版本号 | `backend/pyproject.toml` 的 `[project] version`（`MAJOR.MINOR.PATCH`；本版为 1.1.0） | `frontend/package.json` 的 `version` 必须相同；`GET /api/v1/admin/version`（仅站主）连同发布包的 `RELEASE` 构建信息在“设置 → 站点设置”展示；`tests/unit/test_version.py` 守护 |
+| 应用版本号 | `backend/pyproject.toml` 的 `[project] version`（`MAJOR.MINOR.PATCH`） | `frontend/package.json` 的 `version` 必须相同；`GET /api/v1/admin/version`（仅站主）连同发布包的 `RELEASE` 构建信息在“设置 → 站点设置”展示；`tests/unit/test_version.py` 守护 |
 | 距离、用时、配速 | `gpx/metrics.py` 与 `gpx/queries.py`（PostGIS） | 前端只格式化 |
 | CI 按路径跳过的规则 | `.github/scripts/changed_areas.py` | `scripts/verify.py` 直接复用 |
 | 检查命令 | `.github/workflows/ci.yml` | `scripts/verify.py`（`infra/native/tests/test_verify_script.py` 保持一致） |
@@ -102,8 +102,9 @@ runes/禁用 store、`#lib` 导入、重型库按需加载、禁用 `map.setStyl
 - SvelteKit 3 的配置在 `vite.config.ts`（**没有 `svelte.config.js`**）。内部导入用 Node 子路径别名 `#lib/...` 且**带 `.ts` 扩展名**（如 `#lib/api/activities.ts`）；不要使用旧版 `$lib`。类型从 `$app/tsconfig` 继承。
 - 服务端环境变量在 `src/env.ts` 用 `defineEnvVars` 声明，从 `$app/env/private` 导入；hooks 类型从 `@sveltejs/kit/hooks` 导入。**新增变量必须在 `defineEnvVars` 中声明**，前端可见的才设 `public: true`。Vite 配置了 `env: { dir: '..' }`，因此 `.env` 位于仓库根目录。
 - 组件使用 Svelte 5 runes（`$props`/`$state`/`$derived`/`$effect`），props 用单次 `$props()` 解构并内联类型，回调命名 `onselect`/`onedit`/`ondelete`。**项目不使用 `createEventDispatcher`，也不使用 svelte store**。
-- 页面数据在客户端 `onMount` 中通过 `lib/api` 加载；服务端 `load` 只提供 `locals.user`。读取路由信息用 `$app/state`，**不要用 `$app/stores`**。
+- 页面业务数据通常在客户端 `onMount` 中通过 `lib/api` 加载。根布局的服务端 `load` 从 `locals` 提供会话、展示和站点上下文；路由级 `load` 沿用现有的访问校验、资源存在性检查和重定向。读取路由信息用 `$app/state`，**不要用 `$app/stores`**。
 - 组件里必须保留 `disposed` 清理标志（`onMount` 返回时置位，await 后赋值前检查）与单调请求令牌（丢弃过期响应）；遇到 401 一律清除私人状态并跳转登录。
+- 路由或现有领域容器负责业务请求和状态，展示组件通过 props、回调和 Svelte snippet 组合。状态就近维护，同源计算用 `$derived` / `$derived.by`，用户操作走事件处理，`$effect` 用于确有需要的外部同步和清理。优先使用模板、绑定和原生控件；焦点、尺寸测量、地图和玻璃增强等需要 DOM 的交互沿用现有绑定或工具，并清理监听和资源。组件按职责拆分，避免空壳包装、重复状态和不必要的依赖。
 
 ### 接口层
 
@@ -120,12 +121,13 @@ runes/禁用 store、`#lib` 导入、重型库按需加载、禁用 `map.setStyl
 
 ### UI 设计系统（强制流程）
 
-- 开始 UI 工作先读 [Design System](docs/design-system/README.md)，再查 [组件](docs/design-system/components.md)、[Patterns](docs/design-system/patterns.md) 和 [Tokens](docs/design-system/tokens.md)。先定位可复用实现与相似页面，再新增能力。
-- 样式基于 `src/app.css` 中的 CSS 自定义属性，通过 `@theme inline` 映射为 Tailwind 令牌（如 `bg-surface`、`text-muted-foreground`）。**颜色与稳定间距使用语义令牌，新增时扩展令牌，不要在组件里硬编码色值。** 通用组件类（`.button-secondary`、`.page-header` 等）放在 `app.css` 的 `@layer components`。
-- 液态玻璃、弹层与按压动效复用 `lib/styles/` 下的既有实现（如 `createGlass`、`rn-glass-menu`、`popover-motion.ts`），不要重新实现一套材质或动画。
+- 开始 UI 工作先读 [Design System](docs/design-system/README.md)，再查 [组件](docs/design-system/components.md)、[页面模式](docs/design-system/patterns.md) 和 [令牌](docs/design-system/tokens.md)。检查目标路由、调用方及最接近的已成熟页面，核对共享组件、排版、色彩、间距、圆角、阴影、导航、表单和响应式。优先复用 `PageHeader`、`FeedbackState`、`PageSkeleton`、`SaveBar` 等适用实现，以及已有语义类和原生控件。
+- **内容和数据优先。** 用标题、分组、对齐、留白和数据单位建立层级，信息密度以读得清、找得到、点得准为准。保留必要的图标文字、表单标签、无障碍名称、阅读顺序、键盘操作和可见焦点。限定在任务所需的功能范围内，避免新增一级导航、重复入口、无意义的卡片与装饰、不必要的弹窗、教程、功能推荐和无关设置。
+- **Do not narrate the interface** 是 UI 文案的首要规则。只有在省略会影响理解、操作或用户明确要求的内容，且标题、标签、数据或控件无法充分表达时，才新增可见文字。默认不加页面副标题、欢迎语、营销文案、泛化提示横幅、重复解释卡片数据或功能的说明和开发者视角文字。复用 `PageHeader` 时默认省略可选的 `description`，页面模式中的示例文案也按必要性判断。保留简短且可操作的空态、错误和恢复提示，以及必要的不可逆风险、权限、隐私、复杂设置、单位与统计口径、图表和无障碍说明。任务需要的业务摘要应传达实际数据结论，例如个人记录页的同期里程对比。长说明可用现有 `details` 模式。既有文案只在任务涉及该内容时调整，保留完整功能与反馈。
+- `src/app.css` 管理语义令牌，通过 `@theme inline` 映射 Tailwind 工具类（如 `bg-surface`、`text-muted-foreground`）；全站基础样式在 `@layer base`，共享类（如 `.button-secondary`、`.page-header`）在 `@layer components`，页面或组件独有的样式留在局部 `<style>`。沿用系统字体、指标等宽数字和现有排版阶梯、表面及布局规则。颜色与稳定间距使用语义令牌，确有缺项时扩展令牌；避免硬编码色值、平行样式体系和层叠覆盖补丁。
+- 液态玻璃、弹层与按压动效复用 `lib/styles/` 下的项目入口，包括 `liquid-glass.ts` 的 `liquidGlass`、`menu-glass.ts` 的 `attachMenuGlass` / `attachFloatingGlass`、`.rn-glass-menu` 样式和 `popover-motion.ts`。底层 `createGlass` 定义在 `lib/vendor/liquidglass/liquid-glass.js`，由项目封装调用。不要重新实现一套材质或动画。
 - 延续现有品牌、主题、材质和响应式；未经允许不得全局换肤或批量重写，避免重复样式与无目的的视觉创新。
 - 新增通用组件时同步更新规范文档和独立 showcase；没有实际重复需求不创建空壳组件。`pnpm showcase` 是独立开发入口，**不得加入生产路由或导航**。
-- 验证主题、响应式、交互/加载/空/错误状态、键盘与可见焦点；按 [验收记录](docs/50-ui-design-system.md) 区分合成 UI、视觉回归与真实业务验收。
 
 ## 6. 数据库、迁移与配置
 
@@ -167,6 +169,7 @@ python3 scripts/verify.py --list                  # 只打印计划
 ```bash
 pnpm test                                      # Vitest 单元测试
 pnpm check                                     # svelte-kit sync + svelte-check 类型检查
+pnpm lint:style                                # Stylelint：CSS 与 Svelte 样式的排版令牌约束
 pnpm build                                     # 生产构建（adapter-node）
 pnpm format <文件…>                            # 用 Prettier 格式化指定文件（渐进采用，见第 1 节）
 pnpm format:check <文件…>                      # 只检查，不写入
@@ -270,11 +273,18 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
 - **同类错误会反复出现时**，把规则写进 `test_architecture.py` / `architecture.test.ts` / 契约检查，而不是只往本文件加一段话。
 - 新增按 ID 访问本人资源的路由时，写出“他人 ID 返回 404 且数据不变”的集成测试，并登记到 `test_architecture.py` 的 `CROSS_USER_TESTS`。
 
+### UI 变更验收
+
+- 改前按第 5 节核对同类实现、复用机会与可见文案的必要性。有稳定的页面基线时，先留修改前的视觉证据。改后从 `frontend/` 运行 `pnpm check`、`pnpm lint:style`、`pnpm test`、`pnpm build` 和涉及功能的 Playwright 配置。Stylelint 需单独运行；`scripts/verify.py --full` 可覆盖其余通用前端检查，专项配置按需追加。
+- 有浏览器条件时，通过现有 Playwright 配置或隔离的本地服务打开受影响路由，实际检查桌面、平板、手机（默认 1440×900、768×1024、390×844）的浅色和深色，以及受影响的布局断点；项目页面模式已有的额外窄屏、低高度和断点覆盖继续适用。检查关键操作、键盘与焦点、适用的成功/加载/空/错误和恢复状态、布局溢出及控制台和页面错误。沿用合成数据或获准的隔离测试库，保护现有服务与真实数据。
+- 使用相同路由、数据、视口、主题和状态查看修改前后截图，说明预期差异和视觉回归结果；已有快照按相应配置比较，更新前审阅差异。按 [设计系统验收记录](docs/50-ui-design-system.md) 说明合成 UI、视觉回归与真实业务验收各自实际覆盖的范围。未做浏览器或视觉验证时，在 PR 和交付说明中写明原因与缺项。
+
 ### 验证纪律
 
 - 测试必须**真实执行**。无法执行时明确说明原因，**禁止声称测试通过**。
 - **测试通过数量随开发变化，不要引用历史计数或据其判断当前状态**；每次改动后重新执行相关测试，并报告本次实际结果与命令输出。
 - 先运行与改动相关的最小测试集作为快速反馈，交付前再补充回归范围；报告时分开说明"实际运行"与"未运行"。
+- 检查失败先定位根因；不要为通过检查跳过用例、弱化断言、放宽截图阈值或增加无依据的压制。
 - 前端改动需通过 `pnpm check`；后端改动需通过 Ruff 检查与格式检查。
 - **本机通常没配测试库，集成测试会被跳过，所以单元测试全绿不代表 CI 会过**（后端 CI 里的集成用例要 7 分钟以上，失败才发现代价很高）。改动函数签名、路由入参、解析/导入入口或共享工具前，先 `grep -rn <名字> backend/tests/integration`，找出调用方和 `monkeypatch` 替身（替身签名不跟着改会直接 `TypeError`）；改完在交付说明里把"集成测试未在本机运行"列入未运行项，并以 PR 上的 CI 结果为准。
 
@@ -282,7 +292,7 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
 
 1. **先定位再改**：改动前先读相关 router/service/schema 与其调用方，确认既有约定，不要凭猜测新增模式。
 2. **复用优先**：已存在的 `envelope`、`StrictInput`、`lock_owner`、`owned_*`、`lib/api` 工具、底图控制器与设计系统组件是既定模式。
-3. **最小必要改动**：不做与任务无关的重构、不顺手"优化"周边代码。
+3. **最小必要改动**：不做与任务无关的重构、不顺手"优化"周边代码。避免臆造抽象、缺乏依据的防御分支和残留的废弃代码。
 4. **不要擅自变更**公共接口、响应结构、数据库 Schema 或既有业务行为。确有必要时先说明影响范围并取得确认。
 5. **保护未提交修改**：工作区可能长期存在大量未提交改动，这是有意保留的状态。改动前先确认目标文件是否已有未提交修改，不要删除、覆盖或顺手清理。
 6. **较大功能的文档流程**：
@@ -290,7 +300,7 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
    - 实施计划：`docs/superpowers/plans/YYYY-MM-DD-<slug>.md`
    - 完成后追加编号特性文档 `docs/NN-<slug>.md`：编号取 `docs/` 下已用最大编号 +1，用 `ls docs/` 现场确认，不要沿用文档里写死的编号。
    - 文档使用中文，需包含"使用方式 / 接口与隐私 / 验证记录"并给出真实证据。
-7. **注释**：先用命名、类型、函数拆分与模块边界表达意图，不写复述代码行为的注释。保留代码推导不出的信息：算法依据、坐标系与精度约束、外部协议限制、安全原因、设计取舍。公共 API 文档、许可证与合规声明照常保留。修改代码时顺带检查相邻注释是否过时，但不做全仓库批量删注释。以下由检查强制（`test_architecture.py`、`architecture.test.ts`、`test_shell_style.py`、Ruff `RUF100`）：
+7. **注释写缘由**：先用命名、类型、函数拆分与模块边界表达意图，注释简洁交代代码推导不出的算法依据、GPX 与地理约束（如坐标系和精度）、外部协议、兼容性、安全与业务取舍。公共 API 文档、许可证与合规声明照常保留。改动时核对相邻注释，避免留下过时注释或注释掉的废弃代码，不做全仓库批量删注释。以下由检查强制（`test_architecture.py`、`architecture.test.ts`、`test_shell_style.py`、Ruff `RUF100`）：
    - TODO/FIXME/HACK/XXX 必须关联可追踪问题，写作 `TODO(#12)`；能立即修的直接修根因。
    - 压制检查的注释必须在同一行写明原因（`# noqa: CODE  原因`、`svelte-ignore 规则 (原因)`、`# shellcheck disable=SCxxxx # 原因`）；多余的 `noqa` 会被 Ruff 报错；禁止 `@ts-ignore` 与 `eslint-disable`。
    - 不得用注释为临时绕过、跳过校验或架构违规辩护。同一类警告反复出现时，修根因或加约束（例如共享夹具放进 `conftest.py`，而不是在每个测试里压制 F811）。
@@ -308,10 +318,10 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
 
 ## 12. 完成任务后的交付说明
 
-报告需包含：
+PR 与交付说明简洁记录以下内容：
 
 1. **改动范围**：具体文件与各自意图，区分后端/前端/文档/测试。
-2. **验证结果**：实际执行的命令及其真实输出（通过/失败/跳过数量），明确列出**未运行**的检查。
+2. **验证结果**：实际执行的命令及其真实输出（通过/失败/跳过数量），明确列出**未运行**的检查。UI 变更附可查看的前后视觉证据及实际核对的路由、视口、主题和状态；缺少证据时注明范围和原因。
 3. **未确认事项与剩余风险**：例如"开发服务未重启，新接口未在运行实例上验证""真实 AI 供应商未配置"。
 4. **未受影响的部分**：说明保留的既有行为、未改动的接口与数据。
 
