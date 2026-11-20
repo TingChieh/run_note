@@ -1260,8 +1260,10 @@ test.describe('phone bar looks like the desktop bar', () => {
         right: cs.borderRightWidth,
         left: cs.borderLeftWidth,
         bottom: cs.borderBottomWidth,
+        overflowX: cs.overflowX,
       };
     });
+    expect(card.overflowX, 'mobile menu never scrolls horizontally').toBe('hidden');
     expect(card.radius).toBeGreaterThanOrEqual(16);
     expect([card.top, card.right, card.bottom, card.left]).toEqual(['1px', '1px', '1px', '1px']);
   });
