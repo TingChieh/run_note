@@ -160,6 +160,24 @@ for (const viewport of [
       await expect(dockImg).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(viewport.width);
       await expect(page.locator('html')).toHaveAttribute('data-theme', scheme);
+      // Verify chart X-axis labels never overlap and stay >=12px across desktop/tablet/mobile too.
+      for (const testId of ['recap-terrain-chart', 'recap-pace-chart']) {
+        const check = await page.getByTestId(testId).evaluate((root) => {
+          const labels = [...root.querySelectorAll<HTMLElement>('.slot-label')]
+            .map((el) => ({
+              fontSize: parseFloat(getComputedStyle(el).fontSize),
+              rect: el.getBoundingClientRect(),
+            }))
+            .sort((a, b) => a.rect.left - b.rect.left);
+          const overlaps = labels.slice(1).filter((curr, idx) => curr.rect.left < labels[idx].rect.right - 0.5);
+          return {
+            minFont: Math.min(...labels.map((l) => l.fontSize)),
+            overlapCount: overlaps.length,
+          };
+        });
+        expect(check.minFont).toBeGreaterThanOrEqual(12);
+        expect(check.overlapCount).toBe(0);
+      }
       await page.screenshot({
         path: info.outputPath(`${viewport.name}-${scheme}.png`),
         fullPage: true,
@@ -320,3 +338,72 @@ test('current cutoff reaches Canvas across A/B/C styles, themes change exported 
   await page.keyboard.press('Escape');
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
 });
+
+for (const narrow of [
+  { name: 'mobile-390', width: 390, height: 844 },
+  { name: 'narrow-320', width: 320, height: 568 },
+]) {
+  test(`${narrow.name} keeps chart axis and slot labels readable (>=12px) without overlap`, async ({ page }, info) => {
+    await loginRunner(page);
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    page.on('console', (message) => {
+      if (message.type() === 'error') errors.push(message.text());
+    });
+    await page.setViewportSize({ width: narrow.width, height: narrow.height });
+    await page.addInitScript(() => localStorage.setItem('runnote-theme', 'light'));
+    await page.goto(recap + '?period=year&year=2025');
+    await expect(page.getByTestId('recap-overview')).toContainText('186.00');
+    await expect(page.getByTestId('recap-poster-dock').getByRole('img')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(narrow.width);
+
+    for (const testId of ['recap-terrain-chart', 'recap-pace-chart']) {
+      const stats = await page.getByTestId(testId).evaluate((root) => {
+        const svg = root.querySelector('svg');
+        const svgRect = svg?.getBoundingClientRect();
+        const measure = (selector: string) =>
+          [...root.querySelectorAll<HTMLElement>(selector)].map((el) => {
+            const rect = el.getBoundingClientRect();
+            const fontSize = parseFloat(getComputedStyle(el).fontSize);
+            return {
+              text: el.textContent?.trim() ?? '',
+              fontSize,
+              width: rect.width,
+              height: rect.height,
+              left: rect.left,
+              right: rect.right,
+            };
+          });
+        const yLabels = measure('.axis-label');
+        const xLabels = measure('.slot-label');
+        const badges = measure('.point-badge, .pace-fast-badge');
+        const sortedX = [...xLabels].sort((a, b) => a.left - b.left);
+        const xOverlaps = sortedX.slice(1).filter((curr, idx) => curr.left < sortedX[idx].right - 0.5);
+        return {
+          svgWidth: svgRect?.width ?? 0,
+          svgHeight: svgRect?.height ?? 0,
+          yLabels,
+          xLabels,
+          badges,
+          xOverlaps,
+        };
+      });
+
+      expect(stats.svgHeight).toBeGreaterThanOrEqual(160);
+      expect(stats.yLabels.length).toBeGreaterThanOrEqual(2);
+      expect(stats.xLabels.length).toBeGreaterThanOrEqual(4);
+      expect(stats.xOverlaps).toEqual([]);
+      for (const label of [...stats.yLabels, ...stats.xLabels, ...stats.badges]) {
+        expect(label.fontSize).toBeGreaterThanOrEqual(12);
+        expect(label.height).toBeGreaterThanOrEqual(12);
+      }
+    }
+
+    await page.screenshot({
+      path: info.outputPath(`${narrow.name}-light.png`),
+      fullPage: true,
+      animations: 'disabled',
+    });
+    expect(errors).toEqual([]);
+  });
+}

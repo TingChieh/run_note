@@ -7,7 +7,7 @@ import type { Trends } from '#lib/api/statistics.ts';
 interface CapturedDraw {
   width: number;
   height: number;
-  texts: { text: string; font: string; x: number; y: number }[];
+  texts: { text: string; font: string; x: number; y: number; maxWidth?: number }[];
   fills: string[];
   hasNaN: boolean;
   released: boolean;
@@ -75,9 +75,10 @@ function installCanvasMock(theme: 'light' | 'dark' = 'light') {
       const px = match ? Number(match[1]) : 16;
       return { width: value.length * px * 0.62 };
     }),
-    fillText: vi.fn((value: string, x: number, y: number) => {
+    fillText: vi.fn((value: string, x: number, y: number, maxWidth?: number) => {
       checkNums(x, y);
-      captured.texts.push({ text: value, font: ctx.font, x, y });
+      if (maxWidth !== undefined) checkNums(maxWidth);
+      captured.texts.push({ text: value, font: ctx.font, x, y, maxWidth });
     }),
   };
 
@@ -330,5 +331,73 @@ describe('recap 9:16 Canvas 2D renderer (A/B/C styles & whitelist)', () => {
     expect(captured.height).toBe(640);
     expect(captured.hasNaN).toBe(false);
     expect(captured.released).toBe(true);
+  });
+
+  it('condenses 12-way tied peaks and tied fastest paces cleanly across all three styles without overflow', async () => {
+    const report = {
+      period: 'year',
+      year: 2025,
+      month: null,
+      date_from: '2025-01-01',
+      date_to: '2026-01-01',
+      is_partial: false,
+      cutoff_date: null,
+      today: '2026-11-21',
+      activity_count: 24,
+      activity_days: 24,
+      distance_m: '120000.000',
+      duration_sum_seconds: '43200',
+      known_duration_count: 24,
+      missing_duration_count: 0,
+      pace_eligible_count: 24,
+      pace_eligible_distance_m: '120000.000',
+      avg_pace_seconds_per_km: '360.000',
+      quality_warning_count: 0,
+      date_assignment: 'activity_local_date',
+    } as unknown as PeriodReport;
+
+    const slots = recapSlots({ period: 'year', year: 2025, month: null });
+    const tiedTrends: Trends = {
+      period: 'month',
+      date_from: '2025-01-01',
+      date_to: '2026-01-01',
+      week_start: 'monday',
+      date_assignment: 'activity_local_date',
+      buckets: slots.map((slot) => ({
+        bucket_start: slot.start,
+        bucket_end: slot.end,
+        is_partial: false,
+        distance_m: '10000.000',
+        activity_count: 2,
+        activity_days: 2,
+        duration_sum_seconds: '3600',
+        known_duration_count: 2,
+        missing_duration_count: 0,
+        pace_eligible_count: 2,
+        pace_eligible_distance_m: '10000.000',
+        avg_pace_seconds_per_km: '360.000',
+        quality_warning_count: 0,
+        date_assignment: 'activity_local_date',
+      })),
+    };
+
+    const tiedRecap = buildRecap(report, tiedTrends);
+    expect(tiedRecap.derived.peakLabels).toHaveLength(12);
+    expect(tiedRecap.derived.peakLabelCompact).toBe('1月、2月、3月 等 12 段');
+    expect(tiedRecap.derived.fastestLabelCompact).toBe('1月、2月、3月 等 12 段');
+
+    for (const style of recapPosterStyles.map((item) => item.id)) {
+      const { captured, fakeElement } = installCanvasMock('light');
+      await renderRecap(tiedRecap, fakeElement, { style });
+      expect(captured.hasNaN).toBe(false);
+      const joined = captured.texts.map((entry) => entry.text).join('\n');
+      expect(joined).toContain('1月、2月、3月 等 12 段');
+      expect(joined).not.toContain('1月、2月、3月、4月、5月、6月');
+      for (const entry of captured.texts) {
+        const px = Number(entry.font.match(/(\d+)px/)?.[1] ?? 0);
+        expect(px).toBeGreaterThanOrEqual(14);
+        expect(entry.maxWidth).toBeGreaterThan(0);
+      }
+    }
   });
 });

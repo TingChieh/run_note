@@ -379,10 +379,10 @@
               <div class="scale-facts">
                 {#if heroMarathonsText}<span>等效 <strong>{heroMarathonsText}</strong></span>{/if}
                 {#if heroAvgRunText}<span>单次均距 <strong>{heroAvgRunText}</strong></span>{/if}
-                {#if distribution && distribution.max > 0 && distribution.derived.peakLabel}
+                {#if distribution && distribution.max > 0 && distribution.derived.peakLabelCompact}
                   <span>
                     {distribution.derived.peakTied ? '并列峰值' : '峰值'}
-                    <strong>{distribution.derived.peakLabel} · {km(distribution.max, 1)} km</strong>
+                    <strong>{distribution.derived.peakLabelCompact} · {km(distribution.max, 1)} km</strong>
                   </span>
                 {/if}
               </div>

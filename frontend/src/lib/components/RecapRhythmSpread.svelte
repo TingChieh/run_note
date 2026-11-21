@@ -10,6 +10,8 @@
     selectedIndex?: number;
   } = $props();
 
+  let pacePlotWidth = $state(0);
+
   const activeIndex = $derived(
     selectedIndex >= 0 && selectedIndex < recap.buckets.length ? selectedIndex : defaultRecapBucketIndex(recap),
   );
@@ -18,42 +20,59 @@
   const ringR = 18;
   const ringCirc = 2 * Math.PI * ringR;
 
-  const paceW = 500;
-  const paceH = 212;
-  const padL = 62;
-  const padR = 24;
-  const padT = 28;
-  const padB = 34;
-  const plotW = paceW - padL - padR;
-  const plotH = paceH - padT - padB;
+  // Render pace SVG at 1:1 CSS pixels using measured plot width; keep all axis/slot/peak labels in HTML at 12px.
+  const paceW = $derived(Math.max(160, Math.round(pacePlotWidth || 420)));
+  const paceH = 168;
+  const padX = $derived(paceW < 300 ? 8 : 14);
+  const padT = 26;
+  const padB = 10;
+  const innerW = $derived(Math.max(40, paceW - padX * 2));
+  const innerH = paceH - padT - padB;
+
+  const visiblePaceXIndices = $derived.by(() => {
+    const n = recap.buckets.length;
+    if (n <= 6 || paceW >= 500) return new Set(Array.from({ length: n }, (_, i) => i));
+    if (paceW >= 290) return new Set([0, 2, 4, 6, 8, n - 1].filter((i) => i >= 0 && i < n));
+    return new Set([0, 4, 8, n - 1].filter((i) => i >= 0 && i < n));
+  });
 
   const paceChart = $derived.by(() => {
     const paced = recap.buckets
       .map((bucket, index) => ({ bucket, index }))
       .filter(({ bucket }) => !bucket.future && bucket.avgPaceSeconds !== null && bucket.avgPaceSeconds > 0);
     if (paced.length < 2) {
-      return { paced, pathD: '', points: [], minP: 0, maxP: 0, yAvg: null as number | null };
+      return {
+        paced,
+        pathD: '',
+        points: [],
+        minP: 0,
+        maxP: 0,
+        yAvg: null as number | null,
+        showAvgAxisLabel: false,
+        fastestBadge: null as { xPct: number; y: number; text: string } | null,
+      };
     }
 
     const values = paced.map(({ bucket }) => bucket.avgPaceSeconds!);
     if (recap.avgPaceSeconds !== null && recap.avgPaceSeconds > 0) values.push(recap.avgPaceSeconds);
     const rawMin = Math.min(...values);
     const rawMax = Math.max(...values);
-    const pad = rawMax - rawMin < 8 ? 14 : Math.max(8, (rawMax - rawMin) * 0.14);
+    const pad = rawMax - rawMin < 8 ? 14 : Math.max(8, (rawMax - rawMin) * 0.16);
     const minP = Math.max(1, rawMin - pad);
     const maxP = rawMax + pad;
     const span = Math.max(10, maxP - minP);
 
     const n = recap.buckets.length;
-    const stepX = n > 1 ? plotW / (n - 1) : plotW;
+    const stepX = n > 1 ? innerW / (n - 1) : innerW;
 
     // Inverted Y: faster (smaller sec/km) sits higher.
     const points = recap.buckets.map((bucket, index) => {
-      const x = n === 1 ? padL + plotW / 2 : padL + index * stepX;
+      const x = n === 1 ? padX + innerW / 2 : padX + index * stepX;
+      const xPct = (x / paceW) * 100;
       const p =
         !bucket.future && bucket.avgPaceSeconds !== null && bucket.avgPaceSeconds > 0 ? bucket.avgPaceSeconds : null;
-      const y = p === null ? null : padT + ((p - minP) / span) * plotH;
-      return { x, y, bucket, index };
+      const y = p === null ? null : padT + ((p - minP) / span) * innerH;
+      return { x, xPct, y, bucket, index };
     });
 
     const valid = points.filter((pt): pt is typeof pt & { y: number } => pt.y !== null);
@@ -65,15 +84,26 @@
 
     const yAvg =
       recap.avgPaceSeconds !== null && recap.avgPaceSeconds > 0
-        ? padT + ((recap.avgPaceSeconds - minP) / span) * plotH
+        ? padT + ((recap.avgPaceSeconds - minP) / span) * innerH
+        : null;
+    const showAvgAxisLabel = yAvg !== null && yAvg - padT >= 22 && padT + innerH - yAvg >= 22;
+
+    const fastestPt = points.find((pt) => pt.bucket.fastest && pt.y !== null && pt.bucket.avgPaceSeconds !== null);
+    const fastestBadge =
+      fastestPt && fastestPt.y !== null && fastestPt.bucket.avgPaceSeconds !== null
+        ? {
+            xPct: fastestPt.xPct,
+            y: Math.max(0, fastestPt.y - 22),
+            text: formatPace(fastestPt.bucket.avgPaceSeconds).replace(/ \/km$/, ''),
+          }
         : null;
 
-    return { paced, pathD, points, minP, maxP, yAvg };
+    return { paced, pathD, points, minP, maxP, yAvg, showAvgAxisLabel, fastestBadge };
   });
 
   const paceChip = $derived(
     recap.derived.fastestPace !== null
-      ? `${recap.derived.fastestTied ? '并列最快' : '最快'} ${recap.derived.fastestLabel} · ${recap.derived.fastestPaceText}`
+      ? `${recap.derived.fastestTied ? '并列最快' : '最快'} ${recap.derived.fastestLabelCompact} · ${recap.derived.fastestPaceText}`
       : '暂无配速数据',
   );
 
@@ -158,64 +188,86 @@
 
     <div class="pace-stage" data-testid="recap-pace-chart">
       {#if paceChart.paced.length >= 2}
-        <svg
-          class="pace-svg"
-          viewBox={`0 0 ${paceW} ${paceH}`}
-          role="img"
-          aria-label={`各时段加权平均配速走势图，${paceChip}`}
-        >
-          <line x1={padL} y1={padT} x2={paceW - padR} y2={padT} class="guide-line" />
-          {#if paceChart.yAvg !== null}
-            <line x1={padL} y1={paceChart.yAvg} x2={paceW - padR} y2={paceChart.yAvg} class="avg-line" />
-            <text x={padL - 8} y={paceChart.yAvg + 4} text-anchor="end" class="avg-label">均 {avgPaceShort}</text>
-          {/if}
-          <line x1={padL} y1={padT + plotH} x2={paceW - padR} y2={padT + plotH} class="guide-line" />
-
-          <text x={padL - 8} y={padT + 4} text-anchor="end" class="axis-text">
-            {formatPace(paceChart.minP).replace(/ \/km$/, '')}
-          </text>
-          <text x={padL - 8} y={padT + plotH + 4} text-anchor="end" class="axis-text">
-            {formatPace(paceChart.maxP).replace(/ \/km$/, '')}
-          </text>
-
-          {#key `${recap.period}-${recap.year}-${recap.month ?? ''}-${recap.derived.fastestPace}`}
-            <path class="pace-path" d={paceChart.pathD} fill="none" />
-          {/key}
-
-          {#each paceChart.points as pt (pt.bucket.start)}
-            {@const hideCompact =
-              recap.buckets.length >= 10 &&
-              !pt.bucket.fastest &&
-              pt.index !== 0 &&
-              pt.index !== recap.buckets.length - 1 &&
-              pt.index % 2 === 1}
-            {#if pt.y !== null}
-              <circle
-                cx={pt.x}
-                cy={pt.y}
-                r={pt.bucket.fastest ? 6 : 3.8}
-                class="pace-dot"
-                class:pace-dot-fast={pt.bucket.fastest}
-              />
-              {#if pt.bucket.fastest && pt.bucket.avgPaceSeconds !== null}
-                <text x={pt.x} y={pt.y - 11} text-anchor="middle" class="pace-fast-label">
-                  {formatPace(pt.bucket.avgPaceSeconds).replace(/ \/km$/, '')}
-                </text>
-              {/if}
+        <div class="pace-frame">
+          <div class="pace-y-axis" aria-hidden="true" style:height={`${paceH}px`}>
+            <span class="axis-label" style:top={`${padT}px`}>
+              {formatPace(paceChart.minP).replace(/ \/km$/, '')}
+            </span>
+            {#if paceChart.showAvgAxisLabel && paceChart.yAvg !== null}
+              <span class="axis-label avg-label" style:top={`${paceChart.yAvg}px`}>均 {avgPaceShort}</span>
             {/if}
-            <text
-              x={pt.x}
-              y={paceH - 10}
-              text-anchor="middle"
-              class="axis-text"
-              class:axis-fast={pt.bucket.fastest}
-              class:axis-compact-hide={hideCompact}
-            >
-              {pt.bucket.shortLabel}
-            </text>
-          {/each}
-        </svg>
-        <p class="footnote">纵轴越靠上代表该时段加权平均配速越快，均取自服务端聚合。</p>
+            <span class="axis-label" style:top={`${padT + innerH}px`}>
+              {formatPace(paceChart.maxP).replace(/ \/km$/, '')}
+            </span>
+          </div>
+
+          <div class="pace-plot-col" bind:clientWidth={pacePlotWidth}>
+            <div class="pace-canvas" style:height={`${paceH}px`}>
+              <svg
+                class="pace-svg"
+                viewBox={`0 0 ${paceW} ${paceH}`}
+                width={paceW}
+                height={paceH}
+                role="img"
+                aria-label={`各时段加权平均配速走势图，${paceChip}`}
+              >
+                <line x1={padX} y1={padT} x2={paceW - padX} y2={padT} class="guide-line" />
+                {#if paceChart.yAvg !== null}
+                  <line x1={padX} y1={paceChart.yAvg} x2={paceW - padX} y2={paceChart.yAvg} class="avg-line" />
+                {/if}
+                <line x1={padX} y1={padT + innerH} x2={paceW - padX} y2={padT + innerH} class="guide-line" />
+
+                {#key `${recap.period}-${recap.year}-${recap.month ?? ''}-${recap.derived.fastestPace}`}
+                  <path class="pace-path" d={paceChart.pathD} fill="none" />
+                {/key}
+
+                {#each paceChart.points as pt (pt.bucket.start)}
+                  {#if pt.y !== null}
+                    <circle
+                      cx={pt.x}
+                      cy={pt.y}
+                      r={pt.bucket.fastest ? 5.5 : 3.5}
+                      class="pace-dot"
+                      class:pace-dot-fast={pt.bucket.fastest}
+                    />
+                  {/if}
+                {/each}
+              </svg>
+
+              {#if paceChart.fastestBadge}
+                <span
+                  class="pace-fast-badge"
+                  class:badge-start={paceChart.fastestBadge.xPct < 14}
+                  class:badge-end={paceChart.fastestBadge.xPct > 86}
+                  style:left={`${paceChart.fastestBadge.xPct.toFixed(2)}%`}
+                  style:top={`${paceChart.fastestBadge.y}px`}
+                  aria-hidden="true"
+                >
+                  {paceChart.fastestBadge.text}
+                </span>
+              {/if}
+            </div>
+
+            <div class="pace-x-axis" aria-hidden="true">
+              {#each paceChart.points as pt (pt.bucket.start)}
+                {#if visiblePaceXIndices.has(pt.index)}
+                  <span
+                    class="slot-label"
+                    class:slot-fast={pt.bucket.fastest}
+                    class:slot-first={pt.index === 0}
+                    class:slot-last={pt.index === recap.buckets.length - 1 && recap.buckets.length > 1}
+                    style:left={`${pt.xPct.toFixed(2)}%`}
+                  >
+                    {pt.bucket.shortLabel}
+                  </span>
+                {/if}
+              {/each}
+            </div>
+          </div>
+        </div>
+        <p class="footnote">
+          纵轴越靠上代表该时段加权平均配速越快（周期均配 {avgPaceShort} /km），均取自服务端聚合。
+        </p>
       {:else if paceChart.paced.length === 1}
         {@const single = paceChart.paced[0].bucket}
         <div class="pace-single">
@@ -340,13 +392,43 @@
   }
   .pace-stage {
     min-width: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .pace-frame {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-2);
+    align-items: start;
+  }
+  .pace-y-axis {
+    position: relative;
+    min-width: 3.1rem;
+  }
+  .axis-label {
+    position: absolute;
+    right: 0;
+    transform: translateY(-50%);
+    font-size: var(--text-caption);
+    line-height: var(--line-height-solid);
+    color: var(--muted-foreground);
+    white-space: nowrap;
+  }
+  .avg-label {
+    font-weight: var(--weight-semibold);
+    color: var(--primary);
+  }
+  .pace-plot-col {
+    min-width: 0;
+  }
+  .pace-canvas {
+    position: relative;
+    width: 100%;
   }
   .pace-svg {
     display: block;
     width: 100%;
-    height: auto;
+    height: 100%;
     overflow: visible;
-    font-variant-numeric: tabular-nums;
   }
   .guide-line {
     stroke: var(--border);
@@ -357,22 +439,9 @@
     stroke-opacity: 0.48;
     stroke-dasharray: 4 4;
   }
-  .avg-label {
-    font-size: var(--text-caption);
-    font-weight: var(--weight-semibold);
-    fill: var(--primary);
-  }
-  .axis-text {
-    font-size: var(--text-caption);
-    fill: var(--muted-foreground);
-  }
-  .axis-fast {
-    font-weight: var(--weight-bold);
-    fill: var(--foreground);
-  }
   .pace-path {
     stroke: var(--primary);
-    stroke-width: 3;
+    stroke-width: 2.75;
     stroke-linecap: round;
     stroke-dasharray: 1400;
     stroke-dashoffset: 1400;
@@ -386,10 +455,46 @@
   .pace-dot-fast {
     fill: var(--recap-gold);
   }
-  .pace-fast-label {
+  .pace-fast-badge {
+    position: absolute;
+    transform: translateX(-50%);
+    pointer-events: none;
     font-size: var(--text-caption);
     font-weight: var(--weight-bold);
-    fill: var(--foreground);
+    line-height: var(--line-height-solid);
+    color: var(--foreground);
+    white-space: nowrap;
+  }
+  .badge-start {
+    transform: translateX(0);
+  }
+  .badge-end {
+    transform: translateX(-100%);
+  }
+  .pace-x-axis {
+    position: relative;
+    height: 1.5rem;
+    margin-top: var(--space-1);
+  }
+  .slot-label {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    font-size: var(--text-caption);
+    font-weight: var(--weight-medium);
+    line-height: var(--line-height-heading);
+    color: var(--muted-foreground);
+    white-space: nowrap;
+  }
+  .slot-first {
+    transform: translateX(0);
+  }
+  .slot-last {
+    transform: translateX(-100%);
+  }
+  .slot-fast {
+    font-weight: var(--weight-bold);
+    color: var(--foreground);
   }
   .pace-single {
     padding: var(--space-4);
@@ -434,11 +539,6 @@
     }
     .ring-grid {
       grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-  }
-  @media (max-width: 479px) {
-    .axis-compact-hide {
-      visibility: hidden;
     }
   }
   @media (forced-colors: active) {

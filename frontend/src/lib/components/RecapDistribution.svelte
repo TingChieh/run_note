@@ -12,6 +12,7 @@
 
   const uid = $props.id();
   let stageEl = $state<HTMLDivElement>(null!);
+  let plotWidth = $state(0);
 
   const activeIndex = $derived(
     selectedIndex >= 0 && selectedIndex < recap.buckets.length ? selectedIndex : defaultRecapBucketIndex(recap),
@@ -19,34 +20,43 @@
   const activeBucket = $derived(recap.buckets[activeIndex] ?? null);
   const peak = $derived(recapPeak(recap));
 
-  const W = 980;
-  const H = 268;
-  const padL = 48;
-  const padR = 36;
-  const padT = 36;
-  const padB = 46;
-  const plotW = W - padL - padR;
-  const plotH = H - padT - padB;
+  // Track rendered plot width so the SVG renders at 1:1 CSS pixels without shrinking strokes or dots;
+  // all axis ticks, slot labels, and peak callouts are rendered in HTML at true CSS typography sizes.
+  const svgW = $derived(Math.max(180, Math.round(plotWidth || 860)));
+  const svgH = $derived(svgW < 420 ? 176 : 212);
+  const padX = $derived(svgW < 420 ? 10 : 18);
+  const padT = 28;
+  const padB = 10;
+  const innerW = $derived(Math.max(40, svgW - padX * 2));
+  const innerH = $derived(Math.max(60, svgH - padT - padB));
+
+  const visibleXIndices = $derived.by(() => {
+    const n = recap.buckets.length;
+    if (n <= 6 || svgW >= 500) return new Set(Array.from({ length: n }, (_, i) => i));
+    if (svgW >= 310) return new Set([0, 2, 4, 6, 8, n - 1].filter((i) => i >= 0 && i < n));
+    return new Set([0, 4, 8, n - 1].filter((i) => i >= 0 && i < n));
+  });
 
   const geometry = $derived.by(() => {
     const n = recap.buckets.length;
-    const stepX = n > 1 ? plotW / (n - 1) : plotW;
+    const stepX = n > 1 ? innerW / (n - 1) : innerW;
     const maxDist = Math.max(recap.max, 1);
     const maxCum = Math.max(recap.totalDistanceM, 1);
 
     const points = recap.buckets.map((bucket, index) => {
-      const x = n === 1 ? padL + plotW / 2 : padL + index * stepX;
+      const x = n === 1 ? padX + innerW / 2 : padX + index * stepX;
+      const xPct = (x / svgW) * 100;
       const y =
         bucket.distance === null
           ? null
           : recap.max > 0
-            ? padT + plotH - (bucket.distance / maxDist) * (plotH - 20)
-            : padT + plotH;
+            ? padT + innerH - (bucket.distance / maxDist) * innerH
+            : padT + innerH;
       const cy =
         bucket.cumulative === null || recap.totalDistanceM <= 0
           ? null
-          : padT + plotH - (bucket.cumulative / maxCum) * (plotH - 10);
-      return { x, y, cy, bucket, index };
+          : padT + innerH - (bucket.cumulative / maxCum) * innerH;
+      return { x, xPct, y, cy, bucket, index };
     });
 
     const valid = points.filter((p): p is typeof p & { y: number } => p.y !== null);
@@ -60,7 +70,7 @@
         const cx = ((valid[i].x + valid[i + 1].x) / 2).toFixed(1);
         curveD += ` C ${cx} ${valid[i].y.toFixed(1)}, ${cx} ${valid[i + 1].y.toFixed(1)}, ${valid[i + 1].x.toFixed(1)} ${valid[i + 1].y.toFixed(1)}`;
       }
-      areaD = `${curveD} L ${valid[valid.length - 1].x.toFixed(1)} ${padT + plotH} L ${valid[0].x.toFixed(1)} ${padT + plotH} Z`;
+      areaD = `${curveD} L ${valid[valid.length - 1].x.toFixed(1)} ${padT + innerH} L ${valid[0].x.toFixed(1)} ${padT + innerH} Z`;
     }
 
     const cumValid = points.filter((p): p is typeof p & { cy: number } => p.cy !== null);
@@ -68,15 +78,20 @@
       cumD = cumValid.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.cy.toFixed(1)}`).join(' ');
     }
 
-    const guides = [0, 0.5, 1].map((ratio) => {
-      const y = padT + plotH - ratio * (plotH - 20);
+    const guides = [1, 0.5, 0].map((ratio) => {
+      const y = padT + innerH - ratio * innerH;
       const kmVal = recap.max > 0 ? (recap.max * ratio) / 1000 : 0;
       const label = kmVal >= 100 ? Math.round(kmVal).toLocaleString('zh-CN') : kmVal > 0 ? kmVal.toFixed(1) : '0';
       return { y, label };
     });
 
-    const colW = n > 1 ? Math.min(72, stepX * 0.86) : 96;
-    return { points, validCount: valid.length, curveD, areaD, cumD, guides, colW };
+    const colW = n > 1 ? Math.min(64, Math.max(14, stepX * 0.86)) : 80;
+    const badgePoint =
+      points.find((p) => p.index === activeIndex && p.y !== null && p.bucket.distance !== null && recap.max > 0) ??
+      points.find((p) => p.bucket.peak && p.y !== null && p.bucket.distance !== null && recap.max > 0) ??
+      null;
+
+    return { points, validCount: valid.length, curveD, areaD, cumD, guides, colW, badgePoint };
   });
 
   function choose(index: number) {
@@ -136,109 +151,130 @@
 </p>
 
 <div class="terrain-stage" bind:this={stageEl} data-testid="recap-terrain-chart">
-  <svg
-    class="terrain-svg"
-    viewBox={`0 0 ${W} ${H}`}
-    role="img"
-    aria-label={`${recap.title}里程地形与累计曲线，${peak || '暂无峰值'}`}
-  >
-    <defs>
-      <linearGradient id={`${uid}-area`} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="var(--primary)" stop-opacity="0.3" />
-        <stop offset="100%" stop-color="var(--primary)" stop-opacity="0.02" />
-      </linearGradient>
-    </defs>
+  <p class="axis-unit" aria-hidden="true">km</p>
+  <div class="chart-frame">
+    <div class="y-axis" aria-hidden="true" style:height={`${svgH}px`}>
+      {#each geometry.guides as guide (guide.y)}
+        <span class="axis-label" style:top={`${guide.y}px`}>{guide.label}</span>
+      {/each}
+    </div>
 
-    <text x={padL - 10} y={padT - 12} text-anchor="end" class="axis-text">km</text>
-    {#each geometry.guides as guide (guide.y)}
-      <line x1={padL} y1={guide.y} x2={W - padR} y2={guide.y} class="guide-line" />
-      <text x={padL - 10} y={guide.y + 4} text-anchor="end" class="axis-text">{guide.label}</text>
-    {/each}
-
-    {#if geometry.cumD}
-      <path class="cum-path" d={geometry.cumD} fill="none" />
-    {/if}
-    {#if geometry.areaD}
-      <path d={geometry.areaD} fill={`url(#${uid}-area)`} />
-    {/if}
-    {#if geometry.curveD}
-      {#key `${recap.period}-${recap.year}-${recap.month ?? ''}-${recap.totalDistanceM}`}
-        <path class="terrain-path" d={geometry.curveD} fill="none" />
-      {/key}
-    {/if}
-
-    {#each geometry.points as pt (pt.bucket.start)}
-      {@const isSelected = pt.index === activeIndex}
-      {@const hideCompactLabel =
-        recap.buckets.length >= 10 &&
-        !isSelected &&
-        !pt.bucket.peak &&
-        pt.index !== 0 &&
-        pt.index !== recap.buckets.length - 1 &&
-        pt.index % 2 === 1}
-      <g
-        class="hit-col"
-        class:is-selected={isSelected}
-        class:is-peak={pt.bucket.peak}
-        tabindex="0"
-        role="button"
-        data-bucket-index={pt.index}
-        aria-pressed={isSelected}
-        aria-label={`${pt.bucket.rangeShort}，${
-          pt.bucket.distance === null
-            ? '尚未到达'
-            : `里程 ${km(pt.bucket.distance)} 公里，跑步 ${pt.bucket.activityCount ?? 0} 次，平均配速 ${formatPace(pt.bucket.avgPaceSeconds)}`
-        }${pt.bucket.peak ? '，峰值时段' : ''}`}
-        onclick={() => choose(pt.index)}
-        onmouseenter={() => choose(pt.index)}
-        onkeydown={(event) => handleKeydown(event, pt.index)}
-      >
-        <rect
-          class="col-focus"
-          x={pt.x - geometry.colW / 2}
-          y={padT - 8}
-          width={geometry.colW}
-          height={plotH + 14}
-          rx="10"
-        />
-        {#if pt.y !== null}
-          <line
-            x1={pt.x}
-            y1={pt.y}
-            x2={pt.x}
-            y2={padT + plotH}
-            class="stem"
-            class:stem-peak={pt.bucket.peak}
-            class:stem-selected={isSelected && !pt.bucket.peak}
-          />
-          <circle
-            cx={pt.x}
-            cy={pt.y}
-            r={pt.bucket.peak ? 7.5 : isSelected ? 6.5 : geometry.validCount === 1 ? 6 : 4.5}
-            class="point"
-            class:point-peak={pt.bucket.peak}
-          />
-          {#if (pt.bucket.peak || isSelected) && pt.bucket.distance !== null && recap.max > 0}
-            <text x={pt.x} y={pt.y - 14} text-anchor="middle" class="point-value" class:value-peak={pt.bucket.peak}>
-              {km(pt.bucket.distance, 1)}
-            </text>
-          {/if}
-        {:else}
-          <circle cx={pt.x} cy={padT + plotH} r="3.5" class="point-future" />
-        {/if}
-        <text
-          x={pt.x}
-          y={H - 14}
-          text-anchor="middle"
-          class="slot-label"
-          class:slot-active={isSelected || pt.bucket.peak}
-          class:slot-compact-hide={hideCompactLabel}
+    <div class="plot-column" bind:clientWidth={plotWidth}>
+      <div class="plot-canvas" style:height={`${svgH}px`}>
+        <svg
+          class="terrain-svg"
+          viewBox={`0 0 ${svgW} ${svgH}`}
+          width={svgW}
+          height={svgH}
+          role="img"
+          aria-label={`${recap.title}里程地形与累计曲线，${peak || '暂无峰值'}`}
         >
-          {pt.bucket.shortLabel}
-        </text>
-      </g>
-    {/each}
-  </svg>
+          <defs>
+            <linearGradient id={`${uid}-area`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--primary)" stop-opacity="0.3" />
+              <stop offset="100%" stop-color="var(--primary)" stop-opacity="0.02" />
+            </linearGradient>
+          </defs>
+
+          {#each geometry.guides as guide (guide.y)}
+            <line x1={padX} y1={guide.y} x2={svgW - padX} y2={guide.y} class="guide-line" />
+          {/each}
+
+          {#if geometry.cumD}
+            <path class="cum-path" d={geometry.cumD} fill="none" />
+          {/if}
+          {#if geometry.areaD}
+            <path d={geometry.areaD} fill={`url(#${uid}-area)`} />
+          {/if}
+          {#if geometry.curveD}
+            {#key `${recap.period}-${recap.year}-${recap.month ?? ''}-${recap.totalDistanceM}`}
+              <path class="terrain-path" d={geometry.curveD} fill="none" />
+            {/key}
+          {/if}
+
+          {#each geometry.points as pt (pt.bucket.start)}
+            {@const isSelected = pt.index === activeIndex}
+            <g
+              class="hit-col"
+              class:is-selected={isSelected}
+              class:is-peak={pt.bucket.peak}
+              tabindex="0"
+              role="button"
+              data-bucket-index={pt.index}
+              aria-pressed={isSelected}
+              aria-label={`${pt.bucket.rangeShort}，${
+                pt.bucket.distance === null
+                  ? '尚未到达'
+                  : `里程 ${km(pt.bucket.distance)} 公里，跑步 ${pt.bucket.activityCount ?? 0} 次，平均配速 ${formatPace(pt.bucket.avgPaceSeconds)}`
+              }${pt.bucket.peak ? '，峰值时段' : ''}`}
+              onclick={() => choose(pt.index)}
+              onmouseenter={() => choose(pt.index)}
+              onkeydown={(event) => handleKeydown(event, pt.index)}
+            >
+              <rect
+                class="col-focus"
+                x={Math.max(0, pt.x - geometry.colW / 2)}
+                y={padT - 8}
+                width={geometry.colW}
+                height={innerH + 14}
+                rx="8"
+              />
+              {#if pt.y !== null}
+                <line
+                  x1={pt.x}
+                  y1={pt.y}
+                  x2={pt.x}
+                  y2={padT + innerH}
+                  class="stem"
+                  class:stem-peak={pt.bucket.peak}
+                  class:stem-selected={isSelected && !pt.bucket.peak}
+                />
+                <circle
+                  cx={pt.x}
+                  cy={pt.y}
+                  r={pt.bucket.peak ? 6.5 : isSelected ? 5.5 : geometry.validCount === 1 ? 5.5 : 4}
+                  class="point"
+                  class:point-peak={pt.bucket.peak}
+                />
+              {:else}
+                <circle cx={pt.x} cy={padT + innerH} r="3" class="point-future" />
+              {/if}
+            </g>
+          {/each}
+        </svg>
+
+        {#if geometry.badgePoint && geometry.badgePoint.y !== null && geometry.badgePoint.bucket.distance !== null}
+          <span
+            class="point-badge"
+            class:badge-peak={geometry.badgePoint.bucket.peak}
+            class:badge-start={geometry.badgePoint.xPct < 14}
+            class:badge-end={geometry.badgePoint.xPct > 86}
+            style:left={`${geometry.badgePoint.xPct.toFixed(2)}%`}
+            style:top={`${Math.max(0, geometry.badgePoint.y - 24)}px`}
+            aria-hidden="true"
+          >
+            {km(geometry.badgePoint.bucket.distance, 1)}
+          </span>
+        {/if}
+      </div>
+
+      <div class="x-axis" aria-hidden="true">
+        {#each geometry.points as pt (pt.bucket.start)}
+          {#if visibleXIndices.has(pt.index)}
+            <span
+              class="slot-label"
+              class:slot-active={pt.index === activeIndex || pt.bucket.peak}
+              class:slot-first={pt.index === 0}
+              class:slot-last={pt.index === recap.buckets.length - 1 && recap.buckets.length > 1}
+              style:left={`${pt.xPct.toFixed(2)}%`}
+            >
+              {pt.bucket.shortLabel}
+            </span>
+          {/if}
+        {/each}
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="terrain-legend">
@@ -348,17 +384,45 @@
   .terrain-stage {
     width: 100%;
     min-width: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .axis-unit {
+    margin: 0 0 var(--space-1);
+    font-size: var(--text-caption);
+    line-height: var(--line-height-solid);
+    color: var(--muted-foreground);
+  }
+  .chart-frame {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-2);
+    align-items: start;
+  }
+  .y-axis {
+    position: relative;
+    min-width: 2.25rem;
+  }
+  .axis-label {
+    position: absolute;
+    right: 0;
+    transform: translateY(-50%);
+    font-size: var(--text-caption);
+    line-height: var(--line-height-solid);
+    color: var(--muted-foreground);
+    white-space: nowrap;
+  }
+  .plot-column {
+    min-width: 0;
+  }
+  .plot-canvas {
+    position: relative;
+    width: 100%;
   }
   .terrain-svg {
     display: block;
     width: 100%;
-    height: auto;
+    height: 100%;
     overflow: visible;
-    font-variant-numeric: tabular-nums;
-  }
-  .axis-text {
-    font-size: var(--text-small);
-    fill: var(--muted-foreground);
   }
   .guide-line {
     stroke: var(--border);
@@ -372,7 +436,7 @@
   }
   .terrain-path {
     stroke: var(--primary);
-    stroke-width: 3.25;
+    stroke-width: 3;
     stroke-linecap: round;
     stroke-dasharray: 2400;
     stroke-dashoffset: 2400;
@@ -424,22 +488,49 @@
   .point-future {
     fill: var(--border);
   }
-  .point-value {
-    font-size: var(--text-small);
+  .point-badge {
+    position: absolute;
+    transform: translateX(-50%);
+    pointer-events: none;
+    font-size: var(--text-caption);
     font-weight: var(--weight-bold);
-    fill: var(--primary);
+    line-height: var(--line-height-solid);
+    color: var(--primary);
+    white-space: nowrap;
   }
-  .value-peak {
-    fill: var(--foreground);
+  .badge-peak {
+    color: var(--foreground);
+  }
+  .badge-start {
+    transform: translateX(0);
+  }
+  .badge-end {
+    transform: translateX(-100%);
+  }
+  .x-axis {
+    position: relative;
+    height: 1.5rem;
+    margin-top: var(--space-1);
   }
   .slot-label {
-    font-size: var(--text-body);
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    font-size: var(--text-caption);
     font-weight: var(--weight-medium);
-    fill: var(--muted-foreground);
+    line-height: var(--line-height-heading);
+    color: var(--muted-foreground);
+    white-space: nowrap;
+  }
+  .slot-first {
+    transform: translateX(0);
+  }
+  .slot-last {
+    transform: translateX(-100%);
   }
   .slot-active {
     font-weight: var(--weight-bold);
-    fill: var(--foreground);
+    color: var(--foreground);
   }
   .terrain-legend {
     margin-top: var(--space-3);
@@ -535,11 +626,6 @@
     }
     .inspector-pill {
       border-radius: var(--radius-control);
-    }
-  }
-  @media (max-width: 479px) {
-    .slot-compact-hide {
-      visibility: hidden;
     }
   }
   @media (forced-colors: active) {

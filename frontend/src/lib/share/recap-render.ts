@@ -90,11 +90,11 @@ function drawText(
   ctx.font = `${weight} ${size}px ${fontFamily}`;
   const measured = ctx.measureText(value).width;
   if (measured > maxWidth && measured > 0) {
-    const shrunk = Math.max(12, Math.floor((size * maxWidth) / measured));
+    const shrunk = Math.max(14, Math.floor((size * maxWidth) / measured));
     ctx.font = `${weight} ${shrunk}px ${fontFamily}`;
   }
-  ctx.fillText(value, x, y);
-  const rendered = ctx.measureText(value).width;
+  ctx.fillText(value, x, y, maxWidth);
+  const rendered = Math.min(maxWidth, ctx.measureText(value).width);
   ctx.restore();
   return rendered;
 }
@@ -383,7 +383,7 @@ function drawEditorial(ctx: CanvasRenderingContext2D, recap: Recap, p: ResolvedP
   const footLeft = recap.coverage
     ? recap.coverage
     : recap.derived.fastestPace !== null
-      ? `${recap.derived.fastestTied ? '并列最快均配' : '最快均配'} ${recap.derived.fastestLabel} · ${recap.derived.fastestPaceText}`
+      ? `${recap.derived.fastestTied ? '并列最快均配' : '最快均配'} ${recap.derived.fastestLabelCompact} · ${recap.derived.fastestPaceText}`
       : `${recap.derived.activeRatioText}`;
   drawText(ctx, footLeft, 64, 1848, 24, p.muted, 500, 620, 'left', p.font);
   drawText(ctx, 'RUNNOTE · PERSONAL RECAP', 1016, 1848, 22, p.muted, 700, 340, 'right', p.mono);
@@ -535,7 +535,7 @@ function drawTelemetry(ctx: CanvasRenderingContext2D, recap: Recap, p: ResolvedP
   if (peakBanner) calloutParts.push(peakBanner);
   if (recap.derived.fastestPace !== null) {
     calloutParts.push(
-      `${recap.derived.fastestTied ? '并列最快均配' : '最快均配'} ${recap.derived.fastestLabel} · ${recap.derived.fastestPaceText}`,
+      `${recap.derived.fastestTied ? '并列最快均配' : '最快均配'} ${recap.derived.fastestLabelCompact} · ${recap.derived.fastestPaceText}`,
     );
   }
   if (!calloutParts.length) calloutParts.push(recap.derived.activeRatioText);
@@ -747,8 +747,8 @@ function drawReceipt(ctx: CanvasRenderingContext2D, recap: Recap, p: ResolvedPal
 
   // Stub 02: Punch-card rhythm matrix.
   drawText(ctx, '02 · PUNCH-CARD RHYTHM', tx + 48, 792, 22, p.primary, 700, 410, 'left', p.mono);
-  if (recap.max > 0 && recap.derived.peakLabel) {
-    const peakTag = `${recap.derived.peakTied ? 'TIED PEAK' : 'PEAK'} · ${recap.derived.peakLabel} ${km(recap.max, 1)} km`;
+  if (recap.max > 0 && recap.derived.peakLabelCompact) {
+    const peakTag = `${recap.derived.peakTied ? 'TIED PEAK' : 'PEAK'} · ${recap.derived.peakLabelCompact} ${km(recap.max, 1)} km`;
     drawText(ctx, peakTag, tx + tw - 48, 792, 22, p.foreground, 700, 440, 'right', p.mono);
   }
 
@@ -814,7 +814,7 @@ function drawReceipt(ctx: CanvasRenderingContext2D, recap: Recap, p: ResolvedPal
   // Stub 03: Dotted-leader metrics ledger + decorative mileage fingerprint.
   drawText(ctx, '03 · VERIFIED SUMMARY', tx + 48, 1294, 22, p.primary, 700, 390, 'left', p.mono);
   if (recap.derived.fastestPace !== null) {
-    const fastTag = `${recap.derived.fastestTied ? 'TIED FASTEST' : 'FASTEST'} ${recap.derived.fastestLabel} · ${recap.derived.fastestPaceText}`;
+    const fastTag = `${recap.derived.fastestTied ? 'TIED FASTEST' : 'FASTEST'} ${recap.derived.fastestLabelCompact} · ${recap.derived.fastestPaceText}`;
     drawText(ctx, fastTag, tx + tw - 48, 1294, 21, p.muted, 600, 440, 'right', p.mono);
   }
 

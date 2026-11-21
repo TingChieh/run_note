@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildRecap,
   defaultRecapBucketIndex,
+  formatRecapLabelList,
   km,
   recapFilename,
   recapHref,
@@ -164,11 +165,15 @@ describe('running recap', () => {
     };
 
     const recap = buildRecap(yearReport, trends);
+    expect(recap.dateAssignment).toBe('activity_local_date');
+    expect(recap.qualityWarningCount).toBe(0);
     expect(recap.buckets).toHaveLength(12);
     expect(recap.buckets[9].peak).toBe(true);
     expect(recap.buckets[9].activityCount).toBe(4);
     expect(recap.buckets[9].activityDays).toBe(3);
+    expect(recap.buckets[9].qualityWarningCount).toBe(0);
     expect(recap.buckets[11].cumulative).toBe(210975);
+    expect(formatRecapLabelList(['1月', '2月', '3月', '4月', '5月'])).toBe('1月、2月、3月 等 5 段');
     expect(recap.derived.activeCount).toBe(11);
     expect(recap.derived.observedCount).toBe(12);
     expect(recap.derived.activeRatioText).toBe('11/12 个月有开跑');

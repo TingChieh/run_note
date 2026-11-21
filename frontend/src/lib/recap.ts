@@ -114,6 +114,11 @@ function eligibleBucketPace(bucket: TrendBucket | undefined): number | null {
   return pace !== null && pace > 0 ? pace : null;
 }
 
+export function formatRecapLabelList(labels: string[], maxShown = 3): string {
+  if (labels.length <= maxShown) return labels.join('、');
+  return `${labels.slice(0, maxShown).join('、')} 等 ${labels.length} 段`;
+}
+
 export interface RecapBucket {
   label: string;
   shortLabel: string;
@@ -132,6 +137,7 @@ export interface RecapBucket {
   paceEligibleCount: number | null;
   paceEligibleDistanceM: number | null;
   avgPaceSeconds: number | null;
+  qualityWarningCount: number | null;
   peak: boolean;
   fastest: boolean;
 }
@@ -143,12 +149,14 @@ export interface RecapDerived {
   activeRatioCompact: string;
   peakLabels: string[];
   peakLabel: string;
+  peakLabelCompact: string;
   peakTied: boolean;
   peakSharePct: number;
   fastestPace: number | null;
   slowestPace: number | null;
   fastestLabels: string[];
   fastestLabel: string;
+  fastestLabelCompact: string;
   fastestTied: boolean;
   fastestPaceText: string;
   avgRunDistanceM: number | null;
@@ -216,6 +224,7 @@ export function buildRecap(report: PeriodReport, trends: Trends) {
       paceEligibleCount,
       paceEligibleDistanceM,
       avgPaceSeconds: bucket ? finiteMetric(bucket.avg_pace_seconds_per_km) : null,
+      qualityWarningCount: bucket ? safeCount(bucket.quality_warning_count) : null,
       peak: max > 0 && distance === max,
       fastest: fastestPace !== null && bucketPace !== null && Math.abs(bucketPace - fastestPace) < 1e-6,
     };
@@ -238,12 +247,14 @@ export function buildRecap(report: PeriodReport, trends: Trends) {
     activeRatioCompact: `${activeBuckets.length}/${observedBuckets.length}`,
     peakLabels,
     peakLabel: peakLabels.join('、'),
+    peakLabelCompact: formatRecapLabelList(peakLabels),
     peakTied: peakLabels.length > 1,
     peakSharePct: total > 0 && max > 0 ? Math.round((max / total) * 100) : 0,
     fastestPace,
     slowestPace,
     fastestLabels,
     fastestLabel: fastestLabels.join('、'),
+    fastestLabelCompact: formatRecapLabelList(fastestLabels),
     fastestTied: fastestLabels.length > 1,
     fastestPaceText: fastestPace !== null ? formatPace(fastestPace) : '—',
     avgRunDistanceM,
@@ -264,6 +275,7 @@ export function buildRecap(report: PeriodReport, trends: Trends) {
     range: formatReportRange(report),
     dateFrom: report.date_from,
     dateTo: report.date_to,
+    dateAssignment: (report.date_assignment ?? 'activity_local_date') as 'activity_local_date',
     isPartial: Boolean(report.is_partial),
     cutoff: report.cutoff_date,
     totalDistanceM: total,
@@ -276,6 +288,7 @@ export function buildRecap(report: PeriodReport, trends: Trends) {
     missingDurationCount: report.missing_duration_count,
     paceEligibleCount: report.pace_eligible_count,
     paceEligibleDistanceM: finiteMetric(report.pace_eligible_distance_m) ?? 0,
+    qualityWarningCount: safeCount(report.quality_warning_count),
     metrics: recapMetrics(report),
     coverage: recapCoverage(report),
     max,
@@ -293,8 +306,8 @@ export function recapFilename({ year, month }: Pick<Recap, 'year' | 'month'>) {
 export function recapPeak(recap: Recap): string {
   const peaks = recap.buckets.filter((bucket) => bucket.peak);
   if (!peaks.length) return '';
-  const labels = peaks.map((bucket) => bucket.rangeShort);
-  return `${peaks.length > 1 ? '并列峰值' : '峰值'} · ${labels.join('、')} · ${km(recap.max)} km`;
+  const labels = formatRecapLabelList(peaks.map((bucket) => bucket.rangeShort));
+  return `${peaks.length > 1 ? '并列峰值' : '峰值'} · ${labels} · ${km(recap.max)} km`;
 }
 
 export function defaultRecapBucketIndex(recap: Recap): number {
