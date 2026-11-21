@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -28,6 +29,76 @@ def create_shoe(client, **fields):
     )
     assert response.status_code == 201, response.text
     return response.json()["data"]
+
+
+def test_active_list_sorts_by_reminder_before_brand(clients):
+    a, _, _, _ = clients
+    register(a)
+    below = create_shoe(a, brand="Alpha", initial_distance_m="800", replacement_distance_m="1000")
+    due = create_shoe(a, brand="Zeta", initial_distance_m="1000", replacement_distance_m="1000")
+    near = create_shoe(a, initial_distance_m="900", replacement_distance_m="1000")
+
+    response = a.get(SHOES, params={"status": "active", "order": "reminder"})
+    assert response.status_code == 200, response.text
+    rows = response.json()["data"]["items"]
+    assert [(row["id"], row["reminder"]) for row in rows] == [
+        (due["id"], "due"),
+        (near["id"], "near"),
+        (below["id"], None),
+    ]
+
+
+def test_retired_list_sorts_by_retirement_date_before_brand_and_creation(clients, monkeypatch):
+    a, _, _, app = clients
+    now = datetime(2026, 11, 20, 15, 59, 59, tzinfo=UTC)
+    monkeypatch.setattr(app.state, "clock", lambda: now)
+    register(a)
+    newer_retirement = create_shoe(a, brand="Zeta")
+    older_retirement = create_shoe(a, brand="Alpha")
+
+    def retire(shoe):
+        response = a.patch(f"{SHOES}/{shoe['id']}", json={"retired": True}, headers=headers(a))
+        assert response.status_code == 200, response.text
+
+    retire(older_retirement)
+    now += timedelta(seconds=2)
+    retire(newer_retirement)
+
+    response = a.get(SHOES, params={"status": "retired", "order": "reminder"})
+    assert response.status_code == 200, response.text
+    rows = response.json()["data"]["items"]
+    assert [(row["id"], row["retired_on"]) for row in rows] == [
+        (newer_retirement["id"], "2026-11-21"),
+        (older_retirement["id"], "2026-11-20"),
+    ]
+
+
+def test_rebinding_moves_activity_distance_and_count_between_shoes(clients):
+    a, _, _, _ = clients
+    register(a)
+    original = create_shoe(a)["id"]
+    replacement = create_shoe(a)["id"]
+    imported = upload(a)
+    assert imported.status_code == 201, imported.text
+    activity = imported.json()["data"]["activity"]
+    path = binding(activity["id"])
+    distance = Decimal(activity["distance_m"])
+    assert distance > 0
+
+    def totals(shoe_id):
+        response = a.get(f"{SHOES}/{shoe_id}")
+        assert response.status_code == 200, response.text
+        data = response.json()["data"]
+        return Decimal(data["total_distance_m"]), data["activity_count"]
+
+    assert a.patch(path, json={"shoe_id": original}, headers=headers(a)).status_code == 200
+    assert totals(original) == (distance, 1)
+    assert totals(replacement) == (Decimal(0), 0)
+    response = a.patch(path, json={"shoe_id": replacement}, headers=headers(a))
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["shoe"]["id"] == replacement
+    assert totals(original) == (Decimal(0), 0)
+    assert totals(replacement) == (distance, 1)
 
 
 def test_other_users_cannot_access_shoes_or_bindings(clients):

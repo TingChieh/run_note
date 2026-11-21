@@ -29,7 +29,7 @@ def totals_query(owner):
         (Shoe.retired_on.is_not(None), None),
         (total >= Shoe.replacement_distance_m, "due"),
         (total >= Shoe.replacement_distance_m * Decimal("0.9"), "near"),
-    )
+    ).label("reminder")
     return (
         select(Shoe, distance, func.count(Activity.id), reminder)
         .outerjoin(Activity, and_(Activity.user_id == Shoe.user_id, Activity.shoe_id == Shoe.id))
@@ -78,7 +78,7 @@ def listing(db, owner, status, order, limit, offset):
     if order == "name":
         sorting = (func.lower(Shoe.name), Shoe.id)
     else:
-        reminder = query.selected_columns[3]
+        reminder = query.selected_columns.reminder
         sorting = (
             reminder.asc().nulls_last(),
             Shoe.retired_on.desc().nulls_last(),
