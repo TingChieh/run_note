@@ -61,7 +61,12 @@ test('all six story beats, sticky stage sync, city focus, animation controls and
   await expect(page.getByRole('button', { name: '2x', exact: true })).toHaveAttribute('aria-pressed', 'true');
 
   await page.getByText('查看全年各月足迹数据表').click();
-  await expect(page.getByRole('table').getByRole('row')).toHaveCount(13);
+  const tableRegion = page.getByRole('region', { name: '2025 年各月跑步次数与里程数据表' });
+  await expect(tableRegion).toBeVisible();
+  const table = tableRegion.getByRole('table');
+  await expect(table.getByRole('row')).toHaveCount(13);
+  await expect(table.locator('thead th[scope="col"]')).toHaveText(['月份', '跑步次数', '月里程 (km)']);
+  await expect(table.locator('tbody th[scope="row"]')).toHaveCount(12);
 
   // Reduced motion settles immediately at full completion.
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -95,6 +100,88 @@ test('poster dialog generates 9:16 PNG, toggles privacy options, and restores fo
   await expect(trigger).toBeFocused();
 });
 
+test('poster dialog invalidates stale unredacted poster on privacy change and blocks save/share on render failure', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const nav = navigator as Navigator & {
+      canShare?: (data?: ShareData) => boolean;
+      share?: (data?: ShareData) => Promise<void>;
+    };
+    nav.canShare = () => true;
+    nav.share = async () => {};
+  });
+  await loginRunner(page);
+  await page.goto(`${storyUrl}?year=2025`);
+
+  await page.getByRole('button', { name: '生成海报' }).click();
+  const dialog = page.getByTestId('story-poster-dialog');
+  const saveBtn = dialog.getByRole('button', { name: '保存 PNG' });
+  const shareBtn = dialog.getByRole('button', { name: '系统分享' });
+  await expect(dialog.getByTestId('story-poster-image')).toBeVisible();
+  await expect(saveBtn).toBeEnabled();
+  await expect(shareBtn).toBeEnabled();
+
+  // Force the next PNG export to fail right before toggling privacy redaction.
+  await page.evaluate(() => {
+    const win = window as Window & { __origToBlob?: typeof HTMLCanvasElement.prototype.toBlob };
+    win.__origToBlob = HTMLCanvasElement.prototype.toBlob;
+    HTMLCanvasElement.prototype.toBlob = function (cb) {
+      cb(null);
+    };
+  });
+
+  await dialog.getByLabel('隐藏具体城市名').check();
+  await expect(dialog.getByText('无法生成年度故事海报 PNG')).toBeVisible();
+  // Stale unredacted image must be gone and both save & share must be unavailable.
+  await expect(dialog.getByTestId('story-poster-image')).toHaveCount(0);
+  await expect(saveBtn).toBeDisabled();
+  await expect(shareBtn).toHaveCount(0);
+
+  // Restore toBlob and retry: new redacted poster succeeds and re-enables save & share.
+  await page.evaluate(() => {
+    const win = window as Window & { __origToBlob?: typeof HTMLCanvasElement.prototype.toBlob };
+    if (win.__origToBlob) HTMLCanvasElement.prototype.toBlob = win.__origToBlob;
+  });
+  await dialog.getByRole('button', { name: '重试生成' }).click();
+  await expect(dialog.getByTestId('story-poster-image')).toBeVisible();
+  await expect(saveBtn).toBeEnabled();
+  await expect(shareBtn).toBeEnabled();
+});
+
+test('pending cities, building routes and cross-timezone first run never misreport no-data or wrong clock', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await page.goto(`${storyUrl}?year=2022`);
+
+  // P3-3: first run was recorded in America/New_York at 2022-01-01T12:30:00Z -> local 07:30 (NOT Shanghai 20:30).
+  const firstChapter = page.getByTestId('story-chapter-first');
+  await expect(firstChapter).toContainText('2022-01-01 · 07:30');
+  await expect(firstChapter).not.toContainText('20:30');
+  await expect(firstChapter).toContainText('城市待计算');
+  await expect(firstChapter).not.toContainText('无定位记录');
+
+  // P2-1: prologue & chapter 04 & sticky stage must show pending/calculating, never no-GPS / indoor.
+  await expect(page.getByTestId('story-prologue')).toContainText('待计算');
+  await expect(page.getByTestId('story-prologue')).not.toContainText('无定位');
+  const citiesChapter = page.getByTestId('story-chapter-cities');
+  await expect(citiesChapter).toContainText('城市足迹正在后台计算');
+  await expect(citiesChapter).toContainText('28 条带轨迹记录');
+  await expect(citiesChapter).not.toContainText('室内');
+  await expect(citiesChapter).not.toContainText('均无户外 GPS 定位');
+
+  await page.getByTestId('story-sticky-stage').getByRole('button', { name: '04' }).click();
+  await expect(page.getByTestId('story-sticky-stage')).toContainText('城市足迹计算中');
+  await expect(page.getByTestId('story-sticky-stage')).not.toContainText('无户外定位记录');
+
+  // P2-1: chapter 05 sticky stage must show building, never "每一次都是新出发".
+  await page.getByTestId('story-sticky-stage').getByRole('button', { name: '05' }).click();
+  await expect(page.getByTestId('story-sticky-stage')).toContainText('常跑路线归并中');
+  await expect(page.getByTestId('story-sticky-stage')).not.toContainText('每一次都是新出发');
+  await expect(page.getByTestId('story-sticky-stage')).not.toContainText('没有重复跑过');
+});
+
 test('partial, trackless fallback, empty, error recovery and 401 session expiry states', async ({ page }) => {
   await loginRunner(page);
 
@@ -104,9 +191,9 @@ test('partial, trackless fallback, empty, error recovery and 401 session expiry 
   await expect(page.getByTestId('story-chapter-cities')).toContainText('后台计算');
   await expect(page.getByTestId('story-chapter-frequent')).toContainText('仍在归并中');
 
-  // 2024 trackless indoor fallback.
+  // 2024 confirmed ready trackless fallback.
   await page.goto(`${storyUrl}?year=2024`);
-  await expect(page.getByTestId('story-chapter-cities')).toContainText('室内与无定位记录年度');
+  await expect(page.getByTestId('story-chapter-cities')).toContainText('无定位记录年度');
   await expect(page.getByTestId('story-chapter-frequent')).toContainText('每一次都是新出发');
   await expect(page.getByTestId('story-coverage')).toContainText('节律脉冲回放');
 

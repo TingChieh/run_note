@@ -65,7 +65,8 @@ const sampleStory: AnnualStory = {
   first_run: {
     activity_id: '11111111-1111-4111-8111-111111111111',
     activity_date: '2025-01-01',
-    started_at: '2025-01-01T00:00:00Z',
+    timezone: 'Asia/Shanghai',
+    started_at: '2024-12-31T23:00:00Z',
     title: '青岬海湾迎新慢跑',
     distance_m: '6240.000',
     duration_seconds: '2148.000',
@@ -83,6 +84,7 @@ const sampleStory: AnnualStory = {
   longest_route: {
     activity_id: '22222222-2222-4222-8222-222222222222',
     activity_date: '2025-10-19',
+    timezone: 'Asia/Shanghai',
     started_at: null,
     title: '桐溪河滨半马',
     distance_m: '21420.000',
@@ -105,6 +107,7 @@ const sampleStory: AnnualStory = {
     category: '10km',
     activity_id: '33333333-3333-4333-8333-333333333333',
     activity_date: '2025-11-08',
+    timezone: 'Asia/Shanghai',
     started_at: null,
     title: '松风湖竞速 10K',
     distance_m: '10040.000',
@@ -129,6 +132,7 @@ const sampleStory: AnnualStory = {
     total_regions: 2,
     located_activity_count: 10,
     unlocated_activity_count: 0,
+    pending_activity_count: 0,
     items: [
       {
         code: 'C-1',
@@ -230,16 +234,72 @@ describe('story poster renderer privacy and themes', () => {
     expect(joinedPrivate).toContain('开年首跑记录');
   });
 
-  it('handles trackless fallback stories cleanly without NaN or errors', () => {
+  it('handles confirmed ready zero-city trackless stories cleanly without NaN or errors', () => {
     const trackless: AnnualStory = {
       ...sampleStory,
-      explored_cities: { ...sampleStory.explored_cities, total_cities: 0, new_cities_count: 0, items: [] },
+      explored_cities: {
+        ...sampleStory.explored_cities,
+        status: 'ready',
+        total_cities: 0,
+        new_cities_count: 0,
+        located_activity_count: 0,
+        unlocated_activity_count: 10,
+        pending_activity_count: 0,
+        items: [],
+      },
       frequent_route: { ...sampleStory.frequent_route, status: 'none', name: null, run_count: 0 },
       footprint_timeline: { ...sampleStory.footprint_timeline, has_tracks: false, items: [] },
     };
     const res = mockContext();
     drawStoryPoster(res.ctx, trackless, null, { theme: 'light' });
-    expect(res.texts.join(' ')).toContain('室内无定位');
-    expect(res.texts.join(' ')).toContain('每次都是新路');
+    const joined = res.texts.join(' ');
+    expect(joined).toContain('无定位记录');
+    expect(joined).toContain('全年无户外 GPS 定位');
+    expect(joined).toContain('每次都是新路');
+    expect(joined).toContain('全年未重复同一户外轨迹');
+  });
+
+  it('never claims no-GPS or no-repeat when explored_cities is pending or frequent_route is building', () => {
+    const pendingZero: AnnualStory = {
+      ...sampleStory,
+      explored_cities: {
+        status: 'pending',
+        total_cities: 0,
+        new_cities_count: 0,
+        total_regions: 0,
+        located_activity_count: 0,
+        unlocated_activity_count: 1,
+        pending_activity_count: 28,
+        items: [],
+      },
+      frequent_route: { ...sampleStory.frequent_route, status: 'building', name: null, run_count: 0 },
+    };
+    const resPending = mockContext();
+    drawStoryPoster(resPending.ctx, pendingZero, null, { theme: 'light' });
+    const textPending = resPending.texts.join(' | ');
+    expect(textPending).toContain('部分轨迹计算中');
+    expect(textPending).toContain('28 条轨迹待解析城市');
+    expect(textPending).toContain('常跑路线计算中');
+    expect(textPending).toContain('后台正在归并当年重复轨迹');
+    expect(textPending).not.toContain('室内');
+    expect(textPending).not.toContain('无户外 GPS');
+    expect(textPending).not.toContain('每次都是新路');
+    expect(textPending).not.toContain('全年未重复');
+
+    // Pending with partial cities already ready
+    const pendingPartial: AnnualStory = {
+      ...sampleStory,
+      explored_cities: {
+        ...sampleStory.explored_cities,
+        status: 'pending',
+        pending_activity_count: 15,
+      },
+    };
+    const resPartial = mockContext();
+    drawStoryPoster(resPartial.ctx, pendingPartial, null, { theme: 'dark', hideCities: true });
+    const textPartial = resPartial.texts.join(' | ');
+    expect(textPartial).toContain('2 座城（计算中）');
+    expect(textPartial).toContain('部分待计算');
+    expect(textPartial).not.toContain('青岬市');
   });
 });

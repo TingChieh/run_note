@@ -145,11 +145,39 @@ function annualStoryFixture(year) {
     first_run: null,
     longest_route: null,
     best_performance: null,
-    explored_cities: { status: 'ready', total_cities: 0, new_cities_count: 0, total_regions: 0, located_activity_count: 0, unlocated_activity_count: 0, items: [] },
+    explored_cities: { status: 'ready', total_cities: 0, new_cities_count: 0, total_regions: 0, located_activity_count: 0, unlocated_activity_count: 0, pending_activity_count: 0, items: [] },
     frequent_route: { status: 'none', group_id: null, name: null, city_name: null, run_count: 0, share_pct: 0, median_distance_m: null, first_date: null, last_date: null, first_pace_seconds_per_km: null, best_pace_seconds_per_km: null, avg_pace_seconds_per_km: null, pace_improvement_seconds_per_km: null, monthly_hits: Array(12).fill(0), shape: [], overlay_shapes: [] },
     footprint_timeline: { has_tracks: false, truncated: false, total_runs: 0, shown_runs: 0, monthly_distance_m: Array(12).fill('0.000'), monthly_activity_count: Array(12).fill(0), items: [] },
   };
   if (isFuture) return emptyStory;
+
+  if (year === 2022) {
+    const loop = [[120.10, 30.20], [120.12, 30.22], [120.14, 30.21]];
+    return {
+      ...base,
+      summary: { ...summary, activity_count: 30, distance_m: '180000.000', activity_days: 28, duration_sum_seconds: '57600.000', known_duration_count: 30, missing_duration_count: 0, pace_eligible_count: 30, pace_eligible_distance_m: '180000.000', avg_pace_seconds_per_km: '320.000', quality_warning_count: 0 },
+      longest_streak_days: 4,
+      longest_streak_weeks: 6,
+      first_run: { activity_id: '22000000-0000-4000-8000-000000000001', activity_date: '2022-01-01', timezone: 'America/New_York', started_at: '2022-01-01T12:30:00Z', title: '跨时区元旦晨跑', distance_m: '6000.000', duration_seconds: '1920.000', avg_pace_seconds_per_km: '320.000', city_name: null, shoe_name: null, has_track: true, shape: [loop] },
+      longest_route: { activity_id: '22000000-0000-4000-8000-000000000030', activity_date: '2022-09-10', timezone: 'Asia/Shanghai', started_at: '2022-09-09T23:00:00Z', title: '秋日长距离', distance_m: '15000.000', duration_seconds: '4800.000', avg_pace_seconds_per_km: '320.000', city_name: null, shoe_name: null, has_track: true, shape: [loop], tied_count: 1, same_as_first: false },
+      best_performance: { basis: 'standard_band', category: '10km', activity_id: '22000000-0000-4000-8000-000000000020', activity_date: '2022-07-08', timezone: 'Asia/Shanghai', started_at: '2022-07-07T23:00:00Z', title: '夏夜 10K', distance_m: '10000.000', duration_seconds: '3000.000', avg_pace_seconds_per_km: '300.000', city_name: null, has_track: true, shape: [loop], is_all_time_pb: false, pace_gain_seconds_per_km: null, other_bests: [] },
+      explored_cities: { status: 'pending', total_cities: 0, new_cities_count: 0, total_regions: 0, located_activity_count: 0, unlocated_activity_count: 2, pending_activity_count: 28, items: [] },
+      frequent_route: { status: 'building', group_id: null, name: null, city_name: null, run_count: 0, share_pct: 0, median_distance_m: null, first_date: null, last_date: null, first_pace_seconds_per_km: null, best_pace_seconds_per_km: null, avg_pace_seconds_per_km: null, pace_improvement_seconds_per_km: null, monthly_hits: Array(12).fill(0), shape: [], overlay_shapes: [] },
+      footprint_timeline: {
+        has_tracks: true,
+        truncated: false,
+        total_runs: 3,
+        shown_runs: 3,
+        monthly_distance_m: ['20000', '15000', '15000', '15000', '15000', '15000', '20000', '15000', '20000', '10000', '10000', '10000'],
+        monthly_activity_count: [3, 2, 2, 3, 2, 3, 3, 2, 3, 3, 2, 2],
+        items: [
+          { activity_id: '22000000-0000-4000-8000-000000000001', activity_date: '2022-01-01', month: 1, title: '跨时区元旦晨跑', distance_m: '6000.000', cumulative_distance_m: '6000.000', avg_pace_seconds_per_km: '320.000', city_code: null, city_name: null, milestone: 'first', points: loop },
+          { activity_id: '22000000-0000-4000-8000-000000000020', activity_date: '2022-07-08', month: 7, title: '夏夜 10K', distance_m: '10000.000', cumulative_distance_m: '115000.000', avg_pace_seconds_per_km: '300.000', city_code: null, city_name: null, milestone: 'best', points: loop },
+          { activity_id: '22000000-0000-4000-8000-000000000030', activity_date: '2022-09-10', month: 9, title: '秋日长距离', distance_m: '15000.000', cumulative_distance_m: '180000.000', avg_pace_seconds_per_km: '320.000', city_code: null, city_name: null, milestone: 'longest', points: loop },
+        ],
+      },
+    };
+  }
 
   if (year === 2024) {
     return {
@@ -157,10 +185,10 @@ function annualStoryFixture(year) {
       summary: { ...summary, activity_count: 6, distance_m: '34200.000', activity_days: 6, duration_sum_seconds: '10800.000', known_duration_count: 5, missing_duration_count: 1, pace_eligible_count: 5, pace_eligible_distance_m: '29200.000', avg_pace_seconds_per_km: '370.000', quality_warning_count: 1 },
       longest_streak_days: 2,
       longest_streak_weeks: 3,
-      first_run: { activity_id: '24000000-0000-4000-8000-000000000001', activity_date: '2024-03-10', started_at: '2024-03-10T12:15:00Z', title: '室内跑步机启程', distance_m: '4200.000', duration_seconds: '1596.000', avg_pace_seconds_per_km: '380.000', city_name: null, shoe_name: null, has_track: false, shape: [] },
-      longest_route: { activity_id: '24000000-0000-4000-8000-000000000006', activity_date: '2024-11-09', started_at: '2024-11-09T11:00:00Z', title: '年度最长室内跑', distance_m: '8200.000', duration_seconds: '2952.000', avg_pace_seconds_per_km: '360.000', city_name: null, shoe_name: null, has_track: false, shape: [], tied_count: 1, same_as_first: false },
-      best_performance: { basis: 'standard_band', category: '5km', activity_id: '24000000-0000-4000-8000-000000000005', activity_date: '2024-10-12', started_at: '2024-10-12T11:20:00Z', title: '室内 5K 提速', distance_m: '5100.000', duration_seconds: '1785.000', avg_pace_seconds_per_km: '350.000', city_name: null, has_track: false, shape: [], is_all_time_pb: false, pace_gain_seconds_per_km: '30.000', other_bests: [] },
-      explored_cities: { status: 'ready', total_cities: 0, new_cities_count: 0, total_regions: 0, located_activity_count: 0, unlocated_activity_count: 6, items: [] },
+      first_run: { activity_id: '24000000-0000-4000-8000-000000000001', activity_date: '2024-03-10', timezone: 'Asia/Shanghai', started_at: '2024-03-10T12:15:00Z', title: '室内跑步机启程', distance_m: '4200.000', duration_seconds: '1596.000', avg_pace_seconds_per_km: '380.000', city_name: null, shoe_name: null, has_track: false, shape: [] },
+      longest_route: { activity_id: '24000000-0000-4000-8000-000000000006', activity_date: '2024-11-09', timezone: 'Asia/Shanghai', started_at: '2024-11-09T11:00:00Z', title: '年度最长室内跑', distance_m: '8200.000', duration_seconds: '2952.000', avg_pace_seconds_per_km: '360.000', city_name: null, shoe_name: null, has_track: false, shape: [], tied_count: 1, same_as_first: false },
+      best_performance: { basis: 'standard_band', category: '5km', activity_id: '24000000-0000-4000-8000-000000000005', activity_date: '2024-10-12', timezone: 'Asia/Shanghai', started_at: '2024-10-12T11:20:00Z', title: '室内 5K 提速', distance_m: '5100.000', duration_seconds: '1785.000', avg_pace_seconds_per_km: '350.000', city_name: null, has_track: false, shape: [], is_all_time_pb: false, pace_gain_seconds_per_km: '30.000', other_bests: [] },
+      explored_cities: { status: 'ready', total_cities: 0, new_cities_count: 0, total_regions: 0, located_activity_count: 0, unlocated_activity_count: 6, pending_activity_count: 0, items: [] },
       frequent_route: emptyStory.frequent_route,
       footprint_timeline: {
         has_tracks: false,
@@ -189,13 +217,14 @@ function annualStoryFixture(year) {
       summary: { ...summary, activity_count: 118, distance_m: '1042680.000', activity_days: 104, duration_sum_seconds: '329040.000', known_duration_count: 118, missing_duration_count: 0, pace_eligible_count: 118, pace_eligible_distance_m: '1042680.000', avg_pace_seconds_per_km: '316.000', quality_warning_count: 0 },
       longest_streak_days: 6,
       longest_streak_weeks: 19,
-      first_run: { activity_id: '25000000-0000-4000-8000-000000000001', activity_date: '2025-01-01', started_at: '2025-01-01T23:12:00Z', title: '青岬海湾迎新慢跑', distance_m: '6240.000', duration_seconds: '2148.000', avg_pace_seconds_per_km: '344.000', city_name: '青岬市', shoe_name: '轻云 3 代', has_track: true, shape: [loopA] },
-      longest_route: { activity_id: '25000000-0000-4000-8000-000000000090', activity_date: '2025-10-19', started_at: '2025-10-18T22:45:00Z', title: '桐溪秋日河滨半程挑战', distance_m: '21420.000', duration_seconds: '6492.000', avg_pace_seconds_per_km: '303.000', city_name: '桐溪市', shoe_name: '轻云 3 代', has_track: true, shape: [river], tied_count: 1, same_as_first: false },
+      first_run: { activity_id: '25000000-0000-4000-8000-000000000001', activity_date: '2025-01-01', timezone: 'Asia/Shanghai', started_at: '2024-12-31T23:12:00Z', title: '青岬海湾迎新慢跑', distance_m: '6240.000', duration_seconds: '2148.000', avg_pace_seconds_per_km: '344.000', city_name: '青岬市', shoe_name: '轻云 3 代', has_track: true, shape: [loopA] },
+      longest_route: { activity_id: '25000000-0000-4000-8000-000000000090', activity_date: '2025-10-19', timezone: 'Asia/Shanghai', started_at: '2025-10-18T22:45:00Z', title: '桐溪秋日河滨半程挑战', distance_m: '21420.000', duration_seconds: '6492.000', avg_pace_seconds_per_km: '303.000', city_name: '桐溪市', shoe_name: '轻云 3 代', has_track: true, shape: [river], tied_count: 1, same_as_first: false },
       best_performance: {
         basis: 'standard_band',
         category: '10km',
         activity_id: '25000000-0000-4000-8000-000000000099',
         activity_date: '2025-11-08',
+        timezone: 'Asia/Shanghai',
         started_at: '2025-11-07T23:05:00Z',
         title: '松风湖竞速 10K',
         distance_m: '10040.000',
@@ -218,6 +247,7 @@ function annualStoryFixture(year) {
         total_regions: 2,
         located_activity_count: 115,
         unlocated_activity_count: 3,
+        pending_activity_count: 0,
         items: [
           { code: 'C-QINGJIA', name: '青岬市', region_name: '岚海州', is_new: false, first_date: '2025-01-01', last_date: '2025-12-28', activity_count: 86, distance_m: '746880.000', lon: 120.12, lat: 30.21 },
           { code: 'C-TONGXI', name: '桐溪市', region_name: '云岭州', is_new: true, first_date: '2025-04-05', last_date: '2025-10-19', activity_count: 20, distance_m: '212400.000', lon: 121.45, lat: 31.22 },
@@ -267,16 +297,17 @@ function annualStoryFixture(year) {
       summary: { ...summary, activity_count: 76, distance_m: '684500.000', activity_days: 70, duration_sum_seconds: '210900.000', known_duration_count: 73, missing_duration_count: 3, pace_eligible_count: 73, pace_eligible_distance_m: '660000.000', avg_pace_seconds_per_km: '311.000', quality_warning_count: 3 },
       longest_streak_days: 5,
       longest_streak_weeks: 14,
-      first_run: { activity_id: '26000000-0000-4000-8000-000000000001', activity_date: `${year}-01-03`, started_at: `${year}-01-03T23:25:00Z`, title: '青岬冬日启程跑', distance_m: '5120.000', duration_seconds: '1715.000', avg_pace_seconds_per_km: '335.000', city_name: '青岬市', shoe_name: '疾风 2', has_track: true, shape: [loopA] },
-      longest_route: { activity_id: '26000000-0000-4000-8000-000000000050', activity_date: `${year}-09-26`, started_at: `${year}-09-25T22:38:00Z`, title: '岚海西岸长距离拉练', distance_m: '16480.000', duration_seconds: '5191.000', avg_pace_seconds_per_km: '315.000', city_name: '青岬市', shoe_name: '疾风 2', has_track: true, shape: [loopB], tied_count: 1, same_as_first: false },
-      best_performance: { basis: 'standard_band', category: '5km', activity_id: '26000000-0000-4000-8000-000000000060', activity_date: `${year}-10-18`, started_at: `${year}-10-17T23:10:00Z`, title: '北岸 5K 节奏测试', distance_m: '5060.000', duration_seconds: '1255.000', avg_pace_seconds_per_km: '248.000', city_name: '青岬市', has_track: true, shape: [loopA], is_all_time_pb: false, pace_gain_seconds_per_km: '24.000', other_bests: [] },
+      first_run: { activity_id: '26000000-0000-4000-8000-000000000001', activity_date: `${year}-01-03`, timezone: 'Asia/Shanghai', started_at: `${year}-01-02T23:25:00Z`, title: '青岬冬日启程跑', distance_m: '5120.000', duration_seconds: '1715.000', avg_pace_seconds_per_km: '335.000', city_name: '青岬市', shoe_name: '疾风 2', has_track: true, shape: [loopA] },
+      longest_route: { activity_id: '26000000-0000-4000-8000-000000000050', activity_date: `${year}-09-26`, timezone: 'Asia/Shanghai', started_at: `${year}-09-25T22:38:00Z`, title: '岚海西岸长距离拉练', distance_m: '16480.000', duration_seconds: '5191.000', avg_pace_seconds_per_km: '315.000', city_name: '青岬市', shoe_name: '疾风 2', has_track: true, shape: [loopB], tied_count: 1, same_as_first: false },
+      best_performance: { basis: 'standard_band', category: '5km', activity_id: '26000000-0000-4000-8000-000000000060', activity_date: `${year}-10-18`, timezone: 'Asia/Shanghai', started_at: `${year}-10-17T23:10:00Z`, title: '北岸 5K 节奏测试', distance_m: '5060.000', duration_seconds: '1255.000', avg_pace_seconds_per_km: '248.000', city_name: '青岬市', has_track: true, shape: [loopA], is_all_time_pb: false, pace_gain_seconds_per_km: '24.000', other_bests: [] },
       explored_cities: {
         status: 'pending',
         total_cities: 1,
         new_cities_count: 0,
         total_regions: 1,
-        located_activity_count: 74,
+        located_activity_count: 46,
         unlocated_activity_count: 2,
+        pending_activity_count: 28,
         items: [{ code: 'C-QINGJIA', name: '青岬市', region_name: '岚海州', is_new: false, first_date: `${year}-01-03`, last_date: `${year}-11-15`, activity_count: 74, distance_m: '672100.000', lon: 120.12, lat: 30.21 }],
       },
       frequent_route: { status: 'building', group_id: null, name: null, city_name: null, run_count: 0, share_pct: 0, median_distance_m: null, first_date: null, last_date: null, first_pace_seconds_per_km: null, best_pace_seconds_per_km: null, avg_pace_seconds_per_km: null, pace_improvement_seconds_per_km: null, monthly_hits: Array(12).fill(0), shape: [], overlay_shapes: [] },

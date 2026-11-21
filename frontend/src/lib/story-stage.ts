@@ -236,6 +236,7 @@ function drawCalendarPulseFallback(
   story: AnnualStory,
   progress: number,
   p: StagePalette,
+  caption?: string,
 ) {
   const cx = w / 2;
   const cy = h / 2 + 4;
@@ -281,7 +282,7 @@ function drawCalendarPulseFallback(
   ctx.fillText(`${shownKm.toFixed(1)} km`, cx, cy - 8);
   ctx.fillStyle = p.muted;
   ctx.font = `500 12px ${p.font}`;
-  ctx.fillText(`节律脉冲回放 · ${shownRuns}/${story.summary.activity_count} 次`, cx, cy + 16);
+  ctx.fillText(caption ?? `节律脉冲回放 · ${shownRuns}/${story.summary.activity_count} 次`, cx, cy + 16);
   ctx.restore();
 }
 
@@ -353,7 +354,15 @@ export function renderStoryStage(canvas: HTMLCanvasElement, options: StageRender
   if (mode === 'cities') {
     const cities = story.explored_cities.items;
     if (!cities.length) {
-      drawCalendarPulseFallback(ctx, w, h, story, 1, p);
+      drawCalendarPulseFallback(
+        ctx,
+        w,
+        h,
+        story,
+        1,
+        p,
+        story.explored_cities.status === 'pending' ? '部分轨迹城市归属计算中' : undefined,
+      );
       ctx.restore();
       return;
     }
@@ -430,7 +439,7 @@ export function renderStoryStage(canvas: HTMLCanvasElement, options: StageRender
   if (mode === 'frequent') {
     const fr = story.frequent_route;
     if (fr.status !== 'ready' || !fr.shape.length) {
-      drawCalendarPulseFallback(ctx, w, h, story, 1, p);
+      drawCalendarPulseFallback(ctx, w, h, story, 1, p, fr.status === 'building' ? '常跑路线后台归并中' : undefined);
       ctx.restore();
       return;
     }

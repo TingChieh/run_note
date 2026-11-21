@@ -3,7 +3,13 @@ export const isGpxUpload = (path: string, method: string) =>
   method === 'POST' &&
   ['/api/v1/gpx-imports', '/api/v1/tcx-imports', '/api/v1/mifitness-imports'].includes(path.split('?')[0]);
 export const upstreamTimeout = (path: string, method: string) =>
-  isGpxUpload(path, method) ? 45000 : method === 'POST' && path.split('?')[0] === '/api/v1/ai-reports' ? 40000 : 8000;
+  isGpxUpload(path, method)
+    ? 45000
+    : method === 'POST' && path.split('?')[0] === '/api/v1/ai-reports'
+      ? 40000
+      : method === 'GET' && path.split('?')[0] === '/api/v1/statistics/annual-story'
+        ? 20000
+        : 8000;
 export class ProxyBodyError extends Error {
   status = 413;
 }

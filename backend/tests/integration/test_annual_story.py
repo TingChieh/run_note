@@ -28,10 +28,13 @@ def _add_activity(
     duration_s: int | None,
     quality: str = "complete",
     source: str = "gpx",
+    timezone: str = "Asia/Shanghai",
+    started_at: datetime | None = None,
     shoe_id=None,
     line_wkt: str | None = None,
     city_code: str | None = None,
     region_code: str | None = None,
+    create_fingerprint: bool = True,
 ):
     act = Activity(
         id=uuid4(),
@@ -41,8 +44,8 @@ def _add_activity(
         title=title,
         activity_date=date.fromisoformat(day),
         date_source="timestamp",
-        timezone="Asia/Shanghai",
-        started_at=datetime.fromisoformat(f"{day}T06:30:00+08:00").astimezone(UTC),
+        timezone=timezone,
+        started_at=started_at or datetime.fromisoformat(f"{day}T06:30:00+08:00").astimezone(UTC),
         ended_at=None,
         distance_m=Decimal(distance_m),
         elapsed_seconds=Decimal(duration_s) if duration_s is not None else None,
@@ -66,15 +69,16 @@ def _add_activity(
                 geom=f"SRID=4326;{line_wkt}",
             )
         )
-        db.add(
-            RouteFingerprint(
-                id=uuid4(),
-                user_id=owner,
-                activity_id=act.id,
-                algorithm_version="v1",
-                geom=f"SRID=4326;MULTILINESTRING({line_wkt.removeprefix('LINESTRING')})",
+        if create_fingerprint:
+            db.add(
+                RouteFingerprint(
+                    id=uuid4(),
+                    user_id=owner,
+                    activity_id=act.id,
+                    algorithm_version="v1",
+                    geom=f"SRID=4326;MULTILINESTRING({line_wkt.removeprefix('LINESTRING')})",
+                )
             )
-        )
     if city_code or region_code:
         db.add(
             ActivityGlobalFootprintCache(
@@ -310,7 +314,79 @@ def test_annual_story_empty_future_partial_and_trackless_fallbacks(clients):
     assert sparse["summary"]["activity_count"] == 1
     assert sparse["longest_route"]["same_as_first"] is True
     assert sparse["best_performance"]["basis"] == "distance_fallback"
+    assert sparse["explored_cities"]["status"] == "ready"
     assert sparse["explored_cities"]["total_cities"] == 0
+    assert sparse["explored_cities"]["pending_activity_count"] == 0
+    assert sparse["explored_cities"]["unlocated_activity_count"] == 1
     assert sparse["frequent_route"]["status"] == "none"
     assert sparse["footprint_timeline"]["has_tracks"] is False
     assert Decimal(sparse["footprint_timeline"]["monthly_distance_m"][3]) == Decimal(6000)
+
+
+def test_annual_story_pending_cities_building_routes_and_first_run_timezone(clients, monkeypatch):
+    from app.modules.statistics import annual_story as annual_story_mod
+
+    a, _, _, app = clients
+    owner = register(a)
+    # Lower inline threshold so 2 uncached tracked runs trigger status="pending".
+    monkeypatch.setattr(annual_story_mod, "MAX_INLINE_CITY_COMPUTE", 1)
+
+    with app.state.session_factory.begin() as db:
+        # 2 tracked runs without cached global footprint OR route fingerprints:
+        # first run is recorded in America/New_York at local 07:30 (UTC 12:30).
+        _add_activity(
+            db,
+            owner,
+            day="2023-01-01",
+            title="跨时区新年第一跑",
+            distance_m=5200,
+            duration_s=1700,
+            timezone="America/New_York",
+            started_at=datetime(2023, 1, 1, 12, 30, 0, tzinfo=UTC),
+            line_wkt="LINESTRING(120.1 30.1, 120.11 30.11, 120.12 30.12)",
+            create_fingerprint=False,
+        )
+        _add_activity(
+            db,
+            owner,
+            day="2023-02-05",
+            title="未归并户外跑",
+            distance_m=6000,
+            duration_s=1900,
+            line_wkt="LINESTRING(120.2 30.2, 120.21 30.21, 120.22 30.22)",
+            create_fingerprint=False,
+        )
+        # 1 truly trackless run
+        _add_activity(
+            db,
+            owner,
+            day="2023-03-01",
+            title="手动无轨迹跑",
+            distance_m=4000,
+            duration_s=1400,
+            source="manual",
+            create_fingerprint=False,
+        )
+
+    res = a.get("/api/v1/statistics/annual-story?year=2023")
+    assert res.status_code == 200
+    story = res.json()["data"]
+
+    # P3-3: first run keeps its own activity timezone instead of account timezone
+    assert story["first_run"]["activity_date"] == "2023-01-01"
+    assert story["first_run"]["timezone"] == "America/New_York"
+
+    # P2-1: pending tracked runs are counted in pending_activity_count, NOT unlocated_activity_count
+    ec = story["explored_cities"]
+    assert ec["status"] == "pending"
+    assert ec["total_cities"] == 0
+    assert ec["located_activity_count"] == 0
+    assert ec["pending_activity_count"] == 2
+    assert ec["unlocated_activity_count"] == 1
+    assert (
+        ec["located_activity_count"] + ec["unlocated_activity_count"] + ec["pending_activity_count"]
+        == story["summary"]["activity_count"]
+    )
+
+    # P2-1: unprocessed route fingerprints report status="building", NOT "none"
+    assert story["frequent_route"]["status"] == "building"

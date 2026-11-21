@@ -81,7 +81,7 @@ export function storyLocalClock(startedAt: string | null, timezone: string): str
 
 export function storyCoverage(story: AnnualStory): string {
   const notes: string[] = [];
-  const { summary, explored_cities, footprint_timeline } = story;
+  const { summary, explored_cities, frequent_route, footprint_timeline } = story;
   if (summary.missing_duration_count > 0) {
     notes.push(`用时覆盖 ${summary.known_duration_count}/${summary.activity_count} 次`);
   }
@@ -94,7 +94,14 @@ export function storyCoverage(story: AnnualStory): string {
     notes.push(`足迹动画精选 ${footprint_timeline.shown_runs}/${footprint_timeline.total_runs} 次（保留全部里程碑）`);
   }
   if (explored_cities.status === 'pending') {
-    notes.push('部分城市统计仍在后台整理');
+    notes.push(
+      explored_cities.pending_activity_count > 0
+        ? `有 ${explored_cities.pending_activity_count} 条轨迹的城市统计仍在后台计算`
+        : '部分城市统计仍在后台计算',
+    );
+  }
+  if (frequent_route.status === 'building') {
+    notes.push('常跑路线仍在后台归并');
   }
   return notes.join(' · ');
 }
@@ -105,6 +112,12 @@ export function storyLeadSentence(story: AnnualStory): string {
   const distM = Number(summary.distance_m);
   const marathons = distM > 0 ? (distM / MARATHON_M).toFixed(1) : null;
   const startPhrase = first_run ? `从 ${storyMonthDay(first_run.activity_date)} 出发，` : '';
+  if (explored_cities.status === 'pending') {
+    if (explored_cities.total_cities > 0) {
+      return `${startPhrase}已点亮 ${explored_cities.total_cities} 座城（部分轨迹仍在计算），累计奔跑 ${storyKm(summary.distance_m)} km（${summary.activity_count} 次）。`;
+    }
+    return `${startPhrase}共记录 ${summary.activity_count} 次奔跑、累计 ${storyKm(summary.distance_m)} km（城市足迹仍在计算）。`;
+  }
   if (explored_cities.total_cities > 1) {
     return `${startPhrase}全年跑过 ${explored_cities.total_cities} 座城、累计 ${storyKm(summary.distance_m)} km${marathons ? `，相当于 ${marathons} 场全马` : ''}。`;
   }

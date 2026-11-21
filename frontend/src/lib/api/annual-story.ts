@@ -7,6 +7,7 @@ export type LonLat = [number, number];
 export interface StoryRunHighlight {
   activity_id: string;
   activity_date: string;
+  timezone: string;
   started_at: string | null;
   title: string;
   distance_m: Metric;
@@ -37,6 +38,7 @@ export interface StoryBestHighlight {
   category: string;
   activity_id: string;
   activity_date: string;
+  timezone: string;
   started_at: string | null;
   title: string;
   distance_m: Metric;
@@ -70,6 +72,7 @@ export interface StoryCitiesSection {
   total_regions: number;
   located_activity_count: number;
   unlocated_activity_count: number;
+  pending_activity_count: number;
   items: StoryCityItem[];
 }
 
@@ -138,6 +141,15 @@ export interface AnnualStory {
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const isInt = (v: unknown, min = 0) => typeof v === 'number' && Number.isSafeInteger(v) && v >= min;
 const isStr = (v: unknown): v is string => typeof v === 'string';
+const isTimezone = (v: unknown): v is string => {
+  if (typeof v !== 'string' || !v.trim()) return false;
+  try {
+    new Intl.DateTimeFormat('zh-CN', { timeZone: v });
+    return true;
+  } catch {
+    return false;
+  }
+};
 const isOptStr = (v: unknown): v is string | null => v === null || typeof v === 'string';
 const isIsoDate = (v: unknown): v is string =>
   typeof v === 'string' &&
@@ -188,6 +200,7 @@ function parseRunHighlight(v: unknown): StoryRunHighlight {
   if (
     !isStr(v.activity_id) ||
     !isIsoDate(v.activity_date) ||
+    !isTimezone(v.timezone) ||
     !isOptStr(v.started_at) ||
     !isStr(v.title) ||
     !isMetric(v.distance_m) ||
@@ -202,6 +215,7 @@ function parseRunHighlight(v: unknown): StoryRunHighlight {
   return {
     activity_id: v.activity_id,
     activity_date: v.activity_date,
+    timezone: v.timezone,
     started_at: v.started_at,
     title: v.title,
     distance_m: v.distance_m,
@@ -256,6 +270,7 @@ function parseBest(v: unknown): StoryBestHighlight | null {
     !isStr(v.category) ||
     !isStr(v.activity_id) ||
     !isIsoDate(v.activity_date) ||
+    !isTimezone(v.timezone) ||
     !isOptStr(v.started_at) ||
     !isStr(v.title) ||
     !isMetric(v.distance_m) ||
@@ -274,6 +289,7 @@ function parseBest(v: unknown): StoryBestHighlight | null {
     category: v.category,
     activity_id: v.activity_id,
     activity_date: v.activity_date,
+    timezone: v.timezone,
     started_at: v.started_at,
     title: v.title,
     distance_m: v.distance_m,
@@ -333,6 +349,7 @@ function parseCities(v: unknown): StoryCitiesSection {
     !isInt(v.total_regions) ||
     !isInt(v.located_activity_count) ||
     !isInt(v.unlocated_activity_count) ||
+    !isInt(v.pending_activity_count) ||
     !Array.isArray(v.items)
   ) {
     invalid();
@@ -344,6 +361,7 @@ function parseCities(v: unknown): StoryCitiesSection {
     total_regions: v.total_regions as number,
     located_activity_count: v.located_activity_count as number,
     unlocated_activity_count: v.unlocated_activity_count as number,
+    pending_activity_count: v.pending_activity_count as number,
     items: v.items.map(parseCityItem),
   };
 }
@@ -501,6 +519,10 @@ export function parseAnnualStory(v: unknown): AnnualStory {
   };
 }
 
+export const ANNUAL_STORY_TIMEOUT_MS = 22000;
+
 export async function readAnnualStory(year: number, fetcher: typeof fetch = fetch): Promise<AnnualStory> {
-  return parseAnnualStory(await request(`/api/v1/statistics/annual-story?year=${year}`, {}, fetcher));
+  return parseAnnualStory(
+    await request(`/api/v1/statistics/annual-story?year=${year}`, {}, fetcher, ANNUAL_STORY_TIMEOUT_MS),
+  );
 }

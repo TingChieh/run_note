@@ -14,6 +14,7 @@ StoryMilestone = Literal["first", "longest", "best", "new_city", "frequent"]
 class StoryRunHighlight(ExactView):
     activity_id: UUID
     activity_date: date
+    timezone: str
     started_at: datetime | None
     title: str
     distance_m: Decimal
@@ -44,6 +45,7 @@ class StoryBestHighlight(ExactView):
     category: str
     activity_id: UUID
     activity_date: date
+    timezone: str
     started_at: datetime | None
     title: str
     distance_m: Decimal
@@ -77,6 +79,7 @@ class StoryCitiesSection(ExactView):
     total_regions: int
     located_activity_count: int
     unlocated_activity_count: int
+    pending_activity_count: int
     items: list[StoryCityItem]
 
 

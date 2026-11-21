@@ -46,8 +46,6 @@
       dark = isDark;
       if (followsPage) {
         appearance = dark ? 'dark' : 'light';
-        void renderDockPreview();
-        if (opened) void generate();
       }
     });
     return () => {
@@ -68,21 +66,35 @@
     void appearance;
     void hideCities;
     void hideRouteNames;
-    untrack(() => void renderDockPreview());
+    untrack(() => {
+      void renderDockPreview();
+      if (opened) void generate();
+    });
   });
 
-  function releaseDialog() {
-    dialogToken++;
+  function clearDialogAssets() {
     if (url) URL.revokeObjectURL(url);
     url = '';
     file = null;
     shareable = false;
+    shareError = '';
+  }
+
+  function releaseDialog() {
+    dialogToken++;
+    busy = false;
+    error = '';
+    clearDialogAssets();
+  }
+
+  function clearDockAsset() {
+    if (dockUrl) URL.revokeObjectURL(dockUrl);
+    dockUrl = '';
   }
 
   function releaseDock() {
     dockToken++;
-    if (dockUrl) URL.revokeObjectURL(dockUrl);
-    dockUrl = '';
+    clearDockAsset();
   }
 
   export function open(from?: HTMLElement | null) {
@@ -114,13 +126,19 @@
   function setAppearance(next: 'light' | 'dark') {
     if (appearance === next) return;
     followsPage = false;
+    if (opened) clearDialogAssets();
     appearance = next;
-    if (opened) void generate();
+  }
+
+  function handlePrivacyChange() {
+    clearDockAsset();
+    if (opened) clearDialogAssets();
   }
 
   async function renderDockPreview() {
     if (!mounted || disposed) return;
     const mine = ++dockToken;
+    clearDockAsset();
     try {
       const blob = await renderStoryPosterBlob(story, probe, {
         theme: appearance,
@@ -129,19 +147,20 @@
         scale: 1 / 3,
       });
       if (disposed || mine !== dockToken) return;
-      if (dockUrl) URL.revokeObjectURL(dockUrl);
       dockUrl = URL.createObjectURL(blob);
     } catch {
+      if (!disposed && mine === dockToken) clearDockAsset();
       // Dock preview is non-blocking; full preview surfaces errors explicitly.
     }
   }
 
   async function generate() {
-    if (!mounted || disposed) return;
+    if (!mounted || disposed || !opened) return;
     const mine = ++dialogToken;
+    // Immediately invalidate any previous poster so stale or unredacted output can never be saved/shared.
+    clearDialogAssets();
     busy = true;
     error = '';
-    shareError = '';
     try {
       const blob = await renderStoryPosterBlob(story, probe, {
         theme: appearance,
@@ -150,7 +169,6 @@
         scale: 1,
       });
       if (disposed || mine !== dialogToken || !opened) return;
-      if (url) URL.revokeObjectURL(url);
       const filename = storyFilename(story.year, appearance);
       url = URL.createObjectURL(blob);
       const generated = new File([blob], filename, { type: 'image/png' });
@@ -161,6 +179,7 @@
         navigator.canShare({ files: [generated] });
     } catch (cause) {
       if (disposed || mine !== dialogToken) return;
+      clearDialogAssets();
       error = cause instanceof Error ? cause.message : '无法生成分享海报，请重试';
     } finally {
       if (!disposed && mine === dialogToken) busy = false;
@@ -168,15 +187,15 @@
   }
 
   function save() {
-    if (!url) return;
+    if (!url || !file || busy || error) return;
     const link = document.createElement('a');
     link.href = url;
-    link.download = storyFilename(story.year, appearance);
+    link.download = file.name || storyFilename(story.year, appearance);
     link.click();
   }
 
   async function share() {
-    if (!file || sharing || typeof navigator?.share !== 'function') return;
+    if (!file || !shareable || busy || sharing || error || typeof navigator?.share !== 'function') return;
     sharing = true;
     shareError = '';
     try {
@@ -260,23 +279,11 @@
         <span class="option-label">隐私脱敏控制</span>
         <label class="toggle-row">
           <span>隐藏具体城市名</span>
-          <input
-            type="checkbox"
-            bind:checked={hideCities}
-            onchange={() => {
-              if (opened) void generate();
-            }}
-          />
+          <input type="checkbox" bind:checked={hideCities} onchange={handlePrivacyChange} />
         </label>
         <label class="toggle-row">
           <span>隐藏具体路线名</span>
-          <input
-            type="checkbox"
-            bind:checked={hideRouteNames}
-            onchange={() => {
-              if (opened) void generate();
-            }}
-          />
+          <input type="checkbox" bind:checked={hideRouteNames} onchange={handlePrivacyChange} />
         </label>
       </div>
 
@@ -289,9 +296,16 @@
       {/if}
 
       <div class="dialog-actions">
-        <button type="button" class="button-primary" disabled={!url || busy} onclick={save}> 保存 PNG </button>
+        <button type="button" class="button-primary" disabled={!url || !file || busy || Boolean(error)} onclick={save}>
+          保存 PNG
+        </button>
         {#if shareable}
-          <button type="button" class="button-secondary" disabled={!file || busy || sharing} onclick={share}>
+          <button
+            type="button"
+            class="button-secondary"
+            disabled={!file || !shareable || busy || sharing || Boolean(error)}
+            onclick={share}
+          >
             {sharing ? '正在调起分享…' : '系统分享'}
           </button>
         {/if}

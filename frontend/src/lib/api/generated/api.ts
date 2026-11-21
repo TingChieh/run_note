@@ -1209,6 +1209,7 @@ export interface StoryBestHighlight {
   category: string;
   activity_id: string;
   activity_date: string;
+  timezone: string;
   started_at: string | null;
   title: string;
   distance_m: string;
@@ -1238,6 +1239,7 @@ export interface StoryCitiesSection {
   total_regions: number;
   located_activity_count: number;
   unlocated_activity_count: number;
+  pending_activity_count: number;
   items: StoryCityItem[];
 }
 
@@ -1286,6 +1288,7 @@ export interface StoryFrequentRouteSection {
 export interface StoryLongestHighlight {
   activity_id: string;
   activity_date: string;
+  timezone: string;
   started_at: string | null;
   title: string;
   distance_m: string;
@@ -1302,6 +1305,7 @@ export interface StoryLongestHighlight {
 export interface StoryRunHighlight {
   activity_id: string;
   activity_date: string;
+  timezone: string;
   started_at: string | null;
   title: string;
   distance_m: string;

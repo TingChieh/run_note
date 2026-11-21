@@ -107,25 +107,40 @@
         title: city
           ? `${city.name}${city.region_name ? ` · ${city.region_name}` : ''}`
           : ec.total_cities > 0
-            ? `${ec.total_cities} 座探索城市`
-            : '无户外定位记录',
-        pill: '城市拓扑',
+            ? `${ec.total_cities} 座探索城市${ec.status === 'pending' ? '（计算中）' : ''}`
+            : ec.status === 'pending'
+              ? '城市足迹计算中'
+              : '无户外定位记录',
+        pill: ec.status === 'pending' && ec.total_cities === 0 ? '待计算' : '城市拓扑',
         caption: city
           ? `${city.activity_count} 次 · ${storyKm(city.distance_m, 1)} km · 首跑 ${storyShortDate(city.first_date)}`
           : ec.total_cities > 0
-            ? '点击左侧任意城市聚焦该城足迹，金色标记为今年新点亮。'
-            : '全年无 GPS 定位时自动以节律圆盘呈现。',
+            ? ec.status === 'pending'
+              ? `点击左侧任意城市聚焦已就绪足迹，另有 ${ec.pending_activity_count} 条轨迹仍在后台计算。`
+              : '点击左侧任意城市聚焦该城足迹，金色标记为今年新点亮。'
+            : ec.status === 'pending'
+              ? `仍有 ${ec.pending_activity_count} 条轨迹正在解析城市归属，完成后将自动点亮对应城市。`
+              : story.footprint_timeline.has_tracks
+                ? '本年轨迹暂未匹配到图谱城市。'
+                : '全年无 GPS 定位时自动以节律圆盘呈现。',
       };
     }
     const fr = story.frequent_route;
     return {
       kicker: 'STAGE · CHAPTER 05',
-      title: fr.status === 'ready' ? (fr.name ?? '最常跑路线') : '每一次都是新出发',
-      pill: fr.status === 'ready' ? '记忆叠影' : '新路探索',
+      title:
+        fr.status === 'ready'
+          ? (fr.name ?? '最常跑路线')
+          : fr.status === 'building'
+            ? '常跑路线归并中'
+            : '每一次都是新出发',
+      pill: fr.status === 'ready' ? '记忆叠影' : fr.status === 'building' ? '计算中' : '新路探索',
       caption:
         fr.status === 'ready'
           ? `叠加 ${fr.run_count} 次同路轨迹，亮线处为脚步重合最密的路线。`
-          : '本年度没有重复跑过 2 次以上的户外路线。',
+          : fr.status === 'building'
+            ? '后台正在比对并归并本年度重复轨迹，完成后将自动展示最常跑路线。'
+            : '本年度没有重复跑过 2 次以上的户外路线。',
     };
   });
 
@@ -143,11 +158,18 @@
       if (code) lit.add(code);
     }
     const tag = milestoneLabel(current.milestone);
+    const cityLabel = !story.footprint_timeline.has_tracks
+      ? '无定位'
+      : story.explored_cities.status === 'pending'
+        ? lit.size > 0
+          ? `${lit.size} 座（计算中）`
+          : '计算中'
+        : `${lit.size} 座`;
     return {
       date: current.activity_date,
       km: `${storyKm(current.cumulative_distance_m)} km`,
       runs: `${idx + 1} / ${total} 次`,
-      cities: story.footprint_timeline.has_tracks ? `${lit.size} 座` : '室内模式',
+      cities: cityLabel,
       headline: tag
         ? `${current.activity_date} · ${tag} · ${current.title}`
         : `${current.activity_date} · ${current.city_name ?? '跑步记录'} · ${current.title}`,
@@ -205,13 +227,16 @@
     if (href !== page.url.pathname + page.url.search) void goto(href, { reset: false });
   }
 
+  let manualFocusUntil = 0;
+
   function focusChapter(id: StoryChapterId) {
+    manualFocusUntil = performance.now() + 600;
     activeChapter = id;
   }
 
   function toggleCity(code: string) {
     selectedCityCode = selectedCityCode === code ? null : code;
-    activeChapter = 'cities';
+    focusChapter('cities');
   }
 
   async function load(year: number) {
@@ -274,6 +299,7 @@
     const cards = Array.from(chapterSectionEl.querySelectorAll<HTMLElement>('[data-chapter]'));
     const observer = new IntersectionObserver(
       (entries) => {
+        if (performance.now() < manualFocusUntil) return;
         for (const entry of entries) {
           if (entry.isIntersecting) {
             const id = (entry.target as HTMLElement).dataset.chapter as StoryChapterId | undefined;
@@ -400,7 +426,14 @@
             <dd>
               {story.explored_cities.total_cities > 0 ? story.explored_cities.total_cities : '—'}
               <small>
-                {story.explored_cities.total_cities > 0 ? '座' : '无定位'} · 最长 {story.longest_streak_weeks} 周
+                {#if story.explored_cities.total_cities > 0}
+                  座{story.explored_cities.status === 'pending' ? '（计算中）' : ''}
+                {:else if story.explored_cities.status === 'pending'}
+                  待计算
+                {:else}
+                  无定位
+                {/if}
+                · 最长 {story.longest_streak_weeks} 周
               </small>
             </dd>
           </div>
@@ -440,7 +473,7 @@
           <!-- Chapter 01: First Run -->
           {#if story.first_run}
             {@const first = story.first_run}
-            {@const firstClock = storyLocalClock(first.started_at, timezone)}
+            {@const firstClock = storyLocalClock(first.started_at, first.timezone || timezone)}
             <article
               id="ch-first"
               class="chapter-card"
@@ -482,7 +515,10 @@
                 </div>
                 <div>
                   <dt>地点</dt>
-                  <dd>{first.city_name ?? '无定位记录'}</dd>
+                  <dd>
+                    {first.city_name ??
+                      (story.explored_cities.status === 'pending' && first.has_track ? '城市待计算' : '无定位记录')}
+                  </dd>
                 </div>
                 {#if first.shoe_name}
                   <div>
@@ -647,19 +683,42 @@
               </button>
             </header>
             <h2>探索城市</h2>
-            {#if story.explored_cities.status === 'pending'}
-              <p class="coverage-banner" role="status">部分新轨迹的城市归属仍在后台计算，当前展示已就绪结果。</p>
+            {#if story.explored_cities.status === 'pending' && story.explored_cities.total_cities > 0}
+              <p class="coverage-banner" role="status">
+                仍有 {story.explored_cities.pending_activity_count} 条轨迹的城市归属正在后台计算，当前展示已就绪的
+                {story.explored_cities.total_cities} 座城市。
+              </p>
             {/if}
             {#if story.explored_cities.total_cities === 0}
-              <div class="fallback-box">
-                <strong>室内与无定位记录年度</strong>
-                <p>
-                  全年 {story.explored_cities.unlocated_activity_count} 次记录均无户外 GPS 定位。导入带轨迹的跑步后，这里会自动点亮跑过的城市。
-                </p>
-              </div>
+              {#if story.explored_cities.status === 'pending'}
+                <div class="fallback-box" role="status">
+                  <strong>城市足迹正在后台计算</strong>
+                  <p>
+                    还有 {story.explored_cities.pending_activity_count} 条带轨迹记录等待解析城市归属{#if story.explored_cities.unlocated_activity_count > 0}（另有
+                      {story.explored_cities.unlocated_activity_count} 次无定位记录）{/if}，完成后将自动点亮对应城市。
+                  </p>
+                </div>
+              {:else if story.footprint_timeline.has_tracks}
+                <div class="fallback-box">
+                  <strong>暂无匹配城市记录</strong>
+                  <p>
+                    本年度已有户外轨迹记录，但暂未匹配到图谱城市（共 {story.explored_cities.unlocated_activity_count} 次未归入城市）。
+                  </p>
+                </div>
+              {:else}
+                <div class="fallback-box">
+                  <strong>无定位记录年度</strong>
+                  <p>
+                    全年 {story.explored_cities.unlocated_activity_count} 次记录均无户外 GPS 定位。导入带轨迹的跑步后，这里会自动点亮跑过的城市。
+                  </p>
+                </div>
+              {/if}
             {:else}
               <p class="beat-narrative">
-                {#if story.explored_cities.total_cities === 1}
+                {#if story.explored_cities.status === 'pending'}
+                  当前已识别 <strong>{story.explored_cities.total_regions}</strong> 个区域、
+                  <strong>{story.explored_cities.total_cities}</strong> 座城（部分轨迹仍在计算）。
+                {:else if story.explored_cities.total_cities === 1}
                   这一年深耕 <strong>{story.explored_cities.items[0].name}</strong>，共完成
                   {story.explored_cities.items[0].activity_count} 次奔跑。
                 {:else}
@@ -871,19 +930,20 @@
 
         <details class="story-table-details">
           <summary>查看全年各月足迹数据表</summary>
-          <div class="table-scroll" role="region" aria-label={`${story.year} 年各月跑步里程数据表`}>
+          <div class="table-scroll" role="region" aria-label={`${story.year} 年各月跑步次数与里程数据表`}>
             <table class="tabular">
+              <caption class="sr-only">{story.year} 年各月跑步次数与里程汇总</caption>
               <thead>
                 <tr>
-                  <th>月份</th>
-                  <th>跑步次数</th>
-                  <th>月里程 (km)</th>
+                  <th scope="col">月份</th>
+                  <th scope="col">跑步次数</th>
+                  <th scope="col">月里程 (km)</th>
                 </tr>
               </thead>
               <tbody>
                 {#each story.footprint_timeline.monthly_distance_m as dist, idx (idx)}
                   <tr>
-                    <td>{idx + 1} 月</td>
+                    <th scope="row">{idx + 1} 月</th>
                     <td>{story.footprint_timeline.monthly_activity_count[idx]} 次</td>
                     <td>{storyKm(dist)}</td>
                   </tr>
@@ -1494,9 +1554,12 @@
     border-bottom: 1px solid var(--border);
     text-align: left;
   }
-  .table-scroll th {
+  .table-scroll thead th {
     font-size: var(--text-caption);
     color: var(--muted-foreground);
+  }
+  .table-scroll tbody th {
+    font-weight: var(--weight-medium);
   }
 
   @media (max-width: 1023px) {

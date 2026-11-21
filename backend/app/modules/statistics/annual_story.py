@@ -33,7 +33,7 @@ from app.modules.statistics.streaks import runs as consecutive_runs
 MAX_TIMELINE_RUNS = 366
 MAX_LINE_POINTS = 48
 MAX_OVERLAY_SHAPES = 16
-MAX_INLINE_CITY_COMPUTE = 100
+MAX_INLINE_CITY_COMPUTE = 25
 SIMPLIFY_TOLERANCE_DEG = 0.0002
 BAND_PRIORITY = ("10km", "半马", "全马", "5km", "3km")
 BAND_BOUNDS = {label: (low, high) for label, low, high in DISTANCE_BANDS}
@@ -178,6 +178,7 @@ def _resolve_cities(
                 total_regions=0,
                 located_activity_count=0,
                 unlocated_activity_count=0,
+                pending_activity_count=0,
                 items=[],
             ),
             {},
@@ -214,6 +215,7 @@ def _resolve_cities(
         act["id"] for act in year_activities if act["has_track"] and act["id"] not in geo_by_id
     ]
     status = "ready"
+    pending_ids: set[UUID] = set()
     if missing_track_ids:
         if len(missing_track_ids) <= MAX_INLINE_CITY_COMPUTE:
             computed = global_atlas.compute_global_codes(db, owner, missing_track_ids)
@@ -221,6 +223,7 @@ def _resolve_cities(
                 geo_by_id[aid] = pair
         else:
             status = "pending"
+            pending_ids = set(missing_track_ids)
 
     prior_city_codes = set(
         db.scalars(
@@ -239,12 +242,18 @@ def _resolve_cities(
     city_stats: dict[str, dict] = {}
     region_set: set[str] = set()
     located = 0
+    unlocated = 0
     activity_city: dict[UUID, tuple[str | None, str | None]] = {}
 
     for act in year_activities:
+        if act["id"] in pending_ids:
+            activity_city[act["id"]] = (None, None)
+            continue
         r_codes, c_codes = geo_by_id.get(act["id"], ([], []))
         if r_codes or c_codes:
             located += 1
+        else:
+            unlocated += 1
         region_set.update(r_codes)
         valid_codes = [code for code in c_codes if code in cities_by_code]
         if valid_codes:
@@ -301,7 +310,8 @@ def _resolve_cities(
         new_cities_count=new_count,
         total_regions=len(region_set),
         located_activity_count=located,
-        unlocated_activity_count=len(year_activities) - located,
+        unlocated_activity_count=unlocated,
+        pending_activity_count=len(pending_ids),
         items=items,
     )
     return section, activity_city
@@ -499,6 +509,7 @@ def _resolve_best_performance(
             category="年度最长",
             activity_id=longest_act["id"],
             activity_date=longest_act["activity_date"],
+            timezone=longest_act["timezone"],
             started_at=longest_act["started_at"],
             title=longest_act["title"],
             distance_m=Decimal(longest_act["distance_m"]),
@@ -557,6 +568,7 @@ def _resolve_best_performance(
             category=chosen_band,
             activity_id=winner["id"],
             activity_date=winner["activity_date"],
+            timezone=winner["timezone"],
             started_at=winner["started_at"],
             title=winner["title"],
             distance_m=Decimal(winner["distance_m"]),
@@ -579,6 +591,7 @@ def _resolve_best_performance(
         category="最快单次",
         activity_id=winner["id"],
         activity_date=winner["activity_date"],
+        timezone=winner["timezone"],
         started_at=winner["started_at"],
         title=winner["title"],
         distance_m=Decimal(winner["distance_m"]),
@@ -625,6 +638,7 @@ def build_annual_story(db, owner: UUID, year: int, today: date) -> AnnualStory:
                 total_regions=0,
                 located_activity_count=0,
                 unlocated_activity_count=0,
+                pending_activity_count=0,
                 items=[],
             ),
             frequent_route=StoryFrequentRouteSection(
@@ -665,6 +679,7 @@ def build_annual_story(db, owner: UUID, year: int, today: date) -> AnnualStory:
             select(
                 A.id,
                 A.activity_date,
+                A.timezone,
                 A.started_at,
                 A.title,
                 A.distance_m,
@@ -694,6 +709,7 @@ def build_annual_story(db, owner: UUID, year: int, today: date) -> AnnualStory:
             {
                 "id": row["id"],
                 "activity_date": row["activity_date"],
+                "timezone": row["timezone"],
                 "started_at": row["started_at"],
                 "title": row["title"],
                 "distance_m": dist,
@@ -777,6 +793,7 @@ def build_annual_story(db, owner: UUID, year: int, today: date) -> AnnualStory:
         return StoryRunHighlight(
             activity_id=act["id"],
             activity_date=act["activity_date"],
+            timezone=act["timezone"],
             started_at=act["started_at"],
             title=act["title"],
             distance_m=act["distance_m"],

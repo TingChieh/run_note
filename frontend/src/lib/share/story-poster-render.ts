@@ -360,12 +360,34 @@ export function drawStoryPoster(
     p.font,
   );
 
-  const citySummary = (() => {
+  const cityBeat = (() => {
     const ec = story.explored_cities;
-    if (ec.total_cities === 0) return '室内与无定位记录';
-    if (hideCities) return `跨越 ${ec.total_cities} 座城`;
+    if (ec.status === 'pending') {
+      if (ec.total_cities === 0) {
+        return {
+          main: '部分轨迹计算中',
+          sub: ec.pending_activity_count > 0 ? `${ec.pending_activity_count} 条轨迹待解析城市` : '城市足迹仍在计算',
+        };
+      }
+      const names = ec.items.slice(0, 3).map((c) => c.name);
+      return {
+        main: `${ec.total_cities} 座城（计算中）`,
+        sub: hideCities ? `已识别 ${ec.total_cities} 座城 · 部分待计算` : `${names.join(' · ')} · 部分待计算`,
+      };
+    }
+    if (ec.total_cities === 0) {
+      return {
+        main: '无定位记录',
+        sub: story.footprint_timeline.has_tracks ? '未匹配到城市记录' : '全年无户外 GPS 定位',
+      };
+    }
     const names = ec.items.slice(0, 4).map((c) => c.name);
-    return names.join(' · ') + (ec.items.length > 4 ? ` 等 ${ec.items.length} 城` : '');
+    return {
+      main: `${ec.total_cities} 座城${ec.new_cities_count > 0 ? ` · +${ec.new_cities_count} 新城` : ''}`,
+      sub: hideCities
+        ? `跨越 ${ec.total_cities} 座城`
+        : names.join(' · ') + (ec.items.length > 4 ? ` 等 ${ec.items.length} 城` : ''),
+    };
   })();
 
   const routeOr = (title: string | null | undefined, fallback: string) => (hideRoutes || !title ? fallback : title);
@@ -374,6 +396,25 @@ export function drawStoryPoster(
   const longest = story.longest_route;
   const best = story.best_performance;
   const freq = story.frequent_route;
+
+  const frequentBeat = (() => {
+    if (freq.status === 'ready') {
+      return {
+        main: `${freq.run_count} 次重逢`,
+        sub: `${routeOr(freq.name, '年度常跑路线')}${freq.pace_improvement_seconds_per_km ? ` · 提速 ${formatGain(freq.pace_improvement_seconds_per_km)}` : ''}`,
+      };
+    }
+    if (freq.status === 'building') {
+      return {
+        main: '常跑路线计算中',
+        sub: '后台正在归并当年重复轨迹',
+      };
+    }
+    return {
+      main: '每次都是新路',
+      sub: '全年未重复同一户外轨迹',
+    };
+  })();
 
   const beats = [
     {
@@ -405,19 +446,13 @@ export function drawStoryPoster(
     },
     {
       tag: '04 探索城市',
-      main:
-        story.explored_cities.total_cities > 0
-          ? `${story.explored_cities.total_cities} 座城${story.explored_cities.new_cities_count > 0 ? ` · +${story.explored_cities.new_cities_count} 新城` : ''}`
-          : '室内无定位',
-      sub: citySummary,
+      main: cityBeat.main,
+      sub: cityBeat.sub,
     },
     {
       tag: '05 最常跑路线',
-      main: freq.status === 'ready' ? `${freq.run_count} 次重逢` : '每次都是新路',
-      sub:
-        freq.status === 'ready'
-          ? `${routeOr(freq.name, '年度常跑路线')}${freq.pace_improvement_seconds_per_km ? ` · 提速 ${formatGain(freq.pace_improvement_seconds_per_km)}` : ''}`
-          : '全年未重复同一户外轨迹',
+      main: frequentBeat.main,
+      sub: frequentBeat.sub,
     },
   ];
 

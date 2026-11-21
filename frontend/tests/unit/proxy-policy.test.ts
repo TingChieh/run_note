@@ -16,6 +16,11 @@ it('extends only the exact GPX upload timeout', () => {
   expect(upstreamTimeout('/api/v1/auth/login', 'POST')).toBe(8000);
   expect(upstreamTimeout('/api/v1/gpx-imports', 'GET')).toBe(8000);
 });
+it('gives GET annual-story extra upstream headroom without loosening other methods', () => {
+  expect(upstreamTimeout('/api/v1/statistics/annual-story?year=2025', 'GET')).toBe(20000);
+  expect(upstreamTimeout('/api/v1/statistics/annual-story', 'POST')).toBe(8000);
+  expect(upstreamTimeout('/api/v1/statistics/annual-story/other', 'GET')).toBe(8000);
+});
 it('bounds GPX body streams even without trustworthy Content-Length', async () => {
   const request = (chunks: Uint8Array[], length?: string) =>
     new Request('http://localhost/api/v1/gpx-imports', {

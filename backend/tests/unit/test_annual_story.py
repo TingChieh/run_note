@@ -1,11 +1,16 @@
 """Unit tests for pure annual story helpers (no database required)."""
 
 from app.modules.statistics.annual_story import (
+    MAX_INLINE_CITY_COMPUTE,
     downsample_line,
     extract_lines,
     pick_route_name,
     sample_timeline_indices,
 )
+
+
+def test_inline_city_compute_cap_stays_bounded_for_interactive_latency():
+    assert 1 <= MAX_INLINE_CITY_COMPUTE <= 30
 
 
 def test_downsample_line_preserves_endpoints_and_bounds_vertex_count():
