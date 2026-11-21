@@ -259,6 +259,31 @@ describe('story poster renderer privacy and themes', () => {
     expect(joined).toContain('全年未重复同一户外轨迹');
   });
 
+  it('aligns poster city beat copy when tracks exist but zero cities matched', () => {
+    const unmatched: AnnualStory = {
+      ...sampleStory,
+      explored_cities: {
+        ...sampleStory.explored_cities,
+        status: 'ready',
+        total_cities: 0,
+        new_cities_count: 0,
+        total_regions: 0,
+        located_activity_count: 0,
+        unlocated_activity_count: 10,
+        pending_activity_count: 0,
+        items: [],
+      },
+      footprint_timeline: { ...sampleStory.footprint_timeline, has_tracks: true },
+    };
+    const res = mockContext();
+    drawStoryPoster(res.ctx, unmatched, null, { theme: 'light' });
+    const joined = res.texts.join(' | ');
+    expect(joined).toContain('暂无匹配城市记录');
+    expect(joined).toContain('已有户外轨迹，暂未归入图谱城市');
+    expect(joined).not.toContain('无定位记录');
+    expect(joined).not.toContain('全年无户外 GPS 定位');
+  });
+
   it('never claims no-GPS or no-repeat when explored_cities is pending or frequent_route is building', () => {
     const pendingZero: AnnualStory = {
       ...sampleStory,

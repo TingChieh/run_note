@@ -110,7 +110,9 @@
             ? `${ec.total_cities} 座探索城市${ec.status === 'pending' ? '（计算中）' : ''}`
             : ec.status === 'pending'
               ? '城市足迹计算中'
-              : '无户外定位记录',
+              : story.footprint_timeline.has_tracks
+                ? '暂无匹配城市记录'
+                : '无户外定位记录',
         pill: ec.status === 'pending' && ec.total_cities === 0 ? '待计算' : '城市拓扑',
         caption: city
           ? `${city.activity_count} 次 · ${storyKm(city.distance_m, 1)} km · 首跑 ${storyShortDate(city.first_date)}`
@@ -430,6 +432,8 @@
                   座{story.explored_cities.status === 'pending' ? '（计算中）' : ''}
                 {:else if story.explored_cities.status === 'pending'}
                   待计算
+                {:else if story.footprint_timeline.has_tracks}
+                  暂无匹配城市记录
                 {:else}
                   无定位
                 {/if}
@@ -516,8 +520,7 @@
                 <div>
                   <dt>地点</dt>
                   <dd>
-                    {first.city_name ??
-                      (story.explored_cities.status === 'pending' && first.has_track ? '城市待计算' : '无定位记录')}
+                    {first.city_name ?? (first.has_track ? '未匹配城市' : '无定位记录')}
                   </dd>
                 </div>
                 {#if first.shoe_name}

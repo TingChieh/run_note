@@ -376,9 +376,15 @@ export function drawStoryPoster(
       };
     }
     if (ec.total_cities === 0) {
+      if (story.footprint_timeline.has_tracks) {
+        return {
+          main: '暂无匹配城市记录',
+          sub: '已有户外轨迹，暂未归入图谱城市',
+        };
+      }
       return {
         main: '无定位记录',
-        sub: story.footprint_timeline.has_tracks ? '未匹配到城市记录' : '全年无户外 GPS 定位',
+        sub: '全年无户外 GPS 定位',
       };
     }
     const names = ec.items.slice(0, 4).map((c) => c.name);

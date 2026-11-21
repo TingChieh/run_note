@@ -11,11 +11,18 @@ from app.modules.activities.model import Activity
 from app.modules.footprints import global_atlas
 from app.modules.footprints.model import ActivityGlobalFootprintCache
 from app.modules.gpx.model import ActivitySegment
+from app.modules.route_groups.groups import ALGORITHM_VERSION as ROUTE_GROUPS_ALGORITHM_VERSION
 from app.modules.route_groups.model import RouteFingerprint, RouteGroup, RouteGroupMember
 from app.modules.shoes.model import Shoe
 from tests.conftest import register
 
 pytestmark = pytest.mark.integration
+
+
+def quiet(*test_clients):
+    """Stop background workers so derivative caches and route groups do not race assertions."""
+    for client in test_clients:
+        client.app.state.footprint_worker.stop()
 
 
 def _add_activity(
@@ -75,7 +82,7 @@ def _add_activity(
                     id=uuid4(),
                     user_id=owner,
                     activity_id=act.id,
-                    algorithm_version="v1",
+                    algorithm_version=ROUTE_GROUPS_ALGORITHM_VERSION,
                     geom=f"SRID=4326;MULTILINESTRING({line_wkt.removeprefix('LINESTRING')})",
                 )
             )
@@ -95,6 +102,7 @@ def _add_activity(
 
 def test_annual_story_full_beats_isolation_and_privacy_guards(clients):
     a, b, _, app = clients
+    quiet(a, b)
     owner, other = register(a), register(b)
 
     # Pick two real atlas city codes so city metadata lookup succeeds deterministically.
@@ -169,7 +177,9 @@ def test_annual_story_full_beats_isolation_and_privacy_guards(clients):
             shoe_id=shoe_owner.id,
         )
 
-        group = RouteGroup(id=uuid4(), user_id=owner, algorithm_version="v1")
+        group = RouteGroup(
+            id=uuid4(), user_id=owner, algorithm_version=ROUTE_GROUPS_ALGORITHM_VERSION
+        )
         db.add(group)
         db.flush()
         db.add_all(
@@ -269,7 +279,8 @@ def test_annual_story_full_beats_isolation_and_privacy_guards(clients):
 
 
 def test_annual_story_empty_future_partial_and_trackless_fallbacks(clients):
-    a, _, _, app = clients
+    a, b, _, app = clients
+    quiet(a, b)
     owner = register(a)
 
     with app.state.session_factory.begin() as db:
@@ -289,10 +300,10 @@ def test_annual_story_empty_future_partial_and_trackless_fallbacks(clients):
             text(
                 """INSERT INTO route_fingerprints
                        (id, user_id, activity_id, algorithm_version, geom)
-                   SELECT gen_random_uuid(), user_id, id, 'v1', NULL
+                   SELECT gen_random_uuid(), user_id, id, :version, NULL
                    FROM activities WHERE user_id = :owner"""
             ),
-            {"owner": owner},
+            {"owner": owner, "version": ROUTE_GROUPS_ALGORITHM_VERSION},
         )
 
     # Empty year
@@ -326,7 +337,8 @@ def test_annual_story_empty_future_partial_and_trackless_fallbacks(clients):
 def test_annual_story_pending_cities_building_routes_and_first_run_timezone(clients, monkeypatch):
     from app.modules.statistics import annual_story as annual_story_mod
 
-    a, _, _, app = clients
+    a, b, _, app = clients
+    quiet(a, b)
     owner = register(a)
     # Lower inline threshold so 2 uncached tracked runs trigger status="pending".
     monkeypatch.setattr(annual_story_mod, "MAX_INLINE_CITY_COMPUTE", 1)

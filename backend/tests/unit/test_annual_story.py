@@ -10,7 +10,7 @@ from app.modules.statistics.annual_story import (
 
 
 def test_inline_city_compute_cap_stays_bounded_for_interactive_latency():
-    assert 1 <= MAX_INLINE_CITY_COMPUTE <= 30
+    assert MAX_INLINE_CITY_COMPUTE == 25
 
 
 def test_downsample_line_preserves_endpoints_and_bounds_vertex_count():

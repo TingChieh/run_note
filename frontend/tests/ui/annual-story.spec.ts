@@ -159,7 +159,8 @@ test('pending cities, building routes and cross-timezone first run never misrepo
   const firstChapter = page.getByTestId('story-chapter-first');
   await expect(firstChapter).toContainText('2022-01-01 · 07:30');
   await expect(firstChapter).not.toContainText('20:30');
-  await expect(firstChapter).toContainText('城市待计算');
+  await expect(firstChapter).toContainText('未匹配城市');
+  await expect(firstChapter).not.toContainText('城市待计算');
   await expect(firstChapter).not.toContainText('无定位记录');
 
   // P2-1: prologue & chapter 04 & sticky stage must show pending/calculating, never no-GPS / indoor.
@@ -180,6 +181,36 @@ test('pending cities, building routes and cross-timezone first run never misrepo
   await expect(page.getByTestId('story-sticky-stage')).toContainText('常跑路线归并中');
   await expect(page.getByTestId('story-sticky-stage')).not.toContainText('每一次都是新出发');
   await expect(page.getByTestId('story-sticky-stage')).not.toContainText('没有重复跑过');
+
+  // Ready with tracks but zero matched cities: prologue, chapter 01, chapter 04, and stage align.
+  await page.route(
+    storyApi,
+    async (route) => {
+      const res = await route.fetch();
+      const json = await res.json();
+      json.data.explored_cities = {
+        ...json.data.explored_cities,
+        status: 'ready',
+        total_cities: 0,
+        new_cities_count: 0,
+        total_regions: 0,
+        located_activity_count: 0,
+        unlocated_activity_count: json.data.summary.activity_count,
+        pending_activity_count: 0,
+        items: [],
+      };
+      await route.fulfill({ response: res, json });
+    },
+    { times: 1 },
+  );
+  await page.goto(`${storyUrl}?year=2022`);
+  await expect(page.getByTestId('story-prologue')).toContainText('暂无匹配城市记录');
+  await expect(page.getByTestId('story-prologue')).not.toContainText('无定位');
+  await expect(page.getByTestId('story-chapter-first')).toContainText('未匹配城市');
+  await expect(page.getByTestId('story-chapter-cities')).toContainText('暂无匹配城市记录');
+  await page.getByTestId('story-sticky-stage').getByRole('button', { name: '04' }).click();
+  await expect(page.getByTestId('story-sticky-stage')).toContainText('暂无匹配城市记录');
+  await expect(page.getByTestId('story-sticky-stage')).not.toContainText('无户外定位记录');
 });
 
 test('partial, trackless fallback, empty, error recovery and 401 session expiry states', async ({ page }) => {
