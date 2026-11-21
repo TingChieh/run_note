@@ -86,19 +86,21 @@
   }
 
   async function loadList(group: ShoeStatus, offset = 0) {
+    if (disposed || group !== status) return;
     const token = ++listRequest;
+    const isCurrent = () => !disposed && token === listRequest && group === status;
     listBusy = true;
     listError = '';
     try {
       const result = await listShoes(group, offset);
-      if (!disposed && token === listRequest) {
+      if (isCurrent()) {
         lastStatus = group;
         shoes = result;
       }
     } catch (cause) {
-      if (!disposed && token === listRequest) listError = errorMessage(cause, '无法读取跑鞋列表');
+      if (isCurrent()) listError = errorMessage(cause, '无法读取跑鞋列表');
     } finally {
-      if (!disposed && token === listRequest) listBusy = false;
+      if (isCurrent()) listBusy = false;
     }
   }
 
@@ -144,6 +146,7 @@
   }
 
   function filter(group: ShoeStatus) {
+    if (group !== status) listRequest++;
     if (group !== status || id) void goto(href(group), { reset: false });
   }
 
@@ -242,10 +245,7 @@
 
   $effect(() => {
     const group = status;
-    if (mounted)
-      untrack(() => {
-        if (lastStatus !== group) void loadList(group);
-      });
+    if (mounted) untrack(() => void loadList(group));
   });
   $effect(() => {
     const identifier = selected;

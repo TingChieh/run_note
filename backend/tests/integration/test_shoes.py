@@ -55,6 +55,9 @@ def test_retired_list_sorts_by_retirement_date_before_brand_and_creation(clients
     register(a)
     newer_retirement = create_shoe(a, brand="Zeta")
     older_retirement = create_shoe(a, brand="Alpha")
+    assert datetime.fromisoformat(newer_retirement["created_at"]) < datetime.fromisoformat(
+        older_retirement["created_at"]
+    )
 
     def retire(shoe):
         response = a.patch(f"{SHOES}/{shoe['id']}", json={"retired": True}, headers=headers(a))

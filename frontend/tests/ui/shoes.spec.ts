@@ -30,6 +30,78 @@ test('restricts the entry to private activities and handles a session expiring o
   await expect(page.getByText('长距离训练鞋')).toHaveCount(0);
 });
 
+test('a delayed list response cannot replace the selected shoe group', async ({ page }) => {
+  await signIn(page, '/activities/shoes');
+  const list = page.getByRole('region', { name: '跑鞋列表' });
+  const active = list.getByRole('button', { name: '使用中', exact: true });
+  const retired = list.getByRole('button', { name: '已退役', exact: true });
+  const activeCards = list.locator('.shoe-card:not([href*="status=retired"])');
+  const retiredCards = list.locator('.shoe-card[href*="status=retired"]');
+  await expect(activeCards).toHaveCount(2);
+
+  for (const { target, visited, group, expected, unexpected, expectedCount, wrongCard } of [
+    {
+      target: active,
+      visited: retired,
+      group: 'retired',
+      expected: activeCards,
+      unexpected: retiredCards,
+      expectedCount: 2,
+      wrongCard: '.shoe-card[href*="status=retired"]',
+    },
+    {
+      target: retired,
+      visited: active,
+      group: 'active',
+      expected: retiredCards,
+      unexpected: activeCards,
+      expectedCount: 1,
+      wrongCard: '.shoe-card:not([href*="status=retired"])',
+    },
+  ]) {
+    await target.click();
+    await expect(expected).toHaveCount(expectedCount);
+    const matches = (url: URL) => url.pathname === '/api/v1/me/shoes' && url.searchParams.get('status') === group;
+    const held = Promise.withResolvers<void>();
+    await page.route(
+      matches,
+      async (route) => {
+        await held.promise;
+        await route.fallback();
+      },
+      { times: 1 },
+    );
+    const started = page.waitForRequest((request) => matches(new URL(request.url())));
+    await visited.click();
+    await started;
+    await expect(visited).toHaveAttribute('aria-pressed', 'true');
+    await target.click();
+    await expect(target).toHaveAttribute('aria-pressed', 'true');
+    await expect(expected).toHaveCount(expectedCount);
+
+    const monitor = await list.evaluateHandle((element, selector) => {
+      let flashed = false;
+      const observer = new MutationObserver(() => {
+        flashed ||= !!element.querySelector(selector);
+      });
+      observer.observe(element, { childList: true, subtree: true });
+      return () => {
+        observer.disconnect();
+        return flashed;
+      };
+    }, wrongCard);
+    const response = page.waitForResponse((result) => matches(new URL(result.url())));
+    held.resolve();
+    await (await response).finished();
+    await expect(list).toHaveAttribute('aria-busy', 'false');
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await expect(target).toHaveAttribute('aria-pressed', 'true');
+    await expect(unexpected).toHaveCount(0);
+    await expect(expected).toHaveCount(expectedCount);
+    expect(await monitor.evaluate((stop) => stop())).toBe(false);
+  }
+});
+
 test('creates a shoe at 320px, restores dialog focus, and retires and recovers a referenced shoe', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 800 });
   await signIn(page, '/activities/shoes');
