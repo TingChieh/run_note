@@ -36,7 +36,14 @@ export async function readCalendar(year: number, selectedMetric: CalendarMetric,
   return v as unknown as Calendar;
 }
 export async function readTrends(year: number, period: Trends['period'], fetcher: typeof fetch = fetch): Promise<Trends> {
-  const from = `${year}-01-01`, to = `${year + 1}-01-01`, v = await request(`/api/v1/showcase/statistics/trends?date_from=${from}&date_to=${to}&period=${period}`, {}, fetcher);
+  const from = `${year}-01-01`, to = `${year + 1}-01-01`;
+  return parseTrends(await request(`/api/v1/showcase/statistics/trends?date_from=${from}&date_to=${to}&period=${period}`, {}, fetcher), from, to, period);
+}
+export async function readOwnTrends(from: string, to: string, period: Trends['period'], fetcher: typeof fetch = fetch): Promise<Trends> {
+  const params = new URLSearchParams({ date_from: from, date_to: to, period });
+  return parseTrends(await request(`/api/v1/statistics/trends?${params}`, {}, fetcher), from, to, period);
+}
+function parseTrends(v: unknown, from: string, to: string, period: Trends['period']): Trends {
   if (!object(v) || v.period !== period || v.date_from !== from || v.date_to !== to || v.week_start !== 'monday' || v.date_assignment !== 'activity_local_date' || !Array.isArray(v.buckets) || !v.buckets.length) invalid();
   let cursor = from;
   for (const b of v.buckets) { parseSummary(b); if (!object(b) || b.bucket_start !== cursor || typeof b.bucket_end !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(b.bucket_end) || b.bucket_end <= cursor || b.bucket_end > to || typeof b.is_partial !== 'boolean') invalid(); cursor = b.bucket_end; }

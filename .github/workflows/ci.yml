@@ -189,6 +189,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # `github` reporter adds per-failure annotations (readable without log access).
       - run: pnpm exec playwright test --config playwright.ui.config.ts --reporter=list,github
+      - name: Keep synthetic recap screenshots and PNGs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: running-recap-visuals
+          path: frontend/test-results/recap-*/*.png
+          retention-days: 14
       - name: Keep Playwright evidence on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
