@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>方向 A · 跑道年鉴（Editorial Monolith）· RunNote 回顾重设计原型</title>
+    <link rel="stylesheet" href="../shared/tokens.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <a class="sr-only" href="#main-content">跳到主要内容</a>
+
+    <div class="rn-topbar-wrap">
+      <header class="rn-topbar">
+        <div class="rn-brand-group">
+          <span class="rn-brand-mark" aria-hidden="true">R</span>
+          <span class="rn-brand-name">RunNote</span>
+          <span class="rn-divider-v" aria-hidden="true"></span>
+          <span class="rn-crumb">方向 A · 跑道年鉴</span>
+        </div>
+        <nav class="rn-topbar-actions" aria-label="原型导航">
+          <div class="rn-nav-links-desktop">
+            <a class="rn-nav-pill" href="../index.html">总览对比</a>
+            <a class="rn-nav-pill" href="../direction-a/index.html" aria-current="page">方向 A</a>
+            <a class="rn-nav-pill" href="../direction-b/index.html">方向 B</a>
+            <a class="rn-nav-pill" href="../direction-c/index.html">方向 C</a>
+          </div>
+          <button type="button" class="rn-icon-btn" id="theme-toggle" aria-label="切换明暗外观"></button>
+        </nav>
+      </header>
+    </div>
+
+    <main id="main-content" class="ed-page">
+      <!-- Editorial Masthead & Period Switcher -->
+      <div class="ed-masthead">
+        <div class="ed-masthead-left">
+          <a class="ed-back" href="../index.html">‹ 返回个人记录</a>
+          <div class="ed-title-row">
+            <h1 id="recap-title">2025 年跑步回顾</h1>
+            <span class="ed-status-pill" id="recap-status" hidden></span>
+          </div>
+          <p class="ed-range tabular" id="recap-range">2025.01.01 – 2025.12.31</p>
+        </div>
+
+        <div class="ed-controls" aria-label="周期切换">
+          <div class="rn-segmented" role="group" aria-label="回顾周期">
+            <button type="button" data-period="month" aria-pressed="false">月度</button>
+            <button type="button" data-period="year" aria-pressed="true">年度</button>
+          </div>
+          <div class="ed-scenario-wrap">
+            <label class="sr-only" for="scenario-select">切换合成样例周期</label>
+            <select id="scenario-select" class="ed-select" aria-label="选择周期样例">
+              <option value="year-2025">2025 年（完整年度）</option>
+              <option value="year-2026">2026 年（进行中 · 含部分缺计时）</option>
+              <option value="month-2025-10">2025 年 10 月（完整月度）</option>
+              <option value="month-2026-11">2026 年 11 月（进行中月度）</option>
+            </select>
+          </div>
+          <button type="button" class="rn-btn rn-btn-primary" id="open-share-top">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+            生成分享图
+          </button>
+        </div>
+      </div>
+
+      <!-- Chapter 01: Editorial Monolith Hero -->
+      <section class="ed-monolith" aria-labelledby="ch1-label">
+        <svg class="ed-monolith-bg" viewBox="0 0 1200 420" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+          <defs>
+            <linearGradient id="trackArcGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="currentColor" stop-opacity="0.22" />
+              <stop offset="100%" stop-color="currentColor" stop-opacity="0.02" />
+            </linearGradient>
+          </defs>
+          <g fill="none" stroke="url(#trackArcGrad)" stroke-width="1.5">
+            <rect x="440" y="-120" width="960" height="580" rx="290" />
+            <rect x="480" y="-80" width="880" height="500" rx="250" />
+            <rect x="520" y="-40" width="800" height="420" rx="210" />
+            <rect x="560" y="0" width="720" height="340" rx="170" />
+          </g>
+        </svg>
+
+        <div class="ed-monolith-grid">
+          <div class="ed-monolith-lead">
+            <div class="ed-chapter-kicker">
+              <span class="ed-issue-code tabular" id="issue-tag">ANNUAL RECAP · 2025</span>
+              <span class="ed-kicker-dot" aria-hidden="true"></span>
+              <span id="ch1-label">总里程刻度</span>
+            </div>
+
+            <div class="ed-giant-distance tabular">
+              <strong id="hero-distance">956.2</strong>
+              <span class="ed-giant-unit">km</span>
+            </div>
+
+            <div class="ed-scale-facts tabular" id="hero-scale-facts">
+              <!-- populated by JS -->
+            </div>
+
+            <div class="ed-ruler" aria-hidden="true">
+              <div class="ed-ruler-track">
+                <div class="ed-ruler-fill" id="hero-peak-bar"></div>
+              </div>
+              <div class="ed-ruler-caption tabular">
+                <span id="hero-peak-caption">峰值月占比 12%</span>
+                <span id="hero-active-caption">12/12 个月有开跑</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ed-monolith-ledger">
+            <dl class="ed-ledger-grid tabular" id="hero-metrics">
+              <!-- populated by JS -->
+            </dl>
+            <p class="ed-coverage-note" id="coverage-note" hidden></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Chapter 02: Mileage Terrain & Cumulative Ribbon -->
+      <section class="ed-chapter-card" aria-labelledby="ch2-title">
+        <div class="ed-chapter-head">
+          <div>
+            <p class="ed-chapter-num tabular">02 · RHYTHM TERRAIN</p>
+            <h2 id="ch2-title">里程地形与累积轨迹</h2>
+          </div>
+          <div class="ed-inspector-pill tabular" id="terrain-inspector" aria-live="polite">
+            <!-- active bucket telemetry -->
+          </div>
+        </div>
+
+        <div class="ed-terrain-stage" id="terrain-stage">
+          <!-- Interactive SVG Terrain + Peak Anchor + Cumulative Line -->
+        </div>
+
+        <div class="ed-terrain-legend tabular">
+          <span><i class="ed-swatch ed-swatch-area"></i>分期里程</span>
+          <span><i class="ed-swatch ed-swatch-peak"></i>峰值高点</span>
+          <span><i class="ed-swatch ed-swatch-cum"></i>累计曲线</span>
+          <span class="ed-legend-hint">点击或方向键切换时段查看明细</span>
+        </div>
+
+        <details class="rn-table-details">
+          <summary>
+            <span>查看完整周期数据表</span>
+            <span aria-hidden="true">▾</span>
+          </summary>
+          <div class="rn-table-wrap" role="region" aria-label="周期分桶明细数据表">
+            <table class="rn-data-table" id="data-table">
+              <caption class="sr-only">周期各分段聚合里程、次数、天数与配速</caption>
+              <thead>
+                <tr>
+                  <th scope="col">时段</th>
+                  <th scope="col">日期范围</th>
+                  <th scope="col" class="num">里程 (km)</th>
+                  <th scope="col" class="num">次数</th>
+                  <th scope="col" class="num">天数</th>
+                  <th scope="col" class="num">平均配速</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+
+      <!-- Chapter 03: Dual Editorial Spread (Attendance Matrix + Pace Trajectory) -->
+      <section class="ed-spread" aria-label="出勤密度与配速演进">
+        <article class="ed-chapter-card" aria-labelledby="ch3a-title">
+          <div class="ed-chapter-head ed-chapter-head-compact">
+            <div>
+              <p class="ed-chapter-num tabular">03A · CONSISTENCY</p>
+              <h2 id="ch3a-title">出勤节律矩阵</h2>
+            </div>
+            <span class="ed-chip tabular" id="attendance-summary">106 天 · 132 次</span>
+          </div>
+          <div class="ed-ring-grid" id="attendance-grid" role="list" aria-label="各时段出勤天数与次数"></div>
+        </article>
+
+        <article class="ed-chapter-card" aria-labelledby="ch3b-title">
+          <div class="ed-chapter-head ed-chapter-head-compact">
+            <div>
+              <p class="ed-chapter-num tabular">03B · PACE PROFILE</p>
+              <h2 id="ch3b-title">均配速走势</h2>
+            </div>
+            <span class="ed-chip ed-chip-accent tabular" id="pace-summary">最快 10 月 · 5′54″</span>
+          </div>
+          <div class="ed-pace-stage" id="pace-stage"></div>
+          <p class="ed-footnote" id="pace-footnote">纵轴越靠上代表该时段加权平均配速越快，均取自服务端聚合。</p>
+        </article>
+      </section>
+
+      <!-- Closing Poster Dock (Preview & One-click Export) -->
+      <section class="ed-poster-dock" aria-labelledby="dock-title">
+        <div class="ed-dock-copy">
+          <p class="ed-chapter-num tabular">04 · KEEPSAKE POSTER</p>
+          <h2 id="dock-title">封存这一期的 9:16 跑步海报</h2>
+          <p class="ed-dock-meta">
+            仅包含周期日期、服务端聚合数字、无坐标里程地形与 RunNote 通用字标。不含姓名、账号、路线或地点，本机 Canvas 2D 实时渲染。
+          </p>
+          <div class="ed-dock-actions">
+            <button type="button" class="rn-btn rn-btn-primary" id="open-share-dock">打开高清预览与保存</button>
+            <button type="button" class="rn-btn" id="toggle-dock-poster-theme">切换海报明暗预览</button>
+          </div>
+        </div>
+        <button type="button" class="ed-dock-frame" id="dock-poster-btn" aria-label="点击放大预览 1080×1920 分享海报">
+          <img id="dock-poster-img" alt="当前周期 9:16 分享图缩略预览" width="216" height="384" />
+        </button>
+      </section>
+    </main>
+
+    <!-- Native Share Dialog -->
+    <dialog class="rn-share-dialog" id="share-dialog" aria-labelledby="share-dialog-title" aria-describedby="share-dialog-desc">
+      <div class="rn-dialog-head">
+        <h2 id="share-dialog-title">分享图预览 · 1080×1920</h2>
+        <button type="button" class="rn-btn" id="close-share">关闭</button>
+      </div>
+      <p class="rn-dialog-disclosure" id="share-dialog-desc">
+        图片使用本人周期聚合数据，包含私人跑步记录的汇总；仅含白名单字段，不上传任何数据。
+      </p>
+      <div class="rn-dialog-stage">
+        <img id="share-preview-img" width="1080" height="1920" alt="分享图高清预览" />
+      </div>
+      <div class="rn-dialog-actions">
+        <div class="rn-dialog-controls">
+          <span class="ed-dialog-label">海报外观</span>
+          <div class="rn-segmented" role="group" aria-label="选择海报明暗主题">
+            <button type="button" data-poster-theme-btn="light" aria-pressed="true">浅色特刊</button>
+            <button type="button" data-poster-theme-btn="dark" aria-pressed="false">深色暗刊</button>
+          </div>
+        </div>
+        <div class="rn-dialog-controls">
+          <a class="rn-btn rn-btn-primary" id="download-poster" download="runnote-recap-2025.png" href="#">保存 PNG</a>
+        </div>
+      </div>
+    </dialog>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

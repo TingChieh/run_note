@@ -1,0 +1,505 @@
+/* Direction B: Stadium Telemetry (环道计时仪) */
+
+.st-page {
+  max-width: 76rem;
+  margin: 0 auto;
+  padding: 1.5rem clamp(1rem, 3vw, 2.25rem) 4rem;
+  display: grid;
+  gap: 1.5rem;
+}
+
+.st-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.st-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--muted-foreground);
+  letter-spacing: 0.06em;
+  margin-bottom: 0.25rem;
+}
+
+.st-beacon {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 4px var(--primary-soft);
+}
+
+.st-beacon.is-live {
+  background: var(--sport-yellow);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--sport-yellow) 28%, transparent);
+  animation: st-pulse 2s ease-in-out infinite;
+}
+
+.st-header h1 {
+  margin: 0;
+  font-size: clamp(1.8rem, 3vw, 2.4rem);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.st-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.st-select {
+  min-height: 2.75rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: var(--text-small);
+}
+
+/* Main Telemetry Stage */
+.st-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+  gap: 1.5rem;
+  align-items: stretch;
+}
+
+.st-dial-panel,
+.st-chrono-panel,
+.st-splits-card,
+.st-poster-strip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: clamp(1.25rem, 2.5vw, 1.85rem);
+  box-shadow: var(--shadow-card);
+}
+
+.st-dial-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background:
+    radial-gradient(circle at 50% 52%, color-mix(in srgb, var(--primary) 9%, transparent) 0%, transparent 64%),
+    var(--surface);
+}
+
+.st-panel-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 2rem;
+}
+
+.st-panel-code {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--primary);
+}
+
+.st-reset-btn {
+  padding: 0.3rem 0.75rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--muted);
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+
+.st-reset-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.st-dial-wrap {
+  display: grid;
+  place-items: center;
+  padding: 0.5rem 0;
+}
+
+.st-dial-svg {
+  width: min(100%, 26.5rem);
+  height: auto;
+  overflow: visible;
+}
+
+.st-dial-arc {
+  cursor: pointer;
+  transition: opacity 180ms ease, filter 180ms ease;
+}
+
+.st-dial-arc:hover {
+  filter: brightness(1.08);
+}
+
+.st-dial-stroke {
+  animation: st-sweep 760ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+.st-dial-hint {
+  margin: 0;
+  text-align: center;
+  font-size: var(--text-caption);
+  color: var(--muted-foreground);
+}
+
+/* Right Chronograph Readout */
+.st-chrono-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.st-chrono-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.st-chrono-heading {
+  margin: 0.25rem 0 0;
+  font-size: var(--text-section);
+  font-weight: 600;
+}
+
+.st-laps-pill {
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-pill);
+  background: var(--header-tint);
+  color: var(--header-ink);
+  font-size: var(--text-caption);
+  font-weight: 700;
+}
+
+.st-chrono-grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.st-chrono-cell {
+  padding: 1rem 1.05rem;
+  border-radius: 1.05rem;
+  background: var(--background);
+  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+
+.st-chrono-cell::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--cell-accent, var(--primary));
+}
+
+.st-chrono-cell dt {
+  font-size: var(--text-caption);
+  color: var(--muted-foreground);
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.st-chrono-cell dd {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.st-chrono-cell strong {
+  font-size: clamp(1.5rem, 2.3vw, 1.95rem);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.st-chrono-cell span {
+  font-size: var(--text-caption);
+  color: var(--muted-foreground);
+}
+
+.st-gauge-card {
+  margin-top: auto;
+  padding: 1rem 1.1rem;
+  border-radius: 1.05rem;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  display: grid;
+  gap: 0.65rem;
+}
+
+.st-gauge-head,
+.st-gauge-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: var(--text-caption);
+  color: var(--muted-foreground);
+}
+
+.st-gauge-head strong {
+  color: var(--foreground);
+}
+
+.st-gauge-bar {
+  position: relative;
+  height: 1.75rem;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.st-coverage {
+  margin: 0;
+  padding: 0.55rem 0.8rem;
+  border-radius: var(--radius-control);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: var(--text-caption);
+  font-weight: 500;
+}
+
+/* Split Telemetry List */
+.st-splits-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.st-splits-head h2 {
+  margin: 0.2rem 0 0;
+  font-size: var(--text-section);
+  font-weight: 600;
+}
+
+.st-splits-legend {
+  display: flex;
+  gap: 1rem;
+  font-size: var(--text-caption);
+  color: var(--muted-foreground);
+}
+
+.st-dot {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  margin-right: 0.35rem;
+}
+
+.st-dot-peak {
+  background: var(--sport-yellow);
+}
+
+.st-dot-fast {
+  background: var(--sport-blue);
+}
+
+.st-splits-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.st-split-row {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr) 5.5rem 5.5rem 5.2rem;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: 0.85rem;
+  background: var(--background);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: border-color var(--transition-control), background var(--transition-control);
+}
+
+.st-split-row:hover,
+.st-split-row.is-active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.st-split-row.is-future {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.st-split-name {
+  font-weight: 700;
+  font-size: var(--text-small);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.st-split-track {
+  height: 0.6rem;
+  border-radius: var(--radius-pill);
+  background: var(--border);
+  overflow: hidden;
+}
+
+.st-split-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+}
+
+.st-split-fill.is-peak {
+  background: linear-gradient(90deg, var(--primary), var(--sport-yellow));
+}
+
+.st-split-km {
+  text-align: right;
+  font-weight: 700;
+  font-size: var(--text-small);
+}
+
+.st-split-freq {
+  text-align: right;
+  font-size: var(--text-caption);
+  color: var(--muted-foreground);
+}
+
+.st-split-pace {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+
+.st-split-pace.is-fast {
+  color: var(--primary);
+}
+
+/* Bottom Poster Strip */
+.st-poster-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1.75rem;
+}
+
+.st-poster-strip-info h2 {
+  margin: 0.25rem 0 0.5rem;
+  font-size: var(--text-section);
+}
+
+.st-poster-strip-info p {
+  margin: 0 0 1rem;
+  font-size: var(--text-small);
+  color: var(--muted-foreground);
+  max-width: 34rem;
+}
+
+.st-poster-strip-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.st-mini-poster {
+  padding: 0.4rem;
+  border-radius: 1rem;
+  border: 1px solid var(--border);
+  background: var(--background);
+  box-shadow: var(--shadow-float);
+  transition: transform 200ms ease;
+}
+
+.st-mini-poster:hover {
+  transform: translateY(-4px);
+}
+
+.st-mini-poster img {
+  display: block;
+  width: 10.5rem;
+  height: auto;
+  border-radius: 0.7rem;
+}
+
+@keyframes st-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes st-sweep {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+    transform-origin: center;
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    transform-origin: center;
+  }
+}
+
+@media (max-width: 960px) {
+  .st-stage {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 639px) {
+  .st-page {
+    padding-top: 1rem;
+    gap: 1.15rem;
+  }
+  .st-controls {
+    width: 100%;
+  }
+  .st-controls .rn-segmented {
+    flex: 1;
+  }
+  .st-controls .rn-segmented button {
+    flex: 1;
+  }
+  .st-select,
+  .st-controls .rn-btn-primary {
+    width: 100%;
+  }
+  .st-split-row {
+    grid-template-columns: 4.1rem minmax(0, 1fr) 4.6rem 4.3rem;
+    gap: 0.45rem;
+    padding: 0.55rem 0.65rem;
+  }
+  .st-split-freq {
+    display: none;
+  }
+  .st-poster-strip {
+    grid-template-columns: 1fr;
+  }
+  .st-mini-poster {
+    justify-self: center;
+  }
+}

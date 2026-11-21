@@ -1,0 +1,641 @@
+/* Direction C: Tactile Runner's Receipt & Zine (奔跑存根) */
+
+.rc-page {
+  max-width: 74rem;
+  margin: 0 auto;
+  padding: 1.5rem clamp(1rem, 3vw, 2.25rem) 4rem;
+  display: grid;
+  gap: 1.5rem;
+}
+
+.rc-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.rc-kicker {
+  margin: 0 0 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--primary);
+}
+
+.rc-toolbar h1 {
+  margin: 0;
+  font-size: clamp(1.8rem, 3vw, 2.4rem);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.rc-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.rc-select {
+  min-height: 2.75rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: var(--text-small);
+}
+
+.rc-mobile-share {
+  display: none;
+}
+
+/* Studio Split Layout */
+.rc-studio {
+  display: grid;
+  grid-template-columns: 20.5rem minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+}
+
+/* Sticky Left Rail */
+.rc-sticky-rail {
+  position: sticky;
+  top: 5.5rem;
+}
+
+.rc-rail-card {
+  padding: 1.15rem;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+  display: grid;
+  gap: 0.9rem;
+}
+
+.rc-rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.rc-mono-tag {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+}
+
+.rc-mini-toggle {
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--muted);
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+
+.rc-poster-button {
+  padding: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--background);
+  box-shadow: 0 12px 28px rgb(0 0 0 / 0.12);
+  transition: transform 220ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.rc-poster-button:hover {
+  transform: translateY(-4px) rotate(-0.6deg);
+}
+
+.rc-poster-button img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 0.65rem;
+}
+
+.rc-rail-cta {
+  width: 100%;
+}
+
+.rc-rail-note {
+  margin: 0;
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--muted-foreground);
+}
+
+/* Tactile Ticket Paper Body */
+.rc-ticket {
+  border-radius: 1.5rem;
+  background: var(--recap-paper);
+  border: 1px solid var(--recap-paper-edge);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  animation: rc-print 480ms cubic-bezier(0.2, 1.08, 0.32, 1) both;
+}
+
+.rc-ticket-cap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.05rem 1.75rem;
+  background: var(--sport-yellow);
+  color: #1f2b22;
+}
+
+:root[data-theme='dark'] .rc-ticket-cap {
+  background: #22201e;
+  color: var(--primary);
+  border-bottom: 1px solid var(--border);
+}
+
+.rc-cap-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: 0.06em;
+}
+
+.rc-cap-mark {
+  display: grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 0.45rem;
+  background: #1f2b22;
+  color: #f5c519;
+  font-style: italic;
+  font-weight: 700;
+}
+
+:root[data-theme='dark'] .rc-cap-mark {
+  background: var(--primary);
+  color: #10251b;
+}
+
+.rc-cap-code {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.rc-stub {
+  padding: clamp(1.35rem, 2.8vw, 2rem);
+}
+
+.rc-stub-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.rc-mono-label {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--primary);
+}
+
+.rc-range {
+  margin: 0.25rem 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--muted-foreground);
+}
+
+.rc-giant-num {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+.rc-giant-num strong {
+  font-size: clamp(3.3rem, 6.5vw, 5.2rem);
+  line-height: 0.98;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--foreground);
+}
+
+.rc-giant-num span {
+  font-family: var(--font-mono);
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.rc-eq-line {
+  margin: 0.6rem 0 0;
+  font-size: var(--text-small);
+  color: var(--muted-foreground);
+}
+
+/* Circular Rubber Stamp */
+.rc-stamp {
+  width: 6.4rem;
+  height: 6.4rem;
+  border-radius: 50%;
+  border: 2.5px dashed var(--primary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.1rem;
+  color: var(--primary);
+  transform: rotate(-10deg);
+  flex: none;
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+  animation: rc-stamp-in 380ms 220ms cubic-bezier(0.2, 1.3, 0.35, 1) both;
+}
+
+.rc-stamp-top,
+.rc-stamp-bot {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.rc-stamp-mid {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+/* Dotted Leader Metrics */
+.rc-dotted-list {
+  margin: 1.5rem 0 0;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.rc-dotted-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.65rem;
+}
+
+.rc-dotted-row dt {
+  font-size: var(--text-small);
+  color: var(--muted-foreground);
+  font-weight: 500;
+  flex: none;
+}
+
+.rc-dotted-leader {
+  flex: 1;
+  border-bottom: 1.5px dotted var(--border);
+  transform: translateY(-4px);
+}
+
+.rc-dotted-row dd {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--foreground);
+  flex: none;
+}
+
+.rc-dotted-row dd span {
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--muted-foreground);
+  margin-left: 0.25rem;
+}
+
+.rc-coverage {
+  margin: 1rem 0 0;
+  font-size: var(--text-caption);
+  color: var(--warning);
+  padding: 0.45rem 0.75rem;
+  border-radius: var(--radius-field);
+  background: var(--warning-soft);
+}
+
+/* Perforation Cut Line */
+.rc-perforation {
+  position: relative;
+  height: 1.8rem;
+  display: flex;
+  align-items: center;
+}
+
+.rc-dash {
+  width: 100%;
+  border-top: 2px dashed var(--border);
+  margin-inline: 1.1rem;
+}
+
+.rc-notch {
+  position: absolute;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: var(--background);
+  border: 1px solid var(--recap-paper-edge);
+}
+
+.rc-notch-l {
+  left: -0.8rem;
+}
+
+.rc-notch-r {
+  right: -0.8rem;
+}
+
+/* Stub 02: Punch-Card Rhythm Board */
+.rc-stub-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1.15rem;
+}
+
+.rc-stub-head h2 {
+  margin: 0.15rem 0 0;
+  font-size: var(--text-section);
+  font-weight: 700;
+}
+
+.rc-peak-tag {
+  padding: 0.28rem 0.7rem;
+  border-radius: 0.45rem;
+  background: var(--header-tint);
+  color: var(--header-ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-weight: 700;
+}
+
+.rc-punch-board {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 12), minmax(0, 1fr));
+  gap: 0.45rem;
+  align-items: end;
+  padding: 1rem 0.75rem 0.75rem;
+  border-radius: 1rem;
+  background: var(--background);
+  border: 1px solid var(--border);
+}
+
+.rc-punch-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.35rem 0.15rem;
+  border-radius: 0.65rem;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: background var(--transition-control), border-color var(--transition-control);
+}
+
+.rc-punch-col:hover,
+.rc-punch-col[aria-pressed='true'] {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+}
+
+.rc-punch-stack {
+  height: 9.2rem;
+  width: 100%;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 4px;
+}
+
+.rc-block {
+  width: min(76%, 1.55rem);
+  height: 10px;
+  border-radius: 3px;
+  background: var(--primary);
+  opacity: 0.78;
+}
+
+.rc-punch-col.is-peak .rc-block {
+  background: var(--sport-yellow);
+  opacity: 1;
+}
+
+:root[data-theme='dark'] .rc-punch-col.is-peak .rc-block {
+  background: var(--sport-yellow);
+}
+
+.rc-block-empty {
+  width: min(76%, 1.55rem);
+  height: 10px;
+  border-radius: 3px;
+  border: 1px dashed var(--border);
+  opacity: 0.5;
+}
+
+.rc-punch-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.rc-punch-col.is-peak .rc-punch-label,
+.rc-punch-col[aria-pressed='true'] .rc-punch-label {
+  color: var(--foreground);
+  font-weight: 700;
+}
+
+.rc-slip-detail {
+  margin-top: 0.85rem;
+  padding: 0.7rem 0.95rem;
+  border-radius: 0.75rem;
+  background: var(--muted);
+  border: 1px dashed var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  font-size: var(--text-small);
+}
+
+.rc-slip-detail strong {
+  color: var(--primary);
+}
+
+/* Stub 03: Compact Ledger Rows & Barcode */
+.rc-ledger-rows {
+  display: grid;
+  gap: 0.35rem;
+  font-size: var(--text-small);
+}
+
+.rc-ledger-row {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr) 5.2rem 4.8rem;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 0.55rem;
+}
+
+.rc-ledger-row:nth-child(odd) {
+  background: var(--background);
+}
+
+.rc-ledger-row.is-fast {
+  background: var(--primary-soft);
+  font-weight: 600;
+}
+
+.rc-ledger-bar-wrap {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.rc-ledger-bar {
+  height: 100%;
+  background: var(--primary);
+}
+
+.rc-ledger-row.is-peak .rc-ledger-bar {
+  background: var(--sport-yellow);
+}
+
+.rc-ledger-num {
+  text-align: right;
+  font-family: var(--font-mono);
+}
+
+.rc-fingerprint-box {
+  margin-top: 1.5rem;
+  padding-top: 1.15rem;
+  border-top: 1px solid var(--border);
+}
+
+.rc-barcode {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 4px;
+  height: 2.75rem;
+  padding: 0.25rem 0;
+}
+
+.rc-barcode span {
+  flex: 1;
+  background: var(--foreground);
+  border-radius: 1.5px;
+  opacity: 0.82;
+}
+
+.rc-barcode-meta {
+  margin-top: 0.45rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--muted-foreground);
+}
+
+@keyframes rc-print {
+  from {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes rc-stamp-in {
+  from {
+    opacity: 0;
+    transform: rotate(-18deg) scale(1.22);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(-10deg) scale(1);
+  }
+}
+
+@media (max-width: 960px) {
+  .rc-studio {
+    grid-template-columns: 1fr;
+  }
+  .rc-sticky-rail {
+    display: none;
+  }
+  .rc-mobile-share {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 639px) {
+  .rc-page {
+    padding-top: 1rem;
+    gap: 1rem;
+  }
+  .rc-controls {
+    width: 100%;
+  }
+  .rc-controls .rn-segmented {
+    flex: 1;
+  }
+  .rc-controls .rn-segmented button {
+    flex: 1;
+  }
+  .rc-select,
+  .rc-mobile-share {
+    width: 100%;
+  }
+  .rc-stub-hero {
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  .rc-giant-num strong {
+    font-size: 2.85rem;
+  }
+  .rc-stamp {
+    width: 4.85rem;
+    height: 4.85rem;
+    margin-top: 0.25rem;
+  }
+  .rc-stamp-mid {
+    font-size: 1.05rem;
+  }
+  .rc-punch-board {
+    gap: 0.2rem;
+    padding: 0.75rem 0.35rem 0.5rem;
+  }
+  .rc-punch-label {
+    font-size: 0.62rem;
+  }
+  .rc-ledger-row {
+    grid-template-columns: 3.6rem minmax(0, 1fr) 4.4rem 4.2rem;
+    gap: 0.4rem;
+    font-size: var(--text-caption);
+  }
+}

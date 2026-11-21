@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RunNote 跑步回顾重设计 · 三方向原型总览</title>
+    <link rel="stylesheet" href="./shared/tokens.css" />
+    <style>
+      .hub {
+        max-width: 78rem;
+        margin: 0 auto;
+        padding: 1.75rem clamp(1rem, 3vw, 2.25rem) 4rem;
+        display: grid;
+        gap: 2rem;
+      }
+      .hub-hero {
+        padding: clamp(1.5rem, 3vw, 2.4rem);
+        border-radius: 1.75rem;
+        background: var(--header-tint);
+        color: var(--header-ink);
+        border: 1px solid var(--border);
+      }
+      .hub-hero h1 {
+        margin: 0.35rem 0 0.6rem;
+        font-size: clamp(1.75rem, 3vw, 2.35rem);
+        line-height: 1.2;
+      }
+      .hub-hero p {
+        margin: 0;
+        max-width: 48rem;
+        color: var(--header-ink-muted);
+      }
+      .hub-kicker {
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        color: var(--primary);
+      }
+      .hub-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1.35rem;
+      }
+      .hub-card {
+        display: flex;
+        flex-direction: column;
+        gap: 0.85rem;
+        padding: 1.35rem;
+        border-radius: var(--radius-card);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow-card);
+      }
+      .hub-card.is-rec {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 1px var(--primary), var(--shadow-card);
+      }
+      .hub-badge {
+        display: inline-flex;
+        width: fit-content;
+        padding: 0.22rem 0.65rem;
+        border-radius: var(--radius-pill);
+        background: var(--muted);
+        font-size: var(--text-caption);
+        font-weight: 700;
+        color: var(--muted-foreground);
+      }
+      .hub-card.is-rec .hub-badge {
+        background: var(--primary-soft);
+        color: var(--primary);
+      }
+      .hub-card h2 {
+        margin: 0;
+        font-size: 1.25rem;
+      }
+      .hub-card p {
+        margin: 0;
+        font-size: var(--text-small);
+        color: var(--muted-foreground);
+      }
+      .hub-thumb {
+        border-radius: 0.9rem;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        background: var(--background);
+      }
+      .hub-thumb img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .hub-actions {
+        margin-top: auto;
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+      .poster-gallery {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1.35rem;
+      }
+      .poster-tile {
+        padding: 1rem;
+        border-radius: var(--radius-card);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        display: grid;
+        gap: 0.75rem;
+      }
+      .poster-tile img {
+        width: 100%;
+        height: auto;
+        border-radius: 0.9rem;
+        border: 1px solid var(--border);
+      }
+      .poster-tile figcaption {
+        font-size: var(--text-small);
+        font-weight: 600;
+        display: flex;
+        justify-content: space-between;
+        color: var(--muted-foreground);
+      }
+      .hub-section-title {
+        margin: 0 0 0.85rem;
+        font-size: var(--text-section);
+      }
+      .motion-box {
+        padding: 1.25rem;
+        border-radius: var(--radius-card);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        display: grid;
+        gap: 0.85rem;
+      }
+      .motion-box img {
+        width: 100%;
+        max-width: 54rem;
+        border-radius: 0.9rem;
+        border: 1px solid var(--border);
+      }
+      @media (max-width: 960px) {
+        .hub-grid,
+        .poster-gallery {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="rn-topbar-wrap">
+      <header class="rn-topbar">
+        <div class="rn-brand-group">
+          <span class="rn-brand-mark" aria-hidden="true">R</span>
+          <span class="rn-brand-name">RunNote</span>
+          <span class="rn-divider-v" aria-hidden="true"></span>
+          <span class="rn-crumb">跑步回顾重设计 · 三方向原型</span>
+        </div>
+        <div class="rn-topbar-actions">
+          <button type="button" class="rn-icon-btn" id="theme-toggle" aria-label="切换外观"></button>
+        </div>
+      </header>
+    </div>
+
+    <main class="hub">
+      <section class="hub-hero">
+        <span class="hub-kicker">RUNNOTE RECAP REDESIGN · SYNTHETIC PROTOTYPES</span>
+        <h1>月度 / 年度跑步回顾与 9:16 分享图重设计方案</h1>
+        <p>
+          基于现有 <code>PeriodReport</code> 与 <code>Trends</code> 接口的全部服务端聚合字段（零新增 API、零越界工作项 19、严格遵守分享图白名单），产出 3 个视觉概念、图形语言与分享海报完全不同的可交互原型。
+        </p>
+      </section>
+
+      <section aria-label="三个设计方向">
+        <div class="hub-grid">
+          <article class="hub-card is-rec">
+            <span class="hub-badge">推荐方向 · 方向 A</span>
+            <h2>跑道年鉴 · Editorial Monolith</h2>
+            <p>现代运动杂志特刊：深森绿全出血里程巨碑 + 渐变面积里程地形与累计曲线 + 出勤圆环矩阵与反 Y 轴配速演进。</p>
+            <div class="hub-thumb">
+              <img src="./screenshots/direction-a-desktop-light.png" alt="方向 A 桌面浅色预览" />
+            </div>
+            <div class="hub-actions">
+              <a class="rn-btn rn-btn-primary" href="./direction-a/index.html">打开交互原型</a>
+              <a class="rn-btn" href="./direction-a/index.html?theme=dark">深色</a>
+              <a class="rn-btn" href="./direction-a/index.html?scenario=month-2025-10">月度</a>
+            </div>
+          </article>
+
+          <article class="hub-card">
+            <span class="hub-badge">方向 B</span>
+            <h2>环道计时仪 · Stadium Telemetry</h2>
+            <p>400m 标准跑道几何表盘：年度 12 月放射环 / 月度 5 跑道同心冲刺环 + 精密计时码表读数板 + 比赛分段成绩单。</p>
+            <div class="hub-thumb">
+              <img src="./screenshots/direction-b-desktop-light.png" alt="方向 B 桌面浅色预览" />
+            </div>
+            <div class="hub-actions">
+              <a class="rn-btn rn-btn-primary" href="./direction-b/index.html">打开交互原型</a>
+              <a class="rn-btn" href="./direction-b/index.html?theme=dark">深色</a>
+              <a class="rn-btn" href="./direction-b/index.html?scenario=month-2025-10">月度</a>
+            </div>
+          </article>
+
+          <article class="hub-card">
+            <span class="hub-badge">方向 C</span>
+            <h2>奔跑存根 · Tactile Receipt</h2>
+            <p>复古热敏票根与打孔卡手账：桌面左吸顶实时立体存根 + 右三联撕口票据长卷 + 点阵打卡带 + 里程指纹装饰纹样。</p>
+            <div class="hub-thumb">
+              <img src="./screenshots/direction-c-desktop-light.png" alt="方向 C 桌面浅色预览" />
+            </div>
+            <div class="hub-actions">
+              <a class="rn-btn rn-btn-primary" href="./direction-c/index.html">打开交互原型</a>
+              <a class="rn-btn" href="./direction-c/index.html?theme=dark">深色</a>
+              <a class="rn-btn" href="./direction-c/index.html?scenario=month-2025-10">月度</a>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section aria-labelledby="posters-heading">
+        <h2 class="hub-section-title" id="posters-heading">1080×1920 分享图实样对照（纯 Canvas 2D 本机渲染）</h2>
+        <div class="poster-gallery">
+          <figure class="poster-tile">
+            <img src="./screenshots/poster-a-year-light.png" alt="方向 A 浅色年度分享图" />
+            <figcaption><span>方向 A · 深森绿特刊（浅色）</span><span>1080×1920</span></figcaption>
+          </figure>
+          <figure class="poster-tile">
+            <img src="./screenshots/poster-b-year-light.png" alt="方向 B 浅色年度分享图" />
+            <figcaption><span>方向 B · 环道完赛徽章（浅色）</span><span>1080×1920</span></figcaption>
+          </figure>
+          <figure class="poster-tile">
+            <img src="./screenshots/poster-c-year-light.png" alt="方向 C 浅色年度分享图" />
+            <figcaption><span>方向 C · 珍藏版长票根（浅色）</span><span>1080×1920</span></figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="motion-box" aria-labelledby="motion-heading">
+        <h2 class="hub-section-title" id="motion-heading">三方向交互与动效演示</h2>
+        <img
+          src="./screenshots/motion-demo.gif"
+          alt="三方向交互与动效演示动图"
+          onerror="this.replaceWith(Object.assign(document.createElement('p'), { textContent: '完整动效演示（motion-demo.gif / motion-demo.webm）仅保留在本地设计工作区，未随 PR 提交；可直接点击上方任意方向的「打开交互原型」实时体验全部动效与明暗切换。', style: 'margin:0;font-size:0.875rem;color:var(--muted-foreground);' }))"
+        />
+      </section>
+    </main>
+
+    <script type="module">
+      import { initTheme } from './shared/data.js';
+      initTheme(document.getElementById('theme-toggle'));
+    </script>
+  </body>
+</html>
