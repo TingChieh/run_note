@@ -150,7 +150,14 @@ def delete_many(db, identifiers, settings):
     if any(is_admin(user, settings) for user in users):
         raise ApiError(409, "OWNER_PROTECTED", "不能删除站主账号")
     if users:
+        ids = [user.id for user in users]
+        # Clear references before the users cascade deletes both activities and shoes.
+        db.execute(
+            update(Activity)
+            .where(Activity.user_id.in_(ids), Activity.shoe_id.is_not(None))
+            .values(shoe_id=None)
+        )
         # Database ON DELETE CASCADE removes records, raw files, reports, goals and sessions.
-        db.execute(delete(User).where(User.id.in_([user.id for user in users])))
+        db.execute(delete(User).where(User.id.in_(ids)))
     db.flush()
     return {"deleted": True, "deleted_count": len(users)}

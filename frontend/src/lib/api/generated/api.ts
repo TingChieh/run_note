@@ -899,6 +899,85 @@ export interface ShareView {
   status: 'active' | 'expired' | 'revoked';
 }
 
+export interface ShoeActivities {
+  items: ShoeActivity[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ShoeActivity {
+  id: string;
+  title: string;
+  activity_date: string;
+  distance_m: string;
+}
+
+export interface ShoeBinding {
+  shoe: ShoeRef | null;
+}
+
+export interface ShoeBindingPatch {
+  shoe_id: string | null;
+}
+
+export interface ShoeDeleted {
+  deleted: true;
+}
+
+export interface ShoeInput {
+  name: string;
+  brand?: string | null;
+  model?: string | null;
+  notes?: string | null;
+  purchased_on?: string | null;
+  initial_distance_m?: string;
+  replacement_distance_m?: string | null;
+}
+
+export interface ShoeList {
+  items: ShoeView[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ShoePatch {
+  name?: string;
+  brand?: string | null;
+  model?: string | null;
+  notes?: string | null;
+  purchased_on?: string | null;
+  initial_distance_m?: string;
+  replacement_distance_m?: string | null;
+  retired?: boolean;
+}
+
+export interface ShoeRef {
+  id: string;
+  name: string;
+  retired_on: string | null;
+}
+
+export interface ShoeView {
+  id: string;
+  name: string;
+  retired_on: string | null;
+  brand: string | null;
+  model: string | null;
+  notes: string | null;
+  purchased_on: string | null;
+  initial_distance_m: string;
+  replacement_distance_m: string | null;
+  activity_distance_m: string;
+  total_distance_m: string;
+  activity_count: number;
+  reminder: 'near' | 'due' | null;
+  remaining_distance_m: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ShowcaseActivity {
   id: string;
   title: string;
@@ -1403,6 +1482,10 @@ export interface ApiOperations {
     get: { body: never; response: UserView };
     patch: { body: ProfileUpdate; response: UserView };
   };
+  '/api/v1/me/activities/{identifier}/shoe': {
+    get: { body: never; response: ShoeBinding };
+    patch: { body: ShoeBindingPatch; response: ShoeBinding };
+  };
   '/api/v1/me/avatar': {
     get: { body: never; response: unknown };
     put: { body: never; response: AvatarView };
@@ -1416,6 +1499,18 @@ export interface ApiOperations {
   };
   '/api/v1/me/running-goals/{period}': {
     put: { body: GoalUpdate; response: GoalView };
+  };
+  '/api/v1/me/shoes': {
+    get: { body: never; response: ShoeList };
+    post: { body: ShoeInput; response: ShoeView };
+  };
+  '/api/v1/me/shoes/{identifier}': {
+    get: { body: never; response: ShoeView };
+    patch: { body: ShoePatch; response: ShoeView };
+    delete: { body: never; response: ShoeDeleted };
+  };
+  '/api/v1/me/shoes/{identifier}/activities': {
+    get: { body: never; response: ShoeActivities };
   };
   '/api/v1/me/username': {
     patch: { body: UsernameUpdate; response: UserView };
@@ -1788,6 +1883,10 @@ export const API_OPERATIONS = {
     get: [],
     patch: [],
   },
+  '/api/v1/me/activities/{identifier}/shoe': {
+    get: [],
+    patch: [],
+  },
   '/api/v1/me/avatar': {
     get: [],
     put: [],
@@ -1801,6 +1900,18 @@ export const API_OPERATIONS = {
   },
   '/api/v1/me/running-goals/{period}': {
     put: [],
+  },
+  '/api/v1/me/shoes': {
+    get: ['limit', 'offset', 'order', 'status'],
+    post: [],
+  },
+  '/api/v1/me/shoes/{identifier}': {
+    get: [],
+    patch: [],
+    delete: [],
+  },
+  '/api/v1/me/shoes/{identifier}/activities': {
+    get: ['limit', 'offset'],
   },
   '/api/v1/me/username': {
     patch: [],

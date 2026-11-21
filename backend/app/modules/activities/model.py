@@ -8,6 +8,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     Numeric,
@@ -26,6 +27,9 @@ class Activity(Base):
     __tablename__ = "activities"
     __table_args__ = (
         UniqueConstraint("id", "user_id", name="uq_activities_id_user_id"),
+        ForeignKeyConstraint(
+            ["shoe_id", "user_id"], ["shoes.id", "shoes.user_id"], ondelete="RESTRICT"
+        ),
         CheckConstraint("source IN ('gpx','manual','tcx','mifitness')", name="source"),
         CheckConstraint("date_source IN ('timestamp','manual')", name="date_source"),
         CheckConstraint(
@@ -100,6 +104,7 @@ class Activity(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    shoe_id: Mapped[UUID | None]
     source: Mapped[str] = mapped_column(String(10))
     title: Mapped[str] = mapped_column(String(120))
     notes: Mapped[str] = mapped_column(Text, server_default="")
@@ -141,6 +146,15 @@ Index(
     Activity.user_id,
     Activity.activity_date.desc(),
     Activity.id.desc(),
+)
+
+Index(
+    "ix_activities_owner_shoe_date_id",
+    Activity.user_id,
+    Activity.shoe_id,
+    Activity.activity_date.desc(),
+    Activity.id.desc(),
+    postgresql_where=Activity.shoe_id.is_not(None),
 )
 
 Index(

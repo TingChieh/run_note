@@ -81,6 +81,12 @@ ASYNC_ENDPOINTS = {
 # Each signed-in route that addresses a resource by id (longest matching prefix) names the
 # integration test proving another user's id answers 404 and changes nothing.
 CROSS_USER_TESTS = {
+    "/api/v1/me/shoes/{identifier}": (
+        "test_shoes.py::test_other_users_cannot_access_shoes_or_bindings"
+    ),
+    "/api/v1/me/activities/{identifier}/shoe": (
+        "test_shoes.py::test_other_users_cannot_access_shoes_or_bindings"
+    ),
     "/api/v1/activities/{identifier}": (
         "test_cross_user_access.py::test_other_users_activity_ids_answer_404_and_change_nothing"
     ),
@@ -110,6 +116,10 @@ CROSS_USER_TESTS = {
 OWN_SCOPE_PARAMS = {"period"}  # /me/running-goals/{period}
 # Field names that must never appear in a public (anonymous, non-self-service) response.
 PRIVATE_FIELDS = {
+    "shoe",
+    "shoe_id",
+    "initial_distance_m",
+    "replacement_distance_m",
     "email",
     "email_normalized",
     "password",
