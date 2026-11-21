@@ -36,11 +36,13 @@ busy 时防重复提交，失败保留草稿，字段错误与输入关联。写
 
 ## 5. 设置分组
 
-适用：账户资料、公开范围、站点与用户管理。参考 [settings](../../frontend/src/routes/settings/+page.svelte)、[site](../../frontend/src/routes/settings/site/+page.svelte)、[用户管理](../../frontend/src/routes/admin/users/+page.svelte)。结构：根布局渲染的 PageHeader（黄色页头，底部为玻璃分段标签）→ 页面内容。
+适用：账户资料、跑鞋、目标与隐私、站点与用户管理。参考 [settings](../../frontend/src/routes/settings/+page.svelte)、[shoes](../../frontend/src/routes/settings/shoes/+page.svelte)、[preferences](../../frontend/src/routes/settings/preferences/+page.svelte)、[site](../../frontend/src/routes/settings/site/+page.svelte)、[用户管理](../../frontend/src/routes/admin/users/+page.svelte)。结构：根布局渲染的 PageHeader（黄色页头，底部为玻璃分段标签）→ 页面内容。
 
 页面级模式/排序切换（`/footprints` 的地图模式、`/routes` 的排序）沿用同一外观：在页面自己的 `PageHeader` 的 `footer` 插槽里放 `.settings-tabs` 按钮组（`role="group"`、中文 `aria-label`、`aria-pressed`），不再在页面内自写 `.mode-switch` 样式。按钮版标签不会被全局按钮材质涂上白底（由 `liquid-glass.css` 的 `:where(:not(.settings-tabs > button))` 排除保证）；增强器不可用时选中项回落为主色填充，不会留下无底色的白字。表格工具栏里的列表筛选（如用户管理）仍用 `.compact-switch`。
 
-- **账户设置**：顶部身份卡（头像、昵称、用户名、邮箱/时区/主页标签）→ 两列 `.settings-grid`（个人资料、公开个人主页含开关）→ 账户安全（修改密码默认折叠）。
+- **账户总览**（`/settings`）：顶部身份卡（头像、昵称、用户名、邮箱/时区/主页标签）→ 个人管理摘要条（`.settings-hub-strip`，独立加载跑鞋提醒数、周/月/年跑量目标、公开与功能状态，单项失败不阻塞资料编辑，一键跳转对应分区）→ 个人资料与用户名卡片 → 账户安全（修改密码默认折叠）。
+- **跑鞋**（`/settings/shoes`）：全宽 3:7 列表/详情体验，页头动作区放“添加跑鞋”，退役前弹出原生 `<dialog>` 确认；活动详情仍保留轻量跑鞋绑定入口并提供“管理跑鞋 →”跳转；旧路径 `/activities/shoes` 与 `/workspace/activities/shoes` 303 重定向至对应设置分区。
+- **目标与隐私**（`/settings/preferences`）：周/月/年跑量目标统一编辑卡片 → 展示与隐私/功能开关（`个人完整展示` 只读状态 + `公开个人主页` / `身心健康` / `加入一起跑步` 经 SaveBar 保存）→ 数据入口卡片（跑步记录与导入、AI 汇总、个人足迹与路线）。
 - **站点设置**：左列站点文字与“默认外观”卡片选项，右列吸顶（≥1024px，停在固定顶部条下方 1rem）的实时预览与图标上传；预览是顶部导航条的缩略样（`--surface` 底、`--border` 边、`--sport-brand` Logo 方块、站点名与副标题）；手机上纵排。
 - **用户管理**：一行工具栏（搜索、状态分段、总数）→ 紧凑表格（首字母头像、两个开关、行内小按钮）→ 分页与折叠说明。
 - **保存方式**：有草稿的设置用 SaveBar，只在有改动时出现；需要立即生效的布尔值（登录启用、公开展示）用开关直接写入并就地更新这一行，不重新读取整张表。外观是本机即时偏好，不能因此把公开设置改成自动保存。

@@ -82,12 +82,25 @@
 
 <section class="mt-4 rounded-xl border border-border bg-surface p-4" aria-label="活动的跑鞋">
   {#if ready}
-    <form class="flex flex-wrap items-end gap-3" onsubmit={save} aria-busy={busy}>
-      <label class="min-w-0 flex-1 basis-48" for={selectId}>
+    <div class="mb-2 flex flex-wrap items-start justify-between gap-2">
+      <div class="min-w-0">
         <span class="block font-medium">跑鞋</span>
-        <span class="mb-2 block break-all text-sm text-muted-foreground">
+        <span class="block break-all text-sm text-muted-foreground">
           {current?.name ?? '未绑定'}{current?.retired_on ? '（已退役）' : ''}
         </span>
+      </div>
+      <a
+        class="button-secondary button-compact"
+        href={view.href(
+          current
+            ? `/settings/shoes?${new URLSearchParams({ ...(current.retired_on ? { status: 'retired' } : {}), id: current.id })}`
+            : '/settings/shoes',
+        )}>管理跑鞋 →</a
+      >
+    </div>
+    <form class="flex flex-wrap items-end gap-3" onsubmit={save} aria-busy={busy}>
+      <div class="min-w-0 flex-1 basis-48">
+        <label class="sr-only" for={selectId}>选择活动穿着的跑鞋</label>
         <select
           id={selectId}
           class="min-h-11 w-full rounded-lg border border-border bg-surface px-3"
@@ -102,13 +115,13 @@
             <option value={shoe.id}>{shoe.name}</option>
           {/each}
         </select>
-      </label>
+      </div>
       <button class="button-secondary min-h-11" type="submit" disabled={busy || choice === (current?.id ?? '')}>
         {busy ? '保存中…' : '保存跑鞋'}
       </button>
     </form>
     {#if !options.length}
-      <a class="button-secondary mt-3 min-h-11" href={view.href('/activities/shoes?add=1')}>添加跑鞋</a>
+      <a class="button-secondary mt-3 min-h-11" href={view.href('/settings/shoes?add=1')}>添加跑鞋</a>
     {/if}
     {#if message}<p class="mt-2 text-sm text-muted-foreground" role="status">{message}</p>{/if}
   {:else if busy}

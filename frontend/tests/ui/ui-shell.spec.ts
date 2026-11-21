@@ -15,7 +15,7 @@ async function noOverflow(page: Page) {
 test('desktop sidebar highlights route, keyboard skip works, session survives navigation and logout', async ({ page }) => {
   await login(page);
   await page.getByLabel('昵称', { exact: true }).fill('悬停测试');
-  const saveButton = page.getByRole('button', { name: '保存公开设置', exact: true });
+  const saveButton = page.getByRole('button', { name: '保存个人资料', exact: true });
   const normalColor = await saveButton.evaluate(el => getComputedStyle(el).backgroundColor);
   await saveButton.hover();
   await expect.poll(() => saveButton.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(normalColor);
@@ -189,7 +189,7 @@ test('long saved nickname stays inside navigation at mobile and desktop widths',
   await login(page);
   const nickname = 'LongSyntheticRunner'.repeat(4);
   await page.getByLabel('昵称', { exact: true }).fill(nickname);
-  await page.getByRole('button', { name: '保存公开设置', exact: true }).click();
+  await page.getByRole('button', { name: '保存个人资料', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: '资料已保存' })).toBeVisible();
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });

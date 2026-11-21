@@ -13,25 +13,45 @@ async function signIn(page: Page, path: string) {
   await expect(page.locator('header').first()).toHaveAttribute('data-auth-ready', 'true');
 }
 
-test('restricts the entry to private activities and handles a session expiring on read', async ({ page }) => {
+test('moves shoes into settings, removes the activities button, redirects legacy URLs, and handles session expiry', async ({
+  page,
+  request,
+}) => {
   await page.goto('/activities');
   await expect(page.getByRole('link', { name: '跑鞋', exact: true })).toHaveCount(0);
   await page.goto('/activities/shoes');
   await expect(page).toHaveURL(/\/admin\?next=/);
+  await page.goto('/settings/shoes');
+  await expect(page).toHaveURL(/\/admin\?next=/);
+
   await signIn(page, '/activities');
-  await expect(page.getByRole('link', { name: '跑鞋', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: '跑鞋', exact: true })).toHaveCount(0);
+
+  // Legacy /activities/shoes redirects 303 to /settings/shoes preserving query parameters.
+  const redirect = await page.request.get('/activities/shoes?status=retired&add=1', { maxRedirects: 0 });
+  expect(redirect.status()).toBe(303);
+  expect(redirect.headers().location).toBe('/settings/shoes?status=retired&add=1');
+  expect((await request.get('/settings/shoes', { maxRedirects: 0 })).status()).toBe(303);
+
+  await page.goto('/settings');
+  const tabs = page.getByRole('navigation', { name: '设置分区' });
+  await tabs.getByRole('link', { name: /跑鞋/ }).click();
+  await expect(page).toHaveURL(/\/settings\/shoes$/);
+  await expect(page.getByRole('heading', { level: 1, name: '跑鞋', exact: true })).toBeVisible();
+
   await page.goto('/p/runner/activities');
   await expect(page.getByRole('link', { name: '跑鞋', exact: true })).toHaveCount(0);
+
   await page.route('**/api/v1/me/shoes?*', (route) =>
     route.fulfill({ status: 401, json: { data: null, error: { code: 'AUTH_REQUIRED' } } }),
   );
-  await page.goto('/activities/shoes');
+  await page.goto('/settings/shoes');
   await expect(page).toHaveURL(/\/admin\?reason=expired/);
   await expect(page.getByText('长距离训练鞋')).toHaveCount(0);
 });
 
 test('a delayed list response cannot replace the selected shoe group', async ({ page }) => {
-  await signIn(page, '/activities/shoes');
+  await signIn(page, '/settings/shoes');
   const list = page.getByRole('region', { name: '跑鞋列表' });
   const active = list.getByRole('button', { name: '使用中', exact: true });
   const retired = list.getByRole('button', { name: '已退役', exact: true });
@@ -102,10 +122,12 @@ test('a delayed list response cannot replace the selected shoe group', async ({ 
   }
 });
 
-test('creates a shoe at 320px, restores dialog focus, and retires and recovers a referenced shoe', async ({ page }) => {
+test('creates a shoe at 320px, restores dialog focus, confirms retire, and recovers a referenced shoe', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 320, height: 800 });
-  await signIn(page, '/activities/shoes');
-  const add = page.getByRole('button', { name: '添加跑鞋' });
+  await signIn(page, '/settings/shoes');
+  const add = page.getByRole('button', { name: /添加跑鞋/ });
   await add.focus();
   await page.keyboard.press('Enter');
   const dialog = page.getByRole('dialog', { name: '添加跑鞋' });
@@ -120,6 +142,7 @@ test('creates a shoe at 320px, restores dialog focus, and retires and recovers a
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: '里程' })).toContainText('1,000,000.0 km');
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+
   await page.getByRole('link', { name: /跑鞋列表/ }).click();
   await page.getByRole('link', { name: /长距离训练鞋/ }).click();
   await expect(page.getByRole('heading', { name: '长距离训练鞋' })).toBeFocused();
@@ -127,27 +150,42 @@ test('creates a shoe at 320px, restores dialog focus, and retires and recovers a
   await expect(page.getByRole('link', { name: /长距离训练鞋/ })).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { name: '长距离训练鞋' })).toBeFocused();
+
   await page.getByRole('button', { name: '删除跑鞋', exact: true }).click();
   const deleteDialog = page.getByRole('dialog', { name: '删除跑鞋？' });
   await deleteDialog.getByRole('button', { name: '确认删除' }).click();
   await expect(deleteDialog.getByRole('alert')).toContainText('关联活动');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('button', { name: '删除跑鞋', exact: true })).toBeFocused();
-  await page.getByRole('button', { name: '退役跑鞋', exact: true }).click();
+
+  const retireButton = page.getByRole('button', { name: '退役跑鞋', exact: true });
+  await retireButton.click();
+  const retireDialog = page.getByRole('dialog', { name: '退役跑鞋？' });
+  await expect(retireDialog).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(retireButton).toBeFocused();
+  await retireButton.click();
+  await retireDialog.getByRole('button', { name: '确认退役', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: '跑鞋已退役' })).toBeVisible();
   await expect(page.getByRole('region', { name: '里程' })).not.toContainText('替换里程');
   await page.getByRole('button', { name: '恢复使用', exact: true }).click();
   await expect(page.getByRole('region', { name: '里程' })).toContainText('接近替换里程');
 });
 
-test('the activity exposes the retired current binding and supports unbinding', async ({ page }) => {
+test('the activity exposes the retired current binding, links back to settings, and supports unbinding', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await signIn(page, '/activities/shoes');
+  await signIn(page, '/settings/shoes');
   await page.getByRole('link', { name: /长距离训练鞋/ }).click();
   await page.getByRole('button', { name: '退役跑鞋', exact: true }).click();
+  await page.getByRole('dialog', { name: '退役跑鞋？' }).getByRole('button', { name: '确认退役', exact: true }).click();
   await expect(page.getByRole('button', { name: '恢复使用' })).toBeVisible();
+
   await page.goto('/activities/' + activity);
   const binding = page.getByRole('region', { name: '活动的跑鞋' });
+  const manageLink = binding.getByRole('link', { name: /管理跑鞋/ });
+  await expect(manageLink).toHaveAttribute('href', `/settings/shoes?status=retired&id=${sampleShoe}`);
   const picker = binding.getByRole('combobox');
   await expect(picker).toHaveValue(sampleShoe);
   await expect(binding).toContainText('长距离训练鞋（已退役）');
@@ -168,7 +206,7 @@ for (const viewport of [
     test('renders ' + viewport.width + 'px ' + theme + ' without overflow', async ({ page }, info) => {
       await page.setViewportSize(viewport);
       await page.addInitScript((value) => localStorage.setItem('runnote-theme', value), theme);
-      await signIn(page, '/activities/shoes');
+      await signIn(page, '/settings/shoes');
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       await expect(page.getByRole('link', { name: /长距离训练鞋/ })).toBeVisible();
       const prefix = 'shoes-' + viewport.width + '-' + theme;

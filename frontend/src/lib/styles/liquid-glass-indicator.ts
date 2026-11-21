@@ -12,8 +12,21 @@ export function createIndicator(host: HTMLElement, items: HTMLElement[], initial
   const labels = items.map(item => {
     const label = document.createElement('span'); label.className = 'rn-moving-label';
     const icon = item.querySelector('svg'); if (icon) label.append(icon.cloneNode(true));
-    const text = document.createElement('span'); text.textContent = item.textContent?.trim() ?? '';
-    label.append(text); copy.append(label); return label;
+    const badge = item.querySelector('.settings-tab-badge');
+    const text = document.createElement('span');
+    if (badge) {
+      const ownText = [...item.childNodes]
+        .filter((node) => node.nodeType === Node.TEXT_NODE)
+        .map((node) => node.textContent ?? '')
+        .join('')
+        .trim();
+      text.textContent = ownText;
+      label.append(text, badge.cloneNode(true));
+    } else {
+      text.textContent = item.textContent?.trim() ?? '';
+      label.append(text);
+    }
+    copy.append(label); return label;
   });
   host.append(outline, copy);
   const motion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -113,12 +126,13 @@ function build(nav: HTMLElement, links: HTMLAnchorElement[], settings: GlassSett
 /** Horizontal variant for `.settings-tabs` links and `.compact-switch` buttons: a glass lens glides under the active one. */
 export function enhanceSegmented(group: HTMLElement, settings: GlassSettings) {
   const read = () => [...group.querySelectorAll<HTMLElement>(':scope > a, :scope > button')];
-  let items = read(), current = settings, stop = buildSegmented(group, items, settings);
-  const same = () => { const next = read(); return next.length === items.length && next.every((item, i) => item === items[i]); };
+  const signature = (list: HTMLElement[]) => list.map((item) => item.textContent?.trim() ?? '').join('\0');
+  let items = read(), sig = signature(items), current = settings, stop = buildSegmented(group, items, settings);
+  const same = () => { const next = read(); return next.length === items.length && next.every((item, i) => item === items[i]) && signature(next) === sig; };
   return { update(next: GlassSettings) {
     current = next;
     if (same()) { stop.update(next); return; }
-    stop.destroy(); items = read(); stop = buildSegmented(group, items, current);
+    stop.destroy(); items = read(); sig = signature(items); stop = buildSegmented(group, items, current);
   }, destroy() { stop.destroy(); } };
 }
 

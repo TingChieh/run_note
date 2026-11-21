@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { goalRange, validGoal, readGoals, saveGoal } from '../../src/lib/api/running-goal';
+import { goalRange, validGoal, readGoals, readOwnGoals, saveGoal } from '../../src/lib/api/running-goal';
 describe('personal running goal', () => {
   it('uses account local dates, Monday weeks and exclusive calendar end dates', () => {
     const now = new Date('2026-12-31T18:00:00Z');
@@ -18,6 +18,11 @@ describe('personal running goal', () => {
       return Response.json({data:{week:5.5,month:null,year:500}});
     }) as typeof fetch;
     expect(await readGoals(fetcher)).toEqual({week:5.5,month:null,year:500});
+    const ownFetcher = (async (path: string) => {
+      expect(path).toBe('/api/v1/me/running-goals');
+      return Response.json({data:{week:40,month:160,year:1800}});
+    }) as typeof fetch;
+    expect(await readOwnGoals(ownFetcher)).toEqual({week:40,month:160,year:1800});
   });
   it('saves only the selected period with fresh CSRF and returns the confirmed target', async () => {
     const fetcher = (async (path: string, init?: RequestInit) => {

@@ -2120,6 +2120,7 @@
   .settings-tabs :is(a, button) {
     display: inline-flex;
     align-items: center;
+    gap: 0.35rem;
     min-height: 2.5rem;
     padding: 0.375rem 1.125rem;
     border-radius: var(--radius-pill);
@@ -2130,6 +2131,174 @@
       background-color var(--transition-control),
       color var(--transition-control),
       box-shadow var(--transition-control);
+  }
+  /* Visual separation between personal management tabs and admin-only tabs without adding a DOM child that would shift enhanceSegmented indexing. */
+  .settings-tabs > a.settings-tab-admin-start {
+    position: relative;
+    margin-inline-start: 0.75rem;
+  }
+  .settings-tabs > a.settings-tab-admin-start::before {
+    content: '';
+    position: absolute;
+    left: -0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 1px;
+    height: 1.25rem;
+    background: var(--border);
+    pointer-events: none;
+  }
+  .settings-tab-badge {
+    display: inline-grid;
+    place-items: center;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    padding-inline: 0.3rem;
+    border: 1px solid var(--warning-border);
+    border-radius: var(--radius-pill);
+    background: var(--warning-soft);
+    color: var(--warning);
+    font-size: var(--text-caption);
+    font-weight: var(--weight-bold);
+    line-height: var(--line-height-solid);
+    font-variant-numeric: tabular-nums;
+  }
+  .settings-hub-strip {
+    display: grid;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    overflow: hidden;
+  }
+  @media (min-width: 900px) {
+    .settings-hub-strip {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+  .settings-hub-cell {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+    padding: var(--space-6);
+    text-align: left;
+    transition: background-color var(--transition-control);
+  }
+  .settings-hub-cell + .settings-hub-cell {
+    border-top: 1px solid var(--border);
+  }
+  @media (min-width: 900px) {
+    .settings-hub-cell + .settings-hub-cell {
+      border-top: 0;
+      border-left: 1px solid var(--border);
+    }
+  }
+  @media (hover: hover) {
+    .settings-hub-cell:hover {
+      background: color-mix(in srgb, var(--muted) 45%, var(--surface));
+    }
+  }
+  .settings-hub-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+  .settings-hub-kicker {
+    font-size: var(--text-caption);
+    font-weight: var(--weight-medium);
+    color: var(--muted-foreground);
+  }
+  .settings-hub-badge {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    font-size: var(--text-caption);
+    font-weight: var(--weight-bold);
+    line-height: var(--line-height-solid);
+    color: var(--sport-ink);
+  }
+  .settings-hub-badge.shoes {
+    background: var(--sport-green);
+  }
+  .settings-hub-badge.goals {
+    background: var(--sport-blue);
+  }
+  .settings-hub-badge.privacy {
+    background: var(--sport-yellow-accent);
+  }
+  .settings-hub-stat {
+    font-size: var(--text-stat);
+    font-weight: var(--weight-bold);
+    line-height: var(--line-height-tight);
+    font-variant-numeric: tabular-nums;
+  }
+  .settings-hub-detail {
+    font-size: var(--text-small);
+    color: var(--muted-foreground);
+  }
+  .settings-hub-action {
+    margin-top: auto;
+    padding-top: var(--space-2);
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+    color: var(--primary);
+  }
+  .goal-form-grid {
+    display: grid;
+    gap: var(--space-4);
+  }
+  @media (min-width: 720px) {
+    .goal-form-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+  .goal-input-card {
+    display: grid;
+    gap: var(--space-2);
+    min-width: 0;
+    padding: var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-control);
+    background: color-mix(in srgb, var(--muted) 35%, var(--surface));
+  }
+  .goal-input-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .goal-input-row .text-field {
+    min-width: 0;
+    flex: 1;
+  }
+  .goal-input-unit {
+    flex-shrink: 0;
+    font-size: var(--text-small);
+    color: var(--muted-foreground);
+  }
+  .data-links-grid {
+    display: grid;
+    gap: var(--space-3);
+  }
+  @media (min-width: 720px) {
+    .data-links-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  .data-link-card {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-width: 0;
+    padding: var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-control);
+    background: var(--surface);
   }
   @media (max-width: 479px) {
     .settings-tabs {

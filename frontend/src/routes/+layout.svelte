@@ -28,15 +28,31 @@
   let pageDirection = $state<1 | -1 | 0>(0), menuNavigationPending = false;
   let GlassTuner = $state<Component | null>(null);
   // Switching between the settings sections keeps the old page on screen and skips the skeleton and fade.
-  const settingsSection = (path?: string) => !!path && /^(\/workspace)?\/(settings(\/site)?|admin\/users)\/?$/.test(path);
+  const settingsSection = (path?: string) => !!path && /^(\/workspace)?\/(settings(\/(shoes|preferences|site))?|admin\/users)\/?$/.test(path);
   let quietSwap = $state(false);
   let shallowNavigation = $state(false);
   const settingsHeader = provideSettingsHeader();
   const settingsKind = $derived.by(() => {
     const path = page.url.pathname.replace(/^\/workspace/, '').replace(/\/$/, '');
-    return path === '/settings' ? 'account' : path === '/settings/site' ? 'site' : path === '/admin/users' ? 'users' : null;
+    return path === '/settings'
+      ? 'account'
+      : path === '/settings/shoes'
+        ? 'shoes'
+        : path === '/settings/preferences'
+          ? 'preferences'
+          : path === '/settings/site'
+            ? 'site'
+            : path === '/admin/users'
+              ? 'users'
+              : null;
   });
-  const settingsMeta = { account: ['设置', '管理账户资料与公开主页。'], site: ['站点设置', '管理站点名称、标语、默认外观和图标。'], users: ['用户管理', '管理账号、登录权限和独立个人展示链接。'] } as const;
+  const settingsMeta = {
+    account: '设置',
+    shoes: '跑鞋',
+    preferences: '目标与隐私',
+    site: '站点设置',
+    users: '用户管理',
+  } as const;
   beforeNavigate(navigation => {
     publicMenuOpen = false;
     shallowNavigation = navigation.shallow;
@@ -166,8 +182,8 @@
       {#if !(identityBlocked && privateView)}
         {#if routeLoading}<div data-testid="navigation-skeleton"><PageSkeleton /></div>{/if}
         {#if settingsKind}<div hidden={routeLoading || checking && privateView} inert={routeLoading || checking && privateView}>
-          <PageHeader title={settingsMeta[settingsKind][0]} description={settingsMeta[settingsKind][1]}>
-            {#snippet actions()}{#if settingsHeader.create}<button id="create-user" type="button" class="button-secondary" disabled={settingsHeader.createDisabled} onclick={settingsHeader.create}>新增用户</button>{/if}{/snippet}
+          <PageHeader title={settingsMeta[settingsKind]}>
+            {#snippet actions()}{#if settingsHeader.action}<button id={settingsHeader.action.id} type="button" class={settingsHeader.action.variant === 'primary' ? 'button-primary' : 'button-secondary'} disabled={settingsHeader.action.disabled} onclick={settingsHeader.action.onclick}>{settingsHeader.action.label}</button>{/if}{/snippet}
             {#snippet footer()}<SettingsTabs current={settingsKind} />{/snippet}
           </PageHeader>
         </div>{/if}

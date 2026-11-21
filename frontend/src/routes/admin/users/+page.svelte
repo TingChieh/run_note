@@ -17,7 +17,20 @@
   let password = $state(''), repeatedPassword = $state(''), active = $state(true), published = $state(false);
   let action = $state<'active' | 'showcase' | 'password'>('active');
   const header = useSettingsHeader();
-  $effect(() => { header.create = administrator ? () => void edit(null) : null; header.createDisabled = busy; return () => { header.create = null; header.createDisabled = false; }; });
+  $effect(() => {
+    header.action = administrator
+      ? {
+          id: 'create-user',
+          label: '新增用户',
+          variant: 'secondary',
+          disabled: busy,
+          onclick: () => void edit(null),
+        }
+      : null;
+    return () => {
+      header.action = null;
+    };
+  });
   let editor: HTMLDialogElement, confirmation: HTMLDialogElement, deletion: HTMLDialogElement;
   let chosen = $state<string[]>([]), removing = $state<AdminUser[]>([]), removal = $state('');
   const selectable = $derived(users?.items.filter(user => !user.is_admin) ?? []);

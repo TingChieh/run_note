@@ -157,6 +157,17 @@
 </dialog>
 
 <style>
+  dialog {
+    margin: auto;
+    padding: var(--space-6);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    color: var(--foreground);
+  }
+  dialog::backdrop {
+    background: var(--surface-backdrop);
+  }
   label {
     display: grid;
     min-width: 0;

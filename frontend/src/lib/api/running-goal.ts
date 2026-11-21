@@ -23,11 +23,16 @@ export function validGoal(value: string): number | null {
 function invalidGoalResponse(): never { throw new ActivityError('目标服务返回了无效响应，请重试', 502, 'INVALID_RESPONSE'); }
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const targetValue = (value: unknown): value is number => typeof value === 'number' && validGoal(String(value)) !== null;
-export async function readGoals(fetcher: typeof fetch = fetch): Promise<RunningGoals> {
-  const data = await request('/api/v1/showcase/running-goals', {}, fetcher);
+function parseGoals(data: unknown): RunningGoals {
   if (!object(data)) invalidGoalResponse();
   for (const period of ['week', 'month', 'year']) if (data[period] !== null && !targetValue(data[period])) invalidGoalResponse();
   return { week: data.week as number | null, month: data.month as number | null, year: data.year as number | null };
+}
+export async function readGoals(fetcher: typeof fetch = fetch): Promise<RunningGoals> {
+  return parseGoals(await request('/api/v1/showcase/running-goals', {}, fetcher));
+}
+export async function readOwnGoals(fetcher: typeof fetch = fetch): Promise<RunningGoals> {
+  return parseGoals(await request('/api/v1/me/running-goals', {}, fetcher));
 }
 export async function saveGoal(period: GoalPeriod, target: number, fetcher: typeof fetch = fetch): Promise<number> {
   if (!targetValue(target)) throw new ActivityError('请输入有效的目标公里数', 422);
