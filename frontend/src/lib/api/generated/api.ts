@@ -332,6 +332,70 @@ export interface ErrorInfo {
   details?: (Record<string, string>)[];
 }
 
+export interface ExplorationCatalog {
+  source_version: number;
+  atlas_version: string;
+  status: 'ready' | 'pending' | 'failed';
+  items: ExplorationPlace[];
+  total: number;
+  limit: number;
+  offset: number;
+  regions: ExplorationRegion[];
+  activity_count: number | null;
+  boundary_count: number | null;
+  nearby_count: number | null;
+  no_track_count: number | null;
+  unmatched_count: number | null;
+  distance_m: number | null;
+  unallocated_m: number | null;
+}
+
+export interface ExplorationCells {
+  source_version: number;
+  atlas_version: string;
+  status: 'ready' | 'pending' | 'failed';
+  bounds: [number, number, number, number] | null;
+  block_size: number;
+  cells: ([number, number, number])[];
+}
+
+export interface ExplorationDetail {
+  source_version: number;
+  atlas_version: string;
+  status: 'ready' | 'pending' | 'failed';
+  scope: 'global' | 'region' | 'city';
+  code: string;
+  name: string;
+  year: number;
+  first_year: number | null;
+  city: ExplorationPlace | null;
+  months: ExplorationMonth[];
+  new_cells: number | null;
+  cumulative_cells: number | null;
+}
+
+export interface ExplorationMonth {
+  month: number;
+  new_cells: number | null;
+  cumulative_cells: number | null;
+}
+
+export interface ExplorationPlace {
+  code: string;
+  name: string;
+  region_name: string | null;
+  kind: 'boundary' | 'nearby';
+  first_date: string;
+  last_date: string;
+  activity_count: number;
+  distance_m: number | null;
+}
+
+export interface ExplorationRegion {
+  code: string;
+  name: string;
+}
+
 export interface FeedPage {
   items: Recent[];
   next_cursor: string | null;
@@ -1491,6 +1555,15 @@ export interface ApiOperations {
     put: { body: never; response: AvatarView };
     delete: { body: never; response: AvatarView };
   };
+  '/api/v1/me/footprints/exploration/cities': {
+    get: { body: never; response: ExplorationCatalog };
+  };
+  '/api/v1/me/footprints/exploration/{scope}/{code}': {
+    get: { body: never; response: ExplorationDetail };
+  };
+  '/api/v1/me/footprints/exploration/{scope}/{code}/cells': {
+    get: { body: never; response: ExplorationCells };
+  };
   '/api/v1/me/password': {
     patch: { body: PasswordUpdate; response: PasswordChanged };
   };
@@ -1891,6 +1964,15 @@ export const API_OPERATIONS = {
     get: [],
     put: [],
     delete: [],
+  },
+  '/api/v1/me/footprints/exploration/cities': {
+    get: ['limit', 'offset'],
+  },
+  '/api/v1/me/footprints/exploration/{scope}/{code}': {
+    get: ['year'],
+  },
+  '/api/v1/me/footprints/exploration/{scope}/{code}/cells': {
+    get: ['bbox', 'layer', 'year', 'zoom'],
   },
   '/api/v1/me/password': {
     patch: [],

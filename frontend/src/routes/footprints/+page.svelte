@@ -151,6 +151,11 @@
   <link rel="preload" as="fetch" href={firstRead} crossorigin="anonymous" />
 </svelte:head>
 <PageHeader title="个人足迹" description="沿着跑过的路，看看你的运动版图。">
+  {#snippet actions()}
+    {#if page.data.user && view.manage}
+      <a class="button-secondary" href={view.href('/footprints/exploration')}>城市探索</a>
+    {/if}
+  {/snippet}
   {#snippet footer()}
     <div class="settings-tabs" role="group" aria-label="地图模式">
       <button type="button" aria-pressed={mode === 'tracks'} disabled={!mounted} onclick={() => changeMode('tracks')}

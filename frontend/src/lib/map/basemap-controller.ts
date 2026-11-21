@@ -7,8 +7,8 @@ import { watchSystemTheme } from '#lib/components/system-theme.ts';
 // Video export only: `fixed` pins one style regardless of the saved preference and site theme.
 export function createBasemapController(map: LibreMap, beforeLayer: string,
   update: (state: { status: BasemapStatus; preference: BasemapPreference; style: BasemapStyle }) => void, routeColor?: () => string | undefined,
-  { fixed }: { fixed?: BasemapStyle } = {}) {
-  let preference = savedBasemapPreference(), dark = false, disposed = false;
+  { fixed, localPreference }: { fixed?: BasemapStyle; localPreference?: BasemapPreference } = {}) {
+  let preference = localPreference ?? savedBasemapPreference(), dark = false, disposed = false;
   const chosen = () => fixed ?? resolveBasemap(preference, dark);
   let retryAssets = false;
   let installing = false;
@@ -91,7 +91,7 @@ export function createBasemapController(map: LibreMap, beforeLayer: string,
   const onData = (_event: MapLibreEvent) => check();
   map.on('render', onData); map.on('error', onError);
   let initialized = false;
-  const stopPreference = watchBasemapPreference(value => {
+  const stopPreference = localPreference ? () => {} : watchBasemapPreference(value => {
     preference = value;
     if (initialized && active !== chosen()) void load();
     else if (initialized) publish();
