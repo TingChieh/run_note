@@ -365,4 +365,6 @@ def test_delete_many_ignores_missing_and_counts_locked_rows():
     db.scalars.return_value.all.return_value = [person]
     result = admin_service.delete_many(db, [person.id, uuid4()], settings)
     assert result == {"deleted": True, "deleted_count": 1}
-    db.execute.assert_called_once()
+    unbind, delete = (call.args[0] for call in db.execute.call_args_list)
+    assert unbind.is_update and unbind.table.name == "activities"
+    assert delete.is_delete and delete.table.name == "users"

@@ -4,7 +4,7 @@ import pytest
 def test_release_head_follows_complete_chain():
     from app.db.schema import get_expected_revision
 
-    assert get_expected_revision() == "0030_global_footprint_caches"
+    assert get_expected_revision() == "0031_shoes"
 
 
 @pytest.mark.parametrize("revisions", [[], [("a", None), ("b", None)]])
@@ -30,6 +30,7 @@ def test_model_registry_and_autogenerate_preserve_unmanaged_tables():
         "activity_share_links",
         "ai_reports",
         "running_goals",
+        "shoes",
         "auth_sessions",
         "auth_rate_buckets",
         "activities",
@@ -59,6 +60,7 @@ def test_model_registry_and_autogenerate_preserve_unmanaged_tables():
     }
     assert set(models.Base.metadata.tables) == expected
     assert include_name("users", "table", {})
+    assert include_name("shoes", "table", {})
     assert not include_name("spatial_ref_sys", "table", {})
     assert not include_name("legacy_sentinel", "table", {})
     assert not include_name("other_schema", "schema", {})
@@ -68,5 +70,6 @@ def test_model_registry_and_autogenerate_preserve_unmanaged_tables():
 def test_revision_discovery_does_not_depend_on_working_directory(tmp_path, monkeypatch):
     from app.db.schema import get_expected_revision
 
+    expected = get_expected_revision()
     monkeypatch.chdir(tmp_path)
-    assert get_expected_revision() == "0030_global_footprint_caches"
+    assert get_expected_revision() == expected
