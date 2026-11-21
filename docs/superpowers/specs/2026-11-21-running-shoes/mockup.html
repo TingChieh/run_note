@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>跑鞋 · RunNote</title>
+    <link rel="stylesheet" href="mockup.css">
+  </head>
+  <body>
+    <svg xmlns="http://www.w3.org/2000/svg" hidden aria-hidden="true">
+      <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+      <symbol id="back" viewBox="0 0 24 24"><path d="m14 18-6-6 6-6"/></symbol>
+      <symbol id="shoe" viewBox="0 0 24 24"><path d="M3 14V9c0-1 1-1.6 2-1l3 2 3-2a2 2 0 0 1 3 .6l2 3.4 4 1.5a2 2 0 0 1 1 1.8V18H5a2 2 0 0 1-2-2v-2Zm0 1h18m-9-4 2-1m0 3 2-1"/></symbol>
+      <symbol id="warning" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5m0 4h.01"/></symbol>
+      <symbol id="theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2"/></symbol>
+      <symbol id="menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+      <symbol id="pencil" viewBox="0 0 24 24"><path d="m16 4 4 4M4 20l4-.8L21 6l-3-3L5 16z"/></symbol>
+      <symbol id="target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></symbol>
+      <symbol id="home" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10H3zM9 20v-7h6v7"/></symbol>
+      <symbol id="records" viewBox="0 0 24 24"><path d="M5 20V10m7 10V4m7 16v-7M3 20h18"/></symbol>
+      <symbol id="calendar" viewBox="0 0 24 24"><path d="M4 5h16v15H4zM8 2v6m8-6v6M4 10h16m-12 4h3m-3 3h7"/></symbol>
+      <symbol id="map" viewBox="0 0 24 24"><path d="m3 5 6-2 6 2 6-2v16l-6 2-6-2-6 2zM9 3v16m6-14v16"/></symbol>
+      <symbol id="together" viewBox="0 0 24 24"><path d="M3 20h18m-14-3 2-6 3 2 2-6 3 2 2 8m-6-13a1 1 0 1 0 2 0 1 1 0 0 0-2 0"/></symbol>
+      <symbol id="routes" viewBox="0 0 24 24"><path d="M6 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm12-10a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM8 17h5a3 3 0 1 0 0-6h-2a2 2 0 1 1 0-4h5"/></symbol>
+      <symbol id="sparkle" viewBox="0 0 24 24"><path d="m12 3 3 6 6 3-6 3-3 6-3-6-6-3 6-3z"/></symbol>
+    </svg>
+    <a class="skip" href="#main">跳到主要内容</a>
+    <header class="shell">
+      <div class="brand"><span aria-hidden="true">R</span>RunNote</div>
+      <nav class="shell-nav" aria-label="站点导航">
+        <span><svg><use href="#home"/></svg>数据汇总</span>
+        <span><svg><use href="#records"/></svg>个人记录</span>
+        <span class="current" aria-current="true"><svg><use href="#calendar"/></svg>跑步记录</span>
+        <span><svg><use href="#together"/></svg>一起跑步</span>
+        <span><svg><use href="#map"/></svg>个人足迹</span>
+        <span><svg><use href="#routes"/></svg>常跑路线</span>
+        <span><svg><use href="#sparkle"/></svg>AI 分析</span>
+      </nav>
+      <div class="shell-tools">
+        <span class="goal" title="跑量目标"><svg aria-hidden="true"><use href="#target"/></svg><span class="sr-only">跑量目标</span></span>
+        <button class="icon theme" type="button" aria-label="切换深浅外观"><svg aria-hidden="true"><use href="#theme"/></svg></button>
+        <span class="avatar" aria-label="账户">R</span>
+        <button class="icon menu" type="button" aria-controls="mobile-nav" aria-expanded="false" aria-label="菜单"><svg aria-hidden="true"><use href="#menu"/></svg></button>
+      </div>
+    </header>
+    <nav id="mobile-nav" class="mobile-nav" aria-label="手机站点导航" hidden>
+      <span>数据汇总</span><span>个人记录</span><span aria-current="true">跑步记录</span><span>一起跑步</span><span>个人足迹</span><span>常跑路线</span><span>AI 分析</span>
+    </nav>
+    <main id="main">
+      <nav class="breadcrumb" aria-label="位置">
+        <span>跑步记录</span><svg aria-hidden="true"><use href="#chevron"/></svg><span aria-current="page">跑鞋</span>
+      </nav>
+      <div class="page-header">
+        <h1>跑鞋</h1>
+        <button class="primary" type="button" data-editor="add"><svg aria-hidden="true"><use href="#plus"/></svg>添加跑鞋</button>
+      </div>
+      <div class="layout">
+        <section class="inventory" aria-label="跑鞋列表">
+          <div class="list-header">
+            <div class="segments" role="group" aria-label="跑鞋状态">
+              <button type="button" data-filter="active" aria-pressed="true">使用中</button>
+              <button type="button" data-filter="retired" aria-pressed="false">已退役</button>
+            </div>
+            <span id="shoe-count" class="muted" role="status">2 双</span>
+          </div>
+          <ul id="shoes" class="shoe-list"></ul>
+        </section>
+        <section id="detail" class="detail" aria-labelledby="shoe-name">
+          <a class="back" href="#main"><svg aria-hidden="true"><use href="#back"/></svg>跑鞋列表</a>
+          <div id="shoe-detail"></div>
+        </section>
+      </div>
+    </main>
+    <dialog id="editor" aria-labelledby="editor-title">
+      <h2 id="editor-title">添加跑鞋</h2>
+      <form method="dialog">
+        <label>鞋名 <input name="name" maxlength="80" autofocus></label>
+        <div class="fields"><label>品牌 <input name="brand"></label><label>型号 <input name="model"></label></div>
+        <label>购入日期 <input name="purchased" type="date"></label>
+        <div class="fields">
+          <label>初始里程（km）<input name="initial" type="number" min="0" step="0.1" aria-describedby="initial-help"></label>
+          <label>替换提醒（km）<input name="limit" type="number" min="0.1" step="0.1" placeholder="例如 800"></label>
+        </div>
+        <p id="initial-help" class="form-hint">只填写尚未录入的里程。替换提醒留空时关闭。</p>
+        <label>备注 <textarea name="notes" rows="2" maxlength="1000"></textarea></label>
+        <footer><button class="secondary" value="cancel">关闭预览</button></footer>
+      </form>
+    </dialog>
+    <dialog id="binding" aria-labelledby="binding-title">
+      <h2 id="binding-title">活动的跑鞋</h2>
+      <p id="binding-activity" class="muted"></p>
+      <form method="dialog">
+        <label>跑鞋 <select id="binding-shoe" autofocus></select></label>
+        <footer><button class="secondary" value="cancel">关闭预览</button></footer>
+      </form>
+    </dialog>
+    <script>
+      const shoes = [
+        { id: 'long', state: 'active', name: '长距离训练鞋', brand: 'Northline', model: 'Pace 02',
+          total: '762.4', initial: '120.0', activity: '642.4', limit: 800, progress: 95.3, remaining: '37.6', count: 58,
+          purchased: '2026-05-16', rows: [['11月18日', '轻松跑', '12.0'], ['11月15日', '周末长跑', '18.6'], ['11月12日', '有氧跑', '10.4']] },
+        { id: 'tempo', state: 'active', name: '间歇训练鞋', brand: 'Stride Lab', model: 'Tempo 01',
+          total: '218.6', initial: '0.0', activity: '218.6', limit: 650, progress: 33.6, count: 27,
+          purchased: '2026-08-08', rows: [['11月17日', '间歇训练', '8.2'], ['11月10日', '节奏跑', '7.5']] },
+        { id: 'easy', state: 'retired', name: '轻松跑训练鞋', brand: 'Northline', model: 'Pace 01',
+          total: '805.2', initial: '65.0', activity: '740.2', count: 77,
+          purchased: '2025-09-10', retired: '2026-08-26', rows: [['8月23日', '轻松跑', '9.2'], ['8月20日', '慢跑', '6.8']] }
+      ];
+      const root = document.documentElement;
+      const selectedTheme = new URLSearchParams(location.search).get('theme');
+      const applyTheme = (theme) => { root.dataset.theme = theme; };
+      applyTheme(selectedTheme ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+      document.querySelector('.theme').onclick = () => applyTheme(root.dataset.theme === 'dark' ? 'light' : 'dark');
+      document.querySelector('.menu').onclick = (event) => {
+        const nav = document.querySelector('.mobile-nav');
+        nav.hidden = !nav.hidden;
+        event.currentTarget.setAttribute('aria-expanded', String(!nav.hidden));
+      };
+
+      const icon = (name) => `<svg aria-hidden="true"><use href="#${name}"/></svg>`;
+      const progress = (shoe) => shoe.limit ? `<span class="track ${shoe.remaining ? 'near' : ''}" aria-hidden="true"><span style="--progress:${shoe.progress}%"></span></span>` : '';
+      const list = document.querySelector('#shoes');
+      const detail = document.querySelector('#shoe-detail');
+      const filters = document.querySelectorAll('[data-filter]');
+      let selected = shoes[0];
+      let state = selected.state;
+
+      function render() {
+        const visible = shoes.filter((shoe) => shoe.state === state);
+        document.querySelector('#shoe-count').textContent = `${visible.length} 双`;
+        filters.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.filter === state)));
+        list.innerHTML = visible.map((shoe) => `
+          <li><a class="shoe-card" href="#${shoe.id}" ${shoe === selected ? 'aria-current="true"' : ''}>
+            <span class="shoe-symbol">${icon('shoe')}</span>
+            <span class="shoe-title"><strong>${shoe.name}</strong><span>${shoe.brand} · ${shoe.model}</span></span>
+            ${icon('chevron')}
+            <span class="shoe-distance"><strong>${shoe.total}</strong> km</span>
+            <span class="shoe-goal ${shoe.remaining ? 'warn' : 'muted'}">${shoe.remaining ? '接近替换里程' : shoe.limit ? `阈值 ${shoe.limit} km` : '已退役'}</span>
+            ${progress(shoe)}
+          </a></li>`).join('');
+
+        const shoe = selected;
+        detail.innerHTML = `
+          <header class="detail-heading">
+            <div><h2 id="shoe-name" tabindex="-1">${shoe.name}</h2><p class="muted">${shoe.brand} · ${shoe.model}</p></div>
+            <button type="button" class="secondary" data-editor="edit">${icon('pencil')}编辑</button>
+          </header>
+          <section class="totals" aria-label="里程">
+            <p class="muted metric-label">累计里程</p>
+            <p class="total"><strong>${shoe.total}</strong><span>km</span></p>
+            ${shoe.limit ? `<div class="threshold"><span class="${shoe.remaining ? 'warn' : 'muted'}">${shoe.remaining ? icon('warning') + '接近替换里程' : '替换里程'}</span><span class="muted">阈值 ${shoe.limit} km</span></div>${progress(shoe)}` : ''}
+            ${shoe.remaining ? `<p class="remaining muted">距替换里程 ${shoe.remaining} km</p>` : ''}
+            <dl class="breakdown"><div><dt>初始里程</dt><dd>${shoe.initial} <span>km</span></dd></div><div><dt>已绑活动里程</dt><dd>${shoe.activity} <span>km</span></dd></div></dl>
+          </section>
+          <section class="activities" aria-labelledby="activities-title">
+            <header><h3 id="activities-title">关联活动</h3><span class="muted">${shoe.count} 次</span></header>
+            <ul>${shoe.rows.map(([date, title, distance], index) => `<li><button type="button" class="activity-row" data-activity="${index}"><time>${date}</time><span>${title}</span><span class="distance">${distance} km</span>${icon('chevron')}</button></li>`).join('')}</ul>
+          </section>
+          <details class="metadata"><summary>跑鞋资料</summary><dl><div><dt>购入日期</dt><dd>${shoe.purchased}</dd></div>${shoe.retired ? `<div><dt>退役日期</dt><dd>${shoe.retired}</dd></div>` : ''}</dl></details>`;
+      }
+
+      function readFragment() {
+        const wasDetail = root.classList.contains('show-detail');
+        const next = shoes.find((shoe) => `#${shoe.id}` === location.hash);
+        root.classList.toggle('show-detail', Boolean(next));
+        if (next) {
+          selected = next;
+          state = next.state;
+        }
+        render();
+        if (next && matchMedia('(max-width: 1023px)').matches) {
+          document.querySelector('#shoe-name').focus({ preventScroll: true });
+          window.scrollTo(0, 0);
+        } else if (wasDetail && !next && matchMedia('(max-width: 1023px)').matches) {
+          list.querySelector('[aria-current]')?.focus({ preventScroll: true });
+        }
+      }
+
+      filters.forEach((button) => button.addEventListener('click', () => {
+        state = button.dataset.filter;
+        selected = shoes.find((shoe) => shoe.state === state);
+        if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+        root.classList.remove('show-detail');
+        render();
+      }));
+      const binding = document.querySelector('#binding');
+      detail.addEventListener('click', (event) => {
+        const trigger = event.target.closest('[data-activity]');
+        if (!trigger) return;
+        const [date, title, distance] = selected.rows[Number(trigger.dataset.activity)];
+        document.querySelector('#binding-activity').textContent = `${date} · ${title} · ${distance} km`;
+        const candidates = shoes.filter((shoe) => shoe.state === 'active' || shoe === selected);
+        const picker = document.querySelector('#binding-shoe');
+        picker.replaceChildren(new Option('不绑定', ''), ...candidates.map((shoe) => (
+          new Option(shoe.state === 'retired' ? `${shoe.name}（已退役）` : shoe.name, shoe.id)
+        )));
+        picker.value = selected.id;
+        binding.showModal();
+      });
+      const editor = document.querySelector('#editor');
+      document.addEventListener('click', (event) => {
+        const trigger = event.target.closest('[data-editor]');
+        if (!trigger) return;
+        const editing = trigger.dataset.editor === 'edit';
+        editor.querySelector('h2').textContent = editing ? '编辑跑鞋' : '添加跑鞋';
+        const fields = editor.querySelector('form').elements;
+        fields.name.value = editing ? selected.name : '';
+        fields.brand.value = editing ? selected.brand : '';
+        fields.model.value = editing ? selected.model : '';
+        fields.purchased.value = editing ? selected.purchased : '';
+        fields.initial.value = editing ? selected.initial : '0';
+        fields.limit.value = editing ? selected.limit ?? '' : '';
+        editor.showModal();
+      });
+      window.addEventListener('hashchange', readFragment);
+      readFragment();
+    </script>
+  </body>
+</html>
