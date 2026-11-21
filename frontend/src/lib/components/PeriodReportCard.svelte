@@ -6,6 +6,7 @@
   import { dashboardDistance } from '#lib/api/dashboard-format.ts';
   import { currentYear } from '#lib/api/statistics.ts';
   import { recapHref } from '#lib/recap.ts';
+  import { storyHref } from '#lib/story.ts';
   import {
     currentMonthValue,
     formatPeriodTitle,
@@ -288,6 +289,9 @@
           </span>
         {/if}
         <a class="button-secondary button-compact current-jump" href={recapHref(report)}>查看跑步回顾</a>
+        {#if report.period === 'year'}
+          <a class="button-secondary button-compact current-jump" href={storyHref(report.year)}>查看年度故事</a>
+        {/if}
       {:else if loading}
         <strong class="period-name">{requestedTitle}</strong>
         <span class="range-text">正在读取…</span>

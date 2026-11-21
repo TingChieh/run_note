@@ -1,0 +1,164 @@
+import { expect, test } from '@playwright/test';
+import { loginRunner } from '../fixtures/activities';
+
+const storyUrl = '/workspace/records/story';
+const storyApi = /\/api\/v1\/statistics\/annual-story\?/;
+
+test('annual story requires auth and links from personal records and annual recap', async ({ page }) => {
+  await page.goto(`${storyUrl}?year=2025`);
+  await expect(page).toHaveURL(/\/admin\?next=/);
+
+  await page.goto('/records');
+  await expect(page.getByTestId('records-ready')).toBeVisible();
+  await expect(page.getByRole('link', { name: '查看年度故事' })).toHaveCount(0);
+
+  await loginRunner(page);
+  await page.goto('/records');
+  await page.getByRole('button', { name: '年度', exact: true }).click();
+  const recordsEntry = page.getByRole('link', { name: '查看年度故事' });
+  await expect(recordsEntry).toHaveAttribute('href', /\/workspace\/records\/story\?year=\d{4}/);
+  await recordsEntry.click();
+  await expect(page.getByRole('heading', { name: /跑步年度故事/, level: 1 })).toBeVisible();
+
+  // Also reachable from #15 recap annual slot without changing recap layout.
+  await page.goto('/workspace/records/recap?period=year&year=2025');
+  const recapEntry = page.getByTestId('recap-story-entry').getByRole('link', { name: '查看年度故事' });
+  await expect(recapEntry).toHaveAttribute('href', '/workspace/records/story?year=2025');
+  await recapEntry.click();
+  await expect(page).toHaveURL(/\/workspace\/records\/story\?year=2025$/);
+  await expect(page.getByTestId('story-prologue')).toContainText('1,042.68');
+});
+
+test('all six story beats, sticky stage sync, city focus, animation controls and reduced motion work cleanly', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await page.goto(`${storyUrl}?year=2025`);
+
+  await expect(page.getByTestId('story-chapter-first')).toContainText('青岬海湾迎新慢跑');
+  await expect(page.getByTestId('story-chapter-longest')).toContainText('21.42');
+  await expect(page.getByTestId('story-chapter-best')).toContainText('刷新历史 PB');
+  await expect(page.getByTestId('story-chapter-cities')).toContainText('桐溪市');
+  await expect(page.getByTestId('story-chapter-frequent')).toContainText('29');
+
+  // Sticky stage sync via chapter quick buttons and city click.
+  await page.getByTestId('story-sticky-stage').getByRole('button', { name: '02' }).click();
+  await expect(page.getByTestId('story-sticky-stage')).toContainText('桐溪秋日河滨半程挑战');
+
+  await page
+    .getByTestId('story-chapter-cities')
+    .getByRole('button', { name: /桐溪市/ })
+    .click();
+  await expect(page.getByTestId('story-sticky-stage')).toContainText('桐溪市 · 云岭州');
+
+  // Animation scrubber, speed buttons, and accessible table.
+  const scrubber = page.getByLabel('年度足迹进度');
+  await scrubber.fill('220');
+  await scrubber.dispatchEvent('input');
+  await expect(page.getByTestId('story-film-date')).toContainText('2025-');
+
+  await page.getByRole('button', { name: '2x', exact: true }).click();
+  await expect(page.getByRole('button', { name: '2x', exact: true })).toHaveAttribute('aria-pressed', 'true');
+
+  await page.getByText('查看全年各月足迹数据表').click();
+  await expect(page.getByRole('table').getByRole('row')).toHaveCount(13);
+
+  // Reduced motion settles immediately at full completion.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.getByRole('button', { name: '重头开始' }).click();
+  await expect(page.getByTestId('story-film-km')).toContainText('1,042.68 km');
+});
+
+test('poster dialog generates 9:16 PNG, toggles privacy options, and restores focus on close', async ({ page }) => {
+  await loginRunner(page);
+  await page.goto(`${storyUrl}?year=2025`);
+
+  const trigger = page.getByRole('button', { name: '生成海报' });
+  await trigger.click();
+  const dialog = page.getByTestId('story-poster-dialog');
+  await expect(dialog).toBeVisible();
+  await expect(page.getByTestId('story-poster-privacy-note')).toContainText('抽象足迹轮廓');
+
+  const img = page.getByTestId('story-poster-image');
+  await expect(img).toBeVisible();
+  const initialSrc = await img.getAttribute('src');
+  expect(initialSrc).toMatch(/^blob:/);
+
+  await dialog.getByLabel('隐藏具体城市名').check();
+  await expect(img).not.toHaveAttribute('src', initialSrc!);
+
+  await dialog.getByRole('button', { name: '深色暖炭' }).click();
+  await expect(dialog.getByRole('button', { name: '保存 PNG' })).toBeEnabled();
+
+  await dialog.getByRole('button', { name: '关闭' }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(trigger).toBeFocused();
+});
+
+test('partial, trackless fallback, empty, error recovery and 401 session expiry states', async ({ page }) => {
+  await loginRunner(page);
+
+  // 2026 partial + single city + pending city + building frequent route.
+  await page.goto(`${storyUrl}?year=2026`);
+  await expect(page.getByTestId('story-partial-pill')).toContainText('进行中');
+  await expect(page.getByTestId('story-chapter-cities')).toContainText('后台计算');
+  await expect(page.getByTestId('story-chapter-frequent')).toContainText('仍在归并中');
+
+  // 2024 trackless indoor fallback.
+  await page.goto(`${storyUrl}?year=2024`);
+  await expect(page.getByTestId('story-chapter-cities')).toContainText('室内与无定位记录年度');
+  await expect(page.getByTestId('story-chapter-frequent')).toContainText('每一次都是新出发');
+  await expect(page.getByTestId('story-coverage')).toContainText('节律脉冲回放');
+
+  // 2023 empty year.
+  await page.goto(`${storyUrl}?year=2023`);
+  await expect(page.getByText('2023 年还没有跑步记录')).toBeVisible();
+
+  // 503 error + retry recovery.
+  await page.route(
+    storyApi,
+    (route) =>
+      route.fulfill({ status: 503, json: { data: null, error: { code: 'UNAVAILABLE', message: '故事服务暂不可用' } } }),
+    { times: 1 },
+  );
+  await page.getByRole('button', { name: '下一年' }).click();
+  await expect(page.getByText('故事服务暂不可用')).toBeVisible();
+  await page.getByRole('button', { name: '重试', exact: true }).click();
+  await expect(page.getByTestId('story-prologue')).toBeVisible();
+
+  // 401 session expiry clears state and redirects to /admin.
+  await page.route(storyApi, async (route) => {
+    await page.context().clearCookies();
+    await route.fulfill({ status: 401, json: { data: null } });
+  });
+  await page.getByRole('button', { name: '下一年' }).click();
+  await expect(page).toHaveURL(/\/admin\?reason=expired&next=.*story/);
+  await expect(page.getByTestId('story-prologue')).toHaveCount(0);
+});
+
+test('responsive viewports and light/dark themes have zero console errors and zero horizontal overflow', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') errors.push(msg.text());
+  });
+  page.on('pageerror', (err) => errors.push(err.message));
+
+  await loginRunner(page);
+  for (const vp of [
+    { width: 1440, height: 900 },
+    { width: 768, height: 1024 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(vp);
+    for (const theme of ['light', 'dark'] as const) {
+      await page.addInitScript((t) => window.localStorage.setItem('runnote-theme', t), theme);
+      await page.goto(`${storyUrl}?year=2025`);
+      await expect(page.getByTestId('story-prologue')).toBeVisible();
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+      expect(overflow, `overflow at ${vp.width}x${vp.height} ${theme}`).toBe(false);
+    }
+  }
+  expect(errors).toEqual([]);
+});

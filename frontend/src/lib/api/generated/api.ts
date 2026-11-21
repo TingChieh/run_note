@@ -134,6 +134,25 @@ export interface AnalysisText {
   limitations: string;
 }
 
+export interface AnnualStory {
+  year: number;
+  date_from: string;
+  date_to: string;
+  is_partial: boolean;
+  cutoff_date: string | null;
+  today: string;
+  date_assignment: 'activity_local_date';
+  summary: Summary;
+  longest_streak_days: number;
+  longest_streak_weeks: number;
+  first_run: StoryRunHighlight | null;
+  longest_route: StoryLongestHighlight | null;
+  best_performance: StoryBestHighlight | null;
+  explored_cities: StoryCitiesSection;
+  frequent_route: StoryFrequentRouteSection;
+  footprint_timeline: StoryFootprintTimeline;
+}
+
 export interface AuthView {
   csrf_token: string;
   user: UserView;
@@ -1185,6 +1204,129 @@ export interface StockView {
   days_left: number | null;
 }
 
+export interface StoryBestHighlight {
+  basis: 'standard_band' | 'fastest_run' | 'distance_fallback';
+  category: string;
+  activity_id: string;
+  activity_date: string;
+  started_at: string | null;
+  title: string;
+  distance_m: string;
+  duration_seconds: string | null;
+  avg_pace_seconds_per_km: string | null;
+  city_name: string | null;
+  has_track: boolean;
+  shape: (([number, number])[])[];
+  is_all_time_pb: boolean;
+  pace_gain_seconds_per_km: string | null;
+  other_bests: StoryCategoryBest[];
+}
+
+export interface StoryCategoryBest {
+  category: string;
+  activity_id: string;
+  activity_date: string;
+  distance_m: string;
+  duration_seconds: string;
+  avg_pace_seconds_per_km: string;
+}
+
+export interface StoryCitiesSection {
+  status: 'ready' | 'pending';
+  total_cities: number;
+  new_cities_count: number;
+  total_regions: number;
+  located_activity_count: number;
+  unlocated_activity_count: number;
+  items: StoryCityItem[];
+}
+
+export interface StoryCityItem {
+  code: string;
+  name: string;
+  region_name: string | null;
+  is_new: boolean;
+  first_date: string;
+  last_date: string;
+  activity_count: number;
+  distance_m: string;
+  lon: number;
+  lat: number;
+}
+
+export interface StoryFootprintTimeline {
+  has_tracks: boolean;
+  truncated: boolean;
+  total_runs: number;
+  shown_runs: number;
+  monthly_distance_m: string[];
+  monthly_activity_count: number[];
+  items: StoryTimelineItem[];
+}
+
+export interface StoryFrequentRouteSection {
+  status: 'ready' | 'building' | 'none';
+  group_id: string | null;
+  name: string | null;
+  city_name: string | null;
+  run_count: number;
+  share_pct: number;
+  median_distance_m: string | null;
+  first_date: string | null;
+  last_date: string | null;
+  first_pace_seconds_per_km: string | null;
+  best_pace_seconds_per_km: string | null;
+  avg_pace_seconds_per_km: string | null;
+  pace_improvement_seconds_per_km: string | null;
+  monthly_hits: number[];
+  shape: (([number, number])[])[];
+  overlay_shapes: ((([number, number])[])[])[];
+}
+
+export interface StoryLongestHighlight {
+  activity_id: string;
+  activity_date: string;
+  started_at: string | null;
+  title: string;
+  distance_m: string;
+  duration_seconds: string | null;
+  avg_pace_seconds_per_km: string | null;
+  city_name: string | null;
+  shoe_name: string | null;
+  has_track: boolean;
+  shape: (([number, number])[])[];
+  tied_count: number;
+  same_as_first: boolean;
+}
+
+export interface StoryRunHighlight {
+  activity_id: string;
+  activity_date: string;
+  started_at: string | null;
+  title: string;
+  distance_m: string;
+  duration_seconds: string | null;
+  avg_pace_seconds_per_km: string | null;
+  city_name: string | null;
+  shoe_name: string | null;
+  has_track: boolean;
+  shape: (([number, number])[])[];
+}
+
+export interface StoryTimelineItem {
+  activity_id: string;
+  activity_date: string;
+  month: number;
+  title: string;
+  distance_m: string;
+  cumulative_distance_m: string;
+  avg_pace_seconds_per_km: string | null;
+  city_code: string | null;
+  city_name: string | null;
+  milestone: 'first' | 'longest' | 'best' | 'new_city' | 'frequent' | null;
+  points: ([number, number])[];
+}
+
 export interface StreakDay {
   date: string;
   active: boolean;
@@ -1807,6 +1949,9 @@ export interface ApiOperations {
     put: { body: never; response: SiteView };
     delete: { body: never; response: SiteView };
   };
+  '/api/v1/statistics/annual-story': {
+    get: { body: never; response: AnnualStory };
+  };
   '/api/v1/statistics/calendar': {
     get: { body: never; response: Calendar };
   };
@@ -2216,6 +2361,9 @@ export const API_OPERATIONS = {
     get: ['v'],
     put: [],
     delete: [],
+  },
+  '/api/v1/statistics/annual-story': {
+    get: ['year'],
   },
   '/api/v1/statistics/calendar': {
     get: ['metric', 'year'],

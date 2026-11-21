@@ -2,13 +2,16 @@ from datetime import date
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_read_identity, get_session
+from app.core.errors import ApiError
 from app.core.responses import ApiResponse
 from app.modules.activities.router import envelope
 from app.modules.statistics import service
+from app.modules.statistics.annual_story import build_annual_story
+from app.modules.statistics.annual_story_schema import AnnualStory
 from app.modules.statistics.records import build_records
 from app.modules.statistics.schema import (
     Calendar,
@@ -96,5 +99,22 @@ def report(
 ):
     today = request.app.state.clock().astimezone(ZoneInfo(identity[1].timezone)).date()
     data = service.period_report(db, identity[1].id, period, year, month, today)
+    db.commit()
+    return envelope(request, data)
+
+
+@router.get("/annual-story", response_model=ApiResponse[AnnualStory])
+def annual_story(
+    request: Request,
+    response: Response,
+    identity: Identity,
+    db: Database,
+    year: Annotated[int, Query(ge=1900, le=2100)],
+):
+    if set(request.query_params) - {"year"} or len(request.query_params.getlist("year")) > 1:
+        raise ApiError(422, "VALIDATION_ERROR", "年度故事查询包含不支持的参数")
+    today = request.app.state.clock().astimezone(ZoneInfo(identity[1].timezone)).date()
+    data = build_annual_story(db, identity[1].id, year, today)
+    response.headers["Cache-Control"] = "private, no-store"
     db.commit()
     return envelope(request, data)
