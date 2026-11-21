@@ -359,7 +359,9 @@
           <li><span>邮箱</span>{page.data.user.email}</li>
           <li><span>时区</span>{baseline.timezone}</li>
         </ul>
-        <p class="text-xs text-muted-foreground">头像支持 PNG、JPEG、WebP，不超过 5 MiB，自动裁成正方形并移除位置信息。</p>
+        <p class="text-xs text-muted-foreground">
+          头像支持 PNG、JPEG、WebP，不超过 5 MiB，自动裁成正方形并移除位置信息。
+        </p>
       </div>
     </section>
 
@@ -381,7 +383,10 @@
             {#if !shoesSummary.total}
               添加跑鞋后可在跑步详情绑定累计里程
             {:else if shoesSummary.due || shoesSummary.near}
-              {[shoesSummary.due ? `${shoesSummary.due} 双已达替换里程` : '', shoesSummary.near ? `${shoesSummary.near} 双接近阈值` : '']
+              {[
+                shoesSummary.due ? `${shoesSummary.due} 双已达替换里程` : '',
+                shoesSummary.near ? `${shoesSummary.near} 双接近阈值` : '',
+              ]
                 .filter(Boolean)
                 .join(' · ')}
             {:else}
@@ -458,7 +463,9 @@
           <h2 id="username-title">修改用户名</h2>
           <p class="block-hint">用户名由 3–30 位小写字母、数字或下划线组成，每次修改后需等待 30 天。</p>
           {#if remaining > 0 && availableAt}
-            <p class="block-hint">剩余约 {Math.ceil(remaining / 86400000)} 天，可于 {new Date(availableAt).toLocaleString()} 后再次修改。</p>
+            <p class="block-hint">
+              剩余约 {Math.ceil(remaining / 86400000)} 天，可于 {new Date(availableAt).toLocaleString()} 后再次修改。
+            </p>
           {:else}
             <p class="block-hint">现在可以修改用户名。</p>
           {/if}

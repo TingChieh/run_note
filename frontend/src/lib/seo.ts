@@ -31,11 +31,11 @@ export const SITEMAP_PATHS = ['/', '/activities', '/footprints', '/ai'] as const
 const ROBOTS_DISALLOW = ['/admin', '/workspace', '/settings', '/wellbeing', '/api', '/shared', '/public'] as const;
 
 export function robotsTxt(origin: string): string {
-  const rules = ROBOTS_DISALLOW.map(path => `Disallow: ${path}`).join('\n');
+  const rules = ROBOTS_DISALLOW.map((path) => `Disallow: ${path}`).join('\n');
   return `User-agent: *\n${rules}\n\nSitemap: ${origin}/sitemap.xml\n`;
 }
 
 export function sitemapXml(origin: string): string {
-  const urls = SITEMAP_PATHS.map(path => `  <url><loc>${origin}${path}</loc></url>`).join('\n');
+  const urls = SITEMAP_PATHS.map((path) => `  <url><loc>${origin}${path}</loc></url>`).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 }

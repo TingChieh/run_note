@@ -42,9 +42,19 @@
 <nav aria-label="设置分区" class="settings-tabs">
   <a href={view.href('/settings')} aria-current={current === 'account' ? 'page' : undefined}>账户总览</a>
   <a href={view.href('/settings/shoes')} aria-current={current === 'shoes' ? 'page' : undefined}>
-    跑鞋{#if reminderCount > 0}<span class="settings-tab-badge" aria-label={`${reminderCount} 双需要替换关注`}>{reminderCount}</span>{/if}
+    跑鞋{#if reminderCount > 0}<span class="settings-tab-badge" aria-label={`${reminderCount} 双需要替换关注`}
+        >{reminderCount}</span
+      >{/if}
   </a>
-  <a href={view.href('/settings/preferences')} aria-current={current === 'preferences' ? 'page' : undefined}>目标与隐私</a>
-  {#if page.data.user?.is_admin}<a href="/settings/site" class="settings-tab-admin-start" aria-current={current === 'site' ? 'page' : undefined}>站点设置</a>{/if}
-  {#if page.data.user?.is_admin}<a href="/admin/users" aria-current={current === 'users' ? 'page' : undefined}>用户管理</a>{/if}
+  <a href={view.href('/settings/preferences')} aria-current={current === 'preferences' ? 'page' : undefined}
+    >目标与隐私</a
+  >
+  {#if page.data.user?.is_admin}<a
+      href="/settings/site"
+      class="settings-tab-admin-start"
+      aria-current={current === 'site' ? 'page' : undefined}>站点设置</a
+    >{/if}
+  {#if page.data.user?.is_admin}<a href="/admin/users" aria-current={current === 'users' ? 'page' : undefined}
+      >用户管理</a
+    >{/if}
 </nav>
