@@ -880,9 +880,25 @@
     opacity: 1;
     transition-duration: 260ms;
   }
-  /* The dialog's padding already insets the sticky bar, so it rests below the form instead of being pulled over its last field. */
-  .form-dialog .save-bar-slot {
-    bottom: 0;
+  /* Dialog with a footer: the body scrolls on its own and the save bar stays outside it, so it never covers a field. */
+  .form-dialog-split {
+    overflow: hidden;
+  }
+  .form-dialog-split[open] {
+    display: flex;
+    flex-direction: column;
+  }
+  .form-dialog-split > .form-dialog-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0 var(--space-1);
+    margin: 0 calc(var(--space-1) * -1);
+  }
+  .form-dialog-split > .save-bar-slot {
+    position: static;
+    flex: none;
     margin-top: var(--space-4);
   }
   @starting-style {
@@ -897,7 +913,8 @@
   @media (prefers-reduced-motion: reduce) {
     .form-dialog,
     .form-dialog[open],
-    .form-dialog::backdrop {
+    .form-dialog::backdrop,
+    .form-dialog[open]::backdrop {
       transition: none;
     }
   }

@@ -103,7 +103,7 @@
 </script>
 
 <dialog
-  class="form-dialog"
+  class="form-dialog form-dialog-split"
   bind:this={dialog}
   aria-labelledby={uid + '-title'}
   oncancel={(event) => {
@@ -112,48 +112,52 @@
   }}
   {onclose}
 >
-  <h2 class="mb-4 text-xl font-semibold" id={uid + '-title'}>{shoe ? '编辑跑鞋' : '添加跑鞋'}</h2>
-  <form id={uid} class="grid gap-4" onsubmit={save}>
-    <fieldset class="grid min-w-0 gap-3 sm:grid-cols-2" disabled={busy}>
-      <label class="sm:col-span-2"
-        >鞋名
-        <input bind:this={nameInput} bind:value={name} required maxlength="80" name="name" />
-      </label>
-      <label>品牌 <input bind:value={brand} name="brand" maxlength="60" /></label>
-      <label>型号 <input bind:value={model} name="model" maxlength="60" /></label>
-      <label>购入日期 <input bind:value={purchased} name="purchased" type="date" /></label>
-      <label
-        >替换阈值（km）
-        <input
-          bind:value={threshold}
-          name="threshold"
-          inputmode="decimal"
-          aria-invalid={field === 'threshold'}
-          aria-describedby={field === 'threshold' ? uid + '-error' : undefined}
-        />
-      </label>
-      <label class="sm:col-span-2"
-        >初始里程（km）
-        <input
-          bind:value={initial}
-          name="initial"
-          inputmode="decimal"
-          required
-          aria-invalid={field === 'initial'}
-          aria-describedby={uid + '-initial' + (field === 'initial' ? ' ' + uid + '-error' : '')}
-        />
-        <span class="text-sm text-muted-foreground" id={uid + '-initial'}>只填写尚未录入的里程。</span>
-      </label>
-      <label class="sm:col-span-2"
-        >备注 <textarea bind:value={notes} name="notes" maxlength="1000" rows="3"></textarea></label
-      >
-    </fieldset>
-    {#if error}<p role="alert" id={uid + '-error'} class="text-sm" style:color="var(--error)">{error}</p>{/if}
-  </form>
+  <div class="form-dialog-body">
+    <h2 class="mb-4 text-xl font-semibold" id={uid + '-title'}>{shoe ? '编辑跑鞋' : '添加跑鞋'}</h2>
+    <form id={uid} class="grid gap-4" onsubmit={save}>
+      <fieldset class="grid min-w-0 gap-3 sm:grid-cols-2" disabled={busy}>
+        <label class="sm:col-span-2"
+          >鞋名
+          <input bind:this={nameInput} bind:value={name} required maxlength="80" name="name" />
+        </label>
+        <label>品牌 <input bind:value={brand} name="brand" maxlength="60" /></label>
+        <label>型号 <input bind:value={model} name="model" maxlength="60" /></label>
+        <label>购入日期 <input bind:value={purchased} name="purchased" type="date" /></label>
+        <label
+          >替换阈值（km）
+          <input
+            bind:value={threshold}
+            name="threshold"
+            inputmode="decimal"
+            aria-invalid={field === 'threshold'}
+            aria-describedby={field === 'threshold' ? uid + '-error' : undefined}
+          />
+        </label>
+        <label class="sm:col-span-2"
+          >初始里程（km）
+          <input
+            bind:value={initial}
+            name="initial"
+            inputmode="decimal"
+            required
+            aria-invalid={field === 'initial'}
+            aria-describedby={uid + '-initial' + (field === 'initial' ? ' ' + uid + '-error' : '')}
+          />
+          <span class="text-sm text-muted-foreground" id={uid + '-initial'}>只填写尚未录入的里程。</span>
+        </label>
+        <label class="sm:col-span-2"
+          >备注 <textarea bind:value={notes} name="notes" maxlength="1000" rows="3"></textarea></label
+        >
+      </fieldset>
+      {#if error}<p role="alert" id={uid + '-error'} class="text-sm" style:color="var(--error)">{error}</p>{/if}
+    </form>
+    {#if !name.trim() && !busy}<button
+        class="button-secondary mt-4 min-h-11"
+        type="button"
+        onclick={() => dialog.close()}>取消</button
+      >{/if}
+  </div>
   <SaveBar form={uid} dirty={!!name.trim()} {busy} label="保存跑鞋" ondiscard={() => dialog.close()} />
-  {#if !name.trim() && !busy}<button class="button-secondary mt-4 min-h-11" type="button" onclick={() => dialog.close()}
-      >取消</button
-    >{/if}
 </dialog>
 
 <style>
