@@ -81,6 +81,16 @@
   --province-sea: #a8b3a2;
   --comparison-down: #c33e52;
   --chart-series: #27815c;
+  --recap-forest: #124e3d;
+  --recap-forest-deep: #0b3529;
+  --recap-forest-ink: #f6f7f4;
+  --recap-forest-muted: #b7d7cb;
+  --recap-gold: #f5c519;
+  --recap-paper: #fcfcf7;
+  --recap-desk: #eaece4;
+  --recap-well: #f2f4ec;
+  --recap-hero-num: #ffffff;
+  --recap-dock-tint: #fbf0bd;
   /* Wellbeing journal: one hue per measure, so a dial is recognised by colour as well as by icon. Hue never says good or bad. */
   --well-mood: #7a6bd6;
   --well-anxiety: #d9692f;
@@ -114,6 +124,7 @@
   --top-navigation-height: 4rem;
   --z-top-navigation: 30;
   --font-body: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
   --text-caption: 0.75rem;
   --text-small: 0.875rem;
   --text-body: 1rem;
@@ -122,18 +133,23 @@
   --text-stat: 1.75rem;
   --text-title: 2.5rem;
   --text-display: 3rem;
+  --text-recap-hero: clamp(2.75rem, 7.6vw, 6rem);
+  --text-recap-unit: clamp(1.125rem, 2vw, 1.75rem);
+  --text-recap-ledger: clamp(1.375rem, 2.2vw, 1.95rem);
   /* Deck cards are inline-size containers, so these shrink with the card and stop at the scale. */
   --text-caption-fluid: clamp(0.6875rem, 6.2cqi, var(--text-caption));
   --text-body-fluid: clamp(0.875rem, 8.4cqi, var(--text-body));
   --text-stat-fluid: clamp(1.375rem, 14.5cqi, var(--text-stat));
   --text-sport-title: var(--text-title);
   --line-height-solid: 1;
+  --line-height-hero: 1.02;
   --line-height-tight: 1.15;
   --line-height-title: 1.25;
   --line-height-heading: 1.4;
   --line-height-body: 1.65;
   --tracking-title: 0;
   --tracking-heading: 0;
+  --tracking-tight: -0.03em;
   --tracking-caps: 0.12em;
   --weight-regular: 400;
   --weight-medium: 500;
@@ -1875,6 +1891,16 @@
   --province-sea: #6f7a74;
   --comparison-down: #ffadb1;
   --chart-series: #77d4ac;
+  --recap-forest: #1e2421;
+  --recap-forest-deep: #151917;
+  --recap-forest-ink: #f2f0ee;
+  --recap-forest-muted: #a9b6ae;
+  --recap-gold: #f5d36c;
+  --recap-paper: #312f2c;
+  --recap-desk: #201e1c;
+  --recap-well: #272523;
+  --recap-hero-num: #77d4ac;
+  --recap-dock-tint: #37332e;
   --well-mood: #b3a8ff;
   --well-anxiety: #ffab80;
   --well-energy: #ffd75e;

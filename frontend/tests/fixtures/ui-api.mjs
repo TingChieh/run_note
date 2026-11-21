@@ -329,6 +329,7 @@ createServer(async (req, res) => {
     const start = new Date(`${from}T00:00:00Z`);
     const year = start.getUTCFullYear(), month = start.getUTCMonth() + 1;
     const report = reportFixture(period === 'month' ? 'year' : 'month', year, period === 'month' ? null : month, false);
+    /** @type {Record<string, any>[]} */
     const buckets = [];
     for (let cursor = from; cursor < to; ) {
       const date = new Date(`${cursor}T00:00:00Z`);
@@ -341,10 +342,38 @@ createServer(async (req, res) => {
     }
     const weights = buckets.map((_, i) => [4, 6, 8, 7, 10, 6, 5, 8, 9, 12, 7, 8][i]);
     const weightTotal = weights.reduce((sum, weight) => sum + weight, 0);
-    let remaining = Number(report.distance_m);
+    let remainingDistance = Number(report.distance_m);
+    let remainingCount = report.activity_count;
+    let remainingDays = report.activity_days;
+    let remainingKnown = report.known_duration_count;
+    let remainingMissing = report.missing_duration_count;
+    let remainingPaceEligible = report.pace_eligible_count;
+    const basePace = report.avg_pace_seconds_per_km === null ? null : Number(report.avg_pace_seconds_per_km);
+    const paceOffsets = [14, 10, 5, 2, -2, -5, 4, -4, -7, -12, -3, 8];
     buckets.forEach((bucket, i) => {
-      bucket.distance_m = i === buckets.length - 1 ? remaining : Math.round(Number(report.distance_m) * weights[i] / weightTotal);
-      remaining -= bucket.distance_m;
+      const isLast = i === buckets.length - 1;
+      const dist = isLast ? remainingDistance : Math.round(Number(report.distance_m) * weights[i] / weightTotal);
+      remainingDistance -= dist;
+      const count = isLast ? remainingCount : Math.min(remainingCount, Math.max(report.activity_count > 0 ? 1 : 0, Math.round(report.activity_count * weights[i] / weightTotal)));
+      remainingCount -= count;
+      const days = isLast ? Math.min(count, remainingDays) : Math.min(count, remainingDays, Math.max(count > 0 ? 1 : 0, Math.round(report.activity_days * weights[i] / weightTotal)));
+      remainingDays -= days;
+      const missing = isLast ? Math.min(count, remainingMissing) : Math.min(count, remainingMissing);
+      remainingMissing -= missing;
+      const known = Math.min(count - missing, remainingKnown);
+      remainingKnown -= known;
+      const paceCount = isLast ? Math.min(known, remainingPaceEligible) : Math.min(known, remainingPaceEligible);
+      remainingPaceEligible -= paceCount;
+      const bucketPace = basePace !== null && paceCount > 0 && dist > 0 ? Math.max(240, basePace + paceOffsets[i % paceOffsets.length]) : null;
+      bucket.distance_m = dist;
+      bucket.activity_count = count;
+      bucket.activity_days = days;
+      bucket.known_duration_count = known;
+      bucket.missing_duration_count = count - known;
+      bucket.duration_sum_seconds = known === 0 ? null : dist > 0 && bucketPace !== null ? Math.round((dist / 1000) * bucketPace) : 0;
+      bucket.pace_eligible_count = bucketPace !== null ? paceCount : 0;
+      bucket.pace_eligible_distance_m = bucketPace !== null ? dist : 0;
+      bucket.avg_pace_seconds_per_km = bucketPace;
     });
     return send({ ...result, buckets });
   }

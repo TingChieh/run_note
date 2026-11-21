@@ -59,6 +59,8 @@
 
 数据颜色：`--calendar-0..4`（浅 #edf0ed/#8dcc9c/#4ca76a/#227b49/#105332，深 #3e3b39/#347247/#60aa72/#90cc96/#c7edb5）、`--calendar-ring/label/active-label/strong-label`、`--chart-series`（#27815c/#77d4ac）、`--route-thumbnail`（深 #2c3a31）、`--province-unvisited/sea`（深 #45423e/#6f7a74）、`--comparison-down`。计数色阶、轨迹区分色、未知区域颜色各有含义，不能统一替换为主色；当前地图专项色板见 `src/lib/map/footprint-colors.ts`。
 
+回顾页与 9:16 分享图局部令牌：`--recap-forest` / `--recap-forest-deep` / `--recap-forest-ink` / `--recap-forest-muted` / `--recap-hero-num`（浅 #124e3d/#0b3529/#f6f7f4/#b7d7cb/#ffffff，深 #1e2421/#151917/#f2f0ee/#a9b6ae/#77d4ac）、`--recap-gold`（浅 #f5c519，深 #f5d36c）、`--recap-paper` / `--recap-desk` / `--recap-well` / `--recap-dock-tint`（浅 #fcfcf7/#eaece4/#f2f4ec/#fbf0bd，深 #312f2c/#201e1c/#272523/#37332e）。配套展示字号令牌 `--text-recap-hero`（`clamp(2.75rem, 7.6vw, 6rem)`）、`--text-recap-unit`、`--text-recap-ledger`、`--line-height-hero`、`--tracking-tight` 与 `--font-mono` 仅用于 `/workspace/records/recap` 及其分享图探针。
+
 ## Typography
 
 字体栈不变：`--font-body` 为 system-ui / Apple / Segoe UI / PingFang SC / Microsoft YaHei / sans-serif。组件里的 `font-size`、`font-weight`、`letter-spacing`、`line-height` 只引用下表 token；Tailwind 的 `text-xs`…`text-4xl` 与 `font-normal|medium|semibold|bold` 在 `@theme` 里对齐同一阶梯。禁止 550/650/750：苹方没有这些档，macOS 上数字会比中文更粗。
