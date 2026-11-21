@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>方向 C · 跑者手账册 — RunNote 跑步年度故事原型</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23218538'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='18' font-weight='700' font-style='italic' fill='white' font-family='sans-serif'%3ER%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="../shared/tokens.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="proto-topbar">
+      <div class="proto-topbar-inner">
+        <div class="proto-brand-row">
+          <a class="proto-brand" href="../index.html">
+            <span class="proto-brand-mark" aria-hidden="true">R</span>
+            <span>RunNote</span>
+          </a>
+          <span class="proto-badge">方向 C · 跑者手账册</span>
+        </div>
+
+        <div class="proto-controls">
+          <nav class="seg-group" aria-label="切换设计方向">
+            <a href="../index.html">总览</a>
+            <a href="../direction-a/index.html">A 长卷</a>
+            <a href="../direction-b/index.html">B 放映室</a>
+            <a href="../direction-c/index.html" aria-current="page">C 手账册</a>
+          </nav>
+
+          <div class="seg-group" role="group" aria-label="切换示例年份" id="year-switch">
+            <button type="button" data-year="2025" aria-pressed="true">2025</button>
+            <button type="button" data-year="2026" aria-pressed="false">2026 进行中</button>
+            <button type="button" data-year="2024" aria-pressed="false">2024 降级</button>
+          </div>
+
+          <button type="button" class="btn btn-sm" id="theme-toggle" aria-label="切换明暗主题">深色</button>
+          <button type="button" class="btn btn-primary btn-sm" id="open-poster-top">护照海报</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="almanac-shell">
+      <!-- Field Book Masthead -->
+      <section class="almanac-masthead" aria-labelledby="almanac-title">
+        <div class="masthead-left">
+          <div class="folio-tags">
+            <span class="folio-serial" id="folio-serial">FIELD ALMANAC · NO.2025</span>
+            <span class="folio-partial" id="folio-partial" hidden>进行中</span>
+            <span class="folio-fixture">合成虚构数据</span>
+          </div>
+          <h1 id="almanac-title">2025 跑者年度手账册</h1>
+          <p class="masthead-sub tabular" id="masthead-sub"></p>
+        </div>
+
+        <div class="archival-stamp" aria-hidden="true">
+          <span class="stamp-top" id="stamp-runs">118 RUNS</span>
+          <strong class="stamp-mid" id="stamp-km">1,042.7</strong>
+          <span class="stamp-bot">KILOMETRES</span>
+        </div>
+      </section>
+
+      <p class="almanac-coverage" id="almanac-coverage" hidden></p>
+
+      <!-- Atlas-First Interactive Footprint Workbench -->
+      <section class="atlas-bench" aria-labelledby="atlas-heading">
+        <div class="atlas-header">
+          <div>
+            <span class="specimen-code">SPECIMEN 00 · INTERACTIVE FOOTPRINT ATLAS</span>
+            <h2 id="atlas-heading">年度足迹主画布</h2>
+          </div>
+
+          <div class="lens-tabs" role="group" aria-label="切换主画布聚焦视图" id="lens-tabs">
+            <button type="button" data-lens="annual" aria-pressed="true">全年动画</button>
+            <button type="button" data-lens="first" aria-pressed="false">首跑</button>
+            <button type="button" data-lens="longest" aria-pressed="false">最长</button>
+            <button type="button" data-lens="best" aria-pressed="false">最佳</button>
+            <button type="button" data-lens="cities" aria-pressed="false">城市</button>
+            <button type="button" data-lens="frequent" aria-pressed="false">常跑叠影</button>
+          </div>
+        </div>
+
+        <div class="atlas-stage-wrap">
+          <canvas id="almanac-canvas" role="img" aria-label="年度足迹手账主画布"></canvas>
+          <div class="atlas-hud tabular" id="atlas-hud">
+            <span class="hud-label" id="hud-date">2025-12-28</span>
+            <span class="hud-sep">·</span>
+            <strong id="hud-km">1,042.68 km</strong>
+            <span class="hud-sep">·</span>
+            <span id="hud-title">点击下方任意标本卡或邮戳即时聚焦</span>
+          </div>
+        </div>
+
+        <!-- Timeline Caliper Controls -->
+        <div class="caliper-bar" id="caliper-bar">
+          <div class="caliper-btns">
+            <button type="button" class="btn btn-primary btn-sm" id="atlas-play">播放足迹</button>
+            <button type="button" class="btn btn-sm" id="atlas-replay">重头</button>
+            <div class="seg-group" role="group" aria-label="播放倍速" id="atlas-speed">
+              <button type="button" data-speed="1" aria-pressed="true">1x</button>
+              <button type="button" data-speed="2" aria-pressed="false">2x</button>
+              <button type="button" data-speed="4" aria-pressed="false">4x</button>
+            </div>
+          </div>
+
+          <div class="caliper-track">
+            <label for="atlas-scrubber" class="sr-only">年度足迹时间卡尺</label>
+            <input type="range" id="atlas-scrubber" min="0" max="1000" value="1000" />
+            <div class="caliper-months tabular" aria-hidden="true">
+              <span>1月</span><span>2月</span><span>3月</span><span>4月</span><span>5月</span><span>6月</span>
+              <span>7月</span><span>8月</span><span>9月</span><span>10月</span><span>11月</span><span>12月</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tactile Specimen Spread (3 Top Cards + Full-Width City Passport + Frequent Route + Poster Sheet) -->
+      <section class="specimen-grid" aria-label="年度记忆标本与护照页">
+        <!-- Specimen 01: First Run Tear-off Calendar Ticket -->
+        <article class="specimen-card ticket-card" data-focus="first" tabindex="0">
+          <div class="specimen-top">
+            <span class="specimen-code">NO.01 · FIRST RUN</span>
+            <span class="specimen-action-hint">点击定位画布</span>
+          </div>
+          <h3>开年第一跑</h3>
+          <div id="spec-first"></div>
+        </article>
+
+        <!-- Specimen 02: Longest Route Survey Card -->
+        <article class="specimen-card survey-card" data-focus="longest" tabindex="0">
+          <div class="specimen-top">
+            <span class="specimen-code">NO.02 · LONGEST ROUTE</span>
+            <span class="specimen-action-hint">点击定位画布</span>
+          </div>
+          <h3>年度最长路线</h3>
+          <div id="spec-longest"></div>
+        </article>
+
+        <!-- Specimen 03: Best Performance Seal Card -->
+        <article class="specimen-card seal-card" data-focus="best" tabindex="0">
+          <div class="specimen-top">
+            <span class="specimen-code">NO.03 · PEAK PERFORMANCE</span>
+            <span class="specimen-action-hint">点击定位画布</span>
+          </div>
+          <h3>年度最佳表现</h3>
+          <div id="spec-best"></div>
+        </article>
+
+        <!-- Specimen 04: City Passport Stamp Page (Full Span) -->
+        <article class="specimen-card passport-card span-full" data-focus="cities" tabindex="0">
+          <div class="specimen-top">
+            <span class="specimen-code">NO.04 · CITY EXPLORATION PASSPORT</span>
+            <span class="specimen-action-hint">点击邮戳在主画布高亮城市</span>
+          </div>
+          <h3>探索城市邮戳页</h3>
+          <div id="spec-cities"></div>
+        </article>
+
+        <!-- Specimen 05: Frequent Route Carbon Overlay -->
+        <article class="specimen-card carbon-card span-two" data-focus="frequent" tabindex="0">
+          <div class="specimen-top">
+            <span class="specimen-code">NO.05 · RITUAL ROUTE CARBON SHEET</span>
+            <span class="specimen-action-hint">点击查看轨迹叠影</span>
+          </div>
+          <h3>最常跑路线复写页</h3>
+          <div id="spec-frequent"></div>
+        </article>
+
+        <!-- Specimen 06: Passport Keepsake Poster Dock -->
+        <article class="specimen-card keepsake-card">
+          <div class="specimen-top">
+            <span class="specimen-code">NO.06 · PASSPORT SHEET</span>
+            <span class="specimen-action-hint">9:16 离线生成</span>
+          </div>
+          <h3>封存跑者年度护照</h3>
+          <div class="keepsake-mini-row">
+            <canvas id="almanac-mini-poster" role="img" aria-label="跑者护照海报缩略预览"></canvas>
+            <div class="keepsake-mini-copy">
+              <p>生成 1080×1920 竖屏手账护照页，含抽象足迹墨线、城市邮戳与三大标本，支持隐私一键脱敏。</p>
+              <button type="button" class="btn btn-primary btn-sm" id="open-poster-card">预览与导出 PNG</button>
+            </div>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <!-- Native Share Dialog -->
+    <dialog class="poster-dialog" id="poster-dialog" aria-labelledby="poster-dialog-title">
+      <div class="poster-dialog-head">
+        <h2 id="poster-dialog-title">跑者手账册 · 年度护照海报（1080×1920）</h2>
+        <button type="button" class="btn btn-sm" id="close-poster-dialog">关闭</button>
+      </div>
+      <div class="poster-dialog-body">
+        <div class="poster-stage">
+          <canvas id="poster-canvas" role="img" aria-label="1080×1920 跑者护照海报预览"></canvas>
+        </div>
+        <div class="poster-sidebar">
+          <div class="poster-option-group">
+            <span class="poster-option-label">纸面主题</span>
+            <div class="seg-group" role="group" aria-label="海报明暗主题" id="poster-theme-switch">
+              <button type="button" data-ptheme="light" aria-pressed="true">米白手账纸</button>
+              <button type="button" data-ptheme="dark" aria-pressed="false">深炭勘测纸</button>
+            </div>
+          </div>
+
+          <div class="poster-option-group">
+            <span class="poster-option-label">隐私脱敏控制</span>
+            <label class="poster-toggle-row">
+              <span>邮戳隐藏真实城市名</span>
+              <input type="checkbox" id="opt-hide-cities" />
+            </label>
+            <label class="poster-toggle-row">
+              <span>隐藏具体路线名</span>
+              <input type="checkbox" id="opt-hide-routes" />
+            </label>
+          </div>
+
+          <p class="poster-privacy-note">
+            隐私边界：离线本机 Canvas 2D 绘制，绝不上传服务器；抽象墨线不含经纬度、起终点、姓名、邮箱、备注或身心健康数据。
+          </p>
+
+          <div class="poster-actions">
+            <button type="button" class="btn btn-primary" id="download-poster-btn">保存 PNG（1080×1920）</button>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
+    <script src="../shared/story-data.js"></script>
+    <script src="../shared/footprint-engine.js"></script>
+    <script src="../shared/poster-renderer.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

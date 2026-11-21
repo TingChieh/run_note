@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>方向 B · 足迹放映室 — RunNote 跑步年度故事原型</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23218538'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='18' font-weight='700' font-style='italic' fill='white' font-family='sans-serif'%3ER%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="../shared/tokens.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="proto-topbar">
+      <div class="proto-topbar-inner">
+        <div class="proto-brand-row">
+          <a class="proto-brand" href="../index.html">
+            <span class="proto-brand-mark" aria-hidden="true">R</span>
+            <span>RunNote</span>
+          </a>
+          <span class="proto-badge">方向 B · 足迹放映室</span>
+        </div>
+
+        <div class="proto-controls">
+          <nav class="seg-group" aria-label="切换设计方向">
+            <a href="../index.html">总览</a>
+            <a href="../direction-a/index.html">A 长卷</a>
+            <a href="../direction-b/index.html" aria-current="page">B 放映室</a>
+            <a href="../direction-c/index.html">C 手账册</a>
+          </nav>
+
+          <div class="seg-group" role="group" aria-label="切换示例年份" id="year-switch">
+            <button type="button" data-year="2025" aria-pressed="true">2025</button>
+            <button type="button" data-year="2026" aria-pressed="false">2026 进行中</button>
+            <button type="button" data-year="2024" aria-pressed="false">2024 降级</button>
+          </div>
+
+          <button type="button" class="btn btn-sm" id="theme-toggle" aria-label="切换明暗主题">深色</button>
+          <button type="button" class="btn btn-primary btn-sm" id="open-poster-top">胶片海报</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="cinema-shell">
+      <!-- 7-Act Progress Rail -->
+      <div class="act-progress-bar" role="tablist" aria-label="故事七幕进度" id="act-tabs">
+        <button type="button" role="tab" data-act="0" aria-selected="true">
+          <span class="act-bar-fill"></span>
+          <span class="act-bar-label">01 序幕</span>
+        </button>
+        <button type="button" role="tab" data-act="1" aria-selected="false">
+          <span class="act-bar-fill"></span>
+          <span class="act-bar-label">02 第一跑</span>
+        </button>
+        <button type="button" role="tab" data-act="2" aria-selected="false">
+          <span class="act-bar-fill"></span>
+          <span class="act-bar-label">03 最长路线</span>
+        </button>
+        <button type="button" role="tab" data-act="3" aria-selected="false">
+          <span class="act-bar-fill"></span>
+          <span class="act-bar-label">04 最佳表现</span>
+        </button>
+        <button type="button" role="tab" data-act="4" aria-selected="false">
+          <span class="act-bar-fill"></span>
+          <span class="act-bar-label">05 探索城市</span>
+        </button>
+        <button type="button" role="tab" data-act="5" aria-selected="false">
+          <span class="act-bar-fill"></span>
+          <span class="act-bar-label">06 最常跑</span>
+        </button>
+        <button type="button" role="tab" data-act="6" aria-selected="false">
+          <span class="act-bar-fill"></span>
+          <span class="act-bar-label">07 足迹电影</span>
+        </button>
+      </div>
+
+      <!-- Main Full-Stage Theater Card -->
+      <section class="theater-frame" id="theater-frame" aria-live="polite">
+        <div class="theater-meta-bar">
+          <div class="theater-meta-left">
+            <span class="act-code" id="act-code">ACT 01 / 07</span>
+            <span class="act-pill" id="act-pill">2025 年度故事</span>
+          </div>
+          <span class="theater-hint">键盘 ← / → 切幕 · 合成虚构数据</span>
+        </div>
+
+        <div class="theater-grid" id="theater-grid">
+          <!-- Left Copy / Telemetry Column -->
+          <div class="theater-copy" id="theater-copy"></div>
+
+          <!-- Right Visual Canvas Column -->
+          <div class="theater-visual">
+            <div class="theater-canvas-box">
+              <canvas id="cinema-canvas" role="img" aria-label="足迹放映室互动舞台"></canvas>
+              <div class="canvas-corner-badge tabular" id="canvas-corner-badge">2025 · 118 次</div>
+            </div>
+
+            <!-- Shown only on Act 07 (Annual Footprint Film) -->
+            <div class="film-controls" id="film-controls" hidden>
+              <div class="film-btn-row">
+                <button type="button" class="btn btn-primary btn-sm" id="cinema-play">播放电影</button>
+                <button type="button" class="btn btn-sm cinema-ghost-btn" id="cinema-replay">重放</button>
+                <div class="seg-group cinema-seg" role="group" aria-label="放映倍速" id="cinema-speed">
+                  <button type="button" data-speed="1" aria-pressed="true">1x</button>
+                  <button type="button" data-speed="2" aria-pressed="false">2x</button>
+                  <button type="button" data-speed="4" aria-pressed="false">4x</button>
+                </div>
+              </div>
+              <div class="film-scrubber">
+                <label for="cinema-scrubber" class="sr-only">足迹电影进度</label>
+                <input type="range" id="cinema-scrubber" min="0" max="1000" value="1000" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom Theater Deck Controls -->
+        <footer class="theater-dock">
+          <button type="button" class="btn cinema-ghost-btn" id="prev-act">‹ 上一幕</button>
+          <div class="dock-center-actions">
+            <button type="button" class="btn btn-sm cinema-ghost-btn" id="share-scene-btn">分享单幕剧照</button>
+            <button type="button" class="btn btn-primary btn-sm" id="share-film-btn">导出全景胶片</button>
+          </div>
+          <button type="button" class="btn cinema-ghost-btn" id="next-act">下一幕 ›</button>
+        </footer>
+      </section>
+    </main>
+
+    <!-- Native Share Dialog (Cinema Strip + Single-Act Card) -->
+    <dialog class="poster-dialog" id="poster-dialog" aria-labelledby="poster-dialog-title">
+      <div class="poster-dialog-head">
+        <h2 id="poster-dialog-title">足迹放映室 · 9:16 分享导出（1080×1920）</h2>
+        <button type="button" class="btn btn-sm" id="close-poster-dialog">关闭</button>
+      </div>
+      <div class="poster-dialog-body">
+        <div class="poster-stage">
+          <canvas id="poster-canvas" role="img" aria-label="1080×1920 放映室胶片海报预览"></canvas>
+        </div>
+        <div class="poster-sidebar">
+          <div class="poster-option-group">
+            <span class="poster-option-label">海报模式</span>
+            <div class="seg-group" role="group" aria-label="选择海报模式" id="poster-mode-switch">
+              <button type="button" data-pmode="cinema" aria-pressed="true">全景胶片</button>
+              <button type="button" data-pmode="cinema-scene" aria-pressed="false">单幕剧照</button>
+            </div>
+          </div>
+
+          <div class="poster-option-group">
+            <span class="poster-option-label">剧场基调</span>
+            <div class="seg-group" role="group" aria-label="海报明暗主题" id="poster-theme-switch">
+              <button type="button" data-ptheme="light" aria-pressed="true">深森放映</button>
+              <button type="button" data-ptheme="dark" aria-pressed="false">黑曜炭灰</button>
+            </div>
+          </div>
+
+          <div class="poster-option-group">
+            <span class="poster-option-label">隐私脱敏控制</span>
+            <label class="poster-toggle-row">
+              <span>隐藏具体城市名</span>
+              <input type="checkbox" id="opt-hide-cities" />
+            </label>
+            <label class="poster-toggle-row">
+              <span>隐藏具体路线名</span>
+              <input type="checkbox" id="opt-hide-routes" />
+            </label>
+          </div>
+
+          <p class="poster-privacy-note">
+            隐私边界：离线浏览器本地合成 PNG，抽象呈现轨迹走势，不含真实经纬度、街道地图、姓名、邮箱、备注或身心健康记录。
+          </p>
+
+          <div class="poster-actions">
+            <button type="button" class="btn btn-primary" id="download-poster-btn">保存 PNG（1080×1920）</button>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
+    <script src="../shared/story-data.js"></script>
+    <script src="../shared/footprint-engine.js"></script>
+    <script src="../shared/poster-renderer.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
