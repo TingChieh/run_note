@@ -343,67 +343,297 @@ for (const narrow of [
   { name: 'mobile-390', width: 390, height: 844 },
   { name: 'narrow-320', width: 320, height: 568 },
 ]) {
-  test(`${narrow.name} keeps chart axis and slot labels readable (>=12px) without overlap`, async ({ page }, info) => {
-    await loginRunner(page);
-    const errors: string[] = [];
-    page.on('pageerror', (error) => errors.push(error.message));
-    page.on('console', (message) => {
-      if (message.type() === 'error') errors.push(message.text());
-    });
-    await page.setViewportSize({ width: narrow.width, height: narrow.height });
-    await page.addInitScript(() => localStorage.setItem('runnote-theme', 'light'));
-    await page.goto(recap + '?period=year&year=2025');
-    await expect(page.getByTestId('recap-overview')).toContainText('186.00');
-    await expect(page.getByTestId('recap-poster-dock').getByRole('img')).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(narrow.width);
-
-    for (const testId of ['recap-terrain-chart', 'recap-pace-chart']) {
-      const stats = await page.getByTestId(testId).evaluate((root) => {
-        const svg = root.querySelector('svg');
-        const svgRect = svg?.getBoundingClientRect();
-        const measure = (selector: string) =>
-          [...root.querySelectorAll<HTMLElement>(selector)].map((el) => {
-            const rect = el.getBoundingClientRect();
-            const fontSize = parseFloat(getComputedStyle(el).fontSize);
-            return {
-              text: el.textContent?.trim() ?? '',
-              fontSize,
-              width: rect.width,
-              height: rect.height,
-              left: rect.left,
-              right: rect.right,
-            };
-          });
-        const yLabels = measure('.axis-label');
-        const xLabels = measure('.slot-label');
-        const badges = measure('.point-badge, .pace-fast-badge');
-        const sortedX = [...xLabels].sort((a, b) => a.left - b.left);
-        const xOverlaps = sortedX.slice(1).filter((curr, idx) => curr.left < sortedX[idx].right - 0.5);
-        return {
-          svgWidth: svgRect?.width ?? 0,
-          svgHeight: svgRect?.height ?? 0,
-          yLabels,
-          xLabels,
-          badges,
-          xOverlaps,
-        };
+  for (const scheme of ['light', 'dark'] as const) {
+    test(`${narrow.name} ${scheme} keeps dual-axis chart labels and badges readable (>=12px) without overlap`, async ({
+      page,
+    }, info) => {
+      await loginRunner(page);
+      const errors: string[] = [];
+      page.on('pageerror', (error) => errors.push(error.message));
+      page.on('console', (message) => {
+        if (message.type() === 'error') errors.push(message.text());
       });
+      await page.setViewportSize({ width: narrow.width, height: narrow.height });
+      await page.addInitScript((theme) => localStorage.setItem('runnote-theme', theme), scheme);
+      await page.goto(recap + '?period=year&year=2025');
+      await expect(page.getByTestId('recap-overview')).toContainText('186.00');
+      await expect(page.getByTestId('recap-poster-dock').getByRole('img')).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(narrow.width);
 
-      expect(stats.svgHeight).toBeGreaterThanOrEqual(160);
-      expect(stats.yLabels.length).toBeGreaterThanOrEqual(2);
-      expect(stats.xLabels.length).toBeGreaterThanOrEqual(4);
-      expect(stats.xOverlaps).toEqual([]);
-      for (const label of [...stats.yLabels, ...stats.xLabels, ...stats.badges]) {
-        expect(label.fontSize).toBeGreaterThanOrEqual(12);
-        expect(label.height).toBeGreaterThanOrEqual(12);
+      for (const testId of ['recap-terrain-chart', 'recap-pace-chart']) {
+        const stats = await page.getByTestId(testId).evaluate((root) => {
+          const rootRect = root.getBoundingClientRect();
+          const svg = root.querySelector('svg');
+          const svgRect = svg?.getBoundingClientRect();
+          const leftAxis = root.querySelector<HTMLElement>('[data-testid="recap-terrain-axis-left"], .pace-y-axis');
+          const rightAxis = root.querySelector<HTMLElement>('[data-testid="recap-terrain-axis-right"]');
+          const measure = (selector: string) =>
+            [...root.querySelectorAll<HTMLElement>(selector)].map((el) => {
+              const rect = el.getBoundingClientRect();
+              const fontSize = parseFloat(getComputedStyle(el).fontSize);
+              return {
+                text: el.textContent?.trim() ?? '',
+                fontSize,
+                width: rect.width,
+                height: rect.height,
+                top: rect.top,
+                bottom: rect.bottom,
+                left: rect.left,
+                right: rect.right,
+              };
+            });
+          const leftYLabels = measure('.axis-label-left, .pace-y-axis .axis-label');
+          const rightYLabels = measure('.axis-label-right');
+          const xLabels = measure('.slot-label');
+          const badges = measure('.point-badge, .pace-fast-badge');
+          const sortedX = [...xLabels].sort((a, b) => a.left - b.left);
+          const xOverlaps = sortedX.slice(1).filter((curr, idx) => curr.left < sortedX[idx].right - 0.5);
+          const verticalOverlaps = (items: typeof leftYLabels) => {
+            const sorted = [...items].sort((a, b) => a.top - b.top);
+            return sorted.slice(1).filter((curr, idx) => curr.top < sorted[idx].bottom - 0.5);
+          };
+          return {
+            rootLeft: rootRect.left,
+            rootRight: rootRect.right,
+            svgLeft: svgRect?.left ?? 0,
+            svgRight: svgRect?.right ?? 0,
+            svgWidth: svgRect?.width ?? 0,
+            svgHeight: svgRect?.height ?? 0,
+            leftAxisRight: leftAxis?.getBoundingClientRect().right ?? 0,
+            rightAxisLeft: rightAxis?.getBoundingClientRect().left ?? null,
+            leftYLabels,
+            rightYLabels,
+            leftYOverlaps: verticalOverlaps(leftYLabels),
+            rightYOverlaps: verticalOverlaps(rightYLabels),
+            xLabels,
+            badges,
+            xOverlaps,
+          };
+        });
+
+        expect(stats.svgHeight).toBeGreaterThanOrEqual(160);
+        expect(stats.leftYLabels.length).toBeGreaterThanOrEqual(2);
+        expect(stats.leftYOverlaps).toEqual([]);
+        expect(stats.leftAxisRight).toBeLessThanOrEqual(stats.svgLeft + 1);
+        if (testId === 'recap-terrain-chart') {
+          expect(stats.rightYLabels).toHaveLength(3);
+          expect(stats.rightYOverlaps).toEqual([]);
+          expect(stats.rightAxisLeft).not.toBeNull();
+          expect(stats.rightAxisLeft!).toBeGreaterThanOrEqual(stats.svgRight - 1);
+        }
+        expect(stats.xLabels.length).toBeGreaterThanOrEqual(4);
+        expect(stats.xOverlaps).toEqual([]);
+        expect(stats.badges.length).toBeGreaterThanOrEqual(1);
+        for (const label of [...stats.leftYLabels, ...stats.rightYLabels, ...stats.xLabels, ...stats.badges]) {
+          expect(label.fontSize).toBeGreaterThanOrEqual(12);
+          expect(label.height).toBeGreaterThanOrEqual(12);
+          expect(label.left).toBeGreaterThanOrEqual(stats.rootLeft - 2);
+          expect(label.right).toBeLessThanOrEqual(stats.rootRight + 2);
+        }
       }
-    }
 
-    await page.screenshot({
-      path: info.outputPath(`${narrow.name}-light.png`),
-      fullPage: true,
-      animations: 'disabled',
+      await page.screenshot({
+        path: info.outputPath(`${narrow.name}-${scheme}.png`),
+        fullPage: true,
+        animations: 'disabled',
+      });
+      expect(errors).toEqual([]);
     });
-    expect(errors).toEqual([]);
-  });
+  }
 }
+
+test('dual-axis terrain aligns periodic left axis and cumulative right axis for 12x10km and equal-value cases, and HTML X-axis labels select buckets', async ({
+  page,
+}) => {
+  await loginRunner(page);
+
+  // Case 1: 12 months × 10 km = 120 km total (periodic max 10 km on left axis, cumulative 0..120 km on right axis).
+  const months = Array.from({ length: 12 }, (_, idx) => {
+    const start = `2025-${String(idx + 1).padStart(2, '0')}-01`;
+    const end = idx === 11 ? '2026-01-01' : `2025-${String(idx + 2).padStart(2, '0')}-01`;
+    return {
+      bucket_start: start,
+      bucket_end: end,
+      is_partial: false,
+      activity_count: 2,
+      activity_days: 2,
+      distance_m: '10000.000',
+      duration_sum_seconds: '3600.000',
+      known_duration_count: 2,
+      missing_duration_count: 0,
+      pace_eligible_count: 2,
+      pace_eligible_distance_m: '10000.000',
+      avg_pace_seconds_per_km: '360.000',
+      quality_warning_count: 0,
+      date_assignment: 'activity_local_date',
+    };
+  });
+  await page.route(report, (route) =>
+    route.fulfill({
+      status: 200,
+      json: {
+        data: {
+          period: 'year',
+          year: 2025,
+          month: null,
+          date_from: '2025-01-01',
+          date_to: '2026-01-01',
+          is_partial: false,
+          cutoff_date: null,
+          today: '2026-11-21',
+          activity_count: 24,
+          activity_days: 24,
+          distance_m: '120000.000',
+          duration_sum_seconds: '43200.000',
+          known_duration_count: 24,
+          missing_duration_count: 0,
+          pace_eligible_count: 24,
+          pace_eligible_distance_m: '120000.000',
+          avg_pace_seconds_per_km: '360.000',
+          quality_warning_count: 0,
+          date_assignment: 'activity_local_date',
+        },
+        error: null,
+      },
+    }),
+  );
+  await page.route(trends, (route) =>
+    route.fulfill({
+      status: 200,
+      json: {
+        data: {
+          period: 'month',
+          date_from: '2025-01-01',
+          date_to: '2026-01-01',
+          week_start: 'monday',
+          date_assignment: 'activity_local_date',
+          buckets: months,
+        },
+        error: null,
+      },
+    }),
+  );
+
+  await page.goto(recap + '?period=year&year=2025');
+  const terrain = page.getByTestId('recap-terrain-chart');
+  await expect(terrain.getByTestId('recap-terrain-axis-left')).toContainText('10');
+  await expect(terrain.getByTestId('recap-terrain-axis-right')).toContainText('120');
+
+  const dualCheck = await terrain.evaluate((root) => {
+    const leftTexts = [...root.querySelectorAll('[data-testid="recap-terrain-axis-left"] .axis-label')].map((el) =>
+      el.textContent?.trim(),
+    );
+    const rightTexts = [...root.querySelectorAll('[data-testid="recap-terrain-axis-right"] .axis-label')].map((el) =>
+      el.textContent?.trim(),
+    );
+    const guideYs = [...root.querySelectorAll('line.guide-line')].map((el) => Number(el.getAttribute('y1')));
+    const topY = Math.min(...guideYs);
+    const bottomY = Math.max(...guideYs);
+    const midY = (topY + bottomY) / 2;
+    const cumD = root.querySelector('[data-testid="recap-terrain-cum-path"]')?.getAttribute('d') ?? '';
+    const cumYs = [...cumD.matchAll(/[ML]\s+([\d.]+)\s+([\d.]+)/g)].map((m) => Number(m[2]));
+    const pointYs = [...root.querySelectorAll('circle.point')].map((el) => Number(el.getAttribute('cy')));
+    return { leftTexts, rightTexts, topY, midY, bottomY, cumYs, pointYs };
+  });
+
+  expect(dualCheck.leftTexts).toEqual(['10', '5', '0']);
+  expect(dualCheck.rightTexts).toEqual(['120', '60', '0']);
+  expect(dualCheck.pointYs).toHaveLength(12);
+  // Every monthly 10 km point sits on the left-axis 10 km line (topY).
+  for (const py of dualCheck.pointYs) {
+    expect(py).toBeCloseTo(dualCheck.topY, 1);
+  }
+  // Cumulative line scales strictly against right axis (0..120 km): Jan=10/120, Jun=60/120 (midY), Dec=120/120 (topY).
+  const span = dualCheck.bottomY - dualCheck.topY;
+  expect(dualCheck.cumYs).toHaveLength(12);
+  expect(dualCheck.cumYs[0]).toBeCloseTo(dualCheck.bottomY - (10 / 120) * span, 1);
+  expect(dualCheck.cumYs[5]).toBeCloseTo(dualCheck.midY, 1);
+  expect(dualCheck.cumYs[11]).toBeCloseTo(dualCheck.topY, 1);
+
+  // Clicking an HTML X-axis slot label selects that month and updates the inspector with cumulative mileage.
+  await terrain.locator('[data-slot-index="5"]').click();
+  await expect(page.getByTestId('recap-terrain-inspector')).toContainText('6月');
+  await expect(page.getByTestId('recap-terrain-inspector')).toContainText('累计 60.00 km');
+
+  // Case 2: Cumulative equals bucket distance (month 1 = 10 km, month 2 = 0 km, total = 10 km) -> identical Y height at top.
+  await page.unroute(report);
+  await page.unroute(trends);
+  await page.route(report, (route) =>
+    route.fulfill({
+      status: 200,
+      json: {
+        data: {
+          period: 'year',
+          year: 2026,
+          month: null,
+          date_from: '2026-01-01',
+          date_to: '2026-03-01',
+          is_partial: true,
+          cutoff_date: '2026-02-28',
+          today: '2026-02-28',
+          activity_count: 1,
+          activity_days: 1,
+          distance_m: '10000.000',
+          duration_sum_seconds: '3600.000',
+          known_duration_count: 1,
+          missing_duration_count: 0,
+          pace_eligible_count: 1,
+          pace_eligible_distance_m: '10000.000',
+          avg_pace_seconds_per_km: '360.000',
+          quality_warning_count: 0,
+          date_assignment: 'activity_local_date',
+        },
+        error: null,
+      },
+    }),
+  );
+  await page.route(trends, (route) =>
+    route.fulfill({
+      status: 200,
+      json: {
+        data: {
+          period: 'month',
+          date_from: '2026-01-01',
+          date_to: '2026-03-01',
+          week_start: 'monday',
+          date_assignment: 'activity_local_date',
+          buckets: [
+            { ...months[0], bucket_start: '2026-01-01', bucket_end: '2026-02-01', distance_m: '10000.000' },
+            {
+              ...months[1],
+              bucket_start: '2026-02-01',
+              bucket_end: '2026-03-01',
+              activity_count: 0,
+              activity_days: 0,
+              distance_m: '0.000',
+              duration_sum_seconds: null,
+              known_duration_count: 0,
+              pace_eligible_count: 0,
+              pace_eligible_distance_m: '0.000',
+              avg_pace_seconds_per_km: null,
+            },
+          ],
+        },
+        error: null,
+      },
+    }),
+  );
+
+  await page.goto(recap + '?period=year&year=2026');
+  const equalCheck = await terrain.evaluate((root) => {
+    const leftTexts = [...root.querySelectorAll('[data-testid="recap-terrain-axis-left"] .axis-label')].map((el) =>
+      el.textContent?.trim(),
+    );
+    const rightTexts = [...root.querySelectorAll('[data-testid="recap-terrain-axis-right"] .axis-label')].map((el) =>
+      el.textContent?.trim(),
+    );
+    const cumD = root.querySelector('[data-testid="recap-terrain-cum-path"]')?.getAttribute('d') ?? '';
+    const cumYs = [...cumD.matchAll(/[ML]\s+([\d.]+)\s+([\d.]+)/g)].map((m) => Number(m[2]));
+    const firstPointY = Number(root.querySelector('circle.point')?.getAttribute('cy'));
+    return { leftTexts, rightTexts, cumYs, firstPointY };
+  });
+  expect(equalCheck.leftTexts).toEqual(['10', '5', '0']);
+  expect(equalCheck.rightTexts).toEqual(['10', '5', '0']);
+  expect(equalCheck.cumYs[0]).toBeCloseTo(equalCheck.firstPointY, 1);
+  expect(equalCheck.cumYs[1]).toBeCloseTo(equalCheck.firstPointY, 1);
+});

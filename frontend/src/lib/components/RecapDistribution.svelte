@@ -20,11 +20,21 @@
   const activeBucket = $derived(recap.buckets[activeIndex] ?? null);
   const peak = $derived(recapPeak(recap));
 
+  function formatAxisKm(metres: number): string {
+    const value = metres / 1000;
+    if (value <= 0) return '0';
+    if (value >= 10000) return `${(value / 1000).toFixed(1)}k`;
+    if (value >= 100 || Math.abs(value - Math.round(value)) < 0.05) {
+      return Math.round(value).toLocaleString('zh-CN');
+    }
+    return value.toFixed(1);
+  }
+
   // Track rendered plot width so the SVG renders at 1:1 CSS pixels without shrinking strokes or dots;
   // all axis ticks, slot labels, and peak callouts are rendered in HTML at true CSS typography sizes.
-  const svgW = $derived(Math.max(180, Math.round(plotWidth || 860)));
+  const svgW = $derived(Math.max(160, Math.round(plotWidth || 820)));
   const svgH = $derived(svgW < 420 ? 176 : 212);
-  const padX = $derived(svgW < 420 ? 10 : 18);
+  const padX = $derived(svgW < 420 ? 8 : 18);
   const padT = 28;
   const padB = 10;
   const innerW = $derived(Math.max(40, svgW - padX * 2));
@@ -80,9 +90,11 @@
 
     const guides = [1, 0.5, 0].map((ratio) => {
       const y = padT + innerH - ratio * innerH;
-      const kmVal = recap.max > 0 ? (recap.max * ratio) / 1000 : 0;
-      const label = kmVal >= 100 ? Math.round(kmVal).toLocaleString('zh-CN') : kmVal > 0 ? kmVal.toFixed(1) : '0';
-      return { y, label };
+      return {
+        y,
+        label: recap.max > 0 ? formatAxisKm(recap.max * ratio) : '0',
+        cumLabel: recap.totalDistanceM > 0 ? formatAxisKm(recap.totalDistanceM * ratio) : '0',
+      };
     });
 
     const colW = n > 1 ? Math.min(64, Math.max(14, stepX * 0.86)) : 80;
@@ -93,6 +105,14 @@
 
     return { points, validCount: valid.length, curveD, areaD, cumD, guides, colW, badgePoint };
   });
+
+  const hasCumulativeAxis = $derived(Boolean(geometry.cumD));
+
+  const chartAriaLabel = $derived(
+    hasCumulativeAxis
+      ? `${recap.title}单期里程（左轴，最高 ${km(recap.max)} km）与累计里程（右轴，总计 ${recap.distance} km）双轴图，${peak || '暂无峰值'}`
+      : `${recap.title}单期里程分布图，${peak || '暂无峰值'}`,
+  );
 
   function choose(index: number) {
     selectedIndex = index;
@@ -135,7 +155,11 @@
           {activeBucket.rangeShort}{#if activeBucket.peak}{` · ${recap.derived.peakTied ? '并列峰值' : '峰值'}`}{/if}
         </strong>
         <span class="sep" aria-hidden="true">|</span>
-        <span>里程 <strong>{km(activeBucket.distance ?? 0)} km</strong></span>
+        <span>单期 <strong>{km(activeBucket.distance ?? 0)} km</strong></span>
+        {#if activeBucket.cumulative !== null && recap.totalDistanceM > 0}
+          <span class="sep" aria-hidden="true">|</span>
+          <span>累计 {km(activeBucket.cumulative)} km</span>
+        {/if}
         <span class="sep" aria-hidden="true">|</span>
         <span>{activeBucket.activityCount ?? 0} 次 · {activeBucket.activityDays ?? 0} 天</span>
         <span class="sep" aria-hidden="true">|</span>
@@ -151,11 +175,17 @@
 </p>
 
 <div class="terrain-stage" bind:this={stageEl} data-testid="recap-terrain-chart">
-  <p class="axis-unit" aria-hidden="true">km</p>
-  <div class="chart-frame">
-    <div class="y-axis" aria-hidden="true" style:height={`${svgH}px`}>
+  <div class="axis-units" aria-hidden="true">
+    <span class="axis-unit axis-unit-left">单期 km</span>
+    {#if hasCumulativeAxis}
+      <span class="axis-unit axis-unit-right">累计 km</span>
+    {/if}
+  </div>
+
+  <div class="chart-frame" class:has-cum-axis={hasCumulativeAxis}>
+    <div class="y-axis y-axis-left" aria-hidden="true" style:height={`${svgH}px`} data-testid="recap-terrain-axis-left">
       {#each geometry.guides as guide (guide.y)}
-        <span class="axis-label" style:top={`${guide.y}px`}>{guide.label}</span>
+        <span class="axis-label axis-label-left" style:top={`${guide.y}px`}>{guide.label}</span>
       {/each}
     </div>
 
@@ -167,7 +197,7 @@
           width={svgW}
           height={svgH}
           role="img"
-          aria-label={`${recap.title}里程地形与累计曲线，${peak || '暂无峰值'}`}
+          aria-label={chartAriaLabel}
         >
           <defs>
             <linearGradient id={`${uid}-area`} x1="0" y1="0" x2="0" y2="1">
@@ -181,7 +211,7 @@
           {/each}
 
           {#if geometry.cumD}
-            <path class="cum-path" d={geometry.cumD} fill="none" />
+            <path class="cum-path" d={geometry.cumD} fill="none" data-testid="recap-terrain-cum-path" />
           {/if}
           {#if geometry.areaD}
             <path d={geometry.areaD} fill={`url(#${uid}-area)`} />
@@ -205,7 +235,11 @@
               aria-label={`${pt.bucket.rangeShort}，${
                 pt.bucket.distance === null
                   ? '尚未到达'
-                  : `里程 ${km(pt.bucket.distance)} 公里，跑步 ${pt.bucket.activityCount ?? 0} 次，平均配速 ${formatPace(pt.bucket.avgPaceSeconds)}`
+                  : `单期里程 ${km(pt.bucket.distance)} 公里${
+                      pt.bucket.cumulative !== null && recap.totalDistanceM > 0
+                        ? `，累计里程 ${km(pt.bucket.cumulative)} 公里`
+                        : ''
+                    }，跑步 ${pt.bucket.activityCount ?? 0} 次，平均配速 ${formatPace(pt.bucket.avgPaceSeconds)}`
               }${pt.bucket.peak ? '，峰值时段' : ''}`}
               onclick={() => choose(pt.index)}
               onmouseenter={() => choose(pt.index)}
@@ -261,29 +295,49 @@
       <div class="x-axis" aria-hidden="true">
         {#each geometry.points as pt (pt.bucket.start)}
           {#if visibleXIndices.has(pt.index)}
-            <span
+            <button
+              type="button"
+              tabindex="-1"
+              data-date={pt.bucket.start}
+              data-slot-index={pt.index}
               class="slot-label"
               class:slot-active={pt.index === activeIndex || pt.bucket.peak}
               class:slot-first={pt.index === 0}
               class:slot-last={pt.index === recap.buckets.length - 1 && recap.buckets.length > 1}
               style:left={`${pt.xPct.toFixed(2)}%`}
+              onclick={() => choose(pt.index)}
+              onmouseenter={() => choose(pt.index)}
             >
               {pt.bucket.shortLabel}
-            </span>
+            </button>
           {/if}
         {/each}
       </div>
     </div>
+
+    {#if hasCumulativeAxis}
+      <div
+        class="y-axis y-axis-right"
+        aria-hidden="true"
+        style:height={`${svgH}px`}
+        data-testid="recap-terrain-axis-right"
+      >
+        {#each geometry.guides as guide (guide.y)}
+          <span class="axis-label axis-label-right" style:top={`${guide.y}px`}>{guide.cumLabel}</span>
+        {/each}
+      </div>
+    {/if}
   </div>
 </div>
 
 <div class="terrain-legend">
-  <span><i class="swatch swatch-area" aria-hidden="true"></i>分期里程</span>
+  <span><i class="swatch swatch-area" aria-hidden="true"></i>{hasCumulativeAxis ? '单期里程（左轴）' : '单期里程'}</span
+  >
   {#if recap.max > 0}
     <span><i class="swatch swatch-peak" aria-hidden="true"></i>峰值高点</span>
   {/if}
-  {#if geometry.cumD}
-    <span><i class="swatch swatch-cum" aria-hidden="true"></i>累计曲线</span>
+  {#if hasCumulativeAxis}
+    <span><i class="swatch swatch-cum" aria-hidden="true"></i>累计里程（右轴）</span>
   {/if}
   <span class="legend-hint">点击或方向键切换时段查看明细</span>
 </div>
@@ -386,11 +440,25 @@
     min-width: 0;
     font-variant-numeric: tabular-nums;
   }
+  .axis-units {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-bottom: var(--space-1);
+  }
   .axis-unit {
-    margin: 0 0 var(--space-1);
     font-size: var(--text-caption);
     line-height: var(--line-height-solid);
+    white-space: nowrap;
+  }
+  .axis-unit-left {
+    color: var(--primary);
+    font-weight: var(--weight-semibold);
+  }
+  .axis-unit-right {
     color: var(--muted-foreground);
+    font-weight: var(--weight-medium);
   }
   .chart-frame {
     display: grid;
@@ -398,18 +466,32 @@
     gap: var(--space-2);
     align-items: start;
   }
+  .chart-frame.has-cum-axis {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
   .y-axis {
     position: relative;
     min-width: 2.25rem;
   }
+  .y-axis-right {
+    min-width: 2.4rem;
+  }
   .axis-label {
     position: absolute;
-    right: 0;
     transform: translateY(-50%);
     font-size: var(--text-caption);
     line-height: var(--line-height-solid);
-    color: var(--muted-foreground);
     white-space: nowrap;
+  }
+  .axis-label-left {
+    right: 0;
+    color: var(--primary);
+    font-weight: var(--weight-medium);
+  }
+  .axis-label-right {
+    left: 0;
+    color: var(--muted-foreground);
+    font-weight: var(--weight-regular);
   }
   .plot-column {
     min-width: 0;
@@ -432,7 +514,7 @@
     stroke: var(--muted-foreground);
     stroke-width: 1.75;
     stroke-dasharray: 6 6;
-    opacity: 0.65;
+    opacity: 0.72;
   }
   .terrain-path {
     stroke: var(--primary);
@@ -515,12 +597,19 @@
   .slot-label {
     position: absolute;
     top: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
     transform: translateX(-50%);
     font-size: var(--text-caption);
     font-weight: var(--weight-medium);
     line-height: var(--line-height-heading);
     color: var(--muted-foreground);
     white-space: nowrap;
+    cursor: pointer;
+  }
+  .slot-label:hover {
+    color: var(--foreground);
   }
   .slot-first {
     transform: translateX(0);
@@ -628,11 +717,23 @@
       border-radius: var(--radius-control);
     }
   }
+  @media (max-width: 479px) {
+    .chart-frame {
+      gap: var(--space-1);
+    }
+    .y-axis,
+    .y-axis-right {
+      min-width: 1.9rem;
+    }
+  }
   @media (forced-colors: active) {
     .terrain-path,
     .point {
       stroke: Highlight;
       fill: Highlight;
+    }
+    .cum-path {
+      stroke: CanvasText;
     }
     .point-peak,
     .stem-peak {

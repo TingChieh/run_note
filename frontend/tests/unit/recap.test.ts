@@ -132,7 +132,7 @@ describe('running recap', () => {
       pace_eligible_count: 18,
       pace_eligible_distance_m: '190000.000',
       avg_pace_seconds_per_km: '350.000',
-      quality_warning_count: 0,
+      quality_warning_count: 2,
       date_assignment: 'activity_local_date',
     };
 
@@ -159,19 +159,20 @@ describe('running recap', () => {
         pace_eligible_count: i === 9 ? 0 : distances[i] > 0 ? 2 : 0,
         pace_eligible_distance_m: i === 9 ? '0' : String(distances[i]),
         avg_pace_seconds_per_km: paces[i] !== null ? String(paces[i]) : null,
-        quality_warning_count: 0,
+        quality_warning_count: i === 9 ? 2 : 0,
         date_assignment: 'activity_local_date',
       })),
     };
 
     const recap = buildRecap(yearReport, trends);
     expect(recap.dateAssignment).toBe('activity_local_date');
-    expect(recap.qualityWarningCount).toBe(0);
+    expect(recap.qualityWarningCount).toBe(2);
     expect(recap.buckets).toHaveLength(12);
     expect(recap.buckets[9].peak).toBe(true);
     expect(recap.buckets[9].activityCount).toBe(4);
     expect(recap.buckets[9].activityDays).toBe(3);
-    expect(recap.buckets[9].qualityWarningCount).toBe(0);
+    expect(recap.buckets[9].qualityWarningCount).toBe(2);
+    expect(recap.buckets[0].qualityWarningCount).toBe(0);
     expect(recap.buckets[11].cumulative).toBe(210975);
     expect(formatRecapLabelList(['1月', '2月', '3月', '4月', '5月'])).toBe('1月、2月、3月 等 5 段');
     expect(recap.derived.activeCount).toBe(11);
