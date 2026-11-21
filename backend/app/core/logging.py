@@ -5,10 +5,16 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 
 
-class ShareTokenFilter(logging.Filter):
+class SensitiveUrlFilter(logging.Filter):
     def filter(self, record):
         def redact(value):
-            return re.sub(r"(/shared/)[^\s/?\"']+", r"\1[redacted]", value)
+            value = re.sub(r"(/shared/)[^\s/?\"']+", r"\1[redacted]", value)
+            # Cells queries can contain the owner's map coordinates.
+            return re.sub(
+                r"(/api/v1/me/footprints/exploration/[^/\s?]+/[^/\s?]+/cells/?\?)[^\s\"']+",
+                r"\1[redacted]",
+                value,
+            )
 
         if (
             record.name == "uvicorn.access"
@@ -28,8 +34,8 @@ def configure_logging() -> None:
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
     for name in ("uvicorn.access", "httpx", "httpx2"):
         logger = logging.getLogger(name)
-        if not any(isinstance(f, ShareTokenFilter) for f in logger.filters):
-            logger.addFilter(ShareTokenFilter())
+        if not any(isinstance(f, SensitiveUrlFilter) for f in logger.filters):
+            logger.addFilter(SensitiveUrlFilter())
 
 
 def register_request_metadata(app: FastAPI) -> None:

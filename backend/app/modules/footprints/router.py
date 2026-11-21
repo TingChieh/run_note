@@ -2,7 +2,7 @@ from datetime import date
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
+from fastapi import APIRouter, Depends, Path, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_read_identity, get_session
@@ -95,7 +95,7 @@ def exploration_cells(
     year: Year,
     zoom: Annotated[float, Query(ge=0, le=22)],
     layer: Layer = "heatmap",
-    viewport: Annotated[str | None, Header(alias="X-Footprint-Viewport", max_length=100)] = None,
+    bbox: Annotated[str | None, Query(max_length=100)] = None,
 ):
     user = identity[1]
     data = cells(
@@ -105,11 +105,11 @@ def exploration_cells(
         scope,
         code,
         year,
-        parse_viewport(viewport),
+        parse_viewport(bbox),
         zoom,
         layer,
     )
-    return _exploration_response(request, response, db, data, {"year", "zoom", "layer"})
+    return _exploration_response(request, response, db, data, {"year", "zoom", "layer", "bbox"})
 
 
 @router.get("/all", response_model=ApiResponse[AllFootprintView])

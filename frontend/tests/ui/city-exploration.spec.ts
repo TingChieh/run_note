@@ -112,13 +112,13 @@ test('private entry, catalogue, map, year, layer, scope and keyboard', async ({ 
   await expect(page.getByTestId('exploration-map')).toHaveAttribute('data-ready', 'true');
   await expect
     .poll(() =>
-      state.requests.map(({ url, header }) =>
-        url.pathname.endsWith('/cells') ? (header ?? 'initial cells') : url.pathname,
+      state.requests.map(({ url }) =>
+        url.pathname.endsWith('/cells') ? (url.searchParams.get('bbox') ?? 'initial cells') : url.pathname,
       ),
     )
     .toContainEqual(expect.stringContaining(','));
   await expect(page.getByTestId('exploration-map')).toHaveAttribute('data-drawn', 'true');
-  expect(state.requests.every((entry) => !entry.url.searchParams.has('bbox'))).toBe(true);
+  expect(state.requests.every((entry) => entry.header === undefined)).toBe(true);
   expect(external).toHaveLength(0);
   await page.getByRole('button', { name: '新增格网' }).click();
   await expect.poll(() => state.requests.some((entry) => entry.url.searchParams.get('layer') === 'new')).toBe(true);

@@ -1972,7 +1972,7 @@ export const API_OPERATIONS = {
     get: ['year'],
   },
   '/api/v1/me/footprints/exploration/{scope}/{code}/cells': {
-    get: ['layer', 'year', 'zoom'],
+    get: ['bbox', 'layer', 'year', 'zoom'],
   },
   '/api/v1/me/password': {
     patch: [],

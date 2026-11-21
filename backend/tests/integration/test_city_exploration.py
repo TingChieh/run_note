@@ -131,13 +131,16 @@ def test_history_recovers_after_old_import_and_delete(clients):
     assert combined["new_cells"] == baseline["new_cells"]
     assert combined["city"]["activity_count"] == 2
     cells = "/city/310000/cells?year=2025&zoom=12"
-    heat = ready(first, cells, headers={"X-Footprint-Viewport": "121.47,31.22,121.49,31.24"})
-    assert heat["cells"] and all(count == 2 for _, _, count in heat["cells"])
+    heat = ready(first, cells + "&bbox=121.47,31.22,121.49,31.24")
+    assert heat["bounds"] is None and heat["cells"]
+    assert all(count == 2 for _, _, count in heat["cells"])
+    assert ready(first, cells + "&bbox=121.49,31.22,121.50,31.24")["cells"] == []
+    assert ready(first, cells)["bounds"] is not None
+    invalid = first.get(BASE + cells + "&bbox=121.47,nan,121.49,31.24")
+    assert invalid.status_code == 422
+    assert invalid.json()["error"]["code"] == "EXPLORATION_VIEWPORT_INVALID"
     assert (
-        first.get(
-            BASE + cells, headers={"X-Footprint-Viewport": "121.47,nan,121.49,31.24"}
-        ).status_code
-        == 422
+        first.get(BASE + cells + "&bbox=121.47,31.22,121.49,31.24&bbox=0,0,1,1").status_code == 422
     )
     old = run("2024-07-03", "121.483002")
     recalculated = ready(first, city)

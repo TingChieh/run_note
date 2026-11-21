@@ -119,8 +119,8 @@ export function parseCells(value: unknown): ExplorationCells {
   return value as unknown as ExplorationCells;
 }
 
-async function read(path: string, signal: AbortSignal, headers?: HeadersInit) {
-  const response = await fetch(path, { signal, headers, cache: 'no-store' });
+async function read(path: string, signal: AbortSignal) {
+  const response = await fetch(path, { signal, cache: 'no-store' });
   if (response.status === 401) throw new FootprintError('登录已过期', 401);
   if (response.status === 404) throw new FootprintError('没有找到该范围的足迹', 404);
   if (!response.ok) throw new FootprintError('无法读取城市探索，请重试', response.status);
@@ -144,6 +144,6 @@ export const readCells = async (
   signal: AbortSignal,
 ) => {
   const query = new URLSearchParams({ year: String(year), layer, zoom: String(viewport?.zoom ?? 5) });
-  const headers = viewport ? { 'X-Footprint-Viewport': viewport.bounds.join(',') } : undefined;
-  return parseCells(await read(`${root}/${scope}/${encodeURIComponent(placeCode)}/cells?${query}`, signal, headers));
+  if (viewport) query.set('bbox', viewport.bounds.join(','));
+  return parseCells(await read(`${root}/${scope}/${encodeURIComponent(placeCode)}/cells?${query}`, signal));
 };

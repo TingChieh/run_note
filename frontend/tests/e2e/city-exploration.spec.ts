@@ -25,16 +25,20 @@ test('a member explores their imported run through the private footprint page', 
   await expect(page.getByRole('link', { name: /上海市/ })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('link', { name: /上海市/ }).click();
   await expect(page.getByRole('heading', { name: '上海市' })).toBeVisible();
-  const viewport = page.waitForResponse(
-    (response) =>
-      response.url().includes('/city/310000/cells?year=2025') &&
-      Boolean(response.request().headers()['x-footprint-viewport']),
-  );
+  const viewport = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      url.pathname.endsWith('/city/310000/cells') &&
+      url.searchParams.get('year') === '2025' &&
+      url.searchParams.has('bbox')
+    );
+  });
   await page.getByLabel('年份').selectOption('2025');
   await expect(page.getByTestId('exploration-map')).toHaveAttribute('data-drawn', 'true');
   const response = await viewport;
   expect(response.ok()).toBe(true);
   expect(response.headers()['cache-control']).toBe('private, no-store');
-  expect(new URL(response.url()).searchParams.has('bbox')).toBe(false);
+  expect(response.request().headers()).not.toHaveProperty('x-footprint-viewport');
+  expect((await response.json()).data.bounds).toBeNull();
   await expect(page.getByText('2025 年每月新增格网')).toBeVisible();
 });
