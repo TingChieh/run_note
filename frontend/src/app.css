@@ -839,6 +839,90 @@
     width: 100%;
     overflow: hidden;
   }
+  /* Form and confirmation dialogs (shoe editor, delete confirmation): centred card on the dialog surface, with the
+     same spring entrance as the journal pop-up. Opt in with `form-dialog`; `--dialog-width` widens or narrows it. */
+  .form-dialog {
+    margin: auto;
+    width: min(var(--dialog-width, 36rem), calc(100vw - var(--space-8)));
+    max-height: calc(100dvh - var(--space-8));
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    padding: var(--space-6);
+    color: var(--foreground);
+    background: var(--surface);
+    opacity: 0;
+    transform: translateY(1rem) scale(0.94);
+    transition:
+      opacity var(--motion-popover-exit-duration) ease,
+      transform var(--motion-popover-exit-duration) var(--motion-popover-exit-ease),
+      overlay var(--motion-popover-exit-duration) allow-discrete,
+      display var(--motion-popover-exit-duration) allow-discrete;
+  }
+  .form-dialog[open] {
+    opacity: 1;
+    transform: none;
+    transition:
+      opacity 200ms ease,
+      transform var(--motion-popover-enter-duration) var(--motion-popover-enter-ease),
+      overlay var(--motion-popover-enter-duration) allow-discrete,
+      display var(--motion-popover-enter-duration) allow-discrete;
+  }
+  .form-dialog::backdrop {
+    background: var(--surface-backdrop);
+    opacity: 0;
+    transition:
+      opacity var(--motion-popover-exit-duration) ease,
+      overlay var(--motion-popover-exit-duration) allow-discrete,
+      display var(--motion-popover-exit-duration) allow-discrete;
+  }
+  .form-dialog[open]::backdrop {
+    opacity: 1;
+    transition-duration: 260ms;
+  }
+  /* Dialog with a footer: the body scrolls on its own and the save bar stays outside it, so it never covers a field. */
+  .form-dialog-split {
+    overflow: hidden;
+  }
+  .form-dialog-split[open] {
+    display: flex;
+    flex-direction: column;
+  }
+  .form-dialog-split > .form-dialog-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0 var(--space-1);
+    margin: 0 calc(var(--space-1) * -1);
+  }
+  .form-dialog-split > .save-bar-slot {
+    position: static;
+    flex: none;
+    margin-top: var(--space-4);
+  }
+  @starting-style {
+    .form-dialog[open] {
+      opacity: 0;
+      transform: translateY(1rem) scale(0.94);
+    }
+    .form-dialog[open]::backdrop {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .form-dialog,
+    .form-dialog[open],
+    .form-dialog::backdrop,
+    .form-dialog[open]::backdrop {
+      transition: none;
+    }
+  }
+  @media (max-width: 479px) {
+    .form-dialog {
+      padding: var(--space-4);
+    }
+  }
   /* Poster dialogs (RoutePosterDialog, ActivityPosterDialog): capped to the viewport; the header stays put and the
      two columns scroll on their own (the whole body scrolls when stacked), so nothing is cut off without a way to reach it. */
   .poster-dialog {

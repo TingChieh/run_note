@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { join } from 'node:path';
 
 const activity = '34567890-1234-4567-8899-012345678901';
@@ -197,6 +197,129 @@ for (const viewport of [
         await page.getByRole('region', { name: '活动的跑鞋' }).scrollIntoViewIfNeeded();
         await screenshot(prefix + '-binding');
       }
+    });
+  }
+}
+
+const rectsOverlap = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+// The save bar is the dialog footer: it must not intersect any field, whatever the scroll position.
+async function expectBarClear(dialog: Locator) {
+  const bar = (await dialog.getByRole('region', { name: '保存设置' }).boundingBox())!;
+  const body = (await dialog.locator('.form-dialog-body').boundingBox())!;
+  for (const name of ['鞋名', '备注', '初始里程（km）', '替换阈值（km）']) {
+    const raw = await dialog.getByLabel(name).boundingBox();
+    // Only the part inside the scrolling body is visible; anything scrolled out of it cannot be covered.
+    const top = Math.max(raw!.y, body.y);
+    const bottom = Math.min(raw!.y + raw!.height, body.y + body.height);
+    if (bottom > top) expect(rectsOverlap({ ...raw!, y: top, height: bottom - top }, bar), name).toBe(false);
+  }
+}
+
+async function scrollAndCheck(dialog: Locator) {
+  const body = dialog.locator('.form-dialog-body');
+  await body.evaluate((node) => node.scrollTo(0, node.scrollHeight));
+  await expectBarClear(dialog);
+  const notes = (await dialog.getByLabel('备注').boundingBox())!;
+  const bar = (await dialog.getByRole('region', { name: '保存设置' }).boundingBox())!;
+  expect(notes.y + notes.height).toBeLessThanOrEqual(bar.y + 1);
+  await dialog.getByLabel('备注').focus();
+  await expectBarClear(dialog);
+  await body.evaluate((node) => node.scrollTo(0, 0));
+}
+
+test('shoe dialog motion is off under reduced motion', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await signIn(page, '/activities/shoes');
+  await page.getByRole('button', { name: '添加跑鞋' }).click();
+  const dialog = page.getByRole('dialog', { name: '添加跑鞋' });
+  await expect(dialog).toBeVisible();
+  expect(await dialog.evaluate((node) => getComputedStyle(node).transitionDuration)).toBe('0s');
+  expect(await dialog.evaluate((node) => getComputedStyle(node, '::backdrop').transitionDuration)).toBe('0s');
+});
+
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 390, height: 844 },
+  { width: 320, height: 640 },
+]) {
+  for (const theme of ['light', 'dark']) {
+    test('shoe dialogs are centred cards at ' + viewport.width + 'px ' + theme, async ({ page }, info) => {
+      await page.setViewportSize(viewport);
+      await page.addInitScript((value) => localStorage.setItem('runnote-theme', value), theme);
+      await signIn(page, '/activities/shoes');
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      const directory = process.env.RUNNOTE_SHOE_SCREENSHOTS;
+      const shot = (name: string) =>
+        page.screenshot({
+          path: directory
+            ? join(directory, 'dialog-' + viewport.width + '-' + theme + '-' + name + '.png')
+            : info.outputPath(name + '.png'),
+          animations: 'disabled',
+        });
+      const check = async (name: string) => {
+        const dialog = page.getByRole('dialog', { name });
+        await expect(dialog).toBeVisible();
+        await page.waitForTimeout(400);
+        const box = (await dialog.boundingBox())!;
+        const style = await dialog.evaluate((node) => {
+          const css = getComputedStyle(node);
+          return {
+            background: css.backgroundColor,
+            padding: parseFloat(css.paddingLeft),
+            border: parseFloat(css.borderTopWidth),
+            borderColor: css.borderTopColor,
+            radius: parseFloat(css.borderTopLeftRadius),
+            color: css.color,
+            backdrop: getComputedStyle(node, '::backdrop').backgroundColor,
+          };
+        });
+        expect(style.border).toBeGreaterThan(0);
+        expect(style.borderColor).not.toBe(style.background);
+        expect(style.radius).toBeGreaterThan(0);
+        expect(style.color).not.toBe(style.background);
+        expect(style.backdrop).not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+        expect(style.background).not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+        expect(style.padding).toBeGreaterThan(0);
+        expect(box.x).toBeGreaterThan(0);
+        expect(box.y).toBeGreaterThanOrEqual(0);
+        expect(Math.abs(box.x + box.width / 2 - viewport.width / 2)).toBeLessThan(2);
+        expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+        expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+        expect(await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+        return dialog;
+      };
+
+      await page.getByRole('button', { name: '添加跑鞋' }).click();
+      let dialog = await check('添加跑鞋');
+      await shot('add');
+      await dialog.getByLabel('鞋名').fill('晨跑训练鞋');
+      await expect(dialog.getByRole('button', { name: '保存跑鞋', exact: true })).toBeVisible();
+      await page.waitForTimeout(600);
+      await shot('add-dirty');
+      await expectBarClear(dialog);
+      await scrollAndCheck(dialog);
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+
+      if (!(await page.getByRole('button', { name: '编辑', exact: true }).isVisible())) {
+        await page.getByRole('link', { name: /长距离训练鞋/ }).click();
+      }
+      await page.getByRole('button', { name: '编辑', exact: true }).click();
+      dialog = await check('编辑跑鞋');
+      await page.waitForTimeout(600);
+      expect(await dialog.locator('.form-dialog-body').evaluate((node) => node.scrollTop)).toBe(0);
+      await shot('edit');
+      await expectBarClear(dialog);
+      await scrollAndCheck(dialog);
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+
+      await page.getByRole('button', { name: '删除跑鞋', exact: true }).click();
+      await check('删除跑鞋？');
+      await shot('delete');
     });
   }
 }

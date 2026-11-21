@@ -486,6 +486,8 @@
 {/if}
 
 <dialog
+  class="form-dialog"
+  style:--dialog-width="28rem"
   bind:this={deleteDialog}
   aria-labelledby="shoe-delete-title"
   oncancel={(event) => {
@@ -603,7 +605,6 @@
     color: var(--error);
   }
   dialog {
-    width: min(28rem, calc(100% - 2rem));
     overflow-wrap: anywhere;
   }
   @media (min-width: 1024px) {
