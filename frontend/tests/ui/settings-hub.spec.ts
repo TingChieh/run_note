@@ -65,6 +65,26 @@ test('settings hub shows 5 tabs for owner with pseudo-element divider and keeps 
   await tabs.getByRole('link', { name: '目标与隐私', exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/preferences$/);
   await expect(page.getByRole('heading', { level: 1, name: '目标与隐私', exact: true })).toBeVisible();
+
+  // Unrelated admin pages keep their existing PageHeader descriptions intact.
+  await tabs.getByRole('link', { name: '站点设置', exact: true }).click();
+  await expect(page).toHaveURL(/\/settings\/site$/);
+  await expect(page.locator('.page-description')).toHaveText('管理站点名称、标语、默认外观和图标。');
+
+  await tabs.getByRole('link', { name: '用户管理', exact: true }).click();
+  await expect(page).toHaveURL(/\/admin\/users$/);
+  await expect(page.locator('.page-description')).toHaveText('管理账号、登录权限和独立个人展示链接。');
+
+  // Legacy shoe redirects preserve query parameters for owner in both root and workspace contexts.
+  const rootLegacy = await page.request.get('/activities/shoes?status=retired&id=test-id&add=1', { maxRedirects: 0 });
+  expect(rootLegacy.status()).toBe(303);
+  expect(rootLegacy.headers().location).toBe('/settings/shoes?status=retired&id=test-id&add=1');
+
+  const workspaceLegacy = await page.request.get('/workspace/activities/shoes?status=retired&id=test-id', {
+    maxRedirects: 0,
+  });
+  expect(workspaceLegacy.status()).toBe(303);
+  expect(workspaceLegacy.headers().location).toBe('/workspace/settings/shoes?status=retired&id=test-id');
 });
 
 test('independent summary read failures never block profile editing on /settings or switches on /settings/preferences', async ({
@@ -122,6 +142,120 @@ test('unified running goals editing validates input, persists via PUT, and syncs
   await expect(page.getByTestId('hub-goals')).toContainText('年 1,800 km');
 });
 
+test('partial running-goals save failure reports exact saved and failed periods without misleading success', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await page.goto('/settings/preferences');
+  await expect(page.locator('header')).toHaveAttribute('data-auth-ready', 'true');
+
+  await page.route(
+    '**/api/v1/me/running-goals/month',
+    (route) =>
+      route.fulfill({
+        status: 500,
+        json: { data: null, error: { code: 'SAVE_FAILED', message: '月度目标写入失败' } },
+      }),
+    { times: 1 },
+  );
+
+  await page.getByLabel('每周目标').fill('45');
+  await page.getByLabel('每月目标').fill('180');
+  await page.getByRole('button', { name: '保存跑量目标', exact: true }).click();
+
+  const alert = page.getByRole('alert');
+  await expect(alert).toContainText('每周目标已保存');
+  await expect(alert).toContainText('每月目标保存失败');
+  await expect(alert).toContainText('月度目标写入失败');
+  await expect(page.getByRole('status').filter({ hasText: '跑量目标已保存并同步' })).toHaveCount(0);
+
+  // Saved week value is reflected immediately; failed month keeps draft & invalid marker for retry.
+  const weekCard = page.locator('.goal-input-card').filter({ hasText: '每周目标' });
+  const monthCard = page.locator('.goal-input-card').filter({ hasText: '每月目标' });
+  await expect(weekCard).toContainText('已保存：45 km');
+  await expect(monthCard).toContainText('已保存：未设置');
+  await expect(page.getByLabel('每月目标')).toHaveValue('180');
+  await expect(page.getByLabel('每月目标')).toHaveAttribute('aria-invalid', 'true');
+
+  // Retrying submits only the still-dirty failed period and succeeds.
+  const retriedPeriods: string[] = [];
+  page.on('request', (req) => {
+    const match = req.url().match(/\/api\/v1\/me\/running-goals\/(week|month|year)$/);
+    if (req.method() === 'PUT' && match) retriedPeriods.push(match[1]);
+  });
+  await page.getByRole('button', { name: '保存跑量目标', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: '跑量目标已保存并同步。' })).toBeVisible();
+  await expect(monthCard).toContainText('已保存：180 km');
+  expect(retriedPeriods).toEqual(['month']);
+});
+
+for (const viewport of [
+  { name: 'desktop', width: 1440, height: 900 },
+  { name: 'mobile', width: 390, height: 844 },
+]) {
+  test(`deleting a shoe focuses the enabled add-shoe header button on ${viewport.name} (${viewport.width}px)`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await loginRunner(page);
+    await page.goto('/settings/shoes');
+    await page.getByRole('link', { name: /间歇训练鞋/ }).click();
+    await expect(page.getByRole('heading', { name: '间歇训练鞋', exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: '删除跑鞋', exact: true }).click();
+    const deleteDialog = page.getByRole('dialog', { name: '删除跑鞋？' });
+    await expect(deleteDialog).toBeVisible();
+    await deleteDialog.getByRole('button', { name: '确认删除', exact: true }).click();
+
+    await expect(page.getByRole('status').filter({ hasText: '已删除跑鞋' })).toBeVisible();
+    const addButton = page.locator('#add-shoe');
+    await expect(addButton).toBeEnabled();
+    await expect(addButton).toBeFocused();
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe('add-shoe');
+  });
+}
+
+test('shoe reminder badge refreshes after unbinding and rebinding a shoe on activity detail via SPA navigation', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await loginRunner(page);
+  await page.goto('/settings');
+  const tabs = page.getByRole('navigation', { name: '设置分区' });
+  await expect(tabs.locator(':scope > a .settings-tab-badge')).toHaveText('1');
+
+  // Navigate via SPA links from Settings -> Shoes -> bound activity detail so root layout stays mounted.
+  await tabs.getByRole('link', { name: /跑鞋/ }).click();
+  await expect(page).toHaveURL(/\/settings\/shoes$/);
+  await page.getByRole('link', { name: /以往训练记录/ }).click();
+  await expect(page).toHaveURL(/\/activities\/34567890-1234-4567-8899-012345678903$/);
+
+  const binding = page.getByRole('region', { name: '活动的跑鞋' });
+  await expect(binding.getByRole('combobox')).toHaveValue('45d68910-3d3d-4c10-8e13-ea016883ff41');
+  await binding.getByRole('combobox').selectOption('');
+  await binding.getByRole('button', { name: '保存跑鞋', exact: true }).click();
+  await expect(binding.getByRole('status')).toHaveText('已解绑跑鞋');
+
+  // Return to /settings via SPA link (without ShoesPage mounted); badge must drop from 1 to hidden (0).
+  await page.getByRole('button', { name: /账户菜单/ }).click();
+  await page.getByRole('link', { name: '设置', exact: true }).click();
+  await expect(page).toHaveURL(/\/settings$/);
+  await expect(tabs.locator(':scope > a .settings-tab-badge')).toHaveCount(0);
+  await expect(page.getByTestId('hub-shoes')).not.toContainText('接近阈值');
+
+  // Navigate back to the same activity via browser history (SPA) and bind the second shoe past its 650km threshold.
+  await page.goBack();
+  await expect(page).toHaveURL(/\/activities\/34567890-1234-4567-8899-012345678903$/);
+  await binding.getByRole('combobox').selectOption('45d68910-3d3d-4c10-8e13-ea016883ff42');
+  await binding.getByRole('button', { name: '保存跑鞋', exact: true }).click();
+  await expect(binding.getByRole('status')).toHaveText('已保存跑鞋');
+
+  await page.getByRole('button', { name: /账户菜单/ }).click();
+  await page.getByRole('link', { name: '设置', exact: true }).click();
+  await expect(page).toHaveURL(/\/settings$/);
+  await expect(tabs.locator(':scope > a .settings-tab-badge')).toHaveText('1');
+});
+
 test('non-admin member gets 3 personal tabs, redirects off root /settings* (blank-page regression) and legacy /activities/shoes', async ({
   page,
   browser,
@@ -133,13 +267,17 @@ test('non-admin member gets 3 personal tabs, redirects off root /settings* (blan
     await expect(tabs.getByRole('link', { name: '站点设置' })).toHaveCount(0);
     await expect(tabs.getByRole('link', { name: '用户管理' })).toHaveCount(0);
 
-    // Non-admin blank-page regression: visiting root /settings* redirects 303 to /workspace/settings*.
+    // Non-admin blank-page regression: visiting root /settings* redirects 303 to /workspace/settings* preserving query params.
     for (const [rootPath, workspacePath] of [
       ['/settings', '/workspace/settings'],
-      ['/settings/shoes?status=retired', '/workspace/settings/shoes?status=retired'],
-      ['/settings/preferences', '/workspace/settings/preferences'],
-      ['/activities/shoes?add=1', '/workspace/settings/shoes?add=1'],
-      ['/workspace/activities/shoes?status=retired', '/workspace/settings/shoes?status=retired'],
+      ['/settings?from=together', '/workspace/settings?from=together'],
+      ['/settings/shoes?status=retired&id=test-id', '/workspace/settings/shoes?status=retired&id=test-id'],
+      ['/settings/preferences?section=goals', '/workspace/settings/preferences?section=goals'],
+      [
+        '/activities/shoes?status=retired&id=test-id&add=1',
+        '/workspace/settings/shoes?status=retired&id=test-id&add=1',
+      ],
+      ['/workspace/activities/shoes?status=retired&id=test-id', '/workspace/settings/shoes?status=retired&id=test-id'],
     ]) {
       const response = await member.request.get(rootPath, { maxRedirects: 0 });
       expect(response.status(), `303 for ${rootPath}`).toBe(303);

@@ -56,6 +56,7 @@
   let restoreFocus: HTMLElement | null = null;
   let dialogReturnFocus: HTMLElement | null = null;
   let focusNextDetail = false;
+  let focusAddShoe = $state(false);
   let listPosition: { element: HTMLAnchorElement; top: number } | null = null;
   const selected = $derived(id ?? shoes?.items[0]?.id ?? null);
   const freshShoe = $derived(shoe?.id === selected ? shoe : null);
@@ -74,6 +75,16 @@
     return () => {
       header.action = null;
     };
+  });
+
+  $effect(() => {
+    if (!focusAddShoe || busy || !header.action || header.action.id !== 'add-shoe' || header.action.disabled) return;
+    focusAddShoe = false;
+    void tick().then(() => {
+      if (disposed) return;
+      const button = document.getElementById('add-shoe');
+      if (button instanceof HTMLButtonElement && !button.disabled) button.focus();
+    });
   });
 
   function href(group: ShoeStatus, identifier?: string) {
@@ -250,7 +261,7 @@
         message = '已删除跑鞋';
         window.dispatchEvent(new CustomEvent('runnote-shoes-changed'));
         await goto(href(status), { replace: true, reset: false });
-        if (!disposed) document.getElementById('add-shoe')?.focus();
+        if (!disposed && token === actionRequest) focusAddShoe = true;
       } else {
         const result = await editShoe(record.id, { retired: !record.retired_on });
         if (disposed || token !== actionRequest) return;

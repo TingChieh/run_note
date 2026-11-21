@@ -15,7 +15,7 @@
 | [ThemeToggle](../../frontend/src/lib/components/ThemeToggle.svelte) | `compact=false` | 挂载前禁用，手动浅深色与“自动”；恢复自动把焦点留在切换按钮。私人导航中，手机只显示顶部栏的紧凑入口，展开菜单不重复显示；桌面使用账户区入口。偏好仅本机；不接受服务器用户主题配置 |
 | [ImageUpload](../../frontend/src/lib/components/ImageUpload.svelte) | `label:string`；`src:string\|null`；`fallback:string`；`shape?:'circle'\|'square'`（默认 square）；`busy=false`；`error=''`；`hint=''`；`onselect(file)`；`onremove()` | 头像/站内标志/浏览器图标上传。原生 file input + label；accept 仅 png/jpeg/webp；预览失败回退字符；移除/恢复默认按钮；错误 role=alert；busy 禁用；挂载前禁用，隐藏 input 获得焦点时在 label 显示焦点环。设置页（账户、站点）消费，校验与裁剪由服务端负责 |
 
-`SettingsTabs`（`current:'account'|'shoes'|'preferences'|'site'|'users'`）用于设置页个人管理（账户总览、跑鞋、目标与隐私）与管理员分区（站点设置、用户管理）的切换，遵循“模式切换用链接组 + `aria-current`，不加 `role=tab`”；个人三项随工作区上下文切换路径，跑鞋标签内附独立的换鞋提醒角标；站点设置与用户管理仅管理员可见，固定指向 `/settings/site` 与 `/admin/users`，并通过 `.settings-tab-admin-start::before` 绘制分隔线，不向 `.settings-tabs` 新增子元素以保持玻璃指示器索引几何。
+`SettingsTabs`（`current:'account'|'shoes'|'preferences'|'site'|'users'`）用于设置页个人管理（账户总览、跑鞋、目标与隐私）与管理员分区（站点设置、用户管理）的切换，遵循“模式切换用链接组 + `aria-current`，不加 `role=tab`”；个人三项随工作区上下文切换路径，跑鞋标签内附独立的换鞋提醒角标（复用 `GET /api/v1/me/shoes?status=active&order=reminder&limit=20`，活跃跑鞋超过 20 双时仅统计前 20 双）；站点设置与用户管理仅管理员可见，固定指向 `/settings/site` 与 `/admin/users`，并通过 `.settings-tab-admin-start::before` 绘制分隔线，不向 `.settings-tabs` 新增子元素以保持玻璃指示器索引几何。
 
 MetricSummary 的 icon 枚举：`distance/duration/elapsed/pace/count/days/heart/calories/steps`。默认项图形为路线；compact 不绘图标。不要将未格式化秒数、米或 nullable 值直接传入 value。
 

@@ -97,7 +97,7 @@
     goalsMessage = '';
     goalsInvalidField = null;
 
-    const updates: { period: GoalPeriod; value: number }[] = [];
+    const updates: { period: GoalPeriod; label: string; value: number }[] = [];
     for (const { key, label } of GOAL_PERIODS) {
       const raw = goalInputs[key].trim();
       const previous = savedGoals[key]?.toString() ?? '';
@@ -115,30 +115,43 @@
         document.getElementById(`pref-goal-${key}`)?.focus();
         return;
       }
-      updates.push({ period: key, value: parsed });
+      updates.push({ period: key, label, value: parsed });
     }
     if (!updates.length) return;
 
     goalsSaving = true;
     ++goalsToken;
+    const succeeded: { period: GoalPeriod; label: string }[] = [];
+    const failed: { period: GoalPeriod; label: string; reason: string }[] = [];
     try {
-      const next = { ...savedGoals };
-      for (const { period, value } of updates) {
-        const persisted = await saveGoal(period, value, fetch);
-        if (disposed) return;
-        next[period] = persisted;
+      for (const { period, label, value } of updates) {
+        try {
+          const persisted = await saveGoal(period, value, fetch);
+          if (disposed) return;
+          savedGoals = { ...savedGoals, [period]: persisted };
+          goalInputs[period] = persisted.toString();
+          succeeded.push({ period, label });
+        } catch (cause) {
+          if (disposed || expired(cause)) return;
+          failed.push({
+            period,
+            label,
+            reason: cause instanceof Error ? cause.message : '保存失败，请重试',
+          });
+        }
       }
-      savedGoals = next;
-      goalInputs = {
-        week: next.week?.toString() ?? '',
-        month: next.month?.toString() ?? '',
-        year: next.year?.toString() ?? '',
-      };
-      goalsMessage = '跑量目标已保存并同步。';
-      window.dispatchEvent(new CustomEvent('runnote-goals-changed'));
-    } catch (cause) {
-      if (disposed || expired(cause)) return;
-      goalsError = cause instanceof Error ? cause.message : '跑量目标保存失败，请重试';
+      if (succeeded.length > 0) {
+        window.dispatchEvent(new CustomEvent('runnote-goals-changed'));
+      }
+      if (failed.length === 0) {
+        goalsMessage = '跑量目标已保存并同步。';
+      } else if (succeeded.length > 0) {
+        goalsInvalidField = failed[0].period;
+        goalsError = `${succeeded.map((item) => item.label).join('、')}已保存；${failed.map((item) => item.label).join('、')}保存失败（${failed[0].reason}），未保存项已保留输入，请重试。`;
+      } else {
+        goalsInvalidField = failed[0].period;
+        goalsError = `${failed.map((item) => item.label).join('、')}保存失败：${failed[0].reason}`;
+      }
     } finally {
       if (!disposed) goalsSaving = false;
     }

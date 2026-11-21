@@ -64,6 +64,7 @@
       current = result.shoe;
       choice = current?.id ?? '';
       message = current ? '已保存跑鞋' : '已解绑跑鞋';
+      window.dispatchEvent(new CustomEvent('runnote-shoes-changed'));
     } catch (error) {
       if (!disposed && token === request) showError(error, '无法保存跑鞋');
     } finally {

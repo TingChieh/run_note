@@ -46,13 +46,30 @@
               ? 'users'
               : null;
   });
-  const settingsMeta = {
-    account: '设置',
-    shoes: '跑鞋',
-    preferences: '目标与隐私',
-    site: '站点设置',
-    users: '用户管理',
-  } as const;
+  const settingsMeta: Record<'account' | 'shoes' | 'preferences' | 'site' | 'users', { title: string; description?: string }> = {
+    account: { title: '设置' },
+    shoes: { title: '跑鞋' },
+    preferences: { title: '目标与隐私' },
+    site: { title: '站点设置', description: '管理站点名称、标语、默认外观和图标。' },
+    users: { title: '用户管理', description: '管理账号、登录权限和独立个人展示链接。' },
+  };
+  let lastBadgeUserId: string | null = null;
+  $effect(() => {
+    const currentUserId = page.data.user?.id ?? null;
+    if (currentUserId !== lastBadgeUserId) {
+      lastBadgeUserId = currentUserId;
+      settingsHeader.shoeReminderCount = null;
+    }
+  });
+  onMount(() => {
+    const invalidateShoeBadge = () => {
+      if (!settingsKind) settingsHeader.shoeReminderCount = null;
+    };
+    window.addEventListener('runnote-shoes-changed', invalidateShoeBadge);
+    return () => {
+      window.removeEventListener('runnote-shoes-changed', invalidateShoeBadge);
+    };
+  });
   beforeNavigate(navigation => {
     publicMenuOpen = false;
     shallowNavigation = navigation.shallow;
@@ -182,7 +199,7 @@
       {#if !(identityBlocked && privateView)}
         {#if routeLoading}<div data-testid="navigation-skeleton"><PageSkeleton /></div>{/if}
         {#if settingsKind}<div hidden={routeLoading || checking && privateView} inert={routeLoading || checking && privateView}>
-          <PageHeader title={settingsMeta[settingsKind]}>
+          <PageHeader title={settingsMeta[settingsKind].title} description={settingsMeta[settingsKind].description}>
             {#snippet actions()}{#if settingsHeader.action}<button id={settingsHeader.action.id} type="button" class={settingsHeader.action.variant === 'primary' ? 'button-primary' : 'button-secondary'} disabled={settingsHeader.action.disabled} onclick={settingsHeader.action.onclick}>{settingsHeader.action.label}</button>{/if}{/snippet}
             {#snippet footer()}<SettingsTabs current={settingsKind} />{/snippet}
           </PageHeader>
