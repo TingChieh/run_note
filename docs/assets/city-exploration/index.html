@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>城市探索 · RunNote</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="wireframe.css">
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="shell">
+  <div class="brand"><span class="mark" aria-hidden="true">R</span> RunNote</div>
+  <span class="current">运动足迹</span>
+  <button id="theme" class="theme" type="button" aria-label="切换明暗主题" title="切换明暗主题">◐</button>
+</header>
+<main id="main">
+  <header class="page-header">
+    <h1>城市探索</h1>
+    <nav class="views" aria-label="城市探索视图">
+      <a id="catalogLink" href="?view=catalog">城市图鉴</a>
+      <a id="detailLink" href="?view=detail">城市详情</a>
+    </nav>
+  </header>
+  <section id="catalog" hidden aria-labelledby="catalogTitle">
+    <dl class="stats catalog-stats">
+      <div><dt>跑过的城市</dt><dd>3 <small>座</small></dd></div>
+      <div><dt>2026 年首次跑过</dt><dd>1 <small>座</small></dd></div>
+      <div><dt>城市边界内累计跑量</dt><dd>328.6 <small>km</small></dd></div>
+    </dl>
+    <div class="catalog-layout">
+      <section class="panel cities" aria-labelledby="catalogTitle">
+        <header class="section-heading"><h2 id="catalogTitle">跑过的城市 <span class="count">3</span></h2><span class="quiet">最近跑过在前</span></header>
+        <ul class="city-list">
+          <li><a class="city-row" href="?view=detail&amp;city=bay"><span><strong>青岬市</strong><span>岚海州 · 首次 2024-05-12</span></span><span><b>182.4 <small>km</small></b><span>42 次</span></span><span class="chevron" aria-hidden="true">›</span></a></li>
+          <li><a class="city-row" href="?view=detail&amp;city=river"><span><strong>云津市</strong><span>岚海州 · 首次 2025-03-09</span></span><span><b>104.2 <small>km</small></b><span>21 次</span></span><span class="chevron" aria-hidden="true">›</span></a></li>
+          <li><a class="city-row" href="?view=detail&amp;city=hill"><span><strong>松屿市</strong><span>林渡州 · 首次 2026-06-14</span></span><span><b>42.0 <small>km</small></b><span>8 次</span></span><span class="chevron" aria-hidden="true">›</span></a></li>
+        </ul>
+      </section>
+      <aside class="panel nearby">
+        <header class="section-heading"><h2>附近有记录</h2><span class="count">2</span></header>
+        <ul class="nearby-list"><li>晴浦 <span>2026-09-17</span></li><li>棠原 <span>2025-07-08</span></li></ul>
+        <p class="quiet nearby-note">只有城市点，日期表示首次匹配到附近轨迹。</p>
+        <details><summary>未归入城市</summary><p>5 次无轨迹，2 次轨迹未命中城市边界或城市点。</p></details>
+      </aside>
+    </div>
+  </section>
+  <section id="detail" hidden aria-labelledby="cityName">
+    <header class="city-heading">
+      <div><p id="regionName" class="quiet">岚海州</p><h2 id="cityName">青岬市</h2></div>
+      <label class="period"><span>地图与趋势年份</span><select id="year"><option>2026</option><option>2025</option></select></label>
+    </header>
+    <dl class="stats">
+      <div><dt>城市累计跑量</dt><dd id="distance">182.4 <small>km</small></dd></div>
+      <div><dt>首次跑步记录</dt><dd id="first" class="date">2024-05-12</dd></div>
+      <div class="added"><dt>所选年新增格网</dt><dd id="newCells">128 <small>格</small></dd></div>
+    </dl>
+    <div class="detail-layout">
+      <section class="panel map-panel" aria-labelledby="mapTitle">
+        <header class="section-heading map-heading"><h2 id="mapTitle">足迹覆盖</h2>
+          <div id="layers" class="views map-modes" role="group" aria-label="足迹图层">
+            <button type="button" data-layer="all" aria-pressed="true">覆盖热图</button>
+            <button type="button" data-layer="new" aria-pressed="false">新增格网</button>
+          </div>
+        </header>
+        <figure class="map-figure">
+          <canvas id="map" role="img" aria-label="青岬市合成地图，显示所选年活动经过的格网，带轮廓的格网在所选年首次跑过"></canvas>
+          <figcaption class="legend"><span class="intensity" id="intensity"><b>少</b><i></i><i></i><i></i><b>多</b></span><span><i class="outline"></i> 首次跑过</span><span>100 m 投影网格</span></figcaption>
+        </figure>
+      </section>
+      <section class="panel trend" aria-labelledby="trendTitle">
+        <header class="section-heading"><h2 id="trendTitle">覆盖趋势</h2></header>
+        <p class="trend-summary"><b id="ever">486</b> 格 <span>截至所选年末累计</span></p>
+        <p class="quiet chart-caption" id="chartCaption">2026 年每月新增格网</p>
+        <div class="chart" id="chart" role="img" aria-label="2026 年每月新增格网"></div>
+        <details><summary>查看逐月数据</summary><table><thead><tr><th scope="col">月份</th><th scope="col">新增</th><th scope="col">累计</th></tr></thead><tbody id="series"></tbody></table></details>
+      </section>
+    </div>
+    <details class="basis"><summary>统计口径</summary><p>跑量按轨迹在城市边界内的比例分配。首次跑步记录采用活动日期。格网按中心所在区域归属，首次经过日期基于全部活动历史。</p></details>
+  </section>
+</main>
+<script src="wireframe.js"></script>
+</body>
+</html>
