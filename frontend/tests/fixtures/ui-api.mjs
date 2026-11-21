@@ -99,7 +99,7 @@ function reportFixture(period, year, month, empty) {
     const duration = Math.round((distance / 1000) * pace);
     return { ...summary, ...base, activity_count: 2, distance_m: `${distance}.000`, activity_days: 2, duration_sum_seconds: `${duration}.000`, known_duration_count: 2, missing_duration_count: 0, pace_eligible_count: 2, pace_eligible_distance_m: `${distance}.000`, avg_pace_seconds_per_km: `${pace}.000`, quality_warning_count: 0 };
   }
-  if (period === 'month' && month !== null && year === 2026 && month >= 1 && month <= Number(today.slice(5, 7))) {
+  if (period === 'month' && month !== null && year >= 2026 && year === Number(today.slice(0, 4)) && month >= 1 && month <= Number(today.slice(5, 7))) {
     const idx = 12 + (month - 1);
     const distance = 10000 + idx * 1000;
     const pace = 372 - idx * 2;
@@ -109,7 +109,7 @@ function reportFixture(period, year, month, empty) {
   if (period === 'year' && year === 2025) {
     return { ...summary, ...base, activity_count: 24, distance_m: '186000.000', activity_days: 24, duration_sum_seconds: '66960.000', known_duration_count: 24, missing_duration_count: 0, pace_eligible_count: 24, pace_eligible_distance_m: '186000.000', avg_pace_seconds_per_km: '360.000', quality_warning_count: 0 };
   }
-  if (period === 'year' && year === 2026) {
+  if (period === 'year' && (year === 2026 || year === Number(today.slice(0, 4)))) {
     return { ...summary, ...base, activity_count: 20, distance_m: '265000.000', activity_days: 18, duration_sum_seconds: '88775.000', known_duration_count: 20, missing_duration_count: 0, pace_eligible_count: 20, pace_eligible_distance_m: '265000.000', avg_pace_seconds_per_km: '335.000', quality_warning_count: 0 };
   }
   return { ...summary, ...base };
@@ -318,7 +318,32 @@ createServer(async (req, res) => {
   }
   if (url.pathname.endsWith('/statistics/trends')) {
     const from = url.searchParams.get('date_from'), to = url.searchParams.get('date_to');
-    return send({ period: url.searchParams.get('period'), date_from: from, date_to: to, week_start: 'monday', date_assignment: 'activity_local_date', buckets: [{ ...summary, bucket_start: from, bucket_end: to, is_partial: true }] });
+    const period = url.searchParams.get('period');
+    const result = { period, date_from: from, date_to: to, week_start: 'monday', date_assignment: 'activity_local_date', buckets: [] };
+    if (showcase) return send({ ...result, buckets: [{ ...summary, bucket_start: from, bucket_end: to, is_partial: true }] });
+    if (!signedIn) return send(null, 401);
+    if (!from || !to || (period !== 'week' && period !== 'month')) return send(null, 422, '趋势查询参数不合法');
+    const start = new Date(`${from}T00:00:00Z`);
+    const year = start.getUTCFullYear(), month = start.getUTCMonth() + 1;
+    const report = reportFixture(period === 'month' ? 'year' : 'month', year, period === 'month' ? null : month, false);
+    const buckets = [];
+    for (let cursor = from; cursor < to; ) {
+      const date = new Date(`${cursor}T00:00:00Z`);
+      const weekday = (date.getUTCDay() + 6) % 7;
+      const boundary = (period === 'week' ? new Date(+date + (7 - weekday) * 86400000) :
+        new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1))).toISOString().slice(0, 10);
+      const end = boundary < to ? boundary : to;
+      buckets.push({ ...summary, bucket_start: cursor, bucket_end: end, is_partial: end !== boundary || (period === 'week' && weekday !== 0) });
+      cursor = end;
+    }
+    const weights = buckets.map((_, i) => [4, 6, 8, 7, 10, 6, 5, 8, 9, 12, 7, 8][i]);
+    const weightTotal = weights.reduce((sum, weight) => sum + weight, 0);
+    let remaining = Number(report.distance_m);
+    buckets.forEach((bucket, i) => {
+      bucket.distance_m = i === buckets.length - 1 ? remaining : Math.round(Number(report.distance_m) * weights[i] / weightTotal);
+      remaining -= bucket.distance_m;
+    });
+    return send({ ...result, buckets });
   }
   if (url.pathname.endsWith('/statistics/records')) return send(recordsFixture(url.searchParams.get('empty') === '1'));
   if (url.pathname.endsWith('/statistics/report')) {

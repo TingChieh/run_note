@@ -34,6 +34,7 @@ test('signed-in member period reports keep period consistency during delays, iso
   await page.goto('/records');
   await expect(page.locator('[data-testid="records-ready"], [data-testid="records-empty"]').first()).toBeVisible();
   await expect(page.getByTestId('period-report')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: '查看跑步回顾' })).toHaveCount(0);
   expect(anonymousReportRequests).toEqual([]);
   expect((await page.request.get('/api/v1/statistics/report?period=year&year=2024')).status()).toBe(401);
   expect((await page.request.get('/api/v1/showcase/statistics/report?period=year&year=2024')).status()).toBe(404);
@@ -126,4 +127,19 @@ test('signed-in member period reports keep period consistency during delays, iso
   expect(ownerFebAfter.status()).toBe(200);
   expect((await ownerJanAfter.json()).data).toEqual(ownerJanBefore);
   expect((await ownerFebAfter.json()).data).toEqual(ownerFebBefore);
+
+  await card.getByRole('link', { name: '查看跑步回顾' }).click();
+  await expect(page).toHaveURL(/\/workspace\/records\/recap\?period=year&year=2024$/);
+  await expect(page.getByTestId('recap-overview')).toContainText('7.00 km');
+  await page.getByText('查看完整数据表').click();
+  const yearly = page.getByRole('table', { name: '2024 年跑步回顾里程分布' });
+  await expect(yearly.getByRole('row').nth(1)).toContainText('5.00');
+  await expect(yearly.getByRole('row').nth(2)).toContainText('2.00');
+
+  await page.goto('/workspace/records/recap?period=month&year=2024&month=2');
+  await page.getByText('查看完整数据表').click();
+  const february = page.getByRole('table', { name: '2024 年 2 月跑步回顾里程分布' });
+  const leapWeek = february.getByRole('row').last();
+  await expect(leapWeek).toContainText('2024-02-26 至 2024-02-29');
+  await expect(leapWeek).toContainText('2.00');
 });
