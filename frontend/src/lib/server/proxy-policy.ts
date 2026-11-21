@@ -49,5 +49,5 @@ export function proxyCacheControl(method: string, status: number, upstream: Head
     status === 200 &&
     upstream.get('content-type') === 'image/png' &&
     upstream.get('cache-control') === CACHED_IMAGE;
-  return cachedImage ? CACHED_IMAGE : 'no-store';
+  return cachedImage ? CACHED_IMAGE : upstream.get('cache-control') === 'private, no-store' ? 'private, no-store' : 'no-store';
 }

@@ -81,6 +81,9 @@ ASYNC_ENDPOINTS = {
 # Each signed-in route that addresses a resource by id (longest matching prefix) names the
 # integration test proving another user's id answers 404 and changes nothing.
 CROSS_USER_TESTS = {
+    "/api/v1/me/footprints/exploration/{scope}/{code}": (
+        "test_city_exploration.py::test_exploration_is_owner_only_and_private"
+    ),
     "/api/v1/me/shoes/{identifier}": (
         "test_shoes.py::test_other_users_cannot_access_shoes_or_bindings"
     ),

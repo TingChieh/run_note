@@ -16,6 +16,8 @@ from app.modules.admin_users.router import router as admin_users_router
 from app.modules.ai_reports.provider import OpenAIProvider
 from app.modules.ai_reports.router import router as ai_router
 from app.modules.auth.router import router as auth_router
+from app.modules.footprints.exploration import ExplorationReads
+from app.modules.footprints.router import exploration_router
 from app.modules.footprints.router import router as footprints_router
 from app.modules.footprints.worker import FootprintWorker
 from app.modules.gpx.body_limit import GpxBodyLimit
@@ -53,6 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             yield
         finally:
             await to_thread(worker.stop)
+            app.state.exploration_reads.close()
             engine.dispose()
 
     app = FastAPI(title="Run Note API", version="0.1.0", lifespan=lifespan)
@@ -60,6 +63,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.ai_provider = OpenAIProvider()
     app.state.clock = utc_now
     app.state.session_factory = session_factory
+    app.state.exploration_reads = ExplorationReads(session_factory)
     app.state.expected_revision = expected_revision
     app.add_middleware(GpxBodyLimit)
     app.add_middleware(ImageBodyLimit)
@@ -72,6 +76,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(activities_router)
     app.include_router(statistics_router)
     app.include_router(footprints_router)
+    app.include_router(exploration_router)
     app.include_router(route_groups_router)
     app.include_router(auth_router)
     app.include_router(users_router)
