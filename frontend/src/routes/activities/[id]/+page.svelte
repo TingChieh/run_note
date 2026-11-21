@@ -304,11 +304,6 @@
             <dd>{formatStartTime(activity.started_at, activity.timezone)} · {activity.timezone}</dd>
           </div>
         </dl>
-        {#if view.manage && page.data.user}
-          {#key activity.id}
-            <ActivityShoe id={activity.id} onauthrequired={expired} />
-          {/key}
-        {/if}
         {#if activity.temporal_quality !== 'complete'}<p class="metric-note">
             {qualityLabel(activity.temporal_quality)} · 缺失或无法可靠计算的指标以“—”显示，详情见数据质量说明。
           </p>{/if}
@@ -348,6 +343,11 @@
         </div>{/if}
     </section>
   </div>
+  {#if view.manage && page.data.user}
+    {#key activity.id}
+      <ActivityShoe id={activity.id} onauthrequired={expired} />
+    {/key}
+  {/if}
   <DeviceMetrics metrics={activity} />
   <details class="quality-details">
     <summary>数据质量与指标说明</summary>

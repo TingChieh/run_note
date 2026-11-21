@@ -80,7 +80,7 @@
   });
 </script>
 
-<section class="shoe-binding mt-4 border-t border-border pt-4" aria-label="活动的跑鞋">
+<section class="mt-4 rounded-xl border border-border bg-surface p-4" aria-label="活动的跑鞋">
   {#if ready}
     <form class="flex flex-wrap items-end gap-3" onsubmit={save} aria-busy={busy}>
       <label class="min-w-0 flex-1 basis-48" for={selectId}>
