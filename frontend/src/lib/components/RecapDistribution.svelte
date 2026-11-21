@@ -107,7 +107,7 @@
     width: 62%;
     max-width: 3rem;
     min-height: 1px;
-    background: color-mix(in srgb, var(--primary) 65%, var(--surface));
+    background: color-mix(in srgb, var(--primary) 75%, var(--surface));
     border-radius: var(--radius-control) var(--radius-control) 0 0;
   }
   .bar.peak {
@@ -147,7 +147,7 @@
     display: inline-block;
   }
   @media (max-width: 479px) {
-    .plot:has(.slot:nth-child(12)) .label:nth-child(even):not(:last-child) {
+    .plot:has(.slot:nth-child(12)) .label:is(:nth-child(even), :nth-last-child(2)):not(:last-child) {
       visibility: hidden;
     }
   }

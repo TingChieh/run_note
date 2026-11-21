@@ -58,7 +58,7 @@ export async function renderRecap(recap: Recap, element: HTMLElement): Promise<B
       const width = Math.min(slot * 0.62, 78);
       if (bucket.distance) {
         const height = Math.max(1, (bucket.distance / recap.max) * 272);
-        ctx.globalAlpha = bucket.peak ? 1 : 0.6;
+        ctx.globalAlpha = bucket.peak ? 1 : 0.75;
         shape(center - width / 2, base - height, width, height, Math.min(10, height / 2), palette.route);
         ctx.globalAlpha = 1;
       }

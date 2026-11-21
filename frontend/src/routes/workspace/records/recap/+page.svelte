@@ -315,6 +315,7 @@
   h1 {
     font-size: var(--text-title);
     font-weight: var(--weight-bold);
+    word-break: keep-all;
     overflow-wrap: anywhere;
   }
   h2 {
