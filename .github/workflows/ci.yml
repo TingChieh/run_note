@@ -169,7 +169,7 @@ jobs:
       - run: pnpm check
       - run: pnpm build
 
-  # Synthetic-API browser tests (no backend, no database). Chrome is preinstalled on the runner.
+  # Synthetic-API browser tests (no backend, no database). The runner preinstalls Chrome but lacks CJK fonts.
   frontend-ui:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
@@ -187,6 +187,18 @@ jobs:
         with:
           node-version: '24'
       - run: pnpm install --frozen-lockfile
+      - name: Install and verify CJK fonts
+        run: |
+          printf 'Acquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAcquire::Retries "3";\nAcquire::ForceIPv4 "true";\n' | sudo tee /etc/apt/apt.conf.d/99ci-network >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+          fc-cache -f
+          zh_fonts=$(fc-list :lang=zh)
+          if [ -z "$zh_fonts" ]; then
+            echo '::error::fc-list :lang=zh returned no fonts'
+            exit 1
+          fi
+          printf '%s\n' "$zh_fonts"
       # `github` reporter adds per-failure annotations (readable without log access).
       - run: pnpm exec playwright test --config playwright.ui.config.ts --reporter=list,github
       - name: Keep Playwright evidence on failure
