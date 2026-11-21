@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>方向 B · 环道计时仪（Stadium Telemetry）· RunNote 回顾重设计原型</title>
+    <link rel="stylesheet" href="../shared/tokens.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <a class="sr-only" href="#main-content">跳到主要内容</a>
+
+    <div class="rn-topbar-wrap">
+      <header class="rn-topbar">
+        <div class="rn-brand-group">
+          <span class="rn-brand-mark" aria-hidden="true">R</span>
+          <span class="rn-brand-name">RunNote</span>
+          <span class="rn-divider-v" aria-hidden="true"></span>
+          <span class="rn-crumb">方向 B · 环道计时仪</span>
+        </div>
+        <nav class="rn-topbar-actions" aria-label="原型导航">
+          <div class="rn-nav-links-desktop">
+            <a class="rn-nav-pill" href="../index.html">总览对比</a>
+            <a class="rn-nav-pill" href="../direction-a/index.html">方向 A</a>
+            <a class="rn-nav-pill" href="../direction-b/index.html" aria-current="page">方向 B</a>
+            <a class="rn-nav-pill" href="../direction-c/index.html">方向 C</a>
+          </div>
+          <button type="button" class="rn-icon-btn" id="theme-toggle" aria-label="切换明暗外观"></button>
+        </nav>
+      </header>
+    </div>
+
+    <main id="main-content" class="st-page">
+      <!-- Telemetry Header Bar -->
+      <header class="st-header">
+        <div class="st-header-title">
+          <div class="st-eyebrow tabular">
+            <span class="st-beacon" id="status-beacon"></span>
+            <span id="status-code">SEALED · 2025.01.01 – 2025.12.31</span>
+          </div>
+          <h1 id="recap-title">2025 年跑步回顾</h1>
+        </div>
+
+        <div class="st-controls">
+          <div class="rn-segmented" role="group" aria-label="回顾周期">
+            <button type="button" data-period="month" aria-pressed="false">月度</button>
+            <button type="button" data-period="year" aria-pressed="true">年度</button>
+          </div>
+          <select id="scenario-select" class="st-select" aria-label="选择周期样例">
+            <option value="year-2025">2025 年（完整年度）</option>
+            <option value="year-2026">2026 年（进行中 · 含部分缺计时）</option>
+            <option value="month-2025-10">2025 年 10 月（完整月度）</option>
+            <option value="month-2026-11">2026 年 11 月（进行中月度）</option>
+          </select>
+          <button type="button" class="rn-btn rn-btn-primary" id="open-share">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            生成环道海报
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Stage: Radial Track Dial + Chronograph Readout -->
+      <section class="st-stage" aria-label="环道仪表总览">
+        <div class="st-dial-panel">
+          <div class="st-panel-bar">
+            <span class="st-panel-code tabular" id="dial-mode-label">TRACK DIAL · 12 MONTHS</span>
+            <button type="button" class="st-reset-btn" id="reset-focus" hidden>返回周期总览</button>
+          </div>
+          <div class="st-dial-wrap" id="dial-wrap">
+            <!-- SVG Radial Track Dial (year) or Concentric Stadium Lanes (month) -->
+          </div>
+          <p class="st-dial-hint">点击任意刻度或跑道，在表盘中央检视该时段数据</p>
+        </div>
+
+        <div class="st-chrono-panel">
+          <div class="st-chrono-top">
+            <div>
+              <span class="st-panel-code tabular">CHRONOGRAPH · 汇总读数</span>
+              <h2 class="st-chrono-heading" id="chrono-context">全周期服务端聚合</h2>
+            </div>
+            <div class="st-laps-pill tabular" id="laps-pill">2,391 圈 · 400m</div>
+          </div>
+
+          <dl class="st-chrono-grid tabular" id="chrono-metrics">
+            <!-- populated by JS -->
+          </dl>
+
+          <div class="st-gauge-card">
+            <div class="st-gauge-head tabular">
+              <span>配速区间标尺</span>
+              <strong id="pace-range-text">最快 5′54″ · 均 6′11″</strong>
+            </div>
+            <div class="st-gauge-bar" id="pace-gauge"></div>
+            <div class="st-gauge-foot tabular">
+              <span id="peak-callout">峰值 10月 · 118.4 km</span>
+              <span id="active-callout">12/12 个月有开跑</span>
+            </div>
+          </div>
+
+          <p class="st-coverage" id="coverage-note" hidden></p>
+        </div>
+      </section>
+
+      <!-- Split Telemetry Sheet -->
+      <section class="st-splits-card" aria-labelledby="splits-title">
+        <div class="st-splits-head">
+          <div>
+            <span class="st-panel-code tabular">SPLIT TELEMETRY · 分段成绩单</span>
+            <h2 id="splits-title">分期里程与配速卡尺</h2>
+          </div>
+          <div class="st-splits-legend tabular">
+            <span><i class="st-dot st-dot-peak"></i>峰值里程</span>
+            <span><i class="st-dot st-dot-fast"></i>最快均配</span>
+          </div>
+        </div>
+
+        <div class="st-splits-list" id="splits-list" role="list">
+          <!-- populated by JS -->
+        </div>
+
+        <details class="rn-table-details">
+          <summary>
+            <span>查看完整周期数据表</span>
+            <span aria-hidden="true">▾</span>
+          </summary>
+          <div class="rn-table-wrap" role="region" aria-label="周期分段完整数据表">
+            <table class="rn-data-table" id="data-table">
+              <caption class="sr-only">周期各分段聚合数据表</caption>
+              <thead>
+                <tr>
+                  <th scope="col">时段</th>
+                  <th scope="col">日期范围</th>
+                  <th scope="col" class="num">里程 (km)</th>
+                  <th scope="col" class="num">次数</th>
+                  <th scope="col" class="num">天数</th>
+                  <th scope="col" class="num">平均配速</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+
+      <!-- Poster Strip -->
+      <section class="st-poster-strip" aria-labelledby="st-poster-title">
+        <div class="st-poster-strip-info">
+          <span class="st-panel-code tabular">9:16 FINISH MEDALLION · 1080×1920</span>
+          <h2 id="st-poster-title">环道完赛计时海报</h2>
+          <p>以中心环道表盘为主视觉符号，白名单聚合字段本机 Canvas 2D 绘制，不暴露路线坐标与个人身份。</p>
+          <div class="st-poster-strip-btns">
+            <button type="button" class="rn-btn rn-btn-primary" id="open-share-bottom">预览与保存 PNG</button>
+            <button type="button" class="rn-btn" id="flip-poster-theme">切换海报明暗</button>
+          </div>
+        </div>
+        <button type="button" class="st-mini-poster" id="mini-poster-trigger" aria-label="放大预览环道海报">
+          <img id="mini-poster-img" alt="方向 B 环道海报缩略预览" width="200" height="356" />
+        </button>
+      </section>
+    </main>
+
+    <dialog class="rn-share-dialog" id="share-dialog" aria-labelledby="share-dialog-title" aria-describedby="share-dialog-desc">
+      <div class="rn-dialog-head">
+        <h2 id="share-dialog-title">环道海报预览 · 1080×1920</h2>
+        <button type="button" class="rn-btn" id="close-share">关闭</button>
+      </div>
+      <p class="rn-dialog-disclosure" id="share-dialog-desc">
+        图片使用本人聚合数据（包含私人记录汇总），不含姓名、账号、轨迹坐标或地名。
+      </p>
+      <div class="rn-dialog-stage">
+        <img id="share-preview-img" width="1080" height="1920" alt="环道分享图预览" />
+      </div>
+      <div class="rn-dialog-actions">
+        <div class="rn-dialog-controls">
+          <div class="rn-segmented" role="group" aria-label="选择海报主题">
+            <button type="button" data-poster-theme-btn="light" aria-pressed="true">浅色赛场</button>
+            <button type="button" data-poster-theme-btn="dark" aria-pressed="false">夜场泛光</button>
+          </div>
+        </div>
+        <div class="rn-dialog-controls">
+          <a class="rn-btn rn-btn-primary" id="download-poster" download="runnote-recap-2025.png" href="#">保存 PNG</a>
+        </div>
+      </div>
+    </dialog>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

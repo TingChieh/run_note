@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>方向 C · 奔跑存根（Tactile Runner's Receipt）· RunNote 回顾重设计原型</title>
+    <link rel="stylesheet" href="../shared/tokens.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <a class="sr-only" href="#main-content">跳到主要内容</a>
+
+    <div class="rn-topbar-wrap">
+      <header class="rn-topbar">
+        <div class="rn-brand-group">
+          <span class="rn-brand-mark" aria-hidden="true">R</span>
+          <span class="rn-brand-name">RunNote</span>
+          <span class="rn-divider-v" aria-hidden="true"></span>
+          <span class="rn-crumb">方向 C · 奔跑存根</span>
+        </div>
+        <nav class="rn-topbar-actions" aria-label="原型导航">
+          <div class="rn-nav-links-desktop">
+            <a class="rn-nav-pill" href="../index.html">总览对比</a>
+            <a class="rn-nav-pill" href="../direction-a/index.html">方向 A</a>
+            <a class="rn-nav-pill" href="../direction-b/index.html">方向 B</a>
+            <a class="rn-nav-pill" href="../direction-c/index.html" aria-current="page">方向 C</a>
+          </div>
+          <button type="button" class="rn-icon-btn" id="theme-toggle" aria-label="切换明暗外观"></button>
+        </nav>
+      </header>
+    </div>
+
+    <main id="main-content" class="rc-page">
+      <!-- Top Control Ribbon -->
+      <header class="rc-toolbar">
+        <div>
+          <p class="rc-kicker tabular">RUNNER'S RECEIPT &amp; ZINE</p>
+          <h1 id="recap-title">2025 年跑步回顾</h1>
+        </div>
+
+        <div class="rc-controls">
+          <div class="rn-segmented" role="group" aria-label="回顾周期">
+            <button type="button" data-period="month" aria-pressed="false">月度</button>
+            <button type="button" data-period="year" aria-pressed="true">年度</button>
+          </div>
+          <select id="scenario-select" class="rc-select" aria-label="选择周期样例">
+            <option value="year-2025">2025 年（完整年度）</option>
+            <option value="year-2026">2026 年（进行中 · 含部分缺计时）</option>
+            <option value="month-2025-10">2025 年 10 月（完整月度）</option>
+            <option value="month-2026-11">2026 年 11 月（进行中月度）</option>
+          </select>
+          <button type="button" class="rn-btn rn-btn-primary rc-mobile-share" id="open-share-mobile">生成存根图</button>
+        </div>
+      </header>
+
+      <div class="rc-studio">
+        <!-- Left Sticky Live Poster Preview (Desktop) -->
+        <aside class="rc-sticky-rail" aria-label="实时存根分享图预览">
+          <div class="rc-rail-card">
+            <div class="rc-rail-head">
+              <span class="rc-mono-tag">LIVE 9:16 STUB</span>
+              <button type="button" class="rc-mini-toggle" id="flip-poster-theme">切换纸色</button>
+            </div>
+            <button type="button" class="rc-poster-button" id="rail-poster-btn" aria-label="点击放大并保存 1080×1920 奔跑存根图">
+              <img id="rail-poster-img" width="270" height="480" alt="9:16 奔跑存根分享图实时预览" />
+            </button>
+            <button type="button" class="rn-btn rn-btn-primary rc-rail-cta" id="open-share-rail">保存高清存根 PNG</button>
+            <p class="rc-rail-note">白名单聚合数字 · 无姓名/坐标/路线 · 本机渲染</p>
+          </div>
+        </aside>
+
+        <!-- Right 3-Stub Perforated Receipt Scroll -->
+        <article class="rc-ticket" id="ticket-body" aria-label="跑步存根长卷">
+          <!-- Ticket Yellow Vintage Header -->
+          <div class="rc-ticket-cap">
+            <div class="rc-cap-brand">
+              <span class="rc-cap-mark" aria-hidden="true">R</span>
+              <span>RUNNOTE</span>
+            </div>
+            <span class="rc-cap-code tabular" id="ticket-issue">ANNUAL STUB · 2025</span>
+          </div>
+
+          <!-- Stub 01: Hero Distance + Rubber Stamp + Dotted Ledger -->
+          <section class="rc-stub" aria-labelledby="stub-1-title">
+            <div class="rc-stub-hero">
+              <div>
+                <p class="rc-mono-label" id="stub-1-title">TOTAL MILEAGE · 核销总里程</p>
+                <p class="rc-range tabular" id="ticket-range">2025.01.01 – 2025.12.31</p>
+                <div class="rc-giant-num tabular">
+                  <strong id="ticket-distance">956.2</strong>
+                  <span>KM</span>
+                </div>
+                <p class="rc-eq-line tabular" id="ticket-eq">等效 22.7 场全马 · 单次均距 7.2 km</p>
+              </div>
+
+              <!-- Rubber Stamp Seal -->
+              <div class="rc-stamp tabular" id="ticket-stamp" aria-hidden="true">
+                <span class="rc-stamp-top" id="stamp-top">SEALED</span>
+                <strong class="rc-stamp-mid" id="stamp-mid">12/12</strong>
+                <span class="rc-stamp-bot" id="stamp-bot">MONTHS</span>
+              </div>
+            </div>
+
+            <dl class="rc-dotted-list tabular" id="ticket-metrics">
+              <!-- dotted leader rows -->
+            </dl>
+            <p class="rc-coverage" id="coverage-note" hidden></p>
+          </section>
+
+          <!-- Perforation Tear Line 1 -->
+          <div class="rc-perforation" aria-hidden="true">
+            <span class="rc-notch rc-notch-l"></span>
+            <span class="rc-dash"></span>
+            <span class="rc-notch rc-notch-r"></span>
+          </div>
+
+          <!-- Stub 02: Rhythm Punch-Card Matrix -->
+          <section class="rc-stub" aria-labelledby="stub-2-title">
+            <div class="rc-stub-head">
+              <div>
+                <p class="rc-mono-label">STUB 02 · PUNCH-CARD RHYTHM</p>
+                <h2 id="stub-2-title">节律打孔带</h2>
+              </div>
+              <span class="rc-peak-tag tabular" id="punch-peak-tag">PEAK · 10月 118.4 km</span>
+            </div>
+
+            <div class="rc-punch-board" id="punch-board" role="group" aria-label="各时段打孔里程图">
+              <!-- columns of punch blocks -->
+            </div>
+
+            <div class="rc-slip-detail tabular" id="slip-detail" aria-live="polite">
+              <!-- active column micro-slip -->
+            </div>
+          </section>
+
+          <!-- Perforation Tear Line 2 -->
+          <div class="rc-perforation" aria-hidden="true">
+            <span class="rc-notch rc-notch-l"></span>
+            <span class="rc-dash"></span>
+            <span class="rc-notch rc-notch-r"></span>
+          </div>
+
+          <!-- Stub 03: Pace Receipt & Geometric Mileage Fingerprint -->
+          <section class="rc-stub" aria-labelledby="stub-3-title">
+            <div class="rc-stub-head">
+              <div>
+                <p class="rc-mono-label">STUB 03 · PACE &amp; CADENCE RECEIPT</p>
+                <h2 id="stub-3-title">分段配速回执</h2>
+              </div>
+              <span class="rc-mono-tag tabular" id="fastest-tag">FASTEST 10月 · 5′54″</span>
+            </div>
+
+            <div class="rc-ledger-rows tabular" id="ledger-rows">
+              <!-- receipt rows -->
+            </div>
+
+            <!-- Decorative Geometric Mileage Fingerprint -->
+            <div class="rc-fingerprint-box">
+              <div class="rc-barcode" id="mileage-barcode" aria-hidden="true"></div>
+              <div class="rc-barcode-meta tabular">
+                <span>MILEAGE FINGERPRINT · 仅由分期里程比例生成的纯装饰纹样</span>
+                <span id="barcode-summary">132 RUNS · 106 DAYS</span>
+              </div>
+            </div>
+
+            <details class="rn-table-details">
+              <summary>
+                <span>查看完整无障碍数据表</span>
+                <span aria-hidden="true">▾</span>
+              </summary>
+              <div class="rn-table-wrap" role="region" aria-label="奔跑存根完整周期数据表">
+                <table class="rn-data-table" id="data-table">
+                  <caption class="sr-only">周期各分段里程、次数、天数与配速</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">时段</th>
+                      <th scope="col">日期范围</th>
+                      <th scope="col" class="num">里程 (km)</th>
+                      <th scope="col" class="num">次数</th>
+                      <th scope="col" class="num">天数</th>
+                      <th scope="col" class="num">平均配速</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </details>
+          </section>
+        </article>
+      </div>
+    </main>
+
+    <dialog class="rn-share-dialog" id="share-dialog" aria-labelledby="share-dialog-title" aria-describedby="share-dialog-desc">
+      <div class="rn-dialog-head">
+        <h2 id="share-dialog-title">珍藏版奔跑存根 · 1080×1920</h2>
+        <button type="button" class="rn-btn" id="close-share">关闭</button>
+      </div>
+      <p class="rn-dialog-disclosure" id="share-dialog-desc">
+        图片使用本人聚合数据（包含私人记录汇总），不含姓名、账号、轨迹或地名；底部纹样仅为非编码里程比例装饰。
+      </p>
+      <div class="rn-dialog-stage">
+        <img id="share-preview-img" width="1080" height="1920" alt="奔跑存根分享图预览" />
+      </div>
+      <div class="rn-dialog-actions">
+        <div class="rn-dialog-controls">
+          <div class="rn-segmented" role="group" aria-label="选择存根纸张外观">
+            <button type="button" data-poster-theme-btn="light" aria-pressed="true">暖纸热敏</button>
+            <button type="button" data-poster-theme-btn="dark" aria-pressed="false">暗室黑卡</button>
+          </div>
+        </div>
+        <div class="rn-dialog-controls">
+          <a class="rn-btn rn-btn-primary" id="download-poster" download="runnote-recap-2025.png" href="#">保存 PNG</a>
+        </div>
+      </div>
+    </dialog>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
