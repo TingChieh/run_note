@@ -12,7 +12,10 @@ test('a member binds their own activity and the site owner cannot read or change
   const path = await importTrack(page, equatorGpx());
   const identifier = path.split('/').at(-1)!;
   await page.goto('/workspace/settings/shoes');
-  await page.getByRole('button', { name: /添加跑鞋/ }).click();
+  await page
+    .locator('.page-header')
+    .getByRole('button', { name: /添加跑鞋/ })
+    .click();
   const editor = page.getByRole('dialog', { name: '添加跑鞋' });
   await editor.getByLabel('鞋名').fill('浏览器验收跑鞋');
   await editor.getByLabel('初始里程（km）').fill('1');

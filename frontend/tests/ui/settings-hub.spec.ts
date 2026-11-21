@@ -256,6 +256,34 @@ test('shoe reminder badge refreshes after unbinding and rebinding a shoe on acti
   await expect(tabs.locator(':scope > a .settings-tab-badge')).toHaveText('1');
 });
 
+test('shrinking /settings from 1440px to 320px after select enhancement causes zero horizontal overflow', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await loginRunner(page);
+  await page.goto('/settings');
+  await expect(page.locator('header')).toHaveAttribute('data-auth-ready', 'true');
+  await page.locator('#profile-form .rn-select-toggle').waitFor({ state: 'attached' });
+  await page.locator('.settings-tabs .rn-moving-copy').waitFor({ state: 'attached' });
+
+  for (let i = 0; i < 5; i++) {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await page.setViewportSize({ width: 320, height: 844 });
+    const immediate = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      innerWidth: window.innerWidth,
+    }));
+    expect(immediate.scrollWidth).toBeLessThanOrEqual(immediate.innerWidth);
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const settled = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      innerWidth: window.innerWidth,
+    }));
+    expect(settled.scrollWidth).toBeLessThanOrEqual(settled.innerWidth);
+  }
+});
+
 test('non-admin member gets 3 personal tabs, redirects off root /settings* (blank-page regression) and legacy /activities/shoes', async ({
   page,
   browser,
@@ -356,6 +384,7 @@ test('visual QA screenshots across viewports, themes and interaction states with
       }
     }
   }
+  expect(consoleErrors).toEqual([]);
 
   // Interaction states at 1440x900
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -421,6 +450,10 @@ test('visual QA screenshots across viewports, themes and interaction states with
   hold.resolve();
   await page.unroute('**/api/v1/me/shoes?*');
 
-  // Ignore expected abort/503 network errors from simulated error/loading tests above; assert zero JS/page errors.
+  // Ignore only the intentional 409/503/abort network error console messages from simulated fault tests above.
+  const unexpectedConsoleErrors = consoleErrors.filter(
+    (msg) => !/\b(409|503)\b|ERR_ABORTED|Failed to load resource/i.test(msg),
+  );
+  expect(unexpectedConsoleErrors).toEqual([]);
   expect(pageErrors).toEqual([]);
 });
