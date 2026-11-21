@@ -435,6 +435,9 @@
       我的活动{records ? `（${records.total}）` : ''}
     </h2>
     <div class="records-heading-actions">
+      {#if view.manage && page.data.user}
+        <a class="button-secondary" href={view.href('/activities/shoes')}>跑鞋</a>
+      {/if}
       {#if view.manage}<button
           type="button"
           class="button-secondary import-toggle"

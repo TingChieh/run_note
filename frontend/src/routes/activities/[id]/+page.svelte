@@ -20,6 +20,8 @@
   import ActivityPosterDialog from '#lib/components/ActivityPosterDialog.svelte';
   import ActivityReplayDialog from '#lib/components/ActivityReplayDialog.svelte';
   import ActivityShareMenu from '#lib/components/ActivityShareMenu.svelte';
+  import ActivityShoe from '#lib/components/shoes/ActivityShoe.svelte';
+  import { ShoeError } from '#lib/api/shoes.ts';
   import {
     ActivityError,
     readActivity as scoped_readActivity,
@@ -89,11 +91,12 @@
     else void goto(view.href('/activities'), { replace: true });
   }
   function expired(cause: unknown): boolean {
-    if (!(cause instanceof ActivityError) || cause.status !== 401) return false;
+    if (!(cause instanceof ActivityError || cause instanceof ShoeError) || cause.status !== 401) return false;
     activityToken++;
     routeToken++;
     activity = null;
     route = null;
+    mapRoute = null;
     message = '';
     routeError = '';
     window.location.replace('/admin?reason=expired');
@@ -340,6 +343,11 @@
         </div>{/if}
     </section>
   </div>
+  {#if view.manage && page.data.user}
+    {#key activity.id}
+      <ActivityShoe id={activity.id} onauthrequired={expired} />
+    {/key}
+  {/if}
   <DeviceMetrics metrics={activity} />
   <details class="quality-details">
     <summary>数据质量与指标说明</summary>

@@ -16,6 +16,7 @@ from app.modules.place_titles.model import ActivityPlaceName, PlaceFeature
 from app.modules.route_groups.model import RouteFingerprint, RouteGroup, RouteGroupMember
 from app.modules.running_goals.model import RunningGoal
 from app.modules.sharing.model import ActivityShareLink
+from app.modules.shoes.model import Shoe
 from app.modules.site_settings.model import SiteImage, SiteSettings
 from app.modules.tcx.model import TcxImport
 from app.modules.users.model import User, UserAvatar
@@ -40,6 +41,7 @@ __all__ = [
     "AuthSession",
     "AuthRateBucket",
     "Activity",
+    "Shoe",
     "GpxImport",
     "TcxImport",
     "MifitnessImport",
