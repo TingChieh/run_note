@@ -200,3 +200,73 @@ for (const viewport of [
     });
   }
 }
+
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 390, height: 844 },
+  { width: 320, height: 640 },
+]) {
+  for (const theme of ['light', 'dark']) {
+    test('shoe dialogs are centred cards at ' + viewport.width + 'px ' + theme, async ({ page }, info) => {
+      await page.setViewportSize(viewport);
+      await page.addInitScript((value) => localStorage.setItem('runnote-theme', value), theme);
+      await signIn(page, '/activities/shoes');
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      const directory = process.env.RUNNOTE_SHOE_SCREENSHOTS;
+      const shot = (name: string) =>
+        page.screenshot({
+          path: directory
+            ? join(directory, 'dialog-' + viewport.width + '-' + theme + '-' + name + '.png')
+            : info.outputPath(name + '.png'),
+          animations: 'disabled',
+        });
+      const check = async (name: string) => {
+        const dialog = page.getByRole('dialog', { name });
+        await expect(dialog).toBeVisible();
+        await page.waitForTimeout(400);
+        const box = (await dialog.boundingBox())!;
+        const style = await dialog.evaluate((node) => {
+          const css = getComputedStyle(node);
+          return { background: css.backgroundColor, padding: parseFloat(css.paddingLeft) };
+        });
+        expect(style.background).not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+        expect(style.padding).toBeGreaterThan(0);
+        expect(box.x).toBeGreaterThan(0);
+        expect(box.y).toBeGreaterThanOrEqual(0);
+        expect(Math.abs(box.x + box.width / 2 - viewport.width / 2)).toBeLessThan(2);
+        expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+        expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+        expect(await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+        return dialog;
+      };
+
+      await page.getByRole('button', { name: '添加跑鞋' }).click();
+      let dialog = await check('添加跑鞋');
+      await shot('add');
+      await dialog.getByLabel('鞋名').fill('晨跑训练鞋');
+      await expect(dialog.getByRole('button', { name: '保存跑鞋', exact: true })).toBeVisible();
+      await page.waitForTimeout(600);
+      await dialog.evaluate((node) => node.scrollTo(0, node.scrollHeight));
+      await shot('add-dirty');
+      const field = (await dialog.getByLabel('备注').boundingBox())!;
+      const bar = (await dialog.getByRole('region', { name: '保存设置' }).boundingBox())!;
+      expect(field.y + field.height).toBeLessThanOrEqual(bar.y + 1);
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+
+      if (!(await page.getByRole('button', { name: '编辑', exact: true }).isVisible())) {
+        await page.getByRole('link', { name: /长距离训练鞋/ }).click();
+      }
+      await page.getByRole('button', { name: '编辑', exact: true }).click();
+      dialog = await check('编辑跑鞋');
+      await shot('edit');
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+
+      await page.getByRole('button', { name: '删除跑鞋', exact: true }).click();
+      await check('删除跑鞋？');
+      await shot('delete');
+    });
+  }
+}

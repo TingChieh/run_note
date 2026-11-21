@@ -103,7 +103,7 @@
 </script>
 
 <dialog
-  class="w-[min(36rem,calc(100%-2rem))] max-h-[calc(100dvh-2rem)] overflow-y-auto"
+  class="form-dialog"
   bind:this={dialog}
   aria-labelledby={uid + '-title'}
   oncancel={(event) => {
