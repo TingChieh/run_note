@@ -14,10 +14,12 @@ from datetime import date
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from starlette.concurrency import run_in_threadpool
 
 from app.core.errors import ApiError
 from app.modules.ai_assistant import service as assistant_service
+from app.modules.ai_assistant.model import AIMessage
 from app.modules.ai_assistant.provider import ProviderRoundResult, ProviderTextDelta
 from app.modules.ai_assistant.schema import UIBlock
 from app.modules.ai_assistant.tools import (
@@ -31,6 +33,7 @@ from app.modules.ai_assistant.tools import (
 logger = logging.getLogger(__name__)
 
 HEARTBEAT_INTERVAL_SECONDS = 15.0
+CANCEL_POLL_INTERVAL_SECONDS = 1.0
 MAX_TOOL_CALLS_PER_TURN = 8
 MAX_UI_BLOCKS_PER_TURN = 12
 
@@ -150,6 +153,18 @@ def _mark_streaming(session_factory, owner_id: UUID, message_id: UUID) -> bool:
         return assistant_service.mark_streaming(db, owner_id, message_id)
 
 
+def _is_cancelled_in_db(session_factory, owner_id: UUID, message_id: UUID) -> bool:
+    with session_factory() as db:
+        status = db.scalar(
+            select(AIMessage.status).where(
+                AIMessage.id == message_id,
+                AIMessage.user_id == owner_id,
+                AIMessage.role == "assistant",
+            )
+        )
+        return status == "cancelled"
+
+
 def _persist_finish(
     session_factory,
     owner_id: UUID,
@@ -235,6 +250,7 @@ async def stream_turn(
     streams: ActiveStreamRegistry,
     is_disconnected: Callable[[], Awaitable[bool]],
     heartbeat_interval: float = HEARTBEAT_INTERVAL_SECONDS,
+    cancel_poll_interval: float = CANCEL_POLL_INTERVAL_SECONDS,
 ) -> AsyncIterator[str]:
     """Run the streaming DeepSeek + read-only tool loop and yield formatted SSE frames."""
     if turn.replayed:
@@ -344,7 +360,16 @@ async def stream_turn(
             total_tool_calls = 0
 
             for round_index in range(1, int(settings.ai_max_tool_rounds) + 1):
-                if cancel_event.is_set() or await is_disconnected():
+                if (
+                    cancel_event.is_set()
+                    or await is_disconnected()
+                    or await run_in_threadpool(
+                        _is_cancelled_in_db,
+                        session_factory,
+                        turn.owner_id,
+                        turn.assistant_message_id,
+                    )
+                ):
                     raise asyncio.CancelledError
 
                 # On the final allowed round, pass no tools so the model produces its final answer.
@@ -410,7 +435,16 @@ async def stream_turn(
                 )
 
                 for call in round_result.tool_calls:
-                    if cancel_event.is_set() or await is_disconnected():
+                    if (
+                        cancel_event.is_set()
+                        or await is_disconnected()
+                        or await run_in_threadpool(
+                            _is_cancelled_in_db,
+                            session_factory,
+                            turn.owner_id,
+                            turn.assistant_message_id,
+                        )
+                    ):
                         raise asyncio.CancelledError
 
                     if total_tool_calls >= MAX_TOOL_CALLS_PER_TURN:
@@ -552,6 +586,14 @@ async def stream_turn(
             if final_finish_reason == "length":
                 content_truncated = True
 
+            if cancel_event.is_set() or await run_in_threadpool(
+                _is_cancelled_in_db,
+                session_factory,
+                turn.owner_id,
+                turn.assistant_message_id,
+            ):
+                raise asyncio.CancelledError
+
             final_status = "succeeded"
             await _save_final("succeeded")
             await queue.put(
@@ -655,7 +697,21 @@ async def stream_turn(
     producer_task = asyncio.create_task(_producer())
 
     async def _watch_cancel() -> None:
-        await cancel_event.wait()
+        while not producer_task.done():
+            try:
+                await asyncio.wait_for(cancel_event.wait(), timeout=cancel_poll_interval)
+                break
+            except TimeoutError:
+                if producer_task.done():
+                    return
+                if await run_in_threadpool(
+                    _is_cancelled_in_db,
+                    session_factory,
+                    turn.owner_id,
+                    turn.assistant_message_id,
+                ):
+                    cancel_event.set()
+                    break
         if not producer_task.done():
             producer_task.cancel()
 

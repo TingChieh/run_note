@@ -332,6 +332,7 @@ def test_orchestrator_emits_ping_heartbeat_enforces_tool_caps_and_handles_bad_to
     saved: list[dict] = []
     monkeypatch.setattr(orchestrator, "_mark_streaming", lambda *_a, **_kw: True)
     monkeypatch.setattr(orchestrator, "_load_history", lambda *_a, **_kw: [])
+    monkeypatch.setattr(orchestrator, "_is_cancelled_in_db", lambda *_a, **_kw: False)
 
     def fake_save(_sf, _oid, _mid, status, **kwargs):
         saved.append({"status": status, **kwargs})

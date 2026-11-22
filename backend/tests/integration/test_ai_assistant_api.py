@@ -126,7 +126,7 @@ def assistant_api():
     provider = _ScriptedProvider()
     app.state.ai_assistant_provider = provider
     other_app.state.ai_assistant_provider = provider
-    other_app.state.ai_assistant_streams = app.state.ai_assistant_streams
+    # Keep distinct ActiveStreamRegistry instances to mirror the multi-worker deployment.
     created_users: list[UUID] = []
 
     def _register(client: TestClient) -> str:
@@ -508,6 +508,66 @@ def test_idempotency_replay_conflict_concurrency_and_cancel_generation(assistant
         assert row is not None
         assert row.status == "cancelled"
         assert row.content == "生成了一半的内容…"
+
+
+def test_cross_worker_cancel_aborts_active_stream_on_other_worker(assistant_api):
+    client_a, _client_b, app, provider, now_box, reg = assistant_api
+    reg(client_a)
+    _grant_consent(client_a)
+    conv_id = _create_conv(client_a, "跨进程取消测试")
+
+    # Spin up an independent worker app (separate ActiveStreamRegistry) sharing the same DB.
+    worker2_app = create_app(app.state.settings.model_copy())
+    worker2_app.state.clock = app.state.clock
+    worker2_app.state.ai_assistant_provider = provider
+
+    provider.entered.clear()
+    provider.cancelled.clear()
+    provider.release = threading.Event()
+    provider.queue(
+        {
+            "deltas": ["跨进程部分内容…"],
+            "wait_until_released": True,
+            "result": {"input_tokens": 150, "output_tokens": 35},
+        }
+    )
+
+    with (
+        TestClient(worker2_app, base_url=app.state.settings.site_origin) as worker2_client,
+        ThreadPoolExecutor(max_workers=1) as pool,
+    ):
+        # Copy User A's session cookie to worker2_client to simulate load balancer routing cancel.
+        for cookie_name, cookie_value in client_a.cookies.items():
+            worker2_client.cookies.set(cookie_name, cookie_value)
+
+        future = pool.submit(_send_sse, client_a, conv_id, "长任务", uuid4())
+        assert provider.entered.wait(timeout=5)
+
+        concurrent = _send_sse(client_a, conv_id, "查活跃消息")
+        assert concurrent.status_code == 409
+        active_msg_id = concurrent.json()["error"]["details"][0]["message_id"]
+
+        # Cancel hits Worker 2 (which does NOT hold the stream in its in-memory registry).
+        cancel_res = worker2_client.post(
+            f"/api/v1/ai-assistant/conversations/{conv_id}/messages/{active_msg_id}/cancel",
+            headers=headers(worker2_client),
+        )
+        assert cancel_res.status_code == 200
+        assert cancel_res.json()["data"] == {"cancelled": True, "status": "cancelled"}
+
+        # Worker 1 observes persisted cancellation via DB polling and aborts the upstream stream.
+        assert provider.cancelled.wait(timeout=5)
+        stream_res = future.result(timeout=5)
+        assert stream_res.status_code == 200
+        events = _parse_sse(stream_res.text)
+        assert events[-1][0] == "done"
+        assert events[-1][1]["status"] == "cancelled"
+
+    with app.state.session_factory() as db:
+        row = db.scalar(select(AIMessage).where(AIMessage.id == UUID(active_msg_id)))
+        assert row is not None
+        assert row.status == "cancelled"
+        assert row.content == "跨进程部分内容…"
 
 
 def test_provider_error_timeout_no_refund_and_delete_no_refund(assistant_api):
