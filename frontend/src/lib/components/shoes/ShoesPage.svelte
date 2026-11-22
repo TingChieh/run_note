@@ -2,11 +2,11 @@
   import { onMount, tick, untrack } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import PageHeader from '#lib/components/PageHeader.svelte';
   import PageSkeleton from '#lib/components/PageSkeleton.svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import { pageTitle } from '#lib/site.ts';
   import { useViewContext } from '#lib/view-context.ts';
+  import { useSettingsHeader } from '#lib/settings-header.svelte.ts';
   import {
     deleteShoe,
     editShoe,
@@ -26,7 +26,8 @@
   import ShoeProgress from './ShoeProgress.svelte';
 
   const view = useViewContext();
-  const listUrl = $derived(view.href('/activities/shoes'));
+  const header = useSettingsHeader();
+  const listUrl = $derived(view.href('/settings/shoes'));
   const status = $derived<ShoeStatus>(page.url.searchParams.get('status') === 'retired' ? 'retired' : 'active');
   const id = $derived(page.url.searchParams.get('id'));
   let shoes = $state.raw<ShoeList | null>(null);
@@ -50,14 +51,41 @@
   let runsRequest = 0;
   let actionRequest = 0;
   let deleteDialog = $state<HTMLDialogElement>(null!);
+  let retireDialog = $state<HTMLDialogElement>(null!);
   let detailHeading = $state<HTMLHeadingElement>();
-  let addButton: HTMLButtonElement;
   let restoreFocus: HTMLElement | null = null;
+  let dialogReturnFocus: HTMLElement | null = null;
   let focusNextDetail = false;
+  let focusAddShoe = $state(false);
   let listPosition: { element: HTMLAnchorElement; top: number } | null = null;
   const selected = $derived(id ?? shoes?.items[0]?.id ?? null);
   const freshShoe = $derived(shoe?.id === selected ? shoe : null);
   const details = (record: ShoeView) => [record.brand, record.model].filter(Boolean).join(' · ');
+
+  $effect(() => {
+    header.action = view.manage
+      ? {
+          id: 'add-shoe',
+          label: '＋ 添加跑鞋',
+          variant: 'primary',
+          disabled: busy,
+          onclick: () => openEditor(null, document.getElementById('add-shoe')),
+        }
+      : null;
+    return () => {
+      header.action = null;
+    };
+  });
+
+  $effect(() => {
+    if (!focusAddShoe || busy || !header.action || header.action.id !== 'add-shoe' || header.action.disabled) return;
+    focusAddShoe = false;
+    void tick().then(() => {
+      if (disposed) return;
+      const button = document.getElementById('add-shoe');
+      if (button instanceof HTMLButtonElement && !button.disabled) button.focus();
+    });
+  });
 
   function href(group: ShoeStatus, identifier?: string) {
     const query = new URLSearchParams();
@@ -74,6 +102,7 @@
     shoes = shoe = runs = null;
     editing = undefined;
     if (deleteDialog?.open) deleteDialog.close();
+    if (retireDialog?.open) retireDialog.close();
     window.location.replace('/admin?reason=expired');
   }
 
@@ -96,6 +125,9 @@
       if (isCurrent()) {
         lastStatus = group;
         shoes = result;
+        if (group === 'active' && offset === 0) {
+          header.shoeReminderCount = result.items.filter((item) => item.reminder !== null).length;
+        }
       }
     } catch (cause) {
       if (isCurrent()) listError = errorMessage(cause, '无法读取跑鞋列表');
@@ -177,7 +209,7 @@
     position.element.focus({ preventScroll: true });
   }
 
-  function openEditor(value: ShoeView | null, opener: HTMLElement) {
+  function openEditor(value: ShoeView | null, opener: HTMLElement | null) {
     restoreFocus = opener;
     editing = value;
   }
@@ -187,11 +219,24 @@
     void tick().then(() => restoreFocus?.focus());
   }
 
+  function openConfirmDialog(dialog: HTMLDialogElement, opener: HTMLElement | null) {
+    dialogReturnFocus = opener;
+    actionError = '';
+    dialog.showModal();
+  }
+
+  function closeConfirmDialog() {
+    actionError = '';
+    if (dialogReturnFocus?.isConnected) dialogReturnFocus.focus();
+    dialogReturnFocus = null;
+  }
+
   async function saved(value: ShoeView) {
     const group = value.retired_on ? 'retired' : 'active';
     const creating = editing === null;
     closeEditor();
     message = creating ? '已添加跑鞋' : '已保存跑鞋';
+    window.dispatchEvent(new CustomEvent('runnote-shoes-changed'));
     const target = href(group, value.id);
     const unchanged = target === page.url.pathname + page.url.search;
     focusNextDetail = creating;
@@ -211,14 +256,21 @@
       if (operation === 'delete') {
         await deleteShoe(record.id);
         if (disposed || token !== actionRequest) return;
+        dialogReturnFocus = null;
         deleteDialog.close();
         message = '已删除跑鞋';
+        window.dispatchEvent(new CustomEvent('runnote-shoes-changed'));
         await goto(href(status), { replace: true, reset: false });
-        if (!disposed) addButton?.focus();
+        if (!disposed && token === actionRequest) focusAddShoe = true;
       } else {
         const result = await editShoe(record.id, { retired: !record.retired_on });
         if (disposed || token !== actionRequest) return;
+        if (retireDialog?.open) {
+          dialogReturnFocus = null;
+          retireDialog.close();
+        }
         message = result.retired_on ? '跑鞋已退役' : '跑鞋已恢复使用';
+        window.dispatchEvent(new CustomEvent('runnote-shoes-changed'));
         focusNextDetail = true;
         await goto(href(result.retired_on ? 'retired' : 'active', record.id), { reset: false });
         if (!disposed) void loadDetail(record.id);
@@ -233,7 +285,7 @@
 
   onMount(() => {
     mounted = true;
-    if (page.url.searchParams.get('add') === '1') openEditor(null, addButton);
+    if (page.url.searchParams.get('add') === '1') openEditor(null, document.getElementById('add-shoe'));
     return () => {
       disposed = true;
       listRequest++;
@@ -254,29 +306,12 @@
 </script>
 
 <svelte:head><title>{pageTitle('跑鞋', page.data.site)}</title></svelte:head>
-<nav aria-label="当前位置" class="mb-2 flex items-center gap-2 text-sm text-muted-foreground">
-  <a href={view.href('/activities')} class="inline-flex min-h-11 items-center underline underline-offset-4">跑步记录</a>
-  <span aria-hidden="true">›</span>
-  <span aria-current="page">跑鞋</span>
-</nav>
-<div class="shoe-heading" class:detail-open={id !== null}>
-  <PageHeader title="跑鞋">
-    {#snippet actions()}
-      <button
-        bind:this={addButton}
-        class="button-primary min-h-11"
-        type="button"
-        onclick={(event) => openEditor(null, event.currentTarget)}><span aria-hidden="true">＋</span> 添加跑鞋</button
-      >
-    {/snippet}
-  </PageHeader>
-</div>
 {#if message}<p role="status" class="mt-3 text-sm text-muted-foreground">{message}</p>{/if}
 
 {#if !shoes && listBusy && !id}
-  <PageSkeleton title="正在读取跑鞋…" />
+  <div class="mt-5"><PageSkeleton title="正在读取跑鞋…" /></div>
 {:else}
-  <div class="shoe-layout mt-5" class:show-detail={id !== null}>
+  <div class="shoe-layout mt-5" class:show-detail={id !== null} class:single-column={!selected}>
     <section class="inventory min-w-0" aria-label="跑鞋列表" aria-busy={listBusy}>
       <div class="filter-row mb-3 flex flex-wrap items-center justify-between gap-2">
         <div class="settings-tabs" role="group" aria-label="跑鞋状态">
@@ -339,7 +374,15 @@
           </div>
         {/if}
       {:else if !listBusy && !listError}
-        <FeedbackState title={status === 'active' ? '没有使用中的跑鞋' : '没有已退役的跑鞋'} />
+        <FeedbackState title={status === 'active' ? '没有使用中的跑鞋' : '没有已退役的跑鞋'}>
+          {#if status === 'active'}
+            <button
+              type="button"
+              class="button-primary mt-3 min-h-11"
+              onclick={(event) => openEditor(null, event.currentTarget)}>＋ 添加跑鞋</button
+            >
+          {/if}
+        </FeedbackState>
       {/if}
     </section>
 
@@ -463,19 +506,21 @@
                 class="button-secondary min-h-11"
                 type="button"
                 disabled={busy}
-                onclick={() => change(record, 'status')}>{record.retired_on ? '恢复使用' : '退役跑鞋'}</button
+                onclick={(event) => {
+                  if (record.retired_on) void change(record, 'status');
+                  else openConfirmDialog(retireDialog, event.currentTarget);
+                }}>{record.retired_on ? '恢复使用' : '退役跑鞋'}</button
               >
               <button
                 class="button-secondary min-h-11 shoe-danger"
                 type="button"
                 disabled={busy}
-                onclick={() => {
-                  actionError = '';
-                  deleteDialog.showModal();
-                }}>删除跑鞋</button
+                onclick={(event) => openConfirmDialog(deleteDialog, event.currentTarget)}>删除跑鞋</button
               >
             </div>
-            {#if actionError && !deleteDialog?.open}<p role="alert" class="shoe-danger text-sm">{actionError}</p>{/if}
+            {#if actionError && !deleteDialog?.open && !retireDialog?.open}
+              <p role="alert" class="shoe-danger text-sm">{actionError}</p>
+            {/if}
           </div>
         {:else if detailBusy}
           <PageSkeleton title="正在读取跑鞋详情…" />
@@ -486,14 +531,40 @@
 {/if}
 
 <dialog
+  bind:this={retireDialog}
+  aria-labelledby="shoe-retire-title"
+  oncancel={(event) => {
+    if (busy) event.preventDefault();
+  }}
+  onclose={closeConfirmDialog}
+>
+  <h2 class="text-xl font-semibold" id="shoe-retire-title">退役跑鞋？</h2>
+  <p class="mt-2 text-muted-foreground">
+    退役后将记录为今日退役，不再出现在新活动的可选绑定列表中，并停止替换里程提醒。历史关联活动与累计里程完整保留，随时可恢复使用。
+  </p>
+  {#if actionError}<p role="alert" class="shoe-danger mt-2 text-sm">{actionError}</p>{/if}
+  <div class="mt-4 flex flex-wrap justify-end gap-2">
+    <button class="button-secondary min-h-11" type="button" disabled={busy} onclick={() => retireDialog.close()}
+      >取消</button
+    >
+    <button
+      class="button-primary min-h-11"
+      type="button"
+      disabled={busy || !freshShoe}
+      onclick={() => {
+        if (freshShoe) void change(freshShoe, 'status');
+      }}>{busy ? '处理中…' : '确认退役'}</button
+    >
+  </div>
+</dialog>
+
+<dialog
   bind:this={deleteDialog}
   aria-labelledby="shoe-delete-title"
   oncancel={(event) => {
     if (busy) event.preventDefault();
   }}
-  onclose={() => {
-    actionError = '';
-  }}
+  onclose={closeConfirmDialog}
 >
   <h2 class="text-xl font-semibold" id="shoe-delete-title">删除跑鞋？</h2>
   <p class="mt-2 text-muted-foreground">删除后无法恢复。仍有关联活动的跑鞋可保留或退役。</p>
@@ -598,16 +669,26 @@
   }
   .filter-row .settings-tabs {
     width: auto;
+    margin-top: 0;
   }
   .shoe-danger {
     color: var(--error);
   }
   dialog {
-    width: min(28rem, calc(100% - 2rem));
+    margin: auto;
+    width: min(28rem, calc(100vw - var(--space-8)));
+    padding: var(--space-6);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    color: var(--foreground);
     overflow-wrap: anywhere;
   }
+  dialog::backdrop {
+    background: var(--surface-backdrop);
+  }
   @media (min-width: 1024px) {
-    .shoe-layout {
+    .shoe-layout:not(.single-column) {
       grid-template-columns: minmax(0, 3fr) minmax(0, 7fr);
     }
     .detail-back {
@@ -621,17 +702,6 @@
     .shoe-layout:not(.show-detail) .detail,
     .shoe-layout.show-detail .inventory {
       display: none;
-    }
-    .shoe-heading.detail-open {
-      display: none;
-    }
-  }
-  @media (max-width: 639px) {
-    .shoe-heading :global(.button-primary) {
-      width: 100%;
-    }
-    .shoe-heading :global(.page-header) {
-      gap: var(--space-2);
     }
   }
   @media (max-width: 390px) {

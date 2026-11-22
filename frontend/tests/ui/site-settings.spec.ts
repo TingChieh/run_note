@@ -93,7 +93,7 @@ test('owner edits site settings from the site settings page', async ({ page }) =
   await loginRunner(page);
   await page.goto('/settings');
   const tabs = page.getByRole('navigation', { name: '设置分区' });
-  await expect(tabs.getByRole('link', { name: '账户设置', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(tabs.getByRole('link', { name: '账户总览', exact: true })).toHaveAttribute('aria-current', 'page');
   await tabs.getByRole('link', { name: '站点设置', exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/site$/);
   await expect(page.getByRole('heading', { level: 1, name: '站点设置' })).toBeVisible();

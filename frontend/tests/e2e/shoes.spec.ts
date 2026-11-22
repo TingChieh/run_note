@@ -8,11 +8,14 @@ test('a member binds their own activity and the site owner cannot read or change
   member,
 }) => {
   await login(page, member, '/workspace/activities');
-  await expect(page.getByRole('link', { name: '跑鞋', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: '跑鞋', exact: true })).toHaveCount(0);
   const path = await importTrack(page, equatorGpx());
   const identifier = path.split('/').at(-1)!;
-  await page.getByRole('link', { name: '跑鞋', exact: true }).click();
-  await page.getByRole('button', { name: '添加跑鞋' }).click();
+  await page.goto('/workspace/settings/shoes');
+  await page
+    .locator('.page-header')
+    .getByRole('button', { name: /添加跑鞋/ })
+    .click();
   const editor = page.getByRole('dialog', { name: '添加跑鞋' });
   await editor.getByLabel('鞋名').fill('浏览器验收跑鞋');
   await editor.getByLabel('初始里程（km）').fill('1');
@@ -32,7 +35,7 @@ test('a member binds their own activity and the site owner cannot read or change
   await expect(binding.getByRole('combobox')).toHaveValue(shoe.id);
 
   await page.goto('/activities/shoes');
-  await expect(page).toHaveURL(/\/workspace\/activities\/shoes$/);
+  await expect(page).toHaveURL(/\/workspace\/settings\/shoes$/);
   await expect(page.getByRole('region', { name: '跑鞋详情' }).getByRole('heading', { name: shoe.name })).toBeVisible();
   await expect(page.getByRole('heading', { name: '关联活动' })).toBeVisible();
 
