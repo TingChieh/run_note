@@ -31,6 +31,7 @@
     type Recap,
     type RecapPeriod,
   } from '#lib/recap.ts';
+  import { storyHref } from '#lib/story.ts';
 
   let mounted = $state(false);
   let disposed = false;
@@ -442,6 +443,15 @@
         <RecapRhythmSpread recap={distribution} bind:selectedIndex={selectedBucketIndex} />
 
         <!-- Extension slot reserved for Work Item 19 (Annual Story chapters) -->
+        {#if distribution.period === 'year'}
+          <section class="story-entry" aria-label="跑步年度故事入口" data-testid="recap-story-entry">
+            <div>
+              <h2>{distribution.year} 跑步年度故事</h2>
+              <p class="story-entry-meta">重走开年首跑、最长路线、最佳表现、探索城市与年度足迹动画</p>
+            </div>
+            <a class="button-secondary" href={storyHref(distribution.year)}>查看年度故事</a>
+          </section>
+        {/if}
 
         <!-- Chapter 04: Keepsake Poster Dock & Native Share Dialog -->
         <RecapShare bind:this={shareComponent} recap={distribution} disabled={loading} />
@@ -733,6 +743,28 @@
     margin-bottom: var(--space-3);
     font-size: var(--text-section);
     font-weight: var(--weight-semibold);
+  }
+  .story-entry {
+    margin-top: var(--space-6);
+    padding: var(--space-4) var(--space-6);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+  }
+  .story-entry h2 {
+    font-size: var(--text-card);
+    font-weight: var(--weight-semibold);
+    line-height: var(--line-height-heading);
+  }
+  .story-entry-meta {
+    margin-top: var(--space-1);
+    font-size: var(--text-small);
+    color: var(--muted-foreground);
   }
 
   @keyframes recap-rise {

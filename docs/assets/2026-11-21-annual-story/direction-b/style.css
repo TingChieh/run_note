@@ -1,0 +1,369 @@
+/* Direction B: Footprint Cinema (Interactive 7-Act Full-Stage Story Deck) */
+
+.cinema-shell {
+  max-width: var(--content-width);
+  margin-inline: auto;
+  padding: 1rem clamp(1rem, 3vw, 2.5rem) 2.5rem;
+  display: grid;
+  gap: 1rem;
+}
+
+/* 7-Act Top Story Progress Rail */
+.act-progress-bar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.act-progress-bar button {
+  border: 0;
+  background: transparent;
+  padding: 0.25rem 0;
+  display: grid;
+  gap: 0.35rem;
+  text-align: left;
+  min-width: 0;
+}
+
+.act-bar-fill {
+  display: block;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--border);
+  position: relative;
+  overflow: hidden;
+}
+
+.act-progress-bar button.is-passed .act-bar-fill {
+  background: color-mix(in srgb, var(--primary) 55%, var(--border));
+}
+
+.act-progress-bar button[aria-selected='true'] .act-bar-fill {
+  background: var(--primary);
+}
+
+.act-bar-label {
+  font-size: 0.72rem;
+  font-weight: var(--weight-semibold);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.act-progress-bar button[aria-selected='true'] .act-bar-label {
+  color: var(--primary);
+}
+
+/* Full-Stage Cinema Card */
+.theater-frame {
+  border-radius: var(--radius-card);
+  background: linear-gradient(145deg, var(--recap-forest) 0%, var(--recap-forest-deep) 100%);
+  color: var(--recap-forest-ink);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  padding: clamp(1.15rem, 2.8vw, 2rem);
+  display: grid;
+  gap: 1.35rem;
+  min-height: calc(100dvh - 10.5rem);
+  grid-template-rows: auto 1fr auto;
+  box-shadow: 0 20px 50px rgb(0 0 0 / 0.16);
+}
+
+.theater-meta-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid rgb(255 255 255 / 0.12);
+}
+
+.theater-meta-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.act-code {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+  color: var(--recap-gold);
+  letter-spacing: 0.1em;
+}
+
+.act-pill {
+  padding: 0.15rem 0.65rem;
+  border-radius: var(--radius-pill);
+  background: rgb(255 255 255 / 0.12);
+  color: var(--recap-forest-ink);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+}
+
+.theater-hint {
+  font-size: var(--text-caption);
+  color: var(--recap-forest-muted);
+}
+
+/* Split Stage */
+.theater-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.15fr);
+  gap: clamp(1.25rem, 3vw, 2.5rem);
+  align-items: center;
+  min-width: 0;
+}
+
+.theater-grid.is-film-act {
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.45fr);
+}
+
+.theater-copy {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  animation: act-fade var(--motion-enter) both;
+}
+
+@keyframes act-fade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.act-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  letter-spacing: 0.12em;
+  color: var(--recap-gold);
+  font-weight: var(--weight-semibold);
+}
+
+.act-headline {
+  font-size: clamp(1.65rem, 3vw, 2.35rem);
+  line-height: var(--line-height-title);
+  font-weight: var(--weight-bold);
+  color: var(--recap-forest-ink);
+}
+
+.act-giant-stat {
+  font-size: clamp(2.5rem, 5.2vw, 4.25rem);
+  line-height: 1.05;
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.02em;
+  color: var(--recap-hero-num);
+  font-variant-numeric: tabular-nums;
+}
+
+.act-giant-stat small {
+  font-size: clamp(1rem, 1.8vw, 1.45rem);
+  font-weight: var(--weight-semibold);
+  color: var(--recap-gold);
+  margin-left: 0.35rem;
+}
+
+.act-desc {
+  font-size: var(--text-body);
+  color: var(--recap-forest-muted);
+  line-height: var(--line-height-body);
+}
+
+.act-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.act-stat-cell {
+  padding: 0.85rem 1rem;
+  border-radius: 1rem;
+  background: rgb(255 255 255 / 0.07);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  display: grid;
+  gap: 0.2rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.act-stat-cell span {
+  font-size: var(--text-caption);
+  color: var(--recap-forest-muted);
+}
+
+.act-stat-cell strong {
+  font-size: var(--text-card);
+  font-weight: var(--weight-bold);
+  color: var(--recap-forest-ink);
+}
+
+/* Interactive City Selector inside Act 05 */
+.cinema-city-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.cinema-city-pill {
+  padding: 0.4rem 0.8rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid rgb(255 255 255 / 0.2);
+  background: rgb(255 255 255 / 0.08);
+  color: var(--recap-forest-ink);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+}
+
+.cinema-city-pill[aria-pressed='true'],
+.cinema-city-pill:hover {
+  background: var(--recap-gold);
+  border-color: var(--recap-gold);
+  color: #1c1a12;
+}
+
+/* Visual Canvas Stage */
+.theater-visual {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.theater-canvas-box {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 1.25rem;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  background: rgb(0 0 0 / 0.22);
+}
+
+.theater-grid.is-film-act .theater-canvas-box {
+  aspect-ratio: 16 / 10;
+}
+
+.theater-canvas-box canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.canvas-corner-badge {
+  position: absolute;
+  top: 0.85rem;
+  left: 0.85rem;
+  padding: 0.28rem 0.7rem;
+  border-radius: var(--radius-pill);
+  background: rgb(0 0 0 / 0.56);
+  color: #f6f7f4;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+  backdrop-filter: blur(8px);
+}
+
+/* Act 07 Film Controls */
+.film-controls {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.85rem 1rem;
+  border-radius: 1rem;
+  background: rgb(255 255 255 / 0.07);
+  border: 1px solid rgb(255 255 255 / 0.12);
+}
+
+.film-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cinema-seg {
+  background: rgb(255 255 255 / 0.1);
+}
+
+.cinema-seg button {
+  color: var(--recap-forest-muted);
+}
+
+.cinema-seg button[aria-pressed='true'] {
+  background: var(--recap-gold);
+  color: #1c1a12;
+}
+
+.film-scrubber input[type='range'] {
+  width: 100%;
+  accent-color: var(--recap-gold);
+  margin: 0;
+}
+
+/* Bottom Deck Dock */
+.theater-dock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgb(255 255 255 / 0.12);
+}
+
+.dock-center-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cinema-ghost-btn {
+  background: rgb(255 255 255 / 0.08);
+  border-color: rgb(255 255 255 / 0.18);
+  color: var(--recap-forest-ink);
+}
+
+.cinema-ghost-btn:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.16);
+  border-color: rgb(255 255 255 / 0.32);
+  color: var(--recap-forest-ink);
+}
+
+/* Responsive Breakpoints */
+@media (max-width: 960px) {
+  .theater-grid,
+  .theater-grid.is-film-act {
+    grid-template-columns: 1fr;
+  }
+  .theater-visual {
+    order: -1;
+  }
+  .theater-frame {
+    min-height: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .act-bar-label {
+    display: none;
+  }
+  .theater-hint {
+    display: none;
+  }
+  .theater-dock {
+    justify-content: space-between;
+  }
+  .dock-center-actions {
+    order: 3;
+    width: 100%;
+    justify-content: stretch;
+  }
+  .dock-center-actions button {
+    flex: 1 1 8rem;
+  }
+}

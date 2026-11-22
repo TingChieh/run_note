@@ -1,0 +1,536 @@
+/* RunNote Annual Story Design Prototypes — Shared Design Tokens
+ * Faithfully mirrors frontend/src/app.css & docs/design-system/tokens.md
+ * Light: warm off-white paper (#f6f7f4) + brand forest green (#17745c) + cream header (#fbf0bd)
+ * Dark: warm charcoal (#292725) + elevated card (#33312f) + mint accent (#77d4ac)
+ */
+
+:root {
+  color-scheme: light;
+  --background: #f6f7f4;
+  --surface: #ffffff;
+  --foreground: #202d23;
+  --primary: #17745c;
+  --primary-hover: #105d49;
+  --primary-soft: #e8f6df;
+  --primary-foreground: #ffffff;
+  --muted: #eff2e9;
+  --muted-foreground: #5c695e;
+  --border: #e0e6da;
+  --ring: #17745c;
+  --control-hover-border: #91aca0;
+
+  --sport-brand: #218538;
+  --brand-foreground: #ffffff;
+  --sport-nav-hover: #0000000a;
+  --sport-nav-active: #e3f3d9;
+  --sport-nav-active-ink: #14532d;
+  --segment-lens: #cfeacd;
+  --segment-lens-ink: #14532d;
+  --segment-track: #ecebe7;
+
+  --header-tint: #fbf0bd;
+  --header-ink: #2a2a12;
+  --header-ink-muted: #5a5628;
+  --header-tab-track: #ffffff99;
+
+  --sport-green: #86a912;
+  --sport-blue: #4bb6df;
+  --sport-coral: #f06373;
+  --sport-yellow-accent: #f5c519;
+  --sport-ink: #20332b;
+
+  --recap-forest: #124e3d;
+  --recap-forest-deep: #0b3529;
+  --recap-forest-ink: #f6f7f4;
+  --recap-forest-muted: #b7d7cb;
+  --recap-gold: #f5c519;
+  --recap-paper: #fcfcf7;
+  --recap-desk: #eaece4;
+  --recap-well: #f2f4ec;
+  --recap-hero-num: #ffffff;
+  --recap-dock-tint: #fbf0bd;
+
+  --success: #176448;
+  --success-soft: #ecf7ef;
+  --success-border: #bcdcca;
+  --warning: #805412;
+  --warning-soft: #fff8e9;
+  --warning-border: #ead7b3;
+
+  --surface-backdrop: rgb(0 0 0 / 0.52);
+  --shadow-popover: 0 14px 40px rgb(30 48 43 / 0.16);
+  --shadow-card: 0 2px 12px rgb(30 48 43 / 0.04);
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-12: 3rem;
+
+  --radius-field: 0.625rem;
+  --radius-control: 0.75rem;
+  --radius-card: 1.5rem;
+  --radius-pill: 9999px;
+  --content-width: 82rem;
+
+  --font-body: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+
+  --text-caption: 0.75rem;
+  --text-small: 0.875rem;
+  --text-body: 1rem;
+  --text-card: 1.125rem;
+  --text-section: 1.25rem;
+  --text-stat: 1.75rem;
+  --text-title: 2.5rem;
+  --text-display: 3rem;
+
+  --line-height-solid: 1;
+  --line-height-tight: 1.15;
+  --line-height-title: 1.25;
+  --line-height-heading: 1.4;
+  --line-height-body: 1.65;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  --transition-control: 150ms ease;
+  --motion-enter: 320ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  --motion-hover: 200ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --background: #292725;
+  --surface: #33312f;
+  --foreground: #f2f0ee;
+  --primary: #77d4ac;
+  --primary-hover: #9ce4c3;
+  --primary-soft: #2c3a32;
+  --primary-foreground: #10251b;
+  --muted: #3e3b39;
+  --muted-foreground: #b1aca6;
+  --border: #46433f;
+  --ring: #d9d5cf;
+  --control-hover-border: #8b8680;
+
+  --sport-brand: #f2f0ee;
+  --brand-foreground: #1d1c1a;
+  --sport-nav-hover: #ffffff12;
+  --sport-nav-active: #4d4644;
+  --sport-nav-active-ink: #f2f0ee;
+  --segment-lens: #5a5552;
+  --segment-lens-ink: #f2f0ee;
+  --segment-track: #3e3b39;
+
+  --header-tint: #3a3735;
+  --header-ink: #f2f0ee;
+  --header-ink-muted: #b1aca6;
+  --header-tab-track: #292725;
+
+  --recap-forest: #1e2421;
+  --recap-forest-deep: #151917;
+  --recap-forest-ink: #f2f0ee;
+  --recap-forest-muted: #a9b6ae;
+  --recap-gold: #f5d36c;
+  --recap-paper: #312f2c;
+  --recap-desk: #201e1c;
+  --recap-well: #272523;
+  --recap-hero-num: #77d4ac;
+  --recap-dock-tint: #37332e;
+
+  --success: #9fe1b6;
+  --success-soft: #24392d;
+  --success-border: #4c8362;
+  --warning: #f5d391;
+  --warning-soft: #3a3020;
+  --warning-border: #806b41;
+
+  --shadow-popover: 0 16px 44px rgb(0 0 0 / 0.45);
+  --shadow-card: 0 2px 14px rgb(0 0 0 / 0.2);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: var(--line-height-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+p,
+figure,
+dl,
+dd {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+select,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Prototype Top Shell Bar (mirrors RunNote's non-intrusive floating header) */
+.proto-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+
+.proto-topbar-inner {
+  max-width: var(--content-width);
+  margin-inline: auto;
+  padding: 0.625rem clamp(1rem, 3vw, 2.5rem);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.proto-brand-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.proto-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: var(--weight-bold);
+  font-size: var(--text-body);
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.proto-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 0.55rem;
+  background: var(--sport-brand);
+  color: var(--brand-foreground);
+  font-size: 1rem;
+  font-style: italic;
+  font-weight: var(--weight-bold);
+}
+
+.proto-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.proto-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Segmented control matching .settings-tabs */
+.seg-group {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem;
+  border-radius: var(--radius-pill);
+  background: var(--segment-track);
+  gap: 0.15rem;
+}
+
+.seg-group button,
+.seg-group a {
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  padding: 0.35rem 0.75rem;
+  min-height: 2.15rem;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  transition: background-color var(--transition-control), color var(--transition-control);
+}
+
+.seg-group button[aria-pressed='true'],
+.seg-group a[aria-current='page'] {
+  background: var(--segment-lens);
+  color: var(--segment-lens-ink);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.5rem;
+  padding: 0.45rem 0.95rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+  transition:
+    background-color var(--transition-control),
+    border-color var(--transition-control),
+    color var(--transition-control),
+    transform 120ms ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--muted);
+  border-color: var(--control-hover-border);
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.btn-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+  color: var(--primary-foreground);
+}
+
+.btn-icon {
+  width: 2.5rem;
+  padding: 0;
+}
+
+.btn-sm {
+  min-height: 2.1rem;
+  padding: 0.3rem 0.75rem;
+  font-size: var(--text-caption);
+}
+
+/* Native Poster Share Dialog */
+dialog.poster-dialog {
+  width: min(92vw, 56rem);
+  max-height: 92dvh;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--foreground);
+  box-shadow: var(--shadow-popover);
+  overflow: hidden;
+}
+
+dialog.poster-dialog::backdrop {
+  background: var(--surface-backdrop);
+  backdrop-filter: blur(4px);
+}
+
+.poster-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.poster-dialog-head h2 {
+  font-size: var(--text-card);
+  font-weight: var(--weight-semibold);
+}
+
+.poster-dialog-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(15rem, 20rem);
+  gap: 1.25rem;
+  padding: 1.25rem;
+  max-height: calc(92dvh - 4.5rem);
+  overflow-y: auto;
+}
+
+.poster-stage {
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  border-radius: var(--radius-control);
+  background: var(--recap-desk);
+  border: 1px solid var(--border);
+}
+
+.poster-stage img,
+.poster-stage canvas {
+  display: block;
+  width: min(100%, 19rem);
+  aspect-ratio: 9 / 16;
+  height: auto;
+  border-radius: 0.85rem;
+  box-shadow: 0 18px 40px rgb(0 0 0 / 0.22);
+}
+
+.poster-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.poster-option-group {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.poster-option-label {
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+  color: var(--muted-foreground);
+}
+
+.poster-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border);
+  background: var(--background);
+  font-size: var(--text-small);
+}
+
+.poster-privacy-note {
+  padding: 0.75rem;
+  border-radius: var(--radius-control);
+  background: var(--warning-soft);
+  border: 1px solid var(--warning-border);
+  color: var(--warning);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+}
+
+.poster-actions {
+  margin-top: auto;
+  display: grid;
+  gap: 0.5rem;
+}
+
+@media (max-width: 760px) {
+  .poster-dialog-body {
+    grid-template-columns: 1fr;
+  }
+  .poster-stage img,
+  .poster-stage canvas {
+    width: min(100%, 14.5rem);
+  }
+}
+
+@media (max-width: 640px) {
+  .proto-topbar-inner {
+    padding: 0.45rem 0.75rem;
+    gap: 0.45rem;
+  }
+  .proto-controls {
+    gap: 0.35rem;
+  }
+  .seg-group button,
+  .seg-group a {
+    padding: 0.25rem 0.55rem;
+    min-height: 1.9rem;
+    font-size: 0.72rem;
+  }
+  .btn-sm {
+    min-height: 1.9rem;
+    padding: 0.22rem 0.6rem;
+    font-size: 0.72rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -13,6 +13,7 @@ import type { Context, Create, Report, ReportList } from '#lib/api/ai.ts';
 import type { User } from '#lib/api/auth.ts';
 import type { GlobalFootprints, Provinces, Streaks } from '#lib/api/milestones.ts';
 import type { PeriodReport } from '#lib/api/period-report.ts';
+import type { AnnualStory } from '#lib/api/annual-story.ts';
 import type { Records } from '#lib/api/records.ts';
 import type { ReplayData } from '#lib/api/replay.ts';
 import type { RouteGroupDetail, RouteGroupList } from '#lib/api/route-groups.ts';
@@ -42,6 +43,7 @@ export const responses = {
   trends: (v: ResponseData<'/api/v1/statistics/trends', 'get'>): Narrowed<Trends, 'period'> => v,
   records: (v: ResponseData<'/api/v1/statistics/records', 'get'>): Records => v,
   periodReport: (v: ResponseData<'/api/v1/statistics/report', 'get'>): PeriodReport => v,
+  annualStory: (v: ResponseData<'/api/v1/statistics/annual-story', 'get'>): AnnualStory => v,
   me: (v: ResponseData<'/api/v1/me', 'get'>): User => v,
   // An activity without segments sends start/end null; readRoute rejects that, and callers only
   // read routes when has_route is true.
