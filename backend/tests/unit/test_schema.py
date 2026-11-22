@@ -4,7 +4,7 @@ import pytest
 def test_release_head_follows_complete_chain():
     from app.db.schema import get_expected_revision
 
-    assert get_expected_revision() == "0031_shoes"
+    assert get_expected_revision() == "0032_running_diary"
 
 
 @pytest.mark.parametrize("revisions", [[], [("a", None), ("b", None)]])
@@ -34,6 +34,8 @@ def test_model_registry_and_autogenerate_preserve_unmanaged_tables():
         "auth_sessions",
         "auth_rate_buckets",
         "activities",
+        "activity_diaries",
+        "activity_diary_photos",
         "gpx_imports",
         "tcx_imports",
         "mifitness_imports",

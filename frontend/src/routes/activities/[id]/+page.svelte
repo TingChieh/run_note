@@ -21,6 +21,7 @@
   import ActivityReplayDialog from '#lib/components/ActivityReplayDialog.svelte';
   import ActivityShareMenu from '#lib/components/ActivityShareMenu.svelte';
   import ActivityShoe from '#lib/components/shoes/ActivityShoe.svelte';
+  import ActivityDiary from '#lib/components/ActivityDiary.svelte';
   import { ShoeError } from '#lib/api/shoes.ts';
   import {
     ActivityError,
@@ -370,6 +371,11 @@
     onauthrequired={expired}
     onswitch={switchActivity}
   />
+  {#if view.manage && page.data.user}
+    {#key activity.id}
+      <ActivityDiary id={activity.id} onauthrequired={expired} />
+    {/key}
+  {/if}
   {#if view.manage}<SharePanel {activity} />{/if}
 {:else if loading}<div class="page-loading mt-6"><FeedbackState kind="loading" title="正在读取活动…" /></div>{/if}
 

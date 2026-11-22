@@ -1,5 +1,6 @@
 """Reject oversized image upload bodies before multipart parsing allocates them."""
 
+import re
 from uuid import uuid4
 
 from starlette.requests import Request
@@ -8,6 +9,7 @@ from app.core.errors import ApiError, error_response
 
 MAX_IMAGE_BODY = 6 * 1024 * 1024
 PATHS = {"/api/v1/site/images/favicon", "/api/v1/site/images/logo", "/api/v1/me/avatar"}
+DIARY_UPLOAD = re.compile(r"/api/v1/me/activities/[^/]+/diary/photos/?")
 
 
 class ImageBodyLimit:
@@ -15,10 +17,13 @@ class ImageBodyLimit:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if (
-            scope["type"] != "http"
-            or scope.get("method") != "PUT"
-            or scope.get("path") not in PATHS
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        path = scope["path"]
+        method = scope["method"]
+        if not (
+            (method == "PUT" and path in PATHS)
+            or (method == "POST" and DIARY_UPLOAD.fullmatch(path))
         ):
             return await self.app(scope, receive, send)
         scope.setdefault("state", {}).setdefault("request_id", uuid4().hex)

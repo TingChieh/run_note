@@ -267,6 +267,35 @@ export interface DeviceSummary {
   steps: number | null;
 }
 
+export interface DiaryDeleted {
+  deleted: true;
+}
+
+export interface DiaryDetail {
+  diary: DiaryView | null;
+}
+
+export interface DiaryInput {
+  mood?: 'very_bad' | 'bad' | 'neutral' | 'good' | 'very_good' | null;
+  rpe?: number | null;
+  weather?: 'clear' | 'cloudy' | 'rain' | 'snow' | 'windy' | 'other' | null;
+  notes?: string | null;
+}
+
+export interface DiaryPhotoView {
+  id: string;
+  width: number;
+  height: number;
+}
+
+export interface DiaryView {
+  mood: 'very_bad' | 'bad' | 'neutral' | 'good' | 'very_good' | null;
+  rpe: number | null;
+  weather: 'clear' | 'cloudy' | 'rain' | 'snow' | 'windy' | 'other' | null;
+  notes: string | null;
+  photos: DiaryPhotoView[];
+}
+
 export interface DoseChange {
   date: string;
   taken_at: string;
@@ -1692,6 +1721,18 @@ export interface ApiOperations {
     get: { body: never; response: UserView };
     patch: { body: ProfileUpdate; response: UserView };
   };
+  '/api/v1/me/activities/{identifier}/diary': {
+    get: { body: never; response: DiaryDetail };
+    put: { body: DiaryInput; response: DiaryDetail };
+    delete: { body: never; response: DiaryDeleted };
+  };
+  '/api/v1/me/activities/{identifier}/diary/photos': {
+    post: { body: never; response: DiaryPhotoView };
+  };
+  '/api/v1/me/activities/{identifier}/diary/photos/{photo_id}': {
+    get: { body: never; response: unknown };
+    delete: { body: never; response: DiaryDeleted };
+  };
   '/api/v1/me/activities/{identifier}/shoe': {
     get: { body: never; response: ShoeBinding };
     patch: { body: ShoeBindingPatch; response: ShoeBinding };
@@ -2104,6 +2145,18 @@ export const API_OPERATIONS = {
   '/api/v1/me': {
     get: [],
     patch: [],
+  },
+  '/api/v1/me/activities/{identifier}/diary': {
+    get: [],
+    put: [],
+    delete: [],
+  },
+  '/api/v1/me/activities/{identifier}/diary/photos': {
+    post: [],
+  },
+  '/api/v1/me/activities/{identifier}/diary/photos/{photo_id}': {
+    get: [],
+    delete: [],
   },
   '/api/v1/me/activities/{identifier}/shoe': {
     get: [],

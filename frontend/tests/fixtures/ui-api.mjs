@@ -479,6 +479,9 @@ createServer(async (req, res) => {
   if (url.pathname === '/api/v1/together' && req.method === 'GET') return send({distance_m:0,count:0,participants:[],recent:[],tracks:[],next_cursor:null,tracks_truncated:false});
   const publicRead = req.method === 'GET' && (url.pathname.startsWith('/api/v1/public/') || url.pathname.startsWith('/api/v1/shared/'));
   if (!signedIn && !showcase && !publicRead) return send(null, 401);
+  if (signedIn && req.method === 'GET' && /^\/api\/v1\/me\/activities\/[^/]+\/diary$/.test(url.pathname)) {
+    return send({ diary: null });
+  }
   if (url.pathname === '/api/v1/me' && req.method === 'GET') return send(current?.is_admin ? user : clean(current ?? user));
   if (url.pathname === '/api/v1/me/username' && req.method === 'PATCH') {
     if (!current) return send(null,401);
