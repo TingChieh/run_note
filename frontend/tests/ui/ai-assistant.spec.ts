@@ -660,3 +660,113 @@ test('long conversation loads latest page with load-earlier pagination, and new 
   await expect(page.getByTestId('ai-empty-stage')).toBeVisible();
   releaseSlow();
 });
+
+test('stop during stalled conversation creation prevents messages POST and IME confirmation Enter does not send', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  const convId = '99999999-9999-4999-8999-999999999999';
+  let messagesPosts = 0;
+  let createCalls = 0;
+  let releaseCreate!: () => void;
+  const createGate = new Promise<void>((resolve) => {
+    releaseCreate = resolve;
+  });
+
+  await page.route('**/api/v1/ai-assistant/context', (route) =>
+    route.fulfill({
+      json: {
+        data: {
+          configured: true,
+          enabled: true,
+          model: 'deepseek-chat',
+          consent: {
+            consented: true,
+            consent_version: 'ai-assistant-v1',
+            required_version: 'ai-assistant-v1',
+            consented_at: '2026-11-22T01:00:00Z',
+            revoked_at: null,
+          },
+          quota: {
+            daily_message_limit: 30,
+            messages_today: 0,
+            remaining_messages_today: 30,
+            daily_token_budget: 150000,
+            tokens_today: 0,
+            remaining_tokens_today: 150000,
+            site_daily_token_budget: 1000000,
+            site_tokens_today: 0,
+            site_budget_exhausted: false,
+          },
+        },
+        error: null,
+      },
+    }),
+  );
+
+  await page.route('**/api/v1/ai-assistant/conversations*', async (route) => {
+    const req = route.request();
+    const url = new URL(req.url());
+    if (url.pathname.endsWith('/messages') && req.method() === 'POST') {
+      messagesPosts += 1;
+      return route.fulfill({ status: 500, json: { data: null, error: { code: 'UNEXPECTED', message: 'should not be called' } } });
+    }
+    if (url.pathname === '/api/v1/ai-assistant/conversations' && req.method() === 'POST') {
+      createCalls += 1;
+      await createGate;
+      try {
+        await route.fulfill({
+          status: 201,
+          json: {
+            data: {
+              id: convId,
+              title: '未发送会话',
+              created_at: '2026-11-22T01:00:00Z',
+              updated_at: '2026-11-22T01:00:00Z',
+              last_message_at: '2026-11-22T01:00:00Z',
+            },
+            error: null,
+          },
+        });
+      } catch {
+        // Request may already be aborted by the browser AbortController.
+      }
+      return;
+    }
+    if (url.pathname === `/api/v1/ai-assistant/conversations/${convId}` && req.method() === 'DELETE') {
+      return route.fulfill({ json: { data: { deleted: true }, error: null } });
+    }
+    return route.fulfill({ json: { data: { items: [], total: 0, limit: 20, offset: 0 }, error: null } });
+  });
+
+  await page.goto('/ai');
+  const input = page.getByLabel('向 AI 助手提问');
+  await input.fill('测试中文输入法');
+
+  // Simulate Safari/WebKit compositionend-before-Enter ordering and keyCode 229: neither may send.
+  await input.evaluate((el) => {
+    el.dispatchEvent(new CompositionEvent('compositionstart', { data: 'ceshi' }));
+    el.dispatchEvent(new CompositionEvent('compositionend', { data: '测试' }));
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, isComposing: false, bubbles: true, cancelable: true }));
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, isComposing: false, bubbles: true, cancelable: true }));
+  });
+  expect(createCalls).toBe(0);
+  expect(messagesPosts).toBe(0);
+
+  // Now submit normally while conversation creation stalls, click Stop, then release creation.
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  await expect(page.getByRole('button', { name: '停止生成', exact: true })).toBeVisible();
+  await expect.poll(() => createCalls).toBe(1);
+
+  await page.getByRole('button', { name: '停止生成', exact: true }).click();
+  releaseCreate();
+
+  // Streaming ends cleanly, draft is restored, no error banner appears, and messages POST count stays 0.
+  await expect(page.getByRole('button', { name: '发送', exact: true })).toBeVisible();
+  await expect(input).toHaveValue('测试中文输入法');
+  await expect(page.getByTestId('ai-send-error')).toHaveCount(0);
+  await expect(page.getByTestId('ai-empty-stage')).toBeVisible();
+  // Give any trailing microtasks/callbacks a brief window to prove no delayed messages POST fires.
+  await page.waitForTimeout(250);
+  expect(messagesPosts).toBe(0);
+});

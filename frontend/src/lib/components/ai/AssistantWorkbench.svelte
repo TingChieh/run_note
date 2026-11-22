@@ -20,6 +20,7 @@
     type StreamEvent,
   } from '#lib/api/ai-assistant.ts';
   import { QUICK_PROMPTS } from '#lib/ai/quick-prompts.ts';
+  import { createComposerImeGuard } from '#lib/ai/composer-ime.ts';
   import FeedbackState from '../FeedbackState.svelte';
   import PageSkeleton from '../PageSkeleton.svelte';
   import AssistantConsentCard from './AssistantConsentCard.svelte';
@@ -76,9 +77,10 @@
   let liveTools = $state<LiveToolStep[]>([]);
   let truncatedMsgIds = $state<Record<string, boolean>>({});
   let streamAbort: AbortController | null = null;
+  let stopRequested = false;
 
   let draft = $state('');
-  let composing = $state(false);
+  const imeGuard = createComposerImeGuard();
   let sendError = $state('');
   let sendErrorCode = $state('');
   let pendingRetry = $state<{ conversationId: string; content: string; key: string } | null>(null);
@@ -390,12 +392,33 @@
     streaming = true;
     streamStatus = '正在连接助手…';
     liveTools = [];
+    stopRequested = false;
+    const controller = new AbortController();
+    streamAbort = controller;
+
+    const cleanupOrphanConversation = (orphanId: string) => {
+      void deleteConversation(orphanId, fetcher).catch(() => {
+        /* Best-effort cleanup so stopped or unmounted creation does not leave an orphan empty conversation. */
+      });
+    };
 
     let convId = replay?.conversationId ?? activeId;
+    let createdConvId: string | null = null;
     try {
       if (!convId) {
-        const created = await createConversation(text.slice(0, 40), fetcher);
-        if (disposed) return;
+        const created = await createConversation(text.slice(0, 40), fetcher, controller.signal);
+        if (disposed || stopRequested || controller.signal.aborted) {
+          cleanupOrphanConversation(created.id);
+          if (!disposed) {
+            streaming = false;
+            streamAbort = null;
+            stopRequested = false;
+            streamStatus = '';
+            if (!replay) draft = text;
+          }
+          return;
+        }
+        createdConvId = created.id;
         convId = created.id;
         activeId = created.id;
         activeConversation = created;
@@ -412,9 +435,25 @@
     } catch (cause) {
       if (!disposed) {
         streaming = false;
+        streamAbort = null;
+        stopRequested = false;
         streamStatus = '';
-        draft = text;
-        sendError = errorMessage(cause, '无法创建会话，请稍后重试');
+        if (!replay) draft = text;
+        if (!(cause instanceof AssistantError && cause.code === 'ABORTED')) {
+          sendError = errorMessage(cause, '无法创建会话，请稍后重试');
+        }
+      }
+      return;
+    }
+
+    if (disposed || stopRequested || controller.signal.aborted) {
+      if (createdConvId) cleanupOrphanConversation(createdConvId);
+      if (!disposed) {
+        streaming = false;
+        streamAbort = null;
+        stopRequested = false;
+        streamStatus = '';
+        if (!replay) draft = text;
       }
       return;
     }
@@ -504,9 +543,6 @@
     const updateAssistant = (patcher: (msg: MessageView) => MessageView) => {
       messages = messages.map((msg) => (msg.id === assistantMsgId ? patcher(msg) : msg));
     };
-
-    const controller = new AbortController();
-    streamAbort = controller;
 
     const handleEvent = (event: StreamEvent) => {
       if (disposed) return;
@@ -681,6 +717,7 @@
       if (!disposed) {
         streaming = false;
         streamAbort = null;
+        stopRequested = false;
         activeStreamConvId = null;
         activeStreamMsgId = null;
         streamStatus = '';
@@ -692,6 +729,7 @@
 
   async function stopStreaming() {
     if (!streaming) return;
+    stopRequested = true;
     const convId = activeStreamConvId;
     const msgId = activeStreamMsgId;
     streamStatus = '正在停止生成…';
@@ -715,7 +753,7 @@
   }
 
   function handleComposerKeydown(event: KeyboardEvent) {
-    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && !composing) {
+    if (imeGuard.shouldSubmitOnKeydown(event)) {
       event.preventDefault();
       if (canSend && draft.trim()) void sendMessage();
     }
@@ -736,8 +774,10 @@
       contextToken++;
       listToken++;
       detailToken++;
+      stopRequested = true;
       streamAbort?.abort();
       streamAbort = null;
+      imeGuard.reset();
       context = null;
       conversations = null;
       messages = [];
@@ -1110,8 +1150,8 @@
             : '请先同意上方数据使用说明后即可提问…'}
           bind:value={draft}
           disabled={!canSend && !streaming}
-          oncompositionstart={() => { composing = true; }}
-          oncompositionend={() => { composing = false; }}
+          oncompositionstart={() => imeGuard.onCompositionStart()}
+          oncompositionend={() => imeGuard.onCompositionEnd()}
           onkeydown={handleComposerKeydown}
         ></textarea>
         <div class="composer-bar">

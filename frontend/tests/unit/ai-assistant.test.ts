@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   AssistantError,
+  createConversation,
   createSseParser,
   formatRetryAfter,
   parseContext,
@@ -192,5 +193,17 @@ describe('runtime validators and helpers', () => {
     expect(formatRetryAfter(30)).toBe('30 秒');
     expect(formatRetryAfter(120)).toBe('2 分钟');
     expect(formatRetryAfter(3660)).toBe('1 小时 1 分钟');
+  });
+
+  it('aborts createConversation with ABORTED when signal is aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const fetcher: typeof fetch = async () => {
+      throw new Error('should not be called after abort');
+    };
+    await expect(createConversation('测试', fetcher, controller.signal)).rejects.toMatchObject({
+      code: 'ABORTED',
+      status: 0,
+    });
   });
 });

@@ -447,6 +447,9 @@ async function requestJson(
   fetcher: typeof fetch = fetch,
   timeout = 10000,
 ): Promise<unknown> {
+  if (init.signal?.aborted) {
+    throw new AssistantError('已停止生成', 0, 'ABORTED');
+  }
   let response: Response;
   try {
     response = await fetcher(path, {
@@ -455,7 +458,10 @@ async function requestJson(
       cache: 'no-store',
       signal: init.signal ?? AbortSignal.timeout(timeout),
     });
-  } catch {
+  } catch (cause) {
+    if (init.signal?.aborted || (cause instanceof DOMException && cause.name === 'AbortError' && init.signal)) {
+      throw new AssistantError('已停止生成', 0, 'ABORTED');
+    }
     throw new AssistantError('网络连接失败，请检查网络后重试', 503, 'NETWORK_ERROR');
   }
   if (!response.ok) throw await parseErrorResponse(response);
@@ -470,8 +476,8 @@ async function requestJson(
   return body.data;
 }
 
-async function fetchCsrf(fetcher: typeof fetch): Promise<string> {
-  const data = await requestJson('/api/v1/auth/csrf', {}, fetcher);
+async function fetchCsrf(fetcher: typeof fetch, signal?: AbortSignal): Promise<string> {
+  const data = await requestJson('/api/v1/auth/csrf', signal ? { signal } : {}, fetcher);
   if (!isRecord(data) || typeof data.csrf_token !== 'string' || !data.csrf_token) {
     invalid('无法获取安全令牌');
   }
@@ -509,8 +515,12 @@ export async function listConversations(
   );
 }
 
-export async function createConversation(title = '', fetcher: typeof fetch = fetch): Promise<ConversationView> {
-  const token = await fetchCsrf(fetcher);
+export async function createConversation(
+  title = '',
+  fetcher: typeof fetch = fetch,
+  signal?: AbortSignal,
+): Promise<ConversationView> {
+  const token = await fetchCsrf(fetcher, signal);
   const payload: ConversationCreate = { title: title.trim().slice(0, 120) };
   return parseConversation(
     await requestJson(
@@ -519,6 +529,7 @@ export async function createConversation(title = '', fetcher: typeof fetch = fet
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
         body: JSON.stringify(payload),
+        signal,
       },
       fetcher,
     ),
@@ -781,7 +792,7 @@ export async function streamAssistantMessage(
   if (!cleaned || cleaned.length > 4000) {
     throw new AssistantError('提问内容需在 1–4000 字之间', 422, 'VALIDATION_ERROR');
   }
-  const token = await fetchCsrf(fetcher);
+  const token = await fetchCsrf(fetcher, signal);
   const payload: MessageCreate = { content: cleaned };
   let response: Response;
   try {
