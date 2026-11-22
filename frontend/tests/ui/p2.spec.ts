@@ -45,29 +45,68 @@ test('settings separates draft from saved public state and saves with retry',asy
   await expect(page.getByText('有未保存的更改',{exact:true})).toHaveCount(0);
   await page.getByRole('switch',{name:/公开个人主页/}).click();await page.getByRole('button',{name:'保存隐私与功能设置',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'独立记录分享仍需单独撤销'})).toBeVisible();
 });
-test('AI mock report needs explicit consent, aggregate-only payload, history and delete',async({page})=>{
-  const state=await installAI(page);await loginRunner(page);await page.goto('/ai');
-  const generate=page.getByRole('button',{name:'生成近期总结与下周建议'});await expect(generate).toBeDisabled();expect(state.calls).toHaveLength(0);
-  await responsive(page,'ai-entry');await page.getByRole('checkbox').check();await generate.click();
+test('AI assistant requires explicit first-use consent, streams reply, and opens read-only legacy archive',async({page})=>{
+  const state=await installAI(page);state.reports=[report];await loginRunner(page);await page.goto('/ai');
+  await expect(page.getByRole('heading',{level:1,name:'AI 助手',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'生成近期总结与下周建议'})).toHaveCount(0);
+  await expect(page.getByTestId('ai-consent-card')).toBeVisible();
+  await expect(page.getByRole('button',{name:'同意并启用 AI 助手',exact:true})).toBeDisabled();
+  await responsive(page,'ai-entry');
+  await page.getByTestId('ai-consent-card').getByRole('checkbox').check();
+  await page.getByRole('button',{name:'同意并启用 AI 助手',exact:true}).click();
+  await expect(page.getByTestId('ai-consent-card')).toHaveCount(0);
+  await page.getByRole('button',{name:/近 4 周趋势与建议/}).click();
+  await expect(page.getByTestId('block-metrics-card')).toBeVisible();
+  await expect(page.getByTestId('block-trend-chart')).toBeVisible();
+  await expect(page.getByText(/42\.12 km/)).toBeVisible();
+  await expect(page).toHaveURL(/\/ai$/);
+  await page.getByRole('button',{name:/历史分析归档/}).click();
+  await page.getByRole('button',{name:'查看报告'}).click();
   await expect(page.getByRole('region',{name:'当前报告'})).toContainText('近期保持稳定');
-  await expect(page).toHaveURL(/\/ai$/);
-  expect(state.calls[0].body).toEqual({date_from:'2026-09-14',date_to:'2026-10-12',consent_to_send_summary:true});
-  await expect(page.getByRole('table')).toBeHidden();await page.getByText('每周明细与统计口径',{exact:true}).click();await expect(page.getByRole('table')).toBeVisible();
-  await responsive(page,'ai-report');await page.getByRole('button',{name:'查看报告'}).click();await expect(page.getByRole('region',{name:'当前报告'})).toBeVisible();
-  await expect(page).toHaveURL(/\/ai$/);
-  page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'删除报告'}).click();await expect(page.getByText('尚无分析报告。',{exact:true})).toBeVisible();
+  await expect(page.getByRole('table')).toBeHidden();
+  await page.getByText('每周明细与统计口径',{exact:true}).click();
+  await expect(page.getByRole('table')).toBeVisible();
+  await responsive(page,'ai-report');
+  page.once('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:'删除报告'}).click();
+  await expect(page.getByText('暂无历史分析报告',{exact:true})).toBeVisible();
 });
-test('AI unknown failure retries same request; read failures recover without generation',async({page})=>{
-  const state=await installAI(page);state.failContext=true;state.failHistory=true;
-  await loginRunner(page);await page.goto('/ai');await expect(page.getByRole('alert').first()).toBeVisible();state.failContext=false;state.failHistory=false;
-  await page.getByRole('button',{name:'重试读取统计依据'}).click();await page.getByRole('button',{name:'读取历史'}).click();
-  await page.getByRole('checkbox').check();state.failGenerate=true;await page.getByRole('button',{name:'生成近期总结与下周建议'}).click();
-  const retry=page.getByRole('button',{name:'按原请求标识重试（防重复）'});await expect(retry).toBeEnabled();await page.reload();await expect(retry).toBeDisabled();expect(state.calls).toHaveLength(1);await page.getByRole('checkbox').check();state.failGenerate=false;await retry.click();await expect(page.getByRole('region',{name:'当前报告'})).toBeVisible();expect(state.calls).toHaveLength(2);expect(state.calls[1]).toEqual(state.calls[0]);
-  state.failDetail=true;await page.getByRole('button',{name:'查看报告'}).click();await expect(page.getByRole('button',{name:'重试读取报告'})).toBeVisible();state.failDetail=false;await page.getByRole('button',{name:'重试读取报告'}).click();await expect(page.getByRole('region',{name:'当前报告'})).toBeVisible();
+test('AI assistant read failure recovers without calling provider',async({page})=>{
+  await loginRunner(page);
+  let failContext = true;
+  await page.route('**/api/v1/ai-assistant/context', async route => {
+    if (failContext) return route.fulfill({ status: 503, json: { data: null, error: { code: 'UNKNOWN_FAILURE', message: '模拟状态读取失败' } } });
+    return route.fallback();
+  });
+  await page.goto('/ai');
+  await expect(page.getByRole('alert').first()).toContainText('模拟状态读取失败');
+  failContext = false;
+  await page.getByRole('button',{name:'重试读取',exact:true}).click();
+  await expect(page.getByTestId('ai-assistant-workbench')).toBeVisible();
 });
-test('AI no data, unavailable and quota block generation',async({page})=>{
-  const state=await installAI(page);await loginRunner(page);state.empty=true;await page.goto('/ai');await expect(page.getByRole('link',{name:'导入 GPX / TCX'})).toBeVisible();await page.getByRole('checkbox').check();await expect(page.getByRole('button',{name:'生成近期总结与下周建议'})).toBeDisabled();
-  state.empty=false;state.configured=false;await page.reload();await expect(page.getByText(/AI服务尚未配置/)).toBeVisible();state.configured=true;state.quota=0;await page.reload();await page.getByRole('checkbox').check();await expect(page.getByRole('button',{name:'生成近期总结与下周建议'})).toBeDisabled();expect(state.calls).toHaveLength(0);
+test('AI assistant unavailable and quota exhaustion block sending cleanly',async({page})=>{
+  await loginRunner(page);
+  let configured = false;
+  let remaining = 0;
+  await page.route('**/api/v1/ai-assistant/context', route => route.fulfill({
+    json: {
+      data: {
+        configured,
+        enabled: true,
+        model: configured ? 'deepseek-chat' : null,
+        consent: { consented: true, consent_version: 'ai-assistant-v1', required_version: 'ai-assistant-v1', consented_at: '2026-11-22T00:00:00Z', revoked_at: null },
+        quota: { daily_message_limit: 30, messages_today: 30 - remaining, remaining_messages_today: remaining, daily_token_budget: 150000, tokens_today: 0, remaining_tokens_today: 150000, site_daily_token_budget: 1000000, site_tokens_today: 0, site_budget_exhausted: false },
+      },
+      error: null,
+    },
+  }));
+  await page.goto('/ai');
+  await expect(page.getByTestId('ai-unavailable-banner')).toContainText('AI 助手尚未配置');
+  await expect(page.getByRole('button',{name:'发送',exact:true})).toBeDisabled();
+  configured = true;
+  await page.reload();
+  await expect(page.getByTestId('ai-unavailable-banner')).toContainText('今日个人提问次数已达上限');
+  await expect(page.getByRole('button',{name:'发送',exact:true})).toBeDisabled();
 });
 test('removed public profile addresses are not found and share summaries stay coordinate-free',async({page})=>{
   const state=await installPublic(page);const privateReads:string[]=[];page.on('request',req=>{if(/\/api\/v1\/(activities|statistics|ai-reports)(\/|\?|$)/.test(req.url()))privateReads.push(req.url());});
@@ -99,8 +138,8 @@ test('legacy share links can only be revoked',async({page})=>{
 });
 test('historical AI failed, pending and stale snapshots remain accessible without calls',async({page})=>{
   const state=await installAI(page);state.reports=[{...report,status:'failed',analysis:null,error_code:'PROVIDER_ERROR',is_stale:true}];
-  await loginRunner(page);await page.goto('/ai');await page.getByRole('button',{name:'查看报告'}).click();await expect(page.getByRole('region',{name:'当前报告'})).toContainText('新的调用会计入额度');await expect(page.getByText(/运动数据已变化；/)).toBeVisible();
-  state.reports=[{...report,status:'pending',analysis:null}];await page.getByRole('button',{name:'读取历史'}).click();await page.getByRole('button',{name:'查看报告'}).click();await expect(page.getByRole('region',{name:'当前报告'})).toContainText('报告正在生成');await expect(page.getByRole('button',{name:'删除报告'})).toBeDisabled();expect(state.calls).toHaveLength(0);
+  await loginRunner(page);await page.goto('/ai');await page.getByRole('button',{name:/历史分析归档/}).click();await page.getByRole('button',{name:'查看报告'}).click();await expect(page.getByRole('region',{name:'当前报告'})).toContainText('PROVIDER_ERROR');await expect(page.getByText(/运动数据已变化；/)).toBeVisible();
+  state.reports=[{...report,status:'pending',analysis:null}];await page.getByRole('button',{name:'刷新列表'}).click();await page.getByRole('button',{name:'查看报告'}).click();await expect(page.getByRole('region',{name:'当前报告'})).toContainText('报告正在生成');await expect(page.getByRole('button',{name:'删除报告'})).toBeDisabled();expect(state.calls).toHaveLength(0);
 });
 test('sharing read failure offers recovery',async({page})=>{
   await installActivities(page);await loginRunner(page);

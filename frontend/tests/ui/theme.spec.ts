@@ -153,7 +153,7 @@ test('private and public pages have readable surfaces, warnings and keyboard foc
     for (const button of await page.locator('button.bg-primary').all()) {
       expect((await appearance(button)).contrast, `Primary button contrast on ${path}`).toBeGreaterThanOrEqual(4.5);
     }
-    if (path === '/ai') expect((await appearance(page.getByText(/^AI训练建议/))).contrast).toBeGreaterThanOrEqual(4.5);
+    if (path === '/ai') expect((await appearance(page.getByText(/^AI 回答基于你的运动数据汇总/))).contrast).toBeGreaterThanOrEqual(4.5);
     for (const width of [320, 390, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       await fits(page);

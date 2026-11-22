@@ -209,7 +209,7 @@ test('long saved nickname stays inside navigation at mobile and desktop widths',
 
 test('unified sports shell spans every private route and keeps account widgets off public pages', async ({page}) => {
   await login(page);
-  for (const [route,title] of [['/','数据汇总'],['/activities','跑步记录'],['/dashboard','数据汇总'],['/footprints','个人足迹'],['/ai','AI 跑步分析'],['/settings','设置'],['/admin','站点管理']]) {
+  for (const [route,title] of [['/','数据汇总'],['/activities','跑步记录'],['/dashboard','数据汇总'],['/footprints','个人足迹'],['/ai','AI 助手'],['/settings','设置'],['/admin','站点管理']]) {
     await page.goto(route); await expect(page.getByRole('heading',{level:1,name:title,exact:true})).toBeVisible();
     await openGoalPanel(page);
     // Admin has no matching navigation entry; other routes mark a link or the settings avatar.
@@ -413,7 +413,7 @@ test('unknown, retired and unpublished routes share one styled 404 page inside t
   }
 });
 
-test('AI 分析 navigation entry is hidden from anonymous visitors on desktop and mobile, but the route stays reachable', async ({ page }) => {
+test('AI 助手 navigation entry is hidden from anonymous visitors on desktop and mobile, but the route stays reachable', async ({ page }) => {
   await page.goto('/');
   // Assert only after hydration and the anonymous session resolved, not just the SSR markup.
   await expect(page.locator('header[data-auth-ready="true"]')).toHaveCount(1);
@@ -422,26 +422,26 @@ test('AI 分析 navigation entry is hidden from anonymous visitors on desktop an
   await expect(nav.getByRole('link', { name: '跑步记录', exact: true })).toHaveAttribute('href', '/activities');
   await expect(page.locator('.nav-account').getByRole('link', { name: '设置', exact: true })).toHaveCount(0);
   await expect(page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: '跑步记录', exact: true })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'AI 分析', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'AI 助手', exact: true })).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: '打开导航' }).click();
   await expect(page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: '跑步记录', exact: true })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'AI 分析', exact: true })).toHaveCount(0);
-  await expect(nav.getByRole('link', { name: 'AI 分析', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'AI 助手', exact: true })).toHaveCount(0);
+  await expect(nav.getByRole('link', { name: 'AI 助手', exact: true })).toHaveCount(0);
   await page.goto('/ai');
-  await expect(page.getByRole('heading', { level: 1, name: 'AI 跑步分析' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'AI 助手' })).toBeVisible();
 });
 
-test('AI 分析 navigation entry is shown to logged-in users on desktop and mobile', async ({ page }) => {
+test('AI 助手 navigation entry is shown to logged-in users on desktop and mobile', async ({ page }) => {
   await login(page);
-  await expect(page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: 'AI 分析', exact: true })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: 'AI 助手', exact: true })).toBeVisible();
   await page.goto('/');
   await expect(page.locator('header[data-auth-ready="true"]')).toHaveCount(1);
   await expect(page.getByRole('navigation', { name: '功能入口' })).toHaveCount(0);
-  await expect(page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: 'AI 分析', exact: true })).toHaveAttribute('href', '/ai');
+  await expect(page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: 'AI 助手', exact: true })).toHaveAttribute('href', '/ai');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: '打开导航' }).click();
-  await expect(page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: 'AI 分析', exact: true })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: 'AI 助手', exact: true })).toBeVisible();
 });
 
 for (const width of [320, 358, 361, 375]) {
