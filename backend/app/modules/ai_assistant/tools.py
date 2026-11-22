@@ -127,9 +127,10 @@ def _run_get_running_trends(db, ctx: ToolContext, args: RunningTrendsInput) -> d
             None if previous is None else change_rate(bucket.distance_m, previous)
         )
         if args.include_device_metrics and args.period == "week":
-            values["device_metrics"] = device_weeks.get(
-                bucket.bucket_start, finalize_device_metrics({})
-            )
+            # device_summaries keys each week by Monday (date_trunc('week', ...)) while still
+            # filtering to [date_from, date_to), so partial first weeks look up their Monday key.
+            week_monday = bucket.bucket_start - timedelta(days=bucket.bucket_start.weekday())
+            values["device_metrics"] = device_weeks.get(week_monday, finalize_device_metrics({}))
         buckets.append(values)
         previous = bucket.distance_m
     return {

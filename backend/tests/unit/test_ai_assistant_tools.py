@@ -322,6 +322,40 @@ def test_footprint_summary_falls_back_to_cache_only_on_limit(monkeypatch):
     assert result.ui_blocks[0].type == "footprint_summary_card"
 
 
+def test_payload_size_cap_truncates_oversized_yearly_records_keeping_most_recent():
+    yearly = [
+        {
+            "year": year,
+            "activity_count": 10,
+            "distance_m": "100000.000",
+            "activity_days": 10,
+            "avg_pace_seconds_per_km": "300.000",
+            "is_partial": year == 2026,
+            "delta_basis": "previous_year" if year > 1960 else None,
+            "delta": (
+                {
+                    "activity_count": 0,
+                    "distance_m": "0.000",
+                    "avg_pace_seconds_per_km": "0.000",
+                }
+                if year > 1960
+                else None
+            ),
+        }
+        for year in range(1960, 2027)
+    ]
+    sanitized, truncated = sanitize_tool_output(
+        "get_personal_records",
+        {"date_assignment": "activity_local_date", "yearly": yearly},
+    )
+    assert truncated is True
+    assert sanitized["truncated"] is True
+    assert len(sanitized["yearly"]) < len(yearly)
+    assert sanitized["yearly"][-1]["year"] == 2026
+    encoded = json.dumps(sanitized, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    assert len(encoded) <= 12_288
+
+
 def test_ui_blocks_builder_produces_typed_blocks_for_records():
     blocks = build_ui_blocks(
         "get_personal_records",

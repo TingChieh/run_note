@@ -184,23 +184,48 @@ def _cap_payload_size(
         return payload, False
     result = dict(payload)
     truncated = False
+    chronological = {"monthly", "weekly", "yearly", "buckets"}
     if list_key and isinstance(result.get(list_key), list):
         items = list(result[list_key])
         total_before = len(items)
-        while items and _encode_size({**result, list_key: items, "truncated": True}) > max_bytes:
-            items.pop()
+        pop_index = 0 if list_key in chronological else -1
+        while (
+            items
+            and _encode_size(
+                {
+                    **result,
+                    list_key: items,
+                    "truncated": True,
+                    "returned_count": len(items),
+                    "untruncated_count": total_before,
+                }
+            )
+            > max_bytes
+        ):
+            items.pop(pop_index)
         result[list_key] = items
         result["truncated"] = True
         result["returned_count"] = len(items)
         result["untruncated_count"] = total_before
         truncated = True
     if _encode_size(result) > max_bytes:
-        # Final fallback: drop secondary bulky list fields if present.
-        for key in ("monthly", "weekly", "buckets", "runs", "countries", "provinces", "items"):
+        # Fallback: trim any bulky list fields (keeping most recent entries for time series).
+        for key in (
+            "monthly",
+            "weekly",
+            "yearly",
+            "buckets",
+            "runs",
+            "groups",
+            "countries",
+            "provinces",
+            "items",
+        ):
             if isinstance(result.get(key), list) and result[key]:
                 items = list(result[key])
+                pop_index = 0 if key in chronological else -1
                 while items and _encode_size({**result, key: items, "truncated": True}) > max_bytes:
-                    items.pop()
+                    items.pop(pop_index)
                 result[key] = items
                 result["truncated"] = True
                 truncated = True

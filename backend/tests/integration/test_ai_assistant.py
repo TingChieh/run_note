@@ -422,6 +422,24 @@ def test_all_10_tools_and_canary_privacy_zero_leakage(assistant_db):
         assert nov_summary.model_payload["summary"]["activity_count"] == 2
         assert nov_summary.model_payload["summary"]["distance_m"] == "20000.000"
 
+        # Non-Monday partial first week still attaches device metrics for that week.
+        partial_trends = execute_tool(
+            db,
+            ctx,
+            "get_running_trends",
+            {
+                "date_from": "2026-11-10",  # Tuesday; activity exists on 2026-11-10 with HR=158
+                "date_to": "2026-11-22",
+                "period": "week",
+                "include_device_metrics": True,
+            },
+        )
+        first_bucket = partial_trends.model_payload["buckets"][0]
+        assert first_bucket["bucket_start"] == "2026-11-10"
+        assert first_bucket["is_partial"] is True
+        assert first_bucket["device_metrics"]["heart_rate_record_count"] == 1
+        assert first_bucket["device_metrics"]["avg_heart_rate_bpm"] == "158.000"
+
         # Cross-user tool isolation: User B gets 404 for User A's activity_id and group_id.
         other_ctx = ToolContext(
             owner_id=other_id, timezone="Asia/Shanghai", today=date(2026, 11, 22)
