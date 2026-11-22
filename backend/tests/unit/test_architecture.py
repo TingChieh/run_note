@@ -71,6 +71,10 @@ BINARY_ROUTES = {
     ("GET", "/api/v1/me/wellbeing/report.csv"),
     ("GET", "/api/v1/me/activities/{identifier}/diary/photos/{photo_id}"),
 }
+# Routes that answer with a Server-Sent Events stream instead of a single JSON envelope.
+STREAMING_ROUTES = {
+    ("POST", "/api/v1/ai-assistant/conversations/{conversation_id}/messages"),
+}
 # async endpoints must hand blocking work to run_in_threadpool (AGENTS.md section 3).
 ASYNC_ENDPOINTS = {
     "app.modules.gpx.router.import_gpx",
@@ -79,6 +83,7 @@ ASYNC_ENDPOINTS = {
     "app.modules.users.router.upload_avatar",
     "app.modules.site_settings.router.upload",
     "app.modules.running_diary.router.upload_photo",
+    "app.modules.ai_assistant.router.send_message",
 }
 # Each signed-in route that addresses a resource by id (longest matching prefix) names the
 # integration test proving another user's id answers 404 and changes nothing.
@@ -103,6 +108,9 @@ CROSS_USER_TESTS = {
     ),
     "/api/v1/ai-reports/{identifier}": (
         "test_ai_reports.py::test_end_to_end_snapshot_isolation_and_idempotency"
+    ),
+    "/api/v1/ai-assistant/conversations/{conversation_id}": (
+        "test_ai_assistant_api.py::test_cross_user_404_across_all_conversation_and_message_routes"
     ),
     "/api/v1/me/wellbeing/days/{day}": (
         "test_wellbeing_privacy.py::test_other_user_cannot_read_or_change_journal_by_date_or_id"
@@ -487,10 +495,11 @@ def untyped(route) -> bool:
 
 def test_json_routes_declare_a_typed_response_model(routes):
     untyped_routes = {(m, p) for m, p, route in routes if untyped(route)}
-    new = untyped_routes - BINARY_ROUTES
+    allowed_untyped = BINARY_ROUTES | STREAMING_ROUTES
+    new = untyped_routes - allowed_untyped
     assert not new, f"declare response_model=ApiResponse[<model>] (not dict): {new}"
-    assert not BINARY_ROUTES - untyped_routes, (
-        f"stale BINARY_ROUTES: {BINARY_ROUTES - untyped_routes}"
+    assert not allowed_untyped - untyped_routes, (
+        f"stale BINARY_ROUTES / STREAMING_ROUTES: {allowed_untyped - untyped_routes}"
     )
 
 

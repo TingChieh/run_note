@@ -177,7 +177,7 @@ Caddy (HTTPS, flush_interval -1) ──► FastAPI (runnote-api)
 - **会话与消息数据模型（规划，不在此阶段建迁移）**：
   - 计划新增 3 张表（线性迁移编号按合并时最新 head 递增，Phase 1 实现为 `0033_ai_assistant`，父版本 `0032_running_diary`）：
     1. `ai_conversations`：`id (PK)`, `user_id (FK users.id CASCADE)`, `title (String 120)`, `created_at`, `updated_at`, `last_message_at`, `deleted_at`；索引 `(user_id, last_message_at DESC)`。
-    2. `ai_messages`：`id (PK)`, `conversation_id (FK ai_conversations.id CASCADE)`, `user_id (FK users.id CASCADE)`, `request_key (UUID, nullable for assistant)`, `role ('user' | 'assistant')`, `status ('pending' | 'streaming' | 'succeeded' | 'failed' | 'cancelled')`, `content (Text, <=16000)`, `tool_calls_summary (JSONB)`, `ui_blocks (JSONB)`, `model (String 100)`, `prompt_version (String 32)`, `error_code (String 50)`, `input_tokens`, `output_tokens`, `cached_input_tokens`, `source_data_version (BigInteger)`, `created_at`, `finished_at`；唯一约束 `(user_id, request_key)`（非空时）与部分唯一索引 `uq_ai_messages_user_active`（`WHERE status IN ('pending', 'streaming')`，防单用户并发刷单）。
+    2. `ai_messages`：`id (PK)`, `conversation_id (FK ai_conversations.id CASCADE)`, `user_id (FK users.id CASCADE)`, `request_key (UUID, nullable)`, `role ('user' | 'assistant')`, `status ('pending' | 'streaming' | 'succeeded' | 'failed' | 'cancelled')`, `content (Text, <=16000)`, `tool_calls_summary (JSONB)`, `ui_blocks (JSONB)`, `model (String 100)`, `prompt_version (String 32)`, `error_code (String 50)`, `input_tokens`, `output_tokens`, `cached_input_tokens`, `source_data_version (BigInteger)`, `created_at`, `finished_at`；部分唯一索引 `uq_ai_messages_user_role_request`（`(user_id, role, request_key) WHERE request_key IS NOT NULL`）与部分唯一索引 `uq_ai_messages_user_active`（`WHERE role = 'assistant' AND status IN ('pending', 'streaming')`，防单用户并发刷单）。
     3. `ai_user_consents`（或在 `users` 增列，推荐独立表以便审计版本与撤回）：`user_id (PK, FK users.id CASCADE)`, `consent_version (String 32)`, `consented_at`, `revoked_at`。
   - **删除语义**：用户删除会话时，立即清空 `ai_messages.content`/`tool_calls_summary`/`ui_blocks` 并标记 `deleted_at`（保留当天计数元信息用于配额准确，30 天后随 `recover` 物理清理），与旧 `ai_reports` 的隐私清除和防删记录刷额度机制完全一致。
 
@@ -275,7 +275,7 @@ Caddy (HTTPS, flush_interval -1) ──► FastAPI (runnote-api)
    - **并发锁**：数据库部分唯一索引 `uq_ai_messages_user_active` 保证同一用户同时最多 1 个活跃请求（冲突返回 `409 AI_IN_PROGRESS`）。
    - **短窗防刷**：复用 `backend/app/modules/auth/rate_limit.py` 的 `AuthRateBucket` 机制新增 `ai-msg-user` 桶（如每分钟最多 6 次、每 10 分钟最多 20 次），超限返回 `429 AI_RATE_LIMITED` + `Retry-After`。
    - **单用户日配额**：同时校验 `AI_DAILY_MESSAGE_LIMIT`（次数）与 `AI_DAILY_TOKEN_BUDGET`（token 预算，按当天该用户所有消息的 `input_tokens + output_tokens` 求和），超限返回 `429 AI_QUOTA_EXCEEDED` + 距下一个 UTC 零点的 `Retry-After`。
-   - **全站日熔断**：校验 `AI_SITE_DAILY_TOKEN_BUDGET`，触顶时返回 `503 AI_BUDGET_EXHAUSTED`（“今日站点 AI 额度已达上限，将于明日恢复”），同时记录告警日志。
+   - **全站日熔断与并发超支收敛**：`begin_turn` 短事务内先获取事务级咨询锁 `pg_advisory_xact_lock`（在 `db.commit()` 后自动释放，不跨外部 HTTP 持有），按 `已完成全站今日 token + 当前全站活跃生成中会话数 × 单轮预留额度（max(ai_max_output_tokens * 2, 4096)）>= AI_SITE_DAILY_TOKEN_BUDGET` 判定熔断，触顶返回 `503 AI_BUDGET_EXHAUSTED`（“今日站点 AI 额度已达上限，将于明日恢复”）。由此可防止多用户并发在阈值边缘同时放行；单次已放行轮次的残余超支上界严格受单轮工具轮次（<=4）与输出上限（<=2048 tokens）约束。
 
 ### 6.4 成本估算（基于 DeepSeek 官方定价量级）
 

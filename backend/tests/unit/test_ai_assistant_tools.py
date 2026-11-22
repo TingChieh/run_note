@@ -14,8 +14,11 @@ from app.modules.ai_assistant.blocks import build_ui_blocks
 from app.modules.ai_assistant.privacy import (
     PrivacyViolationError,
     assert_outbound_safe,
+    sanitize_tool_calls_summary,
     sanitize_tool_output,
+    sanitize_ui_blocks,
 )
+from app.modules.ai_assistant.provider import build_chat_request
 from app.modules.ai_assistant.tools import (
     TOOL_NAMES,
     ToolContext,
@@ -379,3 +382,98 @@ def test_ui_blocks_builder_produces_typed_blocks_for_records():
         },
     )
     assert [b.type for b in blocks] == ["records_summary", "records_chart"]
+
+
+def test_payload_size_cap_trims_nested_cities_in_global_footprints():
+    raw_global = {
+        "scope": "global",
+        "year": 2026,
+        "activity_count": 100,
+        "located_activity_count": 100,
+        "country_count": 1,
+        "region_count": 1,
+        "city_count": 60,
+        "cached_only": False,
+        "countries": [
+            {
+                "code": "CN",
+                "name": "China",
+                "activity_count": 100,
+                "distance_m": 100000.0,
+                "region_count": 1,
+                "city_count": 60,
+                "regions": [
+                    {
+                        "code": "CN-ZJ",
+                        "name": "Zhejiang",
+                        "activity_count": 100,
+                        "distance_m": 100000.0,
+                        "cities": [
+                            {
+                                "code": f"CN-ZJ-{idx:03d}",
+                                "name": f"CityNameLongSuffix_{idx:03d}",
+                                "activity_count": 60 - idx,
+                                "distance_m": 1000.0,
+                            }
+                            for idx in range(60)
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    sanitized, truncated = sanitize_tool_output("get_footprint_summary", raw_global, max_bytes=1200)
+    assert truncated is True
+    assert sanitized["truncated"] is True
+    encoded = json.dumps(sanitized, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    assert len(encoded) <= 1200
+    assert len(sanitized["countries"]) == 1
+    assert len(sanitized["countries"][0]["regions"][0]["cities"]) < 60
+
+
+def test_write_time_sanitizers_block_forbidden_keys_and_keep_safe_fields():
+    summary = sanitize_tool_calls_summary(
+        [
+            {
+                "tool": "get_running_summary",
+                "duration_ms": 18,
+                "degraded": False,
+                "truncated": False,
+                "notes": "must-be-dropped",
+            }
+        ]
+    )
+    assert summary == [
+        {
+            "tool": "get_running_summary",
+            "duration_ms": 18,
+            "degraded": False,
+            "truncated": False,
+        }
+    ]
+    with pytest.raises(PrivacyViolationError):
+        sanitize_ui_blocks([{"type": "metrics_card", "data": {"notes": "leaked"}}])
+    with pytest.raises(PrivacyViolationError):
+        sanitize_ui_blocks([{"type": "metrics_card", "data": {"png": "base64"}}])
+    with pytest.raises(PrivacyViolationError):
+        sanitize_ui_blocks([{"type": "metrics_card", "data": {"coordinates": [[120.1, 30.2]]}}])
+
+
+def test_build_chat_request_disables_thinking_and_sets_streaming_tools():
+    s = Settings(
+        database_url="postgresql+psycopg://fake:fake@127.0.0.1:1/test",
+        ai_model="deepseek-chat",
+        ai_max_output_tokens=2048,
+        _env_file=None,
+    )
+    with_tools = build_chat_request([{"role": "user", "content": "hi"}], tool_definitions(), s)
+    assert with_tools["model"] == "deepseek-chat"
+    assert with_tools["stream"] is True
+    assert with_tools["stream_options"] == {"include_usage": True}
+    assert with_tools["thinking"] == {"type": "disabled"}
+    assert with_tools["tool_choice"] == "auto"
+    assert len(with_tools["tools"]) == 10
+
+    without_tools = build_chat_request([{"role": "user", "content": "hi"}], [], s)
+    assert "tools" not in without_tools
+    assert "tool_choice" not in without_tools

@@ -21,6 +21,8 @@ from app.core.security import hash_password
 from app.modules.activities.model import Activity
 from app.modules.ai_assistant import service as assistant_service
 from app.modules.ai_assistant.model import AIMessage, AIUserConsent
+from app.modules.ai_assistant.privacy import PrivacyViolationError
+from app.modules.ai_assistant.schema import UIBlock
 from app.modules.ai_assistant.tools import TOOL_NAMES, ToolContext, execute_tool
 from app.modules.footprints.global_atlas import atlas_version as global_atlas_version
 from app.modules.footprints.model import ActivityGlobalFootprintCache, ActivityProvinceCache
@@ -398,6 +400,13 @@ def test_all_10_tools_and_canary_privacy_zero_leakage(assistant_db):
         CANARY_LAT,
         "120.165123",
         "30.284189",
+        "120.155",
+        "120.16",
+        "120.17",
+        "30.274",
+        "30.27",
+        "30.28",
+        "30.284",
         "OTHER_USER_SECRET",
         "OTHER_USER_NOTE",
         "42195",
@@ -409,8 +418,15 @@ def test_all_10_tools_and_canary_privacy_zero_leakage(assistant_db):
             result = execute_tool(db, ctx, tool_name, args)
             executed_names.add(tool_name)
             serialized = json.dumps(result.model_payload, ensure_ascii=False)
+            blocks_serialized = json.dumps(
+                [block.model_dump(mode="json") for block in result.ui_blocks],
+                ensure_ascii=False,
+            )
             for secret in canaries:
-                assert secret not in serialized, f"Canary {secret!r} leaked in {tool_name}"
+                assert secret not in serialized, f"Canary {secret!r} leaked in {tool_name} payload"
+                assert secret not in blocks_serialized, (
+                    f"Canary {secret!r} leaked in {tool_name} ui_blocks"
+                )
             assert result.ui_blocks, f"Expected UI blocks for {tool_name}"
 
         assert executed_names == set(TOOL_NAMES)
@@ -695,3 +711,139 @@ def test_migration_0033_defensive_downgrade_refuses_to_drop_data(assistant_db):
     assert_downgrade_guard(engine, "0033_ai_assistant", "Refusing to drop AI assistant tables")
     with engine.connect() as conn:
         assert conn.scalar(text("SELECT count(*) FROM ai_user_consents")) >= 1
+
+
+def test_finish_turn_sanitization_short_rate_limit_and_site_budget_reservation(assistant_db):
+    _, SessionLocal, created_users = assistant_db
+    url = os.environ["TEST_DATABASE_URL"]
+    now = datetime(2026, 11, 22, 12, 0, tzinfo=UTC)
+    settings = _make_settings(
+        url,
+        ai_daily_message_limit=30,
+        ai_daily_token_budget=150_000,
+        ai_site_daily_token_budget=50_000,
+        ai_max_output_tokens=2048,
+    )
+
+    with SessionLocal.begin() as db:
+        user_a = _create_user(db, created_users)
+        user_b = _create_user(db, created_users)
+        assistant_service.grant_consent(db, user_a.id, now)
+        assistant_service.grant_consent(db, user_b.id, now)
+        conv_a = assistant_service.create_conversation(db, user_a.id, now, title="Budget A")
+        conv_b = assistant_service.create_conversation(db, user_b.id, now, title="Budget B")
+
+        # Prime site usage to 46,000 tokens (4,000 below the 50,000 ceiling).
+        _, prime_msg, _ = assistant_service.begin_turn(
+            db, user_a.id, conv_a.id, "预热额度", uuid4(), now, settings
+        )
+        assistant_service.finish_turn(
+            db,
+            user_a.id,
+            prime_msg.id,
+            "succeeded",
+            finished_at=now + timedelta(seconds=1),
+            content="完成",
+            input_tokens=40_000,
+            output_tokens=6_000,
+        )
+
+        # User A starts turn 2; in-flight reservation (4096) pushes reserved total past 50,000.
+        _, a1, _ = assistant_service.begin_turn(
+            db, user_a.id, conv_a.id, "先问一个问题", uuid4(), now + timedelta(seconds=2), settings
+        )
+        # Concurrent User B is blocked by site budget reservation before overspending.
+        with pytest.raises(ApiError) as err:
+            assistant_service.begin_turn(
+                db,
+                user_b.id,
+                conv_b.id,
+                "同时问一个问题",
+                uuid4(),
+                now + timedelta(seconds=3),
+                settings,
+            )
+        assert err.value.status_code == 503
+        assert err.value.code == "AI_BUDGET_EXHAUSTED"
+
+        # finish_turn rejects forbidden keys injected in ui_blocks before writing to DB.
+        with pytest.raises(PrivacyViolationError):
+            assistant_service.finish_turn(
+                db,
+                user_a.id,
+                a1.id,
+                "succeeded",
+                finished_at=now + timedelta(seconds=4),
+                content="ok",
+                ui_blocks=[UIBlock(type="metrics_card", data={"notes": "forbidden"})],
+            )
+
+        # Once User A finishes with low actual tokens (300), site total is 46,300 -> User B fits.
+        assert (
+            assistant_service.finish_turn(
+                db,
+                user_a.id,
+                a1.id,
+                "succeeded",
+                finished_at=now + timedelta(seconds=5),
+                content="完成",
+                input_tokens=200,
+                output_tokens=100,
+            )
+            is True
+        )
+        _, b1, _ = assistant_service.begin_turn(
+            db, user_b.id, conv_b.id, "现在可以问了", uuid4(), now + timedelta(seconds=6), settings
+        )
+        assistant_service.finish_turn(
+            db,
+            user_b.id,
+            b1.id,
+            "succeeded",
+            finished_at=now + timedelta(seconds=7),
+            content="完成",
+            input_tokens=100,
+            output_tokens=50,
+        )
+
+        # Short-window burst rate limit: User A already used 2 turns; 4 more allowed (total 6/60s),
+        # 7th within 60s returns 429 AI_RATE_LIMITED.
+        high_budget = _make_settings(
+            url,
+            ai_daily_message_limit=30,
+            ai_daily_token_budget=150_000,
+            ai_site_daily_token_budget=1_000_000,
+        )
+        for i in range(4):
+            _, msg, _ = assistant_service.begin_turn(
+                db,
+                user_a.id,
+                conv_a.id,
+                f"连发问题 {i}",
+                uuid4(),
+                now + timedelta(seconds=10 + i),
+                high_budget,
+            )
+            assistant_service.finish_turn(
+                db,
+                user_a.id,
+                msg.id,
+                "succeeded",
+                finished_at=now + timedelta(seconds=10 + i),
+                content="答复",
+                input_tokens=50,
+                output_tokens=20,
+            )
+        with pytest.raises(ApiError) as burst_err:
+            assistant_service.begin_turn(
+                db,
+                user_a.id,
+                conv_a.id,
+                "第七次连发",
+                uuid4(),
+                now + timedelta(seconds=20),
+                high_budget,
+            )
+        assert burst_err.value.status_code == 429
+        assert burst_err.value.code == "AI_RATE_LIMITED"
+        assert (burst_err.value.retry_after or 0) >= 1

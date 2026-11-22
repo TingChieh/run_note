@@ -32,6 +32,9 @@ class SensitiveUrlFilter(logging.Filter):
 def configure_logging() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+    # Never emit outbound HTTP client request lines/headers for AI provider calls at INFO.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     for name in ("uvicorn.access", "httpx", "httpx2"):
         logger = logging.getLogger(name)
         if not any(isinstance(f, SensitiveUrlFilter) for f in logger.filters):
