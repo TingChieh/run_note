@@ -1,0 +1,11 @@
+{
+  "appId": "org.runnote.phasezero",
+  "appName": "RunNote Phase 0",
+  "webDir": "public",
+  "android": {
+    "path": "native"
+  },
+  "server": {
+    "url": "http://localhost:15297"
+  }
+}

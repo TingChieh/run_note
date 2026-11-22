@@ -1,0 +1,16 @@
+{
+  "name": "runnote-android-phase0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.28.13",
+  "scripts": {
+    "sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.6.2",
+    "@capacitor/core": "8.6.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.2"
+  }
+}

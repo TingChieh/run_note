@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">RunNote Phase 0</string>
+    <string name="title_activity_main">RunNote Phase 0</string>
+    <string name="package_name">org.runnote.phasezero</string>
+    <string name="custom_url_scheme">org.runnote.phasezero</string>
+</resources>
