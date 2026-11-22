@@ -18,4 +18,4 @@ adb -s emulator-5568 install -r android/native/app/build/outputs/apk/debug/app-d
 adb -s emulator-5568 shell am start -n org.runnote.phasezero/.MainActivity
 ```
 
-调试包仅为 `localhost` 开放明文网络访问。原始 API 29 Google APIs 镜像的 WebView 74 无法执行当前生产 JS。运行完整路径需另行验证更新过的 WebView。结果和下一阶段限制见 [验证记录](../docs/95-android-capacitor-phase0.md)。
+调试包仅为 `localhost` 开放明文网络访问。原始 API 29 Google APIs 镜像的 WebView 74 无法执行当前生产 JS。已在同一模拟器更新到 WebView 133 后验证主要流程。更新方法、复现结果和下一阶段限制见 [验证记录](../docs/95-android-capacitor-phase0.md)。
