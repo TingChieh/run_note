@@ -14,6 +14,7 @@ from app.modules.gpx.model import ActivityPoint, ActivitySegment, GpxImport
 from app.modules.mifitness.model import MifitnessImport
 from app.modules.place_titles.model import ActivityPlaceName, PlaceFeature
 from app.modules.route_groups.model import RouteFingerprint, RouteGroup, RouteGroupMember
+from app.modules.running_diary.model import ActivityDiary, ActivityDiaryPhoto
 from app.modules.running_goals.model import RunningGoal
 from app.modules.sharing.model import ActivityShareLink
 from app.modules.shoes.model import Shoe
@@ -41,6 +42,8 @@ __all__ = [
     "AuthSession",
     "AuthRateBucket",
     "Activity",
+    "ActivityDiary",
+    "ActivityDiaryPhoto",
     "Shoe",
     "GpxImport",
     "TcxImport",

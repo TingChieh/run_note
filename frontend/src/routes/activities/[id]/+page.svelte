@@ -21,6 +21,7 @@
   import ActivityReplayDialog from '#lib/components/ActivityReplayDialog.svelte';
   import ActivityShareMenu from '#lib/components/ActivityShareMenu.svelte';
   import ActivityShoe from '#lib/components/shoes/ActivityShoe.svelte';
+  import ActivityDiary from '#lib/components/ActivityDiary.svelte';
   import { ShoeError } from '#lib/api/shoes.ts';
   import {
     ActivityError,
@@ -346,6 +347,7 @@
   {#if view.manage && page.data.user}
     {#key activity.id}
       <ActivityShoe id={activity.id} onauthrequired={expired} />
+      <ActivityDiary id={activity.id} onauthrequired={expired} />
     {/key}
   {/if}
   <DeviceMetrics metrics={activity} />

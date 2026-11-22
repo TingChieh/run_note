@@ -69,6 +69,7 @@ BINARY_ROUTES = {
     ("GET", "/api/v1/showcase/users/{username}/avatar"),
     ("GET", "/api/v1/site/images/{kind}"),
     ("GET", "/api/v1/me/wellbeing/report.csv"),
+    ("GET", "/api/v1/me/activities/{identifier}/diary/photos/{photo_id}"),
 }
 # async endpoints must hand blocking work to run_in_threadpool (AGENTS.md section 3).
 ASYNC_ENDPOINTS = {
@@ -77,10 +78,14 @@ ASYNC_ENDPOINTS = {
     "app.modules.mifitness.router.import_mifitness",
     "app.modules.users.router.upload_avatar",
     "app.modules.site_settings.router.upload",
+    "app.modules.running_diary.router.upload_photo",
 }
 # Each signed-in route that addresses a resource by id (longest matching prefix) names the
 # integration test proving another user's id answers 404 and changes nothing.
 CROSS_USER_TESTS = {
+    "/api/v1/me/activities/{identifier}/diary": (
+        "test_running_diary.py::test_other_users_cannot_access_diary_or_photos"
+    ),
     "/api/v1/me/footprints/exploration/{scope}/{code}": (
         "test_city_exploration.py::test_exploration_is_owner_only_and_private"
     ),
@@ -119,6 +124,10 @@ CROSS_USER_TESTS = {
 OWN_SCOPE_PARAMS = {"period"}  # /me/running-goals/{period}
 # Field names that must never appear in a public (anonymous, non-self-service) response.
 PRIVATE_FIELDS = {
+    "diary",
+    "photos",
+    "rpe",
+    "weather",
     "shoe",
     "shoe_id",
     "initial_distance_m",

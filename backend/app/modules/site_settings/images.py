@@ -1,4 +1,4 @@
-"""Decode, orient, square-crop and re-encode uploads as metadata-free PNG."""
+"""Decode, orient and re-encode uploads as metadata-free PNG."""
 
 import warnings
 from dataclasses import dataclass
@@ -18,7 +18,8 @@ SIZES = {"avatar": 256, "logo": 256, "favicon": 64}
 # Pillow reports JPEGs carrying an MPF extension (multi-picture, gain-map photos) as MPO.
 FORMATS = {"PNG", "JPEG", "MPO", "WEBP"}
 DRAFT_SIDE = 1024
-Purpose = Literal["avatar", "logo", "favicon"]
+Purpose = Literal["avatar", "logo", "favicon", "diary"]
+DIARY_MAX_SIDE = 1100
 
 
 @dataclass(frozen=True)
@@ -71,15 +72,20 @@ def normalize_image(raw: bytes, purpose: Purpose) -> ProcessedImage:
     side = min(image.size)
     if side < MIN_SIDE:
         raise ApiError(422, "IMAGE_INVALID", "图片尺寸过小，最短边至少 32 像素")
-    left, top = (image.width - side) // 2, (image.height - side) // 2
-    image = image.crop((left, top, left + side, top + side))
-    target = min(side, SIZES[purpose])
-    if target != side:
-        image = image.resize((target, target), Image.Resampling.LANCZOS)
+    if purpose == "diary":
+        image.thumbnail((DIARY_MAX_SIDE, DIARY_MAX_SIDE), Image.Resampling.LANCZOS)
+    else:
+        left, top = (image.width - side) // 2, (image.height - side) // 2
+        image = image.crop((left, top, left + side, top + side))
+        target = min(side, SIZES[purpose])
+        if target != side:
+            image = image.resize((target, target), Image.Resampling.LANCZOS)
     if image.getchannel("A").getextrema() == (255, 255):
         image = image.convert("RGB")  # Fully opaque: the alpha channel is dead weight.
     image.info.clear()  # Never carry ICC, EXIF, text or DPI from the source.
     buffer = BytesIO()
     image.save(buffer, format="PNG", optimize=True)
     png = buffer.getvalue()
-    return ProcessedImage(png=png, width=target, height=target, sha256=sha256(png).hexdigest())
+    return ProcessedImage(
+        png=png, width=image.width, height=image.height, sha256=sha256(png).hexdigest()
+    )
