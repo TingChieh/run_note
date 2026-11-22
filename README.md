@@ -95,7 +95,7 @@
 
 ## 快速开始
 
-环境：macOS 或 Linux、PostgreSQL 18 + PostGIS 3.7、Python 3.14、Node.js 24、pnpm 11.25.0。
+环境：macOS 或 Linux、PostgreSQL 18 + PostGIS 3.7、Python 3.14、Node.js 24，pnpm 版本见 `frontend/package.json` 的 `packageManager`。
 
 ```bash
 # 1. 配置（编辑 .env，填入数据库连接串等）

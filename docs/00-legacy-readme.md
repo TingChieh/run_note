@@ -34,7 +34,7 @@
 
 ## 本地启动
 
-本项目统一使用非容器化方案：macOS + Homebrew PostgreSQL 18 / PostGIS 3.7、Python 3.14 独立虚拟环境、Node.js 24 LTS、pnpm 11.25.0。当前本机数据库版本为 PostgreSQL 18.7 / PostGIS 3.7.0。
+本项目统一使用非容器化方案：macOS + Homebrew PostgreSQL 18 / PostGIS 3.7、Python 3.14 独立虚拟环境、Node.js 24 LTS，pnpm 版本见 `frontend/package.json` 的 `packageManager`。当前本机数据库版本为 PostgreSQL 18.7 / PostGIS 3.7.0。
 
 以下命令从仓库根目录开始。已有 `.env` 时不要复制覆盖。
 

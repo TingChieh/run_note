@@ -6,7 +6,7 @@
 
 - 代码：`backend/app`（19 个模块、132 个 HTTP 操作）、`backend/migrations`（30 个版本）、`frontend/src`（SvelteKit 3 / Svelte 5）、`.github/workflows/ci.yml`、`infra/native`、`AGENTS.md`。
 - 方法：先跑现有检查得到基线；再用 FastAPI 路由自省（`fastapi.routing.iter_route_contexts`）枚举每条路由的认证依赖、CSRF、请求体与响应模型；用 AST 扫描 AGENTS.md 中的自然语言规则是否被遵守；抽查重复计算与权限路径；最后对新增的守护做“故意破坏”验证，确认它们真的会失败。
-- 包管理确认：后端 `pip` + `requirements.lock`（`--require-hashes`），无 uv/Poetry；前端 `pnpm@11.25.0`，Node `^24`。
+- 包管理确认：后端 `pip` + `requirements.lock`（`--require-hashes`），无 uv/Poetry；前端 pnpm 版本见 `frontend/package.json` 的 `packageManager`，Node `^24`。
 
 ## 2. 基线：现有检查的实际结果
 

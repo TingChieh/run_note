@@ -11,7 +11,7 @@
 **非容器化是本项目的硬约束。** 开发与部署均使用 macOS/Linux 原生安装；`infra/compose.dev.yml` 是已停用的历史文件，不属于启动、测试或部署方案。不要引入 Docker/Compose，也不要用它来"方便地"起数据库。
 
 - 后端：Python 3.14（`>=3.14,<3.15`）、FastAPI 0.163、Pydantic 2.14、SQLAlchemy 2.1（**同步**）、Alembic 1.20、psycopg3、GeoAlchemy2、gpxpy、defusedxml、argon2-cffi。依赖锁定在 `backend/requirements.lock`（`--require-hashes`）。
-- 前端：SvelteKit 3 / Svelte 5（runes）、TypeScript 6（`strict`）、Vite 8、Tailwind 4、Vitest 5、Playwright 1.65、echarts 6、maplibre-gl 6。包管理器固定为 pnpm 11.25.0，Node `^24`。
+- 前端：SvelteKit 3 / Svelte 5（runes）、TypeScript 6（`strict`）、Vite 8、Tailwind 4、Vitest 5、Playwright 1.65、echarts 6、maplibre-gl 6。包管理器版本由 `frontend/package.json` 的 `packageManager` 固定，Node `^24`。
 - 数据库：PostgreSQL 18 + PostGIS 3.7。
 - 代码风格：Ruff，`line-length = 100`，lint 规则 `E,F,I,UP,B`。前端用 Prettier（`frontend/.prettierrc.json`：单引号、`printWidth 120`、含 Svelte 插件），**渐进采用**：只格式化本次要改动的文件，不做全量重排；某个文件第一次格式化时，把纯格式化单独做成一个提交、放在功能改动之前，便于审阅。`src/lib/data/` 等生成数据在 `.prettierignore` 中排除。
 
