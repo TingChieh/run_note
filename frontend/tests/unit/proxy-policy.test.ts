@@ -73,12 +73,12 @@ it('keeps the browser cache only for an image the API marked cacheable', () => {
   expect(proxyCacheControl('GET', 200, image('public, max-age=31536000, immutable'))).toBe('no-store');
   expect(proxyCacheControl('GET', 200, image('private, max-age=31536000'))).toBe('no-store');
 });
-it('gives the AI assistant SSE message stream a 120s deadline and no-transform cache header', async () => {
+it('gives the AI assistant SSE message stream enough headroom for the max 180s backend budget and no-transform cache header', async () => {
   const { isAiAssistantStream } = await import('../../src/lib/server/proxy-policy');
   const streamPath = '/api/v1/ai-assistant/conversations/11111111-1111-4111-8111-111111111111/messages';
   expect(isAiAssistantStream(streamPath, 'POST')).toBe(true);
-  expect(upstreamTimeout(streamPath, 'POST')).toBe(120000);
-  expect(upstreamTimeout(`${streamPath}?x=1`, 'POST')).toBe(120000);
+  expect(upstreamTimeout(streamPath, 'POST')).toBe(195000);
+  expect(upstreamTimeout(`${streamPath}?x=1`, 'POST')).toBe(195000);
   expect(upstreamTimeout(streamPath, 'GET')).toBe(8000);
   expect(upstreamTimeout(`${streamPath}/22222222-2222-4222-8222-222222222222/cancel`, 'POST')).toBe(8000);
   expect(upstreamTimeout('/api/v1/ai-assistant/conversations', 'POST')).toBe(8000);

@@ -392,7 +392,7 @@ Caddy (HTTPS, flush_interval -1) ──► FastAPI (runnote-api)
 | **模型幻觉与口径漂移** | 模型自行估算配速/同比算错、把缺失时长当 0、凭空编造活动链接、给出激进或医疗诊断类建议。 | 高 | ① 所有聚合/同比/配速统一由后端现有服务与 `compare_periods` 精确计算；<br>② 活动链接与图表走后端校验生成的 `ui_blocks`，不依赖模型手写 URL；<br>③ 覆盖率与质量警告随工具强制返回，提示词强约束“缺数如实说明”与非医疗免责。 |
 | **成本失控** | 多轮长会话滚雪球、工具调用死循环、用户脚本刷接口、思考模式烧光额度。 | 高 | ① 默认用 `deepseek-chat` + 关闭 thinking；<br>② 单轮工具上限 4 轮、输出上限 2048 tokens、历史滑动窗口 6 轮；<br>③ 并发部分唯一索引 + 短窗限流 + 单用户日次数/token 双上限 + 全站日 token 熔断；<br>④ 零自动重试 + `Idempotency-Key` 幂等防重。 |
 | **历史与公开链接断裂** | 替换 `/ai` 后，旧 `/ai?report=<id>` 书签、`/p/[username]/ai` 公开展示页、`sitemap.xml` 或既有 UI 测试大面积失效。 | 中 | ① 阶段 1 保留 `ai_reports` 表与只读 API；<br>② 匿名访问 `/ai` 与 `/p/[username]/ai` 平滑降级为历史已完成报告只读视图；<br>③ 登录用户页内保留“历史分析归档”入口；<br>④ 阶段 3 最终清理前需负责人审批并同步更新测试与 sitemap。 |
-| **流式连接阻塞与基础设施兼容** | 外部流式请求占死 DB 连接池；Caddy 60s 响应头超时或压缩缓冲导致不流式；SvelteKit 开发代理 8s 超时提前截断流。 | 中-高 | ① 写库提交释放锁与连接后再发起 DeepSeek 请求；<br>② 首帧立即返回 SSE 头与 `meta` 事件，并每 15s 发 `ping`；<br>③ Caddy 配置 `flush_interval -1`；<br>④ `proxy-policy.ts` 为流式路由配置 120s 超时。 |
+| **流式连接阻塞与基础设施兼容** | 外部流式请求占死 DB 连接池；Caddy 60s 响应头超时或压缩缓冲导致不流式；SvelteKit 开发代理 8s 超时提前截断流。 | 中-高 | ① 写库提交释放锁与连接后再发起 DeepSeek 请求；<br>② 首帧立即返回 SSE 头与 `meta` 事件，并每 15s 发 `ping`；<br>③ Caddy 配置 `flush_interval -1`；<br>④ `proxy-policy.ts` 为流式路由配置 195s 超时（覆盖后端最高 180s 流时长上限 + 15s 余量）。 |
 
 ---
 

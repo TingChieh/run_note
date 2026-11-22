@@ -7,7 +7,7 @@ export const isAiAssistantStream = (path: string, method: string) =>
   method === 'POST' && AI_ASSISTANT_STREAM_RE.test(path.split('?')[0]);
 export const upstreamTimeout = (path: string, method: string) =>
   isAiAssistantStream(path, method)
-    ? 120000
+    ? 195000
     : isGpxUpload(path, method)
       ? 45000
       : method === 'POST' && path.split('?')[0] === '/api/v1/ai-reports'
