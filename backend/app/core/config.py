@@ -25,6 +25,14 @@ class Settings(BaseSettings):
     ai_api_key: SecretStr | None = None
     ai_daily_limit: int = Field(default=5, ge=1, le=100)
     ai_total_timeout_seconds: float = Field(default=30, ge=1, le=30)
+    ai_assistant_enabled: bool = True
+    ai_daily_message_limit: int = Field(default=30, ge=1, le=200)
+    ai_daily_token_budget: int = Field(default=150_000, ge=10_000, le=2_000_000)
+    ai_site_daily_token_budget: int = Field(default=1_000_000, ge=50_000, le=20_000_000)
+    ai_stream_total_timeout_seconds: float = Field(default=90, ge=15, le=180)
+    ai_upstream_read_timeout_seconds: float = Field(default=30, ge=5, le=60)
+    ai_max_tool_rounds: int = Field(default=4, ge=1, le=6)
+    ai_max_output_tokens: int = Field(default=2048, ge=256, le=4096)
 
     @field_validator("site_owner_email")
     @classmethod

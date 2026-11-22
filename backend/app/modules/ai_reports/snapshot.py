@@ -1,9 +1,9 @@
 from datetime import date, timedelta
-from decimal import ROUND_HALF_EVEN, Decimal
+from decimal import Decimal
 
 from app.core.errors import ApiError
-from app.modules.ai_reports.device_metrics import device_summaries, finalize
 from app.modules.statistics import service as statistics
+from app.modules.statistics.device_metrics import change_rate, device_summaries, finalize
 
 
 def default_range(today: date) -> tuple[date, date]:
@@ -15,17 +15,6 @@ def validate_range(start: date, end: date):
     statistics.validate_range(start, end)
     if (end - start).days > 366 or start.weekday() != 0 or end.weekday() != 0:
         raise ApiError(422, "VALIDATION_ERROR", "请选择完整自然周，起止日期均为周一，最多366天")
-
-
-def change_rate(current, previous) -> str | None:
-    previous = Decimal(previous)
-    if previous <= 0:
-        return None
-    return str(
-        ((Decimal(current) - previous) * 100 / previous).quantize(
-            Decimal(".001"), rounding=ROUND_HALF_EVEN
-        )
-    )
 
 
 def build_snapshot(db, owner, start: date, end: date) -> dict:

@@ -2,6 +2,7 @@
 
 from app.db.base import Base
 from app.modules.activities.model import Activity
+from app.modules.ai_assistant.model import AIConversation, AIMessage, AIUserConsent
 from app.modules.ai_reports.model import AIReport
 from app.modules.auth.model import AuthRateBucket, AuthSession
 from app.modules.footprints.model import (
@@ -33,6 +34,9 @@ from app.modules.wellbeing.model import (
 __all__ = [
     "Base",
     "RunningGoal",
+    "AIConversation",
+    "AIMessage",
+    "AIUserConsent",
     "AIReport",
     "ActivityShareLink",
     "User",
