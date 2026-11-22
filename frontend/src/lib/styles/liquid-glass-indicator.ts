@@ -62,9 +62,14 @@ export function createIndicator(
     if (!alive || !items[index]) return;
     const item = items[index];
     const stretch = motion.matches ? 0 : Math.min(12, Math.abs(velocity) * 0.018);
-    const width = Math.max(1, item.offsetWidth - 4 * press) + (horizontal ? stretch : 0);
+    // Segmented controls without horizontal bleed must keep the flying lens inside the host bounds
+    // when moving from a narrow column to a full-width spanned row item.
+    const boundRight =
+      horizontal && bleed === 0 ? Math.max(host.clientWidth, item.offsetLeft + item.offsetWidth) : Infinity;
+    const width = Math.min(boundRight, Math.max(1, item.offsetWidth - 4 * press) + (horizontal ? stretch : 0));
     const height = item.offsetHeight + (horizontal ? 0 : stretch) + 6 * press;
-    const x = horizontal ? pos - stretch / 2 + 2 * press : item.offsetLeft + 2 * press;
+    const rawX = horizontal ? pos - stretch / 2 + 2 * press : item.offsetLeft + 2 * press;
+    const x = horizontal && bleed === 0 ? Math.min(Math.max(0, rawX), Math.max(0, boundRight - width)) : rawX;
     const top = horizontal ? item.offsetTop - 3 * press : pos - stretch / 2 - 3 * press;
     const lensX = x + bleedX,
       lensY = top - host.scrollTop + bleedY;

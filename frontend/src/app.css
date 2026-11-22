@@ -2316,6 +2316,36 @@
       padding-inline: 0.625rem;
       white-space: nowrap;
     }
+    .settings-tabs.settings-tabs-sections {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      overflow-x: visible;
+      gap: var(--space-1);
+      padding: var(--space-1);
+      border-radius: var(--radius-card);
+    }
+    .settings-tabs.settings-tabs-sections > a {
+      width: 100%;
+      min-width: 0;
+      min-height: 2.75rem;
+      padding: var(--space-2) var(--space-3);
+      text-align: center;
+      white-space: normal;
+      line-height: var(--line-height-heading);
+    }
+    .settings-tabs.settings-tabs-sections > a:last-of-type:nth-of-type(odd) {
+      grid-column: 1 / -1;
+    }
+    .settings-tabs.settings-tabs-sections > a.settings-tab-admin-start {
+      margin-inline-start: 0;
+    }
+    .settings-tabs.settings-tabs-sections > a.settings-tab-admin-start::before {
+      display: none;
+    }
+    .settings-tabs.settings-tabs-sections > a:focus-visible {
+      position: relative;
+      z-index: 5;
+    }
   }
   @media (hover: hover) {
     .settings-tabs :is(a, button):hover {

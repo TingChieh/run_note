@@ -445,16 +445,29 @@ test('AI 助手 navigation entry is shown to logged-in users on desktop and mobi
 });
 
 for (const width of [320, 358, 361, 375]) {
-  test(`narrow ${width}px: menu button keeps its glass surface and settings tabs stay on one row`, async ({ page }) => {
+  test(`narrow ${width}px: menu button keeps its glass surface and settings tabs show all sections in a 2-column grid`, async ({ page }) => {
     await page.setViewportSize({ width, height: 851 });
     await login(page);
     await page.goto('/settings/site');
-    const tabs = page.locator('.settings-tabs');
+    const tabs = page.locator('.settings-tabs.settings-tabs-sections');
     await expect(tabs).toBeVisible();
     const buttons = page.locator('.mobile-bar button');
     for (let i = 0; i < 2; i++) await expect.poll(() => buttons.nth(i).locator('.rn-glass-layer').evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(0);
-    const rows = await tabs.locator('a').evaluateAll(items => new Set(items.map(item => Math.round(item.getBoundingClientRect().top))).size);
-    expect(rows).toBe(1);
+    const metrics = await tabs.evaluate(el => {
+      const box = el.getBoundingClientRect();
+      const links = [...el.querySelectorAll(':scope > a')].map(link => {
+        const rect = link.getBoundingClientRect();
+        return { top: Math.round(rect.top), left: rect.left, right: rect.right, height: rect.height };
+      });
+      return { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth, boxLeft: box.left, boxRight: box.right, links };
+    });
+    expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth);
+    expect(new Set(metrics.links.map(link => link.top)).size).toBe(3);
+    for (const link of metrics.links) {
+      expect(link.left).toBeGreaterThanOrEqual(metrics.boxLeft - 1);
+      expect(link.right).toBeLessThanOrEqual(metrics.boxRight + 1);
+      expect(link.height).toBeGreaterThanOrEqual(44);
+    }
     await noOverflow(page);
   });
 }
