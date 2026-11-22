@@ -161,7 +161,7 @@ test('home opens data summary, preserves filters and reaches every section from 
   for (const [name, href] of [
     ['跑步记录', '/activities'],
     ['个人足迹', '/footprints'],
-    ['AI 分析', '/ai'],
+    ['AI 助手', '/ai'],
   ]) {
     await expect(nav.getByRole('link', { name, exact: true })).toHaveAttribute('href', href);
   }

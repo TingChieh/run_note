@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { createWellbeing } from './ui-wellbeing.mjs';
 import { createShoes } from './ui-shoes.mjs';
+import { createAIAssistant } from './ui-ai-assistant.mjs';
 /** @type {Record<string, any>} */
 const user = { id: '00000000-0000-4000-8000-000000000001', email: 'runner.with.a.long.email.address@example.com', username: 'runner', username_changed_at: null, display_name: '晨跑者', timezone: 'Asia/Shanghai', created_at: '2026-01-01T00:00:00Z', bio: '', profile_is_public: false, is_admin: true, is_active: true, showcase_enabled: true, together_allowed: false, together_enabled: false, wellbeing_allowed: true, wellbeing_enabled: true };
 /** @type {Record<string, any>[]} */
@@ -16,6 +17,7 @@ const goals = {week:null,month:null,year:null};
 // Private wellbeing journal (synthetic, in memory); cleared whenever the owner signs in so each test starts empty.
 const wellbeing = createWellbeing(() => user);
 const shoes = createShoes(user.id);
+const aiAssistant = createAIAssistant();
 /** @type {Record<string, any>} */
 const site = { title: 'RunNote', subtitle: '跑步与足迹', footer_tagline: '记录每一步，看见你的进步。', description: '汇总你的跑步数据、活动日历与运动趋势，从这里探索记录、足迹和 AI 分析。', default_theme: 'system', favicon_url: null, logo_url: null };
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
@@ -340,7 +342,7 @@ createServer(async (req, res) => {
   const current = accounts.find(item => item.id === sessions.get(token));
   const signedIn = current?.is_active === true;
   /** @param {unknown} data */
-  const send = (data, status = 200, message = '会话已过期') => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ data, error: status >= 400 ? { code: 'UI_FIXTURE', message } : null })); };
+  const send = (data, status = 200, message = '会话已过期', code = 'UI_FIXTURE') => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ data, error: status >= 400 ? { code, message } : null })); };
   if (showcase && req.method !== 'GET') return send(null,405,'展示页面仅支持读取');
   if (named && (!subject?.is_active || !subject.showcase_enabled)) return send(null,404,'展示页面不存在');
   if (url.pathname === '/api/v1/showcase/profile') {
@@ -357,7 +359,7 @@ createServer(async (req, res) => {
     const payload = JSON.parse(body);
     const found = accounts.find(item => item.email === payload.email || item.is_admin && payload.email === 'runner@example.com');
     if (!found?.is_active || !found.is_admin && found.password !== payload.password) return send(null,401,'邮箱或密码不正确');
-    if (found.is_admin) { Object.assign(user, {display_name:'晨跑者',bio:'',profile_is_public:false,together_allowed: false, together_enabled: false, wellbeing_allowed:true,wellbeing_enabled:true}); Object.assign(found,user); Object.assign(goals,{week:null,month:null,year:null}); wellbeing.reset(); shoes.reset(); }
+    if (found.is_admin) { Object.assign(user, {display_name:'晨跑者',bio:'',profile_is_public:false,together_allowed: false, together_enabled: false, wellbeing_allowed:true,wellbeing_enabled:true}); Object.assign(found,user); Object.assign(goals,{week:null,month:null,year:null}); wellbeing.reset(); shoes.reset(); aiAssistant.reset(); }
     const session = found.is_admin ? 'ui-runner' : randomUUID(); sessions.set(session, found.id);
     res.setHeader('Set-Cookie', `run_session=${session}; Path=/; HttpOnly; SameSite=Lax`); return send({ user: clean(found) });
   }
@@ -517,6 +519,7 @@ createServer(async (req, res) => {
     if (current?.is_admin) Object.assign(user,clean(current));
     return send(clean(current ?? user));
   }
+  if (url.pathname.startsWith('/api/v1/ai-assistant/')) return !signedIn || showcase ? send(null, 401) : aiAssistant.handle(req, url, res, current.id, send);
   if (url.pathname === '/api/v1/ai-reports') return send({items:[],total:0,limit:Number(url.searchParams.get('limit')??10),offset:Number(url.searchParams.get('offset')??0)});
   if (url.pathname === '/api/v1/activities/categories') return send([]);
   if (url.pathname === '/api/v1/activities') return send({ items: [], total: 0, limit: Number(url.searchParams.get('limit') ?? 20), offset: Number(url.searchParams.get('offset') ?? 0) });
