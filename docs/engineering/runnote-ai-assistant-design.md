@@ -1,11 +1,12 @@
 # RunNote AI 跑步数据助手：审计与设计方案（Item 20）
 
-- **状态**：审计与设计完成（本阶段不改业务代码、不做迁移、不改路由/导航、不部署）
+- **状态**：决策已确认（D1–D6 均按推荐方案定案），进入 Phase 1（后端基础、迁移与只读工具层）实施
 - **日期**：2026-11-22
 - **已确认方向**：
   1. AI 供应商确定为 **DeepSeek**（负责人 2026-11-22 决定）。
   2. 用**单一 AI 入口**替换旧 `/ai` 分析，不做双入口并存；先冻结旧功能、保留 `ai_reports` 历史数据，待新助手覆盖后再讨论最终删除（删除历史数据需负责人最终批准）。
   3. 新助手**严格复用**现有统计、足迹、活动、路线组与目标服务及隐私/同意/额度边界，不另建第二套指标口径。
+  4. **D1–D6 全部按推荐方案确认（2026-11-22）**：匿名访客仅只读查看历史 `ai_reports`；首次启用勾选一次同意并版本化留痕、支持随时撤回；`activities.title`/`tags` 默认不发给模型、前端按 `activity_id` 本地回填；足迹地名到城市级名称且不含坐标/街道；单用户 30 次/日与 150,000 tokens/日、全站 1,000,000 tokens/日；首版仅 `deepseek-chat`（关闭 thinking），不引入 `deepseek-reasoner`。
 
 ---
 
@@ -166,7 +167,7 @@ Caddy (HTTPS, flush_interval -1) ──► FastAPI (runnote-api)
 | --- | --- | --- | --- |
 | **L1 公开口径统计摘要** | 里程、次数、天数、有效用时、加权平均配速、分桶趋势、PB/首跑数值、连续天数、跑量目标与完成率、时间质量计数、设备汇总（加权心率、热量/步数小计与覆盖率） | **允许（需用户同意）** | 与旧版 `running-summary-v2` 口径一致，全部由服务端权威计算。 |
 | **L2 脱敏单次活动摘要与粗粒度地名** | 活动 UUID、本地日期、距离、用时、配速、心率/步频/热量/步数/训练负荷、分类（3km/5km/10km/半马/全马）、省/市级足迹聚合计数、常跑路线组聚合指标 | **允许（需用户同意）** | 每次仅限受控条数（<=20 条活动），不含精确经纬度、起终点坐标或具体街道地址。 |
-| **L2.5 灰区用户文本** | `activities.title`、`activities.tags` | **待负责人决定（D3）** | 默认推荐策略：**活动标题默认不发给模型**（仅返回 `activity_id` + 日期 + 分类 + 距离，前端按 ID 本地回填标题）；若负责人批准发送标题以支持“帮我找奥森那次跑”，须截断 <=60 字符并包入不可信数据分隔块防注入。 |
+| **L2.5 受控禁发用户文本** | `activities.title`、`activities.tags` | **默认不发送（D3 已确认）** | **已确认策略（D3）**：`activities.title`/`tags` 默认不发给模型，仅发送 `activity_id`、日期、分类与权威指标，由前端按 `activity_id` 本地回填标题与标签，彻底消除标题隐私与间接提示词注入面。 |
 | **L3 绝对禁止出站（永不发给模型）** | 1. **身心健康全部数据**（`wellbeing_*` 6 张表：药物、剂量、库存、症状、情绪/焦虑/睡眠评分与备注）<br>2. **照片与二进制图像**（`user_avatars`、`site_images` 及未来任何活动/日记照片）<br>3. **精确 GPS 轨迹与坐标**（`activity_segments.geom`、`activity_points.position`、`route_fingerprints.geom`、`route_groups.shape`、起终点经纬度、热力图网格、`global_summary` 的 `bounds`/`center`/`lon`/`lat`）<br>4. **原始导入文件与文件名**（`raw_gpx`、`raw_tcx`、`mifitness` 原始载荷与 `original_filename`）<br>5. **活动自由备注**（`activities.notes`）<br>6. **账号与认证凭据**（`email_normalized`、`username`、`password_hash`、`bio`、`is_admin`、Cookie、CSRF/分享 Token、API Key、内网地址）<br>7. **他人数据**（`together`、其他用户活动/展示） | **永不发送** | 通过三重防线强制：① 不提供读取工具；② 代码层静态测试（延续 `test_private_wellbeing_module_is_not_imported_elsewhere` + 新增 AI 隐私白名单单测）；③ 集成测试注入金丝雀敏感值（如 `secret-email@example.com`、真实坐标、wellbeing 药名、notes 秘文）断言出站 payload 零命中。 |
 
 ### 4.2 用户知情同意与数据留存
@@ -174,7 +175,7 @@ Caddy (HTTPS, flush_interval -1) ──► FastAPI (runnote-api)
   - 首次使用新助手（或同意协议版本 `consent_version` 升级）时，需用户明确勾选同意才可发送首条消息，清晰列出**会发送什么**（当前对话内容 + 所查询范围的运动统计摘要、脱敏活动指标、省市级足迹计数）与**永不发送什么**（身心健康日记、照片、GPS 轨迹坐标、备注、原始文件、邮箱/账号信息），并说明数据将发送至配置的 DeepSeek 服务。
   - 输入框附近常驻精简提示；用户可在设置或助手页随时**查看/撤回同意**或**删除会话**。
 - **会话与消息数据模型（规划，不在此阶段建迁移）**：
-  - 计划新增 3 张表（线性迁移编号届时现场 `ls backend/migrations/versions/` 确认，当前下一个序号为 `0031`）：
+  - 计划新增 3 张表（线性迁移编号按合并时最新 head 递增，Phase 1 实现为 `0033_ai_assistant`，父版本 `0032_running_diary`）：
     1. `ai_conversations`：`id (PK)`, `user_id (FK users.id CASCADE)`, `title (String 120)`, `created_at`, `updated_at`, `last_message_at`, `deleted_at`；索引 `(user_id, last_message_at DESC)`。
     2. `ai_messages`：`id (PK)`, `conversation_id (FK ai_conversations.id CASCADE)`, `user_id (FK users.id CASCADE)`, `request_key (UUID, nullable for assistant)`, `role ('user' | 'assistant')`, `status ('pending' | 'streaming' | 'succeeded' | 'failed' | 'cancelled')`, `content (Text, <=16000)`, `tool_calls_summary (JSONB)`, `ui_blocks (JSONB)`, `model (String 100)`, `prompt_version (String 32)`, `error_code (String 50)`, `input_tokens`, `output_tokens`, `cached_input_tokens`, `source_data_version (BigInteger)`, `created_at`, `finished_at`；唯一约束 `(user_id, request_key)`（非空时）与部分唯一索引 `uq_ai_messages_user_active`（`WHERE status IN ('pending', 'streaming')`，防单用户并发刷单）。
     3. `ai_user_consents`（或在 `users` 增列，推荐独立表以便审计版本与撤回）：`user_id (PK, FK users.id CASCADE)`, `consent_version (String 32)`, `consented_at`, `revoked_at`。
@@ -395,15 +396,15 @@ Caddy (HTTPS, flush_interval -1) ──► FastAPI (runnote-api)
 
 ---
 
-## 10. 仍需负责人决定的产品与成本项
+## 10. 产品与成本决策记录（D1–D6 已全部确认）
 
-以下 6 项在进入 Phase 1 编码前需负责人确认（均已给出推荐默认值，确认即可启动）：
+以下 6 项已于 2026-11-22 经负责人确认，**全部按推荐方案执行**（保留原备选方案与推荐依据备查）：
 
-| 编号 | 待决定项 | 可选方案 | 推荐方案与理由 |
+| 编号 | 决策项 | 备选方案 | 最终确认结论与原推荐依据 |
 | --- | --- | --- | --- |
-| **D1** | **匿名访客访问 `/ai` 与 `/p/[username]/ai` 的处理方式** | A. 过渡期匿名访客仅可只读查看历史已完成的 `ai_reports`（无历史则显示简洁空态引导去数据汇总），不开放对话；<br>B. 立即把 `/ai` 改为仅登录可见（匿名重定向或提示登录），仅保留 `/p/[username]/ai` 历史只读；<br>C. 未来允许用户手动“精选/分享”某次助手总结到公开展示页。 | **推荐 A（过渡期）**，避免现有在线站点（`sitemap.xml` 含 `/ai`）外链突然报错；C 留作远期评估，首版对话严格纯私人。 |
-| **D2** | **隐私知情同意的交互频率** | A. 首次启用助手（及协议版本变更时）勾选一次同意，落库 `ai_user_consents`，支持随时在设置/助手页撤回，输入框常驻简洁提示；<br>B. 延续旧 `/ai`，每次发送消息前都要求手动勾选确认。 | **推荐 A**。多轮对话每次勾选会严重破坏体验；首次显式同意 + 版本化留痕 + 一键撤回即可兼顾合规与流畅度。 |
-| **D3** | **活动标题（`title`）与标签（`tags`）是否允许发给模型** | A. **默认不发** `title`/`tags`（仅发 `activity_id`、日期、分类、指标，前端按 ID 本地回填卡片标题，彻底消除标题隐私与间接注入面）；<br>B. 允许发送经截断（<=60 字）与隔离标记的 `title` 与 `tags`，使助手能回答“我在奥森跑过几次”或“带‘间歇’标签的跑步表现如何”。 | **推荐 A 起步，按需评估 B**（若负责人希望支持按标签/地点标题问答，可仅开放受控 `tags` 或白名单自动地名 `place_titles.category`，仍保持 `notes` 绝对禁发）。 |
-| **D4** | **足迹工具的地名粒度** | A. 允许发送到**城市级**名称（如“杭州市：12 次”，不含经纬度与街道）；<br>B. 仅发送到**省级/国家级**名称（如“浙江省：12 次”）。 | **推荐 A**（“我跑过哪些城市”是核心高频跑步问答；离线图集仅含城市名聚合，不暴露具体住址与坐标）。 |
-| **D5** | **配额与预算默认值** | 确认默认参数：`AI_DAILY_MESSAGE_LIMIT`（单用户日次数）、`AI_DAILY_TOKEN_BUDGET`（单用户日 token）、`AI_SITE_DAILY_TOKEN_BUDGET`（全站日 token）。 | **推荐默认值**：单用户 30 次/日 + 150,000 tokens/日；全站 1,000,000 tokens/日（极端月成本封顶约 ¥90–150，个人常态使用仅数元/月）。 |
-| **D6** | **深度推理模式（`deepseek-reasoner`）是否纳入首版** | A. 首版仅使用 `deepseek-chat`（非思考模式，快且便宜、工具调用稳定）；<br>B. 首版即提供“深度分析”开关切换 `deepseek-reasoner`（单独限额如 3 次/日）。 | **推荐 A**。先跑通低延迟多轮工具调用与富卡片体验，二期视反馈决定是否增加思考模式开关。 |
+| **D1** | **匿名访客访问 `/ai` 与 `/p/[username]/ai` 的处理方式** | A. 过渡期匿名访客仅可只读查看历史已完成的 `ai_reports`（无历史则显示简洁空态引导去数据汇总），不开放对话；<br>B. 立即把 `/ai` 改为仅登录可见（匿名重定向或提示登录），仅保留 `/p/[username]/ai` 历史只读；<br>C. 未来允许用户手动“精选/分享”某次助手总结到公开展示页。 | **已确认选 A（过渡期）**。避免现有在线站点（`sitemap.xml` 含 `/ai`）外链突然报错；不开放匿名对话，首版对话严格纯私人，C 留作远期评估。 |
+| **D2** | **隐私知情同意的交互频率** | A. 首次启用助手（及协议版本变更时）勾选一次同意，落库 `ai_user_consents`，支持随时在设置/助手页撤回，输入框常驻简洁提示；<br>B. 延续旧 `/ai`，每次发送消息前都要求手动勾选确认。 | **已确认选 A**。多轮对话每次勾选会严重破坏体验；首次显式同意 + 版本化留痕 + 一键撤回即可兼顾合规与流畅度。 |
+| **D3** | **活动标题（`title`）与标签（`tags`）是否允许发给模型** | A. **默认不发** `title`/`tags`（仅发 `activity_id`、日期、分类、指标，前端按 ID 本地回填卡片标题，彻底消除标题隐私与间接注入面）；<br>B. 允许发送经截断（<=60 字）与隔离标记的 `title` 与 `tags`，使助手能回答“我在奥森跑过几次”或“带‘间歇’标签的跑步表现如何”。 | **已确认选 A**。默认不向模型发送 `title`/`tags`，仅发送 `activity_id`、日期、分类与权威指标，前端按 ID 本地回填，彻底消除标题隐私与间接提示词注入面。 |
+| **D4** | **足迹工具的地名粒度** | A. 允许发送到**城市级**名称（如“杭州市：12 次”，不含经纬度与街道）；<br>B. 仅发送到**省级/国家级**名称（如“浙江省：12 次”）。 | **已确认选 A**。“我跑过哪些城市”是核心高频跑步问答；离线图集仅含城市名聚合，不暴露具体住址、街道与坐标。 |
+| **D5** | **配额与预算默认值** | 确认默认参数：`AI_DAILY_MESSAGE_LIMIT`（单用户日次数）、`AI_DAILY_TOKEN_BUDGET`（单用户日 token）、`AI_SITE_DAILY_TOKEN_BUDGET`（全站日 token）。 | **已确认默认值**：单用户 30 次/日 + 150,000 tokens/日；全站 1,000,000 tokens/日（极端月成本封顶约 ¥90–150，个人常态使用仅数元/月）。 |
+| **D6** | **深度推理模式（`deepseek-reasoner`）是否纳入首版** | A. 首版仅使用 `deepseek-chat`（非思考模式，快且便宜、工具调用稳定）；<br>B. 首版即提供“深度分析”开关切换 `deepseek-reasoner`（单独限额如 3 次/日）。 | **已确认选 A**。首版仅使用 `deepseek-chat`（显式关闭 thinking），先跑通低延迟多轮工具调用与富卡片体验，不引入 `deepseek-reasoner`。 |

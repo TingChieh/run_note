@@ -27,6 +27,8 @@ class ApiError(Exception):
             "duplicate_kind",
             "report_id",
             "available_at",
+            "conversation_id",
+            "message_id",
         }
         self.details = [
             {k: v for k, v in item.items() if k in allowed and isinstance(v, str) and len(v) <= 200}
