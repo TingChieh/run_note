@@ -547,10 +547,14 @@ test('mobile settings section tabs use a 2-column grid for 3, 4, and 5 links wit
   // Keyboard focus remains clearly visible with ring above the glass layer.
   await page.evaluate(() => localStorage.setItem('runnote-theme', 'light'));
   await page.goto('/settings');
-  const firstTab = page.locator('.settings-tabs.settings-tabs-sections > a').first();
+  await expect(page.locator('header')).toHaveAttribute('data-auth-ready', 'true');
+  const hubTabs = page.locator('.settings-tabs.settings-tabs-sections');
+  await expect(hubTabs.locator(':scope > a')).toHaveCount(5);
+  await hubTabs.locator('.rn-moving-copy').waitFor({ state: 'attached' });
+  const firstTab = hubTabs.locator(':scope > a').first();
   await firstTab.focus();
   await page.keyboard.press('Tab');
-  const secondTab = page.locator('.settings-tabs.settings-tabs-sections > a').nth(1);
+  const secondTab = hubTabs.locator(':scope > a').nth(1);
   await expect(secondTab).toBeFocused();
   const focusStyle = await secondTab.evaluate((el) => {
     const s = getComputedStyle(el);
