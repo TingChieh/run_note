@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { setContext } from "svelte";
-  import { VIEW_CONTEXT } from "#lib/view-context.ts";
-  import { viewContext } from "#lib/api/view-context.ts";
+  import { setContext } from 'svelte';
+  import { VIEW_CONTEXT } from '#lib/view-context.ts';
+  import { viewContext } from '#lib/api/view-context.ts';
   import '../app.css';
   import type { Component, Snippet } from 'svelte';
   import { onMount } from 'svelte';
@@ -22,22 +22,63 @@
   import { initializeTheme } from '#lib/components/system-theme.ts';
 
   let { children }: { children: Snippet } = $props();
-  let checking = $state(false), busy = $state(false), mounted = $state(false), message = $state('');
+  let checking = $state(false),
+    busy = $state(false),
+    mounted = $state(false),
+    message = $state('');
   let identityBlocked = $state(false);
   let publicMenuOpen = $state(false);
-  let pageDirection = $state<1 | -1 | 0>(0), menuNavigationPending = false;
+  let pageDirection = $state<1 | -1 | 0>(0),
+    menuNavigationPending = false;
   let GlassTuner = $state<Component | null>(null);
   // Switching between the settings sections keeps the old page on screen and skips the skeleton and fade.
-  const settingsSection = (path?: string) => !!path && /^(\/workspace)?\/(settings(\/site)?|admin\/users)\/?$/.test(path);
+  const settingsSection = (path?: string) =>
+    !!path && /^(\/workspace)?\/(settings(\/(shoes|preferences|site))?|admin\/users)\/?$/.test(path);
   let quietSwap = $state(false);
   let shallowNavigation = $state(false);
   const settingsHeader = provideSettingsHeader();
   const settingsKind = $derived.by(() => {
     const path = page.url.pathname.replace(/^\/workspace/, '').replace(/\/$/, '');
-    return path === '/settings' ? 'account' : path === '/settings/site' ? 'site' : path === '/admin/users' ? 'users' : null;
+    return path === '/settings'
+      ? 'account'
+      : path === '/settings/shoes'
+        ? 'shoes'
+        : path === '/settings/preferences'
+          ? 'preferences'
+          : path === '/settings/site'
+            ? 'site'
+            : path === '/admin/users'
+              ? 'users'
+              : null;
   });
-  const settingsMeta = { account: ['设置', '管理账户资料与公开主页。'], site: ['站点设置', '管理站点名称、标语、默认外观和图标。'], users: ['用户管理', '管理账号、登录权限和独立个人展示链接。'] } as const;
-  beforeNavigate(navigation => {
+  const settingsMeta: Record<
+    'account' | 'shoes' | 'preferences' | 'site' | 'users',
+    { title: string; description?: string }
+  > = {
+    account: { title: '设置' },
+    shoes: { title: '跑鞋' },
+    preferences: { title: '目标与隐私' },
+    site: { title: '站点设置', description: '管理站点名称、标语、默认外观和图标。' },
+    users: { title: '用户管理', description: '管理账号、登录权限和独立个人展示链接。' },
+  };
+  let lastBadgeUserId: string | null = null;
+  $effect(() => {
+    const currentUserId = page.data.user?.id ?? null;
+    if (currentUserId !== lastBadgeUserId) {
+      lastBadgeUserId = currentUserId;
+      settingsHeader.shoeReminderCount = null;
+    }
+  });
+  onMount(() => {
+    const invalidateShoeBadge = () => {
+      if (!settingsKind) settingsHeader.shoeReminderCount = null;
+    };
+    window.addEventListener('runnote-shoes-changed', invalidateShoeBadge);
+    return () => {
+      window.removeEventListener('runnote-shoes-changed', invalidateShoeBadge);
+    };
+  });
+  beforeNavigate((navigation) => {
     publicMenuOpen = false;
     shallowNavigation = navigation.shallow;
     quietSwap = settingsSection(navigation.from?.url.pathname) && settingsSection(navigation.to?.url.pathname);
@@ -52,14 +93,32 @@
   onMount(() => {
     if (!import.meta.env.DEV) return;
     let disposed = false;
-    void import('#lib/components/LiquidGlassTuner.svelte').then(module => { if (!disposed) GlassTuner = module.default; }).catch(() => { /* The optional dev panel must not block the page. */ });
-    return () => { disposed = true; };
+    void import('#lib/components/LiquidGlassTuner.svelte')
+      .then((module) => {
+        if (!disposed) GlassTuner = module.default;
+      })
+      .catch(() => {
+        /* The optional dev panel must not block the page. */
+      });
+    return () => {
+      disposed = true;
+    };
   });
   const site = $derived(page.data.site ?? SITE_DEFAULTS);
   let logoFailed = $state(false);
-  $effect(() => { void site.logo_url; logoFailed = false; });
+  $effect(() => {
+    void site.logo_url;
+    logoFailed = false;
+  });
   const authPage = $derived(/^\/admin\/?$/.test(page.url.pathname) && !page.data.user);
-  const appLayout = $derived(!authPage && (/^\/(dashboard|activities|footprints|together|records|routes|ai|settings|wellbeing|admin|p|workspace)(\/|$)/.test(page.url.pathname) || page.url.pathname === '/' || page.status >= 400));
+  const appLayout = $derived(
+    !authPage &&
+      (/^\/(dashboard|activities|footprints|together|records|routes|ai|settings|wellbeing|admin|p|workspace)(\/|$)/.test(
+        page.url.pathname,
+      ) ||
+        page.url.pathname === '/' ||
+        page.status >= 400),
+  );
   const privateView = $derived(!!page.data.user || isProtected(page.url.pathname));
   setContext(VIEW_CONTEXT, () => {
     const context = viewContext(page.url.pathname, page.data.user?.is_admin === true);
@@ -69,26 +128,47 @@
   });
   const description = $derived(pageDescription(page.url.pathname, page.status, site.description));
   const noindex = $derived(pageNoindex(page.url.pathname, page.status));
-  const routeLoading = $derived(!!navigating.to && !shallowNavigation && !navigating.shallow && !navigating.willUnload && navigating.to.url.pathname !== page.url.pathname && !(settingsSection(page.url.pathname) && settingsSection(navigating.to.url.pathname)));
+  const routeLoading = $derived(
+    !!navigating.to &&
+      !shallowNavigation &&
+      !navigating.shallow &&
+      !navigating.willUnload &&
+      navigating.to.url.pathname !== page.url.pathname &&
+      !(settingsSection(page.url.pathname) && settingsSection(navigating.to.url.pathname)),
+  );
   async function logout() {
-    if (busy) return; busy = true; message = '';
+    if (busy) return;
+    busy = true;
+    message = '';
     try {
       await authWrite('logout', {});
       checking = true;
       window.location.assign(viewContext(page.url.pathname).kind === 'workspace' ? '/' : page.url.pathname);
     } catch (cause) {
-      if (cause instanceof AuthError && cause.status === 401) { checking = true; window.location.replace('/admin?reason=changed'); return; }
-      message = cause instanceof Error ? cause.message : '退出失败，请重试'; busy = false;
+      if (cause instanceof AuthError && cause.status === 401) {
+        checking = true;
+        window.location.replace('/admin?reason=changed');
+        return;
+      }
+      message = cause instanceof Error ? cause.message : '退出失败，请重试';
+      busy = false;
     }
   }
   onMount(() => {
     mounted = true;
-    let inFlight = false, pending = false, disposed = false;
+    let inFlight = false,
+      pending = false,
+      disposed = false;
     const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('runnote-auth');
     async function verifyIdentity() {
       if (disposed || busy) return;
-      if (inFlight) { pending = true; return; }
-      inFlight = true; pending = false; message = '';
+      if (inFlight) {
+        pending = true;
+        return;
+      }
+      inFlight = true;
+      pending = false;
+      message = '';
       try {
         const current = await readSession();
         if (disposed || busy || pending) return;
@@ -98,84 +178,217 @@
           else window.location.reload();
           return;
         }
-        identityBlocked = false; checking = false;
+        identityBlocked = false;
+        checking = false;
       } catch (cause) {
         // Fail closed: hide private children and identity until verification succeeds.
         if (page.data.user || isProtected(page.url.pathname)) {
-          checking = true; identityBlocked = true;
+          checking = true;
+          identityBlocked = true;
           message = cause instanceof Error ? cause.message : '无法确认登录状态';
-        } else { checking = false; }
+        } else {
+          checking = false;
+        }
       } finally {
         inFlight = false;
         if (pending && !disposed && !busy) void verifyIdentity();
       }
     }
-    const visible = () => { if (document.visibilityState === 'visible') void verifyIdentity(); };
-    const restored = (event: PageTransitionEvent) => { if (event.persisted) void verifyIdentity(); };
-    if (channel) { channel.onmessage = () => { checking = true; void verifyIdentity(); }; channel.postMessage('check'); }
+    const visible = () => {
+      if (document.visibilityState === 'visible') void verifyIdentity();
+    };
+    const restored = (event: PageTransitionEvent) => {
+      if (event.persisted) void verifyIdentity();
+    };
+    if (channel) {
+      channel.onmessage = () => {
+        checking = true;
+        void verifyIdentity();
+      };
+      channel.postMessage('check');
+    }
     window.addEventListener('focus', verifyIdentity);
     window.addEventListener('pageshow', restored);
     document.addEventListener('visibilitychange', visible);
-    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void verifyIdentity(); }, 60000);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void verifyIdentity();
+    }, 60000);
     return () => {
-      disposed = true; channel?.close(); clearInterval(timer);
-      window.removeEventListener('focus', verifyIdentity); window.removeEventListener('pageshow', restored);
+      disposed = true;
+      channel?.close();
+      clearInterval(timer);
+      window.removeEventListener('focus', verifyIdentity);
+      window.removeEventListener('pageshow', restored);
       document.removeEventListener('visibilitychange', visible);
     };
   });
 </script>
-<svelte:window onkeydown={(event) => { if (event.key === 'Escape' && publicMenuOpen) publicMenuOpen = false; }} />
-<svelte:head><meta name="description" content={description} />{#if noindex}<meta name="robots" content="noindex,nofollow" />{/if}</svelte:head>
+
+<svelte:window
+  onkeydown={(event) => {
+    if (event.key === 'Escape' && publicMenuOpen) publicMenuOpen = false;
+  }}
+/>
+<svelte:head
+  ><meta name="description" content={description} />{#if noindex}<meta
+      name="robots"
+      content="noindex,nofollow"
+    />{/if}</svelte:head
+>
 <a href="#main" class="skip-link">跳转到主要内容</a>
 <div use:liquidGlass class:app-shell={appLayout} class:public-shell={!appLayout} class="sport-theme">
   <header data-auth-ready={mounted}>
     {#if appLayout}
-      <AppNavigation pathname={page.url.pathname} user={page.data.user} profile={page.data.showcase} {checking} {busy} {mounted} {identityBlocked} sports onlogout={logout} onnav={(direction) => { menuNavigationPending = true; pageDirection = direction; }} />
+      <AppNavigation
+        pathname={page.url.pathname}
+        user={page.data.user}
+        profile={page.data.showcase}
+        {checking}
+        {busy}
+        {mounted}
+        {identityBlocked}
+        sports
+        onlogout={logout}
+        onnav={(direction) => {
+          menuNavigationPending = true;
+          pageDirection = direction;
+        }}
+      />
     {:else}
       <div class="public-header">
-        <a href="/" class="brand">{#if site.logo_url && !logoFailed}<img class="brand-mark brand-logo" src={site.logo_url} alt="" width="32" height="32" onerror={() => { logoFailed = true; }} />{:else}<span class="brand-mark" aria-hidden="true">{brandInitial(site.title)}</span>{/if}<span class="brand-name">{site.title}</span></a>
+        <a href="/" class="brand"
+          >{#if site.logo_url && !logoFailed}<img
+              class="brand-mark brand-logo"
+              src={site.logo_url}
+              alt=""
+              width="32"
+              height="32"
+              onerror={() => {
+                logoFailed = true;
+              }}
+            />{:else}<span class="brand-mark" aria-hidden="true">{brandInitial(site.title)}</span>{/if}<span
+            class="brand-name">{site.title}</span
+          ></a
+        >
         <nav aria-label="主要导航" class="public-navigation">
           <ThemeToggle compact />
           <a href="/together" class="public-activities">一起跑步</a>
-          {#if page.data.user}<a href="/" data-sveltekit-reload class="button-secondary public-account-action">我的运动统计</a>{#if !checking}<button type="button" onclick={logout} disabled={busy || !mounted} class="button-secondary public-account-action">{busy ? '退出中…' : '退出登录'}</button>{/if}
+          {#if page.data.user}<a href="/" data-sveltekit-reload class="button-secondary public-account-action"
+              >我的运动统计</a
+            >{#if !checking}<button
+                type="button"
+                onclick={logout}
+                disabled={busy || !mounted}
+                class="button-secondary public-account-action">{busy ? '退出中…' : '退出登录'}</button
+              >{/if}
           {:else}<a href="/activities" data-sveltekit-reload class="public-activities">跑步记录</a>{/if}
-          <button type="button" class="nav-toggle public-menu-toggle" aria-expanded={publicMenuOpen} aria-controls="public-mobile-menu" aria-label={publicMenuOpen ? '关闭导航' : '打开导航'} onclick={() => { publicMenuOpen = !publicMenuOpen; }}>
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d={publicMenuOpen ? 'm6 6 12 12 M6 18 18 6' : 'M4 6h16 M4 12h16 M4 18h16'} /></svg><span>导航</span>
+          <button
+            type="button"
+            class="nav-toggle public-menu-toggle"
+            aria-expanded={publicMenuOpen}
+            aria-controls="public-mobile-menu"
+            aria-label={publicMenuOpen ? '关闭导航' : '打开导航'}
+            onclick={() => {
+              publicMenuOpen = !publicMenuOpen;
+            }}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="20"
+              height="20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              aria-hidden="true"
+              ><path d={publicMenuOpen ? 'm6 6 12 12 M6 18 18 6' : 'M4 6h16 M4 12h16 M4 18h16'} /></svg
+            ><span>导航</span>
           </button>
         </nav>
-        <span class="sr-only" data-testid="current-user">{checking ? '正在确认身份…' : page.data.user ? `已登录：${page.data.user.email}` : '未登录'}</span>
+        <span class="sr-only" data-testid="current-user"
+          >{checking ? '正在确认身份…' : page.data.user ? `已登录：${page.data.user.email}` : '未登录'}</span
+        >
       </div>
       {#if publicMenuOpen}
         <nav id="public-mobile-menu" class="public-mobile-menu" aria-label="公开页面导航">
           <a href="/together" class="nav-link">一起跑步</a>
           {#if page.data.user}
             <a href="/" data-sveltekit-reload class="nav-link">我的运动统计</a>
-            {#if !checking}<button type="button" class="nav-link rn-menu-option public-menu-logout" onclick={logout} disabled={busy || !mounted}>{busy ? '退出中…' : '退出登录'}</button>{/if}
+            {#if !checking}<button
+                type="button"
+                class="nav-link rn-menu-option public-menu-logout"
+                onclick={logout}
+                disabled={busy || !mounted}>{busy ? '退出中…' : '退出登录'}</button
+              >{/if}
           {:else}<a href="/activities" data-sveltekit-reload class="nav-link">跑步记录</a>{/if}
         </nav>
       {/if}
     {/if}
   </header>
   <div class="content-column">
-    {#if navigating.to && !shallowNavigation && !navigating.shallow && !navigating.willUnload}<div class="navigation-progress" role="status" data-testid="navigation-progress"><span class="sr-only">正在加载页面…</span></div>{/if}
-    <main id="main" tabindex="-1" class="page-content" class:auth-content={authPage} aria-busy={!!navigating.to && !shallowNavigation && !navigating.shallow}>
-      {#if message || page.data.authError || page.data.showcaseError && page.status < 400}<div class="mb-5"><FeedbackState kind="error" title={message || page.data.authError || page.data.showcaseError || ''} /></div>{/if}
+    {#if navigating.to && !shallowNavigation && !navigating.shallow && !navigating.willUnload}<div
+        class="navigation-progress"
+        role="status"
+        data-testid="navigation-progress"
+      >
+        <span class="sr-only">正在加载页面…</span>
+      </div>{/if}
+    <main
+      id="main"
+      tabindex="-1"
+      class="page-content"
+      class:auth-content={authPage}
+      aria-busy={!!navigating.to && !shallowNavigation && !navigating.shallow}
+    >
+      {#if message || page.data.authError || (page.data.showcaseError && page.status < 400)}<div class="mb-5">
+          <FeedbackState kind="error" title={message || page.data.authError || page.data.showcaseError || ''} />
+        </div>{/if}
       {#if checking && privateView}
         <FeedbackState kind="loading" title="正在确认登录状态。若检查失败，请刷新重试。" />
       {/if}
       {#if !(identityBlocked && privateView)}
         {#if routeLoading}<div data-testid="navigation-skeleton"><PageSkeleton /></div>{/if}
-        {#if settingsKind}<div hidden={routeLoading || checking && privateView} inert={routeLoading || checking && privateView}>
-          <PageHeader title={settingsMeta[settingsKind][0]} description={settingsMeta[settingsKind][1]}>
-            {#snippet actions()}{#if settingsHeader.create}<button id="create-user" type="button" class="button-secondary" disabled={settingsHeader.createDisabled} onclick={settingsHeader.create}>新增用户</button>{/if}{/snippet}
-            {#snippet footer()}<SettingsTabs current={settingsKind} />{/snippet}
-          </PageHeader>
-        </div>{/if}
+        {#if settingsKind}<div
+            hidden={routeLoading || (checking && privateView)}
+            inert={routeLoading || (checking && privateView)}
+          >
+            <PageHeader title={settingsMeta[settingsKind].title} description={settingsMeta[settingsKind].description}>
+              {#snippet actions()}{#if settingsHeader.action}<button
+                    id={settingsHeader.action.id}
+                    type="button"
+                    class={settingsHeader.action.variant === 'primary' ? 'button-primary' : 'button-secondary'}
+                    disabled={settingsHeader.action.disabled}
+                    onclick={settingsHeader.action.onclick}>{settingsHeader.action.label}</button
+                  >{/if}{/snippet}
+              {#snippet footer()}<SettingsTabs current={settingsKind} />{/snippet}
+            </PageHeader>
+          </div>{/if}
         <!-- Preserve file inputs and drafts across successful focus/session checks. -->
-        {#key page.url.pathname}<div class="page-reveal" class:quiet-swap={quietSwap} class:page-enter-up={pageDirection === 1} class:page-enter-down={pageDirection === -1} hidden={routeLoading || checking && privateView} inert={routeLoading || checking && privateView}>{@render children()}</div>{/key}
+        {#key page.url.pathname}<div
+            class="page-reveal"
+            class:quiet-swap={quietSwap}
+            class:page-enter-up={pageDirection === 1}
+            class:page-enter-down={pageDirection === -1}
+            hidden={routeLoading || (checking && privateView)}
+            inert={routeLoading || (checking && privateView)}
+          >
+            {@render children()}
+          </div>{/key}
       {/if}
     </main>
-    <footer class="app-footer"><span>{site.title}</span>{#if site.footer_tagline}<span>{site.footer_tagline}</span>{/if}<a class="app-footer-link" href={PROJECT_URL} target="_blank" rel="noopener noreferrer" aria-label="在 GitHub 上查看项目源码（在新窗口打开）"><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" /></svg>GitHub</a></footer>
+    <footer class="app-footer">
+      <span>{site.title}</span>{#if site.footer_tagline}<span>{site.footer_tagline}</span>{/if}<a
+        class="app-footer-link"
+        href={PROJECT_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="在 GitHub 上查看项目源码（在新窗口打开）"
+        ><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"
+          ><path
+            d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
+          /></svg
+        >GitHub</a
+      >
+    </footer>
   </div>
   {#if GlassTuner}<GlassTuner />{/if}
 </div>

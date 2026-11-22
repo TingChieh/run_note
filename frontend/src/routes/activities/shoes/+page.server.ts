@@ -3,5 +3,5 @@ import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = ({ locals, url }) => {
   if (!locals.user) redirect(303, '/admin?next=' + encodeURIComponent(url.pathname + url.search));
-  if (!locals.user.is_admin) redirect(303, '/workspace/activities/shoes' + url.search);
+  redirect(303, (locals.user.is_admin ? '/settings/shoes' : '/workspace/settings/shoes') + url.search);
 };

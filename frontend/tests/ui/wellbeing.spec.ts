@@ -2286,11 +2286,12 @@ test('disabled wellbeing hides navigation and redirects both private addresses',
 
 test('personal setting saves the preference and reports administrator restrictions', async ({ page }) => {
   await loginRunner(page);
+  await page.goto('/settings/preferences');
   const toggle = page.getByRole('switch', { name: '身心健康' });
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
   await toggle.click();
-  await page.getByRole('button', { name: '保存公开设置' }).click();
-  await expect(page.getByRole('status').filter({ hasText: '资料已保存' })).toBeVisible();
+  await page.getByRole('button', { name: '保存隐私与功能设置' }).click();
+  await expect(page.getByRole('status').filter({ hasText: '隐私与功能设置已保存' })).toBeVisible();
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
   await page.reload();
   await expect(toggle).toHaveAttribute('aria-checked', 'false');

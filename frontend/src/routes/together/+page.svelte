@@ -273,7 +273,9 @@
     {#if !data.participants.length}<section class="aux-panel section">
         {#if page.data.user}<p>还没有人加入一起跑步</p>
           <p>在设置里打开『一起跑步』就能加入</p>
-          <a href="/settings">去设置里加入</a>{:else}<p>还没有人加入</p>{/if}
+          <a href={page.data.user.is_admin ? '/settings/preferences' : '/workspace/settings/preferences'}
+            >去设置里加入</a
+          >{:else}<p>还没有人加入</p>{/if}
       </section>{:else}
       <section class="aux-panel section content-reveal">
         <h2>

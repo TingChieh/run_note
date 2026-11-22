@@ -91,6 +91,7 @@ test('重叠轨迹选择跑者时突出其颜色并保留其他记录', async ({
 
 test('设置只保存改动的开关', async ({page}) => {
   await loginRunner(page);
+  await page.goto('/settings/preferences');
   const toggle = page.getByRole('switch',{name:'加入一起跑步'});
   await expect(toggle).toBeEnabled();
   await expect(toggle).toHaveAttribute('aria-checked','false');
@@ -99,14 +100,13 @@ test('设置只保存改动的开关', async ({page}) => {
   const permission = page.getByRole('switch',{name:'一起跑步 晨跑者'});
   await permission.click();
   await expect(permission).toHaveAttribute('aria-checked','true');
-  await page.goto('/settings');
+  await page.goto('/settings/preferences');
   // The administrator's switch and this one are the same switch.
   await expect(toggle).toHaveAttribute('aria-checked','true');
-  await expect(page.getByRole('button',{name:'修改密码',exact:true})).toBeEnabled();
   let patch: unknown;
   page.on('request', request => { if(request.method()==='PATCH' && request.url().endsWith('/api/v1/me')) patch=request.postDataJSON(); });
   await toggle.click();
-  await page.getByRole('button',{name:'保存公开设置'}).click();
+  await page.getByRole('button',{name:'保存隐私与功能设置'}).click();
   await expect.poll(()=>patch).toEqual({together_enabled:false});
   await page.goto('/admin/users');
   await expect(page.getByRole('switch',{name:'一起跑步 晨跑者'})).toHaveAttribute('aria-checked','false');
@@ -174,7 +174,7 @@ test('已登录用户在无人加入时看到设置指引', async ({page}) => {
   await page.goto('/together');
   await expect(page.getByText('还没有人加入一起跑步', {exact:true})).toBeVisible();
   await expect(page.getByText('在设置里打开『一起跑步』就能加入', {exact:true})).toBeVisible();
-  await expect(page.locator('.together-stack').getByRole('link',{name:'去设置里加入'})).toHaveAttribute('href','/settings');
+  await expect(page.locator('.together-stack').getByRole('link',{name:'去设置里加入'})).toHaveAttribute('href','/settings/preferences');
 });
 
 test('从桌面切到手机时设置页菜单保持关闭', async ({page}) => {
@@ -190,7 +190,7 @@ test('从桌面切到手机时设置页菜单保持关闭', async ({page}) => {
 test('已登录但未加入时空状态提供设置入口', async ({page}) => {
   await loginRunner(page);
   await page.goto('/together');
-  await expect(page.getByRole('link',{name:'去设置里加入'})).toHaveAttribute('href','/settings');
+  await expect(page.getByRole('link',{name:'去设置里加入'})).toHaveAttribute('href','/settings/preferences');
   await expect(page.getByRole('heading',{name:'里程排行榜'})).toHaveCount(0);
 });
 

@@ -5,9 +5,11 @@ const descriptions: [RegExp, string][] = [
   [/\/footprints$/, '在地图上查看跑过的路线和运动热力。'],
   [/\/records$/, '查看 5K、10K 最佳成绩、月度里程、配速进步和训练频率，并逐年回顾。'],
   [/\/ai$/, '根据运动统计查看趋势说明和训练建议。分析只使用汇总数据。'],
+  [/\/settings\/shoes$/, '管理个人跑鞋里程、替换提醒与关联活动。'],
+  [/\/settings\/preferences$/, '管理跑量目标、展示隐私边界与个人功能模块。'],
   [/\/settings\/site$/, '修改站点名称、标语、默认外观和图标。'],
   [/\/admin\/users$/, '管理账号、登录权限和个人展示。'],
-  [/\/settings$/, '管理账户资料、头像和公开设置。'],
+  [/\/settings$/, '管理账户资料、跑鞋、目标与隐私边界。'],
   [/^\/admin$/, '使用已启用账号登录，管理自己的运动记录。'],
   [/^\/(public\/activities|shared)(\/|$)/, '查看一条公开的运动摘要。页面不包含轨迹坐标。'],
 ];
@@ -29,11 +31,11 @@ export const SITEMAP_PATHS = ['/', '/activities', '/footprints', '/ai'] as const
 const ROBOTS_DISALLOW = ['/admin', '/workspace', '/settings', '/wellbeing', '/api', '/shared', '/public'] as const;
 
 export function robotsTxt(origin: string): string {
-  const rules = ROBOTS_DISALLOW.map(path => `Disallow: ${path}`).join('\n');
+  const rules = ROBOTS_DISALLOW.map((path) => `Disallow: ${path}`).join('\n');
   return `User-agent: *\n${rules}\n\nSitemap: ${origin}/sitemap.xml\n`;
 }
 
 export function sitemapXml(origin: string): string {
-  const urls = SITEMAP_PATHS.map(path => `  <url><loc>${origin}${path}</loc></url>`).join('\n');
+  const urls = SITEMAP_PATHS.map((path) => `  <url><loc>${origin}${path}</loc></url>`).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 }

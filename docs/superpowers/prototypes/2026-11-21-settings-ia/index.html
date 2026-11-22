@@ -1,0 +1,2043 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RunNote · 设置页个人管理整合（IA 交互原型 · 方案 B）</title>
+  <style>
+    /* Exact RunNote Design System tokens from frontend/src/app.css */
+    :root {
+      color-scheme: light;
+      --background: #f6f7f4;
+      --surface: #ffffff;
+      --foreground: #202d23;
+      --primary: #17745c;
+      --primary-hover: #105d49;
+      --primary-soft: #e8f6df;
+      --primary-foreground: #ffffff;
+      --muted: #eff2e9;
+      --muted-foreground: #5c695e;
+      --border: #e0e6da;
+      --ring: #17745c;
+      --control-hover-border: #91aca0;
+      --control-accent: #17745c;
+      --control-accent-soft: #e8f6df;
+      --error: #a52b32;
+      --error-soft: #fff1f1;
+      --error-border: #efc9cc;
+      --success: #176448;
+      --success-soft: #ecf7ef;
+      --success-border: #bcdcca;
+      --warning: #805412;
+      --warning-soft: #fff8e9;
+      --warning-border: #ead7b3;
+      --sport-brand: #218538;
+      --brand-foreground: #ffffff;
+      --sport-nav-active: #e3f3d9;
+      --sport-nav-active-ink: #14532d;
+      --action: #218538;
+      --action-hover: #176a2c;
+      --segment-lens: #cfeacd;
+      --segment-lens-ink: #14532d;
+      --segment-track: #ecebe7;
+      --header-tint: #fbf0bd;
+      --header-ink: #2a2a12;
+      --header-ink-muted: #5a5628;
+      --header-tab-track: #ffffff99;
+      --header-pad: clamp(1.25rem, 3vw, 2rem);
+      --hero-bg: #fbf0bd;
+      --hero-border: transparent;
+      --sport-green: #86a912;
+      --sport-blue: #4bb6df;
+      --sport-yellow-accent: #f5c519;
+      --sport-ink: #20332b;
+      --surface-backdrop: rgb(0 0 0 / 0.5);
+      --glass-shadow: #1e302b1f;
+      --space-1: 0.25rem;
+      --space-2: 0.5rem;
+      --space-3: 0.75rem;
+      --space-4: 1rem;
+      --space-6: 1.5rem;
+      --space-8: 2rem;
+      --space-12: 3rem;
+      --radius-field: 0.625rem;
+      --radius-control: 0.75rem;
+      --radius-card: 1.5rem;
+      --radius-pill: 9999px;
+      --content-width: 86rem;
+      --top-navigation-offset: 14px;
+      --top-navigation-height: 4rem;
+      --font-body: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+      --text-caption: 0.75rem;
+      --text-small: 0.875rem;
+      --text-body: 1rem;
+      --text-card: 1.125rem;
+      --text-section: 1.25rem;
+      --text-stat: 1.75rem;
+      --text-title: 2.5rem;
+      --line-height-solid: 1;
+      --line-height-tight: 1.15;
+      --line-height-title: 1.25;
+      --line-height-heading: 1.4;
+      --line-height-body: 1.65;
+      --weight-regular: 400;
+      --weight-medium: 500;
+      --weight-semibold: 600;
+      --weight-bold: 700;
+      --transition-control: 150ms ease;
+    }
+
+    :root[data-theme='dark'] {
+      color-scheme: dark;
+      --background: #292725;
+      --surface: #33312f;
+      --foreground: #f2f0ee;
+      --primary: #77d4ac;
+      --primary-hover: #9ce4c3;
+      --primary-soft: #2c3a32;
+      --primary-foreground: #10251b;
+      --muted: #3e3b39;
+      --muted-foreground: #b1aca6;
+      --border: #46433f;
+      --ring: #d9d5cf;
+      --control-hover-border: #8b8680;
+      --control-accent: #d9d5cf;
+      --control-accent-soft: #46433f;
+      --error: #ffadb1;
+      --error-soft: #40252a;
+      --error-border: #91525c;
+      --success: #9fe1b6;
+      --success-soft: #24392d;
+      --success-border: #4c8362;
+      --warning: #f5d391;
+      --warning-soft: #3a3020;
+      --warning-border: #806b41;
+      --sport-brand: #f2f0ee;
+      --brand-foreground: #1d1c1a;
+      --sport-nav-active: #4d4644;
+      --sport-nav-active-ink: #f2f0ee;
+      --action: #8a847d;
+      --action-hover: #a39d95;
+      --segment-lens: #5a5552;
+      --segment-lens-ink: #f2f0ee;
+      --segment-track: #3e3b39;
+      --header-tint: #3a3735;
+      --header-ink: #f2f0ee;
+      --header-ink-muted: #b1aca6;
+      --header-tab-track: var(--background);
+      --hero-bg: var(--surface);
+      --hero-border: var(--border);
+      --glass-shadow: #00000047;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html { font-family: var(--font-body); background: var(--background); color: var(--foreground); line-height: var(--line-height-body); }
+    body { margin: 0; min-height: 100dvh; background: var(--background); color: var(--foreground); }
+    h1, h2, h3, p, ul, ol, dl, dd, fieldset { margin: 0; }
+    ul, ol { padding: 0; list-style: none; }
+    a { color: inherit; text-decoration: none; }
+    button, input, select, textarea { font: inherit; color: inherit; }
+    button { background: none; border: 0; cursor: pointer; }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    :focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+    }
+    .skip-link {
+      position: fixed; left: -9999px; top: var(--space-2); z-index: 100;
+      padding: var(--space-2) var(--space-4); border-radius: var(--radius-pill);
+      background: var(--primary); color: var(--primary-foreground); font-weight: var(--weight-semibold);
+    }
+    .skip-link:focus { left: var(--space-4); }
+
+    /* Prototype Reviewer Toolbar (clearly separated from app chrome) */
+    .proto-bar {
+      background: var(--muted);
+      border-bottom: 1px solid var(--border);
+      font-size: var(--text-caption);
+      color: var(--muted-foreground);
+      padding: 0.45rem clamp(1rem, 3vw, 2rem);
+    }
+    .proto-bar-inner {
+      max-width: var(--content-width);
+      margin-inline: auto;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem 1rem;
+    }
+    .proto-tag {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      padding: 0.15rem 0.6rem; border-radius: var(--radius-pill);
+      background: var(--primary-soft); color: var(--primary);
+      font-weight: var(--weight-semibold);
+    }
+    .proto-controls {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; margin-left: auto;
+    }
+    .proto-controls label {
+      display: inline-flex; align-items: center; gap: 0.35rem; font-weight: var(--weight-medium);
+    }
+    .proto-controls select, .proto-controls button {
+      min-height: 2rem; padding: 0.15rem 0.6rem; border-radius: var(--radius-field);
+      border: 1px solid var(--border); background: var(--surface); color: var(--foreground);
+      font-size: var(--text-caption); font-weight: var(--weight-medium);
+    }
+    .proto-controls button[aria-pressed='true'] {
+      background: var(--primary-soft); color: var(--primary); border-color: var(--primary);
+    }
+
+    /* App Navigation Shell (Unchanged Global Chrome) */
+    .app-header-wrap {
+      padding: var(--top-navigation-offset) clamp(1rem, 3vw, 3rem) 0;
+    }
+    .app-topbar {
+      max-width: var(--content-width);
+      margin-inline: auto;
+      height: var(--top-navigation-height);
+      padding: 0 var(--space-3) 0 var(--space-4);
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-pill);
+    }
+    .brand {
+      display: inline-flex; align-items: center; gap: 0.625rem; flex-shrink: 0;
+      font-weight: var(--weight-bold);
+    }
+    .brand-mark {
+      display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 0.625rem;
+      background: var(--sport-brand); color: var(--brand-foreground); font-weight: var(--weight-bold);
+      line-height: var(--line-height-solid);
+    }
+    .main-nav {
+      display: flex; align-items: center; gap: 0.15rem; min-width: 0; overflow: hidden;
+    }
+    .nav-link {
+      display: inline-flex; align-items: center; gap: 0.45rem;
+      height: 2.5rem; padding: 0 0.75rem; border-radius: var(--radius-pill);
+      color: var(--muted-foreground); font-size: var(--text-small); font-weight: var(--weight-medium);
+      white-space: nowrap; transition: background-color var(--transition-control), color var(--transition-control);
+    }
+    .nav-link:hover { background: var(--muted); color: var(--foreground); }
+    .nav-link[aria-current='page'] {
+      background: var(--sport-nav-active); color: var(--sport-nav-active-ink); font-weight: var(--weight-semibold);
+    }
+    .nav-account {
+      margin-left: auto; display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0;
+    }
+    .icon-pill {
+      display: inline-grid; place-items: center; width: 2.75rem; height: 2.75rem;
+      border-radius: var(--radius-pill); border: 1px solid var(--border); background: var(--surface);
+      color: var(--foreground); transition: background-color var(--transition-control);
+    }
+    .icon-pill:hover { background: var(--muted); }
+    .goal-ring-btn { color: var(--primary); }
+    .avatar-btn {
+      padding: 0; width: 2.75rem; height: 2.75rem; display: inline-grid; place-items: center;
+      border-radius: var(--radius-pill); border: 1px solid var(--border); background: var(--surface);
+    }
+    .avatar-face {
+      display: grid; place-items: center; width: 2.25rem; height: 2.25rem; border-radius: 50%;
+      background: var(--sport-nav-active); color: var(--sport-nav-active-ink);
+      font-weight: var(--weight-bold); font-size: var(--text-small);
+    }
+    .avatar-face[data-current='true'] { box-shadow: 0 0 0 2px var(--primary); }
+
+    /* Mobile navigation bar (<800px) */
+    .mobile-bar {
+      display: none;
+      max-width: var(--content-width);
+      margin-inline: auto;
+      padding: 0.5rem 0.625rem 0.5rem 0.875rem;
+      align-items: center; justify-content: space-between; gap: var(--space-2);
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-pill);
+    }
+    .mobile-actions { display: flex; align-items: center; gap: var(--space-2); }
+    .mobile-drawer {
+      display: none;
+      margin-top: var(--space-2);
+      padding: var(--space-4);
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card);
+      gap: var(--space-3);
+    }
+    .mobile-drawer.open { display: grid; }
+    .mobile-drawer-nav { display: grid; gap: var(--space-1); }
+    .mobile-drawer-account {
+      border-top: 1px solid var(--border); padding-top: var(--space-3);
+      display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+    }
+
+    @media (min-width: 800px) and (max-width: 1359px) {
+      .main-nav .nav-link > span, .desktop-brand-name { display: none; }
+      .main-nav .nav-link { padding-inline: 0.65rem; }
+    }
+    @media (max-width: 799px) {
+      .app-topbar { display: none; }
+      .mobile-bar { display: flex; }
+    }
+
+    /* Main Content Container */
+    .page-content {
+      width: 100%; max-width: var(--content-width); margin-inline: auto;
+      padding: var(--space-6) clamp(1rem, 3vw, 3rem) var(--space-12);
+      min-width: 0;
+    }
+
+    /* PageHeader + SettingsTabs */
+    .page-header {
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+      gap: var(--space-4);
+      padding: var(--header-pad);
+      background: var(--header-tint);
+      border-radius: var(--radius-card);
+      color: var(--header-ink);
+    }
+    .page-header h1 {
+      font-size: clamp(1.75rem, 3vw, var(--text-title));
+      font-weight: var(--weight-bold);
+      line-height: var(--line-height-title);
+      letter-spacing: 0;
+    }
+    .page-description {
+      margin-top: var(--space-2);
+      color: var(--header-ink-muted);
+      font-size: var(--text-small);
+      max-width: 48rem;
+    }
+    .page-actions { flex-shrink: 0; }
+    .page-header-footer { flex-basis: 100%; min-width: 0; max-width: 100%; }
+
+    .settings-tabs {
+      display: flex; flex-wrap: wrap; align-items: center;
+      width: max-content; max-width: 100%;
+      gap: 0.25rem; margin-top: var(--space-3); padding: 0.25rem;
+      border-radius: var(--radius-pill);
+      background: var(--header-tab-track);
+    }
+    .settings-tabs button, .settings-tabs a {
+      display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem;
+      min-height: 2.5rem; padding: 0.375rem 1.125rem;
+      border-radius: var(--radius-pill);
+      font-size: var(--text-small); font-weight: var(--weight-semibold);
+      color: var(--foreground); white-space: nowrap;
+      transition: background-color var(--transition-control), color var(--transition-control);
+    }
+    .settings-tabs :is(a, button):hover {
+      background: color-mix(in srgb, var(--surface) 70%, transparent);
+    }
+    .settings-tabs :is(a[aria-current='page'], button[aria-current='page'], button[aria-pressed='true']) {
+      background: var(--segment-lens); color: var(--segment-lens-ink);
+      box-shadow: 0 2px 8px var(--glass-shadow);
+    }
+    .tabs-divider {
+      width: 1px; height: 1.25rem; margin-inline: 0.25rem;
+      background: var(--border); flex-shrink: 0;
+    }
+    .tab-badge {
+      display: inline-grid; place-items: center; min-width: 1.25rem; height: 1.25rem;
+      padding-inline: 0.3rem; border-radius: var(--radius-pill);
+      background: var(--warning-soft); color: var(--warning);
+      border: 1px solid var(--warning-border);
+      font-size: var(--text-caption); font-weight: var(--weight-bold); line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    @media (max-width: 639px) {
+      .page-actions { width: 100%; }
+      .page-actions .button-primary, .page-actions .button-secondary { width: 100%; }
+    }
+    @media (max-width: 479px) {
+      .settings-tabs {
+        flex-wrap: nowrap; width: 100%; overflow-x: auto; scrollbar-width: none;
+      }
+      .settings-tabs::-webkit-scrollbar { display: none; }
+      .settings-tabs :is(a, button) { flex: 0 0 auto; padding-inline: 0.625rem; }
+    }
+
+    /* Buttons & Inputs (Exact Design System) */
+    .button-primary, .button-secondary {
+      display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+      min-height: 2.75rem; padding: 0.5rem 1.125rem;
+      border-radius: var(--radius-pill);
+      font-size: var(--text-small); font-weight: var(--weight-semibold);
+      transition: background-color var(--transition-control), border-color var(--transition-control), color var(--transition-control);
+    }
+    .button-primary {
+      background: var(--primary); color: var(--primary-foreground); border: 1px solid transparent;
+    }
+    .button-primary:hover:not(:disabled) { background: var(--primary-hover); }
+    .button-secondary {
+      background: var(--surface); color: var(--foreground); border: 1px solid var(--border);
+    }
+    .button-secondary:hover:not(:disabled) { background: var(--muted); color: var(--primary); }
+    .button-danger {
+      color: var(--error); border-color: var(--error-border);
+    }
+    .button-danger:hover:not(:disabled) { background: var(--error-soft); color: var(--error); }
+    .button-compact { min-height: 2.25rem; padding: 0.25rem 0.875rem; }
+
+    .text-field {
+      width: 100%; min-height: 2.75rem; padding: 0.5rem 0.75rem;
+      border: 1px solid var(--border); border-radius: var(--radius-field);
+      background: var(--surface); color: var(--foreground);
+      font-size: var(--text-body); line-height: var(--line-height-heading);
+      transition: border-color var(--transition-control), box-shadow var(--transition-control);
+    }
+    textarea.text-field { min-height: 5.5rem; resize: vertical; }
+    .text-field:hover:not(:disabled) { border-color: var(--control-hover-border); }
+    .text-field:focus-visible {
+      outline: none; border-color: var(--control-accent);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--control-accent) 22%, transparent);
+    }
+    .text-field[aria-invalid='true'] {
+      border-color: var(--error);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--error) 18%, transparent);
+    }
+    .text-field:disabled { background: var(--muted); }
+
+    /* Cards & Settings Layout */
+    .aux-panel {
+      padding: clamp(1.125rem, 3vw, 1.5rem);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-card);
+      background: var(--surface);
+      min-width: 0;
+    }
+    .settings-stack { display: grid; gap: var(--space-6); margin-top: var(--space-6); }
+    .settings-grid { display: grid; gap: var(--space-6); }
+    @media (min-width: 900px) {
+      .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
+    }
+    .settings-block { display: grid; align-content: start; gap: var(--space-3); }
+    .settings-block h2 { font-size: var(--text-section); font-weight: var(--weight-semibold); line-height: var(--line-height-heading); }
+    .block-hint { font-size: var(--text-small); color: var(--muted-foreground); }
+    .block-title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+    .block-field { display: grid; gap: var(--space-2); font-size: var(--text-small); font-weight: var(--weight-semibold); }
+    .block-field > :is(input, textarea, select) { font-weight: var(--weight-regular); }
+    .switch-row { display: grid; gap: var(--space-2); }
+    .switch-row + .switch-row { padding-top: var(--space-4); border-top: 1px solid var(--border); }
+    .block-details { font-size: var(--text-small); color: var(--muted-foreground); }
+    .block-details summary { cursor: pointer; font-weight: var(--weight-medium); color: var(--foreground); }
+    .block-details p { margin-top: var(--space-2); }
+
+    /* Identity Card */
+    .identity-card {
+      display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-6) var(--space-8);
+    }
+    .avatar-large {
+      width: 5.5rem; height: 5.5rem; border-radius: 50%; flex-shrink: 0;
+      display: grid; place-items: center;
+      background: var(--primary-soft); color: var(--primary);
+      font-size: var(--text-stat); font-weight: var(--weight-bold);
+      border: 2px solid var(--border);
+    }
+    .identity-meta { display: grid; gap: var(--space-1); min-width: 0; flex: 1 1 18rem; }
+    .identity-name { font-size: var(--text-section); font-weight: var(--weight-bold); }
+    .identity-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-2) 0; }
+    .identity-chips li {
+      padding: 0.25rem 0.875rem; border-radius: var(--radius-pill);
+      background: var(--muted); font-size: var(--text-small);
+    }
+    .identity-chips li > span { margin-right: var(--space-2); color: var(--muted-foreground); }
+
+    /* Personal Management Hub Summary Strip (Flat 3-column hairline card like RecordsBanner) */
+    .hub-strip {
+      display: grid;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-card);
+      background: var(--surface);
+      overflow: hidden;
+    }
+    @media (min-width: 900px) {
+      .hub-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    .hub-cell {
+      display: flex; flex-direction: column; gap: var(--space-2);
+      padding: var(--space-6); text-align: left;
+      transition: background-color var(--transition-control);
+    }
+    .hub-cell + .hub-cell { border-top: 1px solid var(--border); }
+    @media (min-width: 900px) {
+      .hub-cell + .hub-cell { border-top: 0; border-left: 1px solid var(--border); }
+    }
+    .hub-cell:hover { background: color-mix(in srgb, var(--muted) 45%, var(--surface)); }
+    .hub-cell-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+    .hub-badge {
+      display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 50%;
+      font-size: var(--text-caption); font-weight: var(--weight-bold); color: var(--sport-ink);
+      flex-shrink: 0;
+    }
+    .hub-badge.shoes { background: var(--sport-green); }
+    .hub-badge.goals { background: var(--sport-blue); }
+    .hub-badge.privacy { background: var(--sport-yellow-accent); }
+    .hub-kicker { font-size: var(--text-caption); color: var(--muted-foreground); font-weight: var(--weight-medium); }
+    .hub-stat {
+      font-size: var(--text-stat); font-weight: var(--weight-bold);
+      line-height: var(--line-height-tight); font-variant-numeric: tabular-nums;
+    }
+    .hub-detail { font-size: var(--text-small); color: var(--muted-foreground); }
+    .hub-link-label {
+      margin-top: auto; padding-top: var(--space-2);
+      font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--primary);
+    }
+
+    /* Native Switch (matching RunNote .rn-switch) */
+    .rn-switch {
+      position: relative; width: 3.5rem; height: 1.75rem; flex-shrink: 0;
+      border-radius: var(--radius-pill); background: var(--muted);
+      border: 1px solid var(--border); padding: 2px;
+      transition: background-color var(--transition-control), border-color var(--transition-control);
+    }
+    .rn-switch[aria-checked='true'] { background: var(--primary); border-color: var(--primary); }
+    .rn-switch-knob {
+      display: block; width: 1.375rem; height: 1.375rem; border-radius: 50%;
+      background: #ffffff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.22);
+      transform: translateX(0); transition: transform var(--transition-control);
+    }
+    :root[data-theme='dark'] .rn-switch[aria-checked='true'] .rn-switch-knob { background: #10251b; }
+    .rn-switch[aria-checked='true'] .rn-switch-knob { transform: translateX(1.75rem); }
+
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 0.35rem; justify-self: start;
+      padding: 0.2rem 0.75rem; border-radius: var(--radius-pill);
+      background: var(--muted); color: var(--muted-foreground); font-size: var(--text-small);
+    }
+    .status-badge.on { background: var(--primary-soft); color: var(--primary); font-weight: var(--weight-medium); }
+    .status-badge.warn { background: var(--warning-soft); color: var(--warning); border: 1px solid var(--warning-border); }
+
+    /* FeedbackState & SaveBar */
+    .feedback {
+      display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-3);
+      padding: var(--space-4); border: 1px solid var(--border);
+      border-radius: var(--radius-control); background: var(--muted); color: var(--foreground);
+    }
+    .feedback[data-kind='error'] { background: var(--error-soft); border-color: var(--error-border); color: var(--error); }
+    .feedback[data-kind='success'] { background: var(--success-soft); border-color: var(--success-border); color: var(--success); }
+    .feedback-body { flex: 1 1 16rem; display: grid; gap: var(--space-2); }
+    .feedback-title { font-weight: var(--weight-semibold); font-size: var(--text-small); }
+
+    .save-bar-slot { position: sticky; bottom: var(--space-4); z-index: 10; display: flex; justify-content: flex-end; }
+    .save-bar {
+      display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3);
+      padding: var(--space-3) var(--space-4);
+      border: 1px solid var(--border); border-radius: var(--radius-card);
+      background: color-mix(in srgb, var(--surface) 92%, transparent);
+      backdrop-filter: blur(14px);
+      box-shadow: 0 0.5rem 1.5rem var(--glass-shadow);
+      max-width: 100%;
+    }
+    .save-status { font-size: var(--text-small); color: var(--muted-foreground); margin-right: var(--space-2); }
+
+    /* Shoes Master-Detail inside Settings (Full-width canvas, zero 3-col squeeze) */
+    .shoe-layout { display: grid; align-items: start; gap: var(--space-6); margin-top: var(--space-6); }
+    @media (min-width: 1024px) {
+      .shoe-layout { grid-template-columns: minmax(0, 3fr) minmax(0, 7fr); }
+      .detail-back { display: none; }
+    }
+    @media (max-width: 1023px) {
+      .shoe-layout:not(.show-detail) .shoe-detail-col { display: none; }
+      .shoe-layout.show-detail .shoe-list-col { display: none; }
+    }
+    .filter-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-3); }
+    .compact-switch {
+      display: inline-flex; gap: 0.25rem; padding: 0.25rem;
+      border-radius: var(--radius-pill); background: var(--segment-track);
+    }
+    .compact-switch button {
+      min-height: 2.5rem; padding: 0.25rem 1rem; border-radius: var(--radius-pill);
+      font-size: var(--text-small); font-weight: var(--weight-semibold); color: var(--muted-foreground);
+    }
+    .compact-switch button[aria-pressed='true'] { background: var(--segment-lens); color: var(--segment-lens-ink); }
+    .shoe-list { display: grid; gap: var(--space-3); }
+    .shoe-card {
+      width: 100%; text-align: left;
+      padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-card);
+      background: var(--surface); display: grid; gap: var(--space-2);
+      transition: border-color var(--transition-control);
+    }
+    .shoe-card:hover, .shoe-card[aria-current='true'] { border-color: var(--primary); }
+    .shoe-card[aria-current='true'] { box-shadow: inset 0 0 0 1px var(--primary); }
+    .shoe-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); }
+    .shoe-card-metrics { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
+    .shoe-km { font-size: var(--text-card); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; }
+    .shoe-warn { font-size: var(--text-small); color: var(--warning); font-weight: var(--weight-medium); }
+    .progress-track {
+      height: var(--space-2); border-radius: var(--radius-pill);
+      background: var(--muted); overflow: hidden;
+    }
+    .progress-fill { display: block; height: 100%; border-radius: inherit; background: var(--primary); }
+    .progress-track.warning .progress-fill { background: var(--warning); }
+
+    .detail-card {
+      padding: clamp(1.125rem, 3vw, 1.5rem); border: 1px solid var(--border);
+      border-radius: var(--radius-card); background: var(--surface);
+      display: grid; gap: var(--space-4);
+    }
+    .detail-totals {
+      display: grid; gap: var(--space-2);
+      border-block: 1px solid var(--border); padding-block: var(--space-4);
+    }
+    .detail-metric { font-size: var(--text-title); font-weight: var(--weight-bold); line-height: var(--line-height-tight); font-variant-numeric: tabular-nums; }
+    .breakdown {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3);
+      border-top: 1px solid var(--border); margin-top: var(--space-2); padding-top: var(--space-3);
+    }
+    .breakdown dt { font-size: var(--text-small); color: var(--muted-foreground); }
+    .breakdown dd { font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
+    .activity-link-btn {
+      width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center; gap: var(--space-3); min-height: 2.75rem;
+      border-top: 1px solid var(--border); padding-block: var(--space-2);
+      font-size: var(--text-small); text-align: left;
+    }
+    .activity-link-btn:hover { color: var(--primary); }
+    .activity-link-btn time { color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+    .activity-link-btn strong { font-variant-numeric: tabular-nums; text-align: right; }
+
+    /* Goals & Privacy Page */
+    .goal-form-grid { display: grid; gap: var(--space-4); }
+    @media (min-width: 720px) {
+      .goal-form-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    .goal-input-card {
+      padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-control);
+      background: color-mix(in srgb, var(--muted) 35%, var(--surface));
+      display: grid; gap: var(--space-2);
+    }
+    .goal-input-row { display: flex; align-items: center; gap: var(--space-2); }
+    .goal-unit { font-size: var(--text-small); color: var(--muted-foreground); flex-shrink: 0; }
+
+    .data-links-grid { display: grid; gap: var(--space-3); }
+    @media (min-width: 720px) {
+      .data-links-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    .data-link-card {
+      display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+      padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-control);
+      background: var(--surface);
+    }
+
+    /* Activity Detail View (Retained Binding Entry Context) */
+    .sport-hero {
+      display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--space-6);
+      background: var(--hero-bg); border: 1px solid var(--hero-border);
+      border-radius: var(--radius-card); padding: clamp(1.25rem, 3vw, 2rem);
+      margin-top: var(--space-4); color: var(--header-ink);
+    }
+    .sport-hero h1 { font-size: clamp(1.75rem, 3vw, var(--text-title)); font-weight: var(--weight-bold); line-height: var(--line-height-tight); margin-top: var(--space-2); }
+    .hero-distance { text-align: right; }
+    .hero-distance span { display: block; font-size: var(--text-small); color: var(--header-ink-muted); }
+    .hero-distance strong { font-size: clamp(2rem, 4vw, 2.75rem); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; }
+    .metric-strip {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); gap: var(--space-3);
+      margin-top: var(--space-4);
+    }
+    .metric-box {
+      padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface);
+    }
+    .metric-box dt { font-size: var(--text-caption); color: var(--muted-foreground); }
+    .metric-box dd { margin-top: var(--space-1); font-size: var(--text-section); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; }
+    .binding-card {
+      margin-top: var(--space-4); padding: var(--space-4);
+      border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface);
+      display: grid; gap: var(--space-3);
+    }
+    .binding-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); }
+    .binding-form label { flex: 1 1 15rem; min-width: 0; display: grid; gap: var(--space-1); }
+
+    /* Native Dialog */
+    dialog {
+      margin: auto; width: min(34rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem);
+      overflow-y: auto; padding: var(--space-6);
+      border: 1px solid var(--border); border-radius: var(--radius-card);
+      background: var(--surface); color: var(--foreground);
+    }
+    dialog::backdrop { background: var(--surface-backdrop); }
+    .dialog-grid { display: grid; gap: var(--space-4); margin-top: var(--space-4); }
+    .dialog-two-col { display: grid; gap: var(--space-3); }
+    @media (min-width: 520px) {
+      .dialog-two-col { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .span-2 { grid-column: 1 / -1; }
+    }
+    .dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-4); }
+
+    /* Skeleton Loader */
+    .skeleton-box {
+      height: 7rem; border-radius: var(--radius-card); background: var(--muted);
+      border: 1px solid var(--border); animation: pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
+
+    .app-footer {
+      max-width: var(--content-width); margin-inline: auto;
+      padding: var(--space-6) clamp(1rem, 3vw, 3rem);
+      display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-3);
+      font-size: var(--text-caption); color: var(--muted-foreground);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+    }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <a href="#main" class="skip-link">跳转到主要内容</a>
+
+  <!-- Prototype Reviewer Control Bar (Not part of production UI) -->
+  <div class="proto-bar" role="region" aria-label="原型演示控制栏">
+    <div class="proto-bar-inner">
+      <span class="proto-tag">IA 原型 · 方案 B（推荐）</span>
+      <span>虚构示例数据 · 复用现有 /api/v1/me/* 接口 · 零生产改动</span>
+      <div class="proto-controls">
+        <label for="proto-role">角色
+          <select id="proto-role">
+            <option value="admin">站主（5 分区）</option>
+            <option value="member">普通用户（3 分区）</option>
+          </select>
+        </label>
+        <label for="proto-state">数据状态
+          <select id="proto-state">
+            <option value="normal">正常数据</option>
+            <option value="empty">跑鞋空态</option>
+            <option value="loading">加载态</option>
+            <option value="error">读取错误态</option>
+          </select>
+        </label>
+        <button type="button" id="proto-theme-btn" aria-pressed="false">切换深色</button>
+        <button type="button" id="proto-activity-btn" aria-pressed="false">预览活动详情绑定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Global Navigation (Unchanged RunNote Chrome) -->
+  <header class="app-header-wrap">
+    <div class="app-topbar">
+      <a href="#dashboard" class="brand" onclick="return false;">
+        <span class="brand-mark" aria-hidden="true">R</span>
+        <span class="desktop-brand-name">RunNote</span>
+      </a>
+      <nav class="main-nav" aria-label="主要导航">
+        <a href="#dashboard" class="nav-link" onclick="return false;"><span>数据汇总</span></a>
+        <a href="#records" class="nav-link" onclick="return false;"><span>个人记录</span></a>
+        <a href="#activities" class="nav-link" id="top-nav-activities"><span>跑步记录</span></a>
+        <a href="#together" class="nav-link" onclick="return false;"><span>一起跑步</span></a>
+        <a href="#footprints" class="nav-link" onclick="return false;"><span>个人足迹</span></a>
+        <a href="#routes" class="nav-link" onclick="return false;"><span>常跑路线</span></a>
+        <a href="#ai" class="nav-link" onclick="return false;"><span>AI 分析</span></a>
+        <a href="#wellbeing" class="nav-link" onclick="return false;"><span>身心健康</span></a>
+      </nav>
+      <div class="nav-account">
+        <button type="button" class="icon-pill goal-ring-btn" id="nav-goal-btn" aria-label="跑量目标，本周已完成 71%" title="跑量目标（本周 71%）">
+          <svg viewBox="0 0 28 28" width="24" height="24" aria-hidden="true">
+            <circle cx="14" cy="14" r="10" fill="none" stroke="currentColor" stroke-opacity="0.22" stroke-width="3" />
+            <circle cx="14" cy="14" r="10" fill="none" stroke="currentColor" stroke-width="3" stroke-dasharray="62.8" stroke-dashoffset="18.2" stroke-linecap="round" transform="rotate(-90 14 14)" />
+          </svg>
+        </button>
+        <button type="button" class="icon-pill" id="nav-theme-btn" aria-label="切换浅色或深色外观" title="切换外观">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+        </button>
+        <button type="button" class="avatar-btn" id="nav-avatar-btn" aria-label="前往个人设置">
+          <span class="avatar-face" id="nav-avatar-face" data-current="true">林</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile Bar (<800px) -->
+    <div class="mobile-bar">
+      <a href="#settings" class="brand" id="mobile-brand-link">
+        <span class="brand-mark" aria-hidden="true">R</span>
+        <span>RunNote</span>
+      </a>
+      <div class="mobile-actions">
+        <button type="button" class="icon-pill" id="mobile-theme-btn" aria-label="切换外观">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2"/></svg>
+        </button>
+        <button type="button" class="button-secondary" id="mobile-menu-toggle" aria-expanded="false" aria-controls="mobile-drawer">导航</button>
+      </div>
+    </div>
+    <div id="mobile-drawer" class="mobile-drawer" aria-label="移动导航菜单">
+      <nav class="mobile-drawer-nav" aria-label="主导航">
+        <button type="button" class="nav-link" data-jump="settings">设置与个人管理</button>
+        <button type="button" class="nav-link" data-jump="activity">跑步详情（含跑鞋绑定）</button>
+      </nav>
+      <div class="mobile-drawer-account">
+        <div>
+          <strong id="mobile-user-name">林砚</strong>
+          <p class="block-hint" id="mobile-user-mode">管理员模式</p>
+        </div>
+        <button type="button" class="button-secondary" data-jump="settings">设置</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1" class="page-content">
+    <!-- ==================== SETTINGS SHELL VIEW ==================== -->
+    <div id="settings-shell">
+      <section class="page-header" aria-labelledby="settings-page-title">
+        <div style="min-width: 0;">
+          <h1 id="settings-page-title">设置</h1>
+          <p class="page-description" id="settings-page-desc">管理账户资料、跑鞋、目标与隐私边界。</p>
+        </div>
+        <div class="page-actions" id="settings-header-actions"></div>
+        <div class="page-header-footer">
+          <nav aria-label="设置分区" class="settings-tabs" id="settings-tabs"></nav>
+        </div>
+      </section>
+
+      <div id="settings-global-status" role="status" class="mt-4 hidden" style="margin-top: var(--space-4);"></div>
+
+      <!-- TAB 1: 账户总览 (Personal Hub + Account) -->
+      <section id="panel-account" class="settings-stack" aria-label="账户总览">
+        <!-- Identity Card -->
+        <section class="aux-panel identity-card" aria-labelledby="identity-heading">
+          <h2 id="identity-heading" class="sr-only">头像与账户信息</h2>
+          <div class="avatar-large" aria-hidden="true">林</div>
+          <div class="identity-meta">
+            <p class="identity-name" id="id-display-name">林砚</p>
+            <p class="block-hint" id="id-username">@linyan_run</p>
+            <ul class="identity-chips" aria-label="账户信息">
+              <li><span>邮箱</span><span id="id-email">runner.demo@example.test</span></li>
+              <li><span>时区</span><span id="id-timezone">Asia/Shanghai</span></li>
+              <li><span>工作区</span><span id="id-scope">站主（根路径 /settings）</span></li>
+            </ul>
+            <div style="display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1);">
+              <button type="button" class="button-secondary button-compact" id="mock-avatar-btn">更换头像</button>
+              <button type="button" class="button-secondary button-compact" id="go-activity-sample">查看跑步详情绑定 →</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Personal Management Hub Strip (3-column flat card) -->
+        <section class="hub-strip" aria-label="个人管理概览">
+          <button type="button" class="hub-cell" id="hub-shoes-btn">
+            <div class="hub-cell-head">
+              <span class="hub-kicker">装备 · 跑鞋</span>
+              <span class="hub-badge shoes" aria-hidden="true">鞋</span>
+            </div>
+            <p class="hub-stat" id="hub-shoes-stat">3 双使用中</p>
+            <p class="hub-detail" id="hub-shoes-detail">1 双已达替换里程 · 1 双接近阈值</p>
+            <span class="hub-link-label">管理跑鞋 →</span>
+          </button>
+
+          <button type="button" class="hub-cell" id="hub-goals-btn">
+            <div class="hub-cell-head">
+              <span class="hub-kicker">训练 · 跑量目标</span>
+              <span class="hub-badge goals" aria-hidden="true">标</span>
+            </div>
+            <p class="hub-stat" id="hub-goals-stat">周 40 km</p>
+            <p class="hub-detail" id="hub-goals-detail">月 160 km · 年 1,800 km（与数据汇总同源）</p>
+            <span class="hub-link-label">调整目标 →</span>
+          </button>
+
+          <button type="button" class="hub-cell" id="hub-privacy-btn">
+            <div class="hub-cell-head">
+              <span class="hub-kicker">可见性与模块</span>
+              <span class="hub-badge privacy" aria-hidden="true">隐</span>
+            </div>
+            <p class="hub-stat" id="hub-privacy-stat">2 项已开启</p>
+            <p class="hub-detail" id="hub-privacy-detail">一起跑步已开 · 身心健康已开 · 旧主页关闭</p>
+            <span class="hub-link-label">隐私与数据 →</span>
+          </button>
+        </section>
+
+        <!-- Profile & Security Grid -->
+        <div class="settings-grid">
+          <form id="account-profile-form" class="aux-panel settings-block" aria-labelledby="profile-title">
+            <h2 id="profile-title">个人资料</h2>
+            <p class="block-hint">昵称与简介显示在个人展示页；时区用于活动日期归属与目标统计。</p>
+            <label class="block-field" for="input-display-name">
+              昵称
+              <input id="input-display-name" class="text-field" required maxlength="80" value="林砚" />
+            </label>
+            <label class="block-field" for="input-bio">
+              个人简介
+              <textarea id="input-bio" class="text-field" maxlength="500" rows="3">周末长距离爱好者，记录每一次轻松跑与半马备赛。</textarea>
+            </label>
+            <label class="block-field" for="input-timezone">
+              时区
+              <select id="input-timezone" class="text-field">
+                <option value="Asia/Shanghai" selected>Asia/Shanghai (UTC+8)</option>
+                <option value="Asia/Tokyo">Asia/Tokyo (UTC+9)</option>
+                <option value="Europe/London">Europe/London (UTC+0/+1)</option>
+                <option value="America/Los_Angeles">America/Los_Angeles (UTC-8/-7)</option>
+              </select>
+            </label>
+          </form>
+
+          <div style="display: grid; gap: var(--space-6); align-content: start;">
+            <section class="aux-panel settings-block" aria-labelledby="username-title">
+              <h2 id="username-title">修改用户名</h2>
+              <p class="block-hint">3–30 位小写字母、数字或下划线，修改后需冷却 30 天，旧的 /p/ 展示链接将失效。</p>
+              <form id="username-form" style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3);">
+                <label class="block-field" for="input-username" style="flex: 1 1 12rem;">
+                  新用户名
+                  <input id="input-username" class="text-field" minlength="3" maxlength="30" pattern="[a-z0-9_]+" value="linyan_run" />
+                </label>
+                <button type="submit" class="button-secondary" id="btn-username-open" disabled>修改用户名</button>
+              </form>
+              <p id="username-status" role="status" class="block-hint hidden"></p>
+            </section>
+
+            <section class="aux-panel settings-block" aria-labelledby="security-title">
+              <div class="block-title-row">
+                <div>
+                  <h2 id="security-title">账户安全</h2>
+                  <p class="block-hint">修改密码后全部登录会话失效，需重新登录。</p>
+                </div>
+                <button type="button" class="button-secondary" id="toggle-password-btn" aria-expanded="false" aria-controls="password-panel">修改密码</button>
+              </div>
+              <form id="password-panel" class="hidden" style="display: grid; gap: var(--space-3); padding-top: var(--space-2);">
+                <label class="block-field" for="pwd-current">当前密码<input id="pwd-current" type="password" class="text-field" minlength="12" required /></label>
+                <label class="block-field" for="pwd-new">新密码（至少 12 位）<input id="pwd-new" type="password" class="text-field" minlength="12" required /></label>
+                <div><button type="submit" class="button-primary">确认修改密码</button></div>
+              </form>
+            </section>
+          </div>
+        </div>
+
+        <div id="account-save-slot" class="save-bar-slot hidden">
+          <div class="save-bar" role="region" aria-label="保存个人资料">
+            <p class="save-status" id="account-save-status" role="status">有未保存的资料更改</p>
+            <button type="button" class="button-secondary" id="account-discard-btn">放弃</button>
+            <button type="submit" form="account-profile-form" class="button-primary" id="account-save-btn">保存个人资料</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: 跑鞋 (First-class Personal Equipment inside Settings) -->
+      <section id="panel-shoes" class="hidden" aria-label="跑鞋管理">
+        <div id="shoes-toast" role="status" class="hidden" style="margin-top: var(--space-4);"></div>
+        <div id="shoes-loading" class="settings-stack hidden" aria-busy="true">
+          <div class="skeleton-box" aria-hidden="true"></div>
+          <div class="skeleton-box" aria-hidden="true"></div>
+          <p role="status" class="block-hint">正在读取跑鞋列表…</p>
+        </div>
+        <div id="shoes-error" class="hidden" style="margin-top: var(--space-6);">
+          <div class="feedback" data-kind="error" role="alert">
+            <div class="feedback-body">
+              <p class="feedback-title">无法读取跑鞋列表（模拟 503 服务暂不可用）</p>
+              <p class="block-hint" style="color: inherit;">请检查网络连接后重试；已有本地数据不受影响。</p>
+              <div><button type="button" class="button-secondary" id="shoes-retry-btn">重试</button></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="shoes-workspace" class="shoe-layout">
+          <section class="shoe-list-col" aria-label="跑鞋列表">
+            <div class="filter-row">
+              <div class="compact-switch" role="group" aria-label="跑鞋状态">
+                <button type="button" id="filter-active" aria-pressed="true">使用中</button>
+                <button type="button" id="filter-retired" aria-pressed="false">已退役</button>
+              </div>
+              <span class="block-hint" id="shoes-count">3 双</span>
+            </div>
+            <ul class="shoe-list" id="shoe-list"></ul>
+            <div id="shoes-empty" class="hidden">
+              <div class="feedback" role="status">
+                <div class="feedback-body">
+                  <p class="feedback-title" id="shoes-empty-title">还没有使用中的跑鞋</p>
+                  <p class="block-hint">添加正在穿的跑鞋后，可在跑步详情里绑定并自动累计里程。</p>
+                  <div><button type="button" class="button-primary" id="empty-add-shoe-btn">＋ 添加跑鞋</button></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="shoe-detail-col" aria-label="跑鞋详情">
+            <button type="button" class="button-secondary detail-back" id="shoe-back-btn" style="margin-bottom: var(--space-3);">← 跑鞋列表</button>
+            <div id="shoe-detail-card" class="detail-card"></div>
+          </section>
+        </div>
+      </section>
+
+      <!-- TAB 3: 目标与隐私 (Goals + Privacy & Visibility + Data Entry Hub) -->
+      <section id="panel-preferences" class="settings-stack hidden" aria-label="目标与隐私">
+        <!-- Section A: Running Goals -->
+        <section class="aux-panel settings-block" id="section-goals" aria-labelledby="goals-title">
+          <div class="block-title-row">
+            <div>
+              <h2 id="goals-title">跑量目标</h2>
+              <p class="block-hint">统一调整周、月、年目标；写入现有 /api/v1/me/running-goals，数据汇总与顶栏进度环实时同步。</p>
+            </div>
+          </div>
+          <form id="goals-form" class="goal-form-grid" novalidate>
+            <div class="goal-input-card">
+              <label class="block-field" for="goal-week">每周目标
+                <div class="goal-input-row">
+                  <input id="goal-week" class="text-field" inputmode="decimal" value="40" aria-describedby="goal-week-hint" />
+                  <span class="goal-unit">km</span>
+                </div>
+              </label>
+              <p id="goal-week-hint" class="block-hint">本周已完成 28.4 km（71%）</p>
+            </div>
+            <div class="goal-input-card">
+              <label class="block-field" for="goal-month">每月目标
+                <div class="goal-input-row">
+                  <input id="goal-month" class="text-field" inputmode="decimal" value="160" aria-describedby="goal-month-hint" />
+                  <span class="goal-unit">km</span>
+                </div>
+              </label>
+              <p id="goal-month-hint" class="block-hint">本月已完成 112.6 km（70%）</p>
+            </div>
+            <div class="goal-input-card">
+              <label class="block-field" for="goal-year">年度目标
+                <div class="goal-input-row">
+                  <input id="goal-year" class="text-field" inputmode="decimal" value="1800" aria-describedby="goal-year-hint" />
+                  <span class="goal-unit">km</span>
+                </div>
+              </label>
+              <p id="goal-year-hint" class="block-hint">今年已完成 1,426.0 km（79%）</p>
+            </div>
+            <div style="grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3);">
+              <button type="submit" class="button-primary" id="save-goals-btn">保存跑量目标</button>
+              <span id="goals-feedback" role="status" class="block-hint"></span>
+            </div>
+          </form>
+        </section>
+
+        <!-- Section B: Privacy & Module Switches -->
+        <form id="privacy-form" class="aux-panel settings-block" aria-labelledby="privacy-title">
+          <h2 id="privacy-title">展示、隐私与个人模块</h2>
+          <p class="block-hint">区分站主授权的完整展示与本人可切换的公开范围，修改后通过底部保存条统一提交。</p>
+
+          <div class="switch-row">
+            <div class="block-title-row">
+              <div>
+                <h3 style="font-size: var(--text-card); font-weight: var(--weight-semibold);">个人完整展示</h3>
+                <p class="block-hint">由站主在用户管理中控制。开启时访客可浏览 /p/linyan_run 的全部记录与完整轨迹；跑鞋、备注与身心健康永不公开。</p>
+              </div>
+              <span class="status-badge on" id="showcase-readonly-badge">只读：已开启</span>
+            </div>
+          </div>
+
+          <div class="switch-row">
+            <div class="block-title-row">
+              <div>
+                <h3 id="sw-public-label" style="font-size: var(--text-card); font-weight: var(--weight-semibold);">公开个人主页（旧版摘要）</h3>
+                <p class="block-hint">仅展示主动设为公开的记录摘要与日历，不含轨迹坐标。</p>
+              </div>
+              <button type="button" role="switch" class="rn-switch" id="sw-public" aria-checked="false" aria-labelledby="sw-public-label">
+                <span class="rn-switch-knob" aria-hidden="true"></span>
+              </button>
+            </div>
+            <details class="block-details">
+              <summary>展示与隐私说明</summary>
+              <p>关闭旧版公开主页不会自动撤销单条活动的旧版分享链接；独立链接需在对应活动详情页单独撤销。</p>
+            </details>
+          </div>
+
+          <div class="switch-row">
+            <div class="block-title-row">
+              <div>
+                <h3 id="sw-together-label" style="font-size: var(--text-card); font-weight: var(--weight-semibold);">加入一起跑步</h3>
+                <p class="block-hint">开启后，全部运动记录（含私人记录）及精确路线会汇入「一起跑步」公开榜单与动态。</p>
+              </div>
+              <button type="button" role="switch" class="rn-switch" id="sw-together" aria-checked="true" aria-labelledby="sw-together-label">
+                <span class="rn-switch-knob" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="switch-row">
+            <div class="block-title-row">
+              <div>
+                <h3 id="sw-wellbeing-label" style="font-size: var(--text-card); font-weight: var(--weight-semibold);">身心健康日记</h3>
+                <p class="block-hint">纯私人数据，不进入任何展示、分享或 AI 分析。关闭仅隐藏导航入口，数据完整保留。</p>
+              </div>
+              <button type="button" role="switch" class="rn-switch" id="sw-wellbeing" aria-checked="true" aria-labelledby="sw-wellbeing-label">
+                <span class="rn-switch-knob" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+        </form>
+
+        <!-- Section C: Data Management Entries (Links only, zero duplicate forms) -->
+        <section class="aux-panel settings-block" aria-labelledby="data-title">
+          <h2 id="data-title">数据与记录入口</h2>
+          <p class="block-hint">保持单一操作入口，不在设置页重复堆叠导入表单。</p>
+          <div class="data-links-grid">
+            <div class="data-link-card">
+              <div>
+                <strong style="display: block;">导入轨迹数据</strong>
+                <span class="block-hint">GPX、TCX 与小米运动健康批量导入</span>
+              </div>
+              <button type="button" class="button-secondary button-compact" id="data-go-import">前往导入 →</button>
+            </div>
+            <div class="data-link-card">
+              <div>
+                <strong style="display: block;">身心健康就诊报告</strong>
+                <span class="block-hint">在身心健康页查看汇总并导出 CSV</span>
+              </div>
+              <button type="button" class="button-secondary button-compact" onclick="alert('原型提示：生产环境直达 /wellbeing 报告导出区')">前往导出 →</button>
+            </div>
+          </div>
+        </section>
+
+        <div id="privacy-save-slot" class="save-bar-slot hidden">
+          <div class="save-bar" role="region" aria-label="保存隐私与功能设置">
+            <p class="save-status" id="privacy-save-status" role="status">有未保存的隐私设置更改</p>
+            <button type="button" class="button-secondary" id="privacy-discard-btn">放弃</button>
+            <button type="submit" form="privacy-form" class="button-primary" id="privacy-save-btn">保存隐私与功能设置</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4 (Admin Only): 站点设置 (Existing route context) -->
+      <section id="panel-site" class="settings-stack hidden" aria-label="站点设置预览">
+        <section class="aux-panel settings-block">
+          <h2>站点设置（仅站主 · 保持现有 /settings/site 不变）</h2>
+          <p class="block-hint">位于设置标签栏分隔线右侧，与个人管理分区清晰隔离。继续管理站点标题、副标题、默认外观、Logo/Favicon 与版本信息。</p>
+          <span class="status-badge on">当前路由：/settings/site · 权限：is_admin</span>
+        </section>
+      </section>
+
+      <!-- TAB 5 (Admin Only): 用户管理 (Existing route context) -->
+      <section id="panel-users" class="settings-stack hidden" aria-label="用户管理预览">
+        <section class="aux-panel settings-block">
+          <h2>用户管理（仅站主 · 保持现有 /admin/users 不变）</h2>
+          <p class="block-hint">继续复用共享设置页头的「新增用户」动作插槽与 quiet-swap 切换，不改动管理员开关和批量删除流程。</p>
+          <span class="status-badge on">当前路由：/admin/users · 权限：is_admin</span>
+        </section>
+      </section>
+    </div>
+
+    <!-- ==================== ACTIVITY DETAIL BINDING VIEW ==================== -->
+    <div id="activity-shell" class="hidden" aria-label="跑步详情页（保留的跑鞋绑定入口）">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3);">
+        <button type="button" class="button-secondary" id="act-back-to-settings">← 返回设置 · 跑鞋</button>
+        <span class="status-badge">上下文示例：/activities/act-20261118-01</span>
+      </div>
+
+      <section class="sport-hero" aria-labelledby="act-title">
+        <div>
+          <p style="font-size: var(--text-small); font-weight: var(--weight-semibold);">跑步详情</p>
+          <h1 id="act-title">晨间滨江 10K</h1>
+          <p style="margin-top: var(--space-2); font-size: var(--text-small); opacity: 0.85;">2026-11-18 · Asia/Shanghai</p>
+        </div>
+        <div class="hero-distance">
+          <span>本次距离</span>
+          <strong>10.04 km</strong>
+        </div>
+      </section>
+
+      <dl class="metric-strip" aria-label="本次运动指标">
+        <div class="metric-box"><dt>设备用时</dt><dd>52:18</dd></div>
+        <div class="metric-box"><dt>平均配速</dt><dd>5:13 /km</dd></div>
+        <div class="metric-box"><dt>平均心率</dt><dd>154 bpm</dd></div>
+        <div class="metric-box"><dt>步数</dt><dd>9,420 步</dd></div>
+      </dl>
+
+      <!-- Retained ActivityShoe Binding Card -->
+      <section class="binding-card" aria-label="活动的跑鞋">
+        <div class="block-title-row">
+          <div>
+            <h2 style="font-size: var(--text-card); font-weight: var(--weight-semibold);">跑鞋</h2>
+            <p class="block-hint" id="binding-current-label">当前绑定：Nimbus 26 日常慢跑</p>
+          </div>
+          <button type="button" class="button-secondary button-compact" id="binding-manage-link">管理跑鞋 →</button>
+        </div>
+        <form id="binding-form" class="binding-form">
+          <label for="binding-select">
+            <span class="sr-only">选择此次跑步穿着的跑鞋</span>
+            <select id="binding-select" class="text-field"></select>
+          </label>
+          <button type="submit" class="button-secondary" id="binding-save-btn" disabled>保存跑鞋</button>
+        </form>
+        <div id="binding-empty-cta" class="hidden">
+          <button type="button" class="button-secondary" id="binding-add-shoe-btn">＋ 添加跑鞋</button>
+        </div>
+        <p id="binding-status" role="status" class="block-hint hidden"></p>
+      </section>
+    </div>
+  </main>
+
+  <footer class="app-footer">
+    <span>RunNote · 设置页个人管理整合（Item 28 设计原型）</span>
+    <span>仅用于 IA 与交互评审 · 无真实个人数据</span>
+  </footer>
+
+  <!-- Dialog 1: Add / Edit Shoe -->
+  <dialog id="shoe-editor-dialog" aria-labelledby="editor-title">
+    <h2 id="editor-title" style="font-size: var(--text-section); font-weight: var(--weight-semibold);">添加跑鞋</h2>
+    <form id="shoe-editor-form" class="dialog-grid" novalidate>
+      <div class="dialog-two-col">
+        <label class="block-field span-2" for="ed-name">鞋名 *<input id="ed-name" class="text-field" maxlength="80" required /></label>
+        <label class="block-field" for="ed-brand">品牌<input id="ed-brand" class="text-field" maxlength="60" placeholder="如 ASICS" /></label>
+        <label class="block-field" for="ed-model">型号<input id="ed-model" class="text-field" maxlength="60" placeholder="如 Gel-Nimbus 26" /></label>
+        <label class="block-field" for="ed-purchased">购入日期<input id="ed-purchased" class="text-field" type="date" /></label>
+        <label class="block-field" for="ed-threshold">替换阈值（km）<input id="ed-threshold" class="text-field" inputmode="decimal" placeholder="如 600" /></label>
+        <label class="block-field span-2" for="ed-initial">
+          初始里程（km）*
+          <input id="ed-initial" class="text-field" inputmode="decimal" value="0" required aria-describedby="ed-initial-hint" />
+          <span id="ed-initial-hint" class="block-hint" style="font-weight: var(--weight-regular);">仅填写导入 RunNote 之前已跑里程。</span>
+        </label>
+        <label class="block-field span-2" for="ed-notes">备注<textarea id="ed-notes" class="text-field" rows="3" maxlength="1000"></textarea></label>
+      </div>
+      <p id="editor-error" role="alert" class="hidden" style="color: var(--error); font-size: var(--text-small); font-weight: var(--weight-medium);"></p>
+      <div class="dialog-actions">
+        <button type="button" class="button-secondary" id="editor-cancel-btn">取消</button>
+        <button type="submit" class="button-primary" id="editor-submit-btn">保存跑鞋</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Dialog 2: Retire Confirmation (Destructive-feeling lifecycle transition) -->
+  <dialog id="retire-dialog" aria-labelledby="retire-title" aria-describedby="retire-desc">
+    <h2 id="retire-title" style="font-size: var(--text-section); font-weight: var(--weight-semibold);">退役这双跑鞋？</h2>
+    <p id="retire-desc" class="block-hint" style="margin-top: var(--space-3);"></p>
+    <div class="dialog-actions">
+      <button type="button" class="button-secondary" id="retire-cancel-btn">取消</button>
+      <button type="button" class="button-primary" id="retire-confirm-btn">确认退役</button>
+    </div>
+  </dialog>
+
+  <!-- Dialog 3: Delete Confirmation (with 409 SHOE_IN_USE handling) -->
+  <dialog id="delete-dialog" aria-labelledby="delete-title" aria-describedby="delete-desc">
+    <h2 id="delete-title" style="font-size: var(--text-section); font-weight: var(--weight-semibold);">永久删除跑鞋？</h2>
+    <p id="delete-desc" class="block-hint" style="margin-top: var(--space-3);">删除后无法恢复。若仍有关联活动，后端将返回 409 并建议改用「退役跑鞋」。</p>
+    <p id="delete-error" role="alert" class="hidden" style="margin-top: var(--space-3); color: var(--error); font-size: var(--text-small); font-weight: var(--weight-medium);"></p>
+    <div class="dialog-actions">
+      <button type="button" class="button-secondary" id="delete-cancel-btn">取消</button>
+      <button type="button" class="button-secondary button-danger" id="delete-confirm-btn">确认删除</button>
+    </div>
+  </dialog>
+
+  <!-- Dialog 4: Username Confirmation -->
+  <dialog id="username-dialog" aria-labelledby="uname-title">
+    <h2 id="uname-title" style="font-size: var(--text-section); font-weight: var(--weight-semibold);">确认修改用户名</h2>
+    <p id="uname-desc" class="block-hint" style="margin-top: var(--space-3);"></p>
+    <div class="dialog-actions">
+      <button type="button" class="button-secondary" id="uname-cancel-btn">取消</button>
+      <button type="button" class="button-primary" id="uname-confirm-btn">确认修改</button>
+    </div>
+  </dialog>
+
+  <script>
+    (() => {
+      // Fictional prototype fixture data (zero real user data)
+      const state = {
+        role: 'admin',          // 'admin' | 'member'
+        theme: 'light',         // 'light' | 'dark'
+        mode: 'settings',       // 'settings' | 'activity'
+        tab: 'account',         // 'account' | 'shoes' | 'preferences' | 'site' | 'users'
+        dataState: 'normal',    // 'normal' | 'empty' | 'loading' | 'error'
+        shoeFilter: 'active',   // 'active' | 'retired'
+        selectedShoeId: 'shoe-1',
+        mobileDetailOpen: false,
+        editingShoeId: null,
+        activityBoundShoeId: 'shoe-2',
+        profile: {
+          displayName: '林砚',
+          username: 'linyan_run',
+          email: 'runner.demo@example.test',
+          timezone: 'Asia/Shanghai',
+          bio: '周末长距离爱好者，记录每一次轻松跑与半马备赛。',
+          showcaseEnabled: true,
+          profileIsPublic: false,
+          togetherEnabled: true,
+          wellbeingEnabled: true
+        },
+        goals: { week: '40', month: '160', year: '1800' },
+        shoes: [
+          {
+            id: 'shoe-1',
+            name: 'Vaporfly 3 竞速',
+            brand: 'Nike',
+            model: 'ZoomX Vaporfly Next% 3',
+            purchased_on: '2025-09-12',
+            retired_on: null,
+            initial_km: 80.0,
+            activity_km: 432.6,
+            replacement_km: 500.0,
+            notes: '仅用于 10K 与半马比赛及节奏跑。',
+            activities: [
+              { id: 'act-1', date: '2026-11-15', title: '周末半马节奏测试', km: 21.1 },
+              { id: 'act-2', date: '2026-11-08', title: '操场间歇 8×1000m', km: 12.4 },
+              { id: 'act-3', date: '2026-10-26', title: '城市秋日 10K', km: 10.0 }
+            ]
+          },
+          {
+            id: 'shoe-2',
+            name: 'Nimbus 26 日常慢跑',
+            brand: 'ASICS',
+            model: 'Gel-Nimbus 26',
+            purchased_on: '2026-01-18',
+            retired_on: null,
+            initial_km: 20.0,
+            activity_km: 548.2,
+            replacement_km: 600.0,
+            notes: '主力堆量鞋，缓震稳定。',
+            activities: [
+              { id: 'act-20261118-01', date: '2026-11-18', title: '晨间滨江 10K', km: 10.04 },
+              { id: 'act-5', date: '2026-11-12', title: '晚间公园恢复跑', km: 7.2 }
+            ]
+          },
+          {
+            id: 'shoe-3',
+            name: 'Boston 12 综训',
+            brand: 'adidas',
+            model: 'Adizero Boston 12',
+            purchased_on: '2026-08-03',
+            retired_on: null,
+            initial_km: 0.0,
+            activity_km: 124.5,
+            replacement_km: 700.0,
+            notes: '雨天与长距离巡航。',
+            activities: []
+          },
+          {
+            id: 'shoe-4',
+            name: 'Pegasus 40 经典款',
+            brand: 'Nike',
+            model: 'Air Zoom Pegasus 40',
+            purchased_on: '2024-04-06',
+            retired_on: '2026-02-14',
+            initial_km: 45.0,
+            activity_km: 682.3,
+            replacement_km: 700.0,
+            notes: '中底弹性衰减，转作日常通勤。',
+            activities: [
+              { id: 'act-9', date: '2026-02-10', title: '春节后轻松跑', km: 8.5 }
+            ]
+          }
+        ]
+      };
+
+      const $ = (id) => document.getElementById(id);
+      const kmFmt = (n) => `${Number(n).toLocaleString('zh-CN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km`;
+
+      function computeShoe(shoe) {
+        const total = Number((shoe.initial_km + shoe.activity_km).toFixed(1));
+        let reminder = null;
+        let remaining = null;
+        if (!shoe.retired_on && shoe.replacement_km) {
+          if (total >= shoe.replacement_km) reminder = 'due';
+          else if (total >= shoe.replacement_km * 0.9) {
+            reminder = 'near';
+            remaining = Number((shoe.replacement_km - total).toFixed(1));
+          }
+        }
+        return { ...shoe, total_km: total, reminder, remaining_km: remaining };
+      }
+
+      function visibleShoes() {
+        if (state.dataState === 'empty') return [];
+        const list = state.shoes
+          .filter((s) => (state.shoeFilter === 'retired' ? !!s.retired_on : !s.retired_on))
+          .map(computeShoe);
+        const rank = { due: 0, near: 1 };
+        list.sort((a, b) => (rank[a.reminder] ?? 2) - (rank[b.reminder] ?? 2));
+        return list;
+      }
+
+      function applyTheme() {
+        document.documentElement.setAttribute('data-theme', state.theme);
+        $('proto-theme-btn').textContent = state.theme === 'dark' ? '切换浅色' : '切换深色';
+        $('proto-theme-btn').setAttribute('aria-pressed', String(state.theme === 'dark'));
+      }
+
+      const TAB_META = {
+        account: { title: '设置', desc: '' },
+        shoes: { title: '跑鞋', desc: '' },
+        preferences: { title: '目标与隐私', desc: '' },
+        site: { title: '站点设置', desc: '' },
+        users: { title: '用户管理', desc: '' }
+      };
+
+      function renderTabs() {
+        const nav = $('settings-tabs');
+        const activeList = state.dataState === 'empty' ? [] : state.shoes.filter((s) => !s.retired_on).map(computeShoe);
+        const alertCount = activeList.filter((s) => s.reminder !== null).length;
+
+        const personal = [
+          { key: 'account', label: '账户总览' },
+          { key: 'shoes', label: '跑鞋', badge: alertCount },
+          { key: 'preferences', label: '目标与隐私' }
+        ];
+        const admin = [
+          { key: 'site', label: '站点设置' },
+          { key: 'users', label: '用户管理' }
+        ];
+
+        nav.innerHTML = '';
+        const makeBtn = (item) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.dataset.tab = item.key;
+          if (state.tab === item.key) btn.setAttribute('aria-current', 'page');
+          btn.append(document.createTextNode(item.label));
+          if (item.badge) {
+            const b = document.createElement('span');
+            b.className = 'tab-badge';
+            b.textContent = String(item.badge);
+            b.setAttribute('aria-label', `${item.badge} 双接近或已达替换里程`);
+            btn.append(b);
+          }
+          btn.addEventListener('click', () => switchTab(item.key));
+          return btn;
+        };
+
+        personal.forEach((item) => nav.append(makeBtn(item)));
+        if (state.role === 'admin') {
+          const div = document.createElement('span');
+          div.className = 'tabs-divider';
+          div.setAttribute('aria-hidden', 'true');
+          nav.append(div);
+          admin.forEach((item) => nav.append(makeBtn(item)));
+        }
+      }
+
+      function renderHeader() {
+        const meta = TAB_META[state.tab];
+        $('settings-page-title').textContent = meta.title;
+        const descEl = $('settings-page-desc');
+        descEl.textContent = meta.desc;
+        descEl.classList.toggle('hidden', !meta.desc);
+        const actions = $('settings-header-actions');
+        actions.innerHTML = '';
+        if (state.tab === 'shoes') {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.id = 'header-add-shoe';
+          btn.className = 'button-primary';
+          btn.innerHTML = '<span aria-hidden="true">＋</span> 添加跑鞋';
+          btn.addEventListener('click', () => openShoeEditor(null, btn));
+          actions.append(btn);
+        } else if (state.tab === 'users' && state.role === 'admin') {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'button-secondary';
+          btn.textContent = '新增用户';
+          btn.addEventListener('click', () => alert('原型提示：复用现有 /admin/users 新增用户弹窗。'));
+          actions.append(btn);
+        }
+      }
+
+      function renderHubSummary() {
+        const active = state.dataState === 'empty' ? [] : state.shoes.filter((s) => !s.retired_on).map(computeShoe);
+        const due = active.filter((s) => s.reminder === 'due').length;
+        const near = active.filter((s) => s.reminder === 'near').length;
+        $('hub-shoes-stat').textContent = active.length ? `${active.length} 双使用中` : '尚未添加';
+        $('hub-shoes-detail').textContent = !active.length
+          ? '添加跑鞋后可在活动详情中绑定累计里程'
+          : [due ? `${due} 双已达替换里程` : '', near ? `${near} 双接近阈值` : ''].filter(Boolean).join(' · ') || '所有使用中跑鞋状态正常';
+
+        $('hub-goals-stat').textContent = `周 ${state.goals.week} km`;
+        $('hub-goals-detail').textContent = `月 ${state.goals.month} km · 年 ${Number(state.goals.year).toLocaleString('zh-CN')} km（与数据汇总同源）`;
+
+        const enabledModules = [
+          state.profile.togetherEnabled ? '一起跑步已开' : '一起跑步已关',
+          state.profile.wellbeingEnabled ? '身心健康已开' : '身心健康已关',
+          state.profile.profileIsPublic ? '旧主页已开' : '旧主页已关'
+        ];
+        const onCount = [state.profile.togetherEnabled, state.profile.wellbeingEnabled, state.profile.profileIsPublic].filter(Boolean).length;
+        $('hub-privacy-stat').textContent = `${onCount} 项已开启`;
+        $('hub-privacy-detail').textContent = enabledModules.join(' · ');
+
+        $('id-display-name').textContent = state.profile.displayName;
+        $('id-username').textContent = `@${state.profile.username}`;
+        $('id-timezone').textContent = state.profile.timezone;
+        $('id-scope').textContent = state.role === 'admin' ? '站主（/settings）' : '普通用户（/workspace/settings）';
+        $('mobile-user-mode').textContent = state.role === 'admin' ? '管理员模式' : '本人工作区';
+      }
+
+      function renderShoes() {
+        const loadingEl = $('shoes-loading');
+        const errorEl = $('shoes-error');
+        const workspace = $('shoes-workspace');
+        loadingEl.classList.toggle('hidden', state.dataState !== 'loading');
+        errorEl.classList.toggle('hidden', state.dataState !== 'error');
+        workspace.classList.toggle('hidden', state.dataState === 'loading' || state.dataState === 'error');
+        if (state.dataState === 'loading' || state.dataState === 'error') return;
+
+        $('filter-active').setAttribute('aria-pressed', String(state.shoeFilter === 'active'));
+        $('filter-retired').setAttribute('aria-pressed', String(state.shoeFilter === 'retired'));
+
+        const items = visibleShoes();
+        $('shoes-count').textContent = `${items.length} 双`;
+        const listEl = $('shoe-list');
+        const emptyEl = $('shoes-empty');
+        listEl.innerHTML = '';
+
+        const detailCol = workspace.querySelector('.shoe-detail-col');
+        if (!items.length) {
+          emptyEl.classList.remove('hidden');
+          $('shoes-empty-title').textContent = state.shoeFilter === 'active' ? '还没有使用中的跑鞋' : '没有已退役的跑鞋';
+          detailCol?.classList.add('hidden');
+          workspace.style.gridTemplateColumns = 'minmax(0, 1fr)';
+          workspace.classList.remove('show-detail');
+          return;
+        }
+
+        emptyEl.classList.add('hidden');
+        detailCol?.classList.remove('hidden');
+        workspace.style.gridTemplateColumns = '';
+        if (!items.some((s) => s.id === state.selectedShoeId)) {
+          state.selectedShoeId = items[0].id;
+        }
+        workspace.classList.toggle('show-detail', state.mobileDetailOpen);
+
+        items.forEach((shoe) => {
+          const li = document.createElement('li');
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'shoe-card';
+          if (shoe.id === state.selectedShoeId) btn.setAttribute('aria-current', 'true');
+          const pct = shoe.replacement_km ? Math.min(100, (shoe.total_km / shoe.replacement_km) * 100) : 0;
+          const statusHtml = shoe.reminder
+            ? `<span class="shoe-warn">${shoe.reminder === 'due' ? '已达替换里程' : '接近替换里程'}</span>`
+            : shoe.retired_on
+              ? '<span class="block-hint">已退役</span>'
+              : shoe.replacement_km
+                ? `<span class="block-hint">阈值 ${kmFmt(shoe.replacement_km)}</span>`
+                : '';
+          const barHtml = shoe.replacement_km && !shoe.retired_on
+            ? `<div class="progress-track ${shoe.reminder ? 'warning' : ''}" aria-hidden="true"><span class="progress-fill" style="width:${pct}%"></span></div>`
+            : '';
+
+          btn.innerHTML = `
+            <div class="shoe-card-top">
+              <div style="min-width:0;">
+                <strong style="display:block;">${shoe.name}</strong>
+                <span class="block-hint">${[shoe.brand, shoe.model].filter(Boolean).join(' · ') || '未填品牌型号'}</span>
+              </div>
+              <span aria-hidden="true" class="block-hint">›</span>
+            </div>
+            <div class="shoe-card-metrics">
+              <strong class="shoe-km">${kmFmt(shoe.total_km)}</strong>
+              ${statusHtml}
+            </div>
+            ${barHtml}
+          `;
+          btn.addEventListener('click', () => {
+            state.selectedShoeId = shoe.id;
+            state.mobileDetailOpen = true;
+            renderShoes();
+          });
+          li.append(btn);
+          listEl.append(li);
+        });
+
+        const current = items.find((s) => s.id === state.selectedShoeId) || items[0];
+        const pct = current.replacement_km ? Math.min(100, (current.total_km / current.replacement_km) * 100) : 0;
+        const activitiesHtml = current.activities.length
+          ? `<ul>${current.activities.map((a) => `
+              <li>
+                <button type="button" class="activity-link-btn" data-open-activity="${a.id}">
+                  <time datetime="${a.date}">${a.date}</time>
+                  <span>${a.title}</span>
+                  <strong>${kmFmt(a.km)}</strong>
+                </button>
+              </li>`).join('')}</ul>`
+          : `<div class="feedback"><div class="feedback-body"><p class="feedback-title">暂无关联活动</p><p class="block-hint">可在任意跑步详情页将活动绑定到此跑鞋。</p></div></div>`;
+
+        $('shoe-detail-card').innerHTML = `
+          <header style="display:flex; align-items:flex-start; justify-content:space-between; gap: var(--space-3);">
+            <div style="min-width:0;">
+              <h2 style="font-size: var(--text-section); font-weight: var(--weight-semibold);">${current.name}</h2>
+              <p class="block-hint">${[current.brand, current.model].filter(Boolean).join(' · ') || '未填品牌型号'}</p>
+            </div>
+            <button type="button" class="button-secondary" id="detail-edit-btn">编辑</button>
+          </header>
+          <section class="detail-totals" aria-label="里程">
+            <p class="block-hint">累计里程</p>
+            <p class="detail-metric">${kmFmt(current.total_km)}</p>
+            ${current.replacement_km && !current.retired_on ? `
+              <div style="display:flex; flex-wrap:wrap; justify-content:space-between; gap: var(--space-2); font-size: var(--text-small);">
+                <span class="${current.reminder ? 'shoe-warn' : ''}">${current.reminder === 'due' ? '已达替换里程' : current.reminder === 'near' ? '接近替换里程' : '替换里程'}</span>
+                <span class="block-hint">阈值 ${kmFmt(current.replacement_km)}</span>
+              </div>
+              <div class="progress-track ${current.reminder ? 'warning' : ''}" aria-hidden="true"><span class="progress-fill" style="width:${pct}%"></span></div>
+              ${current.remaining_km !== null ? `<p class="block-hint">剩余 ${kmFmt(current.remaining_km)}</p>` : ''}
+            ` : ''}
+            <dl class="breakdown">
+              <div><dt>初始里程</dt><dd>${kmFmt(current.initial_km)}</dd></div>
+              <div><dt>已绑活动里程</dt><dd>${kmFmt(current.activity_km)}</dd></div>
+            </dl>
+          </section>
+          <section aria-label="关联活动">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: var(--space-2);">
+              <h3 style="font-size: var(--text-body); font-weight: var(--weight-semibold);">关联活动</h3>
+              <span class="block-hint">${current.activities.length} 次</span>
+            </div>
+            ${activitiesHtml}
+          </section>
+          <details class="block-details" style="border-top: 1px solid var(--border); padding-top: var(--space-3);">
+            <summary>跑鞋资料</summary>
+            <dl style="display:grid; gap: var(--space-2); margin-top: var(--space-2);">
+              <div><dt style="display:inline; color: var(--muted-foreground);">购入日期：</dt><dd style="display:inline;">${current.purchased_on || '—'}</dd></div>
+              ${current.retired_on ? `<div><dt style="display:inline; color: var(--muted-foreground);">退役日期：</dt><dd style="display:inline;">${current.retired_on}</dd></div>` : ''}
+              ${current.notes ? `<div><dt style="display:inline; color: var(--muted-foreground);">备注：</dt><dd style="display:inline;">${current.notes}</dd></div>` : ''}
+            </dl>
+          </details>
+          <div style="display:flex; flex-wrap:wrap; gap: var(--space-2); padding-top: var(--space-1);">
+            <button type="button" class="button-secondary" id="detail-retire-btn">${current.retired_on ? '恢复使用' : '退役跑鞋'}</button>
+            <button type="button" class="button-secondary button-danger" id="detail-delete-btn">删除跑鞋</button>
+          </div>
+        `;
+
+        $('detail-edit-btn').addEventListener('click', (e) => openShoeEditor(current, e.currentTarget));
+        $('detail-retire-btn').addEventListener('click', (e) => {
+          if (current.retired_on) {
+            current.retired_on = null;
+            state.shoeFilter = 'active';
+            showShoesToast(`「${current.name}」已恢复使用。`);
+            renderAll();
+          } else {
+            openRetireDialog(current, e.currentTarget);
+          }
+        });
+        $('detail-delete-btn').addEventListener('click', (e) => openDeleteDialog(current, e.currentTarget));
+        $('shoe-detail-card').querySelectorAll('[data-open-activity]').forEach((el) => {
+          el.addEventListener('click', () => setMode('activity'));
+        });
+      }
+
+      function renderActivityBinding() {
+        const activeShoes = state.dataState === 'empty' ? [] : state.shoes.filter((s) => !s.retired_on);
+        const bound = state.shoes.find((s) => s.id === state.activityBoundShoeId) || null;
+        $('binding-current-label').textContent = bound
+          ? `当前绑定：${bound.name}${bound.retired_on ? '（已退役）' : ''}`
+          : '当前绑定：未绑定';
+
+        const sel = $('binding-select');
+        sel.innerHTML = '<option value="">不绑定</option>';
+        if (bound && bound.retired_on) {
+          const opt = document.createElement('option');
+          opt.value = bound.id;
+          opt.textContent = `${bound.name}（已退役）`;
+          sel.append(opt);
+        }
+        activeShoes.forEach((s) => {
+          const opt = document.createElement('option');
+          opt.value = s.id;
+          opt.textContent = s.name;
+          sel.append(opt);
+        });
+        sel.value = bound ? bound.id : '';
+        $('binding-save-btn').disabled = true;
+        $('binding-empty-cta').classList.toggle('hidden', activeShoes.length > 0);
+      }
+
+      function showShoesToast(msg) {
+        const el = $('shoes-toast');
+        el.innerHTML = `<div class="feedback" data-kind="success"><div class="feedback-body"><p class="feedback-title">${msg}</p></div></div>`;
+        el.classList.remove('hidden');
+        setTimeout(() => el.classList.add('hidden'), 5000);
+      }
+
+      function switchTab(nextTab) {
+        if (state.role !== 'admin' && (nextTab === 'site' || nextTab === 'users')) nextTab = 'account';
+        state.tab = nextTab;
+        state.mode = 'settings';
+        state.mobileDetailOpen = false;
+        renderAll();
+      }
+
+      function setMode(mode) {
+        state.mode = mode;
+        $('proto-activity-btn').setAttribute('aria-pressed', String(mode === 'activity'));
+        renderAll();
+      }
+
+      function renderAll() {
+        applyTheme();
+        $('settings-shell').classList.toggle('hidden', state.mode !== 'settings');
+        $('activity-shell').classList.toggle('hidden', state.mode !== 'activity');
+        $('nav-avatar-face').dataset.current = String(state.mode === 'settings');
+        if (state.mode === 'activity') {
+          $('top-nav-activities').setAttribute('aria-current', 'page');
+          renderActivityBinding();
+        } else {
+          $('top-nav-activities').removeAttribute('aria-current');
+          if (state.role !== 'admin' && (state.tab === 'site' || state.tab === 'users')) state.tab = 'account';
+          renderTabs();
+          renderHeader();
+          renderHubSummary();
+          ['account', 'shoes', 'preferences', 'site', 'users'].forEach((k) => {
+            $('panel-' + k).classList.toggle('hidden', state.tab !== k);
+          });
+          if (state.tab === 'shoes') renderShoes();
+        }
+      }
+
+      // Focus restoration helpers for dialogs
+      let lastTrigger = null;
+      function openShoeEditor(shoe, opener) {
+        lastTrigger = opener || null;
+        state.editingShoeId = shoe ? shoe.id : null;
+        $('editor-title').textContent = shoe ? '编辑跑鞋' : '添加跑鞋';
+        $('ed-name').value = shoe ? shoe.name : '';
+        $('ed-brand').value = shoe ? shoe.brand || '' : '';
+        $('ed-model').value = shoe ? shoe.model || '' : '';
+        $('ed-purchased').value = shoe ? shoe.purchased_on || '' : '';
+        $('ed-threshold').value = shoe && shoe.replacement_km ? String(shoe.replacement_km) : '';
+        $('ed-initial').value = shoe ? String(shoe.initial_km) : '0';
+        $('ed-notes').value = shoe ? shoe.notes || '' : '';
+        $('editor-error').classList.add('hidden');
+        ['ed-name', 'ed-threshold', 'ed-initial'].forEach((id) => $(id).removeAttribute('aria-invalid'));
+        $('shoe-editor-dialog').showModal();
+        $('ed-name').focus();
+      }
+
+      function openRetireDialog(shoe, opener) {
+        lastTrigger = opener || null;
+        $('retire-title').textContent = `退役「${shoe.name}」？`;
+        $('retire-desc').textContent = '退役后该跑鞋将记录为今日退役，不再出现在新活动的可选绑定列表中，并停止替换里程提醒。历史活动关联与累计里程完整保留，随时可在「已退役」列表中恢复使用。';
+        $('retire-confirm-btn').dataset.shoeId = shoe.id;
+        $('retire-dialog').showModal();
+        $('retire-cancel-btn').focus();
+      }
+
+      function openDeleteDialog(shoe, opener) {
+        lastTrigger = opener || null;
+        $('delete-title').textContent = `永久删除「${shoe.name}」？`;
+        $('delete-error').classList.add('hidden');
+        $('delete-confirm-btn').dataset.shoeId = shoe.id;
+        $('delete-dialog').showModal();
+        $('delete-cancel-btn').focus();
+      }
+
+      // Wire events
+      $('proto-role').addEventListener('change', (e) => { state.role = e.target.value; renderAll(); });
+      $('proto-state').addEventListener('change', (e) => { state.dataState = e.target.value; renderAll(); });
+      const toggleTheme = () => { state.theme = state.theme === 'dark' ? 'light' : 'dark'; applyTheme(); };
+      $('proto-theme-btn').addEventListener('click', toggleTheme);
+      $('nav-theme-btn').addEventListener('click', toggleTheme);
+      $('mobile-theme-btn').addEventListener('click', toggleTheme);
+      $('proto-activity-btn').addEventListener('click', () => setMode(state.mode === 'activity' ? 'settings' : 'activity'));
+      $('top-nav-activities').addEventListener('click', (e) => { e.preventDefault(); setMode('activity'); });
+      $('nav-avatar-btn').addEventListener('click', () => switchTab('account'));
+      $('nav-goal-btn').addEventListener('click', () => switchTab('preferences'));
+      $('mobile-menu-toggle').addEventListener('click', () => {
+        const d = $('mobile-drawer');
+        const open = d.classList.toggle('open');
+        $('mobile-menu-toggle').setAttribute('aria-expanded', String(open));
+      });
+      document.querySelectorAll('[data-jump]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          $('mobile-drawer').classList.remove('open');
+          $('mobile-menu-toggle').setAttribute('aria-expanded', 'false');
+          if (btn.dataset.jump === 'activity') setMode('activity');
+          else switchTab('account');
+        });
+      });
+
+      // Hub summary jumps
+      $('hub-shoes-btn').addEventListener('click', () => switchTab('shoes'));
+      $('hub-goals-btn').addEventListener('click', () => switchTab('preferences'));
+      $('hub-privacy-btn').addEventListener('click', () => switchTab('preferences'));
+      $('go-activity-sample').addEventListener('click', () => setMode('activity'));
+      $('data-go-import').addEventListener('click', () => setMode('activity'));
+      $('act-back-to-settings').addEventListener('click', () => switchTab('shoes'));
+      $('binding-manage-link').addEventListener('click', () => {
+        if (state.activityBoundShoeId) {
+          const s = state.shoes.find((x) => x.id === state.activityBoundShoeId);
+          state.shoeFilter = s?.retired_on ? 'retired' : 'active';
+          state.selectedShoeId = state.activityBoundShoeId;
+        }
+        switchTab('shoes');
+      });
+      $('binding-add-shoe-btn').addEventListener('click', () => {
+        state.dataState = 'normal';
+        $('proto-state').value = 'normal';
+        switchTab('shoes');
+        openShoeEditor(null, $('header-add-shoe'));
+      });
+
+      // Account profile dirty tracking
+      function checkAccountDirty() {
+        const dirty =
+          $('input-display-name').value !== state.profile.displayName ||
+          $('input-bio').value !== state.profile.bio ||
+          $('input-timezone').value !== state.profile.timezone;
+        $('account-save-slot').classList.toggle('hidden', !dirty);
+      }
+      ['input-display-name', 'input-bio', 'input-timezone'].forEach((id) => {
+        $(id).addEventListener('input', checkAccountDirty);
+        $(id).addEventListener('change', checkAccountDirty);
+      });
+      $('account-discard-btn').addEventListener('click', () => {
+        $('input-display-name').value = state.profile.displayName;
+        $('input-bio').value = state.profile.bio;
+        $('input-timezone').value = state.profile.timezone;
+        checkAccountDirty();
+      });
+      $('account-profile-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        state.profile.displayName = $('input-display-name').value.trim() || state.profile.displayName;
+        state.profile.bio = $('input-bio').value;
+        state.profile.timezone = $('input-timezone').value;
+        checkAccountDirty();
+        renderHubSummary();
+        const st = $('settings-global-status');
+        st.innerHTML = '<div class="feedback" data-kind="success"><div class="feedback-body"><p class="feedback-title">个人资料已保存（PATCH /api/v1/me）。</p></div></div>';
+        st.classList.remove('hidden');
+        setTimeout(() => st.classList.add('hidden'), 4000);
+      });
+
+      // Username & password
+      $('input-username').addEventListener('input', () => {
+        $('btn-username-open').disabled = $('input-username').value.trim() === state.profile.username;
+      });
+      $('username-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const next = $('input-username').value.trim();
+        $('uname-desc').textContent = `将 @${state.profile.username} 修改为 @${next}。旧的 /p/${state.profile.username} 链接将立即失效，修改后 30 天内不可再次修改。`;
+        $('username-dialog').showModal();
+      });
+      $('uname-cancel-btn').addEventListener('click', () => $('username-dialog').close());
+      $('uname-confirm-btn').addEventListener('click', () => {
+        state.profile.username = $('input-username').value.trim();
+        $('btn-username-open').disabled = true;
+        $('username-dialog').close();
+        renderHubSummary();
+        $('username-status').textContent = '用户名已更新（PATCH /api/v1/me/username）。';
+        $('username-status').classList.remove('hidden');
+      });
+      $('toggle-password-btn').addEventListener('click', () => {
+        const panel = $('password-panel');
+        const open = panel.classList.toggle('hidden') === false;
+        $('toggle-password-btn').setAttribute('aria-expanded', String(open));
+        $('toggle-password-btn').textContent = open ? '收起' : '修改密码';
+      });
+      $('password-panel').addEventListener('submit', (e) => {
+        e.preventDefault();
+        alert('原型提示：调用 PATCH /api/v1/me/password 并吊销所有旧会话。');
+      });
+
+      // Shoes filter & retry & empty add
+      $('filter-active').addEventListener('click', () => { state.shoeFilter = 'active'; state.mobileDetailOpen = false; renderShoes(); });
+      $('filter-retired').addEventListener('click', () => { state.shoeFilter = 'retired'; state.mobileDetailOpen = false; renderShoes(); });
+      $('shoe-back-btn').addEventListener('click', () => { state.mobileDetailOpen = false; renderShoes(); });
+      $('shoes-retry-btn').addEventListener('click', () => { state.dataState = 'normal'; $('proto-state').value = 'normal'; renderAll(); });
+      $('empty-add-shoe-btn').addEventListener('click', (e) => openShoeEditor(null, e.currentTarget));
+
+      // Shoe editor submit + validation
+      $('editor-cancel-btn').addEventListener('click', () => { $('shoe-editor-dialog').close(); lastTrigger?.focus(); });
+      $('shoe-editor-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const name = $('ed-name').value.trim();
+        const thresholdStr = $('ed-threshold').value.trim();
+        const initialStr = $('ed-initial').value.trim();
+        const err = $('editor-error');
+        ['ed-name', 'ed-threshold', 'ed-initial'].forEach((id) => $(id).removeAttribute('aria-invalid'));
+
+        if (!name) {
+          $('ed-name').setAttribute('aria-invalid', 'true');
+          err.textContent = '请填写鞋名（1–80 个字符）。';
+          err.classList.remove('hidden');
+          $('ed-name').focus();
+          return;
+        }
+        const initialVal = Number(initialStr);
+        if (initialStr === '' || !Number.isFinite(initialVal) || initialVal < 0 || initialVal >= 1000000) {
+          $('ed-initial').setAttribute('aria-invalid', 'true');
+          err.textContent = '请输入大于等于 0 且小于 1,000,000 km 的初始里程。';
+          err.classList.remove('hidden');
+          $('ed-initial').focus();
+          return;
+        }
+        let thresholdVal = null;
+        if (thresholdStr !== '') {
+          thresholdVal = Number(thresholdStr);
+          if (!Number.isFinite(thresholdVal) || thresholdVal <= 0 || thresholdVal >= 1000000) {
+            $('ed-threshold').setAttribute('aria-invalid', 'true');
+            err.textContent = '请输入大于 0 且小于 1,000,000 km 的替换阈值。';
+            err.classList.remove('hidden');
+            $('ed-threshold').focus();
+            return;
+          }
+        }
+
+        if (state.editingShoeId) {
+          const target = state.shoes.find((s) => s.id === state.editingShoeId);
+          if (target) {
+            target.name = name;
+            target.brand = $('ed-brand').value.trim();
+            target.model = $('ed-model').value.trim();
+            target.purchased_on = $('ed-purchased').value || null;
+            target.replacement_km = thresholdVal;
+            target.initial_km = initialVal;
+            target.notes = $('ed-notes').value.trim();
+          }
+          showShoesToast(`已保存跑鞋「${name}」。`);
+        } else {
+          const created = {
+            id: 'shoe-' + Date.now(),
+            name,
+            brand: $('ed-brand').value.trim(),
+            model: $('ed-model').value.trim(),
+            purchased_on: $('ed-purchased').value || null,
+            retired_on: null,
+            initial_km: initialVal,
+            activity_km: 0,
+            replacement_km: thresholdVal,
+            notes: $('ed-notes').value.trim(),
+            activities: []
+          };
+          state.shoes.unshift(created);
+          state.dataState = 'normal';
+          $('proto-state').value = 'normal';
+          state.shoeFilter = 'active';
+          state.selectedShoeId = created.id;
+          showShoesToast(`已添加跑鞋「${name}」。`);
+        }
+        $('shoe-editor-dialog').close();
+        renderAll();
+        lastTrigger?.focus();
+      });
+
+      // Retire confirm
+      $('retire-cancel-btn').addEventListener('click', () => { $('retire-dialog').close(); lastTrigger?.focus(); });
+      $('retire-confirm-btn').addEventListener('click', () => {
+        const id = $('retire-confirm-btn').dataset.shoeId;
+        const shoe = state.shoes.find((s) => s.id === id);
+        if (shoe) {
+          shoe.retired_on = '2026-11-21';
+          state.shoeFilter = 'retired';
+          state.selectedShoeId = shoe.id;
+          showShoesToast(`「${shoe.name}」已退役，历史里程完整保留。`);
+        }
+        $('retire-dialog').close();
+        renderAll();
+      });
+
+      // Delete confirm (simulates 409 SHOE_IN_USE when activities > 0)
+      $('delete-cancel-btn').addEventListener('click', () => { $('delete-dialog').close(); lastTrigger?.focus(); });
+      $('delete-confirm-btn').addEventListener('click', () => {
+        const id = $('delete-confirm-btn').dataset.shoeId;
+        const shoe = state.shoes.find((s) => s.id === id);
+        if (!shoe) return;
+        if (shoe.activities.length > 0) {
+          $('delete-error').textContent = '仍有关联活动，请先解绑或改用「退役跑鞋」（409 SHOE_IN_USE）。';
+          $('delete-error').classList.remove('hidden');
+          return;
+        }
+        state.shoes = state.shoes.filter((s) => s.id !== id);
+        $('delete-dialog').close();
+        showShoesToast(`已永久删除「${shoe.name}」。`);
+        renderAll();
+      });
+
+      // Goals save + validation
+      $('goals-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const fields = [
+          ['goal-week', 'week', '每周目标'],
+          ['goal-month', 'month', '每月目标'],
+          ['goal-year', 'year', '年度目标']
+        ];
+        for (const [id, key, label] of fields) {
+          $(id).removeAttribute('aria-invalid');
+          const v = $(id).value.trim();
+          if (!/^\d+(?:\.\d)?$/.test(v) || Number(v) <= 0 || Number(v) > 100000) {
+            $(id).setAttribute('aria-invalid', 'true');
+            $('goals-feedback').textContent = `${label}请输入大于 0、最多 1 位小数的公里数（上限 100000）。`;
+            $('goals-feedback').style.color = 'var(--error)';
+            $(id).focus();
+            return;
+          }
+          state.goals[key] = v;
+        }
+        $('goals-feedback').textContent = '跑量目标已保存并同步（PUT /api/v1/me/running-goals/{period}）。';
+        $('goals-feedback').style.color = 'var(--success)';
+        renderHubSummary();
+      });
+
+      // Privacy switches + SaveBar
+      const switchDraft = {
+        profileIsPublic: state.profile.profileIsPublic,
+        togetherEnabled: state.profile.togetherEnabled,
+        wellbeingEnabled: state.profile.wellbeingEnabled
+      };
+      function syncSwitches() {
+        $('sw-public').setAttribute('aria-checked', String(switchDraft.profileIsPublic));
+        $('sw-together').setAttribute('aria-checked', String(switchDraft.togetherEnabled));
+        $('sw-wellbeing').setAttribute('aria-checked', String(switchDraft.wellbeingEnabled));
+        const dirty =
+          switchDraft.profileIsPublic !== state.profile.profileIsPublic ||
+          switchDraft.togetherEnabled !== state.profile.togetherEnabled ||
+          switchDraft.wellbeingEnabled !== state.profile.wellbeingEnabled;
+        $('privacy-save-slot').classList.toggle('hidden', !dirty);
+      }
+      $('sw-public').addEventListener('click', () => { switchDraft.profileIsPublic = !switchDraft.profileIsPublic; syncSwitches(); });
+      $('sw-together').addEventListener('click', () => { switchDraft.togetherEnabled = !switchDraft.togetherEnabled; syncSwitches(); });
+      $('sw-wellbeing').addEventListener('click', () => { switchDraft.wellbeingEnabled = !switchDraft.wellbeingEnabled; syncSwitches(); });
+      $('privacy-discard-btn').addEventListener('click', () => {
+        switchDraft.profileIsPublic = state.profile.profileIsPublic;
+        switchDraft.togetherEnabled = state.profile.togetherEnabled;
+        switchDraft.wellbeingEnabled = state.profile.wellbeingEnabled;
+        syncSwitches();
+      });
+      $('privacy-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        state.profile.profileIsPublic = switchDraft.profileIsPublic;
+        state.profile.togetherEnabled = switchDraft.togetherEnabled;
+        state.profile.wellbeingEnabled = switchDraft.wellbeingEnabled;
+        syncSwitches();
+        renderHubSummary();
+        const st = $('settings-global-status');
+        st.innerHTML = '<div class="feedback" data-kind="success"><div class="feedback-body"><p class="feedback-title">隐私与功能设置已保存（PATCH /api/v1/me）。</p></div></div>';
+        st.classList.remove('hidden');
+        setTimeout(() => st.classList.add('hidden'), 4000);
+      });
+
+      // Activity shoe binding
+      $('binding-select').addEventListener('change', () => {
+        $('binding-save-btn').disabled = $('binding-select').value === (state.activityBoundShoeId || '');
+        $('binding-status').classList.add('hidden');
+      });
+      $('binding-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const nextId = $('binding-select').value || null;
+        state.activityBoundShoeId = nextId;
+        renderActivityBinding();
+        $('binding-status').textContent = nextId ? '已保存跑鞋绑定（PATCH /api/v1/me/activities/{id}/shoe）。' : '已解绑跑鞋。';
+        $('binding-status').classList.remove('hidden');
+      });
+
+      // Support deterministic URL query params for visual QA screenshots
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('theme') === 'dark') state.theme = 'dark';
+      if (params.get('role') === 'member') { state.role = 'member'; $('proto-role').value = 'member'; }
+      if (['normal', 'empty', 'loading', 'error'].includes(params.get('state'))) {
+        state.dataState = params.get('state');
+        $('proto-state').value = state.dataState;
+      }
+      if (params.get('mode') === 'activity') state.mode = 'activity';
+      if (['account', 'shoes', 'preferences', 'site', 'users'].includes(params.get('tab'))) state.tab = params.get('tab');
+      if (params.get('detail') === '1') state.mobileDetailOpen = true;
+      if (params.get('hidebar') === '1') document.querySelector('.proto-bar')?.classList.add('hidden');
+
+      renderAll();
+
+      // Optional deterministic dialog triggers for QA screenshots
+      if (params.get('dialog') === 'add') {
+        openShoeEditor(null, $('header-add-shoe'));
+      } else if (params.get('dialog') === 'error') {
+        openShoeEditor(null, $('header-add-shoe'));
+        $('ed-name').value = 'Temp 测试鞋';
+        $('ed-threshold').value = '-50';
+        $('shoe-editor-form').requestSubmit();
+      } else if (params.get('dialog') === 'retire') {
+        const s = state.shoes.find((x) => x.id === state.selectedShoeId);
+        if (s) openRetireDialog(s);
+      } else if (params.get('dialog') === 'delete-in-use') {
+        const s = state.shoes.find((x) => x.id === state.selectedShoeId);
+        if (s) {
+          openDeleteDialog(s);
+          $('delete-confirm-btn').click();
+        }
+      }
+    })();
+  </script>
+</body>
+</html>
