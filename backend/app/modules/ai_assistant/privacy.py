@@ -41,6 +41,7 @@ FORBIDDEN_OUTBOUND_KEYS: frozenset[str] = frozenset(
         "raw_gpx",
         "raw_tcx",
         "raw_bytes",
+        "png",
         "png_bytes",
         "avatar_url",
         "photo",
@@ -176,6 +177,39 @@ def _encode_size(payload: dict[str, Any]) -> int:
     return len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
 
 
+def _trim_nested_cities(result: dict[str, Any], max_bytes: int) -> bool:
+    """Trim nested cities inside global footprint countries/regions before dropping regions."""
+    countries = result.get("countries")
+    if not isinstance(countries, list):
+        return False
+    # Deep-copy nested structures before mutating.
+    copied = [
+        {
+            **country,
+            "regions": [
+                {**region, "cities": list(region.get("cities", []))}
+                for region in country.get("regions", [])
+            ],
+        }
+        for country in countries
+    ]
+    trimmed = False
+    while _encode_size({**result, "countries": copied, "truncated": True}) > max_bytes:
+        # Pop the tail city from the region that currently holds the most cities.
+        candidates = [
+            region for country in copied for region in country["regions"] if region["cities"]
+        ]
+        if not candidates:
+            break
+        richest = max(candidates, key=lambda r: len(r["cities"]))
+        richest["cities"].pop()
+        trimmed = True
+    if trimmed:
+        result["countries"] = copied
+        result["truncated"] = True
+    return trimmed
+
+
 def _cap_payload_size(
     payload: dict[str, Any], *, list_key: str | None = None, max_bytes: int = MAX_TOOL_OUTPUT_BYTES
 ) -> tuple[dict[str, Any], bool]:
@@ -184,6 +218,10 @@ def _cap_payload_size(
         return payload, False
     result = dict(payload)
     truncated = False
+    if list_key == "countries" and _trim_nested_cities(result, max_bytes):
+        truncated = True
+        if _encode_size(result) <= max_bytes:
+            return result, True
     chronological = {"monthly", "weekly", "yearly", "buckets"}
     if list_key and isinstance(result.get(list_key), list):
         items = list(result[list_key])
@@ -217,6 +255,8 @@ def _cap_payload_size(
             "buckets",
             "runs",
             "groups",
+            "cities",
+            "regions",
             "countries",
             "provinces",
             "items",
@@ -232,6 +272,36 @@ def _cap_payload_size(
                 if _encode_size(result) <= max_bytes:
                     break
     return result, truncated
+
+
+ALLOWED_TOOL_SUMMARY_KEYS = ("tool", "duration_ms", "degraded", "truncated", "error_code")
+
+
+def sanitize_tool_calls_summary(entries: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Allowlist-sanitize persisted tool execution metadata (never store raw arguments/text)."""
+    cleaned: list[dict[str, Any]] = []
+    for entry in (entries or [])[:16]:
+        if not isinstance(entry, dict):
+            continue
+        item = {
+            "tool": str(entry.get("tool", ""))[:64],
+            "duration_ms": max(0, int(entry.get("duration_ms", 0))),
+            "degraded": bool(entry.get("degraded", False)),
+            "truncated": bool(entry.get("truncated", False)),
+        }
+        error_code = entry.get("error_code")
+        if isinstance(error_code, str) and error_code:
+            item["error_code"] = error_code[:50]
+        cleaned.append(item)
+    assert_outbound_safe(cleaned)
+    return cleaned
+
+
+def sanitize_ui_blocks(blocks: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Defense-in-depth privacy check before persisting UI blocks to PostgreSQL."""
+    sanitized = list((blocks or [])[:12])
+    assert_outbound_safe(sanitized)
+    return sanitized
 
 
 def sanitize_tool_output(

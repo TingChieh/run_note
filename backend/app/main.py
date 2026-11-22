@@ -13,6 +13,9 @@ from app.db.session import create_session_factory
 from app.modules.activities.router import router as activities_router
 from app.modules.admin_users.router import activity_router as admin_activities_router
 from app.modules.admin_users.router import router as admin_users_router
+from app.modules.ai_assistant.orchestrator import ActiveStreamRegistry
+from app.modules.ai_assistant.provider import DeepSeekProvider
+from app.modules.ai_assistant.router import router as ai_assistant_router
 from app.modules.ai_reports.provider import OpenAIProvider
 from app.modules.ai_reports.router import router as ai_router
 from app.modules.auth.router import router as auth_router
@@ -62,6 +65,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Run Note API", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
     app.state.ai_provider = OpenAIProvider()
+    app.state.ai_assistant_provider = DeepSeekProvider()
+    app.state.ai_assistant_streams = ActiveStreamRegistry()
     app.state.clock = utc_now
     app.state.session_factory = session_factory
     app.state.exploration_reads = ExplorationReads(session_factory)
@@ -86,6 +91,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(shoes_router)
     app.include_router(running_diary_router)
     app.include_router(ai_router)
+    app.include_router(ai_assistant_router)
     app.include_router(showcase_router)
     app.include_router(named_showcase_router)
     app.include_router(admin_users_router)

@@ -21,6 +21,8 @@ from app.core.security import hash_password
 from app.modules.activities.model import Activity
 from app.modules.ai_assistant import service as assistant_service
 from app.modules.ai_assistant.model import AIMessage, AIUserConsent
+from app.modules.ai_assistant.privacy import PrivacyViolationError
+from app.modules.ai_assistant.schema import UIBlock
 from app.modules.ai_assistant.tools import TOOL_NAMES, ToolContext, execute_tool
 from app.modules.footprints.global_atlas import atlas_version as global_atlas_version
 from app.modules.footprints.model import ActivityGlobalFootprintCache, ActivityProvinceCache
@@ -398,6 +400,13 @@ def test_all_10_tools_and_canary_privacy_zero_leakage(assistant_db):
         CANARY_LAT,
         "120.165123",
         "30.284189",
+        "120.155",
+        "120.16",
+        "120.17",
+        "30.274",
+        "30.27",
+        "30.28",
+        "30.284",
         "OTHER_USER_SECRET",
         "OTHER_USER_NOTE",
         "42195",
@@ -409,8 +418,15 @@ def test_all_10_tools_and_canary_privacy_zero_leakage(assistant_db):
             result = execute_tool(db, ctx, tool_name, args)
             executed_names.add(tool_name)
             serialized = json.dumps(result.model_payload, ensure_ascii=False)
+            blocks_serialized = json.dumps(
+                [block.model_dump(mode="json") for block in result.ui_blocks],
+                ensure_ascii=False,
+            )
             for secret in canaries:
-                assert secret not in serialized, f"Canary {secret!r} leaked in {tool_name}"
+                assert secret not in serialized, f"Canary {secret!r} leaked in {tool_name} payload"
+                assert secret not in blocks_serialized, (
+                    f"Canary {secret!r} leaked in {tool_name} ui_blocks"
+                )
             assert result.ui_blocks, f"Expected UI blocks for {tool_name}"
 
         assert executed_names == set(TOOL_NAMES)
@@ -459,8 +475,8 @@ def test_cross_user_404_consent_concurrency_idempotency_and_quotas(assistant_db)
     settings = _make_settings(
         url,
         ai_daily_message_limit=2,
-        ai_daily_token_budget=10_000,
-        ai_site_daily_token_budget=50_000,
+        ai_daily_token_budget=60_000,
+        ai_site_daily_token_budget=100_000,
     )
     now = datetime(2026, 11, 22, 10, 0, tzinfo=UTC)
 
@@ -578,7 +594,8 @@ def test_cross_user_404_consent_concurrency_idempotency_and_quotas(assistant_db)
         assert err.value.status_code == 409
         assert err.value.code == "IDEMPOTENCY_CONFLICT"
 
-        # Turn 2 uses 2500 more tokens (total 10,500 > 10,000 daily user budget) and 2/2 messages.
+        # Turn 2 uses 4,500 more tokens (total 12,500; remaining 47,500 < 48,192 turn limit)
+        # and hits 2/2 daily message limit.
         key_2 = uuid4()
         _, a2, _ = assistant_service.begin_turn(
             db, user_a.id, conv_a.id, "查 5K 最佳成绩", key_2, now + timedelta(seconds=5), settings
@@ -590,7 +607,7 @@ def test_cross_user_404_consent_concurrency_idempotency_and_quotas(assistant_db)
             "succeeded",
             finished_at=now + timedelta(seconds=6),
             content="5K PB 详情。",
-            input_tokens=2000,
+            input_tokens=4000,
             output_tokens=500,
         )
 
@@ -609,12 +626,12 @@ def test_cross_user_404_consent_concurrency_idempotency_and_quotas(assistant_db)
         assert err.value.status_code == 429
         assert err.value.code == "AI_QUOTA_EXCEEDED"
 
-        # Raising message limit still hits user token budget (10,500 >= 10,000).
+        # Raising message limit still hits user token budget (remaining 47,500 < turn_token_limit).
         token_settings = _make_settings(
             url,
             ai_daily_message_limit=30,
-            ai_daily_token_budget=10_000,
-            ai_site_daily_token_budget=50_000,
+            ai_daily_token_budget=60_000,
+            ai_site_daily_token_budget=200_000,
         )
         with pytest.raises(ApiError) as err:
             assistant_service.begin_turn(
@@ -629,12 +646,13 @@ def test_cross_user_404_consent_concurrency_idempotency_and_quotas(assistant_db)
         assert err.value.status_code == 429
         assert err.value.code == "AI_QUOTA_EXCEEDED"
 
-        # User B adds 40,000 tokens -> site total reaches 50,500 >= 50,000 -> 503.
+        # User B adds 40,000 tokens -> site total reaches 52,500 (remaining 47,500 < turn limit)
+        # -> 503 AI_BUDGET_EXHAUSTED.
         site_settings = _make_settings(
             url,
             ai_daily_message_limit=30,
             ai_daily_token_budget=100_000,
-            ai_site_daily_token_budget=50_000,
+            ai_site_daily_token_budget=100_000,
         )
         _, b1, _ = assistant_service.begin_turn(
             db,
@@ -695,3 +713,290 @@ def test_migration_0033_defensive_downgrade_refuses_to_drop_data(assistant_db):
     assert_downgrade_guard(engine, "0033_ai_assistant", "Refusing to drop AI assistant tables")
     with engine.connect() as conn:
         assert conn.scalar(text("SELECT count(*) FROM ai_user_consents")) >= 1
+
+
+def test_finish_turn_sanitization_short_rate_limit_and_site_budget_reservation(assistant_db):
+    _, SessionLocal, created_users = assistant_db
+    url = os.environ["TEST_DATABASE_URL"]
+    now = datetime(2026, 11, 22, 12, 0, tzinfo=UTC)
+    site_budget = 150_000
+    settings = _make_settings(
+        url,
+        ai_daily_message_limit=30,
+        ai_daily_token_budget=150_000,
+        ai_site_daily_token_budget=site_budget,
+        ai_max_tool_rounds=4,
+        ai_max_output_tokens=2048,
+    )
+    turn_limit = assistant_service.turn_token_limit(settings)
+    # Single-turn limit covers input + output across allowed rounds (4 * (10000 + 2048) = 48192).
+    assert turn_limit == 4 * (assistant_service.PER_ROUND_INPUT_TOKEN_ALLOWANCE + 2048)
+    max_concurrent = site_budget // turn_limit
+    assert max_concurrent == 3
+
+    with SessionLocal.begin() as db:
+        users = [_create_user(db, created_users) for _ in range(max_concurrent + 1)]
+        convs = []
+        for idx, user in enumerate(users):
+            assistant_service.grant_consent(db, user.id, now)
+            convs.append(
+                assistant_service.create_conversation(db, user.id, now, title=f"Budget {idx}")
+            )
+
+        # Admitting concurrent in-flight turns caps strictly at floor(site_budget / turn_limit).
+        active_msgs = []
+        for idx in range(max_concurrent):
+            _, msg, _ = assistant_service.begin_turn(
+                db,
+                users[idx].id,
+                convs[idx].id,
+                f"并发提问 {idx}",
+                uuid4(),
+                now + timedelta(seconds=idx),
+                settings,
+            )
+            active_msgs.append((users[idx].id, msg.id))
+
+        # The (max_concurrent + 1)-th concurrent turn must be rejected with 503 AI_BUDGET_EXHAUSTED
+        # because the incoming turn itself is counted in the reservation.
+        with pytest.raises(ApiError) as err:
+            assistant_service.begin_turn(
+                db,
+                users[max_concurrent].id,
+                convs[max_concurrent].id,
+                "超出并发配额上限",
+                uuid4(),
+                now + timedelta(seconds=max_concurrent),
+                settings,
+            )
+        assert err.value.status_code == 503
+        assert err.value.code == "AI_BUDGET_EXHAUSTED"
+
+        # finish_turn rejects forbidden keys injected in ui_blocks before writing to DB.
+        with pytest.raises(PrivacyViolationError):
+            assistant_service.finish_turn(
+                db,
+                active_msgs[0][0],
+                active_msgs[0][1],
+                "succeeded",
+                finished_at=now + timedelta(seconds=4),
+                content="ok",
+                ui_blocks=[UIBlock(type="metrics_card", data={"notes": "forbidden"})],
+            )
+
+        # Once one active turn finishes with low actual tokens (300), one slot opens up.
+        assert (
+            assistant_service.finish_turn(
+                db,
+                active_msgs[0][0],
+                active_msgs[0][1],
+                "succeeded",
+                finished_at=now + timedelta(seconds=5),
+                content="完成",
+                input_tokens=200,
+                output_tokens=100,
+            )
+            is True
+        )
+        _, admitted_4, _ = assistant_service.begin_turn(
+            db,
+            users[max_concurrent].id,
+            convs[max_concurrent].id,
+            "释放一个槽位后可准入",
+            uuid4(),
+            now + timedelta(seconds=6),
+            settings,
+        )
+        # Settle all active turns; user 0 uses 105,000 total (remaining 45,000 < turn_limit).
+        for uid, mid in [*active_msgs[1:], (users[max_concurrent].id, admitted_4.id)]:
+            assistant_service.finish_turn(
+                db,
+                uid,
+                mid,
+                "succeeded",
+                finished_at=now + timedelta(seconds=7),
+                content="完成",
+                input_tokens=100,
+                output_tokens=50,
+            )
+
+        # Remaining personal budget < turn_token_limit -> 429 AI_QUOTA_EXCEEDED (even with plenty
+        # of site budget remaining).
+        personal_settings = _make_settings(
+            url,
+            ai_daily_message_limit=30,
+            ai_daily_token_budget=60_000,
+            ai_site_daily_token_budget=1_000_000,
+            ai_max_tool_rounds=4,
+            ai_max_output_tokens=2048,
+        )
+        _, heavy_u0, _ = assistant_service.begin_turn(
+            db,
+            users[0].id,
+            convs[0].id,
+            "消耗个人预算",
+            uuid4(),
+            now + timedelta(seconds=8),
+            personal_settings,
+        )
+        assistant_service.finish_turn(
+            db,
+            users[0].id,
+            heavy_u0.id,
+            "failed",
+            finished_at=now + timedelta(seconds=9),
+            error_code="AI_TIMEOUT",
+            input_tokens=14_000,
+            output_tokens=1_000,
+        )
+        # Failed turn is not refunded: personal remaining = 60,000 - 15,300 = 44,700 < 48,192.
+        with pytest.raises(ApiError) as user_budget_err:
+            assistant_service.begin_turn(
+                db,
+                users[0].id,
+                convs[0].id,
+                "个人剩余不足一轮",
+                uuid4(),
+                now + timedelta(seconds=10),
+                personal_settings,
+            )
+        assert user_budget_err.value.status_code == 429
+        assert user_budget_err.value.code == "AI_QUOTA_EXCEEDED"
+
+        # Remaining site budget < turn_token_limit (with 0 active turns) -> 503 AI_BUDGET_EXHAUSTED.
+        tight_site = _make_settings(
+            url,
+            ai_daily_message_limit=30,
+            ai_daily_token_budget=150_000,
+            ai_site_daily_token_budget=60_000,
+            ai_max_tool_rounds=4,
+            ai_max_output_tokens=2048,
+        )
+        # Site tokens today = 15,750 -> site remaining = 44,250 < 48,192.
+        with pytest.raises(ApiError) as site_rem_err:
+            assistant_service.begin_turn(
+                db,
+                users[1].id,
+                convs[1].id,
+                "全站剩余不足一轮",
+                uuid4(),
+                now + timedelta(seconds=11),
+                tight_site,
+            )
+        assert site_rem_err.value.status_code == 503
+        assert site_rem_err.value.code == "AI_BUDGET_EXHAUSTED"
+
+        # Short-window burst limit: users[0] already used 2 turns; 4 more allowed (total 6/60s),
+        # 7th within 60s returns 429 AI_RATE_LIMITED.
+        high_budget = _make_settings(
+            url,
+            ai_daily_message_limit=30,
+            ai_daily_token_budget=150_000,
+            ai_site_daily_token_budget=1_000_000,
+        )
+        for i in range(4):
+            _, msg, _ = assistant_service.begin_turn(
+                db,
+                users[0].id,
+                convs[0].id,
+                f"连发问题 {i}",
+                uuid4(),
+                now + timedelta(seconds=12 + i),
+                high_budget,
+            )
+            assistant_service.finish_turn(
+                db,
+                users[0].id,
+                msg.id,
+                "succeeded",
+                finished_at=now + timedelta(seconds=12 + i),
+                content="答复",
+                input_tokens=50,
+                output_tokens=20,
+            )
+        with pytest.raises(ApiError) as burst_err:
+            assistant_service.begin_turn(
+                db,
+                users[0].id,
+                convs[0].id,
+                "第七次连发",
+                uuid4(),
+                now + timedelta(seconds=20),
+                high_budget,
+            )
+        assert burst_err.value.status_code == 429
+        assert burst_err.value.code == "AI_RATE_LIMITED"
+        assert (burst_err.value.retry_after or 0) >= 1
+
+
+def test_within_turn_ordering_always_places_user_before_assistant(assistant_db):
+    _, SessionLocal, created_users = assistant_db
+    url = os.environ["TEST_DATABASE_URL"]
+    settings = _make_settings(url)
+    t1 = datetime(2026, 11, 22, 14, 0, tzinfo=UTC)
+    t2 = datetime(2026, 11, 22, 14, 1, tzinfo=UTC)
+
+    with SessionLocal.begin() as db:
+        owner = _create_user(db, created_users)
+        conv = assistant_service.create_conversation(db, owner.id, t1, title="Ordering")
+        # Deliberately set user UUID > assistant UUID on identical created_at timestamps.
+        u1 = AIMessage(
+            id=UUID("ffffffff-ffff-4fff-8fff-fffffffffff1"),
+            conversation_id=conv.id,
+            user_id=owner.id,
+            role="user",
+            status="succeeded",
+            content="第一问",
+            source_data_version=0,
+            created_at=t1,
+            finished_at=t1,
+        )
+        a1 = AIMessage(
+            id=UUID("00000000-0000-4000-8000-000000000001"),
+            conversation_id=conv.id,
+            user_id=owner.id,
+            role="assistant",
+            status="succeeded",
+            content="第一答",
+            source_data_version=0,
+            created_at=t1,
+            finished_at=t1,
+        )
+        u2 = AIMessage(
+            id=UUID("ffffffff-ffff-4fff-8fff-fffffffffff2"),
+            conversation_id=conv.id,
+            user_id=owner.id,
+            role="user",
+            status="succeeded",
+            content="第二问",
+            source_data_version=0,
+            created_at=t2,
+            finished_at=t2,
+        )
+        a2 = AIMessage(
+            id=UUID("00000000-0000-4000-8000-000000000002"),
+            conversation_id=conv.id,
+            user_id=owner.id,
+            role="assistant",
+            status="succeeded",
+            content="第二答",
+            source_data_version=0,
+            created_at=t2,
+            finished_at=t2,
+        )
+        db.add_all([a1, u1, a2, u2])
+        db.flush()
+
+        detail = assistant_service.conversation_detail(db, owner.id, conv.id, t2, settings)
+        assert [(m.role, m.content) for m in detail.messages] == [
+            ("user", "第一问"),
+            ("assistant", "第一答"),
+            ("user", "第二问"),
+            ("assistant", "第二答"),
+        ]
+        # With max_turns=1 (limit 2 rows), history still keeps [u2, a2] in user-first order.
+        history = assistant_service.recent_history_messages(db, owner.id, conv.id, max_turns=1)
+        assert history == [
+            {"role": "user", "content": "第二问"},
+            {"role": "assistant", "content": "第二答"},
+        ]

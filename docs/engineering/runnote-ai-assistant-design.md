@@ -177,7 +177,7 @@ Caddy (HTTPS, flush_interval -1) ──► FastAPI (runnote-api)
 - **会话与消息数据模型（规划，不在此阶段建迁移）**：
   - 计划新增 3 张表（线性迁移编号按合并时最新 head 递增，Phase 1 实现为 `0033_ai_assistant`，父版本 `0032_running_diary`）：
     1. `ai_conversations`：`id (PK)`, `user_id (FK users.id CASCADE)`, `title (String 120)`, `created_at`, `updated_at`, `last_message_at`, `deleted_at`；索引 `(user_id, last_message_at DESC)`。
-    2. `ai_messages`：`id (PK)`, `conversation_id (FK ai_conversations.id CASCADE)`, `user_id (FK users.id CASCADE)`, `request_key (UUID, nullable for assistant)`, `role ('user' | 'assistant')`, `status ('pending' | 'streaming' | 'succeeded' | 'failed' | 'cancelled')`, `content (Text, <=16000)`, `tool_calls_summary (JSONB)`, `ui_blocks (JSONB)`, `model (String 100)`, `prompt_version (String 32)`, `error_code (String 50)`, `input_tokens`, `output_tokens`, `cached_input_tokens`, `source_data_version (BigInteger)`, `created_at`, `finished_at`；唯一约束 `(user_id, request_key)`（非空时）与部分唯一索引 `uq_ai_messages_user_active`（`WHERE status IN ('pending', 'streaming')`，防单用户并发刷单）。
+    2. `ai_messages`：`id (PK)`, `conversation_id (FK ai_conversations.id CASCADE)`, `user_id (FK users.id CASCADE)`, `request_key (UUID, nullable)`, `role ('user' | 'assistant')`, `status ('pending' | 'streaming' | 'succeeded' | 'failed' | 'cancelled')`, `content (Text, <=16000)`, `tool_calls_summary (JSONB)`, `ui_blocks (JSONB)`, `model (String 100)`, `prompt_version (String 32)`, `error_code (String 50)`, `input_tokens`, `output_tokens`, `cached_input_tokens`, `source_data_version (BigInteger)`, `created_at`, `finished_at`；部分唯一索引 `uq_ai_messages_user_role_request`（`(user_id, role, request_key) WHERE request_key IS NOT NULL`）与部分唯一索引 `uq_ai_messages_user_active`（`WHERE role = 'assistant' AND status IN ('pending', 'streaming')`，防单用户并发刷单）。
     3. `ai_user_consents`（或在 `users` 增列，推荐独立表以便审计版本与撤回）：`user_id (PK, FK users.id CASCADE)`, `consent_version (String 32)`, `consented_at`, `revoked_at`。
   - **删除语义**：用户删除会话时，立即清空 `ai_messages.content`/`tool_calls_summary`/`ui_blocks` 并标记 `deleted_at`（保留当天计数元信息用于配额准确，30 天后随 `recover` 物理清理），与旧 `ai_reports` 的隐私清除和防删记录刷额度机制完全一致。
 
@@ -273,9 +273,9 @@ Caddy (HTTPS, flush_interval -1) ──► FastAPI (runnote-api)
    - **幂等防重**：沿用 `Idempotency-Key`（UUID），同一请求键重发时：若仍在生成中返回 `409 AI_IN_PROGRESS`；若已完成直接回放结果，不重复调用 DeepSeek。
 3. **四层限流与防刷**：
    - **并发锁**：数据库部分唯一索引 `uq_ai_messages_user_active` 保证同一用户同时最多 1 个活跃请求（冲突返回 `409 AI_IN_PROGRESS`）。
-   - **短窗防刷**：复用 `backend/app/modules/auth/rate_limit.py` 的 `AuthRateBucket` 机制新增 `ai-msg-user` 桶（如每分钟最多 6 次、每 10 分钟最多 20 次），超限返回 `429 AI_RATE_LIMITED` + `Retry-After`。
-   - **单用户日配额**：同时校验 `AI_DAILY_MESSAGE_LIMIT`（次数）与 `AI_DAILY_TOKEN_BUDGET`（token 预算，按当天该用户所有消息的 `input_tokens + output_tokens` 求和），超限返回 `429 AI_QUOTA_EXCEEDED` + 距下一个 UTC 零点的 `Retry-After`。
-   - **全站日熔断**：校验 `AI_SITE_DAILY_TOKEN_BUDGET`，触顶时返回 `503 AI_BUDGET_EXHAUSTED`（“今日站点 AI 额度已达上限，将于明日恢复”），同时记录告警日志。
+   - **短窗防刷**：直接基于 `ai_messages`（利用索引 `ix_ai_messages_user_created`）执行 `SHORT_RATE_WINDOWS` 滑窗校验（每 60 秒最多 6 次、每 600 秒最多 20 次，跨进程生效且计入失败与已删除回合），超限返回 `429 AI_RATE_LIMITED` + `Retry-After`。
+   - **单用户日配额**：同时校验 `AI_DAILY_MESSAGE_LIMIT`（次数）与 `AI_DAILY_TOKEN_BUDGET`（token 预算，按当天该用户所有消息的 `input_tokens + output_tokens` 求和，失败/取消/删除均不退款）；准入时要求个人剩余额度 `>= 单轮预留上限 turn_token_limit(settings)`，不足返回 `429 AI_QUOTA_EXCEEDED` + 距下一个 UTC 零点的 `Retry-After`。
+   - **全站日熔断与并发超支收敛**：`begin_turn` 短事务内先获取事务级咨询锁 `pg_advisory_xact_lock`（在 `db.commit()` 后自动释放，不跨外部 HTTP 持有）。单轮预留上限 `turn_token_limit(settings) = AI_MAX_TOOL_ROUNDS * (PER_ROUND_INPUT_TOKEN_ALLOWANCE + AI_MAX_OUTPUT_TOKENS)`（默认 `4 * (10,000 + 2,048) = 48,192`）同时覆盖允许轮次内的输入与输出；准入时将**已有活跃回合与即将开始的本轮一并计入预留**，要求全站剩余额度 `AI_SITE_DAILY_TOKEN_BUDGET - site_tokens_today - site_active * turn_token_limit >= turn_token_limit`（等价于 `site_tokens_today + (site_active + 1) * turn_token_limit <= AI_SITE_DAILY_TOKEN_BUDGET`），否则返回 `503 AI_BUDGET_EXHAUSTED`（“今日站点 AI 额度已达上限，将于明日恢复”），全站同时在途回合数严格不超过 `floor(AI_SITE_DAILY_TOKEN_BUDGET / turn_token_limit)`。编排层在**每次发起模型调用前**采用字节级 BPE 严格上界估算（ASCII 含标点 `1` token/字符、BMP 非 ASCII `3` token/码位、增补平面/emoji `4` token/码位，叠加聊天/工具模板帧开销）校验“已记账 token + 本次真实 prompt 上界 + `max_tokens` <= `turn_token_limit`”：空间不足以容纳“带工具轮 + 收尾回答轮”时先剥离工具定义；首轮超限时按最旧优先裁剪历史；连无工具收尾都放不下或触发 `context_budget` 工具结果替换时即停止继续调用工具/模型并按 `budget_limit` 收尾，保证单轮记账与并发总消耗严格受限于站点日 token 预算。
 
 ### 6.4 成本估算（基于 DeepSeek 官方定价量级）
 
@@ -287,7 +287,7 @@ Caddy (HTTPS, flush_interval -1) ──► FastAPI (runnote-api)
   - **单轮估算费用**：约 **¥0.01 – ¥0.025 / 轮**（约 1–2.5 分人民币）。
 - **风险上界（按默认配额测算）**：
   - 单用户日满额（30 轮或 150K tokens）：约 **¥0.30 – ¥0.60 / 天**；单活跃用户月度上限约 **¥9 – ¥18 / 月**。
-  - 全站日熔断（1,000K tokens）：即便全站满载触发熔断，单日支出硬封顶在约 **¥3 – ¥5 / 天**，月度极端上限约 **¥90 – ¥150 / 月**（个人/小团体站点实际常规消耗预计仅数元/月）。
+  - 全站日熔断（1,000K tokens 预算目标）：配合准入预留上限与每次模型调用前的本地预算门控，可将全站单日实际 token 消耗收敛在 1,000K tokens 预算量级内（估算约 **¥3 – ¥5 / 天**，月度约 **¥90 – ¥150 / 月**；因本地保守估算与上游实际分词、实时单价存在差异，属预算控制目标而非账单级绝对硬封顶；个人/小团体站点实际常规消耗预计仅数元/月）。
 - **关键控本杠杆**：
   1. 工具 schema 与系统提示词保持稳定前缀，最大化 DeepSeek Context Caching 命中率。
   2. 工具返回结果严格裁剪（如 `search_activities <= 20` 条、`records` 按 `sections` 懒取），避免大 JSON 进上下文。
@@ -392,7 +392,7 @@ Caddy (HTTPS, flush_interval -1) ──► FastAPI (runnote-api)
 | **模型幻觉与口径漂移** | 模型自行估算配速/同比算错、把缺失时长当 0、凭空编造活动链接、给出激进或医疗诊断类建议。 | 高 | ① 所有聚合/同比/配速统一由后端现有服务与 `compare_periods` 精确计算；<br>② 活动链接与图表走后端校验生成的 `ui_blocks`，不依赖模型手写 URL；<br>③ 覆盖率与质量警告随工具强制返回，提示词强约束“缺数如实说明”与非医疗免责。 |
 | **成本失控** | 多轮长会话滚雪球、工具调用死循环、用户脚本刷接口、思考模式烧光额度。 | 高 | ① 默认用 `deepseek-chat` + 关闭 thinking；<br>② 单轮工具上限 4 轮、输出上限 2048 tokens、历史滑动窗口 6 轮；<br>③ 并发部分唯一索引 + 短窗限流 + 单用户日次数/token 双上限 + 全站日 token 熔断；<br>④ 零自动重试 + `Idempotency-Key` 幂等防重。 |
 | **历史与公开链接断裂** | 替换 `/ai` 后，旧 `/ai?report=<id>` 书签、`/p/[username]/ai` 公开展示页、`sitemap.xml` 或既有 UI 测试大面积失效。 | 中 | ① 阶段 1 保留 `ai_reports` 表与只读 API；<br>② 匿名访问 `/ai` 与 `/p/[username]/ai` 平滑降级为历史已完成报告只读视图；<br>③ 登录用户页内保留“历史分析归档”入口；<br>④ 阶段 3 最终清理前需负责人审批并同步更新测试与 sitemap。 |
-| **流式连接阻塞与基础设施兼容** | 外部流式请求占死 DB 连接池；Caddy 60s 响应头超时或压缩缓冲导致不流式；SvelteKit 开发代理 8s 超时提前截断流。 | 中-高 | ① 写库提交释放锁与连接后再发起 DeepSeek 请求；<br>② 首帧立即返回 SSE 头与 `meta` 事件，并每 15s 发 `ping`；<br>③ Caddy 配置 `flush_interval -1`；<br>④ `proxy-policy.ts` 为流式路由配置 120s 超时。 |
+| **流式连接阻塞与基础设施兼容** | 外部流式请求占死 DB 连接池；Caddy 60s 响应头超时或压缩缓冲导致不流式；SvelteKit 开发代理 8s 超时提前截断流。 | 中-高 | ① 写库提交释放锁与连接后再发起 DeepSeek 请求；<br>② 首帧立即返回 SSE 头与 `meta` 事件，并每 15s 发 `ping`；<br>③ Caddy 配置 `flush_interval -1`；<br>④ `proxy-policy.ts` 为流式路由配置 195s 超时（覆盖后端最高 180s 流时长上限 + 15s 余量）。 |
 
 ---
 

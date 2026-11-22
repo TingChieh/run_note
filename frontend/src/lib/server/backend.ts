@@ -13,5 +13,7 @@ export async function backendRequest(path: string, request: Request, method = 'G
   for (const name of ['cookie', 'origin', 'referer', 'x-csrf-token', 'content-type', 'accept', 'idempotency-key']) {
     const value = request.headers.get(name); if (value) headers.set(name, value);
   }
-  return fetch(url, { method, headers, body, redirect: 'manual', cache: 'no-store', signal: AbortSignal.timeout(upstreamTimeout(path, method)) });
+  const timeout = AbortSignal.timeout(upstreamTimeout(path, method));
+  const signal = request.signal ? AbortSignal.any([timeout, request.signal]) : timeout;
+  return fetch(url, { method, headers, body, redirect: 'manual', cache: 'no-store', signal });
 }

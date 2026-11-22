@@ -153,6 +153,14 @@ export interface AnnualStory {
   footprint_timeline: StoryFootprintTimeline;
 }
 
+export interface AssistantContext {
+  configured: boolean;
+  enabled: boolean;
+  model: string | null;
+  consent: ConsentView;
+  quota: QuotaStatusView;
+}
+
 export interface AuthView {
   csrf_token: string;
   user: UserView;
@@ -217,6 +225,53 @@ export interface CategoryBest {
   best: PersonalBest | null;
   first: FirstRun | null;
   pace_gain_seconds_per_km: string | null;
+}
+
+export interface ConsentUpdate {
+  consented: boolean;
+}
+
+export interface ConsentView {
+  consented: boolean;
+  consent_version: string | null;
+  required_version: string;
+  consented_at: string | null;
+  revoked_at: string | null;
+}
+
+export interface ConversationCreate {
+  title?: string;
+}
+
+export interface ConversationDeleted {
+  deleted: true;
+}
+
+export interface ConversationDetail {
+  conversation: ConversationView;
+  messages: MessageView[];
+  total_messages: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ConversationList {
+  items: ConversationView[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ConversationUpdate {
+  title?: string | null;
+}
+
+export interface ConversationView {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  last_message_at: string;
 }
 
 export interface CountInput {
@@ -623,6 +678,34 @@ export interface MedicationView {
   stock: StockView | null;
 }
 
+export interface MessageCancelled {
+  cancelled: boolean;
+  status: 'pending' | 'streaming' | 'succeeded' | 'failed' | 'cancelled';
+}
+
+export interface MessageCreate {
+  content: string;
+}
+
+export interface MessageView {
+  id: string;
+  conversation_id: string;
+  role: 'user' | 'assistant';
+  status: 'pending' | 'streaming' | 'succeeded' | 'failed' | 'cancelled';
+  content: string | null;
+  tool_calls_summary: (Record<string, unknown>)[];
+  ui_blocks: UIBlock[];
+  model: string | null;
+  prompt_version: string | null;
+  error_code: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cached_input_tokens: number | null;
+  created_at: string;
+  finished_at: string | null;
+  is_stale: boolean;
+}
+
 export interface MifitnessPreview {
   activity_date: string;
   timezone: string;
@@ -782,6 +865,18 @@ export interface PublicProfile {
   display_name: string;
   bio: string;
   summary: Summary;
+}
+
+export interface QuotaStatusView {
+  daily_message_limit: number;
+  messages_today: number;
+  remaining_messages_today: number;
+  daily_token_budget: number;
+  tokens_today: number;
+  remaining_tokens_today: number;
+  site_daily_token_budget: number;
+  site_tokens_today: number;
+  site_budget_exhausted: boolean;
 }
 
 export interface RatingStat {
@@ -1493,6 +1588,11 @@ export interface TrendDay {
   symptom_max_severity: number | null;
 }
 
+export interface UIBlock {
+  type: 'metrics_card' | 'trend_chart' | 'period_card' | 'comparison_card' | 'records_summary' | 'records_chart' | 'goals_streaks_card' | 'activity_list' | 'activity_detail_card' | 'footprint_summary_card' | 'route_group_list';
+  data: Record<string, unknown>;
+}
+
 export interface UserBatchDelete {
   ids: string[];
 }
@@ -1669,6 +1769,27 @@ export interface ApiOperations {
   };
   '/api/v1/admin/version': {
     get: { body: never; response: VersionInfo };
+  };
+  '/api/v1/ai-assistant/consent': {
+    put: { body: ConsentUpdate; response: ConsentView };
+  };
+  '/api/v1/ai-assistant/context': {
+    get: { body: never; response: AssistantContext };
+  };
+  '/api/v1/ai-assistant/conversations': {
+    get: { body: never; response: ConversationList };
+    post: { body: ConversationCreate; response: ConversationView };
+  };
+  '/api/v1/ai-assistant/conversations/{conversation_id}': {
+    get: { body: never; response: ConversationDetail };
+    patch: { body: ConversationUpdate; response: ConversationView };
+    delete: { body: never; response: ConversationDeleted };
+  };
+  '/api/v1/ai-assistant/conversations/{conversation_id}/messages': {
+    post: { body: MessageCreate; response: unknown };
+  };
+  '/api/v1/ai-assistant/conversations/{conversation_id}/messages/{message_id}/cancel': {
+    post: { body: never; response: MessageCancelled };
   };
   '/api/v1/ai-reports': {
     get: { body: never; response: ReportList };
@@ -2094,6 +2215,27 @@ export const API_OPERATIONS = {
   },
   '/api/v1/admin/version': {
     get: [],
+  },
+  '/api/v1/ai-assistant/consent': {
+    put: [],
+  },
+  '/api/v1/ai-assistant/context': {
+    get: [],
+  },
+  '/api/v1/ai-assistant/conversations': {
+    get: ['limit', 'offset'],
+    post: [],
+  },
+  '/api/v1/ai-assistant/conversations/{conversation_id}': {
+    get: ['limit', 'offset'],
+    patch: [],
+    delete: [],
+  },
+  '/api/v1/ai-assistant/conversations/{conversation_id}/messages': {
+    post: [],
+  },
+  '/api/v1/ai-assistant/conversations/{conversation_id}/messages/{message_id}/cancel': {
+    post: [],
   },
   '/api/v1/ai-reports': {
     get: ['limit', 'offset'],

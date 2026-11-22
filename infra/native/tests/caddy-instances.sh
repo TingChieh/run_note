@@ -21,10 +21,11 @@ ok() { echo "ok: $*" >&2; }
 
 # four upstreams that say who they are and what client address they were told
 cat > "$T/upstream.py" <<'PY'
-import gzip, sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import gzip, sys, time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 who = sys.argv[2]
 class H(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
     def do_GET(self):
         # /encoded stands for the pre-compressed footprints response (backend footprints/cache.py)
         extra = {}
@@ -39,8 +40,30 @@ class H(BaseHTTPRequestHandler):
         self.send_response(200); self.send_header("Content-Length", str(len(body)))
         for name, value in extra.items(): self.send_header(name, value)
         self.end_headers(); self.wfile.write(body)
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        if length > 0:
+            self.rfile.read(length)
+        if self.path.startswith("/api/v1/ai-assistant/conversations/") and self.path.endswith("/messages"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-store, no-transform")
+            self.send_header("X-Accel-Buffering", "no")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            first = f"event: meta\ndata: {{\"who\":\"{who}\",\"seq\":1}}\n\n".encode()
+            self.wfile.write(first)
+            self.wfile.flush()
+            time.sleep(0.8)
+            second = b'event: done\ndata: {"seq":2}\n\n'
+            self.wfile.write(second)
+            self.wfile.flush()
+            return
+        body = f"{who} post".encode()
+        self.send_response(200); self.send_header("Content-Length", str(len(body)))
+        self.end_headers(); self.wfile.write(body)
     def log_message(self, *a): pass
-HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
 PY
 for spec in "18000 legacy-api" "18001 legacy-web" "18100 prod-api" "18101 prod-web"; do
   # shellcheck disable=SC2086 # split "port name" into two arguments on purpose
@@ -155,5 +178,40 @@ python3 -c 'import gzip, sys; sys.exit(gzip.decompress(open(sys.argv[1], "rb").r
 get prod.example.test /api/v1/large -H "$accept" -D "$T/large.h" -o /dev/null
 grep -iq '^content-encoding: zstd' "$T/large.h" || fail "a plain JSON response was not compressed with zstd"
 ok "pre-compressed API responses pass through unchanged; plain ones are compressed"
+python3 - <<'PY' || fail "AI assistant SSE stream was buffered or altered by Caddy"
+import http.client, time
+conn = http.client.HTTPConnection("127.0.0.1", 18080, timeout=5)
+conn.request(
+    "POST",
+    "/api/v1/ai-assistant/conversations/11111111-1111-4111-8111-111111111111/messages",
+    body=b'{"content":"ping"}',
+    headers={
+        "Host": "prod.example.test",
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+    },
+)
+t0 = time.monotonic()
+resp = conn.getresponse()
+assert resp.status == 200, f"unexpected status {resp.status}"
+assert "text/event-stream" in (resp.getheader("Content-Type") or "").lower()
+assert resp.getheader("Content-Encoding") is None, f"SSE must not be compressed: {resp.getheader('Content-Encoding')}"
+buf = b""
+first_at = None
+while True:
+    chunk = resp.read1(1024)
+    if not chunk:
+        break
+    buf += chunk
+    if first_at is None and b"event: meta" in buf:
+        first_at = time.monotonic() - t0
+done_at = time.monotonic() - t0
+conn.close()
+assert first_at is not None, f"missing first SSE frame: {buf!r}"
+assert b'"who":"prod-api"' in buf and b"event: done" in buf, f"unexpected SSE payload: {buf!r}"
+assert (done_at - first_at) >= 0.45, f"SSE frames were buffered together: first={first_at:.3f}s done={done_at:.3f}s"
+PY
+ok "AI assistant SSE responses flush immediately without buffering or compression"
 stop_caddy
 echo "ALL CADDY INSTANCE CHECKS PASSED" >&2

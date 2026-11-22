@@ -41,6 +41,21 @@
 		max_size 12MB
 	}
 
+	@api_sse {
+		method POST
+		path_regexp ^/api/v1/ai-assistant/conversations/[^/]+/messages$
+	}
+	handle @api_sse {
+		reverse_proxy 127.0.0.1:{args[0]} {
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto https
+			flush_interval -1
+			transport http {
+				response_header_timeout 60s
+			}
+		}
+	}
+
 	@api path /api/*
 	handle @api {
 		reverse_proxy 127.0.0.1:{args[0]} {

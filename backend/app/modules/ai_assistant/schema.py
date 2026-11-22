@@ -209,3 +209,66 @@ class MessageView(BaseModel):
     created_at: datetime
     finished_at: datetime | None
     is_stale: bool
+
+
+class AssistantContext(BaseModel):
+    configured: bool
+    enabled: bool
+    model: str | None
+    consent: ConsentView
+    quota: QuotaStatusView
+
+
+class ConsentUpdate(StrictInput):
+    consented: bool
+
+
+class ConversationCreate(StrictInput):
+    title: str = Field(default="", max_length=120)
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def trim_title(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+
+class ConversationUpdate(StrictInput):
+    title: str | None = Field(default=None, min_length=1, max_length=120)
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def trim_title(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+
+class ConversationList(BaseModel):
+    items: list[ConversationView]
+    total: int
+    limit: int
+    offset: int
+
+
+class ConversationDetail(BaseModel):
+    conversation: ConversationView
+    messages: list[MessageView]
+    total_messages: int
+    limit: int
+    offset: int
+
+
+class ConversationDeleted(ExactView):
+    deleted: Literal[True]
+
+
+class MessageCreate(StrictInput):
+    content: str = Field(min_length=1, max_length=4000)
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def trim_content(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+
+class MessageCancelled(ExactView):
+    cancelled: bool
+    status: Literal["pending", "streaming", "succeeded", "failed", "cancelled"]
