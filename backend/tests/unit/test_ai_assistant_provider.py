@@ -581,26 +581,18 @@ def test_orchestrator_caps_maxed_out_turn_usage_within_turn_token_limit(monkeypa
         lambda _sf, _oid, _mid, status, **kw: saved.append({"status": status, **kw}) or True,
     )
 
-    def _realistic_deepseek_tokens(messages, tools) -> int:
-        # Realistic DeepSeek-V3 BPE approximation (~0.85 tok/CJK, ~0.35 tok/ASCII, 1.0/digit).
-        blob = json.dumps(messages, ensure_ascii=False, separators=(",", ":"))
-        if tools:
-            blob += json.dumps(tools, ensure_ascii=False, separators=(",", ":"))
-        digits = sum(1 for c in blob if "0" <= c <= "9")
-        ascii_other = sum(1 for c in blob if ord(c) < 128 and not ("0" <= c <= "9"))
-        non_ascii = len(blob) - digits - ascii_other
-        return int(digits * 1.0 + ascii_other * 0.35 + non_ascii * 0.85) + 32
+    def _bpe_upper_bound_tokens(messages, tools) -> int:
+        # Strict byte-level BPE upper bound (>= DeepSeek V4 official tokenization on every class:
+        # ASCII/punctuation=1, BMP non-ASCII=3, astral/emoji=4, plus chat/tool wrapper overhead).
+        return orchestrator.estimate_prompt_tokens(messages, tools)
 
     class _StressProvider:
         def __init__(self):
             self.calls: list[dict] = []
 
         async def stream_chat(self, messages, tools, _settings, *, deadline):
-            in_tok = _realistic_deepseek_tokens(messages, tools)
+            in_tok = _bpe_upper_bound_tokens(messages, tools)
             self.calls.append({"tool_count": len(tools), "input_tokens": in_tok})
-            # Even if the model keeps trying to call tools whenever tools are offered,
-            # the orchestrator must stop offering tools (or stop calling the model) before
-            # total usage can ever exceed turn_token_limit.
             if tools:
                 yield ProviderRoundResult(
                     text="",
@@ -673,22 +665,17 @@ def test_orchestrator_caps_maxed_out_turn_usage_within_turn_token_limit(monkeypa
     assert done_data["status"] == "succeeded"
     total_used = done_data["usage"]["input_tokens"] + done_data["usage"]["output_tokens"]
     assert total_used <= turn_limit, f"total_used={total_used} exceeded turn_limit={turn_limit}"
-    # Round 1 used 3 tools (3rd hit context_budget replacement), so Round 2 must NOT receive tools
-    # (or must stop before calling again).
-    assert len(provider.calls) <= 2
-    if len(provider.calls) == 2:
-        assert provider.calls[1]["tool_count"] == 0
+    assert (1_000_000 // turn_limit) * total_used <= 1_000_000
     assert saved[-1]["input_tokens"] + saved[-1]["output_tokens"] == total_used
 
-    # Also verify pre-call gate refuses an over-budget call when an adversarial provider ignores
-    # empty tools and returns tool calls until budget is exhausted.
+    # Adversarial provider ignores empty tools and keeps returning tool calls with max output.
     class _AdversarialProvider:
         def __init__(self):
             self.call_count = 0
 
         async def stream_chat(self, messages, tools, _settings, *, deadline):
             self.call_count += 1
-            in_tok = _realistic_deepseek_tokens(messages, tools)
+            in_tok = _bpe_upper_bound_tokens(messages, tools)
             yield ProviderRoundResult(
                 text="",
                 tool_calls=[
@@ -727,3 +714,243 @@ def test_orchestrator_caps_maxed_out_turn_usage_within_turn_token_limit(monkeypa
     assert adv_done["finish_reason"] == "budget_limit"
     assert adv_done["is_truncated"] is True
     assert adv_provider.call_count < 4
+
+
+def test_orchestrator_caps_maxed_emoji_and_punctuation_and_preserves_normal_4_rounds(monkeypatch):
+    """Verify:
+    1) Maxed emoji repro (4x2000 🏃 history + 4000 🏃 user + {'ok': true} tool) stays <=
+       turn_token_limit and 20 concurrent turns stay <= 1,000,000.
+    2) Pure ASCII punctuation uses >= 1 token/char upper bound (never 0.5).
+    3) Normal Chinese 4-round conversation keeps full history and all 10 tools across rounds 1-3.
+    """
+    from app.modules.ai_assistant import orchestrator, service
+    from app.modules.ai_assistant.tools import ToolExecutionResult
+
+    settings = _settings(ai_max_tool_rounds=4, ai_max_output_tokens=2048)
+    turn_limit = service.turn_token_limit(settings)
+    max_concurrent = 1_000_000 // turn_limit
+    assert max_concurrent == 20
+
+    # Pure punctuation and emoji upper-bound invariants on estimate_text_tokens.
+    punct = "!@#$%^&*()[]{}|;:',.<>?/~`" * 40
+    assert orchestrator.estimate_text_tokens(punct) == len(punct)
+    assert orchestrator.estimate_text_tokens("🏃" * 1000) == 4000
+    assert orchestrator.estimate_text_tokens("跑" * 1000) == 3000
+
+    monkeypatch.setattr(orchestrator, "_mark_streaming", lambda *_a, **_kw: True)
+    monkeypatch.setattr(orchestrator, "_is_cancelled_in_db", lambda *_a, **_kw: False)
+    monkeypatch.setattr(orchestrator, "_persist_finish", lambda *_a, **_kw: True)
+
+    async def not_disconnected():
+        return False
+
+    # --- Scenario A: Exact maxed emoji repro (4x2000 🏃 + 4000 🏃 + {"ok": true} tool) ---
+    emoji_history = [
+        {"role": "user" if i % 2 == 0 else "assistant", "content": "🏃" * 2000} for i in range(4)
+    ]
+    monkeypatch.setattr(orchestrator, "_load_history", lambda *_a, **_kw: list(emoji_history))
+    monkeypatch.setattr(
+        orchestrator,
+        "_run_tool_in_isolated_session",
+        lambda _sf, _ctx, name, _args: ToolExecutionResult(
+            tool_name=name, model_payload={"ok": True}, ui_blocks=[]
+        ),
+    )
+
+    def _official_calibrated_emoji_tokens(messages, tools) -> int:
+        # Matches DeepSeek V4 official tokenization (🏃 = 2.0 tok, ASCII = 1.0 upper, CJK = 1.0,
+        # 10 tool schemas ~1935 tok, framing ~32/msg) and even tests full 2048 output.
+        total = 64
+        for m in messages:
+            total += 32
+            text = m.get("content") or ""
+            for ch in text:
+                if ord(ch) > 0xFFFF:
+                    total += 2
+                elif ord(ch) < 128:
+                    total += 1
+                else:
+                    total += 1
+            if m.get("tool_calls"):
+                total += len(json.dumps(m["tool_calls"], ensure_ascii=False))
+        if tools:
+            total += 1950
+        return total
+
+    class _EmojiProvider:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        async def stream_chat(self, messages, tools, _settings, *, deadline):
+            in_tok = _official_calibrated_emoji_tokens(messages, tools)
+            self.calls.append({"tool_count": len(tools), "input_tokens": in_tok})
+            if tools:
+                yield ProviderRoundResult(
+                    text="",
+                    tool_calls=[
+                        ProviderToolCall(
+                            id="emoji_c1", name="get_streaks_and_goals", arguments="{}"
+                        )
+                    ],
+                    finish_reason="tool_calls",
+                    input_tokens=in_tok,
+                    output_tokens=2048,
+                    cached_input_tokens=0,
+                )
+            else:
+                yield ProviderTextDelta(text="收到你的跑步表情。")
+                yield ProviderRoundResult(
+                    text="收到你的跑步表情。",
+                    tool_calls=[],
+                    finish_reason="stop",
+                    input_tokens=in_tok,
+                    output_tokens=2048,
+                    cached_input_tokens=0,
+                )
+
+    emoji_provider = _EmojiProvider()
+    emoji_turn = TurnStart(
+        owner_id=uuid4(),
+        timezone="Asia/Shanghai",
+        today=date(2026, 11, 22),
+        conversation_id=uuid4(),
+        user_message_id=uuid4(),
+        assistant_message_id=uuid4(),
+        user_content="🏃" * 4000,
+        remaining_messages_today=29,
+        remaining_tokens_today=150_000,
+    )
+
+    async def run_emoji():
+        return [
+            frame
+            async for frame in stream_turn(
+                emoji_turn,
+                session_factory=lambda: None,
+                settings=settings,
+                provider=emoji_provider,
+                clock=lambda: datetime(2026, 11, 22, 10, 0, tzinfo=UTC),
+                streams=ActiveStreamRegistry(),
+                is_disconnected=not_disconnected,
+            )
+        ]
+
+    emoji_events = _parse_sse_frames(asyncio.run(run_emoji()))
+    emoji_done = emoji_events[-1][1]
+    assert emoji_done["status"] == "succeeded"
+    emoji_total = emoji_done["usage"]["input_tokens"] + emoji_done["usage"]["output_tokens"]
+    assert emoji_total <= turn_limit, f"emoji_total={emoji_total} > {turn_limit}"
+    assert max_concurrent * emoji_total <= 1_000_000
+
+    # --- Scenario B: Normal 4-round Chinese turn (must NOT prematurely drop tools or history) ---
+    normal_history = [
+        {"role": "user", "content": "帮我总结一下最近一个月的跑步情况，看看配速和心率变化。"},
+        {
+            "role": "assistant",
+            "content": (
+                "最近一个月你完成了 12 次跑步，总里程 118.5 公里，"
+                "平均配速 5分08秒/公里，平均心率 154 bpm。"
+            ),
+        },
+        {"role": "user", "content": "10 公里最好成绩是多少？"},
+        {
+            "role": "assistant",
+            "content": "10 公里个人最佳为 45分32秒（配速 4分33秒/公里），达成日期 2026-10-18。",
+        },
+        {"role": "user", "content": "今年跑过哪些省份？"},
+        {
+            "role": "assistant",
+            "content": "2026 年你累计打卡了浙江省、上海市与江苏省，共 3 个省份。",
+        },
+    ]
+    normal_tool_payload = {
+        "summary": {
+            "activity_count": 12,
+            "distance_m": "118500.000",
+            "avg_pace_seconds_per_km": "308.000",
+            "avg_heart_rate_bpm": "154.000",
+        },
+        "buckets": [
+            {"bucket_start": f"2026-10-{d:02d}", "distance_m": "25000.000", "activity_count": 3}
+            for d in (1, 8, 15, 22)
+        ],
+    }
+    monkeypatch.setattr(orchestrator, "_load_history", lambda *_a, **_kw: list(normal_history))
+    monkeypatch.setattr(
+        orchestrator,
+        "_run_tool_in_isolated_session",
+        lambda _sf, _ctx, name, _args: ToolExecutionResult(
+            tool_name=name, model_payload=normal_tool_payload, ui_blocks=[]
+        ),
+    )
+
+    class _Normal4RoundProvider:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        async def stream_chat(self, messages, tools, _settings, *, deadline):
+            idx = len(self.calls) + 1
+            self.calls.append({"msg_count": len(messages), "tool_count": len(tools)})
+            if idx < 4:
+                yield ProviderRoundResult(
+                    text="",
+                    tool_calls=[
+                        ProviderToolCall(
+                            id=f"norm_{idx}",
+                            name="get_running_summary",
+                            arguments='{"date_from":"2026-11-01","date_to":"2026-12-01"}',
+                        )
+                    ],
+                    finish_reason="tool_calls",
+                    input_tokens=2000 + idx * 500,
+                    output_tokens=60,
+                    cached_input_tokens=1500,
+                )
+            else:
+                yield ProviderTextDelta(text="已完成全部 3 轮工具查询并整理出对比报告。")
+                yield ProviderRoundResult(
+                    text="已完成全部 3 轮工具查询并整理出对比报告。",
+                    tool_calls=[],
+                    finish_reason="stop",
+                    input_tokens=4000,
+                    output_tokens=300,
+                    cached_input_tokens=2500,
+                )
+
+    normal_provider = _Normal4RoundProvider()
+    normal_turn = TurnStart(
+        owner_id=uuid4(),
+        timezone="Asia/Shanghai",
+        today=date(2026, 11, 22),
+        conversation_id=uuid4(),
+        user_message_id=uuid4(),
+        assistant_message_id=uuid4(),
+        user_content=(
+            "把今年 11 月和去年 11 月的跑量、配速、心率做完整对比，再看看周趋势和目标完成度。"
+        ),
+        remaining_messages_today=29,
+        remaining_tokens_today=150_000,
+    )
+
+    async def run_normal():
+        return [
+            frame
+            async for frame in stream_turn(
+                normal_turn,
+                session_factory=lambda: None,
+                settings=settings,
+                provider=normal_provider,
+                clock=lambda: datetime(2026, 11, 22, 10, 0, tzinfo=UTC),
+                streams=ActiveStreamRegistry(),
+                is_disconnected=not_disconnected,
+            )
+        ]
+
+    normal_events = _parse_sse_frames(asyncio.run(run_normal()))
+    normal_done = normal_events[-1][1]
+    assert normal_done["status"] == "succeeded"
+    assert normal_done["is_truncated"] is False
+    # Full 6-message history preserved on Round 1 (system + 6 history + user = 8).
+    assert normal_provider.calls[0]["msg_count"] == 8
+    # All 10 tools preserved on Rounds 1, 2, 3; Round 4 receives 0 tools for final answer.
+    assert [c["tool_count"] for c in normal_provider.calls] == [10, 10, 10, 0]

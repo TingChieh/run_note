@@ -37,39 +37,37 @@ CANCEL_POLL_INTERVAL_SECONDS = 1.0
 MAX_TOOL_CALLS_PER_TURN = 8
 MAX_UI_BLOCKS_PER_TURN = 12
 MAX_TURN_TOOL_PAYLOAD_BYTES = 24_576
-MESSAGE_FRAMING_TOKENS = 16
-PROMPT_BASE_OVERHEAD_TOKENS = 64
+MESSAGE_FRAMING_TOKENS = 32
+PROMPT_BASE_OVERHEAD_TOKENS = 128
 BUDGET_EXHAUSTED_NOTICE = (
     "已达到本轮上下文预算上限，以上展示的数据卡片可供参考；建议拆分为更具体的问题继续提问。"
 )
 
 
 def estimate_text_tokens(text: str) -> int:
-    """Conservative local upper-bound token estimate for pre-call budget gating.
+    """Strict upper-bound token estimate for Byte-Level BPE tokenizers (e.g. DeepSeek V4).
 
-    Weights digits at 1.0 token (DeepSeek BPE splits digits individually), other ASCII at 0.5,
-    and non-ASCII (CJK/emoji) at 1.2 tokens so estimated prompt size stays conservatively above
-    typical DeepSeek tokenization without requiring an external tokenizer binary.
+    Every ASCII character (including punctuation and digits) is bounded at 1 token/char,
+    BMP non-ASCII code points at 3 tokens/code point, and astral code points (such as emoji
+    and rare CJK Extension B) at 4 tokens/code point, matching the UTF-8 byte ceiling so
+    official tokenization cannot exceed this estimate.
     """
     if not text:
         return 0
-    digits = 0
-    other_ascii = 0
-    non_ascii = 0
+    total = 0
     for ch in text:
         code = ord(ch)
         if code < 128:
-            if 48 <= code <= 57:
-                digits += 1
-            else:
-                other_ascii += 1
+            total += 1
+        elif code <= 0xFFFF:
+            total += 3
         else:
-            non_ascii += 1
-    return (digits * 10 + other_ascii * 5 + non_ascii * 12 + 9) // 10
+            total += 4
+    return total
 
 
 def estimate_prompt_tokens(messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> int:
-    """Estimate total input tokens for the next chat-completions request."""
+    """Estimate upper-bound input tokens for the next chat-completions request."""
     total = PROMPT_BASE_OVERHEAD_TOKENS
     for msg in messages:
         total += MESSAGE_FRAMING_TOKENS
@@ -82,7 +80,9 @@ def estimate_prompt_tokens(messages: list[dict[str, Any]], tools: list[dict[str,
                 json.dumps(tool_calls, ensure_ascii=False, separators=(",", ":"))
             )
     if tools:
-        total += estimate_text_tokens(json.dumps(tools, ensure_ascii=False, separators=(",", ":")))
+        total += MESSAGE_FRAMING_TOKENS + estimate_text_tokens(
+            json.dumps(tools, ensure_ascii=False, separators=(",", ":"))
+        )
     return total
 
 
