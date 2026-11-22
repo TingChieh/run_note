@@ -275,7 +275,7 @@ Caddy (HTTPS, flush_interval -1) ──► FastAPI (runnote-api)
    - **并发锁**：数据库部分唯一索引 `uq_ai_messages_user_active` 保证同一用户同时最多 1 个活跃请求（冲突返回 `409 AI_IN_PROGRESS`）。
    - **短窗防刷**：直接基于 `ai_messages`（利用索引 `ix_ai_messages_user_created`）执行 `SHORT_RATE_WINDOWS` 滑窗校验（每 60 秒最多 6 次、每 600 秒最多 20 次，跨进程生效且计入失败与已删除回合），超限返回 `429 AI_RATE_LIMITED` + `Retry-After`。
    - **单用户日配额**：同时校验 `AI_DAILY_MESSAGE_LIMIT`（次数）与 `AI_DAILY_TOKEN_BUDGET`（token 预算，按当天该用户所有消息的 `input_tokens + output_tokens` 求和，失败/取消/删除均不退款）；准入时要求个人剩余额度 `>= 单轮预留上限 turn_token_limit(settings)`，不足返回 `429 AI_QUOTA_EXCEEDED` + 距下一个 UTC 零点的 `Retry-After`。
-   - **全站日熔断与并发超支收敛**：`begin_turn` 短事务内先获取事务级咨询锁 `pg_advisory_xact_lock`（在 `db.commit()` 后自动释放，不跨外部 HTTP 持有）。单轮预留上限 `turn_token_limit(settings) = AI_MAX_TOOL_ROUNDS * (PER_ROUND_INPUT_TOKEN_ALLOWANCE + AI_MAX_OUTPUT_TOKENS)` 同时覆盖允许轮次内的输入与输出 token（默认 `4 * (10,000 + 2,048) = 48,192`，并在编排层配合历史总字符上限、单轮工具输出总字节上限及轮间累计 token 护栏约束单轮消耗）。准入时将**已有活跃回合与即将开始的本轮一并计入预留**，要求全站剩余额度 `AI_SITE_DAILY_TOKEN_BUDGET - site_tokens_today - site_active * turn_token_limit >= turn_token_limit`（等价于 `site_tokens_today + (site_active + 1) * turn_token_limit <= AI_SITE_DAILY_TOKEN_BUDGET`），否则返回 `503 AI_BUDGET_EXHAUSTED`（“今日站点 AI 额度已达上限，将于明日恢复”）；由此保证全站同时在途回合数不超过 `floor(AI_SITE_DAILY_TOKEN_BUDGET / turn_token_limit)`，避免并发放大超支。
+   - **全站日熔断与并发超支收敛**：`begin_turn` 短事务内先获取事务级咨询锁 `pg_advisory_xact_lock`（在 `db.commit()` 后自动释放，不跨外部 HTTP 持有）。单轮预留上限 `turn_token_limit(settings) = AI_MAX_TOOL_ROUNDS * (PER_ROUND_INPUT_TOKEN_ALLOWANCE + AI_MAX_OUTPUT_TOKENS)`（默认 `4 * (10,000 + 2,048) = 48,192`）同时覆盖允许轮次内的输入与输出估算；准入时将**已有活跃回合与即将开始的本轮一并计入预留**，要求全站剩余额度 `AI_SITE_DAILY_TOKEN_BUDGET - site_tokens_today - site_active * turn_token_limit >= turn_token_limit`（等价于 `site_tokens_today + (site_active + 1) * turn_token_limit <= AI_SITE_DAILY_TOKEN_BUDGET`），否则返回 `503 AI_BUDGET_EXHAUSTED`（“今日站点 AI 额度已达上限，将于明日恢复”），全站同时在途回合数严格不超过 `floor(AI_SITE_DAILY_TOKEN_BUDGET / turn_token_limit)`。编排层在**每次发起模型调用前**按“已记账 token + 本次真实 prompt 本地保守估算（含历史、用户消息、已累计工具结果与可选工具 schema）+ `max_tokens`”与 `turn_token_limit` 比对：空间不足以再走一轮工具往返时先剥离工具定义，连无工具收尾都放不下或触发 `context_budget` 工具结果替换时即停止继续调用工具/模型并按 `budget_limit` 截断收尾（本地估算采用保守字符/数字上界而非服务端精确 BPE 分词，可将绝大多数场景下的单轮实际记账控制在预留上限内）。
 
 ### 6.4 成本估算（基于 DeepSeek 官方定价量级）
 
@@ -287,7 +287,7 @@ Caddy (HTTPS, flush_interval -1) ──► FastAPI (runnote-api)
   - **单轮估算费用**：约 **¥0.01 – ¥0.025 / 轮**（约 1–2.5 分人民币）。
 - **风险上界（按默认配额测算）**：
   - 单用户日满额（30 轮或 150K tokens）：约 **¥0.30 – ¥0.60 / 天**；单活跃用户月度上限约 **¥9 – ¥18 / 月**。
-  - 全站日熔断（1,000K tokens）：即便全站满载触发熔断，单日支出硬封顶在约 **¥3 – ¥5 / 天**，月度极端上限约 **¥90 – ¥150 / 月**（个人/小团体站点实际常规消耗预计仅数元/月）。
+  - 全站日熔断（1,000K tokens 预算目标）：配合准入预留上限与每次模型调用前的本地预算门控，可将全站单日实际 token 消耗收敛在 1,000K tokens 预算量级内（估算约 **¥3 – ¥5 / 天**，月度约 **¥90 – ¥150 / 月**；因本地保守估算与上游实际分词、实时单价存在差异，属预算控制目标而非账单级绝对硬封顶；个人/小团体站点实际常规消耗预计仅数元/月）。
 - **关键控本杠杆**：
   1. 工具 schema 与系统提示词保持稳定前缀，最大化 DeepSeek Context Caching 命中率。
   2. 工具返回结果严格裁剪（如 `search_activities <= 20` 条、`records` 按 `sections` 懒取），避免大 JSON 进上下文。

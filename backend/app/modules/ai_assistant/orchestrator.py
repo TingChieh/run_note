@@ -37,6 +37,54 @@ CANCEL_POLL_INTERVAL_SECONDS = 1.0
 MAX_TOOL_CALLS_PER_TURN = 8
 MAX_UI_BLOCKS_PER_TURN = 12
 MAX_TURN_TOOL_PAYLOAD_BYTES = 24_576
+MESSAGE_FRAMING_TOKENS = 16
+PROMPT_BASE_OVERHEAD_TOKENS = 64
+BUDGET_EXHAUSTED_NOTICE = (
+    "已达到本轮上下文预算上限，以上展示的数据卡片可供参考；建议拆分为更具体的问题继续提问。"
+)
+
+
+def estimate_text_tokens(text: str) -> int:
+    """Conservative local upper-bound token estimate for pre-call budget gating.
+
+    Weights digits at 1.0 token (DeepSeek BPE splits digits individually), other ASCII at 0.5,
+    and non-ASCII (CJK/emoji) at 1.2 tokens so estimated prompt size stays conservatively above
+    typical DeepSeek tokenization without requiring an external tokenizer binary.
+    """
+    if not text:
+        return 0
+    digits = 0
+    other_ascii = 0
+    non_ascii = 0
+    for ch in text:
+        code = ord(ch)
+        if code < 128:
+            if 48 <= code <= 57:
+                digits += 1
+            else:
+                other_ascii += 1
+        else:
+            non_ascii += 1
+    return (digits * 10 + other_ascii * 5 + non_ascii * 12 + 9) // 10
+
+
+def estimate_prompt_tokens(messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> int:
+    """Estimate total input tokens for the next chat-completions request."""
+    total = PROMPT_BASE_OVERHEAD_TOKENS
+    for msg in messages:
+        total += MESSAGE_FRAMING_TOKENS
+        content = msg.get("content")
+        if isinstance(content, str) and content:
+            total += estimate_text_tokens(content)
+        tool_calls = msg.get("tool_calls")
+        if tool_calls:
+            total += estimate_text_tokens(
+                json.dumps(tool_calls, ensure_ascii=False, separators=(",", ":"))
+            )
+    if tools:
+        total += estimate_text_tokens(json.dumps(tools, ensure_ascii=False, separators=(",", ":")))
+    return total
+
 
 TOOL_LABELS: dict[str, str] = {
     "get_running_summary": "查询跑步汇总数据",
@@ -362,10 +410,10 @@ async def stream_turn(
             ctx = ToolContext(owner_id=turn.owner_id, timezone=turn.timezone, today=turn.today)
             total_tool_calls = 0
             total_tool_payload_bytes = 0
+            tool_context_exhausted = False
+            budget_spent = 0
             turn_budget = assistant_service.turn_token_limit(settings)
-            next_round_reserve = assistant_service.PER_ROUND_INPUT_TOKEN_ALLOWANCE + int(
-                settings.ai_max_output_tokens
-            )
+            max_output = int(settings.ai_max_output_tokens)
 
             for round_index in range(1, int(settings.ai_max_tool_rounds) + 1):
                 if (
@@ -380,16 +428,52 @@ async def stream_turn(
                 ):
                     raise asyncio.CancelledError
 
-                # On the final allowed round (or once tool/token budget leaves room only for the
-                # final answer), pass no tools so the model produces its final answer.
+                prompt_no_tools = estimate_prompt_tokens(messages, [])
+                prompt_with_tools = estimate_prompt_tokens(messages, tools)
+
+                # Before Round 1, trim oldest history turns if needed so the initial prompt +
+                # max_tokens fits inside turn_budget even under small ai_max_tool_rounds configs.
+                if round_index == 1:
+                    while (
+                        len(messages) > 2
+                        and budget_spent + prompt_no_tools + max_output > turn_budget
+                    ):
+                        messages.pop(1)
+                        prompt_no_tools = estimate_prompt_tokens(messages, [])
+                        prompt_with_tools = estimate_prompt_tokens(messages, tools)
+
+                # Only offer tools when structural limits allow AND budget still fits BOTH this
+                # tool round AND at least one follow-up final-answer round without tools.
                 can_call_more_tools = (
                     round_index < int(settings.ai_max_tool_rounds)
                     and total_tool_calls < MAX_TOOL_CALLS_PER_TURN
+                    and not tool_context_exhausted
                     and total_tool_payload_bytes < MAX_TURN_TOOL_PAYLOAD_BYTES
-                    and (total_input_tokens + total_output_tokens + next_round_reserve)
+                    and (
+                        budget_spent
+                        + (prompt_with_tools + max_output)
+                        + (prompt_no_tools + max_output)
+                    )
                     <= turn_budget
                 )
                 round_tools = tools if can_call_more_tools else []
+                this_prompt_est = prompt_with_tools if round_tools else prompt_no_tools
+
+                # Strict pre-call gate: never issue a model request whose worst-case
+                # (spent + prompt + max_tokens) cannot fit in turn_budget.
+                if budget_spent + this_prompt_est + max_output > turn_budget:
+                    if round_tools:
+                        round_tools = []
+                        this_prompt_est = prompt_no_tools
+                    if budget_spent + this_prompt_est + max_output > turn_budget:
+                        content_truncated = True
+                        final_finish_reason = "budget_limit"
+                        if not content_parts:
+                            content_parts.append(BUDGET_EXHAUSTED_NOTICE)
+                            content_length += len(BUDGET_EXHAUSTED_NOTICE)
+                            await queue.put(format_sse("delta", {"text": BUDGET_EXHAUSTED_NOTICE}))
+                        break
+
                 round_result: ProviderRoundResult | None = None
                 async for item in provider.stream_chat(
                     messages, round_tools, settings, deadline=deadline
@@ -425,11 +509,26 @@ async def stream_turn(
                     total_output_tokens += round_result.output_tokens or 0
                     total_cached_tokens += round_result.cached_input_tokens or 0
 
+                budget_spent += (
+                    round_result.input_tokens
+                    if round_result.input_tokens is not None
+                    else this_prompt_est
+                ) + (
+                    round_result.output_tokens
+                    if round_result.output_tokens is not None
+                    else estimate_text_tokens(round_result.text)
+                )
+
                 final_finish_reason = round_result.finish_reason
                 if not round_result.tool_calls:
                     break
-                if (total_input_tokens + total_output_tokens) >= turn_budget:
+                if budget_spent >= turn_budget:
                     content_truncated = True
+                    final_finish_reason = "budget_limit"
+                    if not content_parts:
+                        content_parts.append(BUDGET_EXHAUSTED_NOTICE)
+                        content_length += len(BUDGET_EXHAUSTED_NOTICE)
+                        await queue.put(format_sse("delta", {"text": BUDGET_EXHAUSTED_NOTICE}))
                     break
 
                 # Record assistant tool_calls turn in the conversation context.
@@ -558,6 +657,7 @@ async def stream_turn(
                         )
                         payload_bytes = len(payload_json.encode("utf-8"))
                         if total_tool_payload_bytes + payload_bytes > MAX_TURN_TOOL_PAYLOAD_BYTES:
+                            tool_context_exhausted = True
                             payload_json = json.dumps(
                                 {
                                     "degraded": True,
@@ -567,6 +667,7 @@ async def stream_turn(
                                 ensure_ascii=False,
                                 separators=(",", ":"),
                             )
+                            total_tool_payload_bytes += len(payload_json.encode("utf-8"))
                         else:
                             total_tool_payload_bytes += payload_bytes
                         messages.append(

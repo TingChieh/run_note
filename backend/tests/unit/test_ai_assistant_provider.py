@@ -533,3 +533,197 @@ def test_orchestrator_handles_cancel_race_before_succeeded_finish_and_retries_sa
     assert retry_calls == ["succeeded", "failed"]
     assert events2[-1][0] == "done"
     assert events2[-1][1]["status"] == "failed"
+
+
+def test_orchestrator_caps_maxed_out_turn_usage_within_turn_token_limit(monkeypatch):
+    """Maxed history (8000 chars) + maxed user prompt (4000 chars) + maxed 12KB tool results
+    must stay strictly within turn_token_limit in done.usage and stop calling tools once
+    context_budget replacement occurs or budget cannot fit another model request.
+    """
+    from app.modules.ai_assistant import orchestrator, service
+    from app.modules.ai_assistant.tools import ToolExecutionResult
+
+    settings = _settings(ai_max_tool_rounds=4, ai_max_output_tokens=2048)
+    turn_limit = service.turn_token_limit(settings)
+    assert turn_limit == 48_192
+
+    # Build maxed-out 8,000-char CJK sliding history (4 x 2,000 chars) and 4,000-char user input.
+    maxed_history = [
+        {"role": "user" if i % 2 == 0 else "assistant", "content": "跑" * 2000} for i in range(4)
+    ]
+    maxed_user = "配" * 4000
+    # ~12,259-byte tool payload per call (matching the review's exact stress case).
+    big_payload = {
+        "items": [{"k": "1234567890" * 10, "c": "杭州市西湖区跑步记录"} for _ in range(84)]
+    }
+    big_bytes = len(json.dumps(big_payload, ensure_ascii=False, separators=(",", ":")).encode())
+    assert 12_000 <= big_bytes <= 12_288
+
+    monkeypatch.setattr(orchestrator, "_mark_streaming", lambda *_a, **_kw: True)
+    monkeypatch.setattr(orchestrator, "_load_history", lambda *_a, **_kw: list(maxed_history))
+    monkeypatch.setattr(orchestrator, "_is_cancelled_in_db", lambda *_a, **_kw: False)
+    monkeypatch.setattr(
+        orchestrator,
+        "_run_tool_in_isolated_session",
+        lambda _sf, _ctx, name, _args: ToolExecutionResult(
+            tool_name=name,
+            model_payload=big_payload,
+            ui_blocks=[],
+            degraded=False,
+            truncated=False,
+        ),
+    )
+
+    saved: list[dict] = []
+    monkeypatch.setattr(
+        orchestrator,
+        "_persist_finish",
+        lambda _sf, _oid, _mid, status, **kw: saved.append({"status": status, **kw}) or True,
+    )
+
+    def _realistic_deepseek_tokens(messages, tools) -> int:
+        # Realistic DeepSeek-V3 BPE approximation (~0.85 tok/CJK, ~0.35 tok/ASCII, 1.0/digit).
+        blob = json.dumps(messages, ensure_ascii=False, separators=(",", ":"))
+        if tools:
+            blob += json.dumps(tools, ensure_ascii=False, separators=(",", ":"))
+        digits = sum(1 for c in blob if "0" <= c <= "9")
+        ascii_other = sum(1 for c in blob if ord(c) < 128 and not ("0" <= c <= "9"))
+        non_ascii = len(blob) - digits - ascii_other
+        return int(digits * 1.0 + ascii_other * 0.35 + non_ascii * 0.85) + 32
+
+    class _StressProvider:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        async def stream_chat(self, messages, tools, _settings, *, deadline):
+            in_tok = _realistic_deepseek_tokens(messages, tools)
+            self.calls.append({"tool_count": len(tools), "input_tokens": in_tok})
+            # Even if the model keeps trying to call tools whenever tools are offered,
+            # the orchestrator must stop offering tools (or stop calling the model) before
+            # total usage can ever exceed turn_token_limit.
+            if tools:
+                yield ProviderRoundResult(
+                    text="",
+                    tool_calls=[
+                        ProviderToolCall(
+                            id=f"c_{len(self.calls)}_1",
+                            name="search_activities",
+                            arguments='{"limit":20}',
+                        ),
+                        ProviderToolCall(
+                            id=f"c_{len(self.calls)}_2",
+                            name="get_footprint_summary",
+                            arguments='{"scope":"china"}',
+                        ),
+                        ProviderToolCall(
+                            id=f"c_{len(self.calls)}_3",
+                            name="get_personal_records",
+                            arguments="{}",
+                        ),
+                    ],
+                    finish_reason="tool_calls",
+                    input_tokens=in_tok,
+                    output_tokens=80,
+                    cached_input_tokens=in_tok // 2,
+                )
+            else:
+                yield ProviderTextDelta(text="基于已获取的数据给出最终总结。")
+                yield ProviderRoundResult(
+                    text="基于已获取的数据给出最终总结。",
+                    tool_calls=[],
+                    finish_reason="stop",
+                    input_tokens=in_tok,
+                    output_tokens=120,
+                    cached_input_tokens=in_tok // 2,
+                )
+
+    async def not_disconnected():
+        return False
+
+    provider = _StressProvider()
+    turn = TurnStart(
+        owner_id=uuid4(),
+        timezone="Asia/Shanghai",
+        today=date(2026, 11, 22),
+        conversation_id=uuid4(),
+        user_message_id=uuid4(),
+        assistant_message_id=uuid4(),
+        user_content=maxed_user,
+        remaining_messages_today=29,
+        remaining_tokens_today=150_000,
+    )
+
+    async def collect():
+        return [
+            frame
+            async for frame in stream_turn(
+                turn,
+                session_factory=lambda: None,
+                settings=settings,
+                provider=provider,
+                clock=lambda: datetime(2026, 11, 22, 10, 0, tzinfo=UTC),
+                streams=ActiveStreamRegistry(),
+                is_disconnected=not_disconnected,
+            )
+        ]
+
+    events = _parse_sse_frames(asyncio.run(collect()))
+    done_event, done_data = events[-1]
+    assert done_event == "done"
+    assert done_data["status"] == "succeeded"
+    total_used = done_data["usage"]["input_tokens"] + done_data["usage"]["output_tokens"]
+    assert total_used <= turn_limit, f"total_used={total_used} exceeded turn_limit={turn_limit}"
+    # Round 1 used 3 tools (3rd hit context_budget replacement), so Round 2 must NOT receive tools
+    # (or must stop before calling again).
+    assert len(provider.calls) <= 2
+    if len(provider.calls) == 2:
+        assert provider.calls[1]["tool_count"] == 0
+    assert saved[-1]["input_tokens"] + saved[-1]["output_tokens"] == total_used
+
+    # Also verify pre-call gate refuses an over-budget call when an adversarial provider ignores
+    # empty tools and returns tool calls until budget is exhausted.
+    class _AdversarialProvider:
+        def __init__(self):
+            self.call_count = 0
+
+        async def stream_chat(self, messages, tools, _settings, *, deadline):
+            self.call_count += 1
+            in_tok = _realistic_deepseek_tokens(messages, tools)
+            yield ProviderRoundResult(
+                text="",
+                tool_calls=[
+                    ProviderToolCall(
+                        id=f"adv_{self.call_count}",
+                        name="search_activities",
+                        arguments='{"limit":20}',
+                    )
+                ],
+                finish_reason="tool_calls",
+                input_tokens=in_tok,
+                output_tokens=2048,
+                cached_input_tokens=0,
+            )
+
+    adv_provider = _AdversarialProvider()
+
+    async def collect_adv():
+        return [
+            frame
+            async for frame in stream_turn(
+                turn,
+                session_factory=lambda: None,
+                settings=settings,
+                provider=adv_provider,
+                clock=lambda: datetime(2026, 11, 22, 10, 0, tzinfo=UTC),
+                streams=ActiveStreamRegistry(),
+                is_disconnected=not_disconnected,
+            )
+        ]
+
+    adv_events = _parse_sse_frames(asyncio.run(collect_adv()))
+    adv_done = adv_events[-1][1]
+    adv_total = adv_done["usage"]["input_tokens"] + adv_done["usage"]["output_tokens"]
+    assert adv_total <= turn_limit, f"adv_total={adv_total} exceeded turn_limit={turn_limit}"
+    assert adv_done["finish_reason"] == "budget_limit"
+    assert adv_done["is_truncated"] is True
+    assert adv_provider.call_count < 4
