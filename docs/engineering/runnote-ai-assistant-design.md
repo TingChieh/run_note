@@ -273,9 +273,9 @@ Caddy (HTTPS, flush_interval -1) ──► FastAPI (runnote-api)
    - **幂等防重**：沿用 `Idempotency-Key`（UUID），同一请求键重发时：若仍在生成中返回 `409 AI_IN_PROGRESS`；若已完成直接回放结果，不重复调用 DeepSeek。
 3. **四层限流与防刷**：
    - **并发锁**：数据库部分唯一索引 `uq_ai_messages_user_active` 保证同一用户同时最多 1 个活跃请求（冲突返回 `409 AI_IN_PROGRESS`）。
-   - **短窗防刷**：复用 `backend/app/modules/auth/rate_limit.py` 的 `AuthRateBucket` 机制新增 `ai-msg-user` 桶（如每分钟最多 6 次、每 10 分钟最多 20 次），超限返回 `429 AI_RATE_LIMITED` + `Retry-After`。
-   - **单用户日配额**：同时校验 `AI_DAILY_MESSAGE_LIMIT`（次数）与 `AI_DAILY_TOKEN_BUDGET`（token 预算，按当天该用户所有消息的 `input_tokens + output_tokens` 求和），超限返回 `429 AI_QUOTA_EXCEEDED` + 距下一个 UTC 零点的 `Retry-After`。
-   - **全站日熔断与并发超支收敛**：`begin_turn` 短事务内先获取事务级咨询锁 `pg_advisory_xact_lock`（在 `db.commit()` 后自动释放，不跨外部 HTTP 持有），按 `已完成全站今日 token + 当前全站活跃生成中会话数 × 单轮预留额度（max(ai_max_output_tokens * 2, 4096)）>= AI_SITE_DAILY_TOKEN_BUDGET` 判定熔断，触顶返回 `503 AI_BUDGET_EXHAUSTED`（“今日站点 AI 额度已达上限，将于明日恢复”）。由此可防止多用户并发在阈值边缘同时放行；单次已放行轮次的残余超支上界严格受单轮工具轮次（<=4）与输出上限（<=2048 tokens）约束。
+   - **短窗防刷**：直接基于 `ai_messages`（利用索引 `ix_ai_messages_user_created`）执行 `SHORT_RATE_WINDOWS` 滑窗校验（每 60 秒最多 6 次、每 600 秒最多 20 次，跨进程生效且计入失败与已删除回合），超限返回 `429 AI_RATE_LIMITED` + `Retry-After`。
+   - **单用户日配额**：同时校验 `AI_DAILY_MESSAGE_LIMIT`（次数）与 `AI_DAILY_TOKEN_BUDGET`（token 预算，按当天该用户所有消息的 `input_tokens + output_tokens` 求和，失败/取消/删除均不退款）；准入时要求个人剩余额度 `>= 单轮预留上限 turn_token_limit(settings)`，不足返回 `429 AI_QUOTA_EXCEEDED` + 距下一个 UTC 零点的 `Retry-After`。
+   - **全站日熔断与并发超支收敛**：`begin_turn` 短事务内先获取事务级咨询锁 `pg_advisory_xact_lock`（在 `db.commit()` 后自动释放，不跨外部 HTTP 持有）。单轮预留上限 `turn_token_limit(settings) = AI_MAX_TOOL_ROUNDS * (PER_ROUND_INPUT_TOKEN_ALLOWANCE + AI_MAX_OUTPUT_TOKENS)` 同时覆盖允许轮次内的输入与输出 token（默认 `4 * (10,000 + 2,048) = 48,192`，并在编排层配合历史总字符上限、单轮工具输出总字节上限及轮间累计 token 护栏约束单轮消耗）。准入时将**已有活跃回合与即将开始的本轮一并计入预留**，要求全站剩余额度 `AI_SITE_DAILY_TOKEN_BUDGET - site_tokens_today - site_active * turn_token_limit >= turn_token_limit`（等价于 `site_tokens_today + (site_active + 1) * turn_token_limit <= AI_SITE_DAILY_TOKEN_BUDGET`），否则返回 `503 AI_BUDGET_EXHAUSTED`（“今日站点 AI 额度已达上限，将于明日恢复”）；由此保证全站同时在途回合数不超过 `floor(AI_SITE_DAILY_TOKEN_BUDGET / turn_token_limit)`，避免并发放大超支。
 
 ### 6.4 成本估算（基于 DeepSeek 官方定价量级）
 

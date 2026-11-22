@@ -36,6 +36,7 @@ HEARTBEAT_INTERVAL_SECONDS = 15.0
 CANCEL_POLL_INTERVAL_SECONDS = 1.0
 MAX_TOOL_CALLS_PER_TURN = 8
 MAX_UI_BLOCKS_PER_TURN = 12
+MAX_TURN_TOOL_PAYLOAD_BYTES = 24_576
 
 TOOL_LABELS: dict[str, str] = {
     "get_running_summary": "查询跑步汇总数据",
@@ -284,13 +285,12 @@ async def stream_turn(
             "cached_input_tokens": total_cached_tokens,
         }
 
-    async def _save_final(status: str, error_code: str | None = None) -> None:
+    async def _save_final(status: str, error_code: str | None = None) -> bool:
         nonlocal persisted
         if persisted:
-            return
-        persisted = True
+            return True
         full_text = "".join(content_parts)
-        await asyncio.shield(
+        saved = await asyncio.shield(
             run_in_threadpool(
                 _persist_finish,
                 session_factory,
@@ -307,6 +307,9 @@ async def stream_turn(
                 cached_input_tokens=total_cached_tokens if saw_usage else None,
             )
         )
+        if saved:
+            persisted = True
+        return saved
 
     async def _producer() -> None:
         nonlocal content_length, content_truncated
@@ -358,6 +361,11 @@ async def stream_turn(
             tools = tool_definitions()
             ctx = ToolContext(owner_id=turn.owner_id, timezone=turn.timezone, today=turn.today)
             total_tool_calls = 0
+            total_tool_payload_bytes = 0
+            turn_budget = assistant_service.turn_token_limit(settings)
+            next_round_reserve = assistant_service.PER_ROUND_INPUT_TOKEN_ALLOWANCE + int(
+                settings.ai_max_output_tokens
+            )
 
             for round_index in range(1, int(settings.ai_max_tool_rounds) + 1):
                 if (
@@ -372,13 +380,16 @@ async def stream_turn(
                 ):
                     raise asyncio.CancelledError
 
-                # On the final allowed round, pass no tools so the model produces its final answer.
-                round_tools = (
-                    tools
-                    if round_index < int(settings.ai_max_tool_rounds)
+                # On the final allowed round (or once tool/token budget leaves room only for the
+                # final answer), pass no tools so the model produces its final answer.
+                can_call_more_tools = (
+                    round_index < int(settings.ai_max_tool_rounds)
                     and total_tool_calls < MAX_TOOL_CALLS_PER_TURN
-                    else []
+                    and total_tool_payload_bytes < MAX_TURN_TOOL_PAYLOAD_BYTES
+                    and (total_input_tokens + total_output_tokens + next_round_reserve)
+                    <= turn_budget
                 )
+                round_tools = tools if can_call_more_tools else []
                 round_result: ProviderRoundResult | None = None
                 async for item in provider.stream_chat(
                     messages, round_tools, settings, deadline=deadline
@@ -416,6 +427,9 @@ async def stream_turn(
 
                 final_finish_reason = round_result.finish_reason
                 if not round_result.tool_calls:
+                    break
+                if (total_input_tokens + total_output_tokens) >= turn_budget:
+                    content_truncated = True
                     break
 
                 # Record assistant tool_calls turn in the conversation context.
@@ -539,13 +553,27 @@ async def stream_turn(
                             if len(collected_blocks) < MAX_UI_BLOCKS_PER_TURN:
                                 collected_blocks.append(block)
                                 await queue.put(format_sse("block", block.model_dump(mode="json")))
+                        payload_json = json.dumps(
+                            result.model_payload, ensure_ascii=False, separators=(",", ":")
+                        )
+                        payload_bytes = len(payload_json.encode("utf-8"))
+                        if total_tool_payload_bytes + payload_bytes > MAX_TURN_TOOL_PAYLOAD_BYTES:
+                            payload_json = json.dumps(
+                                {
+                                    "degraded": True,
+                                    "reason": "context_budget",
+                                    "message": "本轮工具上下文预算已满，请基于已有数据完成回答。",
+                                },
+                                ensure_ascii=False,
+                                separators=(",", ":"),
+                            )
+                        else:
+                            total_tool_payload_bytes += payload_bytes
                         messages.append(
                             {
                                 "role": "tool",
                                 "tool_call_id": call.id,
-                                "content": json.dumps(
-                                    result.model_payload, ensure_ascii=False, separators=(",", ":")
-                                ),
+                                "content": payload_json,
                             }
                         )
                     except (ToolInputError, ApiError) as tool_error:
@@ -595,7 +623,28 @@ async def stream_turn(
                 raise asyncio.CancelledError
 
             final_status = "succeeded"
-            await _save_final("succeeded")
+            saved_ok = await _save_final("succeeded")
+            if not saved_ok and await run_in_threadpool(
+                _is_cancelled_in_db,
+                session_factory,
+                turn.owner_id,
+                turn.assistant_message_id,
+            ):
+                final_status = "cancelled"
+                await _save_final("cancelled")
+                await queue.put(
+                    format_sse(
+                        "done",
+                        {
+                            "message_id": str(turn.assistant_message_id),
+                            "status": "cancelled",
+                            "finish_reason": "cancelled",
+                            "is_truncated": content_truncated,
+                            "usage": _usage_payload(),
+                        },
+                    )
+                )
+                return
             await queue.put(
                 format_sse(
                     "done",

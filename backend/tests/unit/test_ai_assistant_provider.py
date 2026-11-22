@@ -208,7 +208,11 @@ def test_deepseek_provider_assembles_chunked_tool_calls_and_cached_details():
     ],
 )
 def test_deepseek_provider_rejects_redirects_and_non_2xx(status_code, expected_code):
+    calls = 0
+
     def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
         headers = {"location": "https://evil.example.test/steal"} if status_code == 302 else {}
         return httpx.Response(status_code, headers=headers, content=b"error")
 
@@ -222,6 +226,7 @@ def test_deepseek_provider_rejects_redirects_and_non_2xx(status_code, expected_c
     with pytest.raises(ApiError) as err:
         asyncio.run(run())
     assert err.value.code == expected_code
+    assert calls == 1
 
 
 def test_deepseek_provider_maps_malformed_json_and_timeouts():
@@ -438,3 +443,93 @@ def test_orchestrator_emits_ping_heartbeat_enforces_tool_caps_and_handles_bad_to
     }
     assert saved[-1]["status"] == "succeeded"
     assert saved[-1]["input_tokens"] == 250
+
+
+def test_orchestrator_handles_cancel_race_before_succeeded_finish_and_retries_save(monkeypatch):
+    from app.modules.ai_assistant import orchestrator
+
+    monkeypatch.setattr(orchestrator, "_mark_streaming", lambda *_a, **_kw: True)
+    monkeypatch.setattr(orchestrator, "_load_history", lambda *_a, **_kw: [])
+
+    # Case 1 (P3-1): _is_cancelled_in_db returns False right before finish_turn("succeeded"),
+    # then another worker cancels the row so finish_turn("succeeded") returns False and
+    # _is_cancelled_in_db now returns True -> orchestrator must backfill cancelled & emit cancelled.
+    db_cancelled = [False]
+    calls: list[tuple[str, str | None]] = []
+
+    def fake_is_cancelled(*_a, **_kw):
+        return db_cancelled[0]
+
+    def fake_persist(_sf, _oid, _mid, status, **kwargs):
+        calls.append((status, kwargs.get("content")))
+        if status == "succeeded":
+            db_cancelled[0] = True
+            return False
+        return True
+
+    monkeypatch.setattr(orchestrator, "_is_cancelled_in_db", fake_is_cancelled)
+    monkeypatch.setattr(orchestrator, "_persist_finish", fake_persist)
+
+    class _SimpleProvider:
+        async def stream_chat(self, _messages, _tools, _settings, *, deadline):
+            yield ProviderTextDelta(text="已完成的内容")
+            yield ProviderRoundResult(
+                text="已完成的内容",
+                tool_calls=[],
+                finish_reason="stop",
+                input_tokens=80,
+                output_tokens=20,
+                cached_input_tokens=40,
+            )
+
+    async def not_disconnected():
+        return False
+
+    turn = TurnStart(
+        owner_id=uuid4(),
+        timezone="Asia/Shanghai",
+        today=date(2026, 11, 22),
+        conversation_id=uuid4(),
+        user_message_id=uuid4(),
+        assistant_message_id=uuid4(),
+        user_content="窄窗口测试",
+        remaining_messages_today=29,
+        remaining_tokens_today=100_000,
+    )
+
+    async def collect():
+        return [
+            frame
+            async for frame in stream_turn(
+                turn,
+                session_factory=lambda: None,
+                settings=_settings(),
+                provider=_SimpleProvider(),
+                clock=lambda: datetime(2026, 11, 22, 10, 0, tzinfo=UTC),
+                streams=ActiveStreamRegistry(),
+                is_disconnected=not_disconnected,
+            )
+        ]
+
+    events = _parse_sse_frames(asyncio.run(collect()))
+    assert events[-1][0] == "done"
+    assert events[-1][1]["status"] == "cancelled"
+    assert events[-1][1]["finish_reason"] == "cancelled"
+    assert calls == [("succeeded", "已完成的内容"), ("cancelled", "已完成的内容")]
+
+    # Case 2 (P3-2): transient DB error on first _persist_finish must leave persisted=False so
+    # the exception/finally handler can still persist a terminal state instead of leaving streaming.
+    retry_calls: list[str] = []
+
+    def flaky_persist(_sf, _oid, _mid, status, **_kwargs):
+        retry_calls.append(status)
+        if len(retry_calls) == 1:
+            raise RuntimeError("transient DB disconnect")
+        return True
+
+    db_cancelled[0] = False
+    monkeypatch.setattr(orchestrator, "_persist_finish", flaky_persist)
+    events2 = _parse_sse_frames(asyncio.run(collect()))
+    assert retry_calls == ["succeeded", "failed"]
+    assert events2[-1][0] == "done"
+    assert events2[-1][1]["status"] == "failed"

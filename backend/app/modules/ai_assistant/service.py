@@ -31,6 +31,7 @@ MAX_USER_MESSAGE_CHARS = 4000
 MAX_ASSISTANT_CONTENT_CHARS = 16000
 MAX_HISTORY_TURNS = 6
 MAX_HISTORY_ITEM_CHARS = 2000
+MAX_HISTORY_TOTAL_CHARS = 8000
 
 # Fixed 64-bit PostgreSQL advisory lock key serializing site-wide admission checks (~2 ms
 # short transaction, released automatically on commit before any external DeepSeek call).
@@ -42,10 +43,21 @@ SHORT_RATE_WINDOWS: tuple[tuple[int, int], ...] = (
     (20, 600),
 )
 
+# Conservative per-round input allowance covering system prompt + 10 tool schemas + bounded
+# sliding history + current user message + accumulated tool payloads.
+PER_ROUND_INPUT_TOKEN_ALLOWANCE = 10_000
+
+
+def turn_token_limit(settings) -> int:
+    """Single-turn token upper bound covering input + output across all allowed tool rounds."""
+    rounds = int(settings.ai_max_tool_rounds)
+    max_output = int(settings.ai_max_output_tokens)
+    return rounds * (PER_ROUND_INPUT_TOKEN_ALLOWANCE + max_output)
+
 
 def site_inflight_reserve(settings) -> int:
-    """Estimated tokens reserved per active in-flight turn to bound concurrent site overspend."""
-    return max(int(settings.ai_max_output_tokens) * 2, 4096)
+    """Per-turn token reservation for active and incoming turns."""
+    return turn_token_limit(settings)
 
 
 def lock_user(db, owner_id: UUID) -> User:
@@ -155,8 +167,9 @@ def recover_global_stale_messages(db, now: datetime, settings) -> None:
 
 def quota_status(db, owner_id: UUID, now: datetime, settings) -> QuotaStatusView:
     start, end = _utc_day_bounds(now)
+    reserve = turn_token_limit(settings)
     # Deleting conversations does not refund quota: count every assistant turn started today.
-    user_messages, user_tokens = db.execute(
+    user_messages, user_tokens, user_active = db.execute(
         select(
             func.count(),
             func.coalesce(
@@ -166,6 +179,7 @@ def quota_status(db, owner_id: UUID, now: datetime, settings) -> QuotaStatusView
                 ),
                 0,
             ),
+            func.count().filter(AIMessage.status.in_(("pending", "streaming"))),
         )
         .select_from(AIMessage)
         .where(
@@ -195,20 +209,24 @@ def quota_status(db, owner_id: UUID, now: datetime, settings) -> QuotaStatusView
     ).one()
     messages_today = int(user_messages or 0)
     tokens_today = int(user_tokens or 0)
+    user_reserved_tokens = int(user_active or 0) * reserve
     site_tokens_today = int(site_tokens or 0)
-    reserved_site_tokens = int(site_active or 0) * site_inflight_reserve(settings)
+    site_reserved_tokens = int(site_active or 0) * reserve
+    site_remaining = settings.ai_site_daily_token_budget - site_tokens_today - site_reserved_tokens
     return QuotaStatusView(
         daily_message_limit=settings.ai_daily_message_limit,
         messages_today=messages_today,
         remaining_messages_today=max(0, settings.ai_daily_message_limit - messages_today),
         daily_token_budget=settings.ai_daily_token_budget,
         tokens_today=tokens_today,
-        remaining_tokens_today=max(0, settings.ai_daily_token_budget - tokens_today),
+        remaining_tokens_today=max(
+            0, settings.ai_daily_token_budget - tokens_today - user_reserved_tokens
+        ),
         site_daily_token_budget=settings.ai_site_daily_token_budget,
         site_tokens_today=site_tokens_today,
-        site_budget_exhausted=(
-            site_tokens_today + reserved_site_tokens >= settings.ai_site_daily_token_budget
-        ),
+        # Include the incoming turn in the reservation check so remaining site budget must cover
+        # at least one full turn upper bound (caps concurrent turns at floor(budget / reserve)).
+        site_budget_exhausted=site_remaining < reserve,
     )
 
 
@@ -386,12 +404,21 @@ def recent_history_messages(
         .order_by(AIMessage.created_at.desc(), role_rank.desc(), AIMessage.id.desc())
         .limit(max_turns * 2)
     ).all()
-    rows.reverse()
-    return [
-        {"role": row.role, "content": (row.content or "")[:MAX_HISTORY_ITEM_CHARS]}
-        for row in rows
-        if (row.content or "").strip()
-    ]
+    selected: list[dict[str, str]] = []
+    used_chars = 0
+    for row in rows:
+        piece = (row.content or "")[:MAX_HISTORY_ITEM_CHARS]
+        if not piece.strip():
+            continue
+        if used_chars + len(piece) > MAX_HISTORY_TOTAL_CHARS:
+            remaining = MAX_HISTORY_TOTAL_CHARS - used_chars
+            if remaining <= 0:
+                break
+            piece = piece[:remaining]
+        selected.append({"role": row.role, "content": piece})
+        used_chars += len(piece)
+    selected.reverse()
+    return selected
 
 
 def delete_conversation(
@@ -530,6 +557,7 @@ def begin_turn(
     _check_short_rate_limits(db, owner_id, now)
 
     quota = quota_status(db, owner_id, now, settings)
+    reserve = turn_token_limit(settings)
     _, boundary = _utc_day_bounds(now)
     seconds_until_reset = max(1, int((boundary - now).total_seconds()))
     if quota.messages_today >= quota.daily_message_limit:
@@ -539,7 +567,7 @@ def begin_turn(
             "今日提问次数已达上限（按 UTC 日期计算）",
             retry_after=seconds_until_reset,
         )
-    if quota.tokens_today >= quota.daily_token_budget:
+    if quota.remaining_tokens_today < reserve:
         raise ApiError(
             429,
             "AI_QUOTA_EXCEEDED",
