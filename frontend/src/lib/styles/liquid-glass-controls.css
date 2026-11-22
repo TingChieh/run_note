@@ -143,3 +143,6 @@
   /* Floating over content: inactive labels and icons read in the full foreground colour (muted grey was too weak over the yellow header). Docked keeps the muted grey. Lives here, unlayered, because it has to beat the rule above. */
   .sport-theme.app-shell .app-sidebar[data-floating] .rn-liquid-navigation .nav-link:not([aria-current="page"]) { color: var(--foreground); }
 }
+@media (max-width: 479px) {
+  .settings-tabs-sections > .rn-moving-copy > .rn-moving-label { white-space: normal; text-align: center; }
+}
