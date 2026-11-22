@@ -159,8 +159,7 @@ test('pending cities, building routes and cross-timezone first run never misrepo
   const firstChapter = page.getByTestId('story-chapter-first');
   await expect(firstChapter).toContainText('2022-01-01 · 07:30');
   await expect(firstChapter).not.toContainText('20:30');
-  await expect(firstChapter).toContainText('未匹配城市');
-  await expect(firstChapter).not.toContainText('城市待计算');
+  await expect(firstChapter).toContainText('暂未匹配（计算中）');
   await expect(firstChapter).not.toContainText('无定位记录');
 
   // P2-1: prologue & chapter 04 & sticky stage must show pending/calculating, never no-GPS / indoor.
@@ -211,6 +210,33 @@ test('pending cities, building routes and cross-timezone first run never misrepo
   await page.getByTestId('story-sticky-stage').getByRole('button', { name: '04' }).click();
   await expect(page.getByTestId('story-sticky-stage')).toContainText('暂无匹配城市记录');
   await expect(page.getByTestId('story-sticky-stage')).not.toContainText('无户外定位记录');
+
+  // Prior-year pending (status="pending", pending_activity_count=0, total_cities>0): never says "0 条轨迹".
+  await page.route(
+    storyApi,
+    async (route) => {
+      const res = await route.fetch();
+      const json = await res.json();
+      json.data.first_run = { ...json.data.first_run, city_name: null, has_track: true };
+      json.data.explored_cities = {
+        ...json.data.explored_cities,
+        status: 'pending',
+        new_cities_count: 0,
+        pending_activity_count: 0,
+        items: json.data.explored_cities.items.map((c: Record<string, unknown>) => ({ ...c, is_new: false })),
+      };
+      await route.fulfill({ response: res, json });
+    },
+    { times: 1 },
+  );
+  await page.goto(`${storyUrl}?year=2025`);
+  await expect(page.getByTestId('story-chapter-first')).toContainText('未匹配城市');
+  await expect(page.getByTestId('story-chapter-first')).not.toContainText('计算中');
+  await expect(page.getByTestId('story-chapter-cities')).toContainText('往年城市足迹仍在后台计算');
+  await expect(page.getByTestId('story-chapter-cities')).not.toContainText('0 条轨迹');
+  await page.getByTestId('story-sticky-stage').getByRole('button', { name: '04' }).click();
+  await expect(page.getByTestId('story-sticky-stage')).toContainText('往年城市记录仍在后台补全');
+  await expect(page.getByTestId('story-sticky-stage')).not.toContainText('0 条轨迹');
 });
 
 test('partial, trackless fallback, empty, error recovery and 401 session expiry states', async ({ page }) => {

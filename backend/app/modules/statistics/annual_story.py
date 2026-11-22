@@ -216,28 +216,16 @@ def _resolve_cities(
     ]
     status = "ready"
     pending_ids: set[UUID] = set()
+    inline_used = 0
     if missing_track_ids:
         if len(missing_track_ids) <= MAX_INLINE_CITY_COMPUTE:
             computed = global_atlas.compute_global_codes(db, owner, missing_track_ids)
+            inline_used = len(missing_track_ids)
             for aid, pair in computed.items():
                 geo_by_id[aid] = pair
         else:
             status = "pending"
             pending_ids = set(missing_track_ids)
-
-    prior_city_codes = set(
-        db.scalars(
-            text(
-                """SELECT DISTINCT unnest(c.city_codes)
-                   FROM activities a
-                   JOIN activity_global_footprint_caches c
-                     ON (c.activity_id, c.user_id) = (a.id, a.user_id)
-                    AND c.atlas_version = :atlas
-                   WHERE a.user_id = :owner AND a.activity_date < :start"""
-            ),
-            {"owner": owner, "atlas": atlas_ver, "start": date_from},
-        ).all()
-    )
 
     city_stats: dict[str, dict] = {}
     region_set: set[str] = set()
@@ -281,6 +269,66 @@ def _resolve_cities(
                 if day > entry["last_date"]:
                     entry["last_date"] = day
 
+    prior_city_codes: set[str] = set()
+    prior_history_complete = True
+    if city_stats:
+        prior_city_codes = set(
+            db.scalars(
+                text(
+                    """SELECT DISTINCT unnest(c.city_codes)
+                       FROM activities a
+                       JOIN activity_global_footprint_caches c
+                         ON (c.activity_id, c.user_id) = (a.id, a.user_id)
+                        AND c.atlas_version = :atlas
+                       WHERE a.user_id = :owner AND a.activity_date < :start"""
+                ),
+                {"owner": owner, "atlas": atlas_ver, "start": date_from},
+            ).all()
+        )
+        if set(city_stats) - prior_city_codes:
+            # Bounded check for prior tracked runs with missing or stale-version caches so
+            # previously visited cities are never mislabeled as newly discovered.
+            remaining_budget = max(0, MAX_INLINE_CITY_COMPUTE - inline_used)
+            prior_missing_ids = list(
+                db.scalars(
+                    text(
+                        """SELECT a.id
+                           FROM activities a
+                           WHERE a.user_id = :owner
+                             AND a.activity_date < :start
+                             AND EXISTS (
+                                 SELECT 1
+                                 FROM activity_segments s
+                                 WHERE s.activity_id = a.id
+                                   AND (s.geom IS NOT NULL OR s.point_count = 1)
+                             )
+                             AND NOT EXISTS (
+                                 SELECT 1
+                                 FROM activity_global_footprint_caches c
+                                 WHERE c.activity_id = a.id
+                                   AND c.user_id = a.user_id
+                                   AND c.atlas_version = :atlas
+                             )
+                           ORDER BY a.activity_date DESC, a.id DESC
+                           LIMIT :limit"""
+                    ),
+                    {
+                        "owner": owner,
+                        "atlas": atlas_ver,
+                        "start": date_from,
+                        "limit": remaining_budget + 1,
+                    },
+                ).all()
+            )
+            if prior_missing_ids:
+                if len(prior_missing_ids) <= remaining_budget:
+                    computed_prior = global_atlas.compute_global_codes(db, owner, prior_missing_ids)
+                    for _, c_codes in computed_prior.values():
+                        prior_city_codes.update(c_codes)
+                else:
+                    prior_history_complete = False
+                    status = "pending"
+
     items: list[StoryCityItem] = []
     for code, stat in city_stats.items():
         meta = cities_by_code[code]
@@ -291,7 +339,7 @@ def _resolve_cities(
                 code=code,
                 name=meta["name"],
                 region_name=reg["name"] if reg else None,
-                is_new=code not in prior_city_codes,
+                is_new=prior_history_complete and (code not in prior_city_codes),
                 first_date=stat["first_date"],
                 last_date=stat["last_date"],
                 activity_count=stat["count"],

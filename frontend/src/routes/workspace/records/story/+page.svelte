@@ -118,7 +118,9 @@
           ? `${city.activity_count} 次 · ${storyKm(city.distance_m, 1)} km · 首跑 ${storyShortDate(city.first_date)}`
           : ec.total_cities > 0
             ? ec.status === 'pending'
-              ? `点击左侧任意城市聚焦已就绪足迹，另有 ${ec.pending_activity_count} 条轨迹仍在后台计算。`
+              ? ec.pending_activity_count > 0
+                ? `点击左侧任意城市聚焦已就绪足迹，另有 ${ec.pending_activity_count} 条轨迹仍在后台计算。`
+                : '点击左侧任意城市聚焦已就绪足迹，往年城市记录仍在后台补全。'
               : '点击左侧任意城市聚焦该城足迹，金色标记为今年新点亮。'
             : ec.status === 'pending'
               ? `仍有 ${ec.pending_activity_count} 条轨迹正在解析城市归属，完成后将自动点亮对应城市。`
@@ -520,7 +522,12 @@
                 <div>
                   <dt>地点</dt>
                   <dd>
-                    {first.city_name ?? (first.has_track ? '未匹配城市' : '无定位记录')}
+                    {first.city_name ??
+                      (!first.has_track
+                        ? '无定位记录'
+                        : story.explored_cities.status === 'pending' && story.explored_cities.pending_activity_count > 0
+                          ? '暂未匹配（计算中）'
+                          : '未匹配城市')}
                   </dd>
                 </div>
                 {#if first.shoe_name}
@@ -688,8 +695,12 @@
             <h2>探索城市</h2>
             {#if story.explored_cities.status === 'pending' && story.explored_cities.total_cities > 0}
               <p class="coverage-banner" role="status">
-                仍有 {story.explored_cities.pending_activity_count} 条轨迹的城市归属正在后台计算，当前展示已就绪的
-                {story.explored_cities.total_cities} 座城市。
+                {#if story.explored_cities.pending_activity_count > 0}
+                  仍有 {story.explored_cities.pending_activity_count} 条轨迹的城市归属正在后台计算，当前展示已就绪的
+                  {story.explored_cities.total_cities} 座城市。
+                {:else}
+                  往年城市足迹仍在后台计算，当前展示本年度已就绪的 {story.explored_cities.total_cities} 座城市（新点亮标记待完成后更新）。
+                {/if}
               </p>
             {/if}
             {#if story.explored_cities.total_cities === 0}

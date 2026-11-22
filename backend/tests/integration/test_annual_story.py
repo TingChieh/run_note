@@ -41,6 +41,7 @@ def _add_activity(
     line_wkt: str | None = None,
     city_code: str | None = None,
     region_code: str | None = None,
+    cache_atlas_version: str | None = None,
     create_fingerprint: bool = True,
 ):
     act = Activity(
@@ -86,13 +87,13 @@ def _add_activity(
                     geom=f"SRID=4326;MULTILINESTRING({line_wkt.removeprefix('LINESTRING')})",
                 )
             )
-    if city_code or region_code:
+    if city_code or region_code or cache_atlas_version is not None:
         db.add(
             ActivityGlobalFootprintCache(
                 id=uuid4(),
                 user_id=owner,
                 activity_id=act.id,
-                atlas_version=global_atlas.atlas_version(),
+                atlas_version=cache_atlas_version or global_atlas.atlas_version(),
                 region_codes=[region_code] if region_code else [],
                 city_codes=[city_code] if city_code else [],
             )
@@ -402,3 +403,320 @@ def test_annual_story_pending_cities_building_routes_and_first_run_timezone(clie
 
     # P2-1: unprocessed route fingerprints report status="building", NOT "none"
     assert story["frequent_route"]["status"] == "building"
+
+
+SHANGHAI_WKT = "LINESTRING(121.45 31.20, 121.48 31.22, 121.50 31.25)"
+TOKYO_WKT = "LINESTRING(139.69 35.68, 139.70 35.685, 139.71 35.69)"
+
+
+def _resolve_real_city(db, owner, wkt: str) -> tuple[str, str]:
+    """Resolve the real bundled-atlas (region_code, city_code) for a synthetic track."""
+    probe = _add_activity(
+        db,
+        owner,
+        day="2020-01-01",
+        title="probe",
+        distance_m=3000,
+        duration_s=900,
+        line_wkt=wkt,
+    )
+    db.flush()
+    computed = global_atlas.compute_global_codes(db, owner, [probe.id])
+    regions, cities = computed[probe.id]
+    assert regions and cities
+    db.execute(text("DELETE FROM activities WHERE id = :aid"), {"aid": probe.id})
+    db.flush()
+    return regions[0], cities[0]
+
+
+def test_annual_story_prior_city_cache_complete(clients):
+    a, b, _, app = clients
+    quiet(a, b)
+    owner = register(a)
+
+    with app.state.session_factory.begin() as db:
+        sh_reg, sh_city = _resolve_real_city(db, owner, SHANGHAI_WKT)
+        tk_reg, tk_city = _resolve_real_city(db, owner, TOKYO_WKT)
+        assert sh_city != tk_city
+
+        # Prior year run has current-version cache.
+        _add_activity(
+            db,
+            owner,
+            day="2024-06-01",
+            title="去年上海跑",
+            distance_m=5000,
+            duration_s=1500,
+            line_wkt=SHANGHAI_WKT,
+            city_code=sh_city,
+            region_code=sh_reg,
+        )
+        # Target year runs in Shanghai (previously visited) and Tokyo (newly discovered).
+        _add_activity(
+            db,
+            owner,
+            day="2025-03-01",
+            title="今年上海跑",
+            distance_m=6000,
+            duration_s=1800,
+            line_wkt=SHANGHAI_WKT,
+            city_code=sh_city,
+            region_code=sh_reg,
+        )
+        _add_activity(
+            db,
+            owner,
+            day="2025-07-01",
+            title="今年东京跑",
+            distance_m=7000,
+            duration_s=2100,
+            line_wkt=TOKYO_WKT,
+            city_code=tk_city,
+            region_code=tk_reg,
+        )
+
+    res = a.get("/api/v1/statistics/annual-story?year=2025")
+    assert res.status_code == 200
+    ec = res.json()["data"]["explored_cities"]
+    cities = {c["code"]: c for c in ec["items"]}
+    assert ec["status"] == "ready"
+    assert ec["pending_activity_count"] == 0
+    assert ec["total_cities"] == 2
+    assert ec["new_cities_count"] == 1
+    assert cities[sh_city]["is_new"] is False
+    assert cities[tk_city]["is_new"] is True
+
+
+def test_annual_story_prior_city_cache_missing_inline_and_pending(clients, monkeypatch):
+    from app.modules.statistics import annual_story as annual_story_mod
+
+    a, b, _, app = clients
+    quiet(a, b)
+    owner_inline, owner_pending = register(a), register(b)
+
+    with app.state.session_factory.begin() as db:
+        sh_reg, sh_city = _resolve_real_city(db, owner_inline, SHANGHAI_WKT)
+        tk_reg, tk_city = _resolve_real_city(db, owner_inline, TOKYO_WKT)
+
+        # Subcase A (within cap): prior 2024 Shanghai run has NO cache row at all.
+        prior_uncached = _add_activity(
+            db,
+            owner_inline,
+            day="2024-05-01",
+            title="去年上海无缓存跑",
+            distance_m=5000,
+            duration_s=1500,
+            line_wkt=SHANGHAI_WKT,
+        )
+        _add_activity(
+            db,
+            owner_inline,
+            day="2025-02-01",
+            title="今年上海跑",
+            distance_m=6000,
+            duration_s=1800,
+            line_wkt=SHANGHAI_WKT,
+            city_code=sh_city,
+            region_code=sh_reg,
+        )
+        _add_activity(
+            db,
+            owner_inline,
+            day="2025-06-01",
+            title="今年东京跑",
+            distance_m=7000,
+            duration_s=2100,
+            line_wkt=TOKYO_WKT,
+            city_code=tk_city,
+            region_code=tk_reg,
+        )
+
+        # Subcase B (over cap): 2 prior uncached runs exceed MAX_INLINE_CITY_COMPUTE=1.
+        _add_activity(
+            db,
+            owner_pending,
+            day="2024-04-01",
+            title="去年上海无缓存1",
+            distance_m=5000,
+            duration_s=1500,
+            line_wkt=SHANGHAI_WKT,
+        )
+        _add_activity(
+            db,
+            owner_pending,
+            day="2024-05-01",
+            title="去年东京无缓存2",
+            distance_m=5000,
+            duration_s=1500,
+            line_wkt=TOKYO_WKT,
+        )
+        _add_activity(
+            db,
+            owner_pending,
+            day="2025-03-01",
+            title="今年上海已缓存",
+            distance_m=6000,
+            duration_s=1800,
+            line_wkt=SHANGHAI_WKT,
+            city_code=sh_city,
+            region_code=sh_reg,
+        )
+
+    # Subcase A: inline computes the missing prior run, stays read-only, avoids false is_new.
+    res_a = a.get("/api/v1/statistics/annual-story?year=2025")
+    assert res_a.status_code == 200
+    ec_a = res_a.json()["data"]["explored_cities"]
+    cities_a = {c["code"]: c for c in ec_a["items"]}
+    assert ec_a["status"] == "ready"
+    assert ec_a["pending_activity_count"] == 0
+    assert ec_a["total_cities"] == 2
+    assert ec_a["new_cities_count"] == 1
+    assert cities_a[sh_city]["is_new"] is False
+    assert cities_a[tk_city]["is_new"] is True
+    with app.state.session_factory() as db:
+        cache_count = db.scalar(
+            text("SELECT count(*) FROM activity_global_footprint_caches WHERE activity_id = :aid"),
+            {"aid": prior_uncached.id},
+        )
+        assert cache_count == 0
+
+    # Subcase B: over cap skips compute_global_codes, returns pending, never marks is_new.
+    monkeypatch.setattr(annual_story_mod, "MAX_INLINE_CITY_COMPUTE", 1)
+    calls: list[list] = []
+    orig_compute = global_atlas.compute_global_codes
+
+    def spy_compute(db, owner, activity_ids, **kwargs):
+        calls.append(list(activity_ids))
+        return orig_compute(db, owner, activity_ids, **kwargs)
+
+    monkeypatch.setattr(global_atlas, "compute_global_codes", spy_compute)
+    res_b = b.get("/api/v1/statistics/annual-story?year=2025")
+    assert res_b.status_code == 200
+    story_b = res_b.json()["data"]
+    ec_b = story_b["explored_cities"]
+    assert calls == []
+    assert ec_b["status"] == "pending"
+    assert ec_b["total_cities"] == 1
+    assert ec_b["new_cities_count"] == 0
+    assert ec_b["located_activity_count"] == 1
+    assert ec_b["unlocated_activity_count"] == 0
+    assert ec_b["pending_activity_count"] == 0
+    assert ec_b["items"][0]["code"] == sh_city
+    assert ec_b["items"][0]["is_new"] is False
+    assert all(item["milestone"] != "new_city" for item in story_b["footprint_timeline"]["items"])
+
+
+def test_annual_story_prior_city_cache_stale_version_inline_and_pending(clients, monkeypatch):
+    from app.modules.statistics import annual_story as annual_story_mod
+
+    a, b, _, app = clients
+    quiet(a, b)
+    owner_inline, owner_pending = register(a), register(b)
+
+    with app.state.session_factory.begin() as db:
+        sh_reg, sh_city = _resolve_real_city(db, owner_inline, SHANGHAI_WKT)
+        tk_reg, tk_city = _resolve_real_city(db, owner_inline, TOKYO_WKT)
+
+        # Subcase A (within cap): prior 2024 Shanghai run has stale atlas_version with empty cities.
+        _add_activity(
+            db,
+            owner_inline,
+            day="2024-06-01",
+            title="去年上海旧版本缓存",
+            distance_m=5000,
+            duration_s=1500,
+            line_wkt=SHANGHAI_WKT,
+            cache_atlas_version="stale-atlas-v0",
+        )
+        _add_activity(
+            db,
+            owner_inline,
+            day="2025-03-01",
+            title="今年上海跑",
+            distance_m=6000,
+            duration_s=1800,
+            line_wkt=SHANGHAI_WKT,
+            city_code=sh_city,
+            region_code=sh_reg,
+        )
+        _add_activity(
+            db,
+            owner_inline,
+            day="2025-07-01",
+            title="今年东京跑",
+            distance_m=7000,
+            duration_s=2100,
+            line_wkt=TOKYO_WKT,
+            city_code=tk_city,
+            region_code=tk_reg,
+        )
+
+        # Subcase B (over cap): 2 prior stale-version runs exceed MAX_INLINE_CITY_COMPUTE=1.
+        _add_activity(
+            db,
+            owner_pending,
+            day="2024-04-01",
+            title="去年上海旧版本1",
+            distance_m=5000,
+            duration_s=1500,
+            line_wkt=SHANGHAI_WKT,
+            cache_atlas_version="stale-atlas-v0",
+        )
+        _add_activity(
+            db,
+            owner_pending,
+            day="2024-05-01",
+            title="去年东京旧版本2",
+            distance_m=5000,
+            duration_s=1500,
+            line_wkt=TOKYO_WKT,
+            cache_atlas_version="stale-atlas-v0",
+        )
+        _add_activity(
+            db,
+            owner_pending,
+            day="2025-03-01",
+            title="今年上海已缓存",
+            distance_m=6000,
+            duration_s=1800,
+            line_wkt=SHANGHAI_WKT,
+            city_code=sh_city,
+            region_code=sh_reg,
+        )
+
+    # Subcase A: stale prior cache is recomputed inline so Shanghai is NOT marked is_new.
+    res_a = a.get("/api/v1/statistics/annual-story?year=2025")
+    assert res_a.status_code == 200
+    ec_a = res_a.json()["data"]["explored_cities"]
+    cities_a = {c["code"]: c for c in ec_a["items"]}
+    assert ec_a["status"] == "ready"
+    assert ec_a["pending_activity_count"] == 0
+    assert ec_a["total_cities"] == 2
+    assert ec_a["new_cities_count"] == 1
+    assert cities_a[sh_city]["is_new"] is False
+    assert cities_a[tk_city]["is_new"] is True
+
+    # Subcase B: stale prior caches over cap -> pending without unbounded compute or false is_new.
+    monkeypatch.setattr(annual_story_mod, "MAX_INLINE_CITY_COMPUTE", 1)
+    calls: list[list] = []
+    orig_compute = global_atlas.compute_global_codes
+
+    def spy_compute(db, owner, activity_ids, **kwargs):
+        calls.append(list(activity_ids))
+        return orig_compute(db, owner, activity_ids, **kwargs)
+
+    monkeypatch.setattr(global_atlas, "compute_global_codes", spy_compute)
+    res_b = b.get("/api/v1/statistics/annual-story?year=2025")
+    assert res_b.status_code == 200
+    story_b = res_b.json()["data"]
+    ec_b = story_b["explored_cities"]
+    assert calls == []
+    assert ec_b["status"] == "pending"
+    assert ec_b["total_cities"] == 1
+    assert ec_b["new_cities_count"] == 0
+    assert ec_b["located_activity_count"] == 1
+    assert ec_b["unlocated_activity_count"] == 0
+    assert ec_b["pending_activity_count"] == 0
+    assert ec_b["items"][0]["code"] == sh_city
+    assert ec_b["items"][0]["is_new"] is False
+    assert all(item["milestone"] != "new_city" for item in story_b["footprint_timeline"]["items"])
