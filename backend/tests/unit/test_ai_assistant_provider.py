@@ -254,6 +254,32 @@ def test_deepseek_provider_maps_malformed_json_and_timeouts():
     assert err.value.code == "AI_TIMEOUT"
 
 
+@pytest.mark.parametrize(
+    "raw_body",
+    [
+        b"",
+        _sse_body({"choices": [{"delta": {"content": "半截内容"}}]}),
+        _sse_body({"choices": [{"delta": {"content": "无完成标记"}}]}, "[DONE]"),
+        _sse_body({"choices": [{"delta": {"content": "缺少DONE"}, "finish_reason": "stop"}]}),
+        _sse_body({"choices": [{"delta": {}, "finish_reason": "stop"}]}, "[DONE]"),
+    ],
+)
+def test_deepseek_provider_rejects_empty_or_incomplete_streams(raw_body):
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=raw_body)
+
+    async def run():
+        provider = DeepSeekProvider(transport=httpx.MockTransport(handler))
+        async for _ in provider.stream_chat(
+            [{"role": "user", "content": "hi"}], [], _settings(), deadline=time.monotonic() + 10
+        ):
+            pass
+
+    with pytest.raises(ApiError) as err:
+        asyncio.run(run())
+    assert err.value.code == "AI_OUTPUT_INVALID"
+
+
 class _SlowStream(httpx.AsyncByteStream):
     def __init__(self, cancelled_flag: list[bool]):
         self.cancelled_flag = cancelled_flag

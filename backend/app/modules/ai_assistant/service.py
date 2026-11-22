@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import delete, func, select, text, update
+from sqlalchemy import case, delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 
 from app.core.errors import ApiError
@@ -344,10 +344,11 @@ def conversation_detail(
         AIMessage.deleted_at.is_(None),
     )
     total = int(db.scalar(select(func.count()).select_from(AIMessage).where(*filters)) or 0)
+    role_rank = case((AIMessage.role == "user", 0), else_=1)
     rows = db.scalars(
         select(AIMessage)
         .where(*filters)
-        .order_by(AIMessage.created_at.asc(), AIMessage.id.asc())
+        .order_by(AIMessage.created_at.asc(), role_rank.asc(), AIMessage.id.asc())
         .limit(limit)
         .offset(offset)
     ).all()
@@ -378,10 +379,11 @@ def recent_history_messages(
     ]
     if exclude_message_ids:
         filters.append(AIMessage.id.not_in(exclude_message_ids))
+    role_rank = case((AIMessage.role == "user", 0), else_=1)
     rows = db.scalars(
         select(AIMessage)
         .where(*filters)
-        .order_by(AIMessage.created_at.desc(), AIMessage.id.desc())
+        .order_by(AIMessage.created_at.desc(), role_rank.desc(), AIMessage.id.desc())
         .limit(max_turns * 2)
     ).all()
     rows.reverse()

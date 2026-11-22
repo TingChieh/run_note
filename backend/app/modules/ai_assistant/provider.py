@@ -117,6 +117,7 @@ class DeepSeekProvider:
         text_parts: list[str] = []
         tool_buffers: dict[int, dict[str, str]] = {}
         finish_reason: str | None = None
+        saw_done = False
         input_tokens: int | None = None
         output_tokens: int | None = None
         cached_input_tokens: int | None = None
@@ -153,6 +154,7 @@ class DeepSeekProvider:
                             continue
                         data_str = line[5:].strip()
                         if data_str == "[DONE]":
+                            saw_done = True
                             break
                         try:
                             chunk = json.loads(data_str)
@@ -223,6 +225,10 @@ class DeepSeekProvider:
             for idx, buf in sorted(tool_buffers.items())
             if buf["name"]
         ]
+        if not saw_done or finish_reason is None:
+            raise ApiError(502, "AI_OUTPUT_INVALID", "AI 响应意外中断，请重试")
+        if not text_parts and not assembled_calls:
+            raise ApiError(502, "AI_OUTPUT_INVALID", "AI 未返回有效内容，请重试")
         yield ProviderRoundResult(
             text="".join(text_parts),
             tool_calls=assembled_calls,

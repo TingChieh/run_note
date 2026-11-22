@@ -22,7 +22,7 @@ ok() { echo "ok: $*" >&2; }
 # four upstreams that say who they are and what client address they were told
 cat > "$T/upstream.py" <<'PY'
 import gzip, sys, time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 who = sys.argv[2]
 class H(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -63,7 +63,7 @@ class H(BaseHTTPRequestHandler):
         self.send_response(200); self.send_header("Content-Length", str(len(body)))
         self.end_headers(); self.wfile.write(body)
     def log_message(self, *a): pass
-HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
 PY
 for spec in "18000 legacy-api" "18001 legacy-web" "18100 prod-api" "18101 prod-web"; do
   # shellcheck disable=SC2086 # split "port name" into two arguments on purpose

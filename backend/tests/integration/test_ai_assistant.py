@@ -847,3 +847,76 @@ def test_finish_turn_sanitization_short_rate_limit_and_site_budget_reservation(a
         assert burst_err.value.status_code == 429
         assert burst_err.value.code == "AI_RATE_LIMITED"
         assert (burst_err.value.retry_after or 0) >= 1
+
+
+def test_within_turn_ordering_always_places_user_before_assistant(assistant_db):
+    _, SessionLocal, created_users = assistant_db
+    url = os.environ["TEST_DATABASE_URL"]
+    settings = _make_settings(url)
+    t1 = datetime(2026, 11, 22, 14, 0, tzinfo=UTC)
+    t2 = datetime(2026, 11, 22, 14, 1, tzinfo=UTC)
+
+    with SessionLocal.begin() as db:
+        owner = _create_user(db, created_users)
+        conv = assistant_service.create_conversation(db, owner.id, t1, title="Ordering")
+        # Deliberately set user UUID > assistant UUID on identical created_at timestamps.
+        u1 = AIMessage(
+            id=UUID("ffffffff-ffff-4fff-8fff-fffffffffff1"),
+            conversation_id=conv.id,
+            user_id=owner.id,
+            role="user",
+            status="succeeded",
+            content="第一问",
+            source_data_version=0,
+            created_at=t1,
+            finished_at=t1,
+        )
+        a1 = AIMessage(
+            id=UUID("00000000-0000-4000-8000-000000000001"),
+            conversation_id=conv.id,
+            user_id=owner.id,
+            role="assistant",
+            status="succeeded",
+            content="第一答",
+            source_data_version=0,
+            created_at=t1,
+            finished_at=t1,
+        )
+        u2 = AIMessage(
+            id=UUID("ffffffff-ffff-4fff-8fff-fffffffffff2"),
+            conversation_id=conv.id,
+            user_id=owner.id,
+            role="user",
+            status="succeeded",
+            content="第二问",
+            source_data_version=0,
+            created_at=t2,
+            finished_at=t2,
+        )
+        a2 = AIMessage(
+            id=UUID("00000000-0000-4000-8000-000000000002"),
+            conversation_id=conv.id,
+            user_id=owner.id,
+            role="assistant",
+            status="succeeded",
+            content="第二答",
+            source_data_version=0,
+            created_at=t2,
+            finished_at=t2,
+        )
+        db.add_all([a1, u1, a2, u2])
+        db.flush()
+
+        detail = assistant_service.conversation_detail(db, owner.id, conv.id, t2, settings)
+        assert [(m.role, m.content) for m in detail.messages] == [
+            ("user", "第一问"),
+            ("assistant", "第一答"),
+            ("user", "第二问"),
+            ("assistant", "第二答"),
+        ]
+        # With max_turns=1 (limit 2 rows), history still keeps [u2, a2] in user-first order.
+        history = assistant_service.recent_history_messages(db, owner.id, conv.id, max_turns=1)
+        assert history == [
+            {"role": "user", "content": "第二问"},
+            {"role": "assistant", "content": "第二答"},
+        ]
