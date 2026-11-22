@@ -347,7 +347,6 @@
   {#if view.manage && page.data.user}
     {#key activity.id}
       <ActivityShoe id={activity.id} onauthrequired={expired} />
-      <ActivityDiary id={activity.id} onauthrequired={expired} />
     {/key}
   {/if}
   <DeviceMetrics metrics={activity} />
@@ -372,6 +371,11 @@
     onauthrequired={expired}
     onswitch={switchActivity}
   />
+  {#if view.manage && page.data.user}
+    {#key activity.id}
+      <ActivityDiary id={activity.id} onauthrequired={expired} />
+    {/key}
+  {/if}
   {#if view.manage}<SharePanel {activity} />{/if}
 {:else if loading}<div class="page-loading mt-6"><FeedbackState kind="loading" title="正在读取活动…" /></div>{/if}
 

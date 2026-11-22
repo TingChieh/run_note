@@ -81,6 +81,35 @@ test('public detail does not request the diary and private detail handles read f
   await expect(page).toHaveURL(/\/admin\?reason=expired/);
 });
 
+test('loading a long diary does not move the activity footprint deck', async ({ page }) => {
+  const held = Promise.withResolvers<void>();
+  await page.route('**' + apiPath, async (route) => {
+    await held.promise;
+    await route.fulfill({
+      json: {
+        data: {
+          diary: { mood: null, rpe: null, weather: null, notes: '合成日记\n'.repeat(60), photos: [] },
+        },
+        error: null,
+      },
+    });
+  });
+  try {
+    await signIn(page);
+    const diary = page.getByRole('region', { name: '跑步日记' });
+    await expect(diary.getByText('正在读取日记…')).toBeVisible();
+    const deck = page.getByRole('region', { name: '本次足迹卡片' });
+    await expect(deck.locator('.preview-browser')).toHaveAttribute('aria-busy', 'false');
+    const documentY = () => deck.evaluate((element) => element.getBoundingClientRect().top + scrollY);
+    const before = await documentY();
+    held.resolve();
+    await expect(diary.getByText(/合成日记/)).toBeVisible();
+    expect(Math.abs((await documentY()) - before)).toBeLessThan(5);
+  } finally {
+    held.resolve();
+  }
+});
+
 for (const [width, height] of [
   [1440, 900],
   [768, 1024],
