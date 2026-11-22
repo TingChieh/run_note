@@ -63,8 +63,10 @@
   let activeId = $state<string | null>(null);
   let activeConversation = $state<ConversationView | null>(null);
   let messages = $state<MessageView[]>([]);
+  let messagesOffset = $state(0);
   let totalMessages = $state(0);
   let detailLoading = $state(false);
+  let earlierLoading = $state(false);
   let detailError = $state('');
 
   let streaming = $state(false);
@@ -203,11 +205,14 @@
     }
   }
 
+  const MESSAGE_PAGE_SIZE = 50;
+
   async function openConversation(id: string) {
     if (streaming) return;
     const token = ++detailToken;
     activeId = id;
     detailLoading = true;
+    earlierLoading = false;
     detailError = '';
     sendError = '';
     sendErrorCode = '';
@@ -216,13 +221,19 @@
     convError = '';
     historyDialog?.close();
     try {
-      const detail = await readConversation(id, 0, 50, fetcher);
-      if (!disposed && token === detailToken) {
-        activeConversation = detail.conversation;
-        messages = detail.messages;
-        totalMessages = detail.total_messages;
-        scrollThreadToBottom();
+      let detail = await readConversation(id, 0, MESSAGE_PAGE_SIZE, fetcher);
+      if (disposed || token !== detailToken) return;
+      // Backend orders messages oldest-first; jump to the latest page when history exceeds one page.
+      if (detail.total_messages > detail.messages.length) {
+        const latestOffset = Math.max(0, detail.total_messages - MESSAGE_PAGE_SIZE);
+        detail = await readConversation(id, latestOffset, MESSAGE_PAGE_SIZE, fetcher);
+        if (disposed || token !== detailToken) return;
       }
+      activeConversation = detail.conversation;
+      messages = detail.messages;
+      messagesOffset = detail.offset;
+      totalMessages = detail.total_messages;
+      scrollThreadToBottom();
     } catch (cause) {
       if (!disposed && token === detailToken) detailError = errorMessage(cause, '暂时无法读取该会话');
     } finally {
@@ -230,12 +241,38 @@
     }
   }
 
+  async function loadEarlierMessages() {
+    if (!activeId || earlierLoading || detailLoading || streaming || messagesOffset <= 0) return;
+    const token = detailToken;
+    const targetId = activeId;
+    const nextOffset = Math.max(0, messagesOffset - MESSAGE_PAGE_SIZE);
+    const nextLimit = messagesOffset - nextOffset;
+    earlierLoading = true;
+    detailError = '';
+    try {
+      const earlier = await readConversation(targetId, nextOffset, nextLimit, fetcher);
+      if (disposed || token !== detailToken) return;
+      const existingIds = new Set(messages.map((m) => m.id));
+      const prepended = earlier.messages.filter((m) => !existingIds.has(m.id));
+      messages = [...prepended, ...messages];
+      messagesOffset = earlier.offset;
+      totalMessages = Math.max(totalMessages, earlier.total_messages);
+    } catch (cause) {
+      if (!disposed && token === detailToken) detailError = errorMessage(cause, '暂时无法加载更早的消息');
+    } finally {
+      if (!disposed && token === detailToken) earlierLoading = false;
+    }
+  }
+
   function startNewConversation() {
     if (streaming) return;
     ++detailToken;
+    detailLoading = false;
+    earlierLoading = false;
     activeId = null;
     activeConversation = null;
     messages = [];
+    messagesOffset = 0;
     totalMessages = 0;
     detailError = '';
     sendError = '';
@@ -320,6 +357,7 @@
         activeId = null;
         activeConversation = null;
         messages = [];
+        messagesOffset = 0;
         totalMessages = 0;
       }
       convNotice = '会话已删除，已使用的当日额度不返还。';
@@ -918,6 +956,18 @@
               </div>
             </div>
           {:else}
+            {#if messagesOffset > 0}
+              <div class="earlier-bar">
+                <button
+                  type="button"
+                  class="button-secondary button-compact"
+                  disabled={earlierLoading || streaming}
+                  onclick={() => void loadEarlierMessages()}
+                >
+                  {earlierLoading ? '正在加载更早消息…' : `加载更早消息（还有 ${messagesOffset} 条）`}
+                </button>
+              </div>
+            {/if}
             {#each messages as msg (msg.id)}
               <article class="msg" class:msg-user={msg.role === 'user'} class:msg-assistant={msg.role === 'assistant'} data-role={msg.role} data-status={msg.status}>
                 {#if msg.role === 'user'}
@@ -986,9 +1036,6 @@
                 {/if}
               </article>
             {/each}
-            {#if totalMessages > messages.length}
-              <p class="msg-meta-note">当前展示本会话前 {messages.length} 条消息（共 {totalMessages} 条）。</p>
-            {/if}
           {/if}
           <div bind:this={threadBottom}></div>
         </div>
@@ -1276,6 +1323,10 @@
   }
   .load-more {
     justify-self: stretch;
+  }
+  .earlier-bar {
+    display: flex;
+    justify-content: center;
   }
 
   .chat-shell {

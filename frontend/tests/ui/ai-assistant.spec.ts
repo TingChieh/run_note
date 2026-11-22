@@ -501,3 +501,162 @@ test('responsive visual QA across desktop 1440x900, tablet 768x1024, mobile 390x
   expect(consoleErrors).toEqual([]);
   expect(pageErrors).toEqual([]);
 });
+
+test('long conversation loads latest page with load-earlier pagination, and new conversation clears pending detail loading', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  const longConvId = '77777777-7777-4777-8777-777777777777';
+  const slowConvId = '88888888-8888-4888-8888-888888888888';
+
+  const makeMsg = (index: number) => ({
+    id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    conversation_id: longConvId,
+    role: index % 2 === 0 ? 'user' : 'assistant',
+    status: 'succeeded',
+    content: `消息编号 #${index + 1}`,
+    tool_calls_summary: [],
+    ui_blocks: [],
+    model: index % 2 === 0 ? null : 'deepseek-chat',
+    prompt_version: index % 2 === 0 ? null : 'ai-assistant-v1',
+    error_code: null,
+    input_tokens: null,
+    output_tokens: null,
+    cached_input_tokens: null,
+    created_at: new Date(Date.UTC(2026, 10, 22, 0, index)).toISOString(),
+    finished_at: new Date(Date.UTC(2026, 10, 22, 0, index)).toISOString(),
+    is_stale: false,
+  });
+  const allMessages = Array.from({ length: 55 }, (_, i) => makeMsg(i));
+
+  let releaseSlow!: () => void;
+  const slowGate = new Promise<void>((resolve) => {
+    releaseSlow = resolve;
+  });
+
+  await page.route('**/api/v1/ai-assistant/context', (route) =>
+    route.fulfill({
+      json: {
+        data: {
+          configured: true,
+          enabled: true,
+          model: 'deepseek-chat',
+          consent: {
+            consented: true,
+            consent_version: 'ai-assistant-v1',
+            required_version: 'ai-assistant-v1',
+            consented_at: '2026-11-22T01:00:00Z',
+            revoked_at: null,
+          },
+          quota: {
+            daily_message_limit: 30,
+            messages_today: 0,
+            remaining_messages_today: 30,
+            daily_token_budget: 150000,
+            tokens_today: 0,
+            remaining_tokens_today: 150000,
+            site_daily_token_budget: 1000000,
+            site_tokens_today: 0,
+            site_budget_exhausted: false,
+          },
+        },
+        error: null,
+      },
+    }),
+  );
+
+  await page.route('**/api/v1/ai-assistant/conversations?*', (route) =>
+    route.fulfill({
+      json: {
+        data: {
+          items: [
+            {
+              id: longConvId,
+              title: '超长历史会话',
+              created_at: '2026-11-22T00:00:00Z',
+              updated_at: '2026-11-22T01:00:00Z',
+              last_message_at: '2026-11-22T01:00:00Z',
+            },
+            {
+              id: slowConvId,
+              title: '缓慢加载会话',
+              created_at: '2026-11-22T00:00:00Z',
+              updated_at: '2026-11-22T00:30:00Z',
+              last_message_at: '2026-11-22T00:30:00Z',
+            },
+          ],
+          total: 2,
+          limit: 20,
+          offset: 0,
+        },
+        error: null,
+      },
+    }),
+  );
+
+  await page.route(`**/api/v1/ai-assistant/conversations/${longConvId}?*`, (route) => {
+    const url = new URL(route.request().url());
+    const offset = Number(url.searchParams.get('offset') ?? 0);
+    const limit = Number(url.searchParams.get('limit') ?? 50);
+    return route.fulfill({
+      json: {
+        data: {
+          conversation: {
+            id: longConvId,
+            title: '超长历史会话',
+            created_at: '2026-11-22T00:00:00Z',
+            updated_at: '2026-11-22T01:00:00Z',
+            last_message_at: '2026-11-22T01:00:00Z',
+          },
+          messages: allMessages.slice(offset, offset + limit),
+          total_messages: allMessages.length,
+          limit,
+          offset,
+        },
+        error: null,
+      },
+    });
+  });
+
+  await page.route(`**/api/v1/ai-assistant/conversations/${slowConvId}?*`, async (route) => {
+    await slowGate;
+    return route.fulfill({
+      json: {
+        data: {
+          conversation: {
+            id: slowConvId,
+            title: '缓慢加载会话',
+            created_at: '2026-11-22T00:00:00Z',
+            updated_at: '2026-11-22T00:30:00Z',
+            last_message_at: '2026-11-22T00:30:00Z',
+          },
+          messages: [],
+          total_messages: 0,
+          limit: 50,
+          offset: 0,
+        },
+        error: null,
+      },
+    });
+  });
+
+  await page.goto('/ai');
+  await page.getByRole('button', { name: /^超长历史会话/ }).click();
+
+  // Latest message (#55) is immediately visible, while #1 is behind load-earlier button.
+  await expect(page.getByText('消息编号 #55', { exact: true })).toBeVisible();
+  await expect(page.getByText('消息编号 #1', { exact: true })).toHaveCount(0);
+  const loadEarlier = page.getByRole('button', { name: '加载更早消息（还有 5 条）', exact: true });
+  await expect(loadEarlier).toBeVisible();
+  await loadEarlier.click();
+  await expect(page.getByText('消息编号 #1', { exact: true })).toBeVisible();
+  await expect(loadEarlier).toHaveCount(0);
+
+  // Opening a slow conversation then immediately clicking "+ 新建会话" clears detailLoading cleanly.
+  await page.getByRole('button', { name: /^缓慢加载会话/ }).click();
+  await expect(page.getByText('正在读取会话消息…')).toBeVisible();
+  await page.getByRole('button', { name: '+ 新建会话', exact: true }).click();
+  await expect(page.getByText('正在读取会话消息…')).toHaveCount(0);
+  await expect(page.getByTestId('ai-empty-stage')).toBeVisible();
+  releaseSlow();
+});
