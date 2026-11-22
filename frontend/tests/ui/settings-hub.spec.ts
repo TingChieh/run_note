@@ -684,3 +684,119 @@ test('mobile settings section tabs use a 2-column grid for 3, 4, and 5 links wit
   expect(consoleErrors).toEqual([]);
   expect(pageErrors).toEqual([]);
 });
+
+test('mobile lens flight from right column to full-width odd last item never overflows 390px via hover or Tab', async ({
+  page,
+}) => {
+  const consoleErrors: string[] = [];
+  const pageErrors: string[] = [];
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text());
+  });
+  page.on('pageerror', (err) => pageErrors.push(err.message));
+
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await loginRunner(page);
+
+  type FrameSample = { scrollWidth: number; innerWidth: number; outlineRight: number; navRight: number };
+
+  const armSampler = () =>
+    page.evaluate(() => {
+      const nav = document.querySelector('.settings-tabs.settings-tabs-sections')!;
+      const outline = nav.querySelector('.rn-moving-outline')!;
+      const samples: FrameSample[] = [];
+      let frames = 0;
+      const done = new Promise<FrameSample[]>((resolve) => {
+        const tick = () => {
+          samples.push({
+            scrollWidth: document.documentElement.scrollWidth,
+            innerWidth: window.innerWidth,
+            outlineRight: outline.getBoundingClientRect().right,
+            navRight: nav.getBoundingClientRect().right,
+          });
+          if (++frames < 24) requestAnimationFrame(tick);
+          else resolve(samples);
+        };
+        requestAnimationFrame(tick);
+      });
+      (window as unknown as { __settingsFlightSamples?: Promise<FrameSample[]> }).__settingsFlightSamples = done;
+    });
+
+  const collectSamples = () =>
+    page.evaluate(async () => {
+      const pending = (window as unknown as { __settingsFlightSamples?: Promise<FrameSample[]> })
+        .__settingsFlightSamples;
+      return pending ? await pending : [];
+    });
+
+  // 1. Hover path: right-column 站点设置 -> full-width 用户管理 without waiting for settle.
+  await page.goto('/settings/site');
+  await expect(page.locator('header')).toHaveAttribute('data-auth-ready', 'true');
+  const tabs = page.locator('.settings-tabs.settings-tabs-sections');
+  await expect(tabs.locator(':scope > a')).toHaveCount(5);
+  await tabs.locator('.rn-moving-copy').waitFor({ state: 'attached' });
+  await expect
+    .poll(() =>
+      tabs.evaluate((el) => {
+        const active = el.querySelector(':scope > a[aria-current="page"]')!.getBoundingClientRect();
+        const outline = el.querySelector('.rn-moving-outline')!.getBoundingClientRect();
+        return Math.abs(active.left - outline.left) + Math.abs(active.width - outline.width);
+      }),
+    )
+    .toBeLessThan(2);
+
+  await armSampler();
+  await tabs.getByRole('link', { name: '用户管理', exact: true }).hover();
+  const hoverSamples = await collectSamples();
+  expect(hoverSamples.length).toBeGreaterThanOrEqual(20);
+  for (const sample of hoverSamples) {
+    expect(sample.scrollWidth).toBeLessThanOrEqual(sample.innerWidth);
+    expect(sample.outlineRight).toBeLessThanOrEqual(sample.navRight + 1);
+  }
+
+  // 2. Keyboard Tab path: right-column 站点设置 -> full-width 用户管理 without waiting for settle.
+  await page.goto('/settings/site');
+  await expect(page.locator('header')).toHaveAttribute('data-auth-ready', 'true');
+  await expect(tabs.locator(':scope > a')).toHaveCount(5);
+  await tabs.locator('.rn-moving-copy').waitFor({ state: 'attached' });
+  await expect
+    .poll(() =>
+      tabs.evaluate((el) => {
+        const active = el.querySelector(':scope > a[aria-current="page"]')!.getBoundingClientRect();
+        const outline = el.querySelector('.rn-moving-outline')!.getBoundingClientRect();
+        return Math.abs(active.left - outline.left) + Math.abs(active.width - outline.width);
+      }),
+    )
+    .toBeLessThan(2);
+
+  const siteTab = tabs.getByRole('link', { name: '站点设置', exact: true });
+  const usersTab = tabs.getByRole('link', { name: '用户管理', exact: true });
+  await siteTab.focus();
+  await armSampler();
+  await page.keyboard.press('Tab');
+  const tabSamples = await collectSamples();
+  expect(tabSamples.length).toBeGreaterThanOrEqual(20);
+  for (const sample of tabSamples) {
+    expect(sample.scrollWidth).toBeLessThanOrEqual(sample.innerWidth);
+    expect(sample.outlineRight).toBeLessThanOrEqual(sample.navRight + 1);
+  }
+
+  await expect(usersTab).toBeFocused();
+  const focusStyle = await usersTab.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return {
+      outlineStyle: s.outlineStyle,
+      outlineWidth: s.outlineWidth,
+      outlineOffset: s.outlineOffset,
+      zIndex: s.zIndex,
+    };
+  });
+  expect(focusStyle.outlineStyle).toBe('solid');
+  expect(focusStyle.outlineWidth).toBe('2px');
+  expect(focusStyle.outlineOffset).toBe('3px');
+  expect(focusStyle.zIndex).toBe('5');
+
+  expect(consoleErrors).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
