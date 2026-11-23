@@ -71,6 +71,18 @@ export interface ActivitySyncMetadata {
   serverTime: string | null;
   totalCount: number;
   cachedCount: number;
+  /** Resumption cursor saved when a sync run hits maxPages before exhausting server pages. */
+  pendingCursor?: string | null;
+  /** True when the interrupted sync is a full resync (resuming without updated_since). */
+  pendingFullSync?: boolean;
+  /** The updated_since filter used by an interrupted incremental sync, if any. */
+  pendingUpdatedSince?: string | null;
+  /** Target data_version observed when an interrupted sync began (guards against mid-sync drift). */
+  pendingTargetVersion?: number | null;
+  /** Activity IDs accumulated across pages of an interrupted full sync so pruning runs only on completion. */
+  pendingFullSyncedIds?: string[] | null;
+  /** Active IDs received on page 1 of an interrupted incremental sync, applied only on completion. */
+  pendingActiveIds?: string[] | null;
 }
 
 export interface CacheStorageBackend {
@@ -660,12 +672,24 @@ export async function readSyncMetadata(
     (raw) => {
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('invalid sync meta');
       const v = raw as Record<string, unknown>;
+      const parseStringArray = (field: unknown): string[] | null =>
+        Array.isArray(field) && field.every((item) => typeof item === 'string') ? (field as string[]) : null;
       return {
         dataVersion: typeof v.dataVersion === 'number' && Number.isSafeInteger(v.dataVersion) ? v.dataVersion : null,
         lastSyncedAt: typeof v.lastSyncedAt === 'string' ? v.lastSyncedAt : null,
         serverTime: typeof v.serverTime === 'string' ? v.serverTime : null,
         totalCount: typeof v.totalCount === 'number' && Number.isSafeInteger(v.totalCount) ? v.totalCount : 0,
         cachedCount: typeof v.cachedCount === 'number' && Number.isSafeInteger(v.cachedCount) ? v.cachedCount : 0,
+        pendingCursor: typeof v.pendingCursor === 'string' && v.pendingCursor ? v.pendingCursor : null,
+        pendingFullSync: v.pendingFullSync === true,
+        pendingUpdatedSince:
+          typeof v.pendingUpdatedSince === 'string' && v.pendingUpdatedSince ? v.pendingUpdatedSince : null,
+        pendingTargetVersion:
+          typeof v.pendingTargetVersion === 'number' && Number.isSafeInteger(v.pendingTargetVersion)
+            ? v.pendingTargetVersion
+            : null,
+        pendingFullSyncedIds: parseStringArray(v.pendingFullSyncedIds),
+        pendingActiveIds: parseStringArray(v.pendingActiveIds),
       };
     },
     { backend },

@@ -398,7 +398,16 @@ test('visual QA: preferences health & offline panels have no overflow at 1440x90
       );
       expect(overflow, `No horizontal overflow on ${vp.name} ${theme}`).toBeLessThanOrEqual(1);
 
-      await page.getByTestId('companion-health-panel').scrollIntoViewIfNeeded();
+      await page.evaluate(() => {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+        const panel = document.querySelector('[data-testid="companion-health-panel"]');
+        if (panel instanceof HTMLElement) {
+          // Floating top navigation occupies --top-navigation-offset (14px) + --top-navigation-height (64px) = 78px.
+          const topNavClearance = 96;
+          const targetTop = Math.max(0, panel.getBoundingClientRect().top - topNavClearance);
+          window.scrollTo({ top: targetTop, behavior: 'instant' });
+        }
+      });
       await page.screenshot({
         path: testInfo.outputPath(`phase2-${vp.name}-${theme}.png`),
         fullPage: false,

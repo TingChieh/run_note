@@ -23,12 +23,14 @@ export interface ActivitySyncPage {
   full_resync_required: boolean;
 }
 
-export type SyncStatus = 'idle' | 'syncing' | 'synced' | 'offline' | 'error' | 'auth_expired';
+export type SyncStatus = 'idle' | 'syncing' | 'synced' | 'partial' | 'offline' | 'error' | 'auth_expired';
 
 export interface SyncOutcome {
   status: SyncStatus;
   dataVersion: number | null;
   unchanged: boolean;
+  truncated: boolean;
+  hasMore: boolean;
   upsertedCount: number;
   removedCount: number;
   totalCount: number;
@@ -79,6 +81,9 @@ export function parseActivitySyncPage(value: unknown): ActivitySyncPage {
     invalidSyncResponse();
   }
   if (value.next_cursor !== null && (typeof value.next_cursor !== 'string' || !value.next_cursor)) {
+    invalidSyncResponse();
+  }
+  if (value.has_more && !value.next_cursor) {
     invalidSyncResponse();
   }
   let activeIds: string[] | null = null;
@@ -159,7 +164,7 @@ async function runSyncOnce(options: SyncOptions): Promise<SyncOutcome> {
   const sleep = options.sleep ?? defaultSleep;
   const now = options.now ?? (() => new Date());
   const limit = Math.min(100, Math.max(1, options.limit ?? 50));
-  const maxPages = options.maxPages ?? 50;
+  const maxPages = Math.max(1, options.maxPages ?? 50);
   const maxRetries = options.maxRetries ?? 2;
   const retryBaseDelayMs = options.retryBaseDelayMs ?? 400;
 
@@ -170,6 +175,8 @@ async function runSyncOnce(options: SyncOptions): Promise<SyncOutcome> {
       status: 'offline',
       dataVersion: previousMeta?.dataVersion ?? null,
       unchanged: false,
+      truncated: false,
+      hasMore: Boolean(previousMeta?.pendingCursor),
       upsertedCount: 0,
       removedCount: 0,
       totalCount: previousMeta?.totalCount ?? 0,
@@ -201,32 +208,51 @@ async function runSyncOnce(options: SyncOptions): Promise<SyncOutcome> {
     }
   };
 
+  const resuming = !options.forceFull && Boolean(previousMeta?.pendingCursor);
+
   try {
-    let sinceVersion = options.forceFull ? null : (previousMeta?.dataVersion ?? null);
-    let updatedSince = options.forceFull ? null : (previousMeta?.serverTime ?? null);
-    let cursor: string | null = null;
+    let fullSyncMode = resuming
+      ? previousMeta?.pendingFullSync === true
+      : options.forceFull || (previousMeta?.dataVersion ?? null) === null;
+    let sinceVersion = resuming || options.forceFull ? null : (previousMeta?.dataVersion ?? null);
+    let updatedSince = resuming
+      ? fullSyncMode
+        ? null
+        : (previousMeta?.pendingUpdatedSince ?? null)
+      : options.forceFull
+        ? null
+        : (previousMeta?.serverTime ?? null);
+    let cursor: string | null = resuming ? (previousMeta?.pendingCursor ?? null) : null;
+    let runStartDataVersion: number | null = resuming ? (previousMeta?.pendingTargetVersion ?? null) : null;
     let pagesFetched = 0;
     let targetDataVersion: number | null = null;
     let serverTime: string | null = null;
     let totalCount = previousMeta?.totalCount ?? 0;
-    let activeIds: Set<string> | null = null;
-    let fullSyncMode = sinceVersion === null;
+    let activeIds: Set<string> | null =
+      resuming && !fullSyncMode && previousMeta?.pendingActiveIds ? new Set(previousMeta.pendingActiveIds) : null;
+    const accumulatedFullIds = new Set<string>(
+      resuming && fullSyncMode && previousMeta?.pendingFullSyncedIds ? previousMeta.pendingFullSyncedIds : [],
+    );
+    let truncated = false;
+    let nextResumeCursor: string | null = null;
     const mergedById = new Map<string, CachedActivity>();
 
     for (;;) {
-      if (pagesFetched >= maxPages) break;
       const page = await fetchWithRetry({
         limit,
-        sinceVersion: pagesFetched === 0 ? sinceVersion : null,
+        sinceVersion: pagesFetched === 0 && !resuming ? sinceVersion : null,
         updatedSince,
         cursor,
       });
       pagesFetched += 1;
+      if (runStartDataVersion === null) {
+        runStartDataVersion = page.data_version;
+      }
       targetDataVersion = page.data_version;
       serverTime = page.server_time;
       totalCount = page.total_count;
 
-      if (page.unchanged && pagesFetched === 1) {
+      if (page.unchanged && pagesFetched === 1 && !resuming) {
         const syncedAt = now().toISOString();
         const existingEntries = await backend.listByPrefix(`${options.namespace}:activity:`);
         const updatedMeta: ActivitySyncMetadata = {
@@ -235,12 +261,20 @@ async function runSyncOnce(options: SyncOptions): Promise<SyncOutcome> {
           serverTime: page.server_time,
           totalCount: page.total_count,
           cachedCount: existingEntries.length,
+          pendingCursor: null,
+          pendingFullSync: false,
+          pendingUpdatedSince: null,
+          pendingTargetVersion: null,
+          pendingFullSyncedIds: null,
+          pendingActiveIds: null,
         };
         await saveSyncMetadata(options.namespace, updatedMeta, backend);
         return {
           status: 'synced',
           dataVersion: page.data_version,
           unchanged: true,
+          truncated: false,
+          hasMore: false,
           upsertedCount: 0,
           removedCount: 0,
           totalCount: page.total_count,
@@ -256,7 +290,9 @@ async function runSyncOnce(options: SyncOptions): Promise<SyncOutcome> {
         updatedSince = null;
         cursor = null;
         pagesFetched = 0;
+        runStartDataVersion = null;
         mergedById.clear();
+        accumulatedFullIds.clear();
         activeIds = null;
         continue;
       }
@@ -268,44 +304,108 @@ async function runSyncOnce(options: SyncOptions): Promise<SyncOutcome> {
       // Server-authoritative deduplication: later server records overwrite earlier entries for the same ID.
       for (const item of page.items) {
         mergedById.set(item.id, item);
+        if (fullSyncMode) {
+          accumulatedFullIds.add(item.id);
+        }
       }
 
       if (!page.has_more || !page.next_cursor) {
+        truncated = false;
+        nextResumeCursor = null;
         break;
       }
+
+      if (pagesFetched >= maxPages) {
+        truncated = true;
+        nextResumeCursor = page.next_cursor;
+        break;
+      }
+
       cursor = page.next_cursor;
     }
 
     const dedupedItems = Array.from(mergedById.values());
     const nowMs = now().getTime();
+
+    if (truncated) {
+      // Preserve fetched pages without advancing the completed watermark or pruning unseen tail records.
+      await upsertCachedActivities(options.namespace, dedupedItems, {
+        dataVersion: previousMeta?.dataVersion ?? null,
+        now: nowMs,
+        backend,
+      });
+      const currentEntries = await backend.listByPrefix(`${options.namespace}:activity:`);
+      const partialMeta: ActivitySyncMetadata = {
+        dataVersion: previousMeta?.dataVersion ?? null,
+        lastSyncedAt: previousMeta?.lastSyncedAt ?? null,
+        serverTime: previousMeta?.serverTime ?? null,
+        totalCount,
+        cachedCount: currentEntries.length,
+        pendingCursor: nextResumeCursor,
+        pendingFullSync: fullSyncMode,
+        pendingUpdatedSince: fullSyncMode ? null : updatedSince,
+        pendingTargetVersion: runStartDataVersion,
+        pendingFullSyncedIds: fullSyncMode ? Array.from(accumulatedFullIds) : null,
+        pendingActiveIds: !fullSyncMode && activeIds ? Array.from(activeIds) : null,
+      };
+      await saveSyncMetadata(options.namespace, partialMeta, backend);
+      return {
+        status: 'partial',
+        dataVersion: previousMeta?.dataVersion ?? null,
+        unchanged: false,
+        truncated: true,
+        hasMore: true,
+        upsertedCount: dedupedItems.length,
+        removedCount: 0,
+        totalCount,
+        lastSyncedAt: previousMeta?.lastSyncedAt ?? null,
+        message: `已拉取 ${dedupedItems.length} 条记录，仍有剩余页待继续同步。`,
+      };
+    }
+
     await upsertCachedActivities(options.namespace, dedupedItems, {
       dataVersion: targetDataVersion,
       now: nowMs,
       backend,
     });
 
+    const versionDriftedDuringResume =
+      resuming &&
+      runStartDataVersion !== null &&
+      targetDataVersion !== null &&
+      targetDataVersion !== runStartDataVersion;
+
     let removedCount = 0;
-    if (fullSyncMode) {
-      removedCount = await pruneCachedActivities(options.namespace, new Set(mergedById.keys()), backend);
-    } else if (activeIds !== null) {
+    if (fullSyncMode && !versionDriftedDuringResume) {
+      removedCount = await pruneCachedActivities(options.namespace, accumulatedFullIds, backend);
+    } else if (!fullSyncMode && activeIds !== null && !versionDriftedDuringResume) {
       removedCount = await pruneCachedActivities(options.namespace, activeIds, backend);
     }
 
+    const completedDataVersion = versionDriftedDuringResume ? runStartDataVersion : targetDataVersion;
     const finalEntries = await backend.listByPrefix(`${options.namespace}:activity:`);
     const syncedAt = now().toISOString();
     const meta: ActivitySyncMetadata = {
-      dataVersion: targetDataVersion,
+      dataVersion: completedDataVersion,
       lastSyncedAt: syncedAt,
       serverTime,
       totalCount,
       cachedCount: finalEntries.length,
+      pendingCursor: null,
+      pendingFullSync: false,
+      pendingUpdatedSince: null,
+      pendingTargetVersion: null,
+      pendingFullSyncedIds: null,
+      pendingActiveIds: null,
     };
     await saveSyncMetadata(options.namespace, meta, backend);
 
     return {
       status: 'synced',
-      dataVersion: targetDataVersion,
+      dataVersion: completedDataVersion,
       unchanged: false,
+      truncated: false,
+      hasMore: false,
       upsertedCount: dedupedItems.length,
       removedCount,
       totalCount,
@@ -319,6 +419,8 @@ async function runSyncOnce(options: SyncOptions): Promise<SyncOutcome> {
         status: 'auth_expired',
         dataVersion: null,
         unchanged: false,
+        truncated: false,
+        hasMore: false,
         upsertedCount: 0,
         removedCount: 0,
         totalCount: 0,
@@ -326,11 +428,29 @@ async function runSyncOnce(options: SyncOptions): Promise<SyncOutcome> {
         message: '登录已过期，本地离线缓存已清理。',
       };
     }
+    if (cause instanceof ActivityError && cause.status === 422 && resuming && previousMeta) {
+      // Drop an expired/malformed resumption cursor while keeping the last completed watermark intact.
+      await saveSyncMetadata(
+        options.namespace,
+        {
+          ...previousMeta,
+          pendingCursor: null,
+          pendingFullSync: false,
+          pendingUpdatedSince: null,
+          pendingTargetVersion: null,
+          pendingFullSyncedIds: null,
+          pendingActiveIds: null,
+        },
+        backend,
+      );
+    }
     if (!isOnline()) {
       return {
         status: 'offline',
         dataVersion: previousMeta?.dataVersion ?? null,
         unchanged: false,
+        truncated: false,
+        hasMore: Boolean(previousMeta?.pendingCursor),
         upsertedCount: 0,
         removedCount: 0,
         totalCount: previousMeta?.totalCount ?? 0,
@@ -342,6 +462,8 @@ async function runSyncOnce(options: SyncOptions): Promise<SyncOutcome> {
       status: 'error',
       dataVersion: previousMeta?.dataVersion ?? null,
       unchanged: false,
+      truncated: false,
+      hasMore: Boolean(previousMeta?.pendingCursor),
       upsertedCount: 0,
       removedCount: 0,
       totalCount: previousMeta?.totalCount ?? 0,

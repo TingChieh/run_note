@@ -11,6 +11,7 @@ import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.HeartRateRecord
+import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
@@ -31,6 +32,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
+import kotlin.reflect.KClass
 
 /**
  * Strictly read-only Android Health Connect bridge exposed as the platform-neutral `HealthData`
@@ -230,22 +232,31 @@ class HealthDataPlugin : Plugin() {
                 }
 
                 val hrSamples = if ("heart_rate" in grantedSet) {
-                    val records = client.readRecords(ReadRecordsRequest(HeartRateRecord::class, range)).records
-                    records.flatMap { rec -> rec.samples.map { it.beatsPerMinute } }
+                    val result = readAllRecords(client, HeartRateRecord::class, range)
+                    if (result.truncated) {
+                        Logger.warn("RunNoteHealth", "HeartRateRecord pagination reached page limit")
+                    }
+                    result.records.flatMap { rec -> rec.samples.map { it.beatsPerMinute } }
                 } else {
                     null
                 }
 
                 val restingSamples = if ("resting_heart_rate" in grantedSet) {
-                    val records = client.readRecords(ReadRecordsRequest(RestingHeartRateRecord::class, range)).records
-                    records.map { it.beatsPerMinute }
+                    val result = readAllRecords(client, RestingHeartRateRecord::class, range)
+                    if (result.truncated) {
+                        Logger.warn("RunNoteHealth", "RestingHeartRateRecord pagination reached page limit")
+                    }
+                    result.records.map { it.beatsPerMinute }
                 } else {
                     null
                 }
 
                 val sleepSeconds = if ("sleep" in grantedSet) {
-                    val records = client.readRecords(ReadRecordsRequest(SleepSessionRecord::class, range)).records
-                    records.map { Duration.between(it.startTime, it.endTime).seconds }
+                    val result = readAllRecords(client, SleepSessionRecord::class, range)
+                    if (result.truncated) {
+                        Logger.warn("RunNoteHealth", "SleepSessionRecord pagination reached page limit")
+                    }
+                    result.records.map { Duration.between(it.startTime, it.endTime).seconds }
                 } else {
                     null
                 }
@@ -349,6 +360,24 @@ class HealthDataPlugin : Plugin() {
             }
         }
         call.resolve(JSObject().put("opened", false))
+    }
+
+    private suspend fun <T : Record> readAllRecords(
+        client: HealthConnectClient,
+        recordType: KClass<T>,
+        range: TimeRangeFilter
+    ): HealthConnectPolicy.PaginatedResult<T> {
+        return HealthConnectPolicy.collectPages(HealthConnectPolicy.MAX_READ_PAGES) { token ->
+            val response = client.readRecords(
+                ReadRecordsRequest(
+                    recordType = recordType,
+                    timeRangeFilter = range,
+                    pageSize = HealthConnectPolicy.READ_PAGE_SIZE,
+                    pageToken = token
+                )
+            )
+            HealthConnectPolicy.RecordPage(response.records, response.pageToken)
+        }
     }
 
     private fun inspectSdkStatus(): Int {

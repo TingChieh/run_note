@@ -82,6 +82,8 @@
         statusMessage = outcome.message ?? '当前离线，将在恢复网络后自动同步。';
       } else if (outcome.status === 'error') {
         errorMessage = outcome.message ?? '增量同步失败，请稍后重试。';
+      } else if (outcome.status === 'partial') {
+        statusMessage = outcome.message ?? '已同步部分记录，请再次点击继续同步剩余数据。';
       } else if (outcome.unchanged) {
         statusMessage = '本地缓存已是最新（服务端版本无变更）。';
       } else {
@@ -136,7 +138,15 @@
       class:on={syncStatus === 'synced' || cachedActivities > 0}
       data-testid="cache-sync-badge"
     >
-      {syncing ? '同步中…' : syncStatus === 'offline' ? '离线模式' : syncMeta?.lastSyncedAt ? '已缓存' : '未同步'}
+      {syncing
+        ? '同步中…'
+        : syncStatus === 'offline'
+          ? '离线模式'
+          : syncStatus === 'partial' || syncMeta?.pendingCursor
+            ? '待继续同步'
+            : syncMeta?.lastSyncedAt
+              ? '已缓存'
+              : '未同步'}
     </span>
   </div>
 

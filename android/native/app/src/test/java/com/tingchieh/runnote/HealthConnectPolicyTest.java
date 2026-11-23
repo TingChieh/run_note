@@ -155,4 +155,47 @@ public class HealthConnectPolicyTest {
         assertEquals(Integer.valueOf(55), summary.restingHeartRateBpm);
         assertEquals(Integer.valueOf(450), summary.sleepMinutes);
     }
+
+    @Test
+    public void paginatesRecordTokensAndGuardsAgainstCapsAndCycles() {
+        // Multi-page traversal follows pageToken until null/blank.
+        HealthConnectPolicy.PaginatedResult<Long> full = HealthConnectPolicy.collectPagesBlocking(
+            10,
+            token -> {
+                if (token == null) {
+                    return new HealthConnectPolicy.RecordPage<>(Arrays.asList(140L, 145L), "tok-2");
+                }
+                if ("tok-2".equals(token)) {
+                    return new HealthConnectPolicy.RecordPage<>(Arrays.asList(150L, 155L), "tok-3");
+                }
+                return new HealthConnectPolicy.RecordPage<>(Collections.singletonList(160L), null);
+            }
+        );
+        assertFalse(full.truncated);
+        assertEquals(3, full.pagesFetched);
+        assertEquals(Arrays.asList(140L, 145L, 150L, 155L, 160L), full.records);
+
+        // Enforces maxPages cap when provider keeps returning next tokens.
+        HealthConnectPolicy.PaginatedResult<Long> capped = HealthConnectPolicy.collectPagesBlocking(
+            2,
+            token -> {
+                if (token == null) {
+                    return new HealthConnectPolicy.RecordPage<>(Collections.singletonList(101L), "tok-2");
+                }
+                return new HealthConnectPolicy.RecordPage<>(Collections.singletonList(102L), "tok-3");
+            }
+        );
+        assertTrue(capped.truncated);
+        assertEquals(2, capped.pagesFetched);
+        assertEquals(Arrays.asList(101L, 102L), capped.records);
+
+        // Stops safely if a broken provider repeats a previously seen pageToken.
+        HealthConnectPolicy.PaginatedResult<Long> cyclic = HealthConnectPolicy.collectPagesBlocking(
+            10,
+            token -> new HealthConnectPolicy.RecordPage<>(Collections.singletonList(120L), "loop-tok")
+        );
+        assertTrue(cyclic.truncated);
+        assertEquals(2, cyclic.pagesFetched);
+        assertEquals(Arrays.asList(120L, 120L), cyclic.records);
+    }
 }

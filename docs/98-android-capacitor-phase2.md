@@ -33,6 +33,7 @@
 | `sleep` | 睡眠时长 | `android.permission.health.READ_SLEEP` | 对应身心健康页睡眠时长参考 |
 
 - **严格只读边界**：不声明任何 `WRITE_*` 权限、不暴露写入方法、不申请 `READ_HEALTH_DATA_IN_BACKGROUND` 后台读取、不申请 `READ_EXERCISE_ROUTE` 轨迹权限。
+- **分页读取边界**：`HealthDataPlugin` 读取心率（`HeartRateRecord`）、静息心率（`RestingHeartRateRecord`）与睡眠（`SleepSessionRecord`）时通过 `HealthConnectPolicy.collectPages` 循环跟随 `pageToken`（单页 `READ_PAGE_SIZE = 1000`，安全上限 `MAX_READ_PAGES = 50` 且防重复 token 死循环），避免 30 天窗口内超过 1000 条记录被截断。
 - **权限说明页**：提供中文原生 `HealthPermissionsRationaleActivity`，同时声明 Android 10–13 的 `androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE` 与 Android 14+ 的 `android.intent.action.VIEW_PERMISSION_USAGE`（`HEALTH_PERMISSIONS`）。
 - **前端状态覆盖**：`web_unavailable`（普通浏览器）、`unsupported`（设备/系统不支持）、`provider_update_required`（需安装或更新 Health Connect）、`not_requested`、`granted`、`partial`、`denied`、`revoked`（系统设置撤销检测）、`empty`（已授权但近 7 天无记录）、`error`。
 
@@ -80,6 +81,7 @@
 
 - 单飞并发控制（同命名空间并发调用复用同一 Promise，避免重复请求风暴）；
 - 跨页键集分页拉取 + 按 `activity.id` 服务端优先去重合并 + `active_ids` 删除对齐；
+- **分页上限截断保护与游标续拉**：若单次同步在 `has_more === true` 时触达 `maxPages` 上限，仅合并当前已拉取页并返回 `status: 'partial'`，**不推进** `dataVersion`/`serverTime` 水位、**不执行**全量或部分 ID 裁剪，同时在 `sync:meta` 持久化 `pendingCursor` 与累计全量 ID 集合；下次同步不发送已完成水位、直接沿游标续拉，直至所有尾页完整拉完后才执行删除对齐并推进水位（若续拉期间服务端 `data_version` 漂移则跳过本次裁剪并保持旧版目标水位以触发下一轮校验）。
 - 离线自动暂停、恢复联网（`online` 事件）自动触发增量同步；瞬时网络/503 错误按指数退避有限次重试；遇 `401` 立即中止并清空私有缓存。
 - 在「设置 → 目标与隐私」（`/settings/preferences`）集成 `CompanionHealthPanel` 与 `CompanionCachePanel`，复用现有 `.aux-panel`、`.settings-block`、`.status-badge`、`FeedbackState` 与 `MetricSummary`，不新增一级导航入口。
 
@@ -100,17 +102,17 @@
 
 ### 4.2 前端单元测试、类型/样式检查、构建与 Playwright 合成验证
 
-- `pnpm test` — **72 files / 437 passed**（含新增 `capacitor-health.test.ts`、`offline-cache.test.ts`、`companion-sync.test.ts` 及 `architecture.test.ts`、`api-contract.test.ts`）
+- `pnpm test` — **72 files / 439 passed**（含新增 `capacitor-health.test.ts`、`offline-cache.test.ts`、`companion-sync.test.ts`（含 `maxPages` 截断不推进水位/不误删尾页及 `full_resync_required` 游标续拉回归）及 `architecture.test.ts`、`api-contract.test.ts`）
 - `pnpm check` — **0 errors, 0 warnings**
 - `pnpm lint:style` — **PASS**
 - `pnpm build` — **PASS**（adapter-node 生产构建通过）
-- `pnpm format:check`（新增 TS/Svelte 文件）— **PASS**
-- `pnpm exec playwright test --config playwright.companion-phase2.config.ts --reporter=list` — **4 passed**（覆盖网页端 `web_unavailable`、模拟 Capacitor HealthData 插件的 `unsupported` / `provider_update_required` / `not_requested` / `denied` / `granted` / `empty` / `revoked` 状态、增量同步 + 离线活动/足迹查看 + 退出登录清空私有缓存、以及 6 组 Visual QA 视口/主题无溢出校验）
+- `pnpm format:check`（改动 TS/Svelte 文件）— **PASS**
+- `COMPANION_USE_PROD_BUILD=1 pnpm exec playwright test --config playwright.companion-phase2.config.ts --reporter=list` — **4 passed**（在生产构建上验证网页端 `web_unavailable`、模拟 Capacitor HealthData 插件全权限态、增量同步 + 离线活动/足迹查看 + 退出登录清空私有缓存，以及 6 组无 DEV 浮层、无标题裁切的 Visual QA 视口/主题无溢出校验与截图）
 - `pnpm exec playwright test --config playwright.ui.config.ts tests/ui/ui-shell.spec.ts --reporter=list` — **22 passed**（验证在线 503 fail-closed 行为与壳层交互无回归）
 
 ### 4.3 Android JUnit、APK 权限审计与模拟器验证
 
-- `pnpm --dir android sync && (cd android/native && ./gradlew --no-daemon testDebugUnitTest assembleDebug)` — **BUILD SUCCESSFUL**，JUnit **27/27 passed**（含新增 `HealthConnectPolicyTest` 6 项：只读权限白名单、禁止 `WRITE_*`、`AndroidManifest.xml` 权限审计、可用性分类、权限状态计算、30 天时间窗裁剪、合成数据聚合与空状态；`ServerUrlPolicyTest` 2.4.0/20400 断言）
+- `pnpm --dir android sync && (cd android/native && ./gradlew --no-daemon testDebugUnitTest assembleDebug)` — **BUILD SUCCESSFUL**，JUnit **28/28 passed**（含 `HealthConnectPolicyTest` 7 项：只读权限白名单、禁止 `WRITE_*`、`AndroidManifest.xml` 权限审计、可用性分类、权限状态计算、30 天时间窗裁剪、合成数据聚合与空状态、以及 `pageToken` 多页拉取/上限截断/重复 token 防死循环边界测试；`ServerUrlPolicyTest` 2.4.0/20400 断言）
 - 合并后 Debug APK 权限审计（`aapt2 dump permissions android/native/app/build/outputs/apk/debug/app-debug.apk`）：
   - 仅包含 `INTERNET`、`ACCESS_NETWORK_STATE` 与 6 项 `android.permission.health.READ_*`（**0 项 `WRITE_*`**、**0 项定位/存储/后台健康权限**）；`versionCode=20400`、`versionName=2.4.0`。
 - 模拟器验证：

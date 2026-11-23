@@ -27,6 +27,8 @@ object HealthConnectPolicy {
     const val PROVIDER_PACKAGE_NAME = "com.google.android.apps.healthdata"
     const val DEFAULT_WINDOW_DAYS = 7L
     const val MAX_WINDOW_DAYS = 30L
+    const val READ_PAGE_SIZE = 1000
+    const val MAX_READ_PAGES = 50
 
     @JvmField
     val SUPPORTED_METRICS: List<String> = listOf(
@@ -82,6 +84,56 @@ object HealthConnectPolicy {
         @JvmField val sleepMinutes: Int?,
         @JvmField val hasAnyData: Boolean
     )
+
+    data class RecordPage<T>(
+        @JvmField val records: List<T>,
+        @JvmField val nextPageToken: String?
+    )
+
+    data class PaginatedResult<T>(
+        @JvmField val records: List<T>,
+        @JvmField val pagesFetched: Int,
+        @JvmField val truncated: Boolean
+    )
+
+    fun interface PageFetcher<T> {
+        fun fetch(pageToken: String?): RecordPage<T>
+    }
+
+    /**
+     * Traverses Health Connect record pages via `pageToken` until exhaustion, stopping safely
+     * if a malformed provider repeats a token or exceeds `maxPages`.
+     */
+    inline fun <T> collectPages(
+        maxPages: Int = MAX_READ_PAGES,
+        fetchPage: (pageToken: String?) -> RecordPage<T>
+    ): PaginatedResult<T> {
+        val all = mutableListOf<T>()
+        val seenTokens = HashSet<String>()
+        val effectiveMaxPages = maxPages.coerceAtLeast(1)
+        var token: String? = null
+        var pagesFetched = 0
+        var truncated = false
+
+        while (true) {
+            val page = fetchPage(token)
+            all.addAll(page.records)
+            pagesFetched += 1
+            val next = page.nextPageToken?.takeIf { it.isNotBlank() } ?: break
+            if (!seenTokens.add(next) || pagesFetched >= effectiveMaxPages) {
+                truncated = true
+                break
+            }
+            token = next
+        }
+
+        return PaginatedResult(records = all, pagesFetched = pagesFetched, truncated = truncated)
+    }
+
+    @JvmStatic
+    fun <T> collectPagesBlocking(maxPages: Int, fetcher: PageFetcher<T>): PaginatedResult<T> {
+        return collectPages(maxPages) { token -> fetcher.fetch(token) }
+    }
 
     @JvmStatic
     fun isReadOnlyPermission(permission: String?): Boolean {
