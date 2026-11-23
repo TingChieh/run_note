@@ -66,16 +66,20 @@ test('first-use consent, quick prompt streaming, structured blocks, multi-turn, 
     '/activities/11111111-1111-4111-8111-111111111111',
   );
 
-  // Rename first conversation in history sidebar.
-  const renameBtn = page.getByRole('button', { name: /^重命名 / }).first();
-  await renameBtn.click();
+  // Rename first conversation through the compact overflow menu in the history sidebar.
+  await expect(page.getByRole('button', { name: /^重命名/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^删除/ })).toHaveCount(0);
+  const firstMenuTrigger = page.getByRole('button', { name: /^会话操作：/ }).first();
+  await firstMenuTrigger.click();
+  await page.getByRole('menuitem', { name: '重命名', exact: true }).click();
   await page.getByLabel('新会话标题').fill('五月 PB 复盘');
   await page.getByRole('button', { name: '保存', exact: true }).click();
   await expect(page.getByRole('list', { name: '会话列表' })).toContainText('五月 PB 复盘');
 
-  // Delete renamed conversation.
+  // Delete renamed conversation through the overflow menu.
+  await page.getByRole('button', { name: '会话操作：五月 PB 复盘', exact: true }).click();
   page.once('dialog', (d) => d.accept());
-  await page.getByRole('button', { name: '删除 五月 PB 复盘', exact: true }).click();
+  await page.getByRole('menuitem', { name: '删除', exact: true }).click();
   await expect(page.getByRole('list', { name: '会话列表' })).not.toContainText('五月 PB 复盘');
 
   // Withdraw consent through the privacy dialog and confirm composer locks while history stays readable.
@@ -760,4 +764,326 @@ test('stop during stalled conversation creation prevents messages POST and IME c
   // Give any trailing microtasks/callbacks a brief window to prove no delayed messages POST fires.
   await page.waitForTimeout(250);
   expect(messagesPosts).toBe(0);
+});
+
+test('history sidebar overflow menu: compact trigger, keyboard/focus/outside dismiss, rename/delete, and mobile drawer', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') errors.push(msg.text());
+  });
+
+  await loginRunner(page);
+  const convA = 'aaaaaaaa-1111-4111-8111-111111111111';
+  const convB = 'bbbbbbbb-2222-4222-8222-222222222222';
+  let items = [
+    {
+      id: convA,
+      title: '我最近的连续跑步记录和跑量目标完成进度怎么样',
+      created_at: '2026-11-23T01:30:00Z',
+      updated_at: '2026-11-23T01:35:00Z',
+      last_message_at: '2026-11-23T01:35:00Z',
+    },
+    {
+      id: convB,
+      title: '总结我最近 4 周的跑步趋势',
+      created_at: '2026-11-23T01:20:00Z',
+      updated_at: '2026-11-23T01:34:00Z',
+      last_message_at: '2026-11-23T01:34:00Z',
+    },
+  ];
+
+  await page.route('**/api/v1/ai-assistant/context', (route) =>
+    route.fulfill({
+      json: {
+        data: {
+          configured: true,
+          enabled: true,
+          model: 'deepseek-chat',
+          consent: {
+            consented: true,
+            consent_version: 'ai-assistant-v1',
+            required_version: 'ai-assistant-v1',
+            consented_at: '2026-11-22T01:00:00Z',
+            revoked_at: null,
+          },
+          quota: {
+            daily_message_limit: 30,
+            messages_today: 2,
+            remaining_messages_today: 28,
+            daily_token_budget: 150000,
+            tokens_today: 2400,
+            remaining_tokens_today: 147600,
+            site_daily_token_budget: 1000000,
+            site_tokens_today: 2400,
+            site_budget_exhausted: false,
+          },
+        },
+        error: null,
+      },
+    }),
+  );
+
+  await page.route('**/api/v1/ai-assistant/conversations?*', (route) =>
+    route.fulfill({ json: { data: { items, total: items.length, limit: 20, offset: 0 }, error: null } }),
+  );
+
+  await page.route(/\/api\/v1\/ai-assistant\/conversations\/[^/?]+(\?.*)?$/, async (route) => {
+    const req = route.request();
+    const url = new URL(req.url());
+    const id = url.pathname.split('/').pop()!;
+    const conv = items.find((c) => c.id === id);
+    if (!conv) {
+      return route.fulfill({ status: 404, json: { data: null, error: { code: 'RESOURCE_NOT_FOUND', message: '会话不存在' } } });
+    }
+    if (req.method() === 'GET') {
+      return route.fulfill({
+        json: {
+          data: {
+            conversation: conv,
+            messages: [
+              {
+                id: '00000000-0000-4000-8000-000000000001',
+                conversation_id: id,
+                role: 'user',
+                status: 'succeeded',
+                content: conv.title,
+                tool_calls_summary: [],
+                ui_blocks: [],
+                model: null,
+                prompt_version: null,
+                error_code: null,
+                input_tokens: null,
+                output_tokens: null,
+                cached_input_tokens: null,
+                created_at: conv.last_message_at,
+                finished_at: conv.last_message_at,
+                is_stale: false,
+              },
+              {
+                id: '00000000-0000-4000-8000-000000000002',
+                conversation_id: id,
+                role: 'assistant',
+                status: 'succeeded',
+                content: '当前连续跑步记录为 2 天，本周已完成 15.0 km / 20.0 km（75%）。',
+                tool_calls_summary: [{ tool: 'get_streaks_and_goals', duration_ms: 14, degraded: false, truncated: false }],
+                ui_blocks: [],
+                model: 'deepseek-chat',
+                prompt_version: 'ai-assistant-v1',
+                error_code: null,
+                input_tokens: 320,
+                output_tokens: 48,
+                cached_input_tokens: 0,
+                created_at: conv.last_message_at,
+                finished_at: conv.last_message_at,
+                is_stale: false,
+              },
+            ],
+            total_messages: 2,
+            limit: 50,
+            offset: 0,
+          },
+          error: null,
+        },
+      });
+    }
+    if (req.method() === 'PATCH') {
+      const payload = JSON.parse(req.postData() ?? '{}');
+      const updated = { ...conv, title: payload.title, updated_at: '2026-11-23T01:40:00Z' };
+      items = items.map((c) => (c.id === id ? updated : c));
+      return route.fulfill({ json: { data: updated, error: null } });
+    }
+    if (req.method() === 'DELETE') {
+      items = items.filter((c) => c.id !== id);
+      return route.fulfill({ json: { data: { deleted: true }, error: null } });
+    }
+    return route.fallback();
+  });
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/ai');
+
+  const sidebar = page.getByRole('complementary', { name: '历史会话' });
+  await expect(sidebar).toBeVisible();
+
+  // No always-visible Rename / Delete text buttons in the history list.
+  await expect(sidebar.getByRole('button', { name: /重命名|删除/ })).toHaveCount(0);
+  await expect(page.getByRole('menu')).toHaveCount(0);
+
+  // Row title/date remains the primary click target and opens the conversation.
+  const firstRowBtn = sidebar.getByRole('button', { name: /^我最近的连续跑步记录和跑量目标完成进度怎么样/ });
+  const firstRowBox = (await firstRowBtn.boundingBox())!;
+  expect(firstRowBox.height).toBeGreaterThanOrEqual(44);
+  await firstRowBtn.click();
+  await expect(firstRowBtn).toHaveAttribute('aria-current', 'true');
+
+  // Compact overflow trigger has >=44px touch target and clear accessible label.
+  const trigger = sidebar.getByRole('button', { name: '会话操作：我最近的连续跑步记录和跑量目标完成进度怎么样', exact: true });
+  await expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  const triggerBox = (await trigger.boundingBox())!;
+  expect(triggerBox.width).toBeGreaterThanOrEqual(44);
+  expect(triggerBox.height).toBeGreaterThanOrEqual(44);
+
+  // Click opens the menu; items have >=44px targets, destructive color on delete, and do not clip at sidebar or viewport edge.
+  await trigger.click();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  const menu = page.getByRole('menu', { name: '会话操作：我最近的连续跑步记录和跑量目标完成进度怎么样', exact: true });
+  await expect(menu).toBeVisible();
+  await expect(menu).toHaveCSS('scale', '1');
+
+  const renameItem = menu.getByRole('menuitem', { name: '重命名', exact: true });
+  const deleteItem = menu.getByRole('menuitem', { name: '删除', exact: true });
+  await expect(renameItem).toBeVisible();
+  await expect(deleteItem).toBeVisible();
+  expect((await renameItem.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect((await deleteItem.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+
+  const deleteColors = await deleteItem.evaluate((el) => {
+    const style = getComputedStyle(el);
+    const rootStyle = getComputedStyle(document.documentElement);
+    return { color: style.color, errorVar: rootStyle.getPropertyValue('--error').trim() };
+  });
+  expect(deleteColors.errorVar).not.toBe('');
+  expect(deleteColors.color).not.toBe(await renameItem.evaluate((el) => getComputedStyle(el).color));
+
+  // Verify popover is not clipped by the sidebar edge or viewport bounds.
+  const menuBox = (await menu.boundingBox())!;
+  expect(menuBox.x).toBeGreaterThanOrEqual(0);
+  expect(menuBox.y).toBeGreaterThanOrEqual(0);
+  expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(1440);
+  expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(900);
+
+  // Capture desktop menu-open visual evidence in light and dark themes.
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
+    await page.evaluate((t) => {
+      localStorage.setItem('runnote-theme', t);
+      document.documentElement.dataset.theme = t;
+    }, theme);
+    await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
+    await page.screenshot({ path: `test-results/ai-assistant-menu-desktop-${theme}.png` });
+  }
+  await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'no-preference' });
+  await page.evaluate(() => {
+    localStorage.setItem('runnote-theme', 'light');
+    document.documentElement.dataset.theme = 'light';
+  });
+
+  // Outside click closes the menu.
+  await page.mouse.click(900, 300);
+  await expect(menu).toBeHidden();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+  // Keyboard Enter opens menu and focuses first menuitem; ArrowDown/Up cycle; Escape closes and returns focus to trigger.
+  await trigger.focus();
+  await page.keyboard.press('Enter');
+  await expect(menu).toBeVisible();
+  await expect(renameItem).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(deleteItem).toBeFocused();
+  await page.keyboard.press('ArrowUp');
+  await expect(renameItem).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(trigger).toBeFocused();
+
+  // Keyboard Space opens menu, rename inline edit starts with focused input, Escape cancels and restores focus.
+  await page.keyboard.press('Space');
+  await expect(menu).toBeVisible();
+  await expect(renameItem).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(menu).toBeHidden();
+  const renameInput = sidebar.getByLabel('新会话标题');
+  await expect(renameInput).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(renameInput).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+
+  // Complete rename flow through menu.
+  await trigger.click();
+  await renameItem.click();
+  await sidebar.getByLabel('新会话标题').fill('跑量与连续记录复盘');
+  await sidebar.getByRole('button', { name: '保存', exact: true }).click();
+  const renamedTrigger = sidebar.getByRole('button', { name: '会话操作：跑量与连续记录复盘', exact: true });
+  await expect(renamedTrigger).toBeVisible();
+  await expect(page.locator('.chat-title')).toHaveText('跑量与连续记录复盘');
+
+  // Delete confirm: dismiss preserves conversation and returns focus to trigger; accept removes conversation and clears active thread.
+  await renamedTrigger.click();
+  page.once('dialog', (d) => d.dismiss());
+  await page.getByRole('menuitem', { name: '删除', exact: true }).click();
+  await expect(renamedTrigger).toBeVisible();
+  await expect(renamedTrigger).toBeFocused();
+
+  await renamedTrigger.click();
+  page.once('dialog', (d) => d.accept());
+  await page.getByRole('menuitem', { name: '删除', exact: true }).click();
+  await expect(renamedTrigger).toHaveCount(0);
+  await expect(page.getByTestId('ai-empty-stage')).toBeVisible();
+  await expect(sidebar.getByRole('status')).toContainText('会话已删除');
+
+  // Tablet 768x1024 and mobile 390x844 drawers: menu opens above dialog without clipping, Escape closes only the menu, and horizontal overflow stays false.
+  for (const vp of [
+    { name: 'tablet', width: 768, height: 1024 },
+    { name: 'mobile', width: 390, height: 844 },
+  ] as const) {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.getByRole('button', { name: /^会话列表/ }).click();
+    const drawer = page.getByRole('dialog', { name: '历史会话' });
+    await expect(drawer).toBeVisible();
+    await expect(drawer.getByRole('button', { name: /重命名|删除/ })).toHaveCount(0);
+
+    const drawerTrigger = drawer.getByRole('button', { name: '会话操作：总结我最近 4 周的跑步趋势', exact: true });
+    const drawerTriggerBox = (await drawerTrigger.boundingBox())!;
+    expect(drawerTriggerBox.width).toBeGreaterThanOrEqual(44);
+    expect(drawerTriggerBox.height).toBeGreaterThanOrEqual(44);
+    await drawerTrigger.click();
+    const drawerMenu = page.getByRole('menu', { name: '会话操作：总结我最近 4 周的跑步趋势', exact: true });
+    await expect(drawerMenu).toBeVisible();
+    await expect(drawerMenu).toHaveCSS('scale', '1');
+    const drawerMenuBox = (await drawerMenu.boundingBox())!;
+    expect(drawerMenuBox.x).toBeGreaterThanOrEqual(0);
+    expect(drawerMenuBox.x + drawerMenuBox.width).toBeLessThanOrEqual(vp.width);
+    expect(drawerMenuBox.y).toBeGreaterThanOrEqual(0);
+    expect(drawerMenuBox.y + drawerMenuBox.height).toBeLessThanOrEqual(vp.height);
+    for (const theme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
+      await page.evaluate((t) => {
+        localStorage.setItem('runnote-theme', t);
+        document.documentElement.dataset.theme = t;
+      }, theme);
+      await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
+      await page.screenshot({ path: `test-results/ai-assistant-menu-${vp.name}-${theme}.png` });
+    }
+    await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'no-preference' });
+    await page.evaluate(() => {
+      localStorage.setItem('runnote-theme', 'light');
+      document.documentElement.dataset.theme = 'light';
+    });
+
+    // Escape closes the action menu first while keeping the history dialog open and returning focus to the trigger.
+    await page.keyboard.press('Escape');
+    await expect(drawerMenu).toBeHidden();
+    await expect(drawer).toBeVisible();
+    await expect(drawerTrigger).toBeFocused();
+
+    if (vp.name === 'mobile') {
+      // Rename works inside the mobile dialog too.
+      await drawerTrigger.click();
+      await drawerMenu.getByRole('menuitem', { name: '重命名', exact: true }).click();
+      await drawer.getByLabel('新会话标题').fill('四周趋势总结');
+      await drawer.getByRole('button', { name: '保存', exact: true }).click();
+      await expect(drawer.getByRole('button', { name: '会话操作：四周趋势总结', exact: true })).toBeVisible();
+    }
+
+    await page.keyboard.press('Escape');
+    await expect(drawer).toBeHidden();
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+  expect(errors).toEqual([]);
 });

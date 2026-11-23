@@ -26,6 +26,7 @@
   import AssistantConsentCard from './AssistantConsentCard.svelte';
   import AssistantMarkdown from './AssistantMarkdown.svelte';
   import AssistantBlocks from './AssistantBlocks.svelte';
+  import ConversationActionMenu from './ConversationActionMenu.svelte';
 
   const view = useViewContext();
   const fetcher = view.fetch;
@@ -90,6 +91,7 @@
   let consentError = $state('');
   let consentNotice = $state('');
   let consentDialogOpen = $state(false);
+  let historyDialogOpen = $state(false);
 
   let sidebarCollapsed = $state(false);
   let renamingId = $state<string | null>(null);
@@ -98,6 +100,7 @@
   let convNotice = $state('');
   let convError = $state('');
 
+  let sidebarEl = $state<HTMLElement | undefined>();
   let historyDialog = $state<HTMLDialogElement | undefined>();
   let consentDialog = $state<HTMLDialogElement | undefined>();
   let composerInput = $state<HTMLTextAreaElement | undefined>();
@@ -306,10 +309,31 @@
     }
   }
 
+  function activeHistoryContainer(): HTMLElement | undefined {
+    return historyDialog?.open ? historyDialog : sidebarEl;
+  }
+
   function beginRename(conv: ConversationView) {
     renamingId = conv.id;
     renameDraft = conv.title || '新会话';
     convError = '';
+    void tick().then(() => {
+      if (disposed || renamingId !== conv.id) return;
+      const input = activeHistoryContainer()?.querySelector<HTMLInputElement>('input.rename-input');
+      input?.focus();
+      input?.select();
+    });
+  }
+
+  function cancelRename(convId?: string) {
+    renamingId = null;
+    convError = '';
+    if (!convId) return;
+    void tick().then(() => {
+      if (disposed) return;
+      const row = activeHistoryContainer()?.querySelector<HTMLElement>(`.conv-item[data-conv-id="${convId}"]`);
+      row?.querySelector<HTMLButtonElement>('.conv-menu-trigger')?.focus();
+    });
   }
 
   async function submitRename(convId: string) {
@@ -786,7 +810,7 @@
   });
 </script>
 
-{#snippet historyPanelContent()}
+{#snippet historyPanelContent(scope: 'sidebar' | 'dialog')}
   <div class="history-top">
     <button type="button" class="button-primary new-chat-btn" disabled={streaming} onclick={startNewConversation}>
       + 新建会话
@@ -809,7 +833,7 @@
   {:else if conversations}
     <ul class="conv-list" aria-label="会话列表">
       {#each conversations.items as conv (conv.id)}
-        <li class="conv-item" class:active={conv.id === activeId}>
+        <li class="conv-item" class:active={conv.id === activeId} data-conv-id={conv.id}>
           {#if renamingId === conv.id}
             <form
               class="rename-form"
@@ -818,18 +842,25 @@
                 void submitRename(conv.id);
               }}
             >
-              <label class="sr-only" for={`rename-${conv.id}`}>新会话标题</label>
+              <label class="sr-only" for={`rename-${scope}-${conv.id}`}>新会话标题</label>
               <input
-                id={`rename-${conv.id}`}
-                class="text-field"
+                id={`rename-${scope}-${conv.id}`}
+                class="text-field rename-input"
                 bind:value={renameDraft}
                 maxlength="120"
                 disabled={convBusy}
                 required
+                onkeydown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    cancelRename(conv.id);
+                  }
+                }}
               />
               <div class="rename-actions">
                 <button type="submit" class="button-secondary button-compact" disabled={convBusy}>保存</button>
-                <button type="button" class="button-secondary button-compact" disabled={convBusy} onclick={() => { renamingId = null; }}>取消</button>
+                <button type="button" class="button-secondary button-compact" disabled={convBusy} onclick={() => cancelRename(conv.id)}>取消</button>
               </div>
             </form>
           {:else}
@@ -843,26 +874,12 @@
               <span class="conv-title">{conv.title || '未命名会话'}</span>
               <span class="conv-time">{formatTime(conv.last_message_at)}</span>
             </button>
-            <div class="conv-ops">
-              <button
-                type="button"
-                class="conv-op-btn"
-                aria-label={`重命名 ${conv.title || '未命名会话'}`}
-                disabled={streaming || convBusy}
-                onclick={() => beginRename(conv)}
-              >
-                重命名
-              </button>
-              <button
-                type="button"
-                class="conv-op-btn danger"
-                aria-label={`删除 ${conv.title || '未命名会话'}`}
-                disabled={streaming || convBusy}
-                onclick={() => void removeConversation(conv)}
-              >
-                删除
-              </button>
-            </div>
+            <ConversationActionMenu
+              title={conv.title || '未命名会话'}
+              disabled={streaming || convBusy}
+              onrename={() => beginRename(conv)}
+              ondelete={() => void removeConversation(conv)}
+            />
           {/if}
         </li>
       {/each}
@@ -890,7 +907,7 @@
   </div>
 {:else if context}
   <div class="assistant-layout" class:sidebar-collapsed={sidebarCollapsed} data-testid="ai-assistant-workbench">
-    <aside class="history-sidebar aux-panel" aria-label="历史会话">
+    <aside bind:this={sidebarEl} class="history-sidebar aux-panel" aria-label="历史会话">
       <div class="sidebar-header">
         <h2>历史会话</h2>
         <button
@@ -902,7 +919,7 @@
           收起
         </button>
       </div>
-      {@render historyPanelContent()}
+      {@render historyPanelContent('sidebar')}
     </aside>
 
     <section class="chat-shell aux-panel" aria-label="AI 跑步助手对话">
@@ -911,7 +928,10 @@
           <button
             type="button"
             class="button-secondary button-compact mobile-history-btn"
-            onclick={() => historyDialog?.showModal()}
+            onclick={() => {
+              historyDialogOpen = true;
+              historyDialog?.showModal();
+            }}
           >
             会话列表{#if conversations && conversations.total > 0}（{conversations.total}）{/if}
           </button>
@@ -1184,13 +1204,20 @@
     </section>
   </div>
 
-  <dialog bind:this={historyDialog} class="sheet-dialog" aria-labelledby="mobile-history-title">
+  <dialog
+    bind:this={historyDialog}
+    class="sheet-dialog"
+    aria-labelledby="mobile-history-title"
+    onclose={() => { historyDialogOpen = false; }}
+  >
     <div class="dialog-head">
       <h2 id="mobile-history-title">历史会话</h2>
       <button type="button" class="button-secondary button-compact" onclick={() => historyDialog?.close()}>关闭</button>
     </div>
     <div class="dialog-body">
-      {@render historyPanelContent()}
+      {#if historyDialogOpen}
+        {@render historyPanelContent('dialog')}
+      {/if}
     </div>
   </dialog>
 
@@ -1295,12 +1322,27 @@
   }
   .conv-item {
     display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
     gap: var(--space-1);
-    padding: var(--space-2);
+    padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-control);
     background: var(--background);
     min-width: 0;
+    transition:
+      border-color var(--transition-control),
+      background-color var(--transition-control);
+  }
+  .conv-item:has(.rename-form) {
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--space-2);
+  }
+  @media (hover: hover) {
+    .conv-item:not(.active):not(:has(.rename-form)):hover {
+      border-color: var(--control-hover-border);
+      background: var(--surface);
+    }
   }
   .conv-item.active {
     border-color: var(--primary);
@@ -1308,14 +1350,32 @@
   }
   .conv-open {
     display: grid;
-    gap: 0.15rem;
+    gap: 0.125rem;
+    align-content: center;
+    min-height: 2.75rem;
     text-align: left;
-    background: none;
+    background: transparent;
     border: 0;
+    border-radius: calc(var(--radius-control) - 0.125rem);
     padding: var(--space-1);
     color: var(--foreground);
     cursor: pointer;
     min-width: 0;
+  }
+  :global(.sport-theme) .conv-open.conv-open.conv-open.conv-open {
+    background-color: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    border-color: transparent !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  .conv-open > :global(.rn-glass-surface) {
+    display: none !important;
+  }
+  .conv-open:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
   }
   .conv-title {
     font-size: var(--text-small);
@@ -1328,30 +1388,6 @@
     color: var(--muted-foreground);
     font-size: var(--text-caption);
     font-variant-numeric: tabular-nums;
-  }
-  .conv-ops {
-    display: flex;
-    gap: var(--space-2);
-    padding: 0 var(--space-1);
-  }
-  .conv-op-btn {
-    background: none;
-    border: 0;
-    padding: 0.15rem 0.25rem;
-    color: var(--muted-foreground);
-    font-size: var(--text-caption);
-    cursor: pointer;
-  }
-  .conv-op-btn:hover:enabled {
-    color: var(--primary);
-    text-decoration: underline;
-  }
-  .conv-op-btn.danger:hover:enabled {
-    color: var(--error);
-  }
-  .conv-op-btn:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
   }
   .rename-form {
     display: grid;
