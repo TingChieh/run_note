@@ -3,7 +3,6 @@
 from app.db.base import Base
 from app.modules.activities.model import Activity
 from app.modules.ai_assistant.model import AIConversation, AIMessage, AIUserConsent
-from app.modules.ai_reports.model import AIReport
 from app.modules.auth.model import AuthRateBucket, AuthSession
 from app.modules.footprints.model import (
     ActivityGlobalFootprintCache,
@@ -37,7 +36,6 @@ __all__ = [
     "AIConversation",
     "AIMessage",
     "AIUserConsent",
-    "AIReport",
     "ActivityShareLink",
     "User",
     "UserAvatar",

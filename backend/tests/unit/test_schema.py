@@ -4,7 +4,7 @@ import pytest
 def test_release_head_follows_complete_chain():
     from app.db.schema import get_expected_revision
 
-    assert get_expected_revision() == "0033_ai_assistant"
+    assert get_expected_revision() == "0034_drop_ai_reports"
 
 
 @pytest.mark.parametrize("revisions", [[], [("a", None), ("b", None)]])
@@ -31,7 +31,6 @@ def test_model_registry_and_autogenerate_preserve_unmanaged_tables():
         "ai_conversations",
         "ai_messages",
         "ai_user_consents",
-        "ai_reports",
         "running_goals",
         "shoes",
         "auth_sessions",

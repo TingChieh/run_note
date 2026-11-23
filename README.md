@@ -27,8 +27,7 @@
 - **常跑路线与足迹墙**：自动归并重复路线；足迹墙以卡片展示每一次跑步。
 - **分享海报**：单次跑步与路线墙可生成路线大图、运动海报、跑步票根、大字里程等样式，导出 PNG。
 - **自动命名**：按轨迹附近的湖、河、海、公园、操场，把默认标题改成“湖边跑步”等（地物数据取自 OpenStreetMap，全程在本机 PostGIS 内计算）。
-- **AI 跑步助手（Phase 1–3）**：登录并同意数据使用后，可用快捷问题开启多轮对话，接收流式回复，并回看已保存的会话。服务端工具仅针对当前账号执行预定义的只读查询，可查看本人的跑步统计、活动指标、个人记录、目标和足迹。工具不支持任意 SQL 或数据写入。[助手设计](docs/engineering/runnote-ai-assistant-design.md)
-- **AI 跑步分析（历史归档）**：此前基于统计摘要生成的单次报告仍可在界面中只读查看。
+- **AI 跑步助手**：登录并同意数据使用后，可用快捷问题开启多轮对话，接收流式回复，并回看已保存的会话。服务端工具仅针对当前账号执行预定义的只读查询，可查看本人的跑步统计、活动指标、个人记录、目标和足迹。工具不支持任意 SQL 或数据写入。[助手设计](docs/engineering/runnote-ai-assistant-design.md)
 - **跑鞋、目标与设置**：为跑步绑定跑鞋，累计每双鞋的里程，在接近或达到设定的替换里程时显示提醒。在「目标与隐私」设置周、月、年跑量目标。设置还包含「账户总览」和「跑鞋」，站主另有「站点设置」和「用户管理」。
 - **站主展示 + 受管账号**：访客无需登录即可浏览站主内容；管理员可为其他用户开启 `/p/{username}` 个人展示，注册关闭。
 - **深浅色与响应式**：跟随系统，可手动切换；桌面与手机布局一致，Chromium 上启用液态玻璃折射效果。
@@ -78,7 +77,7 @@
 
 ## 在线站点
 
-**<https://run.aisaka.cc>** 是站主的公开展示站点，访客无需登录即可浏览数据汇总、跑步记录、足迹与公开的历史 AI 分析报告。
+**<https://run.aisaka.cc>** 是站主的公开展示站点，访客无需登录即可浏览数据汇总、跑步记录与足迹。
 
 ## 技术栈与架构
 
@@ -94,7 +93,7 @@
 | 数据库 | PostgreSQL 18 + PostGIS 3.7，唯一持久化中心 |
 | 部署 | 原生安装（systemd + Caddy），**不使用 Docker**；脚本化发布、迁移、备份与恢复演练 |
 
-后端是模块化单体，功能模块（activities、footprints、statistics、ai_assistant、ai_reports、sharing、showcase 等）按 `router / service / schema / model` 组织。JSON API 使用 `{data, error, meta.request_id}` 响应信封，助手的实时回复使用服务端发送事件（SSE）。
+后端是模块化单体，功能模块（activities、footprints、statistics、ai_assistant、sharing、showcase 等）按 `router / service / schema / model` 组织。JSON API 使用 `{data, error, meta.request_id}` 响应信封，助手的实时回复使用服务端发送事件（SSE）。
 
 ## 快速开始
 
@@ -127,7 +126,7 @@ pnpm dev
 ## 配置与运维
 
 - **可选 AI 助手**。在后端环境配置 `AI_BASE_URL`、`AI_MODEL` 和 `AI_API_KEY` 后才可发送新问题。设 `AI_ASSISTANT_ENABLED=false` 可停用新提问，已保存的会话仍可查看。密钥仅放在服务端环境（本地使用 Git 忽略的根目录 `.env`），严禁放入 `PUBLIC_*` 变量或提交到仓库。[配置示例](.env.example) · [助手设计](docs/engineering/runnote-ai-assistant-design.md)
-- **数据库升级**。使用新界面前，目标数据库需升到发布版本的 Alembic head，其中包含 `0032_running_diary` 和 `0033_ai_assistant`。已有数据库在生产迁移前须备份并演练恢复。两项迁移在表有数据时会拒绝降级。跨迁移回退需要前向修复，或按部署文档恢复迁移前备份，后者会丢失备份后的写入。[生产部署](docs/66-production-deployment.md)
+- **数据库升级**。使用新界面前，目标数据库需升到发布版本的 Alembic head，其中包含 `0032_running_diary`、`0033_ai_assistant` 和 `0034_drop_ai_reports`（`0034_drop_ai_reports` 会删除旧版 `ai_reports` 表且不可逆）。已有数据库在生产迁移前须备份并演练恢复。这些迁移均带有降级保护（表含数据或已删除不可逆表时会拒绝降级）。跨迁移回退需要前向修复，或按部署文档恢复迁移前备份，后者会丢失备份后的写入。[生产部署](docs/66-production-deployment.md)
 - **流式代理**。反向代理需要即时转发 `text/event-stream`，避免缓冲或压缩缓冲。项目 Caddy 配置为助手消息端点设置了 `flush_interval -1` 和 60 秒响应头超时，后端先发 SSE 响应头再等待模型。SvelteKit 代理为此端点留出 195 秒，覆盖后端单轮流式截止时间（默认 90 秒，最多 180 秒）。[Caddy 配置](infra/native/Caddyfile) · [助手设计](docs/engineering/runnote-ai-assistant-design.md)
 
 ## 测试
@@ -146,7 +145,7 @@ pnpm dev
 
 - 邮箱、文件名、备注、原始 GPX/TCX 不会出现在公开响应中。
 - 地图在浏览器中渲染轨迹 GeoJSON，底图服务只收到公开样式、字体、图标和当前视口瓦片请求。
-- 旧版 AI 分析生成报告时只发送运动统计摘要。AI 助手经用户同意后，向配置的模型服务发送包含日期和时区的系统提示、当前提问、同一会话近期对话、可用工具定义，以及查询所需的白名单结果。结果可包含运动统计、活动 UUID 和日期等单次运动指标、省市级等粗粒度地名及足迹计数、常跑路线组摘要。工具结果排除活动标题、标签、备注、精确坐标、原始导入文件及文件名、照片、账号资料和他人数据。用户自行输入的聊天内容会随提问发送，可在助手中撤回同意。[助手设计](docs/engineering/runnote-ai-assistant-design.md)
+- AI 助手经用户同意后，向配置的模型服务发送包含日期和时区的系统提示、当前提问、同一会话近期对话、可用工具定义，以及查询所需的白名单结果。结果可包含运动统计、活动 UUID 和日期等单次运动指标、省市级等粗粒度地名及足迹计数、常跑路线组摘要。工具结果排除活动标题、标签、备注、精确坐标、原始导入文件及文件名、照片、账号资料和他人数据。用户自行输入的聊天内容会随提问发送，可在助手中撤回同意。[助手设计](docs/engineering/runnote-ai-assistant-design.md)
 - 跑步日记及照片仅本人可访问，不进入公开展示、分享海报或 AI 上下文。上传照片转为无元数据 PNG，原始文件不保留，处理后的图片存入 PostgreSQL 并随数据库备份。独立的身心健康日记同样只供本人查看，也不进入 AI 上下文。[跑步日记](docs/94-running-diary.md)
 
 ## 文档

@@ -10,11 +10,9 @@ export const upstreamTimeout = (path: string, method: string) =>
     ? 195000
     : isGpxUpload(path, method)
       ? 45000
-      : method === 'POST' && path.split('?')[0] === '/api/v1/ai-reports'
-        ? 40000
-        : method === 'GET' && path.split('?')[0] === '/api/v1/statistics/annual-story'
-          ? 20000
-          : 8000;
+      : method === 'GET' && path.split('?')[0] === '/api/v1/statistics/annual-story'
+        ? 20000
+        : 8000;
 export class ProxyBodyError extends Error {
   status = 413;
 }

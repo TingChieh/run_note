@@ -4,7 +4,7 @@ import { safeImagePath } from './site.ts';
 export interface ShowcaseProfile { display_name: string; timezone: string; avatar_url?: string | null }
 export function showcasePath(path: string): string {
   if (path === '/api/v1/me/running-goals') return '/api/v1/showcase/running-goals';
-  if (!/^\/api\/v1\/(activities|statistics|footprints|ai-reports)(\/|\?|$)/.test(path)) throw new Error('不支持的展示资源');
+  if (!/^\/api\/v1\/(activities|statistics|footprints)(\/|\?|$)/.test(path)) throw new Error('不支持的展示资源');
   return path.replace('/api/v1/', '/api/v1/showcase/');
 }
 export async function readShowcaseProfile(fetcher: typeof fetch = fetch): Promise<ShowcaseProfile> {

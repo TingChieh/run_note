@@ -615,7 +615,7 @@ def test_csv_exports_match_the_records_and_neutralise_formulas(clients):
     assert "wellbeing-entries-2026-10-01_2026-10-31.csv" in name
 
 
-def test_journal_writes_do_not_make_running_ai_reports_stale(clients):
+def test_journal_writes_do_not_bump_activity_data_version(clients):
     a, _, engine, _ = clients
     owner = register(a)
     version = "SELECT activity_data_version FROM users WHERE id=:u"
@@ -648,11 +648,10 @@ def test_no_public_owner_or_ai_surface_exposes_the_journal(clients):
         "/api/v1/showcase/statistics/summary",
         f"/api/v1/showcase/statistics/records?year={year}",
         "/api/v1/showcase/statistics/streaks",
-        "/api/v1/showcase/ai-reports",
         "/api/v1/showcase/footprints/all",
         "/api/v1/activities",
-        "/api/v1/ai-reports/context",
-        "/api/v1/ai-reports",
+        "/api/v1/ai-assistant/context",
+        "/api/v1/ai-assistant/conversations",
         "/api/v1/me/running-goals",
         "/api/v1/auth/session",
         "/api/v1/me",

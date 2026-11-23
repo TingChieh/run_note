@@ -1,19 +1,14 @@
 """Read-only owner resolution and independent public serialization."""
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app.core.errors import ApiError
 from app.modules.activities import service as activities
-from app.modules.ai_reports.model import AIReport
-from app.modules.ai_reports.schema import AnalysisText
 from app.modules.running_goals.model import RunningGoal
 from app.modules.running_goals.schema import GoalsView
 from app.modules.showcase.schema import (
     ShowcaseActivity,
     ShowcaseActivityList,
-    ShowcaseReport,
-    ShowcaseReportList,
-    ShowcaseSnapshot,
 )
 from app.modules.users.model import User
 
@@ -52,52 +47,6 @@ def activity_detail(db, owner, identifier):
 def goals(db, owner):
     rows = db.scalars(select(RunningGoal).where(RunningGoal.user_id == owner)).all()
     return GoalsView(**{row.period: float(row.target_km) for row in rows})
-
-
-def report_view(row, version):
-    return ShowcaseReport(
-        id=row.id,
-        date_from=row.date_from,
-        date_to=row.date_to,
-        stats_snapshot=ShowcaseSnapshot.model_validate(row.stats_snapshot),
-        analysis=AnalysisText.model_validate_json(row.report_text),
-        created_at=row.created_at,
-        finished_at=row.finished_at,
-        is_stale=row.source_data_version != version,
-    )
-
-
-def report_filters(owner):
-    return (
-        AIReport.user_id == owner,
-        AIReport.status == "succeeded",
-        AIReport.deleted_at.is_(None),
-    )
-
-
-def reports(db, owner, limit, offset):
-    filters = report_filters(owner.id)
-    total = db.scalar(select(func.count()).select_from(AIReport).where(*filters))
-    rows = db.scalars(
-        select(AIReport)
-        .where(*filters)
-        .order_by(AIReport.created_at.desc(), AIReport.id.desc())
-        .limit(limit)
-        .offset(offset)
-    ).all()
-    return ShowcaseReportList(
-        items=[report_view(row, owner.activity_data_version) for row in rows],
-        total=total,
-        limit=limit,
-        offset=offset,
-    )
-
-
-def report_detail(db, owner, identifier):
-    row = db.scalar(select(AIReport).where(*report_filters(owner.id), AIReport.id == identifier))
-    if row is None:
-        raise ApiError(404, "RESOURCE_NOT_FOUND", "报告不存在")
-    return report_view(row, owner.activity_data_version)
 
 
 def geometry_view(value):

@@ -170,7 +170,7 @@ def test_running_diary_is_excluded_from_showcase_sharing_and_ai(clients):
                 not {"diary", "photos", "rpe", "mood", "weather"} & response.json()["data"].keys()
             )
 
-    for private_path in (f"/api/v1/activities/{run}", "/api/v1/ai-reports/context"):
+    for private_path in (f"/api/v1/activities/{run}", "/api/v1/ai-assistant/context"):
         response = owner.get(private_path)
         assert response.status_code == 200, response.text
         assert marker not in response.text and photo_id not in response.text

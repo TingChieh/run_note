@@ -29,13 +29,17 @@ from app.modules.ai_assistant.tools import (
 from app.modules.statistics.device_metrics import DEVICE_METRIC_KEYS, change_rate, finalize
 
 
-def test_shared_statistics_device_metrics_and_legacy_reexports():
-    from app.modules.ai_reports import device_metrics as legacy_dm
-    from app.modules.ai_reports import snapshot as legacy_snapshot
-
-    assert legacy_dm.DEVICE_METRIC_KEYS == DEVICE_METRIC_KEYS
-    assert legacy_dm.finalize is finalize
-    assert legacy_snapshot.change_rate is change_rate
+def test_shared_statistics_device_metrics():
+    assert DEVICE_METRIC_KEYS == (
+        "heart_rate_record_count",
+        "heart_rate_weighted_count",
+        "heart_rate_weighted_duration_seconds",
+        "avg_heart_rate_bpm",
+        "calories_record_count",
+        "calories_kcal",
+        "steps_record_count",
+        "steps",
+    )
     assert change_rate(1500, 1000) == "50.000"
     assert change_rate(1000, 0) is None
     assert finalize({}) == {
@@ -60,9 +64,6 @@ def test_ai_assistant_settings_defaults_match_confirmed_decisions():
     assert s.ai_upstream_read_timeout_seconds == 30
     assert s.ai_max_tool_rounds == 4
     assert s.ai_max_output_tokens == 2048
-    # Legacy ai_reports defaults remain intact.
-    assert s.ai_daily_limit == 5
-    assert s.ai_total_timeout_seconds == 30
 
 
 def test_tool_definitions_expose_only_10_read_only_tools_without_owner_or_sql_params():

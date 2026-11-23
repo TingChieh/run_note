@@ -43,13 +43,13 @@ infra/native/      原生部署资产：systemd 单元、Caddyfile、env 模板�
 docs/              设计与验收记录（中文）；docs/design-system/ 为 UI 规范；docs/engineering/ 为质量基线
 ```
 
-后端功能模块以 `backend/app/modules/` 目录为准（现有 activities、admin_users、ai_reports、auth、footprints、gpx、health、mifitness、place_titles、route_groups、running_goals、sharing、showcase、site_settings、statistics、tcx、together、users、version、wellbeing）；新增模块须按第 4 节注册。每个模块按自己的 `router/schema/service/model` 组织。**不要为每张表建立空壳 Repository/Manager/Factory**，简单查询直接写在模块 service 中；只有空间查询或确需复用的复杂查询才拆出 `queries.py`。
+后端功能模块以 `backend/app/modules/` 目录为准（现有 activities、admin_users、ai_assistant、auth、footprints、gpx、health、mifitness、place_titles、route_groups、running_diary、running_goals、sharing、shoes、showcase、site_settings、statistics、tcx、together、users、version、wellbeing）；新增模块须按第 4 节注册。每个模块按自己的 `router/schema/service/model` 组织。**不要为每张表建立空壳 Repository/Manager/Factory**，简单查询直接写在模块 service 中；只有空间查询或确需复用的复杂查询才拆出 `queries.py`。
 
 ## 3. 架构边界
 
 - **分层职责**：Router 只做 HTTP 参数、依赖、调用 service、返回信封；Service 承载业务规则、授权、SQL 与事务；Schema 只做校验；Model 只做映射。路由中**禁止**实现距离算法或多步骤事务。
 - **同步执行**：服务层一律是同步的普通函数（不是 class）。常规路由用 `def`，由 FastAPI 线程池执行。**禁止在 `async def` 中直接跑同步 DB 或重计算**；上传入口若要 async，必须用 `run_in_threadpool` 卸载阻塞工作。
-- **提交边界**：路由在 service 调用后 `db.commit()`；service 内部用 `db.flush()`。例外只有三类：AI 报告模块（把 DB 写入与外部 HTTP 调用交错，自己在内部提交）；轨迹导入 `gpx/service.py` 的 `import_track`（解析期间不占连接，解析后以 `with db.begin()` 做一次短写事务）；以及用 `session_factory` 自建会话的后台任务（footprints、place_titles、route_groups 的填充/重建）。
+- **提交边界**：路由在 service 调用后 `db.commit()`；service 内部用 `db.flush()`。例外只有三类：AI 助手模块（`ai_assistant`，在发起外部流式 HTTP 请求前先提交短事务释放锁与连接）；轨迹导入 `gpx/service.py` 的 `import_track`（解析期间不占连接，解析后以 `with db.begin()` 做一次短写事务）；以及用 `session_factory` 自建会话的后台任务（footprints、place_titles、route_groups 的填充/重建）。
 - **会话**：每个请求一个 Session，通过 `get_session` 依赖提供，不存在全局 Session。不要新增 per-request commit 中间件。
 - **时间**：统一使用 `request.app.state.clock()`，不要在业务代码里直接调用 `datetime.now()`。
 - **权威数据在服务端**：前端不得成为唯一校验入口。地图（MapLibre）与图表（ECharts）只做呈现，**不生成权威运动指标**；距离、用时、配速以服务端聚合为准。前端 `lib/api/*` 是接口契约的消费者，不是业务逻辑的复制品。
@@ -76,7 +76,7 @@ docs/              设计与验收记录（中文）；docs/design-system/ 为 U
 - 错误统一 `raise ApiError(status_code, "CODE", "中文用户提示")`；可选 `retry_after=`（写入 `Retry-After` 头）与 `details=`。`details` 的键由 `app/core/errors.py` 中 `ApiError.__init__` 的 `allowed` 集合过滤（值须为 ≤200 字符的字符串），**新增键必须同步加入该集合**，否则会被静默丢弃。
 - 错误码为大写蛇形领域码；`message` 是给用户看的中文，日志与标识符用英文。不向客户端暴露 SQL、堆栈、文件路径或供应商原文。
 - 所有请求体继承 `StrictInput`（`extra="forbid"`, `strict=True`，定义于 `app/modules/users/schema.py`），未知字段必须被拒绝。
-- 列表响应统一 `{items, total, limit, offset}`，查询参数是 **`limit`/`offset`**（不是 `page`/`page_size`；`docs/04-rest-api.md` 的该处说法已过时）。通用取值：`limit` 默认 20、上限 100，`offset` 默认 0、上限 1000000；`ai_reports` 列表为例外（默认 10、上限 50）。年份类查询统一 `ge=1900, le=2100`。
+- 列表响应统一 `{items, total, limit, offset}`，查询参数是 **`limit`/`offset`**（不是 `page`/`page_size`；`docs/04-rest-api.md` 的该处说法已过时）。通用取值：`limit` 默认 20、上限 100，`offset` 默认 0、上限 1000000。年份类查询统一 `ge=1900, le=2100`。
 - PATCH 语义：字段全部可选，用 `model_dump(exclude_unset=True)` 应用，**不要用 `exclude_none`**，并校验至少提交一个字段。
 
 ### 模型与注册
@@ -88,7 +88,7 @@ docs/              设计与验收记录（中文）；docs/design-system/ 为 U
 ### 归属、并发与写入
 
 - 归属校验在 service 层用 `owner` 过滤完成。按 ID 取本人资源时走 `owned_*` helper，**不存在与他人资源统一返回 404，绝不返回 403**，以免泄露存在性。
-- 服务写操作前调用 `lock_owner(db, owner)` 锁定本人 users 行并递增 `activity_data_version`（用于把旧 AI 报告标记为过时）。
+- 服务写操作前调用 `lock_owner(db, owner)` 锁定本人 users 行并递增 `activity_data_version`（用于把旧 AI 助手回答与足迹快照标记为过时）。
 - **修改导入（GPX/TCX/小米运动健康）逻辑前先读现有并发控制**：每用户同时仅一个导入，用 `pg_try_advisory_lock` 在专用自动提交连接上取得，冲突返回 429 `IMPORT_BUSY`（`gpx/service.py`）。不要新增另一套导入互斥机制。
 - 头像与站点图标/Logo 上传（`/api/v1/me/avatar`、`/api/v1/site/images/*`，`site_settings/images.py`）统一解码、方向校正、方形裁剪并重新编码为无元数据 PNG（单图上限 5 MiB），`ImageBodyLimit` 中间件在 multipart 解析前按 6 MiB 拦截请求体。新增图片上传入口必须复用 `normalize_image` 并把路径加入 `body_limit.PATHS`。
 - 公开数据的接口规则见第 8 节。
@@ -203,11 +203,11 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
 ### 账号与入口
 
 - 唯一站主由后端 `SITE_OWNER_EMAIL` 指定（默认值见 `backend/app/core/config.py`；生产必须显式设置），账号缺失时展示接口返回 503，不回退到任意用户。唯一管理员由配置邮箱计算，不依赖可编辑角色字段。
-- 匿名展示页面为 `/dashboard`、`/activities`（含详情和 wall）、`/footprints`、`/ai`；只在 `/admin` 提供管理员登录，旧 `/login` 与 `/register` 返回 404，注册 API 禁用。写操作仍由认证依赖与 CSRF/Origin 双重保护。导航项“AI 分析”仅对已登录用户显示（含桌面侧栏与手机菜单），`/ai` 路由本身仍可直接访问。
+- 匿名展示页面为 `/dashboard`、`/activities`（含详情和 wall）、`/footprints`、`/ai`；只在 `/admin` 提供管理员登录，旧 `/login` 与 `/register` 返回 404，注册 API 禁用。写操作仍由认证依赖与 CSRF/Origin 双重保护。导航项“AI 助手”仅对已登录用户显示（含桌面侧栏与手机菜单），`/ai` 路由本身仍可直接访问。
 - 用户管理页 `/admin/users` 在导航中归属"设置"（与 `/settings`、`/settings/site` 同组，使用 `settings-header.svelte.ts` 共享头部），仅站主可管理账号；普通启用用户在 `/workspace/*` 管理本人，公开 `/p/{username}/*` 始终只读。历史普通账号默认停用且不公开，显式启用后可登录本人工作区。
 - 禁用账号会撤销会话并关闭展示，重新启用不恢复旧状态；修改邮箱或重置密码撤销全部会话。站主的邮箱/启用/展示状态受保护。
 - 空库初始化用离线 `scripts/site-owner.py`，不可重开注册或自动重置密码。
-- 匿名 AI 仅查看已成功的报告，不调用管理 context、recover、cleanup 或供应商。
+- 匿名访问 `/ai` 仅展示需要登录本人账号的只读说明，不调用任何 `/api/v1/ai-assistant/*` 接口或外部供应商；个人展示 `/p/{username}/ai` 与旧版 `ai_reports` 接口均已在 Phase 5 移除。
 - 背景文档：部署模板见 `docs/55-single-owner-showcase.md`，权限/迁移/个人展示边界见 `docs/56-admin-users-personal-showcase.md`。
 
 ### 公开接口规则

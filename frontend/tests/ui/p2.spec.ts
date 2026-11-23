@@ -1,12 +1,12 @@
 import { test, expect, type Page } from '@playwright/test';
 import { loginRunner, installActivities, sampleActivity } from '../fixtures/activities';
-import { installAI, installPublic, report } from '../fixtures/p2';
+import { installPublic } from '../fixtures/p2';
 async function responsive(page: Page, name: string) {
   for(const width of [320,390,768,1440]) {
     await page.setViewportSize({width,height:1000});
     await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     if(width===390 || width===1440) { await page.evaluate(()=>{(document.activeElement as HTMLElement)?.blur();window.scrollTo(0,0);}); await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())))); await page.screenshot({path:`test-results/p2-${name}-${width}.png`});
-      if(name==='ai-report' || name==='share') await page.getByRole('region',{name:name==='ai-report'?'当前报告':'旧版分享链接'}).screenshot({path:`test-results/p2-${name}-panel-${width}.png`}); }
+      if(name==='share') await page.getByRole('region',{name:'旧版分享链接'}).screenshot({path:`test-results/p2-${name}-panel-${width}.png`}); }
   }
 }
 test('admin login native validation, password visibility, busy and failure retry, safe redirect',async({page})=>{
@@ -45,10 +45,11 @@ test('settings separates draft from saved public state and saves with retry',asy
   await expect(page.getByText('有未保存的更改',{exact:true})).toHaveCount(0);
   await page.getByRole('switch',{name:/公开个人主页/}).click();await page.getByRole('button',{name:'保存隐私与功能设置',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'独立记录分享仍需单独撤销'})).toBeVisible();
 });
-test('AI assistant requires explicit first-use consent, streams reply, and opens read-only legacy archive',async({page})=>{
-  const state=await installAI(page);state.reports=[report];await loginRunner(page);await page.goto('/ai');
+test('AI assistant requires explicit first-use consent and streams reply',async({page})=>{
+  await loginRunner(page);await page.goto('/ai');
   await expect(page.getByRole('heading',{level:1,name:'AI 助手',exact:true})).toBeVisible();
   await expect(page.getByRole('button',{name:'生成近期总结与下周建议'})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:/历史分析归档/})).toHaveCount(0);
   await expect(page.getByTestId('ai-consent-card')).toBeVisible();
   await expect(page.getByRole('button',{name:'同意并启用 AI 助手',exact:true})).toBeDisabled();
   await responsive(page,'ai-entry');
@@ -60,16 +61,6 @@ test('AI assistant requires explicit first-use consent, streams reply, and opens
   await expect(page.getByTestId('block-trend-chart')).toBeVisible();
   await expect(page.getByText(/42\.12 km/)).toBeVisible();
   await expect(page).toHaveURL(/\/ai$/);
-  await page.getByRole('button',{name:/历史分析归档/}).click();
-  await page.getByRole('button',{name:'查看报告'}).click();
-  await expect(page.getByRole('region',{name:'当前报告'})).toContainText('近期保持稳定');
-  await expect(page.getByRole('table')).toBeHidden();
-  await page.getByText('每周明细与统计口径',{exact:true}).click();
-  await expect(page.getByRole('table')).toBeVisible();
-  await responsive(page,'ai-report');
-  page.once('dialog',dialog=>dialog.accept());
-  await page.getByRole('button',{name:'删除报告'}).click();
-  await expect(page.getByText('暂无历史分析报告',{exact:true})).toBeVisible();
 });
 test('AI assistant read failure recovers without calling provider',async({page})=>{
   await loginRunner(page);
@@ -109,7 +100,7 @@ test('AI assistant unavailable and quota exhaustion block sending cleanly',async
   await expect(page.getByRole('button',{name:'发送',exact:true})).toBeDisabled();
 });
 test('removed public profile addresses are not found and share summaries stay coordinate-free',async({page})=>{
-  const state=await installPublic(page);const privateReads:string[]=[];page.on('request',req=>{if(/\/api\/v1\/(activities|statistics|ai-reports)(\/|\?|$)/.test(req.url()))privateReads.push(req.url());});
+  const state=await installPublic(page);const privateReads:string[]=[];page.on('request',req=>{if(/\/api\/v1\/(activities|statistics|ai-assistant)(\/|\?|$)/.test(req.url()))privateReads.push(req.url());});
   const missing=await page.goto('/u/runner?year=2026');
   expect(missing?.status()).toBe(404);
   await expect(page.getByRole('heading',{name:'页面不存在',exact:true})).toBeVisible();
@@ -135,11 +126,6 @@ test('legacy share links can only be revoked',async({page})=>{
   const state=await installActivities(page);state.links=[{link_id:'33333333-3333-4333-8333-333333333333',created_at:'2026-10-13T02:00:00Z',expires_at:null,revoked_at:null,status:'active' as const}];await loginRunner(page);await page.goto(`/activities/${sampleActivity.id}`);
   const panel=page.getByRole('region',{name:'旧版分享链接'});await expect(panel.getByLabel('记录可见性')).toHaveCount(0);await expect(panel.getByRole('button',{name:'创建分享链接'})).toHaveCount(0);
   await responsive(page,'share');await panel.getByRole('button',{name:'撤销链接'}).click();await expect(panel.getByText(/已撤销/).first()).toBeVisible();
-});
-test('historical AI failed, pending and stale snapshots remain accessible without calls',async({page})=>{
-  const state=await installAI(page);state.reports=[{...report,status:'failed',analysis:null,error_code:'PROVIDER_ERROR',is_stale:true}];
-  await loginRunner(page);await page.goto('/ai');await page.getByRole('button',{name:/历史分析归档/}).click();await page.getByRole('button',{name:'查看报告'}).click();await expect(page.getByRole('region',{name:'当前报告'})).toContainText('PROVIDER_ERROR');await expect(page.getByText(/运动数据已变化；/)).toBeVisible();
-  state.reports=[{...report,status:'pending',analysis:null}];await page.getByRole('button',{name:'刷新列表'}).click();await page.getByRole('button',{name:'查看报告'}).click();await expect(page.getByRole('region',{name:'当前报告'})).toContainText('报告正在生成');await expect(page.getByRole('button',{name:'删除报告'})).toBeDisabled();expect(state.calls).toHaveLength(0);
 });
 test('sharing read failure offers recovery',async({page})=>{
   await installActivities(page);await loginRunner(page);

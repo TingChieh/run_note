@@ -15,9 +15,6 @@ from app.core.security import hash_password, new_token, token_hash
 from app.db.schema import get_expected_revision
 from app.main import create_app
 from app.modules.activities.model import Activity
-from app.modules.ai_reports.model import AIReport
-from app.modules.ai_reports.schema import AnalysisText
-from app.modules.ai_reports.snapshot import build_snapshot
 from app.modules.auth.model import AuthSession
 from app.modules.users.model import User
 
@@ -57,7 +54,7 @@ def site():
         )
         db.add_all([owner, other])
         db.flush()
-        owner_id, other_id = owner.id, other.id
+        other_id = other.id
         db.add(
             AuthSession(
                 user_id=other_id,
@@ -107,9 +104,6 @@ def site():
     )
     assert changed.status_code == 200
     with Session(engine) as db:
-        snapshot = build_snapshot(
-            db, owner_id, now.date() - timedelta(days=32), now.date() - timedelta(days=4)
-        )
         identifiers = {}
         other_activity = Activity(
             user_id=other_id,
@@ -127,34 +121,6 @@ def site():
         db.add(other_activity)
         db.flush()
         identifiers["other_activity"] = str(other_activity.id)
-        for name, user_id, status in [
-            ("owner", owner_id, "succeeded"),
-            ("other", other_id, "succeeded"),
-            ("pending", owner_id, "pending"),
-        ]:
-            row = AIReport(
-                user_id=user_id,
-                request_key=uuid4(),
-                date_from="2026-09-14",
-                date_to="2026-10-12",
-                source_data_version=0,
-                status=status,
-                stats_snapshot={**snapshot, "email": "PRIVATE_EMAIL_SENTINEL"},
-                model="private-model",
-                prompt_version="private-version",
-                report_text=AnalysisText(
-                    trend_summary="保持稳定节奏",
-                    recommendations=["适度休息"],
-                    limitations="仅供参考",
-                ).model_dump_json()
-                if status == "succeeded"
-                else None,
-                created_at=now - timedelta(days=1),
-                finished_at=now if status == "succeeded" else None,
-            )
-            db.add(row)
-            db.flush()
-            identifiers[name] = str(row.id)
         db.commit()
     try:
         yield admin, visitor, old, headers, activity, identifiers, engine, settings, other_email
@@ -195,8 +161,8 @@ def test_all_owner_records_and_precise_route_are_public_but_private_fields_are_n
     assert replay.json()["data"]["segments"]
 
 
-def test_showcase_statistics_goals_footprints_and_report_reads(site):
-    _, visitor, _, _, _, ids, engine, _, _ = site
+def test_showcase_statistics_goals_and_footprints_reads(site):
+    _, visitor, _, _, _, _, _, _, _ = site
     for path in [
         "/profile",
         "/statistics/summary",
@@ -220,16 +186,7 @@ def test_showcase_statistics_goals_footprints_and_report_reads(site):
     else:
         assert encoded == plain
     assert visitor.get("/api/v1/showcase/footprints/all?encoding=bad").status_code == 422
-    reports = visitor.get("/api/v1/showcase/ai-reports").json()["data"]
-    assert reports["total"] == 1 and reports["items"][0]["id"] == ids["owner"]
-    for name in ["other", "pending"]:
-        assert visitor.get("/api/v1/showcase/ai-reports/" + ids[name]).status_code == 404
-    report = visitor.get("/api/v1/showcase/ai-reports/" + ids["owner"])
-    assert report.status_code == 200
-    assert "PRIVATE_EMAIL_SENTINEL" not in report.text and "private-model" not in report.text
-    with Session(engine) as db:
-        pending = db.scalar(select(AIReport).where(AIReport.id == ids["pending"]))
-        assert pending.status == "pending" and pending.finished_at is None
+    assert visitor.get("/api/v1/showcase/ai-reports").status_code == 404
 
 
 def test_old_other_account_session_and_anonymous_writes_are_rejected(site):

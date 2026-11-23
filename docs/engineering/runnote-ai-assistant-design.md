@@ -1,7 +1,7 @@
 # RunNote AI 跑步数据助手：审计与设计方案（Item 20）
 
-- **状态**：决策已确认（D1–D6 均按推荐方案定案），进入 Phase 1（后端基础、迁移与只读工具层）实施
-- **日期**：2026-11-22
+- **状态**：Phase 1–3 与 Phase 5（旧 `ai_reports` 最终移除）已实施（Phase 5 经负责人 2026-11-23 显式批准 `"ai_report 直接删掉就好"`）
+- **日期**：2026-11-22（Phase 5 记录更新于 2026-11-23）
 - **已确认方向**：
   1. AI 供应商确定为 **DeepSeek**（负责人 2026-11-22 决定）。
   2. 用**单一 AI 入口**替换旧 `/ai` 分析，不做双入口并存；先冻结旧功能、保留 `ai_reports` 历史数据，待新助手覆盖后再讨论最终删除（删除历史数据需负责人最终批准）。
@@ -353,7 +353,7 @@ Caddy (HTTPS, flush_interval -1) ──► FastAPI (runnote-api)
 | **Phase 2：DeepSeek 流式编排、限流与代理适配** | 1. 锁定并引入 `httpx`（`requirements.lock --require-hashes`），实现 DeepSeek OpenAI 兼容流式客户端（`tools` + `thinking: disabled` + 超时/取消）；<br>2. 实现会话 CRUD + `POST .../messages` SSE 流式路由、四层限流与日预算熔断、僵尸消息自愈；<br>3. 更新 `test_architecture.py`（`STREAMING_ROUTES`、`ASYNC_ENDPOINTS`、`CROSS_USER_TESTS`）、`app/core/errors.py` 错误细节白名单、生成前端契约 `api.ts`；<br>4. 更新 `frontend/src/lib/server/proxy-policy.ts` 流式超时与 `infra/native/Caddyfile` `flush_interval -1`（及 `caddy-instances.sh` 验证）。 | 后端 + 依赖锁 + 代理/Caddy + 契约 | Phase 1 完成 |
 | **Phase 3：前端单入口 AI 助手与旧报告只读归档** | 1. 新增 `frontend/src/lib/api/ai-assistant.ts`（含 SSE 解析、严格运行时校验、`AbortController` 取消、401 清态）；<br>2. 构建对话工作台组件（会话列表、快捷提问、流式消息、安全 Markdown 渲染、工具状态提示、同意弹窗/撤回）；<br>3. 接入富结果卡片（复用 `ActivityCard`、`TrendChart`、`RecordsChart`、`RouteMap`、`ProvinceMap`）；<br>4. 在 `/ai` 与 `/workspace/ai` 完成单入口切换，保留旧 `ai_reports` 只读归档与匿名访客兼容；同步更新 `ui-api.mjs` 与受影响的 Playwright UI/E2E 测试。 | 前端 + 合成 API + 前端测试 | Phase 2 完成 |
 | **Phase 4：脱敏真机联调、灰度验收与上线准备** | 1. 仅使用脱敏合成账号/活动数据，经授权执行小批量真实 DeepSeek 联调（验证工具调用准确性、缓存命中、流式首字延迟、错误/超时降级、token 计量准确）；<br>2. 在独立 staging 实例按 `docs/66` 走完整备份、迁移、Caddy SSE 实测与验收清单；<br>3. 补齐编号特性文档 `docs/NN-ai-assistant.md` 并更新 `README.md` / `infra/native/env/backend.env.example`。 | 文档 + 运维配置 + 验收记录 | Phase 3 全绿 |
-| **Phase 5：旧 `/ai` 最终清理（独立审批）** | 仅在负责人确认覆盖率并显式批准后，备份并下线/清理旧 `ai_reports` 表与遗留路由。 | 后端 + 迁移 + 前端 | 负责人最终批准 |
+| **Phase 5：旧 `/ai` 最终清理（已完成）** | 经负责人显式批准后，通过迁移 `0034_drop_ai_reports` 删除 `ai_reports` 表，并端到端移除旧 `ai_reports` 后端模块、公开展示路由、前端只读归档与 `/p/[username]/ai`。 | 后端 + 迁移 `0034_drop_ai_reports` + 前端 + 文档 | 负责人 2026-11-23 批准（已满足） |
 
 ### 验收测试清单（按 RunNote 四层测试体系）
 
@@ -408,3 +408,21 @@ Caddy (HTTPS, flush_interval -1) ──► FastAPI (runnote-api)
 | **D4** | **足迹工具的地名粒度** | A. 允许发送到**城市级**名称（如“杭州市：12 次”，不含经纬度与街道）；<br>B. 仅发送到**省级/国家级**名称（如“浙江省：12 次”）。 | **已确认选 A**。“我跑过哪些城市”是核心高频跑步问答；离线图集仅含城市名聚合，不暴露具体住址、街道与坐标。 |
 | **D5** | **配额与预算默认值** | 确认默认参数：`AI_DAILY_MESSAGE_LIMIT`（单用户日次数）、`AI_DAILY_TOKEN_BUDGET`（单用户日 token）、`AI_SITE_DAILY_TOKEN_BUDGET`（全站日 token）。 | **已确认默认值**：单用户 30 次/日 + 150,000 tokens/日；全站 1,000,000 tokens/日（极端月成本封顶约 ¥90–150，个人常态使用仅数元/月）。 |
 | **D6** | **深度推理模式（`deepseek-reasoner`）是否纳入首版** | A. 首版仅使用 `deepseek-chat`（非思考模式，快且便宜、工具调用稳定）；<br>B. 首版即提供“深度分析”开关切换 `deepseek-reasoner`（单独限额如 3 次/日）。 | **已确认选 A**。首版仅使用 `deepseek-chat`（显式关闭 thinking），先跑通低延迟多轮工具调用与富卡片体验，不引入 `deepseek-reasoner`。 |
+
+---
+
+## 11. Phase 5 实施记录：旧 `ai_reports` 端到端移除（2026-11-23）
+
+经负责人明确批准（`"ai_report 直接删掉就好"`），本阶段在完整保留新对话式 AI 助手（`backend/app/modules/ai_assistant`、`/api/v1/ai-assistant/*`、`/ai`、`/workspace/ai` 及其流式与工具调用能力）的前提下，端到端移除旧版 `ai_reports` 功能与公开展示链接：
+
+1. **后端移除**：
+   - 删除 `backend/app/modules/ai_reports/` 模块（`device_metrics` 与 `change_rate` 权威实现已于 Phase 1 迁入 `app/modules/statistics/device_metrics.py`），移除 `app/main.py` 中的 `OpenAIProvider` / `ai_router` 注册、`app/models/__init__.py` 中的 `AIReport` 注册、`app/core/config.py` 中仅旧报告使用的 `ai_daily_limit` 与 `ai_total_timeout_seconds`，以及 `app/core/errors.py` 中的 `report_id` 细节键。
+   - 移除 `app/modules/showcase/` 中的 `/api/v1/showcase/ai-reports*` 与 `/api/v1/showcase/users/{username}/ai-reports*` 路由、白名单 schema 与查询逻辑。
+2. **数据库迁移**：
+   - 新增线性迁移 `backend/migrations/versions/0034_drop_ai_reports.py`（`down_revision = "0033_ai_assistant"`），删除 `ai_reports` 表及其索引；`downgrade()` 显式抛出 `RuntimeError`，防止误用降级代替备份恢复。
+   - 保留历史迁移 `0005_ai_reports.py` 以维持完整线性迁移链；严禁跳过审批在生产库执行迁移或手工删数据。
+3. **前端与运维清理**：
+   - 删除 `frontend/src/lib/api/ai.ts`、`LegacyReportsArchive.svelte`、`AnalysisFacts.svelte`、`/p/[username]/ai/+page.svelte` 及旧版报告单测/UI 用例。
+   - 简化 `/ai` 页面：登录用户（`/ai` 与 `/workspace/ai`）直接进入 `AssistantWorkbench`，匿名访问 `/ai` 展示精简只读登录说明与跳转“数据汇总 / 跑步记录 / 个人足迹”的链接，不发起任何 AI 接口请求。
+   - 移除 `/admin` 中的“管理 AI 分析”旧入口、移除 `showcase.ts` 中的 `ai-reports` 白名单分支与 `proxy-policy.ts` 中 `POST /api/v1/ai-reports` 超时特例，并重新生成 `frontend/src/lib/api/generated/api.ts`。
+   - 同步更新 `infra/native/ops/acceptance-check.py`、`infra/native/tests/test_ci_changes.py`、`.env.example` 与 `infra/native/env/backend.env.example`。

@@ -1,6 +1,5 @@
 import { expect, test } from '@playwright/test';
 import { installActivities, loginRunner, sampleActivity, openImport } from '../fixtures/activities.ts';
-import { installAI, report } from '../fixtures/p2.ts';
 import { openAccountMenu } from '../fixtures/top-navigation.ts';
 
 for (const width of [390, 1440]) {
@@ -9,7 +8,6 @@ for (const width of [390, 1440]) {
       await page.setViewportSize({ width, height: 1000 });
       await page.addInitScript(theme => localStorage.setItem('runnote-theme', theme), theme);
       await installActivities(page);
-      const ai = await installAI(page); ai.reports = [report];
       const writes: string[] = [];
       page.on('request', r => { if (new URL(r.url()).pathname.startsWith('/api/') && r.method() !== 'GET') writes.push(r.url()); });
       for (const [path, heading] of [['/', '数据汇总'], ['/activities', '跑步记录'], ['/footprints', '个人足迹'], ['/ai', 'AI 助手']]) {
@@ -21,11 +19,8 @@ for (const width of [390, 1440]) {
         await expect(page.locator('[data-testid="current-user"]')).toContainText('个人跑步展示');
         await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       }
-      await page.getByRole('button', { name: '查看报告', exact: true }).click();
-      await expect(page.getByText('近期保持稳定运动节奏。', { exact: true })).toBeVisible();
-      await expect(page.getByRole('button', { name: '删除报告', exact: true })).toHaveCount(0);
+      await expect(page.getByTestId('ai-anonymous-notice')).toBeVisible();
       await expect(page.getByRole('region', { name: '分析设置' })).toHaveCount(0);
-      expect(ai.calls).toHaveLength(0);
       await page.goto(`/activities/${sampleActivity.id}`);
       await expect(page.getByRole('heading', { name: sampleActivity.title, level: 1 })).toBeVisible();
       await expect(page.getByTestId('route-map-ready')).toBeVisible({ timeout: 20000 });
