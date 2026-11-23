@@ -1,16 +1,38 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { setBasemapPreference, type BasemapPreference, type BasemapStyle, type BasemapStatus } from '#lib/api/map-style.ts';
+  import {
+    setBasemapPreference,
+    type BasemapPreference,
+    type BasemapStyle,
+    type BasemapStatus,
+  } from '#lib/api/map-style.ts';
   import { createIndicator } from '#lib/styles/liquid-glass-indicator.ts';
   import { readGlassSettings, watchGlassSettings, glassOptics } from '#lib/styles/liquid-glass-settings.ts';
   import { preparePopoverMotion, positionPopoverMotion } from '#lib/styles/popover-motion.ts';
   import { bindVisualViewport, popoverSupported, visualViewportBox } from '#lib/styles/browser-support.ts';
   import { attachMenuGlass } from '#lib/styles/menu-glass.ts';
-  let { preference, style, status, onselect = setBasemapPreference }: { preference: BasemapPreference; style: BasemapStyle; status: BasemapStatus; onselect?: (value: BasemapPreference) => void } = $props();
+  let {
+    preference,
+    style,
+    status,
+    onselect = setBasemapPreference,
+    allowOff = false,
+    onoff,
+  }: {
+    preference: BasemapPreference | 'off';
+    style: BasemapStyle;
+    status: BasemapStatus;
+    onselect?: (value: BasemapPreference) => void;
+    allowOff?: boolean;
+    onoff?: () => void;
+  } = $props();
   let indicator: ReturnType<typeof createIndicator> | undefined;
   const id = $props.id();
-  let panel: HTMLDivElement, trigger: HTMLButtonElement, expanded = $state(false);
-  let top = $state(0), right = $state(0);
+  let panel: HTMLDivElement,
+    trigger: HTMLButtonElement,
+    expanded = $state(false);
+  let top = $state(0),
+    right = $state(0);
   function position() {
     if (!trigger || !panel?.matches(':popover-open')) return;
     const box = trigger.parentElement!.getBoundingClientRect();
@@ -30,21 +52,46 @@
     let glass: ReturnType<typeof attachMenuGlass> | undefined;
     let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
     let settings = readGlassSettings();
-    const release = () => { indicator?.destroy(); indicator = undefined; glass?.destroy(); glass = undefined; };
-    const stop = watchGlassSettings(value => { settings = value; glass?.update({ ...glassOptics(value, .7), chroma: 0 }); indicator?.update(value); });
+    const release = () => {
+      indicator?.destroy();
+      indicator = undefined;
+      glass?.destroy();
+      glass = undefined;
+    };
+    const stop = watchGlassSettings((value) => {
+      settings = value;
+      glass?.update({ ...glassOptics(value, 0.7), chroma: 0 });
+      indicator?.update(value);
+    });
     const toggle = (event: Event) => {
       clearTimeout(cleanupTimer);
       expanded = (event as ToggleEvent).newState === 'open';
-      if (!expanded) { cleanupTimer = setTimeout(release, 240); return; }
+      if (!expanded) {
+        cleanupTimer = setTimeout(release, 240);
+        return;
+      }
       position();
       const buttons = [...node.querySelectorAll<HTMLButtonElement>('.rn-menu-option')];
       if (!glass) glass = attachMenuGlass(node, settings);
       indicator ??= createIndicator(node, buttons, settings);
       indicator.refresh();
-      indicator.move(Math.max(0, buttons.findIndex(button => button.getAttribute('aria-pressed') === 'true')), true);
+      indicator.move(
+        Math.max(
+          0,
+          buttons.findIndex((button) => button.getAttribute('aria-pressed') === 'true'),
+        ),
+        true,
+      );
     };
     node.addEventListener('toggle', toggle);
-    return { destroy() { clearTimeout(cleanupTimer); stop(); node.removeEventListener('toggle', toggle); release(); } };
+    return {
+      destroy() {
+        clearTimeout(cleanupTimer);
+        stop();
+        node.removeEventListener('toggle', toggle);
+        release();
+      },
+    };
   }
   function togglePanel(event: MouseEvent) {
     event.preventDefault();
@@ -55,47 +102,155 @@
     // rather than the spring-animated trigger's transient bounding rectangle.
     if (panel.matches(':popover-open')) position();
   }
-  function choose(value: BasemapPreference) { onselect(value); panel.hidePopover(); trigger.focus(); }
-  function chooseNative(value: string) { onselect(value as BasemapPreference); }
+  function choose(value: BasemapPreference | 'off') {
+    if (value === 'off') onoff?.();
+    else onselect(value);
+    panel.hidePopover();
+    trigger.focus();
+  }
+  function chooseNative(value: string) {
+    if (value === 'off') onoff?.();
+    else onselect(value as BasemapPreference);
+  }
+  const options = $derived([
+    ...(allowOff ? [{ value: 'off' as const, label: '默认（无外部底图）' }] : []),
+    { value: 'auto' as const, label: '自动（跟随外观）' },
+    { value: 'positron' as const, label: 'Positron' },
+    { value: 'dark' as const, label: 'Dark' },
+    { value: 'liberty' as const, label: 'Liberty' },
+  ]);
   let fallback: HTMLSelectElement;
   onMount(() => {
-    if (!popoverSupported()) { fallback.removeAttribute('inert'); fallback.removeAttribute('tabindex'); }
+    if (!popoverSupported()) {
+      fallback.removeAttribute('inert');
+      fallback.removeAttribute('tabindex');
+    }
     return bindVisualViewport(position);
   });
 </script>
+
 <svelte:window onresize={position} onscroll={position} />
 <div class="basemap-picker" data-glass-stable data-basemap-status={status} data-basemap-style={style}>
-  <select class="basemap-fallback" aria-label="底图样式" inert tabindex="-1" bind:this={fallback} value={preference} onchange={event => chooseNative(event.currentTarget.value)}>
-    <option value="auto">自动（跟随外观）</option>
-    <option value="positron">Positron</option>
-    <option value="dark">Dark</option>
-    <option value="liberty">Liberty</option>
-  </select>
-  <button bind:this={trigger} type="button" popovertarget={id} aria-label="切换底图" aria-expanded={expanded} aria-controls={id} class="button-secondary" title="切换底图" onclick={togglePanel}>
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5" /></svg><span>图层</span>
-  </button>
-  <div bind:this={panel} use:menuGlass {id} popover="auto" class="rn-glass-menu basemap-options" role="group" aria-label="底图样式" style:top={`${top}px`} style:right={`${right}px`}>
-    <p>地图底图</p>
-    {#each [{ value: 'auto', label: '自动（跟随外观）' }, { value: 'positron', label: 'Positron' }, { value: 'dark', label: 'Dark' }, { value: 'liberty', label: 'Liberty' }] as option, index}
-      <button type="button" class="rn-menu-option" onpointermove={() => indicator?.move(index)} onfocus={() => indicator?.move(index)} aria-pressed={preference === option.value} onclick={() => choose(option.value as BasemapPreference)}>{option.label}</button>
+  <select
+    class="basemap-fallback"
+    aria-label="底图样式"
+    inert
+    tabindex="-1"
+    bind:this={fallback}
+    value={preference}
+    onchange={(event) => chooseNative(event.currentTarget.value)}
+  >
+    {#each options as option (option.value)}
+      <option value={option.value}>{option.label}</option>
     {/each}
-    <small>自动模式：浅色 Positron · 深色 Dark</small>
+  </select>
+  <button
+    bind:this={trigger}
+    type="button"
+    popovertarget={id}
+    aria-label="切换底图"
+    aria-expanded={expanded}
+    aria-controls={id}
+    class="button-secondary"
+    title="切换底图"
+    onclick={togglePanel}
+  >
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5" /></svg
+    ><span>{preference === 'off' ? '底图（默认无）' : '图层'}</span>
+  </button>
+  <div
+    bind:this={panel}
+    use:menuGlass
+    {id}
+    popover="auto"
+    class="rn-glass-menu basemap-options"
+    role="group"
+    aria-label="底图样式"
+    style:top={`${top}px`}
+    style:right={`${right}px`}
+  >
+    <p>地图底图</p>
+    {#each options as option, index (option.value)}
+      <button
+        type="button"
+        class="rn-menu-option"
+        onpointermove={() => indicator?.move(index)}
+        onfocus={() => indicator?.move(index)}
+        aria-pressed={preference === option.value}
+        onclick={() => choose(option.value)}>{option.label}</button
+      >
+    {/each}
+    <small>{allowOff ? '默认仅本地轮廓；可选外部矢量底图' : '自动模式：浅色 Positron · 深色 Dark'}</small>
   </div>
 </div>
+
 <style>
-  .basemap-picker { display:inline-block; }
+  .basemap-picker {
+    display: inline-block;
+  }
   @supports selector(:popover-open) {
-    .basemap-fallback { position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip-path:inset(50%); border:0; white-space:nowrap; }
+    .basemap-fallback {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      margin: -1px;
+      padding: 0;
+      overflow: hidden;
+      clip-path: inset(50%);
+      border: 0;
+      white-space: nowrap;
+    }
   }
   @supports not selector(:popover-open) {
-    .basemap-picker > button, .basemap-options { display:none; }
-    .basemap-fallback { display:block; width:100%; min-height:2.75rem; border:1px solid var(--border); border-radius:var(--radius-control); background:var(--surface); color:var(--foreground); }
+    .basemap-picker > button,
+    .basemap-options {
+      display: none;
+    }
+    .basemap-fallback {
+      display: block;
+      width: 100%;
+      min-height: 2.75rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-control);
+      background: var(--surface);
+      color: var(--foreground);
+    }
   }
-  .basemap-picker > button { display:flex; align-items:center; gap:var(--space-2); background:var(--surface); }
-  .basemap-options { width:16rem; max-width:calc(100vw - var(--space-8)); max-height:calc(100dvh - var(--space-6)); }
-  .basemap-options p { padding:var(--space-2) var(--space-3); font-size:var(--text-small); font-weight: var(--weight-semibold); color:var(--muted-foreground); }
-  .basemap-options .rn-menu-option[aria-pressed='true'] { font-weight: var(--weight-semibold); }
-  .basemap-options button:focus-visible { z-index:5; outline-offset:-3px; }
-  small { display:block; padding:var(--space-2) var(--space-3); font-size:var(--text-small); color:var(--muted-foreground); }
-
+  .basemap-picker > button {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    background: var(--surface);
+  }
+  .basemap-options {
+    width: 16rem;
+    max-width: calc(100vw - var(--space-8));
+    max-height: calc(100dvh - var(--space-6));
+  }
+  .basemap-options p {
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+    color: var(--muted-foreground);
+  }
+  .basemap-options .rn-menu-option[aria-pressed='true'] {
+    font-weight: var(--weight-semibold);
+  }
+  .basemap-options button:focus-visible {
+    z-index: 5;
+    outline-offset: -3px;
+  }
+  small {
+    display: block;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-small);
+    color: var(--muted-foreground);
+  }
 </style>

@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import ExplorationMap from '#lib/components/ExplorationMap.svelte';
+  import ExplorationMap, { type FocusTarget } from '#lib/components/ExplorationMap.svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import MetricSummary from '#lib/components/MetricSummary.svelte';
   import PageHeader from '#lib/components/PageHeader.svelte';
@@ -12,9 +12,12 @@
     readCatalog,
     readCells,
     readDetail,
+    readMarkers,
     type ExplorationCatalog,
     type ExplorationCells,
     type ExplorationDetail,
+    type ExplorationMarker,
+    type ExplorationMarkersResponse,
     type Layer,
     type Scope,
     type Viewport,
@@ -22,16 +25,25 @@
   import { pageTitle } from '#lib/site.ts';
   import { useViewContext } from '#lib/view-context.ts';
 
+  type YearSelection = number | 'all';
+  type KindFilter = 'all' | 'boundary' | 'nearby';
+  type SortKey = 'distance' | 'count' | 'recent' | 'first';
+
   const view = useViewContext();
   const number = new Intl.NumberFormat('zh-CN');
   const metres = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1 });
   const count = (value: number | null | undefined) => (value == null ? '—' : number.format(value));
   const km = (value: number | null | undefined) => (value == null ? '—' : `${metres.format(value / 1000)} km`);
+
+  type NavState = { scope: Scope; code: string; year: YearSelection; layer: Layer };
+
+  let pendingNav = $state<NavState | null>(null);
+  let navSeq = 0;
+
   const section = $derived(page.url.searchParams.get('scope'));
-  const scope = $derived<Scope | null>(
-    section === 'global' || section === 'region' || section === 'city' ? section : null,
-  );
-  const code = $derived(page.url.searchParams.get('code') ?? 'all');
+  const urlScope = $derived<Scope>(section === 'region' || section === 'city' ? section : 'global');
+  const urlCode = $derived(urlScope === 'global' ? 'all' : (page.url.searchParams.get('code') ?? 'all'));
+  const urlLayer = $derived<Layer>(page.url.searchParams.get('layer') === 'new' ? 'new' : 'heatmap');
   const path = $derived(view.href('/footprints/exploration'));
   const currentYear = $derived(
     Number(
@@ -41,64 +53,198 @@
       }).format(new Date()),
     ),
   );
-  const year = $derived.by(() => {
-    const value = Number(page.url.searchParams.get('year'));
-    return Number.isInteger(value) && value >= 1900 && value <= currentYear ? value : currentYear;
-  });
-  const offset = $derived.by(() => {
-    const value = Number(page.url.searchParams.get('offset'));
-    return Number.isInteger(value) && value >= 0 && value <= 1000000 ? value : 0;
-  });
-  const href = (nextScope: Scope, nextCode: string, nextYear = year) =>
-    `${path}?${new URLSearchParams({ scope: nextScope, code: nextCode, year: String(nextYear) })}`;
-  const catalogHref = (nextOffset: number) => (nextOffset > 0 ? `${path}?offset=${nextOffset}` : path);
 
-  let mounted = $state(false),
-    disposed = false;
+  const urlYear = $derived.by<YearSelection | null>(() => {
+    const raw = page.url.searchParams.get('year');
+    if (raw === 'all') return 'all';
+    if (!raw) return null;
+    const parsed = Number(raw);
+    return Number.isInteger(parsed) && parsed >= 1900 && parsed <= currentYear ? parsed : null;
+  });
+
+  const scope = $derived<Scope>(pendingNav?.scope ?? urlScope);
+  const code = $derived(pendingNav?.code ?? urlCode);
+  const layer = $derived<Layer>(pendingNav?.layer ?? urlLayer);
+  const selectedYear = $derived<YearSelection>(pendingNav?.year ?? urlYear ?? (layer === 'new' ? currentYear : 'all'));
+  const isAllYears = $derived(selectedYear === 'all');
+  const numericYear = $derived(selectedYear === 'all' ? currentYear : selectedYear);
+  const yearLabel = $derived(selectedYear === 'all' ? '全部年份' : `${selectedYear} 年`);
+
+  const href = (
+    nextScope: Scope,
+    nextCode: string,
+    nextYear: YearSelection = selectedYear,
+    nextLayer: Layer = layer,
+  ) => {
+    const params = new URLSearchParams();
+    if (nextScope !== 'global' || nextCode !== 'all') {
+      params.set('scope', nextScope);
+      params.set('code', nextCode);
+    }
+    params.set('year', String(nextYear));
+    if (nextLayer !== 'heatmap') params.set('layer', nextLayer);
+    const qs = params.toString();
+    return qs ? `${path}?${qs}` : path;
+  };
+
+  let mounted = $state(false);
+  let disposed = false;
+  let mapRef = $state<ReturnType<typeof ExplorationMap> | undefined>(undefined);
   let catalog = $state.raw<ExplorationCatalog | null>(null);
+  let markersData = $state.raw<ExplorationMarkersResponse | null>(null);
   let detail = $state.raw<ExplorationDetail | null>(null);
   let grid = $state.raw<ExplorationCells | null>(null);
   let viewport = $state.raw<Viewport | null>(null);
-  let layer = $state<Layer>('heatmap');
-  let catalogError = $state(''),
-    detailError = $state(''),
-    gridError = $state('');
-  let catalogRetry = $state(0),
-    detailRetry = $state(0),
-    gridRetry = $state(0);
-  let catalogId = 0,
-    detailId = 0,
-    gridId = 0;
+  let focusTarget = $state.raw<FocusTarget | null>(null);
+  let focusSeq = 0;
+
+  let kindFilter = $state<KindFilter>('all');
+  let sortKey = $state<SortKey>('distance');
+  let cityFilterText = $state('');
+
+  let catalogError = $state('');
+  let markersError = $state('');
+  let detailError = $state('');
+  let gridError = $state('');
+
+  let catalogRetry = $state(0);
+  let markersRetry = $state(0);
+  let detailRetry = $state(0);
+  let gridRetry = $state(0);
+
+  let catalogId = 0;
+  let markersId = 0;
+  let detailId = 0;
+  let gridId = 0;
   let identity: string | null | undefined;
-  const boundary = $derived(catalog?.items.filter((city) => city.kind === 'boundary') ?? []);
-  const nearby = $derived(catalog?.items.filter((city) => city.kind === 'nearby') ?? []);
+
   const years = $derived(
-    Array.from({ length: currentYear - Math.min(year, detail?.first_year ?? year) + 1 }, (_, i) => currentYear - i),
+    Array.from(
+      { length: currentYear - Math.min(numericYear, detail?.first_year ?? numericYear) + 1 },
+      (_, i) => currentYear - i,
+    ),
   );
   const peak = $derived(Math.max(1, ...(detail?.months.map((month) => month.new_cells ?? 0) ?? [])));
   const versionMatches = (a: { source_version: number; atlas_version: string }, b: typeof a) =>
     a.source_version === b.source_version && a.atlas_version === b.atlas_version;
 
+  const rawMarkers = $derived(markersData?.items ?? []);
+  const scopedMarkers = $derived.by(() => {
+    if (scope === 'region') return rawMarkers.filter((item) => item.region_code === code);
+    return rawMarkers;
+  });
+
+  const filteredCities = $derived.by(() => {
+    const query = cityFilterText.trim().toLowerCase();
+    const list = scopedMarkers.filter((item) => {
+      if (kindFilter !== 'all' && item.kind !== kindFilter) return false;
+      if (
+        query &&
+        !item.name.toLowerCase().includes(query) &&
+        !(item.region_name ?? '').toLowerCase().includes(query)
+      ) {
+        return false;
+      }
+      return true;
+    });
+    return [...list].sort((a, b) => {
+      if (sortKey === 'distance') {
+        const diff = (b.distance_m ?? -1) - (a.distance_m ?? -1);
+        if (diff !== 0) return diff;
+      } else if (sortKey === 'count') {
+        if (b.activity_count !== a.activity_count) return b.activity_count - a.activity_count;
+      } else if (sortKey === 'first') {
+        if (a.first_date !== b.first_date) return a.first_date.localeCompare(b.first_date);
+      } else if (sortKey === 'recent') {
+        if (b.last_date !== a.last_date) return b.last_date.localeCompare(a.last_date);
+      }
+      return b.activity_count - a.activity_count || a.code.localeCompare(b.code);
+    });
+  });
+
+  const hasHistoricalData = $derived((catalog?.boundary_count ?? 0) + (catalog?.nearby_count ?? 0) > 0);
+
   function report(error: unknown) {
     if (error instanceof FootprintError && error.status === 401) {
-      catalog = detail = grid = null;
+      catalog = markersData = detail = grid = null;
       viewport = null;
       disposed = true;
       window.location.replace('/admin?reason=changed');
     }
     return error instanceof FootprintError ? error.message : '无法读取城市探索，请重试';
   }
+
   function retry() {
     catalogRetry += 1;
+    markersRetry += 1;
     detailRetry += 1;
     gridRetry += 1;
   }
+
+  function navigate(nextScope: Scope, nextCode: string, nextYear: YearSelection, nextLayer: Layer) {
+    const token = ++navSeq;
+    pendingNav = { scope: nextScope, code: nextCode, year: nextYear, layer: nextLayer };
+    void goto(href(nextScope, nextCode, nextYear, nextLayer)).finally(() => {
+      if (navSeq === token) pendingNav = null;
+    });
+  }
+
   function changeScope(input: string) {
     const [nextScope, nextCode] = input.split(':');
     if (nextScope === 'global' || nextScope === 'region' || nextScope === 'city') {
-      void goto(href(nextScope, nextCode));
+      if (nextScope === 'city') {
+        const marker = rawMarkers.find((item) => item.code === nextCode);
+        if (marker) {
+          focusTarget = {
+            bounds: marker.bounds,
+            center: [marker.lon, marker.lat],
+            zoom: marker.kind === 'nearby' ? 9.5 : 11,
+            seq: ++focusSeq,
+          };
+        }
+      } else if (nextScope === 'global') {
+        focusTarget = null;
+        mapRef?.resetToOverview();
+      }
+      navigate(nextScope, nextCode, selectedYear, layer);
     }
   }
+
+  function selectCityMarker(marker: ExplorationMarker) {
+    focusTarget = {
+      bounds: marker.bounds,
+      center: [marker.lon, marker.lat],
+      zoom: marker.kind === 'nearby' ? 9.5 : 11,
+      seq: ++focusSeq,
+    };
+    navigate('city', marker.code, selectedYear, layer);
+  }
+
+  function switchLayer(next: Layer) {
+    if (layer === next) return;
+    grid = null;
+    const targetYear = next === 'new' && selectedYear === 'all' ? currentYear : selectedYear;
+    navigate(scope, code, targetYear, next);
+  }
+
+  function switchYear(value: string) {
+    if (value === 'all') {
+      grid = null;
+      navigate(scope, code, 'all', 'heatmap');
+      return;
+    }
+    const nextYear = Number(value);
+    if (Number.isInteger(nextYear)) {
+      grid = null;
+      navigate(scope, code, nextYear, layer);
+    }
+  }
+
+  function switchToAllYearsHeatmap() {
+    grid = null;
+    navigate(scope, code, 'all', 'heatmap');
+  }
+
   onMount(() => {
     mounted = true;
     return () => {
@@ -110,28 +256,28 @@
     const owner = page.data.user?.id;
     if (owner === identity) return;
     identity = owner;
-    catalog = detail = grid = null;
+    catalog = markersData = detail = grid = null;
     viewport = null;
     retry();
   });
+
   $effect(() => {
-    const currentOffset = offset;
     void catalogRetry;
     if (!mounted || !page.data.user) return;
-    const id = ++catalogId,
-      controller = new AbortController();
+    const id = ++catalogId;
+    const controller = new AbortController();
     let poll: ReturnType<typeof setTimeout>;
     catalogError = '';
-    catalog = null;
     async function load() {
       try {
-        const result = await readCatalog(currentOffset, controller.signal);
+        const result = await readCatalog(0, controller.signal);
         if (disposed || controller.signal.aborted || id !== catalogId) return;
         catalog = result;
-        if (result.status === 'pending')
+        if (result.status === 'pending') {
           poll = setTimeout(() => {
             void load();
           }, 3500);
+        }
       } catch (error) {
         if (!disposed && !controller.signal.aborted && id === catalogId) catalogError = report(error);
       }
@@ -142,48 +288,87 @@
       clearTimeout(poll);
     };
   });
+
   $effect(() => {
-    const selected = scope,
-      selectedCode = code,
-      selectedYear = year;
-    void detailRetry;
-    detail = grid = null;
-    viewport = null;
-    detailError = gridError = '';
-    if (!mounted || !page.data.user || !selected) return;
-    const id = ++detailId,
-      controller = new AbortController();
+    const targetYear = selectedYear;
+    void markersRetry;
+    if (!mounted || !page.data.user) return;
+    const id = ++markersId;
+    const controller = new AbortController();
     let poll: ReturnType<typeof setTimeout>;
-    async function load(target: Scope) {
+    markersError = '';
+    async function load() {
       try {
-        const result = await readDetail(target, selectedCode, selectedYear, controller.signal);
-        if (disposed || controller.signal.aborted || id !== detailId) return;
-        detail = result;
-        if (result.status === 'pending')
+        const result = await readMarkers(targetYear, controller.signal);
+        if (disposed || controller.signal.aborted || id !== markersId) return;
+        markersData = result;
+        if (result.status === 'pending') {
           poll = setTimeout(() => {
-            void load(target);
+            void load();
           }, 3500);
+        }
       } catch (error) {
-        if (!disposed && !controller.signal.aborted && id === detailId) detailError = report(error);
+        if (!disposed && !controller.signal.aborted && id === markersId) markersError = report(error);
       }
     }
-    void load(selected);
+    void load();
     return () => {
       controller.abort();
       clearTimeout(poll);
     };
   });
+
   $effect(() => {
-    const result = detail,
-      box = viewport,
-      mode = layer;
+    const selected = scope;
+    const selectedCode = code;
+    const targetYear = numericYear;
+    const cumulative = isAllYears;
+    void detailRetry;
+    detail = grid = null;
+    viewport = null;
+    detailError = gridError = '';
+    if (!mounted || !page.data.user) return;
+    const id = ++detailId;
+    const controller = new AbortController();
+    let poll: ReturnType<typeof setTimeout>;
+    async function load() {
+      try {
+        const result = await readDetail(selected, selectedCode, targetYear, controller.signal, cumulative);
+        if (disposed || controller.signal.aborted || id !== detailId) return;
+        detail = result;
+        if (result.status === 'pending') {
+          poll = setTimeout(() => {
+            void load();
+          }, 3500);
+        }
+      } catch (error) {
+        if (!disposed && !controller.signal.aborted && id === detailId) detailError = report(error);
+      }
+    }
+    void load();
+    return () => {
+      controller.abort();
+      clearTimeout(poll);
+    };
+  });
+
+  $effect(() => {
+    const result = detail;
+    const box = viewport;
+    const mode = layer;
+    const cumulative = isAllYears;
+    const targetYear = numericYear;
     void gridRetry;
     if (!mounted || !result || result.status !== 'ready' || result.city?.kind === 'nearby') return;
-    const id = ++gridId,
-      controller = new AbortController();
+    if (result.scope === 'global' && box === null) {
+      grid = null;
+      return;
+    }
+    const id = ++gridId;
+    const controller = new AbortController();
     let poll: ReturnType<typeof setTimeout>;
     gridError = '';
-    void readCells(result.scope, result.code, result.year, mode, box, controller.signal)
+    void readCells(result.scope, result.code, targetYear, mode, box, controller.signal, cumulative)
       .then((data) => {
         if (disposed || controller.signal.aborted || id !== gridId) return;
         if (!versionMatches(result, data)) {
@@ -192,10 +377,11 @@
         }
         grid = data;
         if (data.status === 'failed') gridError = '无法读取格网，请重试';
-        if (data.status === 'pending')
+        if (data.status === 'pending') {
           poll = setTimeout(() => {
             gridRetry += 1;
           }, 3500);
+        }
       })
       .catch((error) => {
         if (!disposed && !controller.signal.aborted && id === gridId) gridError = report(error);
@@ -213,10 +399,7 @@
 
 <PageHeader title="城市探索">
   {#snippet actions()}
-    <nav class="settings-tabs" aria-label="城市探索">
-      <a href={path} aria-current={scope ? undefined : 'page'}>城市图鉴</a>
-      <a href={href(scope ?? 'global', scope ? code : 'all')} aria-current={scope ? 'page' : undefined}>探索详情</a>
-    </nav>
+    <a class="button-secondary" href={view.href('/footprints')}>返回运动足迹</a>
   {/snippet}
 </PageHeader>
 
@@ -230,71 +413,295 @@
     <button type="button" class="button-secondary" onclick={action}>重试</button>
   </FeedbackState>
 {/snippet}
-{#snippet cityList(title: string, items: NonNullable<typeof catalog>['items'])}
-  <section class="panel">
-    <h2>{title}</h2>
-    {#if items.length}
-      <ul class="cities">
-        {#each items as city (city.code)}
-          <li>
-            <a href={href('city', city.code)} class="city-link">
-              <span
-                ><strong>{city.name}</strong>{#if city.region_name}<small>{city.region_name}</small>{/if}</span
-              >
-              <span
-                ><strong>{city.distance_m === null ? `${count(city.activity_count)} 条` : km(city.distance_m)}</strong>
-                <small>{city.kind === 'boundary' ? '首次跑步' : '首次附近匹配'} {city.first_date}</small></span
-              >
-            </a>
-          </li>
-        {/each}
-      </ul>
-    {:else}
-      <p class="secondary">暂无记录</p>
-    {/if}
-  </section>
-{/snippet}
 
 <div class="exploration">
-  <a class="back-link" href={view.href('/footprints')}>返回运动足迹</a>
-  {#if !scope}
-    {#if catalogError}
-      {@render failure(catalogError, retry)}
-    {:else if !catalog}
-      <PageSkeleton title="正在读取城市图鉴…" />
-    {:else if catalog.status === 'pending'}
-      {@render waiting('正在整理历史足迹')}
-    {:else if catalog.status === 'failed'}
-      {@render failure('城市图鉴整理失败，请稍后重试', retry)}
-    {:else if catalog.activity_count === 0}
-      <FeedbackState title="还没有跑步记录">
-        <a class="button-secondary" href={view.href('/activities')}>查看活动</a>
-      </FeedbackState>
-    {:else if catalog.activity_count === catalog.no_track_count}
-      <FeedbackState title="暂无带轨迹的活动" />
+  {#if catalogError}
+    {@render failure(catalogError, retry)}
+  {:else if markersError && !markersData}
+    {@render failure(markersError, retry)}
+  {:else if !catalog && !markersData}
+    <PageSkeleton title="正在读取城市探索…" />
+  {:else if catalog?.status === 'pending' && !markersData?.items.length}
+    {@render waiting('正在整理历史足迹')}
+  {:else if catalog?.status === 'failed'}
+    {@render failure('城市探索整理失败，请稍后重试', retry)}
+  {:else if catalog && catalog.activity_count === 0}
+    <FeedbackState title="还没有跑步记录">
+      <a class="button-secondary" href={view.href('/activities')}>查看活动</a>
+    </FeedbackState>
+  {:else if catalog && catalog.activity_count === catalog.no_track_count}
+    <FeedbackState title="暂无带轨迹的活动" />
+  {:else}
+    {#if scope === 'city' && detail?.city?.kind === 'nearby'}
+      <MetricSummary
+        appearance="default"
+        items={[
+          { label: '附近有记录', value: `${count(detail.city.activity_count)} 条`, icon: 'count' },
+          { label: '首次匹配到附近轨迹', value: detail.city.first_date, icon: 'days' },
+          { label: '匹配方式', value: '附近点范围', icon: 'distance' },
+        ]}
+      />
+    {:else if scope === 'city' && detail?.city}
+      <MetricSummary
+        appearance="default"
+        items={[
+          { label: '城市边界内累计跑量', value: km(detail.city.distance_m), icon: 'distance' },
+          { label: '首次跑步记录', value: detail.city.first_date, icon: 'days' },
+          {
+            label: isAllYears ? '累计探索格网' : '所选年新增格网',
+            value: `${count(isAllYears ? detail.cumulative_cells : detail.new_cells)} 格`,
+            icon: 'count',
+          },
+        ]}
+      />
     {:else}
       <MetricSummary
         items={[
-          { label: '跑过的城市', value: count(catalog.boundary_count), icon: 'count' },
-          { label: '城市边界内累计跑量', value: km(catalog.distance_m), icon: 'distance' },
-          { label: '附近有记录的城市', value: count(catalog.nearby_count), icon: 'count' },
+          {
+            label: '边界内城市',
+            value: count(catalog?.boundary_count ?? markersData?.boundary_count),
+            icon: 'count',
+          },
+          { label: '城市边界内累计跑量', value: km(catalog?.distance_m), icon: 'distance' },
+          {
+            label: isAllYears ? '累计探索格网' : '所选年新增格网',
+            value: `${count(isAllYears ? detail?.cumulative_cells : detail?.new_cells)} 格`,
+            icon: 'days',
+          },
         ]}
       />
-      <div class="columns">
-        {@render cityList('跑过的城市', boundary)}
-        {@render cityList('附近有记录', nearby)}
+    {/if}
+
+    <div class="filters">
+      <div class="scope-heading">
+        {#if scope !== 'global'}
+          <nav class="breadcrumb" aria-label="探索层级">
+            <button type="button" class="crumb-link" onclick={() => changeScope('global:all')}>全域</button>
+            {#if detail?.city?.region_name}
+              <span aria-hidden="true">/</span>
+              <span>{detail.city.region_name}</span>
+            {/if}
+          </nav>
+        {/if}
+        <h2>{detail?.name ?? (scope === 'global' ? '全国及全球足迹总览' : '足迹覆盖')}</h2>
       </div>
-      {#if catalog.total > catalog.limit}
-        <nav class="pagination" aria-label="城市图鉴分页">
-          {#if offset > 0}<a class="button-secondary" href={catalogHref(Math.max(0, offset - catalog.limit))}>上一页</a
-            >{/if}
-          <span>{offset + 1}–{offset + catalog.items.length} / {catalog.total}</span>
-          {#if offset + catalog.limit < catalog.total}<a
-              class="button-secondary"
-              href={catalogHref(offset + catalog.limit)}>下一页</a
-            >{/if}
-        </nav>
-      {/if}
+      <div class="filter-controls">
+        <label
+          ><span>范围</span>
+          <select
+            class="text-field"
+            value={`${scope}:${code}`}
+            onchange={(event) => changeScope(event.currentTarget.value)}
+          >
+            <option value="global:all">全域</option>
+            {#each markersData?.regions ?? catalog?.regions ?? [] as region (region.code)}
+              <option value={`region:${region.code}`}>{region.name}</option>
+            {/each}
+            {#each rawMarkers as city (city.code)}
+              <option value={`city:${city.code}`}>{city.name}</option>
+            {/each}
+            {#if scope === 'city' && !rawMarkers.some((item) => item.code === code)}
+              <option value={`city:${code}`}>{detail?.name ?? '所选城市'}</option>
+            {/if}
+            {#if scope === 'region' && !(markersData?.regions ?? catalog?.regions ?? []).some((item) => item.code === code)}
+              <option value={`region:${code}`}>{detail?.name ?? '所选区域'}</option>
+            {/if}
+          </select>
+        </label>
+        <label
+          ><span>年份</span>
+          <select
+            class="text-field"
+            value={String(selectedYear)}
+            onchange={(event) => switchYear(event.currentTarget.value)}
+          >
+            <option value="all">全部年份</option>
+            {#each years as option (option)}<option value={String(option)}>{option}</option>{/each}
+          </select>
+        </label>
+      </div>
+    </div>
+
+    {#if detailError}
+      {@render failure(detailError, retry)}
+    {:else if detail?.status === 'failed'}
+      {@render failure('足迹整理失败，请稍后重试', retry)}
+    {/if}
+
+    <div class="columns">
+      <section class="panel map-panel">
+        <div class="panel-header">
+          <h2>足迹覆盖</h2>
+          <div class="settings-tabs" role="group" aria-label="格网图层">
+            <button type="button" aria-pressed={layer === 'heatmap'} onclick={() => switchLayer('heatmap')}
+              >覆盖热图</button
+            >
+            <button type="button" aria-pressed={layer === 'new'} onclick={() => switchLayer('new')}>首次探索</button>
+          </div>
+        </div>
+
+        {#if markersData?.status === 'pending' || detail?.status === 'pending'}
+          <p class="status-note" role="status">正在整理部分足迹数据，当前先展示可用部分…</p>
+        {/if}
+
+        {#if layer === 'new' && detail?.status === 'ready' && detail.new_cells === 0 && hasHistoricalData}
+          <div class="empty-year-banner" role="status">
+            <span>{selectedYear} 年暂无新增探索格网。</span>
+            <button type="button" class="button-secondary" onclick={switchToAllYearsHeatmap}>查看全部年份</button>
+          </div>
+        {/if}
+
+        {#if gridError}
+          {@render failure(gridError, () => {
+            gridRetry += 1;
+          })}
+        {/if}
+        {#if grid?.status === 'pending'}
+          <p class="status-note" role="status">精细格网整理中…</p>
+        {/if}
+
+        <ExplorationMap
+          bind:this={mapRef}
+          markers={rawMarkers}
+          data={grid}
+          {layer}
+          {scope}
+          selectedCode={scope === 'city' ? code : ''}
+          {yearLabel}
+          {focusTarget}
+          onviewport={(next) => {
+            viewport = next;
+          }}
+          onselectcity={selectCityMarker}
+          onresetscope={() => {
+            if (scope !== 'global') navigate('global', 'all', selectedYear, layer);
+          }}
+        />
+      </section>
+
+      <div class="side-column">
+        <section class="panel" aria-label="城市图鉴">
+          <div class="panel-header">
+            <h2>城市图鉴（{filteredCities.length}）</h2>
+            <select class="text-field sort-select" aria-label="城市排序" bind:value={sortKey}>
+              <option value="distance">按跑量</option>
+              <option value="count">按次数</option>
+              <option value="recent">按最近</option>
+              <option value="first">按首跑</option>
+            </select>
+          </div>
+
+          <div class="list-controls">
+            <div class="mode-switch compact-switch" role="group" aria-label="城市类别筛选">
+              <button type="button" aria-pressed={kindFilter === 'all'} onclick={() => (kindFilter = 'all')}
+                >全部</button
+              >
+              <button type="button" aria-pressed={kindFilter === 'boundary'} onclick={() => (kindFilter = 'boundary')}
+                >跑过</button
+              >
+              <button type="button" aria-pressed={kindFilter === 'nearby'} onclick={() => (kindFilter = 'nearby')}
+                >附近</button
+              >
+            </div>
+            <input
+              type="search"
+              class="text-field city-search"
+              aria-label="筛选城市名称"
+              placeholder="搜索城市或省份"
+              bind:value={cityFilterText}
+            />
+          </div>
+
+          {#if filteredCities.length}
+            <ul class="cities">
+              {#each filteredCities as city (city.code)}
+                <li>
+                  <a
+                    href={href('city', city.code)}
+                    class="city-link"
+                    class:active={scope === 'city' && code === city.code}
+                    aria-current={scope === 'city' && code === city.code ? 'page' : undefined}
+                    onclick={(event) => {
+                      if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+                        event.preventDefault();
+                        selectCityMarker(city);
+                      }
+                    }}
+                  >
+                    <span>
+                      <strong>
+                        {city.name}
+                        {#if city.is_new_in_year}<em class="new-badge">首跑</em>{/if}
+                      </strong>
+                      {#if city.region_name}<small>{city.region_name}</small>{/if}
+                    </span>
+                    <span>
+                      <strong
+                        >{city.distance_m === null ? `${count(city.activity_count)} 条` : km(city.distance_m)}</strong
+                      >
+                      <small>{city.kind === 'boundary' ? '首次跑步' : '附近匹配'} {city.first_date}</small>
+                    </span>
+                  </a>
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <p class="secondary empty-list">当前筛选下暂无城市记录</p>
+          {/if}
+        </section>
+
+        <section class="panel trend">
+          <h2>覆盖趋势</h2>
+          {#if detail?.city?.kind === 'nearby'}
+            <p class="secondary">附近匹配城市不生成 100 m 边界格网，可切换至全域或具体边界城市查看格网趋势。</p>
+            <button type="button" class="button-secondary mt-3" onclick={() => changeScope('global:all')}
+              >回到全域总览</button
+            >
+          {:else if detail}
+            <p class="cumulative">
+              <strong>{count(detail.cumulative_cells)}</strong> 格
+              <span class="secondary"
+                >{isAllYears ? '全部年份累计' : numericYear === currentYear ? '截至当前累计' : '年末累计'}</span
+              >
+            </p>
+            <p class="secondary">
+              {isAllYears ? '各月首次探索分布（全部年份）' : `${numericYear} 年每月新增格网`}
+            </p>
+            <div class="chart" aria-hidden="true">
+              {#each detail.months as month (month.month)}
+                <div class="month">
+                  <div class="bar-track">
+                    <div class="bar" style:height={`${(100 * (month.new_cells ?? 0)) / peak}%`}></div>
+                  </div>
+                  {month.month}
+                </div>
+              {/each}
+            </div>
+            <details>
+              <summary>查看逐月数据</summary>
+              <table>
+                <thead
+                  ><tr><th scope="col">月份</th><th scope="col">新增格网</th><th scope="col">累计格网</th></tr></thead
+                >
+                <tbody>
+                  {#each detail.months as month (month.month)}
+                    <tr>
+                      <th scope="row">{month.month} 月</th>
+                      <td>{count(month.new_cells)}</td>
+                      <td>{count(month.cumulative_cells)}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </details>
+          {:else}
+            <p class="secondary">正在计算格网趋势…</p>
+          {/if}
+        </section>
+      </div>
+    </div>
+
+    {#if catalog}
       <dl class="quality">
         <div>
           <dt>未分配跑量</dt>
@@ -310,161 +717,19 @@
             <dd>{count(catalog.unmatched_count)} 条</dd>
           </div>
         {/if}
+        {#if (catalog.nearby_count ?? 0) > 0}
+          <div>
+            <dt>附近有记录的城市</dt>
+            <dd>{count(catalog.nearby_count)} 座</dd>
+          </div>
+        {/if}
       </dl>
     {/if}
-  {:else}
-    <div class="filters">
-      <div>
-        {#if detail?.city?.region_name}<p class="secondary">{detail.city.region_name}</p>{/if}
-        <h2>{detail?.name ?? '足迹覆盖'}</h2>
-      </div>
-      <div class="filter-controls">
-        <label
-          ><span>范围</span>
-          <select
-            class="text-field"
-            value={`${scope}:${code}`}
-            onchange={(event) => changeScope(event.currentTarget.value)}
-          >
-            <option value="global:all">全域</option>
-            {#each catalog?.regions ?? [] as region (region.code)}
-              <option value={`region:${region.code}`}>{region.name}</option>
-            {/each}
-            {#each catalog?.items ?? [] as city (city.code)}
-              <option value={`city:${city.code}`}>{city.name}</option>
-            {/each}
-            {#if scope === 'city' && !catalog?.items.some((item) => item.code === code)}
-              <option value={`city:${code}`}>{detail?.name ?? '所选城市'}</option>
-            {/if}
-            {#if scope === 'region' && !catalog?.regions.some((item) => item.code === code)}
-              <option value={`region:${code}`}>{detail?.name ?? '所选区域'}</option>
-            {/if}
-          </select>
-        </label>
-        <label
-          ><span>年份</span>
-          <select
-            class="text-field"
-            value={year}
-            onchange={(event) => {
-              if (scope) void goto(href(scope, code, Number(event.currentTarget.value)));
-            }}
-          >
-            {#each years as option (option)}<option value={option}>{option}</option>{/each}
-          </select>
-        </label>
-      </div>
-    </div>
-    {#if detailError}
-      {@render failure(detailError, retry)}
-    {:else if !detail}
-      <PageSkeleton title="正在读取探索详情…" />
-    {:else if detail.status === 'pending'}
-      {@render waiting('正在整理历史足迹')}
-    {:else if detail.status === 'failed'}
-      {@render failure('足迹整理失败，请稍后重试', retry)}
-    {:else if detail.city?.kind === 'nearby'}
-      <MetricSummary
-        appearance="default"
-        items={[
-          { label: '附近有记录', value: `${count(detail.city.activity_count)} 条`, icon: 'count' },
-          { label: '首次匹配到附近轨迹', value: detail.city.first_date, icon: 'days' },
-        ]}
-      />
-      <a class="button-secondary" href={href('global', 'all')}>查看全域格网</a>
-    {:else}
-      <MetricSummary
-        appearance="default"
-        items={[
-          ...(detail.city
-            ? [
-                { label: '城市边界内累计跑量', value: km(detail.city.distance_m), icon: 'distance' as const },
-                { label: '首次跑步记录', value: detail.city.first_date, icon: 'days' as const },
-              ]
-            : []),
-          { label: '所选年新增格网', value: `${count(detail.new_cells)} 格`, icon: 'count' },
-        ]}
-      />
-      <div class="columns">
-        <section class="panel">
-          <div class="panel-header">
-            <h2>足迹覆盖</h2>
-            <div class="settings-tabs" role="group" aria-label="格网图层">
-              <button
-                type="button"
-                aria-pressed={layer === 'heatmap'}
-                onclick={() => {
-                  layer = 'heatmap';
-                  grid = null;
-                }}>覆盖热图</button
-              >
-              <button
-                type="button"
-                aria-pressed={layer === 'new'}
-                onclick={() => {
-                  layer = 'new';
-                  grid = null;
-                }}>新增格网</button
-              >
-            </div>
-          </div>
-          {#if gridError}{@render failure(gridError, () => {
-              gridRetry += 1;
-            })}{/if}
-          {#if grid?.status === 'pending'}{@render waiting('正在整理历史足迹')}{/if}
-          {#if grid?.status === 'ready' && !grid.cells.length}
-            <FeedbackState title={viewport ? '当前视口暂无格网' : '所选年份暂无格网'} />
-          {/if}
-          {#key `${scope}:${code}:${year}:${detail.source_version}`}
-            <ExplorationMap
-              data={grid}
-              {layer}
-              onviewport={(next) => {
-                viewport = next;
-              }}
-            />
-          {/key}
-        </section>
-        <section class="panel trend">
-          <h2>覆盖趋势</h2>
-          <p class="cumulative">
-            <strong>{count(detail.cumulative_cells)}</strong> 格
-            <span class="secondary">{year === currentYear ? '截至当前累计' : '年末累计'}</span>
-          </p>
-          <p class="secondary">{year} 年每月新增格网</p>
-          <div class="chart" aria-hidden="true">
-            {#each detail.months as month (month.month)}
-              <div class="month">
-                <div class="bar-track">
-                  <div class="bar" style:height={`${(100 * (month.new_cells ?? 0)) / peak}%`}></div>
-                </div>
-                {month.month}
-              </div>
-            {/each}
-          </div>
-          <details>
-            <summary>查看逐月数据</summary>
-            <table>
-              <thead><tr><th scope="col">月份</th><th scope="col">新增格网</th><th scope="col">累计格网</th></tr></thead
-              >
-              <tbody>
-                {#each detail.months as month (month.month)}
-                  <tr
-                    ><th scope="row">{month.month} 月</th><td>{count(month.new_cells)}</td><td
-                      >{count(month.cumulative_cells)}</td
-                    ></tr
-                  >
-                {/each}
-              </tbody>
-            </table>
-          </details>
-        </section>
-      </div>
-    {/if}
+
     <details class="method">
       <summary>统计口径</summary>
       <p>
-        按轨迹在城市边界内的长度比例分摊活动里程。跨城活动可计入多个城市。首次跑步和新增格网以现存活动的最早运动日期为准。
+        按轨迹在城市边界内的长度比例分摊活动里程。跨城活动可计入多个城市。首次跑步和新增格网以现存活动的最早运动日期为准。本地默认轮廓仅在浏览器内渲染，不向外部地图发送轨迹。
       </p>
     </details>
   {/if}
@@ -476,18 +741,16 @@
     gap: var(--space-4);
     padding-top: var(--space-3);
   }
-  .back-link {
-    justify-self: start;
-    min-height: 2.75rem;
-    display: inline-flex;
-    align-items: center;
-    color: var(--primary);
-  }
   .columns {
     display: grid;
     grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
     gap: var(--space-4);
     align-items: start;
+  }
+  .side-column {
+    display: grid;
+    gap: var(--space-4);
+    min-width: 0;
   }
   .panel {
     min-width: 0;
@@ -501,11 +764,26 @@
     font-size: var(--text-section);
     font-weight: var(--weight-semibold);
   }
+  .scope-heading {
+    display: grid;
+    gap: var(--space-1);
+  }
+  .breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--muted-foreground);
+    font-size: var(--text-small);
+  }
+  .crumb-link {
+    color: var(--primary);
+    font-weight: var(--weight-medium);
+  }
   .panel-header,
   .filters,
   .filter-controls,
-  .pagination,
-  .quality {
+  .quality,
+  .list-controls {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -518,6 +796,10 @@
   .panel-header {
     margin-bottom: var(--space-3);
   }
+  .list-controls {
+    justify-content: space-between;
+    margin-bottom: var(--space-2);
+  }
   .filter-controls label {
     display: flex;
     align-items: center;
@@ -527,18 +809,49 @@
   .filter-controls label span {
     white-space: nowrap;
   }
-  select {
+  select,
+  .city-search {
     min-height: 2.75rem;
+  }
+  .filter-controls select {
     max-width: 12rem;
+  }
+  .sort-select {
+    max-width: 7.5rem;
+    font-size: var(--text-small);
+  }
+  .city-search {
+    flex: 1 1 8.5rem;
+    min-width: 0;
   }
   .secondary,
   small,
-  .quality dt {
+  .quality dt,
+  .status-note {
     color: var(--muted-foreground);
+    font-size: var(--text-small);
+  }
+  .status-note {
+    margin-bottom: var(--space-2);
+  }
+  .empty-year-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    margin-bottom: var(--space-3);
+    border-radius: var(--radius-control);
+    border: 1px solid var(--warning-border);
+    background: var(--warning-soft);
+    color: var(--warning);
     font-size: var(--text-small);
   }
   .cities {
     margin-top: var(--space-2);
+    max-height: 22rem;
+    overflow-y: auto;
   }
   .cities li + li {
     border-top: 1px solid var(--border);
@@ -549,9 +862,13 @@
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-3) var(--space-2);
+    border-radius: var(--radius-field);
   }
   .city-link:hover {
     background: var(--muted);
+  }
+  .city-link.active {
+    background: var(--primary-soft);
   }
   .city-link strong,
   .city-link small {
@@ -560,6 +877,21 @@
   }
   .city-link > span:last-child {
     text-align: end;
+  }
+  .new-badge {
+    display: inline-block;
+    margin-left: var(--space-1);
+    padding: 0 0.35rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--warning-border);
+    background: var(--warning-soft);
+    color: var(--warning);
+    font-style: normal;
+    font-size: var(--text-caption);
+    font-weight: var(--weight-semibold);
+  }
+  .empty-list {
+    padding-block: var(--space-4);
   }
   .quality,
   .method {

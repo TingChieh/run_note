@@ -66,6 +66,7 @@ class GridHistory:
     first_year: int | None = None
     months: Counter = field(default_factory=Counter)
     years: dict[int, YearGrid] = field(default_factory=dict)
+    all_grid: YearGrid = field(default_factory=YearGrid)
     size: int = 0
 
 
@@ -243,6 +244,67 @@ def version_fields(version, status):
     return dict(source_version=version, atlas_version=atlas_version(), status=status)
 
 
+def parse_optional_year(value: str | None) -> int | None:
+    if value is None or value == "all":
+        return None
+    if value.isdigit() and len(value) == 4:
+        parsed = int(value)
+        if 1900 <= parsed <= 2100:
+            return parsed
+    raise ApiError(422, "VALIDATION_ERROR", "年份参数无效")
+
+
+def markers(reads, owner, version, year: int | None = None):
+    status, data = reads.read(owner, version, "catalog", _catalog)
+    if status != "ready" or data is None:
+        return dict(
+            **version_fields(version, status),
+            year=year,
+            items=[],
+            regions=[],
+            activity_count=None,
+            boundary_count=None,
+            nearby_count=None,
+        )
+    cities_by_code = _atlas()["cities_by_code"]
+    marker_items = []
+    for item in data["items"]:
+        city = cities_by_code.get(item["code"])
+        if city is None:
+            continue
+        lon, lat = city["center"] if "center" in city else (city["lon"], city["lat"])
+        bounds = tuple(city["bounds"]) if "bounds" in city else None
+        first_date = item["first_date"]
+        marker_items.append(
+            dict(
+                code=item["code"],
+                name=item["name"],
+                short_name=city.get("short_name") or item["name"],
+                region_code=city["region_code"],
+                region_name=item["region_name"],
+                country_code=city["country_code"],
+                kind=item["kind"],
+                lon=float(lon),
+                lat=float(lat),
+                bounds=bounds,
+                activity_count=item["activity_count"],
+                distance_m=item["distance_m"],
+                first_date=first_date,
+                last_date=item["last_date"],
+                is_new_in_year=(year is not None and first_date.year == year),
+            )
+        )
+    return dict(
+        **version_fields(version, status),
+        year=year,
+        items=marker_items,
+        regions=data["regions"],
+        activity_count=data["activity_count"],
+        boundary_count=data["boundary_count"],
+        nearby_count=data["nearby_count"],
+    )
+
+
 def catalog(reads, owner, version, limit, offset):
     status, data = reads.read(owner, version, "catalog", _catalog)
     return dict(
@@ -327,6 +389,7 @@ def _grid(db, owner, scope, geo):
                 if year not in history.years:
                     history.years[year] = YearGrid()
                 history.years[year].add(row.i, row.j, heat, year == first_year)
+            history.all_grid.add(row.i, row.j, sum(row.counts), False)
             history.size += len(row.years)
             if history.size > MAX_HISTORY_HITS:
                 raise IncompleteHistory("failed")
@@ -362,24 +425,42 @@ def _read_grid(reads, owner, version, scope, code):
     return status, name, city, data
 
 
-def detail(reads, owner, version, scope, code, year, today: date):
+def detail(reads, owner, version, scope, code, year, today: date, *, all_years: bool = False):
     status, name, city, history = _read_grid(reads, owner, version, scope, code)
     has_coverage = history is not None
     counts = history.months if history else {}
-    before = sum(count for (first_year, _), count in counts.items() if first_year < year)
-    months = []
-    cumulative = before
-    completed = 12 if year < today.year else today.month if year == today.year else 0
-    for month in range(1, 13):
-        count = counts.get((year, month), 0)
-        cumulative += count if month <= completed else 0
-        show = has_coverage and month <= completed
-        months.append(
-            dict(
-                month=month,
-                new_cells=count if show else None,
-                cumulative_cells=cumulative if show else None,
+    if all_years:
+        months = []
+        cumulative = 0
+        for month in range(1, 13):
+            count = sum(value for (_, m), value in counts.items() if m == month)
+            cumulative += count
+            months.append(
+                dict(
+                    month=month,
+                    new_cells=count if has_coverage else None,
+                    cumulative_cells=cumulative if has_coverage else None,
+                )
             )
+        new_cells = cumulative if has_coverage else None
+    else:
+        before = sum(count for (first_year, _), count in counts.items() if first_year < year)
+        months = []
+        cumulative = before
+        completed = 12 if year < today.year else today.month if year == today.year else 0
+        for month in range(1, 13):
+            count = counts.get((year, month), 0)
+            cumulative += count if month <= completed else 0
+            show = has_coverage and month <= completed
+            months.append(
+                dict(
+                    month=month,
+                    new_cells=count if show else None,
+                    cumulative_cells=cumulative if show else None,
+                )
+            )
+        new_cells = (
+            sum(counts.get((year, m), 0) for m in range(1, completed + 1)) if has_coverage else None
         )
     return dict(
         **version_fields(version, status),
@@ -390,9 +471,7 @@ def detail(reads, owner, version, scope, code, year, today: date):
         city=city,
         first_year=history.first_year if history else None,
         months=months,
-        new_cells=sum(counts.get((year, m), 0) for m in range(1, completed + 1))
-        if has_coverage
-        else None,
+        new_cells=new_cells,
         cumulative_cells=cumulative if has_coverage else None,
     )
 
@@ -415,9 +494,13 @@ def parse_viewport(value):
     raise ApiError(422, "EXPLORATION_VIEWPORT_INVALID", "地图视口范围无效")
 
 
-def cells(reads, owner, version, scope, code, year, viewport, zoom, layer):
+def cells(
+    reads, owner, version, scope, code, year, viewport, zoom, layer, *, all_years: bool = False
+):
+    if all_years and layer == "new":
+        raise ApiError(422, "VALIDATION_ERROR", "全部年份仅支持覆盖热图")
     status, _, _, history = _read_grid(reads, owner, version, scope, code)
-    grid = history.years.get(year) if history else None
+    grid = (history.all_grid if all_years else history.years.get(year)) if history else None
     new = layer == "new"
     extents = (grid.new_bounds if new else grid.bounds) if grid else None
     if not extents:

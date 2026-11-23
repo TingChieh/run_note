@@ -19,6 +19,24 @@ class ExplorationPlace(ExactView):
     distance_m: float | None
 
 
+class ExplorationMarker(ExactView):
+    code: str
+    name: str
+    short_name: str
+    region_code: str
+    region_name: str | None
+    country_code: str
+    kind: Literal["boundary", "nearby"]
+    lon: float
+    lat: float
+    bounds: tuple[float, float, float, float] | None
+    activity_count: int
+    distance_m: float | None
+    first_date: date
+    last_date: date
+    is_new_in_year: bool
+
+
 class ExplorationRegion(ExactView):
     code: str
     name: str
@@ -28,6 +46,15 @@ class ExplorationVersion(ExactView):
     source_version: int
     atlas_version: str
     status: Status
+
+
+class ExplorationMarkersResponse(ExplorationVersion):
+    year: int | None
+    items: list[ExplorationMarker]
+    regions: list[ExplorationRegion]
+    activity_count: int | None
+    boundary_count: int | None
+    nearby_count: int | None
 
 
 class ExplorationCatalog(ExplorationVersion):

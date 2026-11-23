@@ -449,6 +449,36 @@ export interface ExplorationDetail {
   cumulative_cells: number | null;
 }
 
+export interface ExplorationMarker {
+  code: string;
+  name: string;
+  short_name: string;
+  region_code: string;
+  region_name: string | null;
+  country_code: string;
+  kind: 'boundary' | 'nearby';
+  lon: number;
+  lat: number;
+  bounds: [number, number, number, number] | null;
+  activity_count: number;
+  distance_m: number | null;
+  first_date: string;
+  last_date: string;
+  is_new_in_year: boolean;
+}
+
+export interface ExplorationMarkersResponse {
+  source_version: number;
+  atlas_version: string;
+  status: 'ready' | 'pending' | 'failed';
+  year: number | null;
+  items: ExplorationMarker[];
+  regions: ExplorationRegion[];
+  activity_count: number | null;
+  boundary_count: number | null;
+  nearby_count: number | null;
+}
+
 export interface ExplorationMonth {
   month: number;
   new_cells: number | null;
@@ -1746,6 +1776,9 @@ export interface ApiOperations {
   '/api/v1/me/footprints/exploration/cities': {
     get: { body: never; response: ExplorationCatalog };
   };
+  '/api/v1/me/footprints/exploration/markers': {
+    get: { body: never; response: ExplorationMarkersResponse };
+  };
   '/api/v1/me/footprints/exploration/{scope}/{code}': {
     get: { body: never; response: ExplorationDetail };
   };
@@ -2169,11 +2202,14 @@ export const API_OPERATIONS = {
   '/api/v1/me/footprints/exploration/cities': {
     get: ['limit', 'offset'],
   },
-  '/api/v1/me/footprints/exploration/{scope}/{code}': {
+  '/api/v1/me/footprints/exploration/markers': {
     get: ['year'],
   },
+  '/api/v1/me/footprints/exploration/{scope}/{code}': {
+    get: ['all_years', 'year'],
+  },
   '/api/v1/me/footprints/exploration/{scope}/{code}/cells': {
-    get: ['bbox', 'layer', 'year', 'zoom'],
+    get: ['all_years', 'bbox', 'layer', 'year', 'zoom'],
   },
   '/api/v1/me/password': {
     patch: [],
