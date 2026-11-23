@@ -1,6 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
 import { loginRunner, installActivities, sampleActivity, incompleteActivity } from '../fixtures/activities';
-import { installAI } from '../fixtures/p2';
 import { settingsLink } from '../fixtures/top-navigation';
 import { installBasemaps } from '../fixtures/basemaps';
 import {

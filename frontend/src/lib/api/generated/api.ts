@@ -117,23 +117,6 @@ export interface AllFootprintView {
   result: AllFootprintCollection | null;
 }
 
-export interface AnalysisContext {
-  configured: boolean;
-  model: string | null;
-  daily_limit: number;
-  attempts_today: number;
-  remaining_today: number;
-  date_from: string;
-  date_to: string;
-  stats_snapshot: Record<string, unknown>;
-}
-
-export interface AnalysisText {
-  trend_summary: string;
-  recommendations: string[];
-  limitations: string;
-}
-
 export interface AnnualStory {
   year: number;
   date_from: string;
@@ -309,17 +292,6 @@ export interface DayView {
 
 export interface Deleted {
   deleted: true;
-}
-
-export interface DeviceSummary {
-  heart_rate_record_count: number;
-  heart_rate_weighted_count: number;
-  heart_rate_weighted_duration_seconds: string | null;
-  avg_heart_rate_bpm: string | null;
-  calories_record_count: number;
-  calories_kcal: number | null;
-  steps_record_count: number;
-  steps: number | null;
 }
 
 export interface DiaryDeleted {
@@ -971,38 +943,6 @@ export interface Report {
   notes: NoteView[];
 }
 
-export interface ReportCreate {
-  date_from: string;
-  date_to: string;
-  consent_to_send_summary: boolean;
-}
-
-export interface ReportDeleted {
-  deleted: true;
-}
-
-export interface ReportList {
-  items: ReportView[];
-  total: number;
-  limit: number;
-  offset: number;
-}
-
-export interface ReportView {
-  id: string;
-  date_from: string;
-  date_to: string;
-  status: 'pending' | 'succeeded' | 'failed';
-  stats_snapshot: Record<string, unknown>;
-  analysis: AnalysisText | null;
-  model: string;
-  prompt_version: string;
-  error_code: string | null;
-  created_at: string;
-  finished_at: string | null;
-  is_stale: boolean;
-}
-
 export interface ResponseMeta {
   request_id: string;
 }
@@ -1228,36 +1168,6 @@ export interface ShowcaseProfile {
   avatar_url: string | null;
 }
 
-export interface ShowcaseReport {
-  id: string;
-  date_from: string;
-  date_to: string;
-  stats_snapshot: ShowcaseSnapshot;
-  analysis: AnalysisText;
-  created_at: string;
-  finished_at: string | null;
-  is_stale: boolean;
-}
-
-export interface ShowcaseReportList {
-  items: ShowcaseReport[];
-  total: number;
-  limit: number;
-  offset: number;
-}
-
-export interface ShowcaseSnapshot {
-  schema_version: 'running-summary-v1' | 'running-summary-v2';
-  date_from: string;
-  date_to: string;
-  summary: Summary;
-  weeks: SnapshotWeek[];
-  device_metrics: DeviceSummary | null;
-  average_runs_per_week: string;
-  evidence_limited: boolean;
-  limitations: string[];
-}
-
 export interface SitePatch {
   title?: string;
   subtitle?: string;
@@ -1285,25 +1195,6 @@ export interface SleepStat {
   mean_quality: number | null;
   wakeups_answered_days: number;
   mean_wakeups: number | null;
-}
-
-export interface SnapshotWeek {
-  activity_count: number;
-  distance_m: string;
-  activity_days: number;
-  duration_sum_seconds: string | null;
-  known_duration_count: number;
-  missing_duration_count: number;
-  pace_eligible_count: number;
-  pace_eligible_distance_m: string;
-  avg_pace_seconds_per_km: string | null;
-  quality_warning_count: number;
-  date_assignment: 'activity_local_date';
-  bucket_start: string;
-  bucket_end: string;
-  is_partial: boolean;
-  distance_change_pct: string | null;
-  device_metrics: DeviceSummary | null;
 }
 
 export interface StatisticsTrends {
@@ -1791,17 +1682,6 @@ export interface ApiOperations {
   '/api/v1/ai-assistant/conversations/{conversation_id}/messages/{message_id}/cancel': {
     post: { body: never; response: MessageCancelled };
   };
-  '/api/v1/ai-reports': {
-    get: { body: never; response: ReportList };
-    post: { body: ReportCreate; response: ReportView };
-  };
-  '/api/v1/ai-reports/context': {
-    get: { body: never; response: AnalysisContext };
-  };
-  '/api/v1/ai-reports/{identifier}': {
-    get: { body: never; response: ReportView };
-    delete: { body: never; response: ReportDeleted };
-  };
   '/api/v1/auth/csrf': {
     get: { body: never; response: CsrfView };
   };
@@ -1995,12 +1875,6 @@ export interface ApiOperations {
   '/api/v1/showcase/activities/{identifier}/route': {
     get: { body: never; response: RouteView };
   };
-  '/api/v1/showcase/ai-reports': {
-    get: { body: never; response: ShowcaseReportList };
-  };
-  '/api/v1/showcase/ai-reports/{identifier}': {
-    get: { body: never; response: ShowcaseReport };
-  };
   '/api/v1/showcase/avatar': {
     get: { body: never; response: unknown };
   };
@@ -2057,12 +1931,6 @@ export interface ApiOperations {
   };
   '/api/v1/showcase/users/{username}/activities/{identifier}/route': {
     get: { body: never; response: RouteView };
-  };
-  '/api/v1/showcase/users/{username}/ai-reports': {
-    get: { body: never; response: ShowcaseReportList };
-  };
-  '/api/v1/showcase/users/{username}/ai-reports/{identifier}': {
-    get: { body: never; response: ShowcaseReport };
   };
   '/api/v1/showcase/users/{username}/avatar': {
     get: { body: never; response: unknown };
@@ -2236,17 +2104,6 @@ export const API_OPERATIONS = {
   },
   '/api/v1/ai-assistant/conversations/{conversation_id}/messages/{message_id}/cancel': {
     post: [],
-  },
-  '/api/v1/ai-reports': {
-    get: ['limit', 'offset'],
-    post: [],
-  },
-  '/api/v1/ai-reports/context': {
-    get: ['date_from', 'date_to'],
-  },
-  '/api/v1/ai-reports/{identifier}': {
-    get: [],
-    delete: [],
   },
   '/api/v1/auth/csrf': {
     get: [],
@@ -2441,12 +2298,6 @@ export const API_OPERATIONS = {
   '/api/v1/showcase/activities/{identifier}/route': {
     get: [],
   },
-  '/api/v1/showcase/ai-reports': {
-    get: ['limit', 'offset'],
-  },
-  '/api/v1/showcase/ai-reports/{identifier}': {
-    get: [],
-  },
   '/api/v1/showcase/avatar': {
     get: ['v'],
   },
@@ -2502,12 +2353,6 @@ export const API_OPERATIONS = {
     get: [],
   },
   '/api/v1/showcase/users/{username}/activities/{identifier}/route': {
-    get: [],
-  },
-  '/api/v1/showcase/users/{username}/ai-reports': {
-    get: ['limit', 'offset'],
-  },
-  '/api/v1/showcase/users/{username}/ai-reports/{identifier}': {
     get: [],
   },
   '/api/v1/showcase/users/{username}/avatar': {

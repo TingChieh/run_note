@@ -1,6 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
 import { installActivities, loginRunner, sampleActivity } from '../fixtures/activities.ts';
-import { installAI, report } from '../fixtures/p2.ts';
 
 function sseFrame(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -422,28 +421,20 @@ test('stop/cancel active stream, provider error retry, rate limit, and network r
   await expect(page.getByText('重试成功，已获取最新数据。')).toBeVisible();
 });
 
-test('anonymous /ai stays read-only with empty-state prompt and never calls /ai-assistant/*', async ({ page }) => {
-  const assistantCalls: string[] = [];
+test('anonymous /ai stays read-only with login notice and never calls /ai-assistant/* or legacy endpoints', async ({ page }) => {
+  const aiCalls: string[] = [];
   page.on('request', (req) => {
-    if (req.url().includes('/api/v1/ai-assistant')) assistantCalls.push(req.url());
+    if (req.url().includes('/api/v1/ai-assistant') || req.url().includes('/api/v1/ai-reports') || req.url().includes('/showcase/ai-reports')) {
+      aiCalls.push(req.url());
+    }
   });
 
-  const ai = await installAI(page);
-  ai.reports = [];
   await page.goto('/ai');
   await expect(page.getByRole('heading', { level: 1, name: 'AI 助手', exact: true })).toBeVisible();
   await expect(page.getByTestId('ai-anonymous-notice')).toContainText('需要登录');
-  await expect(page.getByText('暂无历史分析报告')).toBeVisible();
   await expect(page.getByLabel('向 AI 助手提问')).toHaveCount(0);
-  expect(assistantCalls).toEqual([]);
-
-  // With permitted legacy reports, anonymous visitor can view them read-only without delete action.
-  ai.reports = [report];
-  await page.reload();
-  await page.getByRole('button', { name: '查看报告', exact: true }).click();
-  await expect(page.getByRole('region', { name: '当前报告' })).toContainText('近期保持稳定运动节奏。');
-  await expect(page.getByRole('button', { name: '删除报告' })).toHaveCount(0);
-  expect(assistantCalls).toEqual([]);
+  await expect(page.getByRole('link', { name: '数据汇总', exact: true }).first()).toBeVisible();
+  expect(aiCalls).toEqual([]);
 });
 
 test('responsive visual QA across desktop 1440x900, tablet 768x1024, mobile 390x844 in light and dark themes', async ({

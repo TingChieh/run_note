@@ -129,11 +129,11 @@ def test_upgrade_paths_preserve_baseline_and_are_idempotent(variable):
                 "activity_segments",
                 "activity_points",
                 "activity_share_links",
-                "ai_reports",
                 "running_goals",
                 "footprint_activity_caches",
                 "footprint_snapshots",
             }
+            assert "ai_reports" not in inspect(c).get_table_names()
             if spatial:
                 assert spatial_hash(c) == spatial
             if variable == "TEST_SNAPSHOT_DATABASE_URL":

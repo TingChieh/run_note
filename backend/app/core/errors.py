@@ -25,7 +25,6 @@ class ApiError(Exception):
             "reason",
             "existing_activity_id",
             "duplicate_kind",
-            "report_id",
             "available_at",
             "conversation_id",
             "message_id",

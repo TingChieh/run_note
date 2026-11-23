@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { installActivities, loginRunner, sampleActivity } from '../fixtures/activities';
 import { installBasemaps } from '../fixtures/basemaps';
-import { installAI, installPublic, summary } from '../fixtures/p2';
+import { installPublic, summary } from '../fixtures/p2';
 
 async function appearance(locator: Locator) {
   return locator.evaluate((el) => {
@@ -129,7 +129,6 @@ test('device theme applies to the first page and switches live without losing a 
 test('private and public pages have readable surfaces, warnings and keyboard focus in dark mode', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
   await installActivities(page);
-  await installAI(page);
   await installPublic(page);
   await loginRunner(page);
   for (const path of [

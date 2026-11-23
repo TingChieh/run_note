@@ -119,7 +119,7 @@ function split(parts: Part[]): { path: Part[]; query: string[] } {
 
 function matches(path: Part[]): string[] {
   const last = path.at(-1);
-  // A literal ending in '/' is a prefix the code appends to ('/api/v1/ai-reports/' + id).
+  // A literal ending in '/' is a prefix the code appends to ('/api/v1/activities/' + id).
   const prefix = typeof last === 'string' && last.endsWith('/');
   if (path.includes(null) || prefix) {
     const body = path.map((part) => (part === null ? '.*?' : escape(part))).join('');

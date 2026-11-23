@@ -1,12 +1,9 @@
 import csv
 import io
-import json
-from datetime import date, timedelta
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
 from sqlalchemy import text
 
 from tests.conftest import (
@@ -292,7 +289,6 @@ def test_public_sharing_showcase_poster_sources_and_ai_exclude_journal(clients):
         "/statistics/streaks",
         "/running-goals",
         "/footprints/all",
-        "/ai-reports",
     ]
     public = [
         f"/api/v1/public/users/{username}",
@@ -314,49 +310,14 @@ def test_public_sharing_showcase_poster_sources_and_ai_exclude_journal(clients):
                 assert any(item["id"] == identifier for item in response.json()["data"]["items"])
             assert all(marker not in response.text for marker in markers), path
             assert_private_absent(response.json(), markers)
-    # Both report generation and the context endpoint call ai_reports.service.build_snapshot.
-    from app.modules.ai_reports.provider import request_body
-
-    sent = []
-
-    class MockProvider:
-        def generate(self, snapshot, settings):
-            sent.append(request_body(snapshot, settings.ai_model))
-            return {
-                "analysis": {
-                    "trend_summary": "记录覆盖有限，暂时无法判断趋势。",
-                    "recommendations": ["结合恢复情况保持轻松活动。"],
-                    "limitations": "分析仅依据已知汇总，建议仅供参考，不构成医疗建议。",
-                }
-            }
-
-    app.state.settings.ai_base_url = "http://127.0.0.1:1/v1"
-    app.state.settings.ai_model = "mock-only"
-    app.state.settings.ai_api_key = SecretStr("test-only")
-    app.state.ai_provider = MockProvider()
-    activity_day = date.fromisoformat(activity["activity_date"])
-    week_start = activity_day - timedelta(days=activity_day.weekday())
-    generated = a.post(
-        "/api/v1/ai-reports",
-        headers={**headers(a), "Idempotency-Key": str(uuid4())},
-        json={
-            "date_from": week_start.isoformat(),
-            "date_to": (week_start + timedelta(days=7)).isoformat(),
-            "consent_to_send_summary": True,
-        },
-    )
-    assert generated.status_code == 201, generated.text
-    assert len(sent) == 1
-    assert_private_absent(json.loads(sent[0]["messages"][1]["content"]), markers)
-    assert all(marker not in json.dumps(sent[0], ensure_ascii=False) for marker in markers)
-    # Poster data are built in the browser from these authenticated activity/route/statistics APIs.
+    # Poster data and AI assistant metadata stay strictly isolated from wellbeing records.
     for path in (
         "/api/v1/activities",
         f"/api/v1/activities/{identifier}",
         f"/api/v1/activities/{identifier}/route",
         "/api/v1/statistics/summary",
-        "/api/v1/ai-reports/context",
-        "/api/v1/ai-reports",
+        "/api/v1/ai-assistant/context",
+        "/api/v1/ai-assistant/conversations",
     ):
         response = a.get(path)
         assert response.status_code == 200, (path, response.text)

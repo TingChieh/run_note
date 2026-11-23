@@ -7,9 +7,9 @@ describe('view context isolation', () => {
 });
 describe('context resource mapping', () => {
  it('never rewrites auth or mutations and encodes named subjects once', () => {
-  const c=viewContext('/p/a%20b/ai', true);
+  const c=viewContext('/p/a%20b/records', true);
   expect(contextAPI(c,'/api/v1/auth/session')).toBe('/api/v1/auth/session');
-  expect(contextAPI(c,'/api/v1/showcase/ai-reports?limit=10')).toBe('/api/v1/showcase/users/a%20b/ai-reports?limit=10');
+  expect(contextAPI(c,'/api/v1/showcase/activities?limit=10')).toBe('/api/v1/showcase/users/a%20b/activities?limit=10');
   expect(contextPath(c,'/activities')).toBe('/p/a%20b/activities');
   expect(contextPath(c,'/workspace/dashboard')).toBe('/workspace/dashboard');
   expect(contextPath(viewContext('/activities'), '/dashboard')).toBe('/');
@@ -29,5 +29,12 @@ describe('records path', () => {
   expect(contextPath(viewContext('/p/alice/records'), '/records')).toBe('/p/alice/records');
   expect(contextPath(viewContext('/workspace/records'), '/records?year=2024')).toBe('/workspace/records?year=2024');
   expect(contextPath(viewContext('/records'), '/records')).toBe('/records');
+ });
+});
+describe('ai path', () => {
+ it('never prefixes /ai under named public showcases while keeping workspace and root paths', () => {
+  expect(contextPath(viewContext('/p/alice/dashboard', true), '/ai')).toBe('/ai');
+  expect(contextPath(viewContext('/workspace/dashboard', false), '/ai')).toBe('/workspace/ai');
+  expect(contextPath(viewContext('/dashboard', true), '/ai')).toBe('/ai');
  });
 });

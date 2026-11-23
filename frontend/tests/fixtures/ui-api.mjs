@@ -520,7 +520,6 @@ createServer(async (req, res) => {
     return send(clean(current ?? user));
   }
   if (url.pathname.startsWith('/api/v1/ai-assistant/')) return !signedIn || showcase ? send(null, 401) : aiAssistant.handle(req, url, res, current.id, send);
-  if (url.pathname === '/api/v1/ai-reports') return send({items:[],total:0,limit:Number(url.searchParams.get('limit')??10),offset:Number(url.searchParams.get('offset')??0)});
   if (url.pathname === '/api/v1/activities/categories') return send([]);
   if (url.pathname === '/api/v1/activities') return send({ items: [], total: 0, limit: Number(url.searchParams.get('limit') ?? 20), offset: Number(url.searchParams.get('offset') ?? 0) });
   if (url.pathname === '/api/v1/footprints/all') return send({status:'ready',generated_at:'2026-10-15T00:00:00Z',refreshing:false,result:{scope:'all',type:'FeatureCollection',features:[],mode:url.searchParams.get('mode')??'tracks',activity_count:0,visible_activity_count:0,unsupported_segment_count:0,grid_size_m:100,grid_crs:'EPSG:3857',count_basis:'distinct_activity_per_cell',max_count:0}});

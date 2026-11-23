@@ -118,25 +118,6 @@ def test_activity_whitelist_drops_private_notes_and_unknown_nested_fields():
     assert public["distance_m"] == "1000"
 
 
-def test_public_reports_are_owner_filtered_completed_and_read_only():
-    from app.modules.showcase.service import reports
-
-    owner = SimpleNamespace(id=uuid4(), activity_data_version=7)
-    db = Mock()
-    db.scalar.return_value = 0
-    db.scalars.return_value.all.return_value = []
-    result = reports(db, owner, 10, 0)
-    assert result.total == 0
-    for statement in [db.scalar.call_args.args[0], db.scalars.call_args.args[0]]:
-        params = statement.compile().params
-        assert owner.id in params.values()
-        assert "succeeded" in params.values()
-        assert "deleted_at IS NULL" in str(statement)
-    db.execute.assert_not_called()
-    db.commit.assert_not_called()
-    db.flush.assert_not_called()
-
-
 def test_unknown_owner_parameter_cannot_select_another_showcase_account():
     app = create_app(settings())
     app.dependency_overrides[get_session] = lambda: Mock()
@@ -156,9 +137,9 @@ def test_unknown_owner_parameter_cannot_select_another_showcase_account():
         ),
         ("/api/v1/me/running-goals/week", "put", {"target_km": 10.0}),
         (
-            "/api/v1/ai-reports",
+            "/api/v1/ai-assistant/conversations",
             "post",
-            {"date_from": "2026-09-14", "date_to": "2026-10-12", "consent_to_send_summary": True},
+            {"title": "合成对话"},
         ),
         ("/api/v1/me", "patch", {"display_name": "合成修改"}),
     ],
@@ -193,47 +174,6 @@ def test_non_owner_password_login_never_rotates_a_session(monkeypatch):
         )
     assert error.value.code == "INVALID_CREDENTIALS"
     rotate.assert_not_called()
-
-
-def test_public_report_hides_unknown_nested_snapshot_metadata():
-    from app.modules.showcase.service import report_view
-
-    summary = dict(
-        activity_count=0,
-        distance_m="0",
-        activity_days=0,
-        duration_sum_seconds=None,
-        known_duration_count=0,
-        missing_duration_count=0,
-        pace_eligible_count=0,
-        pace_eligible_distance_m="0",
-        avg_pace_seconds_per_km=None,
-        quality_warning_count=0,
-        user_id="private-id",
-    )
-    row = SimpleNamespace(
-        id=uuid4(),
-        date_from="2026-09-14",
-        date_to="2026-10-12",
-        stats_snapshot=dict(
-            schema_version="running-summary-v1",
-            date_from="2026-09-14",
-            date_to="2026-10-12",
-            summary=summary,
-            weeks=[],
-            average_runs_per_week="0",
-            evidence_limited=True,
-            limitations=["合成数据"],
-            email="private@example.com",
-        ),
-        report_text='{"trend_summary":"保持节奏","recommendations":["适度休息"],"limitations":"仅供参考"}',
-        created_at=datetime(2026, 10, 16, tzinfo=UTC),
-        finished_at=None,
-        source_data_version=1,
-    )
-    public = report_view(row, 1).model_dump_json()
-    for forbidden in ["private-id", "private@example.com", "user_id", "model", "error_code"]:
-        assert forbidden not in public
 
 
 def test_cached_footprint_fields_are_rebuilt_and_unknown_metadata_is_dropped():

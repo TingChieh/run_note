@@ -23,8 +23,6 @@ class Settings(BaseSettings):
     ai_base_url: str | None = None
     ai_model: str | None = Field(default=None, min_length=1, max_length=100)
     ai_api_key: SecretStr | None = None
-    ai_daily_limit: int = Field(default=5, ge=1, le=100)
-    ai_total_timeout_seconds: float = Field(default=30, ge=1, le=30)
     ai_assistant_enabled: bool = True
     ai_daily_message_limit: int = Field(default=30, ge=1, le=200)
     ai_daily_token_budget: int = Field(default=150_000, ge=10_000, le=2_000_000)

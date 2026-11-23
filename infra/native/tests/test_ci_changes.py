@@ -35,7 +35,7 @@ class Classify(unittest.TestCase):
 
     def test_backend_only_skips_frontend_and_infra(self):
         self.assertEqual(
-            changed_areas.classify(["backend/app/modules/ai_reports/provider.py"]),
+            changed_areas.classify(["backend/app/modules/ai_assistant/provider.py"]),
             {"backend": True, "frontend": False, "infra": False},
         )
 

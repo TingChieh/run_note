@@ -29,8 +29,7 @@ Turn GPX / TCX / Mi Fitness runs into calendars, trends, footprint maps and shar
 - **Frequent routes and route wall**: repeated routes are grouped automatically; the wall shows every run as a card.
 - **Share posters**: route, sport, ticket-stub and big-number styles for a single run or the route wall, exported as PNG.
 - **Automatic titles**: default titles become "Lakeside run", "Park run", etc., based on nearby OpenStreetMap features, computed entirely inside your own PostGIS.
-- **AI running assistant (Phases 1–3)**: sign in and consent to data use to start a conversation with a quick prompt, receive streaming replies and revisit saved chats. Server-side tools run predefined read-only queries for the current account's running statistics, activity metrics, personal records, goals and footprints. They cannot run arbitrary SQL or write data. [Assistant design](docs/engineering/runnote-ai-assistant-design.md)
-- **AI running analysis (historical archive)**: earlier one-off reports based on aggregated statistics remain available to view in the app.
+- **AI running assistant**: sign in and consent to data use to start a conversation with a quick prompt, receive streaming replies and revisit saved chats. Server-side tools run predefined read-only queries for the current account's running statistics, activity metrics, personal records, goals and footprints. They cannot run arbitrary SQL or write data. [Assistant design](docs/engineering/runnote-ai-assistant-design.md)
 - **Shoes, goals and settings**: assign shoes to runs, track their mileage and see reminders as they approach or reach the configured replacement distance. Set weekly, monthly and yearly mileage goals in Goals & Privacy. Settings also includes Account Overview and Shoes, with Site Settings and User Management available to the owner.
 - **Owner showcase and managed accounts**: visitors can browse the owner's data without logging in; the admin can enable per-user showcases at `/p/{username}`. Open registration is disabled.
 - **Dark mode and responsive layout**: follows the system, with a manual override; liquid-glass refraction is enabled on Chromium.
@@ -80,7 +79,7 @@ Turn GPX / TCX / Mi Fitness runs into calendars, trends, footprint maps and shar
 
 ## Live site
 
-**<https://run.aisaka.cc>** is the owner's public showcase. Visitors can browse the dashboard, runs, footprints and public historical AI reports without logging in.
+**<https://run.aisaka.cc>** is the owner's public showcase. Visitors can browse the dashboard, runs and footprints without logging in.
 
 ## Stack and architecture
 
@@ -96,7 +95,7 @@ Browser ──► Caddy (HTTPS) ─┬─ /api/*  ──► FastAPI (Uvicorn)  �
 | Database | PostgreSQL 18 + PostGIS 3.7, the single source of truth |
 | Deployment | Native install (systemd + Caddy), **no Docker**; scripted release, migration, backup and restore drills |
 
-The backend is a modular monolith with feature modules such as activities, footprints, statistics, ai_assistant, ai_reports, sharing and showcase organised around `router / service / schema / model`. The JSON API uses a `{data, error, meta.request_id}` envelope. The assistant streams replies with server-sent events (SSE).
+The backend is a modular monolith with feature modules such as activities, footprints, statistics, ai_assistant, sharing and showcase organised around `router / service / schema / model`. The JSON API uses a `{data, error, meta.request_id}` envelope. The assistant streams replies with server-sent events (SSE).
 
 ## Quick start
 
@@ -129,7 +128,7 @@ Open <http://127.0.0.1:5173>. The admin entry is `/admin`. The Chinese docs cove
 ## Configuration and operations
 
 - **Optional AI assistant**. Set `AI_BASE_URL`, `AI_MODEL` and `AI_API_KEY` in the backend environment to enable new prompts. Set `AI_ASSISTANT_ENABLED=false` to disable new prompts while keeping saved chats available to view. Store secrets only in the server environment (locally, the Git-ignored root `.env`). Keep them out of `PUBLIC_*` variables and the repository. [Environment example](.env.example) · [Assistant design](docs/engineering/runnote-ai-assistant-design.md)
-- **Database upgrades**. Before using the new UI, upgrade the database to the release's Alembic head, which includes `0032_running_diary` and `0033_ai_assistant`. Back up existing production databases and rehearse the restore before migrating. Both migrations refuse to downgrade when their tables contain data. To recover after a migration, fix forward or restore the pre-migration backup according to the deployment guide. Restoring discards writes made after the backup. [Production deployment](docs/66-production-deployment.md)
+- **Database upgrades**. Before using the new UI, upgrade the database to the release's Alembic head, which includes `0032_running_diary`, `0033_ai_assistant` and `0034_drop_ai_reports` (`0034_drop_ai_reports` irreversibly drops the legacy `ai_reports` table). Back up existing production databases and rehearse the restore before migrating. These migrations guard against unsafe downgrades when tables hold data or after irreversible drops. To recover after a migration, fix forward or restore the pre-migration backup according to the deployment guide. Restoring discards writes made after the backup. [Production deployment](docs/66-production-deployment.md)
 - **Streaming proxy**. Reverse proxies must forward `text/event-stream` promptly, without buffering the response for compression or delivery. The bundled Caddy config sets `flush_interval -1` and a 60-second response-header timeout on the assistant message endpoint. The backend sends SSE headers before waiting for the model. The SvelteKit proxy allows 195 seconds for this endpoint, covering the backend's per-turn streaming deadline (90 seconds by default, up to 180 seconds). [Caddy config](infra/native/Caddyfile) · [Assistant design](docs/engineering/runnote-ai-assistant-design.md)
 
 ## Tests
@@ -148,7 +147,7 @@ Backend integration tests and e2e tests need a dedicated `_test` PostGIS databas
 
 - Email, file names, notes and raw GPX/TCX never appear in public responses.
 - The browser renders track GeoJSON. The basemap service receives requests for public styles, fonts, sprites and tiles for the current viewport.
-- The legacy report generator sends only aggregated running statistics. After you consent, the assistant sends the configured model service a system prompt with the date and time zone, your current prompt, recent messages from the same chat, available tool definitions and allowlisted query results. These can include running statistics, individual activity metrics with UUIDs and dates, coarse place names such as provinces and cities with footprint counts, and frequent-route group summaries. Tool results exclude activity titles, tags, notes, precise coordinates, raw imports and their filenames, photos, account information and other users' data. Text you enter in the chat goes to the model with your prompt. You can revoke consent in the assistant. [Assistant design](docs/engineering/runnote-ai-assistant-design.md)
+- After you consent, the assistant sends the configured model service a system prompt with the date and time zone, your current prompt, recent messages from the same chat, available tool definitions and allowlisted query results. These can include running statistics, individual activity metrics with UUIDs and dates, coarse place names such as provinces and cities with footprint counts, and frequent-route group summaries. Tool results exclude activity titles, tags, notes, precise coordinates, raw imports and their filenames, photos, account information and other users' data. Text you enter in the chat goes to the model with your prompt. You can revoke consent in the assistant. [Assistant design](docs/engineering/runnote-ai-assistant-design.md)
 - Running diaries and photos are accessible only to the account that owns them and stay out of public showcases, share posters and AI context. Uploads become metadata-free PNGs. RunNote discards the originals and stores the processed images in PostgreSQL as part of the database backups. The separate wellbeing journal is also private to its owner and excluded from AI context. [Running diary](docs/94-running-diary.md)
 
 ## Documentation
