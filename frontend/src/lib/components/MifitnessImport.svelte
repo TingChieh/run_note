@@ -81,7 +81,7 @@
     </label>
     <label class="file-pick" data-filled={trackNames.length?'true':'false'} data-dragging={dragging==='tracks'} ondragover={event=>{event.preventDefault();if(!busy&&!disabled&&mounted)dragging='tracks';}} ondragleave={()=>{dragging='';}} ondrop={event=>drop(event,tracksInput,'tracks')}>
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19c3-1 3-5 6-5s3 4 6 3M6 7a2 2 0 1 0 0 .01M18 5a2 2 0 1 0 0 .01M8 7l8-2"/></svg>
-      <input bind:this={tracksInput} class="sr-only" type="file" accept=".gpx,application/gpx+xml" multiple disabled={busy||disabled||!mounted} onchange={picked}/>
+      <input bind:this={tracksInput} class="sr-only" type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" multiple disabled={busy||disabled||!mounted} onchange={picked}/>
       <span class="file-pick-text"><span class="file-pick-title">{tracksLabel||'匹配的 GPX 文件'}</span><span class="file-pick-hint">可多选 · 每个最大 10 MiB · 按 running_来源时间.gpx 匹配</span></span>
     </label>
     <label class="file-pick tz" data-filled={timezone?'true':'false'}>

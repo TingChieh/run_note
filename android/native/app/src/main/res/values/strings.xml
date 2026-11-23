@@ -1,0 +1,16 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">RunNote Phase 0</string>
+    <string name="title_activity_main">RunNote Phase 0</string>
+    <string name="package_name">org.runnote.phasezero</string>
+    <string name="custom_url_scheme">org.runnote.phasezero</string>
+    <string name="webview_upgrade_title">需要更新系统 WebView</string>
+    <string name="webview_upgrade_body">RunNote 依赖现代浏览器特性（JavaScript、CSS 与地图渲染），需要 Android System WebView 或 Chrome %1$d 及以上版本才能正常运行。</string>
+    <string name="webview_upgrade_detected">当前检测：%1$s（%2$s）</string>
+    <string name="webview_upgrade_missing">当前检测：未找到可用的系统 WebView 组件</string>
+    <string name="webview_upgrade_action_update">前往更新 WebView</string>
+    <string name="webview_upgrade_action_settings">打开 WebView 应用信息</string>
+    <string name="webview_upgrade_action_retry">重新检测</string>
+    <string name="webview_upgrade_no_store">设备未安装应用商店或浏览器，请在系统设置或应用市场中更新 Android System WebView。</string>
+    <string name="webview_upgrade_still_unsupported">仍检测到旧版 WebView（%1$s），请先完成系统组件更新后再试。</string>
+</resources>
