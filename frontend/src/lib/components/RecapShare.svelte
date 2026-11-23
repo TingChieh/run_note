@@ -2,6 +2,7 @@
   import { onMount, tick, untrack } from 'svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import { watchSystemTheme } from '#lib/components/system-theme.ts';
+  import { isCapacitorNative } from '#lib/capacitor-env.ts';
   import { recapFilename, recapPosterStyles, type Recap, type RecapPosterStyle } from '#lib/recap.ts';
 
   let { recap, disabled }: { recap: Recap; disabled: boolean } = $props();
@@ -16,6 +17,7 @@
   let returnFocusTo: HTMLElement | null = null;
 
   let mounted = $state(false);
+  let nativeApp = $state(false);
   let opened = $state(false);
   let dark = false;
   let appearance = $state<'light' | 'dark'>('light');
@@ -52,6 +54,7 @@
 
   onMount(() => {
     mounted = true;
+    nativeApp = isCapacitorNative();
     const unwatch = watchSystemTheme((isDark) => {
       dark = isDark;
       if (followsPage) {
@@ -331,13 +334,14 @@
       </label>
       <div class="action-buttons">
         {#if url && file}
-          <a class="button-primary" href={url} download={file.name}>保存 PNG</a>
+          {#if !nativeApp}<a class="button-primary" href={url} download={file.name}>保存 PNG</a>{/if}
           {#if shareable}
             <button type="button" class="button-secondary" onclick={share} disabled={sharing}>系统分享</button>
           {/if}
         {/if}
       </div>
     </div>
+    {#if nativeApp && !shareable}<p class="hint" role="status">当前客户端暂不支持直接保存图片文件，请在浏览器中打开保存 PNG。</p>{/if}
     {#if shareError}<p role="alert">{shareError}</p>{/if}
   {/if}
 </dialog>

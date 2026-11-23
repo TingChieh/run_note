@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/connection_error_overlay"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/runnote_window_bg"
+    android:clickable="true"
+    android:fillViewport="true"
+    android:fitsSystemWindows="true"
+    android:focusable="true"
+    android:visibility="gone">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <TextView
+            android:id="@+id/connection_error_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/connection_error_unreachable_title"
+            android:textColor="@color/runnote_foreground"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/connection_error_body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:lineSpacingMultiplier="1.35"
+            android:text="@string/connection_error_unreachable_body"
+            android:textColor="@color/runnote_muted_foreground"
+            android:textSize="15sp" />
+
+        <Button
+            android:id="@+id/connection_error_retry_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:minHeight="48dp"
+            android:text="@string/connection_error_action_retry" />
+
+        <Button
+            android:id="@+id/connection_error_back_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:minHeight="48dp"
+            android:text="@string/connection_error_action_back"
+            android:visibility="gone" />
+    </LinearLayout>
+</ScrollView>

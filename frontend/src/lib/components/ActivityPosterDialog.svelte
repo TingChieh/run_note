@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { watchSystemTheme } from '#lib/components/system-theme.ts';
+  import { isCapacitorNative } from '#lib/capacitor-env.ts';
   import { page } from '$app/state';
   import { contextAPI, viewContext, viewsOwnRecords } from '#lib/api/view-context.ts';
   import { ActivityError } from '#lib/api/activities.ts';
@@ -18,7 +19,7 @@
   const own = viewContext('/workspace');
   const ownFetch: typeof fetch = (input, init) => fetch(typeof input === 'string' ? contextAPI(own, input) : input, init);
   let dialog = $state<HTMLDialogElement>(null!), trigger = $state<HTMLButtonElement>(null!), themeProbe = $state<HTMLElement>(null!);
-  let mounted = $state(false), visible = $state(false), loading = $state(false), sharing = $state(false), canShare = $state(false);
+  let mounted = $state(false), visible = $state(false), loading = $state(false), sharing = $state(false), canShare = $state(false), nativeApp = $state(false);
   let image = $state(''), error = $state(''), style = $state<ActivityPosterStyle>('trace'), theme = $state<'auto' | 'light' | 'dark'>('auto');
   let data = $state.raw<ActivityPosterData | null>(null), dataFor = '';
   const themes = [{ id: 'auto', name: '跟随网站' }, { id: 'light', name: '日间' }, { id: 'dark', name: '夜间' }] as const;
@@ -103,6 +104,7 @@
   }
   onMount(() => {
     mounted = true;
+    nativeApp = isCapacitorNative();
     const unwatch = watchSystemTheme(() => { ++appearance; void render(); });
     return () => { disposed = true; unwatch(); stop(); ++logoToken; logo?.close(); logo = null; };
   });
@@ -179,9 +181,10 @@
       {#if error}<p role="alert">{error}</p>{#if !data && !loading}<button type="button" class="button-secondary" onclick={() => void load()}>重新读取</button>{/if}{/if}
       <p class="poster-privacy">{routed ? '图片包含路线形状和起终点，请确认后分享。' : '图片只包含统计数字，不含路线形状。'}图片在本机生成，不会自动发送。</p>
       <div class="poster-save">
-        <button type="button" class="button-secondary" disabled={!image || sharing} onclick={download}>保存 PNG</button>
+        {#if !nativeApp}<button type="button" class="button-secondary" disabled={!image || sharing} onclick={download}>保存 PNG</button>{/if}
         {#if canShare}<button type="button" class="button-secondary" disabled={sharing} onclick={() => void share()}>{sharing ? '正在分享…' : '分享图片'}</button>{/if}
       </div>
+      {#if nativeApp && !canShare}<p class="poster-help" role="status">当前客户端暂不支持直接保存图片文件，请在浏览器中打开保存 PNG。</p>{/if}
     </div>
     <div class="poster-preview" aria-busy={loading}>
       {#if image}<img src={image} alt="单次跑步分享图预览" width="1080" height="1920" />

@@ -3,6 +3,7 @@
   import type { AnnualStory } from '#lib/api/annual-story.ts';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import { watchSystemTheme } from '#lib/components/system-theme.ts';
+  import { isCapacitorNative } from '#lib/capacitor-env.ts';
   import { renderStoryPosterBlob } from '#lib/share/story-poster-render.ts';
   import { storyFilename, storyKm, storyRangeText } from '#lib/story.ts';
 
@@ -16,6 +17,7 @@
   let returnFocusTo: HTMLElement | null = null;
 
   let mounted = $state(false);
+  let nativeApp = $state(false);
   let opened = $state(false);
   let dark = false;
   let appearance = $state<'light' | 'dark'>('light');
@@ -42,6 +44,7 @@
 
   onMount(() => {
     mounted = true;
+    nativeApp = isCapacitorNative();
     const unwatch = watchSystemTheme((isDark) => {
       dark = isDark;
       if (followsPage) {
@@ -296,9 +299,11 @@
       {/if}
 
       <div class="dialog-actions">
-        <button type="button" class="button-primary" disabled={!url || !file || busy || Boolean(error)} onclick={save}>
-          保存 PNG
-        </button>
+        {#if !nativeApp}
+          <button type="button" class="button-primary" disabled={!url || !file || busy || Boolean(error)} onclick={save}>
+            保存 PNG
+          </button>
+        {/if}
         {#if shareable}
           <button
             type="button"
@@ -310,6 +315,7 @@
           </button>
         {/if}
       </div>
+      {#if nativeApp && !shareable}<p class="privacy-notice" role="status">当前客户端暂不支持直接保存图片文件，请在浏览器中打开保存 PNG。</p>{/if}
     </div>
   </div>
 </dialog>

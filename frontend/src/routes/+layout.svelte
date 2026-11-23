@@ -21,11 +21,13 @@
   import { pageDescription, pageNoindex } from '#lib/seo.ts';
   import { initializeTheme } from '#lib/components/system-theme.ts';
   import { installCapacitorBackHandler } from '#lib/capacitor-back.ts';
+  import { installCapacitorThemeSync } from '#lib/capacitor-theme.ts';
 
   let { children }: { children: Snippet } = $props();
   let checking = $state(false),
     busy = $state(false),
     mounted = $state(false),
+    offline = $state(false),
     message = $state('');
   let identityBlocked = $state(false);
   let publicMenuOpen = $state(false);
@@ -92,6 +94,19 @@
   onMount(initializeTheme);
   onMount(() => installDialogScrollLock());
   onMount(() => installCapacitorBackHandler({ isNavigating: () => !!navigating.to }));
+  onMount(() => installCapacitorThemeSync());
+  onMount(() => {
+    const syncNetwork = () => {
+      offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    };
+    syncNetwork();
+    window.addEventListener('online', syncNetwork);
+    window.addEventListener('offline', syncNetwork);
+    return () => {
+      window.removeEventListener('online', syncNetwork);
+      window.removeEventListener('offline', syncNetwork);
+    };
+  });
   onMount(() => {
     if (!import.meta.env.DEV) return;
     let disposed = false;
@@ -341,6 +356,9 @@
       class:auth-content={authPage}
       aria-busy={!!navigating.to && !shallowNavigation && !navigating.shallow}
     >
+      {#if offline}<div class="mb-5" data-testid="offline-banner">
+          <FeedbackState kind="error" title="网络连接已断开，请检查网络后重试。" />
+        </div>{/if}
       {#if message || page.data.authError || (page.data.showcaseError && page.status < 400)}<div class="mb-5">
           <FeedbackState kind="error" title={message || page.data.authError || page.data.showcaseError || ''} />
         </div>{/if}

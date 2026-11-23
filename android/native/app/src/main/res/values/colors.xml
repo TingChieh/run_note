@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#17745C</color>
+    <color name="colorPrimaryDark">#105D49</color>
+    <color name="colorAccent">#218538</color>
+    <color name="ic_launcher_background">#218538</color>
+    <color name="runnote_window_bg">#F6F7F4</color>
+    <color name="runnote_surface">#FFFFFF</color>
+    <color name="runnote_foreground">#1E302B</color>
+    <color name="runnote_muted_foreground">#596B63</color>
+</resources>

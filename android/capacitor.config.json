@@ -1,12 +1,9 @@
 {
-  "appId": "org.runnote.phasezero",
-  "appName": "RunNote Phase 0",
+  "appId": "com.tingchieh.runnote",
+  "appName": "RunNote",
   "webDir": "public",
   "android": {
     "path": "native",
     "minWebViewVersion": 116
-  },
-  "server": {
-    "url": "http://localhost:15297"
   }
 }

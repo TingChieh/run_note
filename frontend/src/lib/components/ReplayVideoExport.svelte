@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { watchSystemTheme } from './system-theme';
+  import { isCapacitorNative } from '#lib/capacitor-env.ts';
   import { posterPalette } from '#lib/share/route-poster-render.ts';
   import type { ReplayTrack } from '#lib/replay/engine.ts';
   import {
@@ -42,7 +43,8 @@
     url = $state(''),
     plainBackground = $state(false),
     canShare = $state(false),
-    sharing = $state(false);
+    sharing = $state(false),
+    nativeApp = $state(false);
   // Resolves the chosen appearance's tokens without switching the page theme (as the share images do).
   let probe = $state<HTMLElement>(null!);
   let preview = $state<HTMLCanvasElement>(),
@@ -185,6 +187,7 @@
     }
   }
   onMount(() => {
+    nativeApp = isCapacitorNative();
     let initial = true;
     const stopTheme = watchSystemTheme((dark) => {
       // Start from the site's look; later site theme changes do not override the viewer's choice.
@@ -206,7 +209,9 @@
 <div hidden data-poster-theme={theme}><div class="sport-theme" bind:this={probe}></div></div>
 <section class="video-export" aria-labelledby="replay-video-title" aria-busy={busy}>
   <h3 id="replay-video-title">导出视频</h3>
-  {#if status === 'unsupported'}
+  {#if nativeApp}
+    <p class="video-help" role="status">视频导出与 MP4 保存仅支持在浏览器中使用，请在浏览器中打开此页面。</p>
+  {:else if status === 'unsupported'}
     <p class="video-help" role="status">
       此浏览器无法导出视频（需要 WebCodecs H.264 编码），请使用最新版 Chrome、Edge 或 Safari。
     </p>

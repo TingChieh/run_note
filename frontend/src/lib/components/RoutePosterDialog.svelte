@@ -2,6 +2,7 @@
   import { onMount, untrack } from 'svelte';
   import DatePicker from '#lib/components/DatePicker.svelte';
   import { watchSystemTheme } from '#lib/components/system-theme.ts';
+  import { isCapacitorNative } from '#lib/capacitor-env.ts';
   import { page } from '$app/state';
   import { contextAPI, viewContext } from '#lib/api/view-context.ts';
   import { ActivityError } from '#lib/api/activities.ts';
@@ -22,7 +23,7 @@
   let dialog = $state<HTMLDialogElement>(null!), trigger = $state<HTMLButtonElement>(null!);
   let mounted = $state(false), visible = $state(false);
   let scope = $state('all'), month = $state(''), image = $state(''), error = $state(''), progress = $state('');
-  let shown = $state<PosterData | null>(null), sampleShown = $state(true), canShare = $state(false), sharing = $state(false);
+  let shown = $state<PosterData | null>(null), sampleShown = $state(true), canShare = $state(false), sharing = $state(false), nativeApp = $state(false);
   let style = $state<PosterStyle>('classic');
   let theme = $state<'auto' | 'light' | 'dark'>('auto');
   let themeProbe = $state<HTMLElement>(null!);
@@ -147,6 +148,7 @@
   }
   onMount(() => {
     mounted = true;
+    nativeApp = isCapacitorNative();
     month = new Intl.DateTimeFormat('sv-SE', { timeZone: page.data.showcase?.timezone ?? page.data.user?.timezone ?? 'UTC', year: 'numeric', month: '2-digit' }).format(new Date());
     const unwatch = watchSystemTheme(() => { ++appearance; void render(); });
     return () => { disposed = true; unwatch(); stop(); ++logoToken; logo?.close(); logo = null; };
@@ -246,9 +248,10 @@
       {#if error}<p role="alert">{error}</p>{/if}
       <p class="poster-privacy">{routed ? '图片包含路线形状，请确认后分享。' : '图片只包含统计数字，不含路线形状。'}图片在本机生成，不会自动发送。</p>
       <div class="poster-save">
-        <button type="button" class="button-secondary" disabled={!image || sampleShown || sharing} onclick={download}>保存 PNG</button>
+        {#if !nativeApp}<button type="button" class="button-secondary" disabled={!image || sampleShown || sharing} onclick={download}>保存 PNG</button>{/if}
         {#if canShare && !sampleShown}<button type="button" class="button-secondary" disabled={sharing} onclick={() => void share()}>{sharing ? '正在分享…' : '分享图片'}</button>{/if}
       </div>
+      {#if nativeApp && !canShare}<p class="poster-help" role="status">当前客户端暂不支持直接保存图片文件，请在浏览器中打开保存 PNG。</p>{/if}
     </div>
     <div class="poster-preview" aria-busy={!!loading}>
       {#if image && shown && sampleShown}

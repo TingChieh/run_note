@@ -1,30 +1,153 @@
 apply plugin: 'com.android.application'
 
+import java.net.URI
+
+def keystoreProps = new Properties()
+def keystorePropsFile = rootProject.file('keystore.properties')
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+
+def resolveOption = { String propName, String envName, String fallback = '' ->
+    if (project.hasProperty(propName)) {
+        def val = project.property(propName)?.toString()?.trim()
+        if (val) return val
+    }
+    def envVal = System.getenv(envName)?.trim()
+    if (envVal) return envVal
+    def fileVal = keystoreProps.getProperty(propName)?.trim()
+    if (fileVal) return fileVal
+    return fallback
+}
+
+def normalizeServerUrl = { String raw ->
+    def trimmed = raw == null ? '' : raw.trim()
+    while (trimmed.endsWith('/')) {
+        trimmed = trimmed.substring(0, trimmed.length() - 1)
+    }
+    return trimmed
+}
+
+def configuredServerUrl = normalizeServerUrl(resolveOption('runnote.serverUrl', 'RUNNOTE_SERVER_URL', ''))
+def debugServerUrl = configuredServerUrl ? configuredServerUrl : 'http://localhost:15297'
+def releaseServerUrl = configuredServerUrl
+
+def validateServerUrl = { String url, boolean allowLoopbackHttp ->
+    if (!url) {
+        throw new GradleException(
+            'Missing RunNote server URL for release build. Pass -Prunnote.serverUrl=https://your.domain or set RUNNOTE_SERVER_URL.'
+        )
+    }
+    URI parsed
+    try {
+        parsed = new URI(url)
+    } catch (Exception ex) {
+        throw new GradleException("Invalid RunNote server URL: ${url}", ex)
+    }
+    def scheme = parsed.scheme ? parsed.scheme.toLowerCase(Locale.ROOT) : ''
+    def host = parsed.host ? parsed.host.toLowerCase(Locale.ROOT) : ''
+    if (!host || parsed.userInfo != null || parsed.fragment != null) {
+        throw new GradleException("RunNote server URL must have a valid host without credentials or fragments: ${url}")
+    }
+    def isLoopback = (host == 'localhost' || host == '127.0.0.1' || host == '10.0.2.2')
+    if (scheme == 'https') {
+        if (!allowLoopbackHttp && isLoopback) {
+            throw new GradleException("Release RunNote server URL must not point to loopback host: ${url}")
+        }
+        return
+    }
+    if (allowLoopbackHttp && scheme == 'http' && isLoopback) {
+        return
+    }
+    throw new GradleException("RunNote server URL must use HTTPS for non-local hosts (and always for release): ${url}")
+}
+
+validateServerUrl(debugServerUrl, true)
+
+def keystorePath = resolveOption('runnote.keystore.path', 'RUNNOTE_KEYSTORE_PATH', '')
+def keystorePassword = resolveOption('runnote.keystore.password', 'RUNNOTE_KEYSTORE_PASSWORD', '')
+def keyAliasValue = resolveOption('runnote.key.alias', 'RUNNOTE_KEY_ALIAS', '')
+def keyPasswordValue = resolveOption('runnote.key.password', 'RUNNOTE_KEY_PASSWORD', '')
+def hasReleaseSigning = (keystorePath && keystorePassword && keyAliasValue && keyPasswordValue)
+
+def escapeJavaString = { String value ->
+    return value.replace('\\', '\\\\').replace('"', '\\"')
+}
+
 android {
-    namespace = "org.runnote.phasezero"
+    namespace = "com.tingchieh.runnote"
     compileSdk = rootProject.ext.compileSdkVersion
+
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
-        applicationId "org.runnote.phasezero"
+        applicationId "com.tingchieh.runnote"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // Formula: MAJOR * 10000 + MINOR * 100 + PATCH (2.3.0 -> 20300)
+        versionCode 20300
+        versionName "2.3.0"
+        buildConfigField "String", "RUNNOTE_APP_ID", "\"com.tingchieh.runnote\""
         aaptOptions {
-             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
-             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+            // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(keystorePath)
+                storePassword keystorePassword
+                keyAlias keyAliasValue
+                keyPassword keyPasswordValue
+                enableV1Signing = false
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            buildConfigField "String", "RUNNOTE_SERVER_URL", "\"${escapeJavaString(debugServerUrl)}\""
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            buildConfigField "String", "RUNNOTE_SERVER_URL", "\"${escapeJavaString(releaseServerUrl)}\""
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+}
+
+gradle.taskGraph.whenReady { taskGraph ->
+    def buildingRelease = taskGraph.allTasks.any { task ->
+        task.path.startsWith(':app:') && task.name.toLowerCase(Locale.ROOT).contains('release') &&
+            !task.name.toLowerCase(Locale.ROOT).contains('test')
+    }
+    if (buildingRelease) {
+        validateServerUrl(releaseServerUrl, false)
+        if (!hasReleaseSigning) {
+            throw new GradleException(
+                'Release APK requires signing credentials outside the repository. ' +
+                'Provide RUNNOTE_KEYSTORE_PATH / RUNNOTE_KEYSTORE_PASSWORD / RUNNOTE_KEY_ALIAS / RUNNOTE_KEY_PASSWORD ' +
+                'via environment variables, Gradle -P properties, or git-ignored android/native/keystore.properties.'
+            )
+        }
+        if (!file(keystorePath).exists()) {
+            throw new GradleException('Configured release keystore file does not exist.')
         }
     }
 }
 
 repositories {
-    flatDir{
+    flatDir {
         dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
     }
 }
@@ -32,6 +155,7 @@ repositories {
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.browser:browser:1.8.0"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation "androidx.webkit:webkit:$androidxWebkitVersion"
