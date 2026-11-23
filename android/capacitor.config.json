@@ -3,7 +3,8 @@
   "appName": "RunNote Phase 0",
   "webDir": "public",
   "android": {
-    "path": "native"
+    "path": "native",
+    "minWebViewVersion": 116
   },
   "server": {
     "url": "http://localhost:15297"

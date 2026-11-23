@@ -20,6 +20,7 @@
   import { PROJECT_URL, SITE_DEFAULTS, brandInitial } from '#lib/site.ts';
   import { pageDescription, pageNoindex } from '#lib/seo.ts';
   import { initializeTheme } from '#lib/components/system-theme.ts';
+  import { installCapacitorBackHandler } from '#lib/capacitor-back.ts';
 
   let { children }: { children: Snippet } = $props();
   let checking = $state(false),
@@ -90,6 +91,7 @@
   });
   onMount(initializeTheme);
   onMount(() => installDialogScrollLock());
+  onMount(() => installCapacitorBackHandler({ isNavigating: () => !!navigating.to }));
   onMount(() => {
     if (!import.meta.env.DEV) return;
     let disposed = false;
