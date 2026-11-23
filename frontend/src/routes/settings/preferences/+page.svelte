@@ -6,6 +6,8 @@
   import { useViewContext } from '#lib/view-context.ts';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import SaveBar from '#lib/components/SaveBar.svelte';
+  import CompanionHealthPanel from '#lib/components/CompanionHealthPanel.svelte';
+  import CompanionCachePanel from '#lib/components/CompanionCachePanel.svelte';
   import { ActivityError } from '#lib/api/activities.ts';
   import { parseUser } from '#lib/api/auth.ts';
   import { sharingWrite } from '#lib/api/sharing.ts';
@@ -376,6 +378,17 @@
         </div>
       </div>
     </form>
+
+    <CompanionHealthPanel accountKey={page.data.user.id} />
+
+    <CompanionCachePanel
+      userId={page.data.user.id}
+      timezone={page.data.user.timezone}
+      fetcher={fetch}
+      onauthrequired={() => {
+        window.location.replace('/admin?reason=expired');
+      }}
+    />
 
     <section id="data" class="aux-panel settings-block" aria-labelledby="data-title">
       <h2 id="data-title">数据与记录入口</h2>

@@ -22,6 +22,13 @@
   import { initializeTheme } from '#lib/components/system-theme.ts';
   import { installCapacitorBackHandler } from '#lib/capacitor-back.ts';
   import { installCapacitorThemeSync } from '#lib/capacitor-theme.ts';
+  import { clearHealthGrantHistory } from '#lib/capacitor-health.ts';
+  import {
+    buildCacheNamespace,
+    clearPrivateOfflineCache,
+    ensureAccountCacheIsolation,
+  } from '#lib/offline-cache.ts';
+  import { syncCompanionActivities } from '#lib/companion-sync.ts';
 
   let { children }: { children: Snippet } = $props();
   let checking = $state(false),
@@ -71,6 +78,9 @@
       lastBadgeUserId = currentUserId;
       settingsHeader.shoeReminderCount = null;
     }
+    if (mounted) {
+      void ensureAccountCacheIsolation(currentUserId);
+    }
   });
   onMount(() => {
     const invalidateShoeBadge = () => {
@@ -96,15 +106,42 @@
   onMount(() => installCapacitorBackHandler({ isNavigating: () => !!navigating.to }));
   onMount(() => installCapacitorThemeSync());
   onMount(() => {
+    let syncDisposed = false;
+    const runBackgroundSync = () => {
+      const uid = page.data.user?.id;
+      if (syncDisposed || !uid || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
+      const namespace = buildCacheNamespace(uid, 'owner');
+      void syncCompanionActivities({ namespace }).then((outcome) => {
+        if (syncDisposed) return;
+        window.dispatchEvent(new CustomEvent('runnote-cache-updated'));
+        if (outcome.status === 'auth_expired' && isProtected(page.url.pathname)) {
+          window.location.replace('/admin?reason=changed');
+        }
+      });
+    };
     const syncNetwork = () => {
-      offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+      const nextOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+      const reconnected = offline && !nextOffline;
+      offline = nextOffline;
+      if (reconnected) {
+        runBackgroundSync();
+      }
     };
     syncNetwork();
+    void ensureAccountCacheIsolation(page.data.user?.id ?? null).then(() => {
+      if (!syncDisposed && !offline && page.data.user?.id) {
+        runBackgroundSync();
+      }
+    });
+    const onActivitiesChanged = () => runBackgroundSync();
     window.addEventListener('online', syncNetwork);
     window.addEventListener('offline', syncNetwork);
+    window.addEventListener('runnote-activities-changed', onActivitiesChanged);
     return () => {
+      syncDisposed = true;
       window.removeEventListener('online', syncNetwork);
       window.removeEventListener('offline', syncNetwork);
+      window.removeEventListener('runnote-activities-changed', onActivitiesChanged);
     };
   });
   onMount(() => {
@@ -159,10 +196,14 @@
     message = '';
     try {
       await authWrite('logout', {});
+      await clearPrivateOfflineCache();
+      clearHealthGrantHistory();
       checking = true;
       window.location.assign(viewContext(page.url.pathname).kind === 'workspace' ? '/' : page.url.pathname);
     } catch (cause) {
       if (cause instanceof AuthError && cause.status === 401) {
+        await clearPrivateOfflineCache();
+        clearHealthGrantHistory();
         checking = true;
         window.location.replace('/admin?reason=changed');
         return;
@@ -179,6 +220,12 @@
     const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('runnote-auth');
     async function verifyIdentity() {
       if (disposed || busy) return;
+      // While the device is explicitly offline and the session was already loaded, allow viewing
+      // cached read-only pages; reconnect immediately re-verifies against the server.
+      if (typeof navigator !== 'undefined' && navigator.onLine === false && page.data.user) {
+        checking = false;
+        return;
+      }
       if (inFlight) {
         pending = true;
         return;
@@ -190,6 +237,8 @@
         const current = await readSession();
         if (disposed || busy || pending) return;
         if ((current?.id ?? null) !== (page.data.user?.id ?? null)) {
+          await clearPrivateOfflineCache();
+          clearHealthGrantHistory();
           identityBlocked = true;
           if (isProtected(page.url.pathname) && !current) window.location.replace('/admin?reason=changed');
           else window.location.reload();
@@ -198,7 +247,7 @@
         identityBlocked = false;
         checking = false;
       } catch (cause) {
-        // Fail closed: hide private children and identity until verification succeeds.
+        // Fail closed when online or server-side verification errors occur.
         if (page.data.user || isProtected(page.url.pathname)) {
           checking = true;
           identityBlocked = true;
@@ -225,6 +274,7 @@
       channel.postMessage('check');
     }
     window.addEventListener('focus', verifyIdentity);
+    window.addEventListener('online', verifyIdentity);
     window.addEventListener('pageshow', restored);
     document.addEventListener('visibilitychange', visible);
     const timer = window.setInterval(() => {
@@ -235,6 +285,7 @@
       channel?.close();
       clearInterval(timer);
       window.removeEventListener('focus', verifyIdentity);
+      window.removeEventListener('online', verifyIdentity);
       window.removeEventListener('pageshow', restored);
       document.removeEventListener('visibilitychange', visible);
     };
@@ -357,7 +408,7 @@
       aria-busy={!!navigating.to && !shallowNavigation && !navigating.shallow}
     >
       {#if offline}<div class="mb-5" data-testid="offline-banner">
-          <FeedbackState kind="error" title="网络连接已断开，请检查网络后重试。" />
+          <FeedbackState kind="error" title="当前处于离线模式，可浏览已缓存数据，恢复网络后将自动同步。" />
         </div>{/if}
       {#if message || page.data.authError || (page.data.showcaseError && page.status < 400)}<div class="mb-5">
           <FeedbackState kind="error" title={message || page.data.authError || page.data.showcaseError || ''} />

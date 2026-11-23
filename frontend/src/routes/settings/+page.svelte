@@ -19,6 +19,8 @@
   import { readOwnGoals, type RunningGoals } from '#lib/api/running-goal.ts';
   import { useSettingsHeader } from '#lib/settings-header.svelte.ts';
   import { unfoldBar } from '#lib/styles/reveal-from-left.ts';
+  import { clearPrivateOfflineCache } from '#lib/offline-cache.ts';
+  import { clearHealthGrantHistory } from '#lib/capacitor-health.ts';
 
   const COMMON_TIMEZONES = [
     'Asia/Shanghai',
@@ -129,6 +131,8 @@
     newPassword = '';
     shoesSummary = null;
     goalsSummary = null;
+    void clearPrivateOfflineCache();
+    clearHealthGrantHistory();
     window.location.replace('/admin?reason=expired');
   }
 
@@ -255,6 +259,8 @@
     passwordError = '';
     try {
       await changePassword(currentPassword, newPassword, fetch);
+      await clearPrivateOfflineCache();
+      clearHealthGrantHistory();
       if (!disposed) {
         currentPassword = '';
         newPassword = '';

@@ -1,11 +1,11 @@
-# RunNote Android（Phase 1 Companion）
+# RunNote Android（Phase 1–2 Companion）
 
-RunNote 的 Android Capacitor 容器工程（#132），直接复用同一套 RunNote Web UI，不改 Web SSR 架构、不引入独立页面 fork。
+RunNote 的 Android Capacitor 容器工程（#132、#133），直接复用同一套 RunNote Web UI，不改 Web SSR 架构、不引入独立页面 fork。
 
 - **应用标识**：`com.tingchieh.runnote`（应用名 `RunNote`）
-- **版本**：与 `backend/pyproject.toml` / `frontend/package.json` 同步为 `2.3.0`（`versionCode = 20300`，规则 `MAJOR * 10000 + MINOR * 100 + PATCH`）
+- **版本**：与 `backend/pyproject.toml` / `frontend/package.json` 同步为 `2.4.0`（`versionCode = 20400`，规则 `MAJOR * 10000 + MINOR * 100 + PATCH`）
 - **最低系统要求**：Android 10（API 29）、Android System WebView / Chrome **116+**
-- **工具链**：Capacitor 8.6.2、`@capacitor/app` 8.1.2、JDK 21、Gradle 8.14.3、AGP 8.13.0、Android SDK 36、Build Tools 35.0.0
+- **工具链**：Capacitor 8.6.2、`@capacitor/app` 8.1.2、`androidx.health.connect:connect-client` 1.1.0、Kotlin 2.1.21、JDK 21、Gradle 8.14.3、AGP 8.13.0、Android SDK 36、Build Tools 35.0.0
 
 ## 1. Debug 构建（本地隔离联调）
 
@@ -66,7 +66,14 @@ sha256sum android/native/app/build/outputs/apk/release/app-release.apk
 - **系统栏深浅色同步（`SystemAppearancePlugin` + `SystemBarStyleHelper` + `frontend/src/lib/capacitor-theme.ts`）**：Web 手动切换浅/深色或跟随系统时，同步更新状态栏/手势条背景色（`#F6F7F4` / `#292725`）与图标对比度。
 - **断网与连接错误覆盖层（`view_connection_error.xml`）**：主文档断网、超时或 TLS 校验失败（绝不忽略证书错误）时展示原生中文提示与「重新加载」/「返回上一页」入口，不覆盖服务端 403/404/500 页面。
 - **返回键与边缘手势（`BackNavigationHelper` + `frontend/src/lib/capacitor-back.ts`）**：依次处理连接错误层、`<dialog>`、Popover、移动抽屉、单步历史回退与根页退出。
+- **Health Connect 只读桥接（`HealthDataPlugin` + `HealthConnectPolicy` + `HealthPermissionsRationaleActivity`）**：
+  - 仅声明 6 项最小化只读权限（`READ_STEPS`、`READ_DISTANCE`、`READ_ACTIVE_CALORIES_BURNED`、`READ_HEART_RATE`、`READ_RESTING_HEART_RATE`、`READ_SLEEP`），**零 `WRITE_*` 权限、零轨迹/后台读取权限**；
+  - 前端统一通过 `frontend/src/lib/capacitor-health.ts` 访问平台无关的 `HealthData` 插件接口，后续 iOS 可无痛接入 Apple HealthKit；
+  - 提供中文权限说明页（支持 Android 10–13 `ACTION_SHOW_PERMISSIONS_RATIONALE` 与 Android 14+ `VIEW_PERMISSION_USAGE`）。
+- **离线缓存与增量同步（`frontend/src/lib/offline-cache.ts` + `companion-sync.ts`）**：
+  - 使用按账号命名空间隔离的 IndexedDB 缓存数据汇总、活动列表/详情与足迹元数据（不缓存明文 Token、Cookie、原始 GPX/TCX、离线底图或私人身心健康日记）；
+  - 通过 `GET /api/v1/activities/sync` 基于 `activity_data_version` + `updated_at` 游标分页增量同步、去重、断网重试与删除对齐；退出登录、401 或切换账号自动清空私有缓存。
 - **文件导入（`RunNoteWebChromeClient` + `FilePickerIntentHelper`）**：沿用 Phase 0 的 SAF DocumentsUI MIME 放宽，不申请宽泛存储权限。
-- **认证与隐私**：沿用同源 HttpOnly Cookie + CSRF + Origin，`onPause()`/`onStop()` 主动 `CookieManager.flush()`；不暴露会话给 JS，不记录凭据、Cookie 或轨迹信息。
+- **认证与隐私**：沿用同源 HttpOnly Cookie + CSRF + Origin，`onPause()`/`onStop()` 主动 `CookieManager.flush()`；不暴露会话给 JS，不记录凭据、Cookie、健康数据原文或轨迹信息。
 
-详细验证记录与阶段边界见 [Phase 1 交付记录](../docs/97-android-capacitor-phase1.md)。
+详细验证记录与阶段边界见 [Phase 1 交付记录](../docs/97-android-capacitor-phase1.md) 与 [Phase 2 交付记录](../docs/98-android-capacitor-phase2.md)。

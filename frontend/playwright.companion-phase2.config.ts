@@ -1,0 +1,4 @@
+import { defineConfig } from '@playwright/test';
+import base from './playwright.ui.config.ts';
+
+export default defineConfig({ ...base, testMatch: ['companion-phase2.spec.ts'] });

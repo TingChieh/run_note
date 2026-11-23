@@ -25,6 +25,53 @@ export interface ActivityOwner {
   user_id: string;
 }
 
+export interface ActivitySyncItem {
+  id: string;
+  title: string;
+  notes: string;
+  category: string;
+  tags: string[];
+  activity_date: string;
+  timezone: string;
+  started_at: string | null;
+  ended_at: string | null;
+  distance_m: string;
+  elapsed_seconds: string | null;
+  timer_seconds: string | null;
+  calories_kcal: number | null;
+  steps: number | null;
+  avg_heart_rate_bpm: number | null;
+  max_heart_rate_bpm: number | null;
+  min_heart_rate_bpm: number | null;
+  avg_cadence_spm: string | null;
+  max_cadence_spm: string | null;
+  vo2_max_ml_kg_min: string | null;
+  training_load: string | null;
+  aerobic_training_effect: string | null;
+  anaerobic_training_effect: string | null;
+  avg_pace_seconds_per_km: string | null;
+  temporal_quality: 'complete' | 'incomplete' | 'invalid' | 'manual';
+  quality_summary: Record<string, unknown>;
+  metrics_version: string;
+  visibility: 'private' | 'unlisted' | 'public';
+  allow_shared_route: boolean;
+  has_route: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ActivitySyncView {
+  data_version: number;
+  unchanged: boolean;
+  server_time: string;
+  total_count: number;
+  items: ActivitySyncItem[];
+  next_cursor: string | null;
+  has_more: boolean;
+  active_ids: string[] | null;
+  full_resync_required: boolean;
+}
+
 export interface ActivityUpdate {
   title?: string;
   notes?: string;
@@ -1642,6 +1689,9 @@ export interface ApiOperations {
   '/api/v1/activities/categories': {
     get: { body: never; response: string[] };
   };
+  '/api/v1/activities/sync': {
+    get: { body: never; response: ActivitySyncView };
+  };
   '/api/v1/activities/{identifier}': {
     get: { body: never; response: ActivityView };
     patch: { body: ActivityUpdate; response: ActivityView };
@@ -2067,6 +2117,9 @@ export const API_OPERATIONS = {
   },
   '/api/v1/activities/categories': {
     get: [],
+  },
+  '/api/v1/activities/sync': {
+    get: ['cursor', 'limit', 'since_version', 'updated_since'],
   },
   '/api/v1/activities/{identifier}': {
     get: [],

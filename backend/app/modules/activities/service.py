@@ -1,19 +1,27 @@
+import base64
 import json
 from calendar import monthrange
-from datetime import date
+from datetime import date, datetime
 from itertools import groupby
 from uuid import UUID
 
-from sqlalchemy import func, select, text, update
+from sqlalchemy import and_, func, or_, select, text, update
 
 from app.core.errors import ApiError
 from app.modules.activities.model import Activity
-from app.modules.activities.schema import ActivityList, ActivityView
+from app.modules.activities.schema import (
+    ActivityList,
+    ActivitySyncItem,
+    ActivitySyncView,
+    ActivityView,
+)
 from app.modules.gpx.model import ActivitySegment
 from app.modules.gpx.queries import replay_points
 from app.modules.gpx.replay import ReplayPoint, build_replay
 from app.modules.sharing.model import ActivityShareLink
 from app.modules.users.model import User
+
+MAX_SYNC_ACTIVE_IDS = 5000
 
 
 def view(activity, has_route=True):
@@ -21,6 +29,38 @@ def view(activity, has_route=True):
         name: getattr(activity, name) for name in ActivityView.model_fields if name != "has_route"
     }
     return ActivityView(**fields, has_route=has_route)
+
+
+def sync_item_view(activity, has_route=True):
+    fields = {
+        name: getattr(activity, name)
+        for name in ActivitySyncItem.model_fields
+        if name != "has_route"
+    }
+    return ActivitySyncItem(**fields, has_route=has_route)
+
+
+def encode_sync_cursor(updated_at: datetime, activity_id: UUID) -> str:
+    raw = f"{updated_at.isoformat()}|{activity_id}".encode()
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def decode_sync_cursor(raw: str) -> tuple[datetime, UUID]:
+    if not raw or len(raw) > 128:
+        raise ApiError(422, "VALIDATION_ERROR", "同步游标无效")
+    try:
+        padded = raw + "=" * (-len(raw) % 4)
+        decoded = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
+        ts_part, sep, id_part = decoded.partition("|")
+        if not sep or "|" in id_part:
+            raise ValueError("malformed cursor")
+        parsed_ts = datetime.fromisoformat(ts_part)
+        if parsed_ts.tzinfo is None:
+            raise ValueError("naive timestamp")
+        parsed_id = UUID(id_part)
+    except ValueError:
+        raise ApiError(422, "VALIDATION_ERROR", "同步游标无效") from None
+    return parsed_ts, parsed_id
 
 
 def owned_activity(db, owner: UUID, identifier: UUID):
@@ -58,6 +98,7 @@ def update_activity(db, owner, identifier, payload, now):
                 )
                 .values(revoked_at=now)
             )
+    activity.updated_at = now
     user.activity_data_version += 1
     db.flush()
     return detail(db, owner, identifier)
@@ -127,6 +168,113 @@ def listing(db, owner, limit, offset, activity_date=None, category=None, activit
     total = db.scalar(select(func.count()).select_from(Activity).where(*filters))
     return ActivityList(
         items=[view(a, a.id in routed) for a in activities], total=total, limit=limit, offset=offset
+    )
+
+
+def sync_activities(
+    db,
+    owner: UUID,
+    now: datetime,
+    *,
+    limit: int = 50,
+    since_version: int | None = None,
+    updated_since: datetime | None = None,
+    cursor: str | None = None,
+) -> ActivitySyncView:
+    if updated_since is not None and updated_since.tzinfo is None:
+        raise ApiError(422, "VALIDATION_ERROR", "同步时间必须包含时区")
+    cursor_pair = decode_sync_cursor(cursor) if cursor is not None else None
+    data_version = db.scalar(
+        select(User.activity_data_version)
+        .where(User.id == owner)
+        .execution_options(populate_existing=True)
+    )
+    if data_version is None:
+        raise ApiError(401, "AUTH_REQUIRED", "请先登录")
+    total_count = int(
+        db.scalar(select(func.count()).select_from(Activity).where(Activity.user_id == owner)) or 0
+    )
+    if since_version is not None and since_version == data_version and cursor_pair is None:
+        return ActivitySyncView(
+            data_version=int(data_version),
+            unchanged=True,
+            server_time=now,
+            total_count=total_count,
+            items=[],
+            next_cursor=None,
+            has_more=False,
+            active_ids=None,
+            full_resync_required=False,
+        )
+
+    filters = [Activity.user_id == owner]
+    if updated_since is not None:
+        filters.append(Activity.updated_at >= updated_since)
+    if cursor_pair is not None:
+        cursor_ts, cursor_id = cursor_pair
+        filters.append(
+            or_(
+                Activity.updated_at > cursor_ts,
+                and_(Activity.updated_at == cursor_ts, Activity.id > cursor_id),
+            )
+        )
+
+    rows = db.scalars(
+        select(Activity)
+        .where(*filters)
+        .order_by(Activity.updated_at.asc(), Activity.id.asc())
+        .limit(limit + 1)
+    ).all()
+    has_more = len(rows) > limit
+    page_rows = rows[:limit]
+    ids = [row.id for row in page_rows]
+    routed = (
+        set(
+            db.scalars(
+                select(ActivitySegment.activity_id)
+                .where(ActivitySegment.activity_id.in_(ids))
+                .distinct()
+            )
+        )
+        if ids
+        else set()
+    )
+    next_cursor = (
+        encode_sync_cursor(page_rows[-1].updated_at, page_rows[-1].id)
+        if has_more and page_rows
+        else None
+    )
+
+    active_ids: list[UUID] | None = None
+    full_resync_required = False
+    if since_version is not None and cursor_pair is None:
+        if total_count <= MAX_SYNC_ACTIVE_IDS:
+            active_ids = list(
+                db.scalars(
+                    select(Activity.id)
+                    .where(Activity.user_id == owner)
+                    .order_by(Activity.activity_date.desc(), Activity.id.desc())
+                ).all()
+            )
+        else:
+            full_resync_required = True
+
+    server_time = now
+    if page_rows:
+        latest_item_ts = max(row.updated_at for row in page_rows)
+        if latest_item_ts > server_time:
+            server_time = latest_item_ts
+
+    return ActivitySyncView(
+        data_version=int(data_version),
+        unchanged=False,
+        server_time=server_time,
+        total_count=total_count,
+        items=[sync_item_view(row, row.id in routed) for row in page_rows],
+        next_cursor=next_cursor,
+        has_more=has_more,
+        active_ids=active_ids,
+        full_resync_required=full_resync_required,
     )
 
 

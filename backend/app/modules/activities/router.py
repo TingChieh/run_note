@@ -1,11 +1,11 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_identity, get_session, require_write
+from app.api.dependencies import get_identity, get_read_identity, get_session, require_write
 from app.core.responses import ApiResponse, ResponseMeta
 from app.modules.activities import service
 from app.modules.activities.schema import (
@@ -13,6 +13,7 @@ from app.modules.activities.schema import (
     ActivityBatchDelete,
     ActivityDeleted,
     ActivityList,
+    ActivitySyncView,
     ActivityUpdate,
     ActivityView,
     ReplayView,
@@ -55,6 +56,32 @@ def categories(
     db: Annotated[Session, Depends(get_session)],
 ):
     data = service.categories(db, identity[1].id)
+    db.commit()
+    return envelope(request, data)
+
+
+@router.get("/sync", response_model=ApiResponse[ActivitySyncView])
+def sync(
+    request: Request,
+    response: Response,
+    identity: Annotated[tuple, Depends(get_read_identity)],
+    db: Annotated[Session, Depends(get_session)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    since_version: Annotated[int | None, Query(ge=0)] = None,
+    updated_since: datetime | None = None,
+    cursor: Annotated[str | None, Query(max_length=128)] = None,
+):
+    data = service.sync_activities(
+        db,
+        identity[1].id,
+        request.app.state.clock(),
+        limit=limit,
+        since_version=since_version,
+        updated_since=updated_since,
+        cursor=cursor,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["ETag"] = f'W/"v{data.data_version}"'
     db.commit()
     return envelope(request, data)
 

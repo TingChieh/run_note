@@ -21,6 +21,17 @@
     FootprintError,
   } from '#lib/api/footprints.ts';
   import type { Selection, FootprintsAll, FootprintSnapshot } from '#lib/api/footprints.ts';
+  import {
+    buildCacheNamespace,
+    clearPrivateOfflineCache,
+    extractFootprintMetadata,
+    readFootprintMetaCache,
+    saveFootprintMetaCache,
+    type FootprintMetaSnapshot,
+  } from '#lib/offline-cache.ts';
+  const cacheNamespace = $derived(buildCacheNamespace(page.data.user?.id, view.manage ? 'owner' : view.href('/')));
+  let offlineMeta = $state<FootprintMetaSnapshot | null>(null);
+  let offlineMetaSavedAt = $state<number | null>(null);
   let mode = $state<Selection['mode']>('tracks');
   // Requested by the HTML itself instead of after hydration; the first load() below reuses the response.
   const firstRead = view.api(allFootprintsPath(page.url.searchParams.get('mode') === 'heatmap' ? 'heatmap' : 'tracks'));
@@ -84,6 +95,8 @@
     if (!silent) {
       loading = true;
       data = null;
+      offlineMeta = null;
+      offlineMetaSavedAt = null;
       message = '';
       status = null;
       generatedAt = null;
@@ -91,17 +104,22 @@
       refreshFailed = false;
     }
     const requested = mode;
+    const ns = cacheNamespace;
     try {
       const result = await readAllFootprints(requested, signal);
       if (disposed || id !== requestId) return;
       const next = result.result ? footprintDisplayData(result.result) : null;
       // Keep the same object when nothing changed, so the live map is not redrawn.
       if (!(next && data && generatedAt === result.generated_at)) data = next;
+      offlineMeta = null;
+      offlineMetaSavedAt = null;
       status = result.status;
       generatedAt = result.generated_at;
       refreshing = result.refreshing;
       refreshFailed = result.refresh_failed;
       message = '';
+      const meta = extractFootprintMetadata(requested, result);
+      if (meta) void saveFootprintMetaCache(ns, requested, meta);
       if (data) cache.set(requested, { data, generatedAt, refreshing, refreshFailed });
       else cache.delete(requested);
       if (result.status === 'failed') message = '足迹生成暂未完成，请稍后重新读取';
@@ -114,14 +132,30 @@
       if (cause instanceof FootprintError && cause.status === 401) {
         cache.clear();
         data = null;
+        offlineMeta = null;
         status = null;
         generatedAt = null;
         refreshing = false;
         refreshFailed = false;
+        void clearPrivateOfflineCache();
         window.location.replace('/admin?reason=changed');
         return;
       }
       if (silent && data) return;
+      const networkDown =
+        (typeof navigator !== 'undefined' && navigator.onLine === false) ||
+        !(cause instanceof FootprintError);
+      if (networkDown) {
+        const cached = await readFootprintMetaCache(ns, requested);
+        if (disposed || id !== requestId) return;
+        if (cached) {
+          offlineMeta = cached.value;
+          offlineMetaSavedAt = cached.savedAt;
+          generatedAt = cached.value.generated_at;
+          message = '';
+          return;
+        }
+      }
       message = cause instanceof Error ? cause.message : '无法读取足迹，请重试';
     } finally {
       if (!disposed && id === requestId) loading = false;
@@ -178,6 +212,22 @@
   {#if message}<FeedbackState kind="error" title={message}
       ><button onclick={reload} class="button-secondary">重新读取足迹</button></FeedbackState
     >{/if}
+  {#if offlineMeta && !data}
+    <section class="aux-panel" data-testid="footprint-offline-meta" aria-label="离线足迹元数据">
+      <FeedbackState
+        kind="empty"
+        title={`离线缓存足迹概览 · 全部 ${offlineMeta.activity_count} 条记录（地图可显示 ${offlineMeta.visible_activity_count} 条）`}
+      >
+        <p>
+          模式：{offlineMeta.mode === 'heatmap' ? '运动热力图' : '轨迹叠加'} · 网格 {offlineMeta.grid_size_m} m
+          {#if generatedLabel}· 快照更新于 {generatedLabel}{/if}
+          {#if offlineMetaSavedAt}· 缓存于 {new Intl.DateTimeFormat('zh-CN', { timeZone: page.data.showcase?.timezone ?? 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(offlineMetaSavedAt))}{/if}
+        </p>
+        <p class="mt-2">离线模式仅展示已缓存的足迹元数据，在线底图与完整轨迹需联网后加载。</p>
+        <button type="button" onclick={reload} class="button-secondary mt-3">重新读取足迹</button>
+      </FeedbackState>
+    </section>
+  {/if}
   {#if data}
     {#if refreshFailed}<div data-testid="footprint-refresh-failed">
         <FeedbackState title="自动更新暂未完成，当前显示上次生成的足迹。"

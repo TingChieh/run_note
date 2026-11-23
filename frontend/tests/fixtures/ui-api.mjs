@@ -521,6 +521,12 @@ createServer(async (req, res) => {
   }
   if (url.pathname.startsWith('/api/v1/ai-assistant/')) return !signedIn || showcase ? send(null, 401) : aiAssistant.handle(req, url, res, current.id, send);
   if (url.pathname === '/api/v1/activities/categories') return send([]);
+  if (url.pathname === '/api/v1/activities/sync') {
+    if (showcase || !signedIn) return send(null, 401);
+    const sinceVersion = url.searchParams.get('since_version');
+    const unchanged = sinceVersion !== null && Number(sinceVersion) === 0;
+    return send({ data_version: 0, unchanged, server_time: new Date().toISOString(), total_count: 0, items: [], next_cursor: null, has_more: false, active_ids: unchanged ? null : [], full_resync_required: false });
+  }
   if (url.pathname === '/api/v1/activities') return send({ items: [], total: 0, limit: Number(url.searchParams.get('limit') ?? 20), offset: Number(url.searchParams.get('offset') ?? 0) });
   if (url.pathname === '/api/v1/footprints/all') return send({status:'ready',generated_at:'2026-10-15T00:00:00Z',refreshing:false,result:{scope:'all',type:'FeatureCollection',features:[],mode:url.searchParams.get('mode')??'tracks',activity_count:0,visible_activity_count:0,unsupported_segment_count:0,grid_size_m:100,grid_crs:'EPSG:3857',count_basis:'distinct_activity_per_cell',max_count:0}});
   if (url.pathname === '/api/v1/footprints/provinces') return send({ year:url.searchParams.has('year')?Number(url.searchParams.get('year')):null,total:34,provinces:[],activity_count:0,located_activity_count:0 });

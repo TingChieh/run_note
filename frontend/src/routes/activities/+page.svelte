@@ -39,6 +39,18 @@
     type Activity,
     type ActivityList,
   } from '#lib/api/activities.ts';
+  import {
+    buildCacheNamespace,
+    clearPrivateOfflineCache,
+    readCachedActivityPage,
+    upsertCachedActivities,
+  } from '#lib/offline-cache.ts';
+  const cacheNamespace = $derived(buildCacheNamespace(page.data.user?.id, view.manage ? 'owner' : view.href('/')));
+  let showingCachedList = $state(false);
+  let cachedListSavedAt = $state<number | null>(null);
+  const isNetworkFailure = (cause: unknown) =>
+    (typeof navigator !== 'undefined' && navigator.onLine === false) ||
+    (cause instanceof ActivityError && cause.code === 'NETWORK_ERROR');
   let records = $state<ActivityList | null>(null),
     loading = $state(true),
     busy = $state(false),
@@ -273,6 +285,7 @@
       duplicateId = null;
       successId = null;
       warnings = [];
+      void clearPrivateOfflineCache();
       window.location.replace('/admin?reason=expired&next=%2Factivities');
       return;
     }
@@ -290,6 +303,9 @@
     loading = true;
     records = null;
     listMessage = '';
+    showingCachedList = false;
+    cachedListSavedAt = null;
+    const ns = cacheNamespace;
     try {
       let result = await readActivities(fetch, offset);
       if (disposed || request !== listRequest) return;
@@ -302,9 +318,25 @@
         records = result;
         syncCurrent(result);
         if (!result.items.length) editMode = false;
+        if (result.items.length > 0) {
+          void upsertCachedActivities(ns, result.items);
+        }
       }
     } catch (cause) {
-      if (!disposed && request === listRequest) fail(cause, 'list');
+      if (disposed || request !== listRequest) return;
+      if (isNetworkFailure(cause)) {
+        const cached = await readCachedActivityPage(ns, offset, 20);
+        if (disposed || request !== listRequest) return;
+        if (cached) {
+          records = cached.list;
+          showingCachedList = true;
+          cachedListSavedAt = cached.savedAt;
+          editMode = false;
+          syncCurrent(cached.list);
+          return;
+        }
+      }
+      fail(cause, 'list');
     } finally {
       if (!disposed && request === listRequest) loading = false;
     }
@@ -675,6 +707,15 @@
   {#if loading}<div class="page-loading mt-4"><PageSkeleton title="正在读取活动…" /></div>
   {:else if records}
     <div class="content-reveal">
+      {#if showingCachedList}<div class="mt-4" data-testid="activities-offline-cache-notice">
+          <FeedbackState
+            kind="empty"
+            title={`离线缓存视图 · 已缓存 ${records.total} 条记录${cachedListSavedAt ? `（同步于 ${new Intl.DateTimeFormat('zh-CN', { timeZone: page.data.showcase?.timezone ?? 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(cachedListSavedAt))}）` : ''}`}
+          >
+            <p>离线时仅供只读查看，编辑与导入需联网后进行。</p>
+            <button type="button" class="button-secondary mt-3" onclick={() => void load(lastOffset)}>重新同步列表</button>
+          </FeedbackState>
+        </div>{/if}
       {#if !records.items.length}<div class="mt-4">
           <FeedbackState kind="empty" title="暂无跑步记录。"
             ><p>
