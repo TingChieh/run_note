@@ -21,6 +21,7 @@
   import { pageDescription, pageNoindex } from '#lib/seo.ts';
   import { initializeTheme } from '#lib/components/system-theme.ts';
   import { installCapacitorBackHandler } from '#lib/capacitor-back.ts';
+  import { isCapacitorNative } from '#lib/capacitor-env.ts';
   import { installCapacitorThemeSync } from '#lib/capacitor-theme.ts';
   import { clearHealthGrantHistory } from '#lib/capacitor-health.ts';
   import {
@@ -107,9 +108,15 @@
   onMount(() => installCapacitorThemeSync());
   onMount(() => {
     let syncDisposed = false;
-    const runBackgroundSync = () => {
+    const shouldAutoSyncOnRoute = () => {
       const uid = page.data.user?.id;
-      if (syncDisposed || !uid || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
+      if (syncDisposed || !uid || (typeof navigator !== 'undefined' && navigator.onLine === false)) return false;
+      // Never fire private owner sync while browsing someone else's public showcase.
+      return viewContext(page.url.pathname, page.data.user?.is_admin === true).kind !== 'public';
+    };
+    const runBackgroundSync = () => {
+      if (!shouldAutoSyncOnRoute()) return;
+      const uid = page.data.user!.id;
       const namespace = buildCacheNamespace(uid, 'owner');
       void syncCompanionActivities({ namespace }).then((outcome) => {
         if (syncDisposed) return;
@@ -129,11 +136,15 @@
     };
     syncNetwork();
     void ensureAccountCacheIsolation(page.data.user?.id ?? null).then(() => {
-      if (!syncDisposed && !offline && page.data.user?.id) {
+      // Auto-sync on mount and mutations inside native Capacitor Companion; standard Web stays
+      // quiet until explicit sync or reconnect from offline.
+      if (!syncDisposed && !offline && isCapacitorNative()) {
         runBackgroundSync();
       }
     });
-    const onActivitiesChanged = () => runBackgroundSync();
+    const onActivitiesChanged = () => {
+      if (isCapacitorNative()) runBackgroundSync();
+    };
     window.addEventListener('online', syncNetwork);
     window.addEventListener('offline', syncNetwork);
     window.addEventListener('runnote-activities-changed', onActivitiesChanged);

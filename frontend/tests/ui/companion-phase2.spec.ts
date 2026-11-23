@@ -253,13 +253,14 @@ test('incremental sync populates offline cache, supports offline viewing, and cl
   // Trigger sync on preferences page & verify cache panel updates cleanly.
   await page.goto('/settings/preferences');
   await expect(page.getByTestId('companion-cache-panel')).toBeVisible();
+  await page.getByTestId('cache-sync-button').click();
   await expect(page.getByTestId('cache-data-version')).toHaveText('v4');
   await expect(page.getByTestId('cache-sections')).toContainText('跑步记录（2 条）');
 
   // Second manual sync should hit unchanged short-circuit (no duplicate records).
   await page.getByTestId('cache-sync-button').click();
   await expect(page.getByTestId('cache-status-message')).toContainText('已是最新');
-  expect(syncCalls).toBeGreaterThanOrEqual(2);
+  expect(syncCalls).toBe(2);
 
   // Visit footprints online so lightweight metadata is cached.
   await page.route('**/api/v1/showcase/footprints/all**', async (route) => {
