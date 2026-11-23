@@ -31,3 +31,10 @@ describe('records path', () => {
   expect(contextPath(viewContext('/records'), '/records')).toBe('/records');
  });
 });
+describe('ai path', () => {
+ it('never prefixes /ai under named public showcases while keeping workspace and root paths', () => {
+  expect(contextPath(viewContext('/p/alice/dashboard', true), '/ai')).toBe('/ai');
+  expect(contextPath(viewContext('/workspace/dashboard', false), '/ai')).toBe('/workspace/ai');
+  expect(contextPath(viewContext('/dashboard', true), '/ai')).toBe('/ai');
+ });
+});

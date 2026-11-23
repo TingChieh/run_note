@@ -128,6 +128,7 @@ test('two full personal showcases keep navigation, records, routes and reports s
       const navigation = page.getByRole('navigation', { name: '主要导航' });
       await expect(navigation.getByRole('link', { name: '跑步记录', exact: true })).toHaveAttribute('href', `/p/${username}/activities`);
       await expect(navigation.getByRole('link', { name: '数据汇总', exact: true })).toHaveAttribute('href', `/p/${username}/dashboard`);
+      await expect(navigation.getByRole('link', { name: 'AI 助手', exact: true })).toHaveCount(0);
       await expect(page.getByRole('button', { name: /^(导入 GPX|编辑记录|生成近期总结与下周建议)/ })).toHaveCount(0);
     }
     const removedAi = await page.goto(`/p/${username}/ai`);
