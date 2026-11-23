@@ -139,9 +139,7 @@ async function fixture(page: Page) {
       const items =
         empty || pending
           ? []
-          : yr === 2026
-            ? [qingjia, songxi, shangang].map((m) => ({ ...m, is_new_in_year: m.first_date.startsWith('2026') }))
-            : allMarkers.map((m) => ({ ...m, is_new_in_year: yr !== null && m.first_date.startsWith(String(yr)) }));
+          : allMarkers.map((m) => ({ ...m, is_new_in_year: yr !== null && m.first_date.startsWith(String(yr)) }));
       data = {
         ...version,
         status: pending ? 'pending' : 'ready',
@@ -182,7 +180,9 @@ async function fixture(page: Page) {
       const scope = url.pathname.split('/').at(-2);
       const y = Number(url.searchParams.get('year'));
       const increments =
-        y === 2024 && code === 'synthetic' ? Array(12).fill(0) : [8, 17, 14, 8, 19, 7, 23, 0, 6, 18, 8, 0];
+        y === 2024 && (code === 'synthetic' || scope === 'global')
+          ? Array(12).fill(0)
+          : [8, 17, 14, 8, 19, 7, 23, 0, 6, 18, 8, 0];
       let cumulative = 358;
       data = {
         ...version,
@@ -272,6 +272,15 @@ test('overview-first map, zero external requests, all-years default, drill-down,
   // Reset to national overview button returns to global scope.
   await page.getByRole('button', { name: '回到全国' }).click();
   await expect(page.getByRole('heading', { name: '全国及全球足迹总览' })).toBeVisible();
+
+  // Regression: in 'new' mode on a year with zero new cells, historical markers remain visible on the map.
+  await page.getByRole('button', { name: '首次探索' }).click();
+  await page.getByLabel('年份').selectOption('2024');
+  await expect(page.getByRole('button', { name: '查看全部年份' })).toBeVisible();
+  await expect(mapEl).toHaveAttribute('data-drawn', 'true');
+  await expect(page.locator('.map-label').first()).toBeVisible();
+  await page.getByRole('button', { name: '查看全部年份' }).click();
+  await expect(page.getByLabel('年份')).toHaveValue('all');
 
   await page.getByText('查看逐月数据').click();
   await expect(page.getByRole('rowheader', { name: '1 月', exact: true })).toBeVisible();

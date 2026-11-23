@@ -170,11 +170,18 @@ def test_history_recovers_after_old_import_and_delete(clients):
     assert sh_all["is_new_in_year"] is False
     assert sh_all["bounds"] is not None
     y25_markers = ready(first, "/markers?year=2025")
-    assert y25_markers["items"][0]["activity_count"] == 2
+    assert y25_markers["items"][0]["activity_count"] == 3
     assert y25_markers["items"][0]["is_new_in_year"] is False
     y24_markers = ready(first, "/markers?year=2024")
-    assert y24_markers["items"][0]["activity_count"] == 1
+    assert y24_markers["items"][0]["activity_count"] == 3
     assert y24_markers["items"][0]["is_new_in_year"] is True
+    # Year with zero activities/new cells still returns historical markers for context.
+    y26_markers = ready(first, "/markers?year=2026")
+    assert len(y26_markers["items"]) == 1
+    assert y26_markers["items"][0]["code"] == "310000"
+    assert y26_markers["items"][0]["activity_count"] == 3
+    assert y26_markers["items"][0]["is_new_in_year"] is False
+    assert y26_markers["regions"] == all_markers["regions"]
     assert second.get(BASE + "/markers").json()["data"]["items"] == []
     all_detail = ready(first, city + "&all_years=true")
     assert all_detail["cumulative_cells"] == baseline["cumulative_cells"]

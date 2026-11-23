@@ -151,7 +151,6 @@ SELECT count(*) AS activity_count,
     )) AS no_track_count,
     COALESCE(sum(a.distance_m),0) AS total_distance
 FROM activities a WHERE a.user_id=:owner
-  AND (CAST(:start AS date) IS NULL OR (a.activity_date >= :start AND a.activity_date < :end))
 """
 ATLAS_COVERAGE = """
 SELECT count(*) FILTER (WHERE c.id IS NULL) FROM activities a
@@ -165,16 +164,13 @@ SELECT hit.code, count(*) AS activity_count, min(a.activity_date) AS first_date,
 FROM activities a JOIN activity_global_footprint_caches c
 ON (c.activity_id,c.user_id)=(a.id,a.user_id) AND c.atlas_version=:atlas
 CROSS JOIN LATERAL unnest(c.city_codes) AS hit(code)
-WHERE a.user_id=:owner
-  AND (CAST(:start AS date) IS NULL OR (a.activity_date >= :start AND a.activity_date < :end))
-GROUP BY hit.code
+WHERE a.user_id=:owner GROUP BY hit.code
 """
 REGION_HITS = """
 SELECT DISTINCT unnest(c.region_codes) AS code
 FROM activities a JOIN activity_global_footprint_caches c
 ON (c.activity_id,c.user_id)=(a.id,a.user_id) AND c.atlas_version=:atlas
 WHERE a.user_id=:owner
-  AND (CAST(:start AS date) IS NULL OR (a.activity_date >= :start AND a.activity_date < :end))
 """
 GRID_COVERAGE = """
 SELECT count(*) FILTER (WHERE c.id IS NULL) AS missing, min(a.activity_date) AS first_date
@@ -198,24 +194,17 @@ def _place(city, row, kind, distance):
     )
 
 
-def _catalog(db, owner, year: int | None = None):
-    start = date(year, 1, 1) if year is not None else None
-    end = date(year + 1, 1, 1) if year is not None else None
-    totals = db.execute(text(CATALOG_TOTALS), {"owner": owner, "start": start, "end": end}).one()
-    params = {"owner": owner, "atlas": atlas_version(), "start": start, "end": end}
+def _catalog(db, owner):
+    totals = db.execute(text(CATALOG_TOTALS), {"owner": owner}).one()
+    params = {"owner": owner, "atlas": atlas_version()}
     atlas = _atlas()
     items, unmatched = [], 0
     if totals.activity_count > totals.no_track_count:
-        if db.scalar(text(ATLAS_COVERAGE), {"owner": owner, "atlas": params["atlas"]}):
+        if db.scalar(text(ATLAS_COVERAGE), params):
             raise IncompleteHistory()
         point_codes = [city["code"] for city in atlas["point_cities"]]
         for row in city_distances(
-            db,
-            owner,
-            atlas["poly_cities"],
-            atlas=params["atlas"],
-            point_codes=point_codes,
-            year=year,
+            db, owner, atlas["poly_cities"], atlas=params["atlas"], point_codes=point_codes
         ):
             if row.code is None:
                 unmatched = row.activity_count
@@ -266,26 +255,10 @@ def parse_optional_year(value: str | None) -> int | None:
 
 
 def markers(reads, owner, version, year: int | None = None):
-    all_status, all_data = reads.read(owner, version, "catalog", _catalog)
-    if all_status != "ready" or all_data is None:
+    status, data = reads.read(owner, version, "catalog", _catalog)
+    if status != "ready" or data is None:
         return dict(
-            **version_fields(version, all_status),
-            year=year,
-            items=[],
-            regions=[],
-            activity_count=None,
-            boundary_count=None,
-            nearby_count=None,
-        )
-    if year is None:
-        target_status, target_data = all_status, all_data
-    else:
-        target_status, target_data = reads.read(
-            owner, version, ("markers", year), lambda db, ow: _catalog(db, ow, year)
-        )
-    if target_status != "ready" or target_data is None:
-        return dict(
-            **version_fields(version, target_status),
+            **version_fields(version, status),
             year=year,
             items=[],
             regions=[],
@@ -294,15 +267,14 @@ def markers(reads, owner, version, year: int | None = None):
             nearby_count=None,
         )
     cities_by_code = _atlas()["cities_by_code"]
-    first_dates = {item["code"]: item["first_date"] for item in all_data["items"]}
     marker_items = []
-    for item in target_data["items"]:
+    for item in data["items"]:
         city = cities_by_code.get(item["code"])
         if city is None:
             continue
         lon, lat = city["center"] if "center" in city else (city["lon"], city["lat"])
         bounds = tuple(city["bounds"]) if "bounds" in city else None
-        first_date = first_dates.get(item["code"], item["first_date"])
+        first_date = item["first_date"]
         marker_items.append(
             dict(
                 code=item["code"],
@@ -323,13 +295,13 @@ def markers(reads, owner, version, year: int | None = None):
             )
         )
     return dict(
-        **version_fields(version, target_status),
+        **version_fields(version, status),
         year=year,
         items=marker_items,
-        regions=target_data["regions"],
-        activity_count=target_data["activity_count"],
-        boundary_count=target_data["boundary_count"],
-        nearby_count=target_data["nearby_count"],
+        regions=data["regions"],
+        activity_count=data["activity_count"],
+        boundary_count=data["boundary_count"],
+        nearby_count=data["nearby_count"],
     )
 
 

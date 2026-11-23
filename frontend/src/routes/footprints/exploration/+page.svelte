@@ -541,11 +541,7 @@
           <p class="status-note" role="status">正在整理部分足迹数据，当前先展示可用部分…</p>
         {/if}
 
-        {#if !isAllYears && markersData?.status === 'ready' && markersData.items.length === 0 && hasHistoricalData}
-          <FeedbackState title={`${selectedYear} 年暂无新增或匹配城市`}>
-            <button type="button" class="button-secondary" onclick={switchToAllYearsHeatmap}>切换到全部年份</button>
-          </FeedbackState>
-        {:else if layer === 'new' && detail?.status === 'ready' && detail.new_cells === 0 && hasHistoricalData}
+        {#if layer === 'new' && detail?.status === 'ready' && detail.new_cells === 0 && hasHistoricalData}
           <div class="empty-year-banner" role="status">
             <span>{selectedYear} 年暂无新增探索格网。</span>
             <button type="button" class="button-secondary" onclick={switchToAllYearsHeatmap}>查看全部年份</button>

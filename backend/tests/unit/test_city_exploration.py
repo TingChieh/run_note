@@ -66,28 +66,7 @@ def test_markers_builds_boundary_and_nearby_with_year_flags():
         "boundary_count": 1,
         "nearby_count": 1,
     }
-    year_catalog = {
-        "items": [
-            {
-                "code": "310000",
-                "name": "上海市",
-                "region_name": "上海市",
-                "kind": "boundary",
-                "first_date": date(2026, 2, 1),
-                "last_date": date(2026, 2, 1),
-                "activity_count": 3,
-                "distance_m": 15000.0,
-            },
-            all_catalog["items"][1],
-        ],
-        "regions": [{"code": "CN-310000", "name": "上海市"}],
-        "activity_count": 4,
-        "boundary_count": 1,
-        "nearby_count": 1,
-    }
-    reads = StubReads(
-        {"catalog": ("ready", all_catalog), ("markers", 2026): ("ready", year_catalog)}
-    )
+    reads = StubReads({"catalog": ("ready", all_catalog)})
 
     cumulative = markers(reads, owner, 3, None)
     assert cumulative["status"] == "ready"
@@ -102,12 +81,21 @@ def test_markers_builds_boundary_and_nearby_with_year_flags():
     assert tokyo["bounds"] is None
     assert tokyo["distance_m"] is None
 
+    # Year parameter keeps all visited cities/regions as context and only flags new ones.
     for_2026 = markers(reads, owner, 3, 2026)
+    assert len(for_2026["items"]) == 2
+    assert len(for_2026["regions"]) == 1
     sh_26, tokyo_26 = for_2026["items"]
     assert sh_26["first_date"] == date(2024, 5, 1)
-    assert sh_26["activity_count"] == 3
+    assert sh_26["activity_count"] == 10
     assert sh_26["is_new_in_year"] is False
     assert tokyo_26["is_new_in_year"] is True
+
+    # A year with zero activities/new cells still returns all historical markers as muted context.
+    for_2020 = markers(reads, owner, 3, 2020)
+    assert len(for_2020["items"]) == 2
+    assert all(not item["is_new_in_year"] for item in for_2020["items"])
+    assert for_2020["regions"] == all_catalog["regions"]
 
     pending = markers(StubReads({"catalog": ("pending", None)}), owner, 3, None)
     assert pending["status"] == "pending"

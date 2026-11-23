@@ -1,9 +1,9 @@
 # 96 城市探索与足迹总览 v2 设计方案
 
-日期：2026-11-23  
-基线：`main` @ `8bf806db`（2.0.1）  
-关联议题：#100（城市探索与足迹成就）、#121（v1.4.0 初版实现 `07fa0be`）  
-状态：已批复定稿（切片 1–3 纳入当前实施；切片 4 独立跟踪为 Item 47）
+- 日期：2026-11-23
+- 基线：`main` @ `8bf806db`（2.0.1）
+- 关联议题：#100（城市探索与足迹成就）、#121（v1.4.0 初版实现 `07fa0be`）
+- 状态：已批复定稿（切片 1–3 纳入当前实施；切片 4 独立跟踪为 Item 47）
 
 ## 负责人决策（2026-11-23 已批复）
 
@@ -36,15 +36,15 @@
 
 #### B. 为什么「全国视野下地图几乎什么都看不见」（三大叠加根因）
 
-1. **视觉与几何根因：亚像素多边形在 WebGL 中消隐**  
-   - `backend/app/modules/footprints/exploration.py` L432：`zoom < 8` 时设置 `block = 16`（即 `16 × 100 m = 1.6 km`），仅当视口内格网块超过 `MAX_FEATURES = 5000`（L26、L468）时才将 `block *= 4`。对于只在几个城市跑过步的用户，全国范围总块数远小于 5,000，因此服务端返回 **`block_size = 16`（1.6 km × 1.6 km 方块）**。  
-   - `frontend/src/lib/components/ExplorationMap.svelte` L51-81、L177-185 仅将这些格网转为真实地理经纬度 `Polygon`，通过单一 `fill` 图层（`exploration-grid-fill`）渲染，**没有任何 `circle` 兜底、城市气泡、聚类或文字标注**。  
+1. **视觉与几何根因：亚像素多边形在 WebGL 中消隐**
+   - `backend/app/modules/footprints/exploration.py` L432：`zoom < 8` 时设置 `block = 16`（即 `16 × 100 m = 1.6 km`），仅当视口内格网块超过 `MAX_FEATURES = 5000`（L26、L468）时才将 `block *= 4`。对于只在几个城市跑过步的用户，全国范围总块数远小于 5,000，因此服务端返回 **`block_size = 16`（1.6 km × 1.6 km 方块）**。
+   - `frontend/src/lib/components/ExplorationMap.svelte` L51-81、L177-185 仅将这些格网转为真实地理经纬度 `Polygon`，通过单一 `fill` 图层（`exploration-grid-fill`）渲染，**没有任何 `circle` 兜底、城市气泡、聚类或文字标注**。
    - 在全国视野（`1440×900` 或 `390×844` 下 `zoom ≈ 3.2–4.2`），1 屏幕像素约跨 `5–10 km`；一块 `1.6 km` 的正方形仅占 **`0.16–0.32 px`**，在 WebGL 三角形光栅化阶段被直接丢弃或退化为肉眼不可见的噪点。
-2. **底图缺失根因：初始状态是纯色矩形，无任何地理参照**  
-   - `ExplorationMap.svelte` L37：`let active = $state<BasemapPreference | null>(null)`，且 `onMount`（L149-207）仅加载 `createRouteMapStyle(dark)`（L164），即一张纯色 `#edf3ef` / `#302e2c` 画布，直到用户手动点击页脚「图层」才调用 `createBasemapController`（L82-102）。  
+2. **底图缺失根因：初始状态是纯色矩形，无任何地理参照**
+   - `ExplorationMap.svelte` L37：`let active = $state<BasemapPreference | null>(null)`，且 `onMount`（L149-207）仅加载 `createRouteMapStyle(dark)`（L164），即一张纯色 `#edf3ef` / `#302e2c` 画布，直到用户手动点击页脚「图层」才调用 `createBasemapController`（L82-102）。
    - 这源于隐私策略（`frontend/tests/ui/city-exploration.spec.ts` L122 明确断言初始加载 `external` OpenFreeMap 请求为 `0`），但组件未像 `ProvinceMap.svelte` 那样接入本地离线轮廓 `world-base.json`，结果就是**“纯色空白画布 + 0.2 px 隐形方块”**。
-3. **数据默认过滤根因：强制锁定当年 `currentYear`，往年城市完全消失**  
-   - `exploration/+page.svelte` L44-47：当 URL 不含 `year` 时默认回退到 `currentYear`；而 `exploration.py` L420 仅读取 `history.years.get(year)`，**不支持跨年累计（`all`）格网视图**。  
+3. **数据默认过滤根因：强制锁定当年 `currentYear`，往年城市完全消失**
+   - `exploration/+page.svelte` L44-47：当 URL 不含 `year` 时默认回退到 `currentYear`；而 `exploration.py` L420 仅读取 `history.years.get(year)`，**不支持跨年累计（`all`）格网视图**。
    - 若跑者在往年去过多个城市而当年尚未前往（或每年年初），切入「全域探索」时地图连亚像素格网都为 0，与「城市图鉴」展示全部历史城市严重割裂。
 
 #### C. 交互与主足迹地图的同类问题
@@ -211,10 +211,12 @@
 
 为直观展现改动效果，本方案配套制作了两张静态矢量线框图（存放于 `docs/assets/2026-11-23-city-exploration-v2/`，仅使用合成示例数据，未接入生产代码）：
 
-1. **全国尺度前后对比**（v1.4.0 空白纯色画布 + 0.2 px 隐形方块 vs v2 离线轮廓 + 聚类气泡 + 标签 + 悬浮摘要卡）：  
+1. **全国尺度前后对比**（v1.4.0 空白纯色画布 + 0.2 px 隐形方块 vs v2 离线轮廓 + 聚类气泡 + 标签 + 悬浮摘要卡）：
+
    ![全国尺度前后对比](assets/2026-11-23-city-exploration-v2/country-before-after.svg)
 
-2. **三级缩放自适应、深色暖炭灰主题与移动端 390×844 布局**：  
+2. **三级缩放自适应、深色暖炭灰主题与移动端 390×844 布局**：
+
    ![多尺度与响应式线框图](assets/2026-11-23-city-exploration-v2/multiscale-and-responsive.svg)
 
 ---
