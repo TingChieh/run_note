@@ -22,6 +22,7 @@ export function createIndicator(
   const labels = items.map((item) => {
     const label = document.createElement('span');
     label.className = 'rn-moving-label';
+    if (item.dataset.tone) label.dataset.tone = item.dataset.tone;
     const icon = item.querySelector('svg');
     if (icon) label.append(icon.cloneNode(true));
     const badge = item.querySelector('.settings-tab-badge');
