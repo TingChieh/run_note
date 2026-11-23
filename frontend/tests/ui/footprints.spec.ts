@@ -1054,3 +1054,282 @@ for (const scheme of ['light', 'dark'] as const) {
     await expectUnenhancedFallback(find(page));
   });
 }
+
+const multiCitySeed = [
+  { name: '北京', lon: 116.397, lat: 39.908, runs: 8 },
+  { name: '上海', lon: 121.485, lat: 31.235, runs: 18 },
+  { name: '苏州', lon: 120.619, lat: 31.3, runs: 6 },
+  { name: '杭州', lon: 120.155, lat: 30.274, runs: 12 },
+  { name: '南京', lon: 118.797, lat: 32.06, runs: 4 },
+  { name: '广州', lon: 113.264, lat: 23.129, runs: 9 },
+  { name: '深圳', lon: 114.058, lat: 22.543, runs: 14 },
+  { name: '成都', lon: 104.066, lat: 30.572, runs: 5 },
+];
+
+async function installMultiCityFootprints(page: Page) {
+  await installActivities(page);
+  await page.route('**/api/v1/showcase/footprints/all?**', (route) => {
+    const url = new URL(route.request().url());
+    const mode = url.searchParams.get('mode') === 'heatmap' ? 'heatmap' : 'tracks';
+    const features =
+      mode === 'heatmap'
+        ? multiCitySeed.flatMap((c, idx) =>
+            Array.from({ length: Math.min(c.runs, 6) }, (_, k) => {
+              const dx = (k % 3) * 0.0012;
+              const dy = Math.floor(k / 3) * 0.0012;
+              return {
+                type: 'Feature' as const,
+                geometry: {
+                  type: 'Polygon' as const,
+                  coordinates: [
+                    [
+                      [c.lon + dx, c.lat + dy],
+                      [c.lon + dx + 0.001, c.lat + dy],
+                      [c.lon + dx + 0.001, c.lat + dy + 0.001],
+                      [c.lon + dx, c.lat + dy + 0.001],
+                      [c.lon + dx, c.lat + dy],
+                    ],
+                  ],
+                },
+                properties: { i: 120000 + idx * 100 + k, j: 36000 + idx * 100 + k, count: Math.min(c.runs, 16) },
+              };
+            }),
+          )
+        : multiCitySeed.flatMap((c, idx) =>
+            Array.from({ length: c.runs }, (_, k) => ({
+              type: 'Feature' as const,
+              geometry: {
+                type: 'LineString' as const,
+                coordinates: [
+                  [c.lon + k * 0.0005, c.lat],
+                  [c.lon + k * 0.0005 + 0.008, c.lat + 0.006],
+                ],
+              },
+              properties: {
+                activity_id: `00000000-0000-4000-8000-${String(idx * 100 + k + 1).padStart(12, '0')}`,
+                title: `合成路线·${c.name} #${k + 1}`,
+                activity_date: `2026-0${1 + (k % 9)}-${String(10 + (k % 15)).padStart(2, '0')}`,
+                segment_index: 0,
+              },
+            })),
+          );
+    const totalRuns = multiCitySeed.reduce((sum, c) => sum + c.runs, 0);
+    const result = {
+      scope: 'all' as const,
+      type: 'FeatureCollection' as const,
+      features,
+      mode,
+      activity_count: totalRuns,
+      visible_activity_count: totalRuns,
+      unsupported_segment_count: 0,
+      grid_size_m: 100,
+      grid_crs: 'EPSG:3857',
+      count_basis: 'distinct_activity_per_cell',
+      max_count: mode === 'heatmap' ? 16 : 0,
+    };
+    return route.fulfill({
+      json: {
+        data: {
+          status: 'ready',
+          generated_at: '2026-10-15T00:00:00Z',
+          refreshing: false,
+          refresh_failed: false,
+          result: url.searchParams.get('encoding') === 'delta' ? encodeFootprints(result) : result,
+        },
+        error: null,
+      },
+    });
+  });
+}
+
+test('low-zoom city clusters and labels stay consistent across tracks and heatmap, and preserve city detail', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (err) => errors.push(err.message));
+  page.on('console', (msg) => {
+    if (msg.type() === 'error' && !msg.text().includes('tiles.openfreemap.org') && !msg.text().includes('ERR_FAILED'))
+      errors.push(msg.text());
+  });
+  await page.route('https://tiles.openfreemap.org/**', (route) => route.abort());
+  await installMultiCityFootprints(page);
+  await loginRunner(page);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+
+  await page.goto('/footprints?mode=tracks');
+  await ready(page);
+  const mapEl = page.getByTestId('footprint-map-ready');
+  await expect(mapEl).toHaveAttribute('data-zoom-tier', 'country');
+  await expect(page.locator('.map-label.cluster-label').first()).toBeVisible();
+  await expect(page.locator('.map-label').filter({ hasText: '北京' })).toBeVisible();
+  await expect(page.locator('.map-label').filter({ hasText: '成都' })).toBeVisible();
+
+  // Switch to heatmap: same low-zoom city aggregation & labels appear.
+  await page.getByRole('button', { name: '运动热力图', exact: true }).click();
+  await ready(page);
+  await expect(mapEl).toHaveAttribute('data-zoom-tier', 'country');
+  await expect(page.locator('.map-label.cluster-label').first()).toBeVisible();
+  await expect(page.locator('.map-label').filter({ hasText: '北京' })).toBeVisible();
+  await expect(page.locator('.map-label').filter({ hasText: '成都' })).toBeVisible();
+
+  // Switching back and forth between loaded modes updates layers in place without rebuilding the Map instance.
+  await page.locator('.maplibregl-canvas').evaluate((el) => {
+    (el as HTMLElement).dataset.mark = 'live-lowzoom';
+  });
+  await page.getByRole('button', { name: '轨迹叠加', exact: true }).click();
+  await ready(page);
+  await expect(page.locator('.maplibregl-canvas[data-mark="live-lowzoom"]')).toHaveCount(1);
+  await expect(page.locator('.map-label.cluster-label').first()).toBeVisible();
+  await expect(page.locator('.map-label').filter({ hasText: '北京' })).toBeVisible();
+
+  await page.getByRole('button', { name: '运动热力图', exact: true }).click();
+  await ready(page);
+  await expect(page.locator('.maplibregl-canvas[data-mark="live-lowzoom"]')).toHaveCount(1);
+  await expect(page.locator('.map-label.cluster-label').first()).toBeVisible();
+  await expect(page.locator('.map-label').filter({ hasText: '北京' })).toBeVisible();
+
+  // Clicking a dense cluster expands toward regional unclustered cities + labels (6.5 <= z < 10.5).
+  await mapEl.scrollIntoViewIfNeeded();
+  const clusterBadge = page.locator('.map-label.cluster-label').first();
+  const clusterBox = (await clusterBadge.boundingBox())!;
+  await page.mouse.click(clusterBox.x + clusterBox.width / 2, clusterBox.y + clusterBox.height / 2);
+  await expect.poll(async () => mapEl.getAttribute('data-zoom-tier')).toBe('region');
+  await expect(page.locator('.map-label').first()).toBeVisible();
+
+  // Locating a city drills down to city detail (z >= 10.5): low-zoom labels clear and heatmap detail stays interactive.
+  await page.getByRole('group', { name: '有记录的城市', exact: true }).getByRole('button', { name: '北京市' }).click();
+  await expect(mapEl).toHaveAttribute('data-zoom-tier', 'city');
+  await expect(page.locator('.map-label')).toHaveCount(0);
+  await page.getByText('查看热区数据', { exact: false }).click();
+  await page.getByRole('button', { name: '定位热区 1', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: '所选网格：8 条不同运动记录' })).toBeVisible();
+
+  // Resetting to overview restores country-tier city aggregation.
+  await page.getByRole('button', { name: '回到全部足迹', exact: true }).click();
+  await expect(mapEl).toHaveAttribute('data-zoom-tier', 'country');
+  await expect(page.locator('.map-label.cluster-label').first()).toBeVisible();
+
+  // Responsive and light/dark checks with zero horizontal overflow.
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 768, height: 1024 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    for (const colorScheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    }
+  }
+  expect(errors).toEqual([]);
+});
+
+test('mobile touch tap on low-zoom city marker opens confirmation bar before zooming', async ({ browser }) => {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (err) => errors.push(err.message));
+  await page.route('https://tiles.openfreemap.org/**', (route) => route.abort());
+  await installMultiCityFootprints(page);
+  await loginRunner(page);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+
+  await page.goto('/footprints?mode=heatmap');
+  await ready(page);
+  const mapEl = page.getByTestId('footprint-map-ready');
+  await expect(mapEl).toHaveAttribute('data-zoom-tier', 'country');
+  const beijingLabel = page.locator('.map-label').filter({ hasText: '北京' });
+  await expect(beijingLabel).toBeVisible();
+  const labelBox = (await beijingLabel.boundingBox())!;
+  // Label is placed 18px above the city bubble center; tap the bubble underneath.
+  await page.touchscreen.tap(labelBox.x + labelBox.width / 2, labelBox.y + labelBox.height / 2 + 18);
+  const tapBar = page.getByTestId('footprint-city-tap-bar');
+  await expect(tapBar).toBeVisible();
+  await expect(tapBar).toContainText('北京市');
+  const goBtn = tapBar.getByRole('button', { name: '定位该城', exact: true });
+  const btnBox = (await goBtn.boundingBox())!;
+  expect(btnBox.height).toBeGreaterThanOrEqual(44);
+  await goBtn.click();
+  await expect(mapEl).toHaveAttribute('data-zoom-tier', 'city');
+  await expect(tapBar).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+  await context.close();
+});
+
+test('overseas heatmap cells and failed city atlas lookup retain low-zoom fallback markers', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (err) => errors.push(err.message));
+  await page.route('https://tiles.openfreemap.org/**', (route) => route.abort());
+  await installActivities(page);
+  await page.route('**/api/v1/showcase/footprints/all?**', (route) => {
+    const url = new URL(route.request().url());
+    const result = {
+      scope: 'all' as const,
+      type: 'FeatureCollection' as const,
+      features: [
+        {
+          type: 'Feature' as const,
+          geometry: {
+            type: 'Polygon' as const,
+            coordinates: [[[-74.0, 40.7], [-73.999, 40.7], [-73.999, 40.701], [-74.0, 40.701], [-74.0, 40.7]]],
+          },
+          properties: { i: 1, j: 1, count: 6 },
+        },
+        {
+          type: 'Feature' as const,
+          geometry: {
+            type: 'Polygon' as const,
+            coordinates: [[[-118.25, 34.05], [-118.249, 34.05], [-118.249, 34.051], [-118.25, 34.051], [-118.25, 34.05]]],
+          },
+          properties: { i: 2, j: 2, count: 4 },
+        },
+      ],
+      mode: 'heatmap' as const,
+      activity_count: 10,
+      visible_activity_count: 10,
+      unsupported_segment_count: 0,
+      grid_size_m: 100,
+      grid_crs: 'EPSG:3857',
+      count_basis: 'distinct_activity_per_cell',
+      max_count: 6,
+    };
+    return route.fulfill({
+      json: {
+        data: {
+          status: 'ready',
+          generated_at: '2026-10-15T00:00:00Z',
+          refreshing: false,
+          refresh_failed: false,
+          result: url.searchParams.get('encoding') === 'delta' ? encodeFootprints(result) : result,
+        },
+        error: null,
+      },
+    });
+  });
+  await loginRunner(page);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+
+  // 1) Overseas heatmap outside China atlas still populates 2 low-zoom fallback markers (NY + LA).
+  await page.goto('/footprints?mode=heatmap');
+  await ready(page);
+  const mapEl = page.getByTestId('footprint-map-ready');
+  await expect(mapEl).toHaveAttribute('data-zoom-tier', 'country');
+  await expect(mapEl).toHaveAttribute('data-lowzoom-markers', '2');
+  const unlocatedBtn = page.getByRole('group', { name: '有记录的城市', exact: true }).getByRole('button', { name: '未识别区域', exact: true });
+  await expect(unlocatedBtn).toBeVisible();
+  await unlocatedBtn.click();
+  await expect(mapEl).toHaveAttribute('data-lowzoom-markers', '2');
+
+  // 2) Failed city atlas download (503) also retains coarse low-zoom fallback markers for heatmap.
+  await page.route('**/china-cities*.json*', (route) => route.fulfill({ status: 503, body: '' }));
+  await page.goto('/footprints?mode=heatmap');
+  await ready(page);
+  await expect(page.getByText('城市识别暂不可用，全部足迹仍可查看。')).toBeVisible();
+  await expect(mapEl).toHaveAttribute('data-lowzoom-markers', '2');
+  expect(errors).toEqual([]);
+});

@@ -5,10 +5,28 @@
 
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import { onMount, onDestroy, untrack, type Snippet } from 'svelte';
-  import type { Map as LibreMap, GeoJSONSource } from 'maplibre-gl';
+  import type { Map as LibreMap, GeoJSONSource, MapLayerMouseEvent } from 'maplibre-gl';
+  import worldBaseUrl from '#lib/data/world-base.json?url';
   import type { FootprintCollection } from '#lib/api/footprints.ts';
   import { geometryBounds, displayFootprints } from '#lib/api/footprints.ts';
-  import type { CityLocations, FootprintCity } from '#lib/map/footprint-cities.ts';
+  import {
+    COUNTRY_MAX_ZOOM,
+    REGION_MAX_ZOOM,
+    bucketUnlocatedFootprints,
+    footprintCitiesToGeoJSON,
+    footprintCityPalette,
+    footprintCitySummaryText,
+    placeFootprintLabels,
+    visitedProvinceCodes,
+    zoomTier,
+    type ClusterPoint,
+    type FootprintCityFeatureInput,
+    type FootprintCitySummary,
+    type FootprintCitySummaryLocations,
+    type ProjectedLabel,
+    type ZoomTier,
+  } from '#lib/map/footprint-cities.ts';
+  import { emptyCollection, type GeoCollection } from '#lib/map/exploration-layers.ts';
   import { colorFootprintFeatures, heatFillColor } from '#lib/map/footprint-colors.ts';
   import { createRouteMapStyle, applyMapTheme, type BasemapPreference, type BasemapStyle } from '#lib/api/map-style.ts';
   import BasemapPicker from './BasemapPicker.svelte';
@@ -60,20 +78,38 @@
   let heatDataOpen = $state(false),
     heatPage = $state(0),
     recordsOpen = $state(false);
-  let dark = false,
+  let dark = $state(false),
     stopTheme: (() => void) | undefined;
   const heatPageSize = 50;
   let selectedIds = $state<string[]>([]);
   let cityOpen = $state(false),
     cityName = $state('');
-  let cities = $state<FootprintCity[]>([]),
-    unlocatedBounds = $state<CityLocations['unlocatedBounds']>(null);
+  let cities = $state<FootprintCitySummary[]>([]),
+    unlocatedMarkers = $state<FootprintCitySummary[]>([]),
+    unlocatedBounds = $state<FootprintCitySummaryLocations['unlocatedBounds']>(null);
   let cityLookup = $state<'loading' | 'ready' | 'failed'>('loading'),
     selectedCity = $state('');
   let cityWorker: Worker | undefined,
     cityRequestId = 0,
     appliedData: FootprintCollection | undefined;
-  const cityCache = new WeakMap<FootprintCollection, CityLocations>();
+  let worldBaseData: GeoCollection = emptyCollection;
+  let currentZoom = $state(4);
+  const currentTier = $derived<ZoomTier>(zoomTier(currentZoom));
+  let labels = $state<ProjectedLabel[]>([]);
+  let hoveredCity = $state<{ city: FootprintCitySummary; x: number; y: number } | null>(null);
+  let tappedCity = $state<FootprintCitySummary | null>(null);
+  let mapWidth = $state(320);
+  let lastPointerType = 'mouse';
+  let labelFrame = 0;
+  let cachedClusters: ClusterPoint[] = [];
+  let cachedVisibleCities: FootprintCitySummary[] = [];
+  let lastQueryZoomBucket = -1;
+  let queryDirty = true;
+  const allLowZoomMarkers = $derived([...cities, ...unlocatedMarkers]);
+  const cityByCode = $derived(new Map(allLowZoomMarkers.map((city) => [city.code, city])));
+  const effectiveMapDark = $derived(basemap === 'ready' ? basemapStyle === 'dark' : dark);
+  const lowZoomPalette = $derived(footprintCityPalette(effectiveMapDark, data.mode));
+  const cityCache = new WeakMap<FootprintCollection, FootprintCitySummaryLocations>();
   const displayData = $derived(displayFootprints(data));
   const allBounds = $derived(geometryBounds(displayData.features.map((f) => f.geometry)));
   const records = $derived(
@@ -143,26 +179,135 @@
     frameEl.style.height = `${Math.min(720, Math.max(424, Math.floor(available)))}px`;
   }
   function cityMarkerData() {
-    return {
-      type: 'FeatureCollection' as const,
-      features:
-        data.mode === 'tracks'
-          ? cities.map((city) => ({
-              type: 'Feature' as const,
-              properties: { code: city.code, name: city.name },
-              geometry: {
-                type: 'Point' as const,
-                coordinates: [
-                  (city.bounds[0][0] + city.bounds[1][0]) / 2,
-                  (city.bounds[0][1] + city.bounds[1][1]) / 2,
-                ] as [number, number],
-              },
-            }))
-          : [],
-    };
+    return footprintCitiesToGeoJSON(allLowZoomMarkers, data.mode);
+  }
+  function applyLowZoomTheme() {
+    if (!map || disposed) return;
+    const hasExtBasemap = basemap === 'ready';
+    const mapDark = hasExtBasemap ? basemapStyle === 'dark' : dark;
+    const pal = footprintCityPalette(mapDark, data.mode);
+    const offlineVisibility = hasExtBasemap ? 'none' : 'visible';
+    if (map.getLayer('background') && !hasExtBasemap) {
+      map.setPaintProperty(
+        'background',
+        'background-color',
+        map.getZoom() < REGION_MAX_ZOOM ? pal.ocean : mapDark ? '#302e2c' : '#edf3ef',
+      );
+    }
+    const visited = visitedProvinceCodes(cities);
+    if (map.getLayer('footprint-base-land')) {
+      map.setLayoutProperty('footprint-base-land', 'visibility', offlineVisibility);
+      map.setPaintProperty(
+        'footprint-base-land',
+        'fill-color',
+        visited.length ? ['case', ['in', ['get', 'code'], ['literal', visited]], pal.visitedFill, pal.land] : pal.land,
+      );
+    }
+    if (map.getLayer('footprint-base-borders')) {
+      map.setLayoutProperty('footprint-base-borders', 'visibility', offlineVisibility);
+      map.setPaintProperty('footprint-base-borders', 'line-color', pal.border);
+    }
+    if (map.getLayer('footprint-city-clusters-halo')) {
+      map.setPaintProperty('footprint-city-clusters-halo', 'circle-color', pal.clusterHalo);
+    }
+    if (map.getLayer('footprint-city-clusters')) {
+      map.setPaintProperty('footprint-city-clusters', 'circle-color', pal.clusterFill);
+      map.setPaintProperty('footprint-city-clusters', 'circle-stroke-color', pal.stroke);
+    }
+    if (map.getLayer('footprint-city-markers')) {
+      map.setPaintProperty('footprint-city-markers', 'circle-color', pal.bubbleFill);
+      map.setPaintProperty('footprint-city-markers', 'circle-stroke-color', [
+        'case',
+        ['==', ['get', 'code'], selectedCity],
+        pal.selectedStroke,
+        pal.stroke,
+      ]);
+      map.setPaintProperty('footprint-city-markers', 'circle-stroke-width', [
+        'case',
+        ['==', ['get', 'code'], selectedCity],
+        3,
+        2,
+      ]);
+    }
+  }
+  function syncLabels(forceQuery = false) {
+    if (!map || !container || disposed) {
+      if (labels.length) labels = [];
+      return;
+    }
+    const zoom = map.getZoom();
+    currentZoom = zoom;
+    if (!ready || !allLowZoomMarkers.length || zoom >= REGION_MAX_ZOOM) {
+      if (labels.length) labels = [];
+      return;
+    }
+    // MapLibre Supercluster only changes cluster membership at integer zoom boundaries, so avoid
+    // synchronous full-viewport queryRenderedFeatures on every animation frame during smooth pan/zoom.
+    const zoomBucket = zoom < COUNTRY_MAX_ZOOM ? Math.floor(zoom) : 99;
+    if (forceQuery || queryDirty || zoomBucket !== lastQueryZoomBucket) {
+      const clusters: ClusterPoint[] = [];
+      const seenClusters = new Set<number>();
+      if (zoom < COUNTRY_MAX_ZOOM && map.getLayer('footprint-city-clusters')) {
+        for (const f of map.queryRenderedFeatures({ layers: ['footprint-city-clusters'] })) {
+          const cid = Number(f.properties?.cluster_id);
+          if (!Number.isFinite(cid) || seenClusters.has(cid)) continue;
+          seenClusters.add(cid);
+          const coords = (f.geometry as { coordinates: [number, number] }).coordinates;
+          clusters.push({
+            id: cid,
+            lon: coords[0],
+            lat: coords[1],
+            count: Number(f.properties?.point_count) || 2,
+            hasNew: false,
+          });
+        }
+      }
+      const visibleCities: FootprintCitySummary[] = [];
+      const seenCities = new Set<string>();
+      if (map.getLayer('footprint-city-markers')) {
+        for (const f of map.queryRenderedFeatures({ layers: ['footprint-city-markers'] })) {
+          const c = String(f.properties?.code ?? '');
+          if (!c || seenCities.has(c)) continue;
+          seenCities.add(c);
+          const found = cityByCode.get(c);
+          if (found) visibleCities.push(found);
+        }
+      }
+      cachedClusters = clusters;
+      cachedVisibleCities = visibleCities;
+      lastQueryZoomBucket = zoomBucket;
+      queryDirty = false;
+    }
+    labels = placeFootprintLabels(
+      cachedVisibleCities.length ? cachedVisibleCities : zoom >= COUNTRY_MAX_ZOOM ? cities : [],
+      zoom < COUNTRY_MAX_ZOOM ? cachedClusters : [],
+      (lngLat) => map!.project(lngLat),
+      container.clientWidth,
+      container.clientHeight,
+      zoom,
+      selectedCity,
+    );
+  }
+  function scheduleLabelSync() {
+    if (!map || disposed) return;
+    const zoom = map.getZoom();
+    currentZoom = zoom;
+    if (!ready || !allLowZoomMarkers.length || zoom >= REGION_MAX_ZOOM) {
+      if (labels.length) labels = [];
+      return;
+    }
+    if (labelFrame) return;
+    labelFrame = requestAnimationFrame(() => {
+      labelFrame = 0;
+      syncLabels(false);
+    });
   }
   function syncCityMarkers() {
-    (map?.getSource('footprint-cities') as GeoJSONSource | undefined)?.setData(cityMarkerData());
+    if (!map || disposed) return;
+    queryDirty = true;
+    (map.getSource('footprint-cities') as GeoJSONSource | undefined)?.setData(cityMarkerData());
+    applyLowZoomTheme();
+    syncLabels(true);
   }
   function highlight(ids: string[]) {
     selectedIds = ids;
@@ -204,25 +349,33 @@
     map?.stop();
     choices = [];
     heat = null;
+    hoveredCity = null;
+    tappedCity = null;
     highlight([]);
     framing = 'all';
     selectedCity = '';
+    applyLowZoomTheme();
     fit(allBounds);
+    syncLabels(true);
   }
   function locateCity(code = cityName, animate = true) {
     const city =
       code === 'unlocated' && unlocatedBounds
         ? { name: '未识别区域', bounds: unlocatedBounds }
-        : cities.find((city) => city.code === code);
+        : (cities.find((entry) => entry.code === code) ?? unlocatedMarkers.find((entry) => entry.code === code));
     if (!map || !ready || error || !city) return;
     map.stop();
+    hoveredCity = null;
+    tappedCity = null;
     framing = 'picked';
-    selectedCity = code;
-    cityName = code;
+    selectedCity = code.startsWith('unlocated:') ? 'unlocated' : code;
+    cityName = selectedCity;
+    applyLowZoomTheme();
     fit(city.bounds, animate);
   }
-  function applyCityLocations(locations: CityLocations) {
+  function applyCityLocations(locations: FootprintCitySummaryLocations) {
     cities = locations.cities;
+    unlocatedMarkers = locations.unlocatedMarkers;
     unlocatedBounds = locations.unlocatedBounds;
     cityName = cities[0]?.code ?? (unlocatedBounds ? 'unlocated' : '');
     cityLookup = 'ready';
@@ -233,7 +386,23 @@
         map?.resize();
         frameInitial();
       }
+      if (!disposed) syncLabels(true);
     });
+  }
+  function cityFeatureInputs(collection: FootprintCollection): FootprintCityFeatureInput[] {
+    return collection.features.map((feature) => ({
+      geometry: feature.geometry,
+      activityId: typeof feature.properties?.activity_id === 'string' ? feature.properties.activity_id : undefined,
+      count: typeof feature.properties?.count === 'number' ? feature.properties.count : undefined,
+    }));
+  }
+  function applyCityLookupFailure(collection: FootprintCollection) {
+    cities = [];
+    unlocatedMarkers = bucketUnlocatedFootprints(cityFeatureInputs(collection), collection.mode);
+    unlocatedBounds = null;
+    cityLookup = 'failed';
+    syncCityMarkers();
+    frameInitial();
   }
   function loadCities() {
     const currentData = data;
@@ -248,22 +417,23 @@
       const worker =
         cityWorker ?? new Worker(new URL('../map/footprint-cities.worker.ts', import.meta.url), { type: 'module' });
       cityWorker = worker;
-      worker.onmessage = (event: MessageEvent<CityLocations>) => {
+      worker.onmessage = (event: MessageEvent<FootprintCitySummaryLocations>) => {
         if (disposed || cityWorker !== worker || requestId !== cityRequestId) return;
         cityCache.set(currentData, event.data);
         applyCityLocations(event.data);
       };
       worker.onerror = () => {
         if (disposed || cityWorker !== worker) return;
-        cityLookup = 'failed';
-        frameInitial();
+        applyCityLookupFailure(currentData);
         worker.terminate();
         cityWorker = undefined;
       };
-      worker.postMessage(currentData.features.map((feature) => feature.geometry));
+      worker.postMessage({
+        mode: currentData.mode,
+        features: cityFeatureInputs(currentData),
+      });
     } catch {
-      cityLookup = 'failed';
-      frameInitial();
+      applyCityLookupFailure(currentData);
       cityWorker?.terminate();
       cityWorker = undefined;
     }
@@ -278,7 +448,11 @@
     choices = [];
     heat = null;
     heatPage = 0;
+    hoveredCity = null;
+    tappedCity = null;
+    selectedCity = '';
     highlight([]);
+    applyLowZoomTheme();
     loadCities();
     if (onclearRunner && (selectedRunner || selectedActivity)) focusRunner(selectedRunner, selectedActivity);
     else fit(allBounds, animateDataChanges);
@@ -425,9 +599,21 @@
     attributionObserver.observe(attribution);
     clearance();
   }
+  const onFramePointerDown = (event: PointerEvent) => {
+    lastPointerType = event.pointerType;
+  };
+  const onFrameKeyDown = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') {
+      hoveredCity = null;
+      tappedCity = null;
+    }
+  };
   onMount(() => {
     loadCities();
     sizeCanvas();
+    mapWidth = frameEl?.clientWidth || 320;
+    frameEl?.addEventListener('pointerdown', onFramePointerDown);
+    frameEl?.addEventListener('keydown', onFrameKeyDown);
     window.addEventListener('resize', onWindowResize);
     stopTheme = watchSystemTheme((value) => {
       dark = value;
@@ -437,17 +623,25 @@
           map.setPaintProperty('footprint-casing', 'line-color', dark ? '#302e2c' : '#ffffff');
         if (map.getLayer('footprint-selected-casing'))
           map.setPaintProperty('footprint-selected-casing', 'line-color', dark ? '#302e2c' : '#ffffff');
+        applyLowZoomTheme();
       }
     });
     void (async () => {
       try {
-        const lib = await loadMapLibre();
+        const [lib, baseJson] = await Promise.all([
+          loadMapLibre(),
+          window
+            .fetch(worldBaseUrl)
+            .then((res) => (res.ok ? (res.json() as Promise<GeoCollection>) : emptyCollection))
+            .catch(() => emptyCollection),
+        ]);
         if (disposed) return;
+        worldBaseData = baseJson;
         // Start on the overview so no high-zoom tiles load before the first fit.
         const camera = allBounds
           ? { bounds: allBounds, fitBoundsOptions: { padding: cameraPadding } }
           : { center: [0, 0] as [number, number], zoom: 4 };
-        map = new lib.Map({
+        const instance: LibreMap = new lib.Map({
           container,
           fadeDuration: 0,
           locale: {
@@ -460,37 +654,71 @@
           maxZoom: 19,
           attributionControl: false,
         });
-        map.addControl(new lib.AttributionControl({ compact: true }), 'bottom-right');
+        map = instance;
+        instance.addControl(new lib.AttributionControl({ compact: true }), 'bottom-right');
         trackAttribution();
-        map.addControl(new lib.NavigationControl({ showCompass: false }), 'top-right');
-        map.on('dragstart', () => {
+        instance.addControl(new lib.NavigationControl({ showCompass: false }), 'top-right');
+        instance.on('dragstart', () => {
           selectedCity = '';
           framing = 'free';
+          hoveredCity = null;
+          tappedCity = null;
+          applyLowZoomTheme();
+        });
+        instance.on('zoomstart', () => {
+          hoveredCity = null;
         });
         observer = new ResizeObserver(() => {
           sizeCanvas();
+          mapWidth = frameEl?.clientWidth || 320;
           map?.resize();
+          scheduleLabelSync();
         });
         observer.observe(frameEl ?? container);
-        map.on('webglcontextlost', () => {
+        instance.on('webglcontextlost', () => {
           basemapController?.destroy();
           ready = false;
           error = '地图绘图上下文已丢失，请重新绘制地图。下方数据入口仍可使用。';
         });
-        map.on('error', (e) => {
+        instance.on('error', (e) => {
           if ('sourceId' in e && e.sourceId === 'footprints') error = '地图绘制失败，请重试。下方记录入口仍可使用。';
         });
-        map.on('load', () => {
+        instance.on('load', () => {
           if (!map || disposed) return;
           appliedData = data;
           const features = colored(displayData.features);
+          map.addSource('footprint-base', {
+            type: 'geojson',
+            data: worldBaseData,
+            maxzoom: 11,
+            tolerance: 0.75,
+          });
+          map.addLayer({
+            id: 'footprint-base-land',
+            type: 'fill',
+            source: 'footprint-base',
+            maxzoom: REGION_MAX_ZOOM + 0.5,
+            paint: { 'fill-color': '#fcfdfb', 'fill-opacity': 1 },
+          });
+          map.addLayer({
+            id: 'footprint-base-borders',
+            type: 'line',
+            source: 'footprint-base',
+            maxzoom: REGION_MAX_ZOOM + 0.5,
+            paint: { 'line-color': '#d5ded8', 'line-width': 0.9 },
+          });
           map.addSource('footprints', { type: 'geojson', data: { type: 'FeatureCollection', features } });
           map.addLayer({
             id: 'footprint-fill',
             type: 'fill',
             source: 'footprints',
             filter: ['==', '$type', 'Polygon'],
-            paint: { 'fill-color': heatFillColor, 'fill-opacity': 0.8 },
+            // Keep 100 m heat cells out of national/regional overview where subpixel blocks turn into noise.
+            minzoom: 10,
+            paint: {
+              'fill-color': heatFillColor,
+              'fill-opacity': ['interpolate', ['linear'], ['zoom'], 10.0, 0, 10.5, 0.8],
+            },
           });
           if (onclearRunner)
             map.addLayer({
@@ -543,27 +771,131 @@
               paint: { 'line-color': ['get', 'color'], 'line-width': 5, 'line-opacity': 1 },
               layout: { 'line-join': 'round', 'line-cap': 'round' },
             });
-          map.addSource('footprint-cities', { type: 'geojson', data: cityMarkerData() });
+          map.addSource('footprint-cities', {
+            type: 'geojson',
+            data: cityMarkerData(),
+            cluster: true,
+            clusterMaxZoom: 6,
+            clusterRadius: 42,
+            clusterProperties: {
+              sum_count: ['+', ['get', 'count']],
+            },
+          });
+          map.addLayer({
+            id: 'footprint-city-clusters-halo',
+            type: 'circle',
+            source: 'footprint-cities',
+            filter: ['has', 'point_count'],
+            maxzoom: COUNTRY_MAX_ZOOM + 0.5,
+            paint: {
+              'circle-radius': ['step', ['get', 'point_count'], 18, 5, 22, 12, 26],
+              'circle-color': 'rgba(23, 116, 92, 0.16)',
+            },
+          });
+          map.addLayer({
+            id: 'footprint-city-clusters',
+            type: 'circle',
+            source: 'footprint-cities',
+            filter: ['has', 'point_count'],
+            maxzoom: COUNTRY_MAX_ZOOM + 0.5,
+            paint: {
+              'circle-radius': ['step', ['get', 'point_count'], 13, 5, 16, 12, 19],
+              'circle-color': '#17745c',
+              'circle-stroke-width': 2,
+              'circle-stroke-color': '#ffffff',
+            },
+          });
           map.addLayer({
             id: 'footprint-city-markers',
             type: 'circle',
             source: 'footprint-cities',
-            maxzoom: 8,
+            filter: ['!', ['has', 'point_count']],
+            maxzoom: REGION_MAX_ZOOM + 0.7,
             paint: {
-              'circle-radius': 7,
+              'circle-radius': ['step', ['get', 'count'], 7, 3, 9.5, 8, 12, 16, 14.5],
               'circle-color': '#14785b',
               'circle-stroke-width': 2,
               'circle-stroke-color': '#ffffff',
-              'circle-opacity': 0.95,
+              'circle-opacity': ['interpolate', ['linear'], ['zoom'], 9.8, 0.96, 11.0, 0],
+              'circle-stroke-opacity': ['interpolate', ['linear'], ['zoom'], 9.8, 1, 11.0, 0],
             },
           });
-          map.on('click', 'footprint-city-markers', (event) => {
-            const code = event.features?.[0]?.properties?.code;
-            if (typeof code === 'string') locateCity(code);
+          map.on('click', 'footprint-city-clusters', async (event) => {
+            if (!map || map.getZoom() >= COUNTRY_MAX_ZOOM + 0.5) return;
+            const feature = event.features?.[0];
+            if (!feature) return;
+            const clusterId = Number(feature.properties?.cluster_id);
+            const coords = (feature.geometry as { coordinates: [number, number] }).coordinates;
+            const source = map.getSource<GeoJSONSource>('footprint-cities');
+            if (!source || !Number.isFinite(clusterId)) return;
+            try {
+              const expansionZoom = await source.getClusterExpansionZoom(clusterId);
+              if (disposed || !map) return;
+              framing = 'free';
+              selectedCity = '';
+              hoveredCity = null;
+              tappedCity = null;
+              applyLowZoomTheme();
+              const motion = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+              map.easeTo({
+                center: coords,
+                zoom: Math.min(Math.max(expansionZoom + 0.5, COUNTRY_MAX_ZOOM + 0.3, map.getZoom() + 1.5), 10),
+                duration: motion ? 320 : 0,
+              });
+            } catch {
+              /* ignore transient cluster state */
+            }
           });
+          const handleCityClick = (event: MapLayerMouseEvent) => {
+            if (!map || map.getZoom() >= REGION_MAX_ZOOM) return;
+            const code = String(event.features?.[0]?.properties?.code ?? '');
+            const found = cityByCode.get(code);
+            if (!found) return;
+            const coarse =
+              lastPointerType === 'touch' ||
+              (typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches);
+            if (coarse && tappedCity?.code !== found.code) {
+              tappedCity = found;
+              hoveredCity = null;
+              return;
+            }
+            locateCity(found.code);
+          };
+          map.on('click', 'footprint-city-markers', handleCityClick);
+          for (const interactiveLayer of ['footprint-city-clusters', 'footprint-city-markers'] as const) {
+            map.on('mouseenter', interactiveLayer, (event) => {
+              if (!map || map.getZoom() >= REGION_MAX_ZOOM) return;
+              map.getCanvas().style.cursor = 'pointer';
+              if (interactiveLayer === 'footprint-city-clusters' || lastPointerType === 'touch') return;
+              const code = String(event.features?.[0]?.properties?.code ?? '');
+              const found = cityByCode.get(code);
+              if (found) hoveredCity = { city: found, x: event.point.x, y: event.point.y };
+            });
+            map.on('mousemove', interactiveLayer, (event) => {
+              if (!map || map.getZoom() >= REGION_MAX_ZOOM) {
+                hoveredCity = null;
+                return;
+              }
+              if (interactiveLayer === 'footprint-city-clusters' || lastPointerType === 'touch') return;
+              const code = String(event.features?.[0]?.properties?.code ?? '');
+              const found = cityByCode.get(code);
+              if (found) hoveredCity = { city: found, x: event.point.x, y: event.point.y };
+            });
+            map.on('mouseleave', interactiveLayer, () => {
+              if (!map) return;
+              map.getCanvas().style.cursor = '';
+              hoveredCity = null;
+            });
+          }
           applyMapTheme(map, dark);
+          applyLowZoomTheme();
           map.on('click', (e) => {
             if (!map) return;
+            if (map.getZoom() < REGION_MAX_ZOOM) {
+              const cityLayers = ['footprint-city-clusters', 'footprint-city-markers'].filter((id) => map?.getLayer(id));
+              if (cityLayers.length && map.queryRenderedFeatures(e.point, { layers: cityLayers }).length > 0) return;
+            }
+            tappedCity = null;
             const hits = map.queryRenderedFeatures(
               [
                 [e.point.x - 5, e.point.y - 5],
@@ -587,12 +919,19 @@
             choices = [...unique.values()];
             highlight(choices.map((record) => record.id));
           });
+          map.on('move', scheduleLabelSync);
+          map.on('moveend', () => {
+            applyLowZoomTheme();
+            syncLabels(true);
+          });
+          map.on('idle', () => syncLabels(true));
           sizeCanvas();
           frameInitial();
           const markReady = () => {
             if (!error && map?.isSourceLoaded('footprints')) {
               ready = true;
               map.off('render', markReady);
+              syncLabels(true);
             }
           };
           map.on('render', markReady);
@@ -600,6 +939,7 @@
             basemap = state.status;
             basemapPreference = state.preference;
             basemapStyle = state.style;
+            applyLowZoomTheme();
           });
         });
       } catch {
@@ -609,6 +949,9 @@
   });
   onDestroy(() => {
     disposed = true;
+    if (labelFrame) cancelAnimationFrame(labelFrame);
+    frameEl?.removeEventListener('pointerdown', onFramePointerDown);
+    frameEl?.removeEventListener('keydown', onFrameKeyDown);
     attributionObserver?.disconnect();
     window.removeEventListener('resize', onWindowResize);
     cityWorker?.terminate();
@@ -701,7 +1044,60 @@
       aria-label={mapLabel || (data.mode === 'heatmap' ? '个人运动热力图' : '个人多轨迹叠加地图')}
       aria-describedby="footprint-map-help"
       data-testid={ready ? 'footprint-map-ready' : 'footprint-map-loading'}
+      data-zoom-tier={currentTier}
+      data-city-labels={labels.length}
+      data-lowzoom-markers={allLowZoomMarkers.length}
     ></div>
+    {#if ready && labels.length}
+      <div class="labels-layer" aria-hidden="true">
+        {#each labels as item (item.id)}
+          <span
+            class="map-label"
+            class:cluster-label={item.kind === 'cluster'}
+            style:transform={`translate3d(${Math.round(item.x)}px, ${Math.round(item.y)}px, 0) translate(-50%, -50%)`}
+            style:color={item.kind === 'cluster' ? lowZoomPalette.clusterInk : undefined}>{item.text}</span
+          >
+        {/each}
+      </div>
+    {/if}
+    {#if hoveredCity}
+      <div
+        class="hover-card"
+        style:left={`${Math.min(Math.max(12, hoveredCity.x + 12), Math.max(12, mapWidth - 220))}px`}
+        style:top={`${Math.max(12, hoveredCity.y - 54)}px`}
+      >
+        <strong>{hoveredCity.city.name}</strong>
+        <span>{footprintCitySummaryText(hoveredCity.city, data.mode)}</span>
+        <small>点击定位该城</small>
+      </div>
+    {/if}
+    {#if tappedCity}
+      <div class="tap-bar" role="status" data-testid="footprint-city-tap-bar">
+        <div>
+          <strong>{tappedCity.name}</strong>
+          <span>{footprintCitySummaryText(tappedCity, data.mode)}</span>
+        </div>
+        <div class="tap-actions">
+          <button
+            type="button"
+            class="button-primary tap-go"
+            onclick={() => {
+              const target = tappedCity;
+              tappedCity = null;
+              if (target) locateCity(target.code);
+            }}>定位该城</button
+          >
+          <button
+            type="button"
+            class="button-secondary tap-close"
+            aria-label="关闭城市提示"
+            onclick={() => {
+              tappedCity = null;
+            }}>×</button
+          >
+        </div>
+      </div>
+    {/if}
     {@render children?.()}
     <div class="map-layers"><BasemapPicker preference={basemapPreference} style={basemapStyle} status={basemap} /></div>
   </div>
@@ -883,6 +1279,100 @@
   .map-canvas {
     height: 100%;
     width: 100%;
+  }
+  .labels-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: 1;
+  }
+  .map-label {
+    position: absolute;
+    left: 0;
+    top: 0;
+    will-change: transform;
+    padding: 0.125rem 0.45rem;
+    border-radius: var(--radius-field);
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    color: var(--foreground);
+    font-size: var(--text-caption);
+    font-weight: var(--weight-semibold);
+    line-height: var(--line-height-heading);
+    white-space: nowrap;
+  }
+  .map-label.cluster-label {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .hover-card {
+    position: absolute;
+    z-index: 3;
+    pointer-events: none;
+    display: grid;
+    gap: 0.125rem;
+    max-width: 13.5rem;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-control);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--foreground);
+    box-shadow: var(--shadow-popover);
+    font-size: var(--text-caption);
+  }
+  .hover-card strong {
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+  }
+  .hover-card small {
+    color: var(--muted-foreground);
+  }
+  .tap-bar {
+    position: absolute;
+    left: var(--space-3);
+    right: var(--space-3);
+    bottom: calc(var(--map-attribution-clearance, 0px) + var(--space-3));
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-control);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    box-shadow: var(--shadow-popover);
+  }
+  .tap-bar > div:first-child {
+    min-width: 0;
+    display: grid;
+  }
+  .tap-bar strong {
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+  }
+  .tap-bar span {
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
+  }
+  .tap-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-shrink: 0;
+  }
+  .tap-go {
+    min-height: 2.75rem;
+    padding-inline: var(--space-3);
+    font-size: var(--text-small);
+  }
+  .tap-close {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    padding: 0;
   }
   .route-choices {
     border-left: 3px solid var(--primary);

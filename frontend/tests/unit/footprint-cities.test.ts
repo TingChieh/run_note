@@ -1,5 +1,19 @@
 import { expect, it } from 'vitest';
-import { locateFootprintCities, type CityRegion } from '../../src/lib/map/footprint-cities.ts';
+import {
+  COUNTRY_MAX_ZOOM,
+  REGION_MAX_ZOOM,
+  bucketUnlocatedFootprints,
+  footprintCitiesToGeoJSON,
+  footprintCityPalette,
+  footprintCitySummaryText,
+  locateFootprintCities,
+  locateFootprintCitySummaries,
+  placeFootprintLabels,
+  shortCityName,
+  visitedProvinceCodes,
+  zoomTier,
+  type CityRegion,
+} from '../../src/lib/map/footprint-cities.ts';
 import type { FootprintCollection } from '../../src/lib/api/footprints.ts';
 import encoded from '../../src/lib/data/china-cities.json';
 import { decodeCityAtlas, type EncodedAtlas } from '../../src/lib/map/city-atlas.ts';
@@ -50,4 +64,170 @@ it('decodes delta-encoded rings back to the exact four-decimal coordinates',()=>
   expect(region.polygons).toEqual([[[[116.4436,39.8728],[116.4441,39.89],[116.4509,39.8902],[116.4436,39.8728]]]]);
   expect(atlas).toHaveLength(369);
   expect(atlas.every(city=>city.polygons.every(polygon=>polygon.every(ring=>ring.length>=4 && ring[0].join()===ring[ring.length-1].join())))).toBe(true);
+});
+
+it('produces concise short city names across all bundled atlas regions', () => {
+  expect(shortCityName('北京市')).toBe('北京');
+  expect(shortCityName('上海市')).toBe('上海');
+  expect(shortCityName('延边朝鲜族自治州')).toBe('延边');
+  expect(shortCityName('恩施土家族苗族自治州')).toBe('恩施');
+  expect(shortCityName('大兴安岭地区')).toBe('大兴安岭');
+  expect(shortCityName('锡林郭勒盟')).toBe('锡林郭勒');
+  expect(shortCityName('香港')).toBe('香港');
+  for (const region of atlas) {
+    const label = shortCityName(region.name);
+    expect(label.length).toBeGreaterThanOrEqual(2);
+    expect(label.length).toBeLessThanOrEqual(region.name.length);
+  }
+});
+
+it('builds consistent city summaries and GeoJSON for tracks and heatmap modes', () => {
+  const trackSummaries = locateFootprintCitySummaries(
+    [
+      { geometry: { type: 'Point', coordinates: [121.485, 31.235] }, activityId: 'a1' },
+      // Second segment of the same activity must not double-count in tracks mode.
+      { geometry: { type: 'Point', coordinates: [121.49, 31.24] }, activityId: 'a1' },
+      { geometry: { type: 'Point', coordinates: [121.495, 31.245] }, activityId: 'a2' },
+      { geometry: { type: 'Point', coordinates: [116.397, 39.908] }, activityId: 'a3' },
+    ],
+    atlas,
+    'tracks',
+  );
+  const heatSummaries = locateFootprintCitySummaries(
+    [
+      {
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[[121.484, 31.234], [121.485, 31.234], [121.485, 31.235], [121.484, 31.235], [121.484, 31.234]]],
+        },
+        count: 5,
+      },
+      {
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[[121.486, 31.236], [121.487, 31.236], [121.487, 31.237], [121.486, 31.237], [121.486, 31.236]]],
+        },
+        count: 2,
+      },
+      {
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[[116.397, 39.908], [116.398, 39.908], [116.398, 39.909], [116.397, 39.909], [116.397, 39.908]]],
+        },
+        count: 3,
+      },
+    ],
+    atlas,
+    'heatmap',
+  );
+
+  // Identical city set across both modes.
+  expect(trackSummaries.cities.map((c) => c.code)).toEqual(heatSummaries.cities.map((c) => c.code));
+  expect(trackSummaries.cities.map((c) => c.shortName)).toEqual(['北京', '上海']);
+
+  const shanghaiTracks = trackSummaries.cities.find((c) => c.code === '310000')!;
+  const shanghaiHeat = heatSummaries.cities.find((c) => c.code === '310000')!;
+  expect(shanghaiTracks.count).toBe(2);
+  expect(shanghaiTracks.cellCount).toBe(0);
+  expect(shanghaiHeat.count).toBe(5);
+  expect(shanghaiHeat.cellCount).toBe(2);
+  expect(footprintCitySummaryText(shanghaiTracks, 'tracks')).toBe('2 条记录');
+  expect(footprintCitySummaryText(shanghaiHeat, 'heatmap')).toBe('2 格 · 最高 5 次');
+
+  // Both modes emit non-empty Point features with aligned properties.
+  const tracksGeo = footprintCitiesToGeoJSON(trackSummaries.cities, 'tracks');
+  const heatGeo = footprintCitiesToGeoJSON(heatSummaries.cities, 'heatmap');
+  expect(tracksGeo.type === 'FeatureCollection' ? tracksGeo.features : []).toHaveLength(2);
+  expect(heatGeo.type === 'FeatureCollection' ? heatGeo.features : []).toHaveLength(2);
+  expect(visitedProvinceCodes(trackSummaries.cities)).toEqual(['CN-110000', 'CN-310000']);
+});
+
+it('places cluster and city labels under REGION_MAX_ZOOM and clears them at city detail zoom', () => {
+  const { cities } = locateFootprintCitySummaries(
+    [
+      { geometry: { type: 'Point', coordinates: [121.485, 31.235] }, activityId: 'a1' },
+      { geometry: { type: 'Point', coordinates: [121.49, 31.24] }, activityId: 'a2' },
+      { geometry: { type: 'Point', coordinates: [116.397, 39.908] }, activityId: 'a3' },
+      { geometry: { type: 'Point', coordinates: [104.066, 30.572] }, activityId: 'a4' },
+    ],
+    atlas,
+    'tracks',
+  );
+  const project = ([lon, lat]: [number, number]) => ({ x: 400 + (lon - 112) * 20, y: 300 - (lat - 32) * 20 });
+
+  expect(zoomTier(4.2)).toBe('country');
+  expect(zoomTier(COUNTRY_MAX_ZOOM)).toBe('region');
+  expect(zoomTier(REGION_MAX_ZOOM)).toBe('city');
+
+  const countryLabels = placeFootprintLabels(
+    cities,
+    [{ id: 1, lon: 121.2, lat: 31.25, count: 2, hasNew: false }],
+    project,
+    900,
+    600,
+    4.5,
+  );
+  expect(countryLabels.some((item) => item.kind === 'cluster' && item.text === '2城')).toBe(true);
+  expect(countryLabels.some((item) => item.kind === 'city' && item.text === '北京')).toBe(true);
+
+  const regionLabels = placeFootprintLabels(cities, [], project, 900, 600, 8.0);
+  expect(regionLabels.every((item) => item.kind === 'city')).toBe(true);
+  expect(regionLabels.map((item) => item.text)).toContain('上海');
+
+  expect(placeFootprintLabels(cities, [], project, 900, 600, REGION_MAX_ZOOM)).toEqual([]);
+});
+
+it('keeps tracks and heatmap palettes distinct while sharing base tokens', () => {
+  for (const dark of [false, true]) {
+    const tracksPal = footprintCityPalette(dark, 'tracks');
+    const heatPal = footprintCityPalette(dark, 'heatmap');
+    expect(tracksPal.ocean).toBe(heatPal.ocean);
+    expect(tracksPal.land).toBe(heatPal.land);
+    expect(tracksPal.clusterFill).not.toBe(heatPal.clusterFill);
+    expect(tracksPal.bubbleFill).not.toEqual(heatPal.bubbleFill);
+  }
+});
+
+it('builds coarse fallback markers for overseas heat cells and atlas lookup failures', () => {
+  const overseasHeat = [
+    {
+      geometry: {
+        type: 'Polygon' as const,
+        coordinates: [[[-74.0, 40.7], [-73.999, 40.7], [-73.999, 40.701], [-74.0, 40.701], [-74.0, 40.7]]],
+      },
+      count: 6,
+    },
+    {
+      geometry: {
+        type: 'Polygon' as const,
+        coordinates: [[[-73.98, 40.71], [-73.979, 40.71], [-73.979, 40.711], [-73.98, 40.711], [-73.98, 40.71]]],
+      },
+      count: 3,
+    },
+    {
+      geometry: {
+        type: 'Polygon' as const,
+        coordinates: [[[-118.25, 34.05], [-118.249, 34.05], [-118.249, 34.051], [-118.25, 34.051], [-118.25, 34.05]]],
+      },
+      count: 4,
+    },
+  ];
+  const located = locateFootprintCitySummaries(overseasHeat, atlas, 'heatmap');
+  expect(located.cities).toEqual([]);
+  expect(located.unlocatedBounds).not.toBeNull();
+  expect(located.unlocatedMarkers).toHaveLength(2);
+  expect(located.unlocatedMarkers.map((m) => m.count).sort((a, b) => a - b)).toEqual([4, 6]);
+  expect(located.unlocatedMarkers.map((m) => m.cellCount).sort((a, b) => a - b)).toEqual([1, 2]);
+  // Fallback markers carry empty shortName so labels stay clean while cluster/bubble layers remain populated.
+  expect(
+    placeFootprintLabels(
+      located.unlocatedMarkers,
+      [],
+      ([lon, lat]) => ({ x: 400 + lon, y: 300 - lat }),
+      800,
+      500,
+      4.0,
+    ),
+  ).toEqual([]);
+  expect(bucketUnlocatedFootprints(overseasHeat, 'heatmap')).toHaveLength(2);
 });
