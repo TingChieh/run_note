@@ -89,6 +89,7 @@
   let ready = $state(false);
   let error = $state(false);
   let drawn = $state(false);
+  let gridDrawn = $state(false);
   let active = $state<BasemapPreference | null>(null);
   let style = $state<BasemapStyle>('positron');
   let status = $state<BasemapStatus>('ready');
@@ -197,7 +198,7 @@
     }
     if (map.getLayer(cityNearbyId)) {
       map.setPaintProperty(cityNearbyId, 'circle-stroke-color', layer === 'new' ? pal.markerNew : pal.markerHeat);
-      map.setPaintProperty(cityNearbyId, 'circle-color', pal.land);
+      map.setPaintProperty(cityNearbyId, 'circle-color', 'rgba(0, 0, 0, 0)');
     }
   }
 
@@ -256,12 +257,15 @@
   function updateDrawnFlag() {
     if (!map || !ready) {
       drawn = false;
+      gridDrawn = false;
       return;
     }
     const checkLayers = [gridLayerId, centroidsLayerId, cityBubblesId, cityNearbyId, clustersLayerId].filter((id) =>
       map?.getLayer(id),
     );
+    const gridLayers = [gridLayerId, centroidsLayerId].filter((id) => map?.getLayer(id));
     drawn = checkLayers.length > 0 && map.queryRenderedFeatures({ layers: checkLayers }).length > 0;
+    gridDrawn = gridLayers.length > 0 && map.queryRenderedFeatures({ layers: gridLayers }).length > 0;
   }
 
   function choose(preference: BasemapPreference | null) {
@@ -322,7 +326,7 @@
       onresetscope?.();
     }
     if (target === 'china') {
-      fitBox(framing.chinaBounds ?? CHINA_OVERVIEW_BOUNDS, { maxZoom: 9, animate: true });
+      fitBox(CHINA_OVERVIEW_BOUNDS, { maxZoom: 9, animate: true });
     } else if (framing.initialBounds) {
       fitBox(framing.initialBounds, { maxZoom: 11, animate: true });
     } else {
@@ -401,13 +405,13 @@
     let obsolete = false;
     selectedCellCount = null;
     const { polygons, centroids } = cellsToFeatures(result);
-    void current
+    const gridPromise = current
       .getSource<GeoJSONSource>(gridSourceId)
       ?.setData(polygons)
       .catch(() => {
         if (!obsolete) error = true;
       });
-    void current
+    const centroidsPromise = current
       .getSource<GeoJSONSource>(centroidsSourceId)
       ?.setData(centroids)
       .catch(() => {
@@ -423,7 +427,9 @@
       syncLabels();
       updateDrawnFlag();
     };
-    current.once('idle', onIdle);
+    void Promise.all([gridPromise, centroidsPromise]).then(() => {
+      if (!obsolete) current.once('idle', onIdle);
+    });
     return () => {
       obsolete = true;
       current.off('idle', onIdle);
@@ -632,8 +638,8 @@
             maxzoom: REGION_MAX_ZOOM + 0.7,
             paint: {
               'circle-radius': ['step', ['get', 'activity_count'], 6, 5, 7.5, 15, 9],
-              'circle-color': '#fcfdfb',
-              'circle-opacity': ['interpolate', ['linear'], ['zoom'], 9.8, 0.85, 11.0, 0],
+              'circle-color': 'rgba(0, 0, 0, 0)',
+              'circle-opacity': ['interpolate', ['linear'], ['zoom'], 9.8, 1, 11.0, 0],
               'circle-stroke-width': 2.5,
               'circle-stroke-color': '#17745c',
               'circle-stroke-opacity': ['interpolate', ['linear'], ['zoom'], 9.8, 1, 11.0, 0],
@@ -764,6 +770,7 @@
   data-testid="exploration-map"
   data-ready={ready}
   data-drawn={drawn}
+  data-grid-drawn={gridDrawn}
   data-zoom-tier={currentTier}
   onpointerdown={(event) => {
     lastPointerType = event.pointerType;
@@ -899,7 +906,14 @@
 
   {#if ready}
     <div class="basemap">
-      <BasemapPicker preference={active ?? 'auto'} {style} {status} onselect={choose} />
+      <BasemapPicker
+        preference={active ?? 'off'}
+        allowOff
+        {style}
+        {status}
+        onselect={choose}
+        onoff={() => choose(null)}
+      />
       {#if active}
         <button class="button-secondary" type="button" onclick={() => choose(null)}>关闭外部底图</button>
       {/if}

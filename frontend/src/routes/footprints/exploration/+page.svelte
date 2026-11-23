@@ -35,9 +35,15 @@
   const count = (value: number | null | undefined) => (value == null ? '—' : number.format(value));
   const km = (value: number | null | undefined) => (value == null ? '—' : `${metres.format(value / 1000)} km`);
 
+  type NavState = { scope: Scope; code: string; year: YearSelection; layer: Layer };
+
+  let pendingNav = $state<NavState | null>(null);
+  let navSeq = 0;
+
   const section = $derived(page.url.searchParams.get('scope'));
-  const scope = $derived<Scope>(section === 'region' || section === 'city' ? section : 'global');
-  const code = $derived(scope === 'global' ? 'all' : (page.url.searchParams.get('code') ?? 'all'));
+  const urlScope = $derived<Scope>(section === 'region' || section === 'city' ? section : 'global');
+  const urlCode = $derived(urlScope === 'global' ? 'all' : (page.url.searchParams.get('code') ?? 'all'));
+  const urlLayer = $derived<Layer>(page.url.searchParams.get('layer') === 'new' ? 'new' : 'heatmap');
   const path = $derived(view.href('/footprints/exploration'));
   const currentYear = $derived(
     Number(
@@ -48,9 +54,6 @@
     ),
   );
 
-  const initialLayerParam = $derived<Layer>(page.url.searchParams.get('layer') === 'new' ? 'new' : 'heatmap');
-  let layer = $state<Layer>('heatmap');
-
   const urlYear = $derived.by<YearSelection | null>(() => {
     const raw = page.url.searchParams.get('year');
     if (raw === 'all') return 'all';
@@ -59,7 +62,10 @@
     return Number.isInteger(parsed) && parsed >= 1900 && parsed <= currentYear ? parsed : null;
   });
 
-  const selectedYear = $derived<YearSelection>(urlYear ?? (layer === 'new' ? currentYear : 'all'));
+  const scope = $derived<Scope>(pendingNav?.scope ?? urlScope);
+  const code = $derived(pendingNav?.code ?? urlCode);
+  const layer = $derived<Layer>(pendingNav?.layer ?? urlLayer);
+  const selectedYear = $derived<YearSelection>(pendingNav?.year ?? urlYear ?? (layer === 'new' ? currentYear : 'all'));
   const isAllYears = $derived(selectedYear === 'all');
   const numericYear = $derived(selectedYear === 'all' ? currentYear : selectedYear);
   const yearLabel = $derived(selectedYear === 'all' ? '全部年份' : `${selectedYear} 年`);
@@ -111,7 +117,6 @@
   let detailId = 0;
   let gridId = 0;
   let identity: string | null | undefined;
-  let initializedLayer = false;
 
   const years = $derived(
     Array.from(
@@ -176,6 +181,14 @@
     gridRetry += 1;
   }
 
+  function navigate(nextScope: Scope, nextCode: string, nextYear: YearSelection, nextLayer: Layer) {
+    const token = ++navSeq;
+    pendingNav = { scope: nextScope, code: nextCode, year: nextYear, layer: nextLayer };
+    void goto(href(nextScope, nextCode, nextYear, nextLayer)).finally(() => {
+      if (navSeq === token) pendingNav = null;
+    });
+  }
+
   function changeScope(input: string) {
     const [nextScope, nextCode] = input.split(':');
     if (nextScope === 'global' || nextScope === 'region' || nextScope === 'city') {
@@ -193,7 +206,7 @@
         focusTarget = null;
         mapRef?.resetToOverview();
       }
-      void goto(href(nextScope, nextCode));
+      navigate(nextScope, nextCode, selectedYear, layer);
     }
   }
 
@@ -204,45 +217,35 @@
       zoom: marker.kind === 'nearby' ? 9.5 : 11,
       seq: ++focusSeq,
     };
-    void goto(href('city', marker.code));
+    navigate('city', marker.code, selectedYear, layer);
   }
 
   function switchLayer(next: Layer) {
     if (layer === next) return;
-    layer = next;
     grid = null;
-    if (next === 'new' && selectedYear === 'all') {
-      void goto(href(scope, code, currentYear, 'new'), { replaceState: true });
-    } else if (next === 'heatmap' && urlYear !== null) {
-      void goto(href(scope, code, selectedYear, 'heatmap'), { replaceState: true });
-    }
+    const targetYear = next === 'new' && selectedYear === 'all' ? currentYear : selectedYear;
+    navigate(scope, code, targetYear, next);
   }
 
   function switchYear(value: string) {
     if (value === 'all') {
-      layer = 'heatmap';
       grid = null;
-      void goto(href(scope, code, 'all', 'heatmap'));
+      navigate(scope, code, 'all', 'heatmap');
       return;
     }
     const nextYear = Number(value);
     if (Number.isInteger(nextYear)) {
       grid = null;
-      void goto(href(scope, code, nextYear, layer));
+      navigate(scope, code, nextYear, layer);
     }
   }
 
   function switchToAllYearsHeatmap() {
-    layer = 'heatmap';
     grid = null;
-    void goto(href(scope, code, 'all', 'heatmap'));
+    navigate(scope, code, 'all', 'heatmap');
   }
 
   onMount(() => {
-    if (!initializedLayer) {
-      initializedLayer = true;
-      layer = initialLayerParam;
-    }
     mounted = true;
     return () => {
       disposed = true;
@@ -455,7 +458,7 @@
       <MetricSummary
         items={[
           {
-            label: '跑过的城市',
+            label: '边界内城市',
             value: count(catalog?.boundary_count ?? markersData?.boundary_count),
             icon: 'count',
           },
@@ -571,7 +574,7 @@
           }}
           onselectcity={selectCityMarker}
           onresetscope={() => {
-            if (scope !== 'global') void goto(href('global', 'all'));
+            if (scope !== 'global') navigate('global', 'all', selectedYear, layer);
           }}
         />
       </section>

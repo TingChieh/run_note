@@ -77,6 +77,24 @@ const shangang = {
   is_new_in_year: false,
 };
 
+const tokyo = {
+  code: 'GN-1850147',
+  name: '东京',
+  short_name: '东京',
+  region_code: 'JP-13',
+  region_name: '东京都',
+  country_code: 'JPN',
+  kind: 'nearby',
+  lon: 139.69,
+  lat: 35.69,
+  bounds: null,
+  first_date: '2025-09-10',
+  last_date: '2025-09-10',
+  activity_count: 2,
+  distance_m: null,
+  is_new_in_year: false,
+};
+
 const allMarkers = [qingjia, songxi, haicheng, shangang];
 const toPlace = (m: typeof qingjia | typeof shangang) => ({
   code: m.code,
@@ -93,7 +111,8 @@ const radius = 6378137;
 const lng = (column: number) => (column * 100 * 180) / (Math.PI * radius);
 const lat = (row: number) => (Math.atan(Math.sinh((row * 100) / radius)) * 180) / Math.PI;
 
-async function fixture(page: Page) {
+async function fixture(page: Page, options: { markers?: typeof allMarkers } = {}) {
+  const markersSource = options.markers ?? allMarkers;
   const state = {
     response: 'ready',
     requests: [] as { url: URL; header: string | undefined }[],
@@ -113,8 +132,8 @@ async function fixture(page: Page) {
       data = {
         ...version,
         status: pending ? 'pending' : 'ready',
-        items: empty ? [] : allMarkers.map(toPlace),
-        total: empty ? 0 : allMarkers.length,
+        items: empty ? [] : markersSource.map(toPlace),
+        total: empty ? 0 : markersSource.length,
         limit: 20,
         offset: 0,
         regions: empty
@@ -126,8 +145,8 @@ async function fixture(page: Page) {
               { code: 'CN-510000', name: '四川省' },
             ],
         activity_count: empty ? 0 : 73,
-        boundary_count: empty ? 0 : 3,
-        nearby_count: empty ? 0 : 1,
+        boundary_count: empty ? 0 : markersSource.filter((m) => m.kind === 'boundary').length,
+        nearby_count: empty ? 0 : markersSource.filter((m) => m.kind === 'nearby').length,
         no_track_count: 0,
         unmatched_count: 0,
         distance_m: empty ? 0 : 343100,
@@ -139,7 +158,7 @@ async function fixture(page: Page) {
       const items =
         empty || pending
           ? []
-          : allMarkers.map((m) => ({ ...m, is_new_in_year: yr !== null && m.first_date.startsWith(String(yr)) }));
+          : markersSource.map((m) => ({ ...m, is_new_in_year: yr !== null && m.first_date.startsWith(String(yr)) }));
       data = {
         ...version,
         status: pending ? 'pending' : 'ready',
@@ -154,8 +173,8 @@ async function fixture(page: Page) {
               { code: 'CN-510000', name: '四川省' },
             ],
         activity_count: empty ? 0 : 73,
-        boundary_count: empty ? 0 : 3,
-        nearby_count: empty ? 0 : 1,
+        boundary_count: empty ? 0 : markersSource.filter((m) => m.kind === 'boundary').length,
+        nearby_count: empty ? 0 : markersSource.filter((m) => m.kind === 'nearby').length,
       };
     } else if (url.pathname.endsWith('/cells')) {
       const onlyNew = url.searchParams.get('layer') === 'new';
@@ -228,6 +247,7 @@ test('overview-first map, zero external requests, all-years default, drill-down,
   await expect(mapEl).toHaveAttribute('data-drawn', 'true');
   await expect(mapEl).toHaveAttribute('data-zoom-tier', 'country');
   await expect(page.getByLabel('年份')).toHaveValue('all');
+  await expect(page.getByRole('button', { name: '切换底图' })).toContainText('底图（默认无）');
   await expect(page.locator('.map-label').first()).toBeVisible();
   expect(external).toHaveLength(0);
   // National overview uses /markers without fetching nationwide /cells at low zoom.
@@ -267,7 +287,7 @@ test('overview-first map, zero external requests, all-years default, drill-down,
   // Nearby city is clickable and opens nearby summary without crashing.
   await page.getByRole('link', { name: /杉港市/ }).click();
   await expect(page.getByRole('heading', { name: '杉港市' })).toBeVisible();
-  await expect(page.getByText('附近有记录', { exact: true })).toBeVisible();
+  await expect(page.getByRole('term').filter({ hasText: /^附近有记录$/ })).toBeVisible();
 
   // Reset to national overview button returns to global scope.
   await page.getByRole('button', { name: '回到全国' }).click();
@@ -284,6 +304,56 @@ test('overview-first map, zero external requests, all-years default, drill-down,
 
   await page.getByText('查看逐月数据').click();
   await expect(page.getByRole('rowheader', { name: '1 月', exact: true })).toBeVisible();
+});
+
+test('layer and year persist in URL across reload and back/forward', async ({ page }) => {
+  await page.context().addCookies([ownerCookie]);
+  await fixture(page);
+  await page.goto(root);
+  await expect(page.getByTestId('exploration-map')).toHaveAttribute('data-drawn', 'true');
+
+  // Repro: select 2025 -> switch to 首次探索 -> reload must preserve layer=new and year=2025.
+  await page.getByLabel('年份').selectOption('2025');
+  await expect(page).toHaveURL(/year=2025/);
+  await page.getByRole('button', { name: '首次探索' }).click();
+  await expect(page).toHaveURL(/year=2025.*layer=new|layer=new.*year=2025/);
+  await expect(page.getByRole('button', { name: '首次探索' })).toHaveAttribute('aria-pressed', 'true');
+
+  await page.reload();
+  await expect(page.getByLabel('年份')).toHaveValue('2025');
+  await expect(page.getByRole('button', { name: '首次探索' })).toHaveAttribute('aria-pressed', 'true');
+
+  // Switch back to heatmap -> reload must preserve layer=heatmap and year=2025.
+  await page.getByRole('button', { name: '覆盖热图' }).click();
+  await expect(page).toHaveURL(/year=2025/);
+  await expect(page).not.toHaveURL(/layer=new/);
+  await expect(page.getByRole('button', { name: '覆盖热图' })).toHaveAttribute('aria-pressed', 'true');
+
+  await page.reload();
+  await expect(page.getByLabel('年份')).toHaveValue('2025');
+  await expect(page.getByRole('button', { name: '覆盖热图' })).toHaveAttribute('aria-pressed', 'true');
+
+  await page.goBack();
+  await expect(page).toHaveURL(/year=2025.*layer=new|layer=new.*year=2025/);
+  await expect(page.getByRole('button', { name: '首次探索' })).toHaveAttribute('aria-pressed', 'true');
+
+  await page.goForward();
+  await expect(page).toHaveURL(/year=2025/);
+  await expect(page).not.toHaveURL(/layer=new/);
+  await expect(page.getByRole('button', { name: '覆盖热图' })).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('overseas focus China shortcut frames China overview rather than single-city bbox', async ({ page }) => {
+  await page.context().addCookies([ownerCookie]);
+  await fixture(page, { markers: [qingjia, tokyo] });
+  await page.goto(root);
+  const mapEl = page.getByTestId('exploration-map');
+  await expect(mapEl).toHaveAttribute('data-drawn', 'true');
+  await expect(page.getByRole('button', { name: '聚焦中国' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '回到全球' })).toBeVisible();
+
+  await page.getByRole('button', { name: '聚焦中国' }).click();
+  await expect(mapEl).toHaveAttribute('data-zoom-tier', 'country');
 });
 
 test('mobile touch tap shows confirmation bar before drilling down', async ({ browser }) => {
@@ -351,6 +421,7 @@ for (const width of [390, 768, 1440]) {
       await expect(page.getByRole('heading', { name: '青岬市' })).toBeVisible();
       await expect(page.getByTestId('exploration-map')).toHaveAttribute('data-zoom-tier', 'city');
       await expect(page.getByTestId('exploration-map')).toHaveAttribute('data-drawn', 'true');
+      await expect(page.getByTestId('exploration-map')).toHaveAttribute('data-grid-drawn', 'true');
       if (process.env.EXPLORATION_SCREENSHOTS) {
         await page.screenshot({ path: info.outputPath(`city-${width}-${theme}.png`), fullPage: true });
       }

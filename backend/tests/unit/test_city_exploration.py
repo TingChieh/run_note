@@ -132,3 +132,7 @@ def test_all_years_detail_and_cells_aggregate_across_years():
 
     y25_cells = cells(reads, owner, 1, "global", "all", 2025, None, 12, "new", all_years=False)
     assert y25_cells["cells"] == [(101, 200, 1)]
+
+    with pytest.raises(ApiError) as exc:
+        cells(reads, owner, 1, "global", "all", 2026, None, 12, "new", all_years=True)
+    assert exc.value.status_code == 422

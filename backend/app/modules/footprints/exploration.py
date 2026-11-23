@@ -389,7 +389,7 @@ def _grid(db, owner, scope, geo):
                 if year not in history.years:
                     history.years[year] = YearGrid()
                 history.years[year].add(row.i, row.j, heat, year == first_year)
-            history.all_grid.add(row.i, row.j, sum(row.counts), True)
+            history.all_grid.add(row.i, row.j, sum(row.counts), False)
             history.size += len(row.years)
             if history.size > MAX_HISTORY_HITS:
                 raise IncompleteHistory("failed")
@@ -497,6 +497,8 @@ def parse_viewport(value):
 def cells(
     reads, owner, version, scope, code, year, viewport, zoom, layer, *, all_years: bool = False
 ):
+    if all_years and layer == "new":
+        raise ApiError(422, "VALIDATION_ERROR", "全部年份仅支持覆盖热图")
     status, _, _, history = _read_grid(reads, owner, version, scope, code)
     grid = (history.all_grid if all_years else history.years.get(year)) if history else None
     new = layer == "new"

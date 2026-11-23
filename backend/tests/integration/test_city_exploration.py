@@ -187,6 +187,7 @@ def test_history_recovers_after_old_import_and_delete(clients):
     assert all_detail["cumulative_cells"] == baseline["cumulative_cells"]
     all_cells = ready(first, cells + "&all_years=true&bbox=121.47,31.22,121.49,31.24")
     assert all(count == 3 for _, _, count in all_cells["cells"])
+    assert first.get(BASE + cells + "&layer=new&all_years=true").status_code == 422
     deletion = first.delete(f"/api/v1/activities/{old}", headers=headers(first))
     assert deletion.status_code == 200, deletion.text
     assert ready(first, city)["months"] == baseline["months"]
