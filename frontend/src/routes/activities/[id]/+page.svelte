@@ -38,6 +38,17 @@
     type Activity,
     type Route,
   } from '#lib/api/activities.ts';
+  import {
+    buildCacheNamespace,
+    clearPrivateOfflineCache,
+    readCachedActivity,
+    upsertCachedActivities,
+  } from '#lib/offline-cache.ts';
+  const cacheNamespace = $derived(buildCacheNamespace(page.data.user?.id, view.manage ? 'owner' : view.href('/')));
+  let showingCachedDetail = $state(false);
+  const isNetworkFailure = (cause: unknown) =>
+    (typeof navigator !== 'undefined' && navigator.onLine === false) ||
+    (cause instanceof ActivityError && cause.code === 'NETWORK_ERROR');
   let activity = $state<Activity | null>(null),
     // Raw like mapRoute below: a route is only ever replaced, never edited in place.
     route = $state.raw<Route | null>(null),
@@ -100,6 +111,7 @@
     mapRoute = null;
     message = '';
     routeError = '';
+    void clearPrivateOfflineCache();
     window.location.replace('/admin?reason=expired');
     return true;
   }
@@ -134,16 +146,31 @@
     mapRoute = null;
     routeLoading = false;
     routeError = '';
+    showingCachedDetail = false;
+    const ns = cacheNamespace;
     try {
       const result = await readActivity(id, fetch, view.manage);
       if (disposed || token !== activityToken) return;
       activity = result;
+      void upsertCachedActivities(ns, [result]);
       // The title is on screen: fetch the map library while the route is still on its way.
       if (result.has_route) afterNextPaint(warmMapLibrary);
       if (result.has_route) await loadRoute(result.id);
     } catch (cause) {
-      if (!disposed && token === activityToken && !expired(cause))
-        message = cause instanceof Error ? cause.message : '无法读取活动';
+      if (disposed || token !== activityToken || expired(cause)) return;
+      if (isNetworkFailure(cause)) {
+        const cached = await readCachedActivity(ns, id);
+        if (disposed || token !== activityToken) return;
+        if (cached) {
+          activity = cached.value;
+          showingCachedDetail = true;
+          if (cached.value.has_route) {
+            routeError = '离线模式暂不支持加载未缓存路线与在线底图，联网后可重新读取路线。';
+          }
+          return;
+        }
+      }
+      message = cause instanceof Error ? cause.message : '无法读取活动';
     } finally {
       if (!disposed && token === activityToken) loading = false;
     }
@@ -219,6 +246,13 @@
     >
   </div>
 {:else if activity}
+  {#if showingCachedDetail}<div class="mt-4" data-testid="activity-detail-offline-notice">
+      <FeedbackState kind="empty" title="当前显示离线缓存详情，恢复网络后可重新同步最新数据。">
+        <button type="button" class="button-secondary mt-3" onclick={() => void loadActivity(activity!.id)}
+          >重新读取活动详情</button
+        >
+      </FeedbackState>
+    </div>{/if}
   <section
     class="sport-hero"
     class:switching

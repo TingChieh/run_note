@@ -103,6 +103,7 @@ public class MainActivity extends BridgeActivity implements RunNoteWebViewClient
             .create();
 
         registerPlugin(SystemAppearancePlugin.class);
+        registerPlugin(HealthDataPlugin.class);
         super.load();
 
         if (getBridge() != null && getBridge().getWebView() != null) {

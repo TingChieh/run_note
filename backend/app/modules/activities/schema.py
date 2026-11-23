@@ -54,6 +54,22 @@ class ActivityList(BaseModel):
     offset: int
 
 
+class ActivitySyncItem(ActivityView):
+    updated_at: datetime
+
+
+class ActivitySyncView(BaseModel):
+    data_version: int
+    unchanged: bool
+    server_time: datetime
+    total_count: int
+    items: list[ActivitySyncItem]
+    next_cursor: str | None = None
+    has_more: bool = False
+    active_ids: list[UUID] | None = None
+    full_resync_required: bool = False
+
+
 class ActivityUpdate(StrictInput):
     title: str = Field(default=None, min_length=1, max_length=120)
     notes: str = Field(default=None, max_length=5000)

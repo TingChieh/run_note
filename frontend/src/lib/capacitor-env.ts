@@ -6,11 +6,21 @@ export interface CapacitorSystemAppearancePlugin {
   setTheme?: (options: { theme: 'light' | 'dark' | 'system' }) => Promise<void> | void;
 }
 
+export interface CapacitorHealthDataPlugin {
+  getAvailability?: () => Promise<unknown>;
+  checkPermissions?: (options?: { metrics?: string[] }) => Promise<unknown>;
+  requestPermissions?: (options?: { metrics?: string[] }) => Promise<unknown>;
+  readSummary?: (options?: { startDate?: string; endDate?: string; metrics?: string[] }) => Promise<unknown>;
+  openSettings?: () => Promise<unknown>;
+}
+
 export interface CapacitorWindowRuntime {
   isNativePlatform?: () => boolean;
+  getPlatform?: () => string;
   Plugins?: {
     SystemBars?: CapacitorSystemBarsPlugin;
     SystemAppearance?: CapacitorSystemAppearancePlugin;
+    HealthData?: CapacitorHealthDataPlugin;
   };
 }
 

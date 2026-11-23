@@ -44,6 +44,22 @@
   import ProvinceMap from '#lib/components/ProvinceMap.svelte';
   import ActivityExplorer from '#lib/components/ActivityExplorer.svelte';
   import RecordsBannerLoader from '#lib/components/RecordsBannerLoader.svelte';
+  import {
+    buildCacheNamespace,
+    clearPrivateOfflineCache,
+    readCalendarCache,
+    readSummaryCache,
+    readTrendsCache,
+    saveCalendarCache,
+    saveSummaryCache,
+    saveTrendsCache,
+  } from '#lib/offline-cache.ts';
+  const cacheNamespace = $derived(buildCacheNamespace(page.data.user?.id, view.manage ? 'owner' : view.href('/')));
+  let showingCachedData = $state(false);
+  let cachedSavedAt = $state<number | null>(null);
+  const isNetworkFailure = (cause: unknown) =>
+    (typeof navigator !== 'undefined' && navigator.onLine === false) ||
+    (cause instanceof ActivityError && cause.code === 'NETWORK_ERROR');
   let year = $state(2026),
     yearInput = $state('2026'),
     calendarMetric = $state<CalendarMetric>('distance'),
@@ -96,6 +112,7 @@
       yearRequest++;
       dayRequest++;
       trendRequest++;
+      void clearPrivateOfflineCache();
       window.location.replace('/admin?reason=expired&next=%2Fdashboard');
       return '';
     }
@@ -115,6 +132,9 @@
     message = '';
     dayMessage = '';
     trendMessage = '';
+    showingCachedData = false;
+    cachedSavedAt = null;
+    const ns = cacheNamespace;
     // Observe every request rejection, including an expired session in a sibling request.
     const results = await Promise.allSettled([readSummary(requestedYear), readCalendar(requestedYear, calendarMetric)]);
     if (disposed) return;
@@ -124,21 +144,64 @@
         return;
       }
     if (token !== yearRequest) return;
-    if (results[0].status === 'fulfilled') annual = results[0].value;
-    else message = fail(results[0].reason);
-    if (results[1].status === 'fulfilled') calendar = results[1].value;
-    else message = fail(results[1].reason);
+    if (results[0].status === 'fulfilled') {
+      annual = results[0].value;
+      void saveSummaryCache(ns, requestedYear, results[0].value);
+    } else if (isNetworkFailure(results[0].reason)) {
+      const cached = await readSummaryCache(ns, requestedYear);
+      if (disposed || token !== yearRequest) return;
+      if (cached) {
+        annual = cached.value;
+        showingCachedData = true;
+        cachedSavedAt = cached.savedAt;
+      } else {
+        message = fail(results[0].reason);
+      }
+    } else {
+      message = fail(results[0].reason);
+    }
+    if (results[1].status === 'fulfilled') {
+      calendar = results[1].value;
+      void saveCalendarCache(ns, requestedYear, calendarMetric, results[1].value);
+    } else if (isNetworkFailure(results[1].reason)) {
+      const cached = await readCalendarCache(ns, requestedYear, calendarMetric);
+      if (disposed || token !== yearRequest) return;
+      if (cached) {
+        calendar = cached.value;
+        showingCachedData = true;
+        cachedSavedAt = cachedSavedAt ?? cached.savedAt;
+      } else if (!showingCachedData) {
+        message = fail(results[1].reason);
+      }
+    } else {
+      message = fail(results[1].reason);
+    }
     loading = false;
     void loadTrend();
     if (restoreDay && calendar && token === yearRequest) void selectDay(restoreDay);
   }
   async function loadCumulative() {
     cumulativeMessage = '';
+    const ns = cacheNamespace;
     try {
       const data = await readSummary();
-      if (!disposed) cumulative = data;
+      if (!disposed) {
+        cumulative = data;
+        void saveSummaryCache(ns, 'all', data);
+      }
     } catch (cause) {
-      if (!disposed) cumulativeMessage = fail(cause);
+      if (disposed) return;
+      if (isNetworkFailure(cause)) {
+        const cached = await readSummaryCache(ns, 'all');
+        if (disposed) return;
+        if (cached) {
+          cumulative = cached.value;
+          showingCachedData = true;
+          cachedSavedAt = cachedSavedAt ?? cached.savedAt;
+          return;
+        }
+      }
+      cumulativeMessage = fail(cause);
     }
   }
   async function loadTrend() {
@@ -146,10 +209,25 @@
     trendLoading = true;
     trends = null;
     trendMessage = '';
+    const ns = cacheNamespace;
     try {
       const result = await readTrends(year, period);
-      if (!disposed && token === trendRequest) trends = result;
+      if (!disposed && token === trendRequest) {
+        trends = result;
+        void saveTrendsCache(ns, year, period, result);
+      }
     } catch (cause) {
+      if (disposed) return;
+      if (token === trendRequest && isNetworkFailure(cause)) {
+        const cached = await readTrendsCache(ns, year, period);
+        if (disposed || token !== trendRequest) return;
+        if (cached) {
+          trends = cached.value;
+          showingCachedData = true;
+          cachedSavedAt = cachedSavedAt ?? cached.savedAt;
+          return;
+        }
+      }
       if (!disposed && (token === trendRequest || (cause instanceof ActivityError && cause.status === 401)))
         trendMessage = fail(cause);
     } finally {
@@ -234,6 +312,21 @@
 <svelte:head><title>{pageTitle('数据汇总', page.data.site)}</title></svelte:head>
 <PageHeader title="数据汇总" description="查看你的跑步数据，探索记录、足迹与运动分析。" />
 <div class="dashboard">
+  {#if showingCachedData}<div data-testid="dashboard-offline-cache-notice">
+      <FeedbackState
+        kind="empty"
+        title={`当前显示离线缓存数据${cachedSavedAt ? `（更新于 ${new Intl.DateTimeFormat('zh-CN', { timeZone: page.data.showcase?.timezone ?? 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(cachedSavedAt))}）` : ''}`}
+      >
+        <button
+          type="button"
+          class="button-secondary mt-3"
+          onclick={() => {
+            void loadYear(selectedDate);
+            void loadCumulative();
+          }}>重新同步统计</button
+        >
+      </FeedbackState>
+    </div>{/if}
   {#if cumulative}<p class="cumulative">
       累计 <strong>{dashboardDistance(cumulative.distance_m)}</strong><span>·</span
       >{cumulative.activity_count.toLocaleString('zh-CN')} 次活动<span>·</span>{cumulative.activity_days.toLocaleString(

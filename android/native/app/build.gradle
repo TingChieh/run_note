@@ -1,4 +1,5 @@
 apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
 
 import java.net.URI
 
@@ -82,13 +83,22 @@ android {
         buildConfig = true
     }
 
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    kotlinOptions {
+        jvmTarget = '21'
+    }
+
     defaultConfig {
         applicationId "com.tingchieh.runnote"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // Formula: MAJOR * 10000 + MINOR * 100 + PATCH (2.3.0 -> 20300)
-        versionCode 20300
-        versionName "2.3.0"
+        // Formula: MAJOR * 10000 + MINOR * 100 + PATCH (2.4.0 -> 20400)
+        versionCode 20400
+        versionName "2.4.0"
         buildConfigField "String", "RUNNOTE_APP_ID", "\"com.tingchieh.runnote\""
         aaptOptions {
             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -158,7 +168,9 @@ dependencies {
     implementation "androidx.browser:browser:1.8.0"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation "androidx.health.connect:connect-client:1.1.0"
     implementation "androidx.webkit:webkit:$androidxWebkitVersion"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2"
     implementation project(':capacitor-android')
     implementation project(':capacitor-cordova-android-plugins')
     testImplementation 'junit:junit:4.13.2'

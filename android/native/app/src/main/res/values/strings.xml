@@ -16,7 +16,7 @@
     <string name="webview_upgrade_still_unsupported">仍检测到旧版 WebView（%1$s），请先完成系统组件更新后再试。</string>
 
     <string name="connection_error_offline_title">网络连接已断开</string>
-    <string name="connection_error_offline_body">当前无法访问网络，请检查 Wi-Fi 或移动数据后重试。RunNote 在当前版本需要联网查看数据。</string>
+    <string name="connection_error_offline_body">当前无法访问网络，请检查 Wi-Fi 或移动数据后重试。页面已加载后可在离线模式下查看已缓存的汇总与跑步记录。</string>
     <string name="connection_error_unreachable_title">无法连接到 RunNote 服务</string>
     <string name="connection_error_unreachable_body">连接超时或服务暂时不可用，请稍后重试。</string>
     <string name="connection_error_tls_title">安全连接校验失败</string>
@@ -25,4 +25,8 @@
     <string name="connection_error_config_body">当前安装包未配置有效的 HTTPS 服务地址，请使用正式构建版本。</string>
     <string name="connection_error_action_retry">重新加载</string>
     <string name="connection_error_action_back">返回上一页</string>
+
+    <string name="health_rationale_title">健康数据权限说明</string>
+    <string name="health_rationale_body">RunNote 仅通过 Health Connect 以只读方式读取你主动授权的运动与恢复指标（步数、距离、活动热量、心率、静息心率、睡眠时长），用于在应用内展示摘要参考。\n\n• 绝不向 Health Connect 写入或修改任何数据。\n• 绝不将健康数据、轨迹或账号凭据发送给第三方。\n• 你可以随时在系统 Health Connect 设置中撤销全部或部分权限。</string>
+    <string name="health_rationale_close">关闭</string>
 </resources>
