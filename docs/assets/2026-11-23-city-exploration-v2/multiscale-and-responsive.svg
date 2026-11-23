@@ -1,0 +1,196 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 680" width="1200" height="680" role="img" aria-label="多尺度缩放层级、深色外观与移动端线框图">
+  <defs>
+    <style>
+      .bg { fill: #f6f7f4; }
+      .panel { fill: #ffffff; stroke: #e0e6da; stroke-width: 1.5; }
+      .dark-panel { fill: #33312f; stroke: #46433f; stroke-width: 1.5; }
+      .title { font: 700 17px system-ui, -apple-system, "PingFang SC", sans-serif; fill: #202d23; }
+      .h2 { font: 600 14px system-ui, -apple-system, "PingFang SC", sans-serif; fill: #202d23; }
+      .h2-dark { font: 600 14px system-ui, -apple-system, "PingFang SC", sans-serif; fill: #f2f0ee; }
+      .sub { font: 500 12px system-ui, -apple-system, "PingFang SC", sans-serif; fill: #5c695e; }
+      .sub-dark { font: 500 12px system-ui, -apple-system, "PingFang SC", sans-serif; fill: #b1aca6; }
+      .num { font: 700 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .pill { fill: #e8f6df; stroke: #bcdcca; }
+      .pill-text { font: 600 11px system-ui, -apple-system, "PingFang SC", sans-serif; fill: #176448; }
+      .new-pill { fill: #fff8e9; stroke: #ead7b3; }
+      .new-text { font: 600 11px system-ui, -apple-system, "PingFang SC", sans-serif; fill: #805412; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="680" class="bg" />
+  <text x="32" y="36" class="title">v2 缩放自适应三层体系 · 首次探索模式 · 深色模式与手机端（390×844）布局</text>
+
+  <!-- Row 1: Three Zoom Scales -->
+  <!-- Tier 1: Country z < 6.5 -->
+  <g transform="translate(32, 56)">
+    <rect width="366" height="260" rx="18" class="panel" />
+    <rect x="16" y="14" width="154" height="24" rx="12" class="pill" />
+    <text x="26" y="30" class="pill-text">Layer 1 · 全国 / 跨省 z &lt; 6.5</text>
+    <text x="180" y="30" class="sub">城市聚类气泡 + 省域衬底</text>
+
+    <rect x="16" y="48" width="334" height="162" rx="10" fill="#e8f0f4" stroke="#d4e0e6" />
+    <path d="M 36,72 L 154,60 L 274,64 L 306,120 L 254,192 L 116,184 L 54,132 Z" fill="#fcfdfb" stroke="#d5ded8" />
+    <path d="M 196,94 L 256,92 L 268,144 L 204,146 Z" fill="#e3f4e8" />
+    <circle cx="232" cy="118" r="14" fill="#17745c" stroke="#ffffff" stroke-width="2" />
+    <text x="232" y="122" text-anchor="middle" fill="#ffffff" class="num">4城</text>
+    <circle cx="128" cy="140" r="10" fill="#4ca76a" stroke="#ffffff" stroke-width="2" />
+    <text x="128" y="144" text-anchor="middle" fill="#ffffff" class="num">15</text>
+    <rect x="142" y="131" width="44" height="18" rx="5" fill="#ffffff" stroke="#d8e2dc" />
+    <text x="164" y="144" text-anchor="middle" class="sub">成都市</text>
+
+    <text x="16" y="232" class="sub">• 不拉取或跳过全国 100 m 细格网，帧耗时 &lt; 8 ms</text>
+    <text x="16" y="248" class="sub">• 首次探索模式：当年首跑城市高亮 #d98218 金色光环</text>
+  </g>
+
+  <!-- Tier 2: Province / Metro z 6.5 - 10.5 -->
+  <g transform="translate(417, 56)">
+    <rect width="366" height="260" rx="18" class="panel" />
+    <rect x="16" y="14" width="174" height="24" rx="12" class="pill" />
+    <text x="26" y="30" class="pill-text">Layer 2 · 省域 / 都市圈 z 6.5–10.5</text>
+    <text x="198" y="30" class="sub">粗格网 + 最小屏幕点兜底</text>
+
+    <rect x="16" y="48" width="334" height="162" rx="10" fill="#e8f0f4" stroke="#d4e0e6" />
+    <path d="M 24,56 L 340,56 L 340,202 L 24,202 Z" fill="#fcfdfb" />
+    <!-- City boundary dashed outlines -->
+    <polygon points="74,84 176,74 196,158 88,166" fill="#edf6ef" stroke="#b8dcc4" stroke-width="1.2" />
+    <polygon points="176,74 294,82 302,166 196,158" fill="#f7faf8" stroke="#d5ded8" stroke-width="1" />
+    <!-- Coarse blocks (400m - 1.6km) + screen-space circle anchors -->
+    <g fill="#4ca76a">
+      <rect x="122" y="108" width="6" height="6" rx="1" />
+      <rect x="129" y="112" width="6" height="6" rx="1" />
+      <rect x="136" y="114" width="6" height="6" rx="1" />
+      <rect x="142" y="108" width="6" height="6" rx="1" fill="#227b49" />
+      <rect x="234" y="118" width="6" height="6" rx="1" />
+      <rect x="242" y="122" width="6" height="6" rx="1" fill="#105332" />
+    </g>
+    <!-- Unclustered city pills -->
+    <circle cx="136" cy="116" r="8" fill="rgba(23,116,92,0.18)" stroke="#17745c" stroke-width="1.5" />
+    <rect x="92" y="84" width="64" height="18" rx="5" fill="#ffffff" stroke="#d8e2dc" />
+    <text x="124" y="97" text-anchor="middle" class="sub">苏州市 · 21</text>
+    <rect x="218" y="92" width="64" height="18" rx="5" fill="#ffffff" stroke="#d8e2dc" />
+    <text x="250" y="105" text-anchor="middle" class="sub">上海市 · 42</text>
+
+    <text x="16" y="232" class="sub">• block_size = 4/16，并在 z &lt; 9 叠加 ≥3px 圆点防消隐</text>
+    <text x="16" y="248" class="sub">• 保留城市边界线与地名标签，支持跨城跑带观察</text>
+  </g>
+
+  <!-- Tier 3: City z >= 10.5 -->
+  <g transform="translate(802, 56)">
+    <rect width="366" height="260" rx="18" class="panel" />
+    <rect x="16" y="14" width="166" height="24" rx="12" class="new-pill" />
+    <text x="26" y="30" class="new-text">Layer 3 · 城市街道 z ≥ 10.5</text>
+    <text x="190" y="30" class="sub">100 m 原生精细格网</text>
+
+    <rect x="16" y="48" width="334" height="162" rx="10" fill="#edf3ef" stroke="#d4e0e6" />
+    <!-- Street-like faint grid -->
+    <g stroke="#dce6df" stroke-width="1">
+      <line x1="20" y1="92" x2="346" y2="92" />
+      <line x1="20" y1="142" x2="346" y2="142" />
+      <line x1="110" y1="52" x2="110" y2="206" />
+      <line x1="220" y1="52" x2="220" y2="206" />
+    </g>
+    <!-- 100m heatmap + new highlight cells -->
+    <g>
+      <rect x="108" y="88" width="11" height="11" fill="#8dcc9c" stroke="rgba(255,255,255,0.6)" />
+      <rect x="119" y="88" width="11" height="11" fill="#4ca76a" stroke="rgba(255,255,255,0.6)" />
+      <rect x="130" y="88" width="11" height="11" fill="#227b49" stroke="rgba(255,255,255,0.6)" />
+      <rect x="141" y="88" width="11" height="11" fill="#105332" stroke="rgba(255,255,255,0.6)" />
+      <rect x="141" y="99" width="11" height="11" fill="#105332" stroke="rgba(255,255,255,0.6)" />
+      <rect x="141" y="110" width="11" height="11" fill="#227b49" stroke="rgba(255,255,255,0.6)" />
+      <rect x="152" y="110" width="11" height="11" fill="#d98218" stroke="#805412" />
+      <rect x="163" y="110" width="11" height="11" fill="#d98218" stroke="#805412" />
+      <rect x="174" y="110" width="11" height="11" fill="#d98218" stroke="#805412" />
+      <rect x="174" y="121" width="11" height="11" fill="#d98218" stroke="#805412" />
+    </g>
+    <rect x="16" y="182" width="170" height="22" rx="6" fill="rgba(255,255,255,0.92)" stroke="#d5ded8" />
+    <text x="24" y="197" class="sub">100 m 格 · 金色=当年首次跑过</text>
+
+    <text x="16" y="232" class="sub">• 城市气泡淡出，完整保留 100 m 格网与点击计数</text>
+    <text x="16" y="248" class="sub">• 仅在此尺度视口内按 bbox 请求 /cells，≤ 5000 格</text>
+  </g>
+
+  <!-- Row 2 Left: Dark Theme & First-run Mode -->
+  <g transform="translate(32, 336)">
+    <rect width="750" height="316" rx="18" class="dark-panel" />
+    <text x="20" y="30" class="h2-dark">深色暖炭灰外观（#292725 / #33312f）+ 「首次探索」年份高光</text>
+    <text x="20" y="50" class="sub-dark">遵循 docs/design-system/tokens.md：深色底用 #302e2c / #3b3835，数据色保持高对比明绿与琥珀金</text>
+
+    <!-- Dark map canvas -->
+    <g transform="translate(20, 66)">
+      <rect width="460" height="228" rx="12" fill="#252321" stroke="#46433f" />
+      <path d="M 36,38 L 194,24 L 348,32 L 382,110 L 314,198 L 146,192 L 56,128 Z" fill="#3b3835" stroke="#4d4945" />
+      <path d="M 244,62 L 308,60 L 318,108 L 250,110 Z" fill="#2c3a32" stroke="#4d4945" />
+      <!-- Past visited (muted green) -->
+      <circle cx="164" cy="128" r="8" fill="#4f9a69" stroke="#292725" stroke-width="2" />
+      <rect x="114" y="119" width="40" height="18" rx="5" fill="#33312f" stroke="#46433f" />
+      <text x="134" y="132" text-anchor="middle" class="sub-dark">成都</text>
+
+      <!-- New city in selected year (amber gold highlight) -->
+      <circle cx="282" cy="84" r="16" fill="rgba(245, 185, 66, 0.22)" />
+      <circle cx="282" cy="84" r="10.5" fill="#f5b942" stroke="#292725" stroke-width="2" />
+      <text x="282" y="88" text-anchor="middle" fill="#201e1c" class="num">NEW</text>
+      <rect x="298" y="75" width="76" height="18" rx="5" fill="#3a3020" stroke="#806b41" />
+      <text x="336" y="88" text-anchor="middle" fill="#f5d391" font-size="11" font-weight="600" font-family="system-ui">杭州 · 首跑</text>
+
+      <!-- Cluster dark -->
+      <circle cx="298" cy="156" r="13" fill="#77d4ac" stroke="#292725" stroke-width="2" />
+      <text x="298" y="160" text-anchor="middle" fill="#10251b" class="num">3城</text>
+    </g>
+
+    <!-- Right side summary card inside dark preview -->
+    <g transform="translate(496, 66)">
+      <rect width="234" height="228" rx="12" fill="#292725" stroke="#46433f" />
+      <text x="14" y="26" class="h2-dark">联动城市榜单（按所选范围）</text>
+      <g transform="translate(14, 42)">
+        <rect width="206" height="44" rx="8" fill="#3a3020" stroke="#806b41" />
+        <text x="10" y="19" fill="#f5d391" font-size="12" font-weight="600" font-family="system-ui">杭州市 · 今年首次解锁</text>
+        <text x="10" y="35" class="sub-dark">48.2 km · 6 次 · 新增 142 格</text>
+      </g>
+      <g transform="translate(14, 96)">
+        <rect width="206" height="44" rx="8" fill="#33312f" stroke="#46433f" />
+        <text x="10" y="19" class="h2-dark">上海市</text>
+        <text x="10" y="35" class="sub-dark">182.4 km · 42 次 · 累计 890 格</text>
+      </g>
+      <g transform="translate(14, 150)">
+        <rect width="206" height="44" rx="8" fill="#33312f" stroke="#46433f" />
+        <text x="10" y="19" class="h2-dark">成都市</text>
+        <text x="10" y="35" class="sub-dark">64.0 km · 15 次 · 累计 310 格</text>
+      </g>
+      <text x="14" y="216" class="sub-dark">点击列表项同步飞行并下钻地图</text>
+    </g>
+  </g>
+
+  <!-- Row 2 Right: Mobile 390x844 -->
+  <g transform="translate(802, 336)">
+    <rect width="366" height="316" rx="18" class="panel" />
+    <text x="18" y="28" class="h2">移动端（390×844）竖排自适应</text>
+    <text x="18" y="46" class="sub">无横向溢出 · ≥44px 触控目标 · 底部确认卡替代悬停</text>
+
+    <!-- Phone frame -->
+    <g transform="translate(88, 58)">
+      <rect width="190" height="244" rx="18" fill="#f6f7f4" stroke="#91aca0" stroke-width="2" />
+      <!-- Header -->
+      <rect x="10" y="10" width="170" height="28" rx="8" fill="#fbf0bd" />
+      <text x="20" y="28" class="h2">城市探索</text>
+      <!-- Controls -->
+      <rect x="10" y="44" width="82" height="22" rx="11" fill="#cfeacd" />
+      <text x="51" y="59" text-anchor="middle" class="pill-text">覆盖热图</text>
+      <rect x="98" y="44" width="82" height="22" rx="8" fill="#ffffff" stroke="#d5ded8" />
+      <text x="139" y="59" text-anchor="middle" class="sub">全部年份 ▾</text>
+      <!-- Map -->
+      <rect x="10" y="72" width="170" height="106" rx="10" fill="#e8f0f4" stroke="#d4e0e6" />
+      <path d="M 22,86 L 146,82 L 158,154 L 38,162 Z" fill="#fcfdfb" stroke="#d5ded8" />
+      <circle cx="118" cy="112" r="9" fill="#17745c" stroke="#fff" stroke-width="1.5" />
+      <text x="118" y="116" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">4城</text>
+      <circle cx="64" cy="134" r="7" fill="#4ca76a" stroke="#fff" stroke-width="1.5" />
+      <!-- Tap confirmation bar (no accidental jump) -->
+      <rect x="16" y="146" width="158" height="26" rx="8" fill="#ffffff" stroke="#bcdcca" />
+      <text x="24" y="163" class="pill-text">成都市 · 15次 · 进入详情 →</text>
+      <!-- Stacked cards -->
+      <rect x="10" y="186" width="170" height="22" rx="6" fill="#ffffff" stroke="#e0e6da" />
+      <text x="20" y="201" class="sub">城市图鉴（12 城）</text>
+      <rect x="10" y="214" width="170" height="22" rx="6" fill="#ffffff" stroke="#e0e6da" />
+      <text x="20" y="229" class="sub">覆盖趋势 · 1,280 格</text>
+    </g>
+  </g>
+</svg>
