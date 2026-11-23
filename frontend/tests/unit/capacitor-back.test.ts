@@ -189,13 +189,18 @@ describe('capacitor back button integration', () => {
   it('exits app only when canGoBack is false and no overlay is open', async () => {
     const env = createMockEnv();
     const cleanup = installCapacitorBackHandler({ windowRef: env.win, documentRef: env.doc });
+    const winFlag = env.win as Window & { __runnoteBackBridgeActive?: boolean };
+    expect(winFlag.__runnoteBackBridgeActive).toBeUndefined();
+
+    await Promise.resolve();
+    expect(winFlag.__runnoteBackBridgeActive).toBe(true);
 
     env.fireBack(false);
     expect(env.exitApp).toHaveBeenCalledTimes(1);
     expect(env.historyBack).not.toHaveBeenCalled();
 
-    await Promise.resolve();
     cleanup();
+    expect(winFlag.__runnoteBackBridgeActive).toBe(false);
     expect(env.remove).toHaveBeenCalledTimes(1);
   });
 });

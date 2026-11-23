@@ -25,7 +25,7 @@ export interface CapacitorRuntime {
 
 export interface BackHandlerOptions {
   isNavigating?: () => boolean;
-  windowRef?: Window & { Capacitor?: CapacitorRuntime };
+  windowRef?: Window & { Capacitor?: CapacitorRuntime; __runnoteBackBridgeActive?: boolean };
   documentRef?: Document;
   debounceMs?: number;
 }
@@ -81,7 +81,9 @@ export function dismissActiveOverlay(doc: Document = document, win: Window = win
 export function installCapacitorBackHandler(options: BackHandlerOptions = {}): () => void {
   const win =
     options.windowRef ??
-    (typeof window !== 'undefined' ? (window as Window & { Capacitor?: CapacitorRuntime }) : undefined);
+    (typeof window !== 'undefined'
+      ? (window as Window & { Capacitor?: CapacitorRuntime; __runnoteBackBridgeActive?: boolean })
+      : undefined);
   const doc = options.documentRef ?? (typeof document !== 'undefined' ? document : undefined);
   if (!win || !doc) return () => {};
 
@@ -130,14 +132,17 @@ export function installCapacitorBackHandler(options: BackHandlerOptions = {}): (
         void registered?.remove?.();
       } else {
         handle = registered;
+        win.__runnoteBackBridgeActive = true;
       }
     })
     .catch(() => {
+      win.__runnoteBackBridgeActive = false;
       /* Keep Web UI usable even if the native bridge listener fails to register. */
     });
 
   return () => {
     disposed = true;
+    win.__runnoteBackBridgeActive = false;
     clearPending();
     win.removeEventListener('popstate', clearPending);
     void handle?.remove?.();

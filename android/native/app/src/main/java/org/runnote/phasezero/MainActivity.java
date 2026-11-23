@@ -6,13 +6,30 @@ import android.net.Uri;
 import android.provider.Settings;
 import android.view.View;
 import android.webkit.CookieManager;
+import android.webkit.WebView;
 import android.widget.Button;
 import android.widget.TextView;
+import androidx.activity.OnBackPressedCallback;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.CapConfig;
 import com.getcapacitor.Logger;
 
 public class MainActivity extends BridgeActivity {
+
+    private static final String FALLBACK_BACK_DISMISS_JS =
+        "(function(){" +
+        "if(window.__runnoteBackBridgeActive){return 'delegated';}" +
+        "var ds=document.querySelectorAll('dialog[open]');" +
+        "if(ds.length){var d=ds[ds.length-1];var e=new Event('cancel',{cancelable:true});d.dispatchEvent(e);" +
+        "if(!e.defaultPrevented&&typeof d.close==='function'){d.close();}return 'overlay';}" +
+        "try{var ps=document.querySelectorAll('[popover]:popover-open');" +
+        "if(ps.length){var p=ps[ps.length-1];if(typeof p.hidePopover==='function'){p.hidePopover();return 'overlay';}}}catch(_){}" +
+        "if(document.querySelector('#app-navigation.nav-open,#public-mobile-menu')){" +
+        "window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return 'overlay';}" +
+        "return 'navigate';" +
+        "})();";
+
+    private boolean backEvaluationInFlight = false;
 
     @Override
     protected void load() {
@@ -38,8 +55,46 @@ public class MainActivity extends BridgeActivity {
 
         super.load();
         if (getBridge() != null && getBridge().getWebView() != null) {
-            getBridge().getWebView().setWebChromeClient(new RunNoteWebChromeClient(getBridge()));
+            WebView webView = getBridge().getWebView();
+            webView.setWebChromeClient(new RunNoteWebChromeClient(getBridge()));
+            installBackFallback(webView);
         }
+    }
+
+    private void installBackFallback(WebView webView) {
+        // Runs ahead of Capacitor AppPlugin's callback so pages without JS backButton listeners
+        // (older web deployments, offline/503 pages, pre-hydration) still close overlays, go back,
+        // and exit cleanly when no history remains instead of swallowing Back.
+        OnBackPressedCallback callback = new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                if (backEvaluationInFlight) {
+                    return;
+                }
+                backEvaluationInFlight = true;
+                webView.evaluateJavascript(FALLBACK_BACK_DISMISS_JS, (rawResult) -> {
+                    backEvaluationInFlight = false;
+                    if (isFinishing() || isDestroyed()) {
+                        return;
+                    }
+                    if ("\"delegated\"".equals(rawResult)) {
+                        setEnabled(false);
+                        getOnBackPressedDispatcher().onBackPressed();
+                        setEnabled(true);
+                        return;
+                    }
+                    if ("\"overlay\"".equals(rawResult)) {
+                        return;
+                    }
+                    if (webView.canGoBack()) {
+                        webView.goBack();
+                    } else {
+                        finish();
+                    }
+                });
+            }
+        };
+        getOnBackPressedDispatcher().addCallback(this, callback);
     }
 
     @Override
