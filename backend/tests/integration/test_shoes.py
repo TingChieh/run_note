@@ -319,7 +319,7 @@ def test_public_views_shares_and_ai_do_not_include_bound_shoes(clients):
         visitor.get(f"/api/v1/showcase/users/{username}/activities/{identifier}"),
         visitor.get(f"/api/v1/public/activities/{identifier}"),
         visitor.get(f"/api/v1/shared/{token}"),
-        client.get("/api/v1/ai-reports/context"),
+        client.get("/api/v1/ai-assistant/context"),
     ):
         assert response.status_code == 200, response.text
         assert "shoe_id" not in response.text

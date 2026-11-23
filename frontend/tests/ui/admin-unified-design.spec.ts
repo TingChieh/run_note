@@ -5,7 +5,6 @@ import { openAccountMenu } from '../fixtures/top-navigation.ts';
 const entries = [
   { name: '导入与管理记录', href: '/workspace/activities' },
   { name: '目标与数据汇总', href: '/workspace/dashboard' },
-  { name: '管理 AI 分析', href: '/workspace/ai' },
   { name: '账户设置', href: '/workspace/settings' },
   { name: '用户管理', href: '/admin/users' },
 ];

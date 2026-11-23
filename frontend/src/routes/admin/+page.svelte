@@ -6,7 +6,7 @@
 </script>
 <svelte:head><title>{pageTitle(page.data.user ? '站点管理' : '管理员登录', page.data.site)}</title></svelte:head>
 {#if page.data.user}
-  <PageHeader title={page.data.user.is_admin ? '站点管理' : '我的工作区'} description="管理本人记录、目标和分析报告。" />
+  <PageHeader title={page.data.user.is_admin ? '站点管理' : '我的工作区'} description="管理本人记录、目标与账户设置。" />
   <div class="aux-stack">
     <section class="aux-panel" aria-labelledby="admin-title">
       <h2 id="admin-title" class="text-xl font-semibold">{page.data.user.is_admin ? '站点管理' : '我的工作区'}</h2>
@@ -14,7 +14,6 @@
       <nav aria-label="管理入口" class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <a class="button-secondary" href="/workspace/activities">导入与管理记录</a>
         <a class="button-secondary" href="/workspace/dashboard">目标与数据汇总</a>
-        <a class="button-secondary" href="/workspace/ai">管理 AI 分析</a>
         <a class="button-secondary" href="/workspace/settings">账户设置</a>
         {#if page.data.user.is_admin}<a class="button-secondary" href="/admin/users">用户管理</a>{/if}
       </nav>

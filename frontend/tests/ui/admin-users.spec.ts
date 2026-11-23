@@ -111,7 +111,7 @@ test('two full personal showcases keep navigation, records, routes and reports s
   page.on('request', request => {
     const path = new URL(request.url()).pathname;
     if (path.startsWith('/api/v1/') && request.method() !== 'GET') writes.push(path);
-    if (path.startsWith('/api/v1/') && /\/activities|\/ai-reports|\/statistics|\/footprints|\/running-goals/.test(path)) reads.push(path);
+    if (path.startsWith('/api/v1/') && /\/activities|\/statistics|\/footprints|\/running-goals/.test(path)) reads.push(path);
   });
   await installActivities(page);
   await page.route(/\/api\/v1\/showcase\/users\/ui_person_(?:one|two)\/activities/, async route => {
@@ -122,14 +122,17 @@ test('two full personal showcases keep navigation, records, routes and reports s
     return route.fulfill({ json: { data: url.pathname.endsWith(sampleActivity.id) ? record : { items: [record], total: 1, limit: Number(url.searchParams.get('limit') ?? 20), offset: Number(url.searchParams.get('offset') ?? 0) }, error: null } });
   });
   for (const username of users) {
-    for (const [section, title] of [['dashboard', '数据汇总'], ['activities', '跑步记录'], ['footprints', '个人足迹'], ['ai', 'AI 跑步分析']]) {
+    for (const [section, title] of [['dashboard', '数据汇总'], ['activities', '跑步记录'], ['footprints', '个人足迹']]) {
       await page.goto(`/p/${username}/${section}`);
       await expect(page.getByRole('heading', { level: 1, name: title, exact: true })).toBeVisible();
       const navigation = page.getByRole('navigation', { name: '主要导航' });
       await expect(navigation.getByRole('link', { name: '跑步记录', exact: true })).toHaveAttribute('href', `/p/${username}/activities`);
       await expect(navigation.getByRole('link', { name: '数据汇总', exact: true })).toHaveAttribute('href', `/p/${username}/dashboard`);
+      await expect(navigation.getByRole('link', { name: 'AI 助手', exact: true })).toHaveCount(0);
       await expect(page.getByRole('button', { name: /^(导入 GPX|编辑记录|生成近期总结与下周建议)/ })).toHaveCount(0);
     }
+    const removedAi = await page.goto(`/p/${username}/ai`);
+    expect(removedAi?.status()).toBe(404);
     await page.goto(`/p/${username}/activities`);
     await expect(page.getByRole('link', { name: /专属记录/ }).first()).toHaveAttribute('href', `/p/${username}/activities/${sampleActivity.id}`);
     await page.getByRole('link', { name: /专属记录/ }).first().click();

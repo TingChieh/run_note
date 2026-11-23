@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { installActivities, loginRunner, sampleActivity } from '../fixtures/activities';
 import { installBasemaps } from '../fixtures/basemaps';
-import { installAI, installPublic, summary } from '../fixtures/p2';
+import { installPublic, summary } from '../fixtures/p2';
 
 async function appearance(locator: Locator) {
   return locator.evaluate((el) => {
@@ -129,7 +129,6 @@ test('device theme applies to the first page and switches live without losing a 
 test('private and public pages have readable surfaces, warnings and keyboard focus in dark mode', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
   await installActivities(page);
-  await installAI(page);
   await installPublic(page);
   await loginRunner(page);
   for (const path of [
@@ -153,7 +152,7 @@ test('private and public pages have readable surfaces, warnings and keyboard foc
     for (const button of await page.locator('button.bg-primary').all()) {
       expect((await appearance(button)).contrast, `Primary button contrast on ${path}`).toBeGreaterThanOrEqual(4.5);
     }
-    if (path === '/ai') expect((await appearance(page.getByText(/^AI训练建议/))).contrast).toBeGreaterThanOrEqual(4.5);
+    if (path === '/ai') expect((await appearance(page.getByText(/^AI 回答基于你的运动数据汇总/))).contrast).toBeGreaterThanOrEqual(4.5);
     for (const width of [320, 390, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       await fits(page);

@@ -61,7 +61,7 @@ SELF_SERVICE = {"/api/v1/auth/csrf", "/api/v1/auth/login", "/api/v1/auth/registe
 # Pre-session writes: protected by the Origin check and rate limits instead of a CSRF token.
 WRITES_WITHOUT_CSRF = {("POST", "/api/v1/auth/login"), ("POST", "/api/v1/auth/register")}
 # Request bodies that are not StrictInput subclasses.
-NON_STRICT_BODIES = {"ReportCreate"}  # extra="forbid"; strict only on the consent flag
+NON_STRICT_BODIES: set[str] = set()
 # Routes that answer with bytes (images, CSV) instead of a JSON envelope.
 BINARY_ROUTES = {
     ("GET", "/api/v1/me/avatar"),
@@ -105,9 +105,6 @@ CROSS_USER_TESTS = {
     ),
     "/api/v1/routes/groups/{identifier}": (
         "test_route_groups.py::test_detail_lists_runs_newest_first_and_other_owners_get_404"
-    ),
-    "/api/v1/ai-reports/{identifier}": (
-        "test_ai_reports.py::test_end_to_end_snapshot_isolation_and_idempotency"
     ),
     "/api/v1/ai-assistant/conversations/{conversation_id}": (
         "test_ai_assistant_api.py::test_cross_user_404_across_all_conversation_and_message_routes"

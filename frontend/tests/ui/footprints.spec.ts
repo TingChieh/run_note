@@ -1,6 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
 import { loginRunner, installActivities, sampleActivity, incompleteActivity } from '../fixtures/activities';
-import { installAI } from '../fixtures/p2';
 import { settingsLink } from '../fixtures/top-navigation';
 import { installBasemaps } from '../fixtures/basemaps';
 import {
@@ -784,25 +783,26 @@ test('a live WebGL context loss shows a retry and redraws existing footprints', 
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
-// Keep the existing shared calendar regressions on the AI page now that
-// personal footprints always includes all records.
+// Keep the existing shared calendar regressions on the wellbeing report custom range
+// now that both personal footprints and /ai no longer mount date range pickers.
 async function dateFixture(page: Page) {
-  await installAI(page);
   await loginRunner(page);
   const state = { requests: [] as URL[] };
   page.on('request', (request) => {
-    if (request.url().includes('/ai-reports/context')) state.requests.push(new URL(request.url()));
+    if (request.url().includes('/me/wellbeing/report')) state.requests.push(new URL(request.url()));
   });
-  await page.goto('/ai');
-  await expect(page.getByLabel('开始日期（周一）', { exact: true })).toHaveValue('2026-09-14');
-  await page.getByLabel('开始日期（周一）', { exact: true }).fill('2026-10-01');
-  await page.getByLabel('结束日期（周一，不含）', { exact: true }).fill('2026-12-31');
+  await page.goto('/wellbeing?tab=report');
+  await expect(page.getByTestId('wellbeing-report-summary')).toBeVisible();
+  await page.getByRole('button', { name: '自定义', exact: true }).click();
+  await expect(page.getByLabel('开始日期', { exact: true })).toBeVisible();
+  await page.getByLabel('开始日期', { exact: true }).fill('2026-10-01');
+  await page.getByLabel('结束日期', { exact: true }).fill('2026-10-13');
   return state;
 }
 test('nested month and year menus stay anchored inside the open calendar', async ({ page }) => {
   await dateFixture(page);
-  await page.getByRole('button', { name: '选择开始日期（周一）', exact: true }).click();
-  const calendar = page.getByRole('dialog', { name: '选择开始日期（周一）', exact: true });
+  await page.getByRole('button', { name: '选择开始日期', exact: true }).click();
+  const calendar = page.getByRole('dialog', { name: '选择开始日期', exact: true });
   // The popover expands from its trigger (scale/translate). Interact only once it has settled,
   // as the responsive loop below does; on a slower runner a click mid-expansion never opens the menu.
   await expect.poll(() => calendar.evaluate((el) => el.getAnimations().length)).toBe(0);
@@ -843,7 +843,7 @@ test('nested month and year menus stay anchored inside the open calendar', async
   await expect(calendar).toBeHidden();
   for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 1000 });
-    await page.getByRole('button', { name: '选择开始日期（周一）', exact: true }).click();
+    await page.getByRole('button', { name: '选择开始日期', exact: true }).click();
     // The popover expands from its trigger; measure only once the scale transform has settled.
     await expect
       .poll(async () =>
@@ -885,10 +885,10 @@ test('nested month and year menus stay anchored inside the open calendar', async
 });
 test('themed date picker supports keyboard selection, required inputs and narrow screens', async ({ page }) => {
   const state = await dateFixture(page);
-  const start = page.getByRole('button', { name: '选择开始日期（周一）', exact: true });
+  const start = page.getByRole('button', { name: '选择开始日期', exact: true });
   await start.focus();
   await page.keyboard.press('Enter');
-  const calendar = page.getByRole('dialog', { name: '选择开始日期（周一）', exact: true });
+  const calendar = page.getByRole('dialog', { name: '选择开始日期', exact: true });
   const selected = calendar.getByRole('button', { name: '2026年10月1日', exact: true });
   await expect(selected).toBeFocused();
   await expect(selected).toHaveAttribute('aria-pressed', 'true');
@@ -900,16 +900,16 @@ test('themed date picker supports keyboard selection, required inputs and narrow
   await expect(selected).toBeFocused();
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('Enter');
-  await expect(page.getByLabel('开始日期（周一）', { exact: true })).toHaveValue('2026-10-02');
+  await expect(page.getByLabel('开始日期', { exact: true })).toHaveValue('2026-10-02');
   await expect(start).toBeFocused();
-  await page.getByRole('button', { name: '选择结束日期（周一，不含）', exact: true }).click();
-  const endCalendar = page.getByRole('dialog', { name: '选择结束日期（周一，不含）', exact: true });
+  await page.getByRole('button', { name: '选择结束日期', exact: true }).click();
+  const endCalendar = page.getByRole('dialog', { name: '选择结束日期', exact: true });
   await endCalendar.getByLabel('月份', { exact: true }).selectOption('9');
   await endCalendar.getByRole('button', { name: '2026年10月13日', exact: true }).click();
-  await page.getByLabel('开始日期（周一）', { exact: true }).fill('2026-09-07');
-  await page.getByLabel('结束日期（周一，不含）', { exact: true }).fill('2026-10-05');
-  await page.getByRole('button', { name: '读取统计依据', exact: true }).click();
-  await expect.poll(() => state.requests.at(-1)?.searchParams.get('date_to')).toBe('2026-10-05');
+  await page.getByLabel('开始日期', { exact: true }).fill('2026-09-07');
+  await page.getByLabel('结束日期', { exact: true }).fill('2026-10-05');
+  await page.getByRole('button', { name: '查看', exact: true }).click();
+  await expect.poll(() => state.requests.some((u) => u.searchParams.get('to') === '2026-10-05')).toBe(true);
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 844 });
     await start.click();
@@ -925,13 +925,13 @@ test('themed date picker supports keyboard selection, required inputs and narrow
   }
   await start.click();
   await calendar.getByRole('button', { name: '清除', exact: true }).click();
-  await expect(page.getByLabel('开始日期（周一）', { exact: true })).toHaveValue('');
+  await expect(page.getByLabel('开始日期', { exact: true })).toHaveValue('');
   const requestCount = state.requests.length;
-  await page.getByRole('button', { name: '读取统计依据', exact: true }).click();
+  await expect(page.getByRole('button', { name: '查看', exact: true })).toBeDisabled();
   expect(state.requests).toHaveLength(requestCount);
   await start.click();
   await calendar.getByRole('button', { name: '今天', exact: true }).click();
-  await expect(page.getByLabel('开始日期（周一）', { exact: true })).not.toHaveValue('');
+  await expect(page.getByLabel('开始日期', { exact: true })).not.toHaveValue('');
 });
 
 test('generation taking more than five minutes still completes automatically', async ({ page }) => {

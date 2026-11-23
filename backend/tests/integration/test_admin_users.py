@@ -112,7 +112,6 @@ def test_admin_accounts_sessions_named_isolation_and_legacy_revocation(site, mon
             "/activities",
             f"/activities/{record['id']}",
             f"/activities/{record['id']}/route",
-            "/ai-reports",
             "/running-goals",
             "/footprints/all",
             "/statistics/summary",

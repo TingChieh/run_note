@@ -9,7 +9,18 @@ import type { RequestBody, ResponseData } from '#lib/api/generated/api.ts';
 import type { Activity, ActivityList, Route } from '#lib/api/activities.ts';
 import type { Footprints } from '#lib/api/footprints.ts';
 import type { AdminUserList } from '#lib/api/admin-users.ts';
-import type { Context, Create, Report, ReportList } from '#lib/api/ai.ts';
+import type {
+  AssistantContext,
+  ConsentUpdate,
+  ConsentView,
+  ConversationCreate,
+  ConversationDetail,
+  ConversationList,
+  ConversationUpdate,
+  ConversationView,
+  MessageCancelled,
+  MessageCreate,
+} from '#lib/api/ai-assistant.ts';
 import type { User } from '#lib/api/auth.ts';
 import type { GlobalFootprints, Provinces, Streaks } from '#lib/api/milestones.ts';
 import type { PeriodReport } from '#lib/api/period-report.ts';
@@ -24,7 +35,6 @@ import type { FeedPage } from '#lib/api/together.ts';
 import type { VersionInfo } from '#lib/api/version.ts';
 
 type Narrowed<T, K extends keyof T> = Omit<T, K> & { [P in K]: unknown };
-type Items<T extends { items: unknown[] }, Item> = Omit<T, 'items'> & { items: Item[] };
 /** Request direction: what the frontend sends must not carry keys the strict backend rejects. */
 type NoExtraKeys<Sent, Accepted> = Exclude<keyof Sent, keyof Accepted> extends never ? Sent : never;
 
@@ -61,10 +71,13 @@ export const responses = {
   provinces: (v: ResponseData<'/api/v1/footprints/provinces', 'get'>): Provinces => v,
   showcaseProvinces: (v: ResponseData<'/api/v1/showcase/footprints/provinces', 'get'>): Provinces => v,
   adminUsers: (v: ResponseData<'/api/v1/admin/users', 'get'>): AdminUserList => v,
-  // stats_snapshot is stored JSON with a schema_version; older reports must stay readable, so the
-  // backend keeps it a dict and ai.ts validates the current shape.
-  aiContext: (v: ResponseData<'/api/v1/ai-reports/context', 'get'>): Narrowed<Context, 'stats_snapshot'> => v,
-  aiReports: (v: ResponseData<'/api/v1/ai-reports', 'get'>): Items<ReportList, Narrowed<Report, 'stats_snapshot'>> => v,
+  aiAssistantContext: (v: ResponseData<'/api/v1/ai-assistant/context', 'get'>): AssistantContext => v,
+  aiAssistantConsent: (v: ResponseData<'/api/v1/ai-assistant/consent', 'put'>): ConsentView => v,
+  aiAssistantConversations: (v: ResponseData<'/api/v1/ai-assistant/conversations', 'get'>): ConversationList => v,
+  aiAssistantConversationCreated: (v: ResponseData<'/api/v1/ai-assistant/conversations', 'post'>): ConversationView => v,
+  aiAssistantConversationDetail: (v: ResponseData<'/api/v1/ai-assistant/conversations/{conversation_id}', 'get'>): ConversationDetail => v,
+  aiAssistantConversationRenamed: (v: ResponseData<'/api/v1/ai-assistant/conversations/{conversation_id}', 'patch'>): ConversationView => v,
+  aiAssistantMessageCancelled: (v: ResponseData<'/api/v1/ai-assistant/conversations/{conversation_id}/messages/{message_id}/cancel', 'post'>): MessageCancelled => v,
   routeGroups: (v: ResponseData<'/api/v1/routes/groups', 'get'>): RouteGroupList => v,
   routeGroup: (v: ResponseData<'/api/v1/routes/groups/{identifier}', 'get'>): RouteGroupDetail => v,
   showcaseProfile: (v: ResponseData<'/api/v1/showcase/profile', 'get'>): ShowcaseProfile => v,
@@ -73,9 +86,18 @@ export const responses = {
 };
 
 export const requests = {
-  aiCreate: (
-    v: NoExtraKeys<Create, RequestBody<'/api/v1/ai-reports', 'post'>>,
-  ): RequestBody<'/api/v1/ai-reports', 'post'> => v,
+  aiAssistantConsent: (
+    v: NoExtraKeys<ConsentUpdate, RequestBody<'/api/v1/ai-assistant/consent', 'put'>>,
+  ): RequestBody<'/api/v1/ai-assistant/consent', 'put'> => v,
+  aiAssistantConversationCreate: (
+    v: NoExtraKeys<ConversationCreate, RequestBody<'/api/v1/ai-assistant/conversations', 'post'>>,
+  ): RequestBody<'/api/v1/ai-assistant/conversations', 'post'> => v,
+  aiAssistantConversationUpdate: (
+    v: NoExtraKeys<ConversationUpdate, RequestBody<'/api/v1/ai-assistant/conversations/{conversation_id}', 'patch'>>,
+  ): RequestBody<'/api/v1/ai-assistant/conversations/{conversation_id}', 'patch'> => v,
+  aiAssistantMessageCreate: (
+    v: NoExtraKeys<MessageCreate, RequestBody<'/api/v1/ai-assistant/conversations/{conversation_id}/messages', 'post'>>,
+  ): RequestBody<'/api/v1/ai-assistant/conversations/{conversation_id}/messages', 'post'> => v,
 };
 
 // Not listed: parsers that reshape the wire format into a different domain type (together.ts turns

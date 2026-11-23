@@ -11,6 +11,7 @@ export function contextPath(context: ViewContext, path: string): string {
     const rest = path.slice('/dashboard'.length);
     return rest ? `/${rest}` : '/';
   }
+  if (context.kind === 'public' && /^\/ai(\/|\?|#|$)/.test(path)) return path;
   return /^\/(dashboard|activities|footprints|records|routes|ai|settings|wellbeing)(\/|\?|#|$)/.test(path) ? context.prefix + path : path;
 }
 export function contextAPI(context: ViewContext, path: string): string {

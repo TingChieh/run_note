@@ -418,8 +418,8 @@ def run(args) -> int:
         record("owner e-mail never appears in anonymous responses", not leak, ",".join(leak))
         status, _, _ = anon.json("GET", "/api/v1/activities")
         record("anonymous cannot read the private list", status == 401, str(status))
-        status, _, _ = anon.json("GET", "/api/v1/ai-reports")
-        record("anonymous AI list never calls a provider", status in (200, 401, 503), str(status))
+        status, _, _ = anon.json("GET", "/api/v1/ai-assistant/conversations")
+        record("anonymous AI list never calls a provider", status == 401, str(status))
     except Stop:
         pass
     finally:

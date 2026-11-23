@@ -62,6 +62,9 @@
 .rn-glass-menu[data-lens-idle] > :is(.rn-moving-outline, .rn-moving-copy) { opacity: 0; }
 .rn-glass-menu > :is(.rn-moving-outline, .rn-moving-copy) { transition: opacity var(--transition-control); }
 .rn-menu-option:disabled { opacity: .45; }
+.sport-theme .rn-glass-menu .rn-menu-option > svg, .rn-glass-menu > .rn-moving-copy > .rn-moving-label > svg { width: 1rem; height: 1rem; flex-shrink: 0; }
+.sport-theme .rn-glass-menu .rn-menu-option[data-tone='danger'], .rn-glass-menu > .rn-moving-copy > .rn-moving-label[data-tone='danger'] { color: var(--error); }
+.sport-theme .rn-glass-menu .rn-menu-option:focus-visible { z-index: 5; outline-offset: -3px; }
 
 /* Overlay-copy slider. The original labelled range keeps its entire 44px hit area. */
 .rn-slider { position: relative; display: block; height: 2.75rem; min-width: 0; }
@@ -142,4 +145,7 @@
   .sport-theme.app-shell .app-sidebar .rn-liquid-navigation .nav-link[aria-current="page"] { color: var(--sport-nav-active-ink); background: transparent; }
   /* Floating over content: inactive labels and icons read in the full foreground colour (muted grey was too weak over the yellow header). Docked keeps the muted grey. Lives here, unlayered, because it has to beat the rule above. */
   .sport-theme.app-shell .app-sidebar[data-floating] .rn-liquid-navigation .nav-link:not([aria-current="page"]) { color: var(--foreground); }
+}
+@media (max-width: 479px) {
+  .settings-tabs-sections > .rn-moving-copy > .rn-moving-label { white-space: normal; text-align: center; }
 }

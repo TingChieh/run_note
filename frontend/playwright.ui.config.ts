@@ -1,9 +1,11 @@
 import { defineConfig } from '@playwright/test';
+const apiPort = Number(process.env.UI_API_PORT ?? 8191);
+const webPort = Number(process.env.UI_WEB_PORT ?? 5191);
 export default defineConfig({
-  testDir: './tests/ui', testMatch: ['admin-unified-design.spec.ts', 'mobile-public-header.spec.ts', 'admin-readonly-activities.spec.ts', 'admin-users.spec.ts', 'basemaps.spec.ts', 'ui-shell.spec.ts', 'activities.spec.ts', 'activity-batch-import.spec.ts', 'dashboard.spec.ts', 'dashboard-explorer.spec.ts', 'footprints.spec.ts', 'city-exploration.spec.ts', 'p2.spec.ts', 'sport-detail.spec.ts', 'activity-replay.spec.ts', 'map-framing.spec.ts', 'footprint-card-deck.spec.ts', 'milestones.spec.ts', 'theme.spec.ts', 'liquid-glass.spec.ts', 'crossbrowser-glass.spec.ts', 'seo-routes.spec.ts', 'records.spec.ts', 'records-banner.spec.ts', 'recap.spec.ts', 'annual-story.spec.ts', 'top-navigation.spec.ts', 'scrollbars.spec.ts', 'first-read-preload.spec.ts', 'shoes.spec.ts', 'settings-hub.spec.ts', 'running-diary.spec.ts'], workers: 1,
-  use: { baseURL: 'http://127.0.0.1:5191', channel: 'chrome', viewport: { width: 1440, height: 1000 } },
+  testDir: './tests/ui', testMatch: ['admin-unified-design.spec.ts', 'mobile-public-header.spec.ts', 'admin-readonly-activities.spec.ts', 'admin-users.spec.ts', 'ai-assistant.spec.ts', 'basemaps.spec.ts', 'ui-shell.spec.ts', 'activities.spec.ts', 'activity-batch-import.spec.ts', 'dashboard.spec.ts', 'dashboard-explorer.spec.ts', 'footprints.spec.ts', 'city-exploration.spec.ts', 'p2.spec.ts', 'sport-detail.spec.ts', 'activity-replay.spec.ts', 'map-framing.spec.ts', 'footprint-card-deck.spec.ts', 'milestones.spec.ts', 'theme.spec.ts', 'liquid-glass.spec.ts', 'crossbrowser-glass.spec.ts', 'seo-routes.spec.ts', 'records.spec.ts', 'records-banner.spec.ts', 'recap.spec.ts', 'annual-story.spec.ts', 'top-navigation.spec.ts', 'scrollbars.spec.ts', 'first-read-preload.spec.ts', 'shoes.spec.ts', 'settings-hub.spec.ts', 'running-diary.spec.ts'], workers: 1,
+  use: { baseURL: `http://127.0.0.1:${webPort}`, channel: 'chrome', viewport: { width: 1440, height: 1000 } },
   webServer: [
-    { command: 'node tests/fixtures/ui-api.mjs', url: 'http://127.0.0.1:8191/api/health', reuseExistingServer: false },
-    { command: 'node node_modules/vite/bin/vite.js dev --host 127.0.0.1 --port 5191', url: 'http://127.0.0.1:5191/admin', env: { INTERNAL_API_BASE_URL: 'http://127.0.0.1:8191' }, reuseExistingServer: false }
+    { command: 'node tests/fixtures/ui-api.mjs', url: `http://127.0.0.1:${apiPort}/api/health`, env: { UI_API_PORT: String(apiPort) }, reuseExistingServer: false },
+    { command: `node node_modules/vite/bin/vite.js dev --host 127.0.0.1 --port ${webPort}`, url: `http://127.0.0.1:${webPort}/admin`, env: { INTERNAL_API_BASE_URL: `http://127.0.0.1:${apiPort}` }, reuseExistingServer: false }
   ]
 });

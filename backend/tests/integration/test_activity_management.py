@@ -6,7 +6,6 @@ import pytest
 from sqlalchemy import text
 
 from tests.conftest import headers, register, upload
-from tests.integration.test_ai_reports import post, seed
 from tests.integration.test_tcx_import import upload_tcx
 
 pytestmark = pytest.mark.integration
@@ -155,25 +154,52 @@ def test_mutations_require_identity_csrf_and_allow_maximum_text_lengths(clients)
     assert version(engine, owner) == 2
 
 
-def test_edit_and_delete_mark_existing_ai_snapshots_stale_without_regeneration(ai_clients):
-    a, _, app, provider = ai_clients
+def test_edit_and_delete_increment_activity_data_version_for_ai_staleness(clients):
+    from datetime import UTC, datetime
+    from uuid import UUID
+
+    from sqlalchemy.orm import Session
+
+    from app.modules.ai_assistant.model import AIConversation, AIMessage
+
+    a, _, engine, _ = clients
     owner = register(a)
-    seed(app, owner)
-    activity = a.get("/api/v1/activities").json()["data"]["items"][0]
+    activity = upload(a).json()["data"]["activity"]
     path = f"/api/v1/activities/{activity['id']}"
-    first = post(a).json()["data"]
-    assert first["is_stale"] is False
+    initial_version = version(engine, owner)
+    now = datetime(2026, 11, 22, 12, 0, tzinfo=UTC)
+    with Session(engine) as db:
+        conv = AIConversation(
+            user_id=UUID(owner),
+            title="版本检查",
+            created_at=now,
+            updated_at=now,
+            last_message_at=now,
+        )
+        db.add(conv)
+        db.flush()
+        msg = AIMessage(
+            conversation_id=conv.id,
+            user_id=UUID(owner),
+            role="assistant",
+            status="succeeded",
+            content="历史回答",
+            source_data_version=initial_version,
+            created_at=now,
+            finished_at=now,
+        )
+        db.add(msg)
+        db.commit()
+        conv_id = str(conv.id)
+
+    before_edit = a.get(f"/api/v1/ai-assistant/conversations/{conv_id}").json()["data"]
+    assert before_edit["messages"][0]["is_stale"] is False
     assert a.patch(path, headers=headers(a), json={"notes": "修改备注"}).status_code == 200
-    stored = a.get("/api/v1/ai-reports/" + first["id"]).json()["data"]
-    assert stored["is_stale"] is True
-    assert stored["stats_snapshot"] == first["stats_snapshot"]
-    second = post(a).json()["data"]
-    assert second["is_stale"] is False
+    assert version(engine, owner) == initial_version + 1
+    after_edit = a.get(f"/api/v1/ai-assistant/conversations/{conv_id}").json()["data"]
+    assert after_edit["messages"][0]["is_stale"] is True
     assert a.delete(path, headers=headers(a)).status_code == 200
-    stored = a.get("/api/v1/ai-reports/" + second["id"]).json()["data"]
-    assert stored["is_stale"] is True
-    assert stored["stats_snapshot"] == second["stats_snapshot"]
-    assert len(provider.calls) == 2
+    assert version(engine, owner) == initial_version + 2
 
 
 def test_concurrent_metadata_changes_preserve_both_fields_and_version_increments(clients):

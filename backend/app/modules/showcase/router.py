@@ -31,8 +31,6 @@ from app.modules.showcase.schema import (
     ShowcaseActivity,
     ShowcaseActivityList,
     ShowcaseProfile,
-    ShowcaseReport,
-    ShowcaseReportList,
 )
 from app.modules.statistics import service as statistics
 from app.modules.statistics.records import build_records
@@ -244,22 +242,6 @@ def route_groups_listing(
 @router.get("/routes/groups/{identifier}", response_model=ApiResponse[RouteGroupDetail])
 def route_group_detail(identifier: UUID, request: Request, db: DB, owner: Owner):
     return envelope(request, route_groups.group_detail(db, owner.id, identifier))
-
-
-@router.get("/ai-reports", response_model=ApiResponse[ShowcaseReportList])
-def reports(
-    request: Request,
-    db: DB,
-    owner: Owner,
-    limit: Annotated[int, Query(ge=1, le=50)] = 10,
-    offset: Annotated[int, Query(ge=0, le=1000000)] = 0,
-):
-    return envelope(request, service.reports(db, owner, limit, offset))
-
-
-@router.get("/ai-reports/{identifier}", response_model=ApiResponse[ShowcaseReport])
-def report(identifier: UUID, request: Request, db: DB, owner: Owner):
-    return envelope(request, service.report_detail(db, owner, identifier))
 
 
 # Reuse the exact handlers, response models, query validation and public allowlists.
