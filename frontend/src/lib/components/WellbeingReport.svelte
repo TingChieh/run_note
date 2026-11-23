@@ -12,6 +12,7 @@
   import { change, changeText, previousRange, sparkRuns, spanDays, wakeupFigures } from './wellbeing-report-math.ts';
   import type { ToneKey } from './wellbeing-tones.ts';
   import { ActivityError } from '#lib/api/activities.ts';
+  import { isCapacitorNative } from '#lib/capacitor-env.ts';
   import { RATING_KEYS, RATING_LABELS, addDays, dateLabel, downloadCsv, hoursText, readReport, type CsvKind, type Report } from '#lib/api/wellbeing.ts';
   // The summary of a range: charts and figures first (compared with the stretch just before); the print report is a separate, paper-only layout. It restates what was logged: no diagnosis, no dosing advice, and symptom/dose order is not a cause.
   let { today, timezone }: { today: string; timezone: string } = $props();
@@ -19,7 +20,7 @@
   let mode = $state<Mode>(7), customFrom = $state(untrack(() => addDays(today, -29))), customTo = $state(untrack(() => today));
   let from = $state(untrack(() => addDays(today, -6))), to = $state(untrack(() => today));
   let report = $state<Report | null>(null), before = $state<Report | null>(null), loading = $state(false), message = $state(''), exporting = $state<CsvKind | ''>(''), exportError = $state('');
-  let allNotes = $state(false), openNote = $state(''), overflowing = $state<Record<string, boolean>>({});
+  let allNotes = $state(false), openNote = $state(''), overflowing = $state<Record<string, boolean>>({}), nativeApp = $state(false);
   /** A note shows "展开" only when its two lines really cut something off (that depends on the width), so a short one never gets a button that does nothing. */
   function measure(node: HTMLElement, date: string) {
     const check = () => { if (node.classList.contains('clamp')) overflowing[date] = node.scrollHeight > node.clientHeight + 1; };
@@ -83,7 +84,7 @@
   const visibleNotes = $derived(allNotes ? noteDates : noteDates.slice(0, 4));
   const effectDays = $derived(report ? new Set(report.symptom_events.map(e => e.entry_date)).size : 0);
   const prevEffectDays = $derived(before ? new Set(before.symptom_events.map(e => e.entry_date)).size : null);
-  onMount(() => { void generate(); return () => { disposed = true; token++; report = null; }; });
+  onMount(() => { nativeApp = isCapacitorNative(); void generate(); return () => { disposed = true; token++; report = null; }; });
 </script>
 
 <div class="report-page" data-testid="wellbeing-report-page">
@@ -215,12 +216,16 @@
 
     <section class="card no-print" aria-labelledby="export-title" data-testid="wellbeing-export">
       <h3 id="export-title">打印或导出</h3>
+      {#if nativeApp}
+        <p class="hint" role="status">打印与 CSV 文件导出仅支持在浏览器中使用，请在浏览器中打开此页面。</p>
+      {:else}
       <div class="export">
         <div class="item"><button type="button" class="button-primary" onclick={() => window.print()}>打印 / 另存为 PDF</button><p class="sub">一份专门排好的报告：概览、各项状态、服药和剂量变化、副作用、备注。</p></div>
         <div class="item"><button type="button" class="button-secondary" disabled={!!exporting} onclick={() => { void save('entries'); }}>{exporting === 'entries' ? '导出中…' : '状态记录 CSV'}</button><p class="sub">每天一行：各项评分、睡眠时长、备注。</p></div>
         <div class="item"><button type="button" class="button-secondary" disabled={!!exporting} onclick={() => { void save('doses'); }}>{exporting === 'doses' ? '导出中…' : '服药记录 CSV'}</button><p class="sub">每次服药一行：日期、时间、药名、用量、常规或按需。</p></div>
         <div class="item"><button type="button" class="button-secondary" disabled={!!exporting} onclick={() => { void save('symptoms'); }}>{exporting === 'symptoms' ? '导出中…' : '副作用 CSV'}</button><p class="sub">每条副作用一行：日期、名称、此前最近一次服药。</p></div>
       </div>
+      {/if}
       <p class="hint">导出的文件包含你的健康记录，请只保存在可信的设备上，分享前确认接收对象。以“=”“+”“-”“@”开头的文字会在 CSV 中加一个“'”，避免被表格软件当作公式执行。</p>
       {#if exportError}<div data-testid="wellbeing-export-error"><FeedbackState kind="error" title={exportError} /></div>{/if}
     </section>

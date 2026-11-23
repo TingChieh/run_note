@@ -9,10 +9,10 @@
   import DeviceMetrics from './DeviceMetrics.svelte';
   let {disabled=false,onimported,onauthrequired,onbusy}: {disabled?:boolean;onimported?:()=>void;onauthrequired?:(cause:ActivityError)=>void;onbusy?:(busy:boolean)=>void}=$props();
   type Entry = {item:PreparedRecord;preview?:MifitnessPreview;status:'pending'|'ready'|'success'|'duplicate'|'failed'|'similar';message:string;existingId?:string;retrySave?:boolean;confirmed?:boolean;enrich?:boolean};
-  let entries=$state<Entry[]>([]),timezone=$state(''),message=$state(''),busy=$state(false),mounted=$state(false);
+  let entries=$state<Entry[]>([]),timezone=$state(''),message=$state(''),cancelNotice=$state(''),busy=$state(false),mounted=$state(false);
   let summaryInput:HTMLInputElement,tracksInput:HTMLInputElement,disposed=false,requestToken=0;
   let summaryName=$state(''),trackNames=$state<string[]>([]),dragging=$state<''|'summary'|'tracks'>('');
-  function picked(){summaryName=summaryInput?.files?.[0]?.name??'';trackNames=Array.from(tracksInput?.files??[],file=>file.name);reset();}
+  function picked(){cancelNotice='';summaryName=summaryInput?.files?.[0]?.name??'';trackNames=Array.from(tracksInput?.files??[],file=>file.name);reset();}
   function drop(event:DragEvent,input:HTMLInputElement,kind:'summary'|'tracks'){event.preventDefault();dragging='';const files=event.dataTransfer?.files;if(busy||disabled||!mounted||!files?.length)return;input.files=kind==='summary'?(()=>{const t=new DataTransfer();t.items.add(files[0]);return t.files;})():files;picked();}
   const tracksLabel=$derived(trackNames.length>1?`${trackNames.length} 个 GPX 文件`:trackNames[0]??'');
   const ready=$derived(entries.some(entry=>entry.status==='ready'));
@@ -76,12 +76,12 @@
   <div class="file-fields">
     <label class="file-pick" data-filled={summaryName?'true':'false'} data-dragging={dragging==='summary'} ondragover={event=>{event.preventDefault();if(!busy&&!disabled&&mounted)dragging='summary';}} ondragleave={()=>{dragging='';}} ondrop={event=>drop(event,summaryInput,'summary')}>
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6"/></svg>
-      <input bind:this={summaryInput} class="sr-only" type="file" accept=".json,application/json" disabled={busy||disabled||!mounted} onchange={picked}/>
+      <input bind:this={summaryInput} class="sr-only" type="file" accept=".json,application/json" disabled={busy||disabled||!mounted} onchange={picked} oncancel={()=>{cancelNotice='已取消选择汇总文件。';}}/>
       <span class="file-pick-text"><span class="file-pick-title">{summaryName||'跑步汇总 JSON'}</span><span class="file-pick-hint">running_summaries.json · 最大 2 MiB、1000 条</span></span>
     </label>
     <label class="file-pick" data-filled={trackNames.length?'true':'false'} data-dragging={dragging==='tracks'} ondragover={event=>{event.preventDefault();if(!busy&&!disabled&&mounted)dragging='tracks';}} ondragleave={()=>{dragging='';}} ondrop={event=>drop(event,tracksInput,'tracks')}>
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19c3-1 3-5 6-5s3 4 6 3M6 7a2 2 0 1 0 0 .01M18 5a2 2 0 1 0 0 .01M8 7l8-2"/></svg>
-      <input bind:this={tracksInput} class="sr-only" type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" multiple disabled={busy||disabled||!mounted} onchange={picked}/>
+      <input bind:this={tracksInput} class="sr-only" type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" multiple disabled={busy||disabled||!mounted} onchange={picked} oncancel={()=>{cancelNotice='已取消选择 GPX 文件。';}}/>
       <span class="file-pick-text"><span class="file-pick-title">{tracksLabel||'匹配的 GPX 文件'}</span><span class="file-pick-hint">可多选 · 每个最大 10 MiB · 按 running_来源时间.gpx 匹配</span></span>
     </label>
     <label class="file-pick tz" data-filled={timezone?'true':'false'}>
@@ -91,6 +91,7 @@
   </div>
   <div class="actions"><button class="button-secondary" disabled={busy||disabled||!mounted||!summaryName} onclick={()=>void previewAll()}>预览所选记录</button>{#if ready}<button class="button-secondary" disabled={busy||disabled} onclick={()=>void saveBatch()}>导入预览成功的记录</button>{/if}{#if failed}<button class="button-secondary" disabled={busy||disabled} onclick={()=>void saveBatch(true)}>仅重试失败记录</button>{/if}</div>
   {#if busy}<p role="status" class="intro">正在逐条处理，请勿重复提交或关闭页面…</p>{/if}
+  {#if cancelNotice && !busy && !message}<p role="status" class="intro">{cancelNotice}</p>{/if}
   {#if message}<p role="alert" class="error">{message}</p>{/if}
   {#if entries.length}
     <p class="intro" aria-live="polite">共 {entries.length} 条 · 成功 {entries.filter(entry=>entry.status==='success').length} · 重复 {entries.filter(entry=>entry.status==='duplicate').length} · 失败 {entries.filter(entry=>entry.status==='failed').length} · 仅汇总 {entries.filter(entry=>!entry.item.file).length}</p>

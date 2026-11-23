@@ -45,6 +45,7 @@
     mounted = $state(false),
     disposed = false;
   let message = $state(''),
+    cancelNotice = $state(''),
     listMessage = $state(''),
     duplicateId = $state<string | null>(null),
     successId = $state<string | null>(null),
@@ -153,6 +154,7 @@
     return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MiB` : `${Math.max(1, Math.round(bytes / 1024))} KiB`;
   }
   function pickChanged() {
+    cancelNotice = '';
     pickedFiles = Array.from(fileInput.files ?? []);
     picked = pickedFiles[0] ?? null;
     batchItems = [];
@@ -504,6 +506,9 @@
                   name="file"
                   multiple
                   onchange={pickChanged}
+                  oncancel={() => {
+                    cancelNotice = '已取消选择文件。';
+                  }}
                   accept=".gpx,.tcx,application/gpx+xml,application/xml,text/xml"
                   required
                   disabled={controlsBusy || !mounted}
@@ -622,6 +627,13 @@
               onstop={() => batchController?.abort()}
               onretry={() => void runBatch(true)}
             />{/if}
+          {#if cancelNotice && !busy && !message && !successId && !batchItems.length}<p
+              class="mt-4"
+              role="status"
+              data-testid="import-cancel-notice"
+            >
+              {cancelNotice}
+            </p>{/if}
           {#if message}<div class="mt-4">
               <FeedbackState kind="error" title={message}
                 >{#if duplicateId}<a href={view.href(`/activities/${duplicateId}`)} class="text-primary underline"

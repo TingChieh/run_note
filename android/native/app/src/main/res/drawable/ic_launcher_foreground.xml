@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Conservative RunNote brand mark: bold italic white "R" centered within the 66dp adaptive safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M43.2,34h16.6c4.8,0 8.5,1.1 11.1,3.3c2.6,2.2 3.9,5.2 3.9,9.1c0,3.2 -0.9,6.0 -2.6,8.2c-1.7,2.3 -4.2,3.8 -7.3,4.6L71.8,74h-10.3l-5.9,-13.4h-6.1L46.9,74H37.2L43.2,34zM51.1,52.8h6.4c2.3,0 4.1,-0.5 5.4,-1.5c1.3,-1.0 1.9,-2.4 1.9,-4.2c0,-1.6 -0.5,-2.8 -1.5,-3.6c-1.0,-0.8 -2.6,-1.2 -4.7,-1.2h-5.8L51.1,52.8z" />
+</vector>

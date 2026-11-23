@@ -1,28 +1,72 @@
-# RunNote Android Phase 0
+# RunNote Android（Phase 1 Companion）
 
-这是 #131 的调试工程。最低 Android 10（API 29）、Android System WebView / Chrome 116+；构建使用 Capacitor 8.6.2、`@capacitor/app` 8.1.2、JDK 21、Gradle 8.14.3、AGP 8.13.0、Android SDK 36 和 Build Tools 35.0.0。Node 与 pnpm 版本沿用 Web 工程。
+RunNote 的 Android Capacitor 容器工程（#132），直接复用同一套 RunNote Web UI，不改 Web SSR 架构、不引入独立页面 fork。
+
+- **应用标识**：`com.tingchieh.runnote`（应用名 `RunNote`）
+- **版本**：与 `backend/pyproject.toml` / `frontend/package.json` 同步为 `2.3.0`（`versionCode = 20300`，规则 `MAJOR * 10000 + MINOR * 100 + PATCH`）
+- **最低系统要求**：Android 10（API 29）、Android System WebView / Chrome **116+**
+- **工具链**：Capacitor 8.6.2、`@capacitor/app` 8.1.2、JDK 21、Gradle 8.14.3、AGP 8.13.0、Android SDK 36、Build Tools 35.0.0
+
+## 1. Debug 构建（本地隔离联调）
+
+默认 `debug` 构建指向 `http://localhost:15297`（仓库不硬编码 staging 或生产域名），并可通过 `-Prunnote.serverUrl` 或 `RUNNOTE_SERVER_URL` 在构建时注入任意合法 HTTPS 来源（非环回地址强制 HTTPS）：
 
 ```sh
-sdkmanager 'platform-tools' 'emulator' 'platforms;android-36' 'build-tools;35.0.0' \
-  'system-images;android-29;google_apis;x86_64'
 pnpm --dir android install --frozen-lockfile
 pnpm --dir android sync
 (cd android/native && ./gradlew --no-daemon testDebugUnitTest assembleDebug)
 ```
 
-调试 APK 位于 `android/native/app/build/outputs/apk/debug/app-debug.apk`。在主机环回地址的 15297 端口启动隔离的 RunNote 实例，后端使用 `APP_ENV=test` 和 `SITE_ORIGIN=http://localhost:15297`。生产构建的前端进程使用同一 `ORIGIN`，`INTERNAL_API_BASE_URL` 指向隔离后端。使用明确的模拟器序列号，以下示例为 `emulator-5568`。
+调试 APK 输出：`android/native/app/build/outputs/apk/debug/app-debug.apk`。
+
+本地隔离联调示例（使用明确模拟器序列号）：
 
 ```sh
-adb -s emulator-5568 reverse tcp:15297 tcp:15297
-adb -s emulator-5568 install -r android/native/app/build/outputs/apk/debug/app-debug.apk
-adb -s emulator-5568 shell am start -n org.runnote.phasezero/.MainActivity
+adb -s emulator-5554 reverse tcp:15297 tcp:15297
+adb -s emulator-5554 install -r android/native/app/build/outputs/apk/debug/app-debug.apk
+adb -s emulator-5554 shell am start -n com.tingchieh.runnote/.MainActivity
 ```
 
-## Phase 0 原生防护与适配
+## 2. Release 签名构建
 
-- **WebView 最低版本检测（`WebViewSupport` + `MainActivity`）**：启动前通过 `WebViewCompat.getCurrentWebViewPackage()` 校验系统 WebView 版本（`minWebViewVersion: 116`）。低于要求（例如 API 29 库存 WebView 74）时不加载远端页面，展示原生中文升级页（跳转应用商店、打开系统应用详情与重新检测），避免静默白屏或水合失败。
-- **系统返回键（`@capacitor/app` + `frontend/src/lib/capacitor-back.ts`）**：按优先级关闭当前打开的 `<dialog>`、Popover 菜单或移动端导航抽屉；无弹层时执行单步历史回退（防连点双导航）；无可回退历史时退出应用。仅在原生 Capacitor 运行时激活，不影响普通 Web 浏览器与 SSR。
-- **文件选择器 MIME（`RunNoteWebChromeClient` + `FilePickerIntentHelper`）**：对 Android `MimeTypeMap` 未收录扩展名（`.gpx`、`.tcx`）及容易被文档提供者标记为 `application/octet-stream` 的轨迹/导入文件（含 Mi Fitness `.json`）放宽 DocumentsUI 筛选为 `*/*`（同时保留图片上传的严格 MIME 过滤），继续由前后端解析器做格式校验。
-- **调试网络边界**：调试包仅为 `localhost` 开放明文网络访问，并在 `debug-overrides` 中允许信任用户/调试 CA 以便隔离演练本地 HTTPS（release 构建不生效）。`MainActivity.onPause()` 触发 `CookieManager.flush()`，降低后台被系统回收时丢失新登录会话的风险。
+**安全规则**：
+- Keystore 与口令必须放在仓库之外（例如 `~/.local/share/runnote-android/keystore/`，权限 `0600`），**绝不提交到仓库**。
+- Release 构建强制要求通过 `-Prunnote.serverUrl` 或 `RUNNOTE_SERVER_URL` 提供 `https://` 非环回服务地址；未配置服务地址或未配置签名凭证时 Gradle 直接拒绝构建。
+- Release 不启用明文 HTTP，不信任用户 CA（见 `android/native/app/src/main/res/xml/network_security_config.xml`）。
 
-更新方法、复现结果和下一阶段限制见 [验证记录](../docs/95-android-capacitor-phase0.md)。
+通过环境变量注入示例：
+
+```sh
+pnpm --dir android install --frozen-lockfile
+pnpm --dir android sync
+(
+  cd android/native && \
+  RUNNOTE_SERVER_URL="https://your-runnote.example" \
+  RUNNOTE_KEYSTORE_PATH="$HOME/.local/share/runnote-android/keystore/runnote-release.jks" \
+  RUNNOTE_KEYSTORE_PASSWORD="<store-password>" \
+  RUNNOTE_KEY_ALIAS="runnote" \
+  RUNNOTE_KEY_PASSWORD="<key-password>" \
+  ./gradlew --no-daemon assembleRelease
+)
+```
+
+也可将签名项写入 Git 忽略的本地文件 `android/native/keystore.properties`（键名：`runnote.keystore.path`、`runnote.keystore.password`、`runnote.key.alias`、`runnote.key.password`）。
+
+校验签名与指纹：
+
+```sh
+apksigner verify --verbose --print-certs android/native/app/build/outputs/apk/release/app-release.apk
+sha256sum android/native/app/build/outputs/apk/release/app-release.apk
+```
+
+## 3. 容器能力与安全边界
+
+- **WebView >= 116 原生拦截（`WebViewSupport`）**：启动前校验系统 WebView，过旧或缺失时展示零 WebView 依赖的原生中文升级页。
+- **导航白名单与外链处理（`NavigationPolicy` + `RunNoteWebViewClient`）**：同源 `http(s)` 留在 WebView；外部 `http(s)` 通过 Chrome Custom Tab / 系统浏览器打开；`mailto:` 交系统处理；`javascript:`、`file://`、`content://`、`data:`、`blob:`、`intent://` 及未知 scheme 全部拦截拒绝。
+- **系统栏深浅色同步（`SystemAppearancePlugin` + `SystemBarStyleHelper` + `frontend/src/lib/capacitor-theme.ts`）**：Web 手动切换浅/深色或跟随系统时，同步更新状态栏/手势条背景色（`#F6F7F4` / `#292725`）与图标对比度。
+- **断网与连接错误覆盖层（`view_connection_error.xml`）**：主文档断网、超时或 TLS 校验失败（绝不忽略证书错误）时展示原生中文提示与「重新加载」/「返回上一页」入口，不覆盖服务端 403/404/500 页面。
+- **返回键与边缘手势（`BackNavigationHelper` + `frontend/src/lib/capacitor-back.ts`）**：依次处理连接错误层、`<dialog>`、Popover、移动抽屉、单步历史回退与根页退出。
+- **文件导入（`RunNoteWebChromeClient` + `FilePickerIntentHelper`）**：沿用 Phase 0 的 SAF DocumentsUI MIME 放宽，不申请宽泛存储权限。
+- **认证与隐私**：沿用同源 HttpOnly Cookie + CSRF + Origin，`onPause()`/`onStop()` 主动 `CookieManager.flush()`；不暴露会话给 JS，不记录凭据、Cookie 或轨迹信息。
+
+详细验证记录与阶段边界见 [Phase 1 交付记录](../docs/97-android-capacitor-phase1.md)。
