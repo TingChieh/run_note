@@ -10,11 +10,19 @@ from app.core.errors import ApiError
 from app.core.responses import ApiResponse
 from app.modules.activities.router import envelope
 from app.modules.footprints.cache import all_footprints_response
-from app.modules.footprints.exploration import catalog, cells, detail, parse_viewport
+from app.modules.footprints.exploration import (
+    catalog,
+    cells,
+    detail,
+    markers,
+    parse_optional_year,
+    parse_viewport,
+)
 from app.modules.footprints.exploration_schema import (
     ExplorationCatalog,
     ExplorationCells,
     ExplorationDetail,
+    ExplorationMarkersResponse,
     Layer,
     Scope,
 )
@@ -60,6 +68,24 @@ def exploration_cities(
     return _exploration_response(request, response, db, data, {"limit", "offset"})
 
 
+@exploration_router.get("/markers", response_model=ApiResponse[ExplorationMarkersResponse])
+def exploration_markers(
+    request: Request,
+    response: Response,
+    identity: Annotated[tuple, Depends(get_read_identity)],
+    db: Annotated[Session, Depends(get_session)],
+    year: Annotated[str | None, Query(max_length=16)] = None,
+):
+    user = identity[1]
+    data = markers(
+        request.app.state.exploration_reads,
+        user.id,
+        user.activity_data_version,
+        parse_optional_year(year),
+    )
+    return _exploration_response(request, response, db, data, {"year"})
+
+
 @exploration_router.get("/{scope}/{code}", response_model=ApiResponse[ExplorationDetail])
 def exploration_detail(
     request: Request,
@@ -69,6 +95,7 @@ def exploration_detail(
     scope: Scope,
     code: ScopeCode,
     year: Year,
+    all_years: bool = False,
 ):
     user = identity[1]
     today = request.app.state.clock().astimezone(ZoneInfo(user.timezone)).date()
@@ -80,8 +107,9 @@ def exploration_detail(
         code,
         year,
         today,
+        all_years=all_years,
     )
-    return _exploration_response(request, response, db, data, {"year"})
+    return _exploration_response(request, response, db, data, {"year", "all_years"})
 
 
 @exploration_router.get("/{scope}/{code}/cells", response_model=ApiResponse[ExplorationCells])
@@ -96,6 +124,7 @@ def exploration_cells(
     zoom: Annotated[float, Query(ge=0, le=22)],
     layer: Layer = "heatmap",
     bbox: Annotated[str | None, Query(max_length=100)] = None,
+    all_years: bool = False,
 ):
     user = identity[1]
     data = cells(
@@ -108,8 +137,11 @@ def exploration_cells(
         parse_viewport(bbox),
         zoom,
         layer,
+        all_years=all_years,
     )
-    return _exploration_response(request, response, db, data, {"year", "zoom", "layer", "bbox"})
+    return _exploration_response(
+        request, response, db, data, {"year", "zoom", "layer", "bbox", "all_years"}
+    )
 
 
 @router.get("/all", response_model=ApiResponse[AllFootprintView])

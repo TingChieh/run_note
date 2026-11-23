@@ -2,6 +2,8 @@ import type {
   ExplorationCatalog,
   ExplorationCells,
   ExplorationDetail,
+  ExplorationMarker,
+  ExplorationMarkersResponse,
   ExplorationPlace,
 } from '#lib/api/generated/api.ts';
 import { FootprintError } from '#lib/api/footprints.ts';
@@ -9,7 +11,7 @@ import { FootprintError } from '#lib/api/footprints.ts';
 export type Scope = ExplorationDetail['scope'];
 export type Layer = 'heatmap' | 'new';
 export type Viewport = { bounds: [number, number, number, number]; zoom: number };
-export type { ExplorationCatalog, ExplorationDetail, ExplorationCells };
+export type { ExplorationCatalog, ExplorationDetail, ExplorationCells, ExplorationMarker, ExplorationMarkersResponse };
 
 const root = '/api/v1/me/footprints/exploration';
 const invalid = () => new FootprintError('无法识别城市探索数据，请重试');
@@ -17,6 +19,8 @@ const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = (value: unknown, min = 0, max = Number.MAX_SAFE_INTEGER): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max;
+const finite = (value: unknown, min: number, max: number): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
 const distance = (value: unknown) =>
   value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0);
 const nullableCount = (value: unknown) => value === null || integer(value);
@@ -27,6 +31,12 @@ const date = (value: unknown) =>
   /^\d{4}-\d{2}-\d{2}$/.test(value) &&
   Number.isFinite(Date.parse(value)) &&
   new Date(value).toISOString().slice(0, 10) === value;
+const boundsTuple = (value: unknown): value is [number, number, number, number] =>
+  Array.isArray(value) &&
+  value.length === 4 &&
+  value.every((v, i) => finite(v, i % 2 ? -90 : -180, i % 2 ? 90 : 180)) &&
+  value[0] <= value[2] &&
+  value[1] <= value[3];
 const version = (value: unknown): value is Record<string, unknown> =>
   object(value) &&
   integer(value.source_version) &&
@@ -44,6 +54,18 @@ const place = (value: unknown): value is ExplorationPlace =>
   date(value.last_date) &&
   String(value.first_date) <= String(value.last_date) &&
   integer(value.activity_count, 1);
+
+const marker = (value: unknown): value is ExplorationMarker =>
+  place(value) &&
+  object(value) &&
+  label(value.short_name) &&
+  code(value.region_code) &&
+  typeof value.country_code === 'string' &&
+  /^[A-Z0-9-]{2,16}$/.test(value.country_code) &&
+  finite(value.lon, -180, 180) &&
+  finite(value.lat, -90, 90) &&
+  (value.bounds === null || boundsTuple(value.bounds)) &&
+  typeof value.is_new_in_year === 'boolean';
 
 export function parseCatalog(value: unknown): ExplorationCatalog {
   if (
@@ -68,6 +90,20 @@ export function parseCatalog(value: unknown): ExplorationCatalog {
   )
     throw invalid();
   return value as unknown as ExplorationCatalog;
+}
+
+export function parseMarkers(value: unknown): ExplorationMarkersResponse {
+  if (
+    !version(value) ||
+    !(value.year === null || integer(value.year, 1900, 2100)) ||
+    !Array.isArray(value.items) ||
+    !value.items.every(marker) ||
+    !Array.isArray(value.regions) ||
+    !value.regions.every((v) => object(v) && code(v.code) && label(v.name)) ||
+    ![value.activity_count, value.boundary_count, value.nearby_count].every(nullableCount)
+  )
+    throw invalid();
+  return value as unknown as ExplorationMarkersResponse;
 }
 
 export function parseDetail(value: unknown): ExplorationDetail {
@@ -132,8 +168,22 @@ async function read(path: string, signal: AbortSignal) {
 export const readCatalog = async (offset: number, signal: AbortSignal) =>
   parseCatalog(await read(`${root}/cities?limit=20&offset=${offset}`, signal));
 
-export const readDetail = async (scope: Scope, placeCode: string, year: number, signal: AbortSignal) =>
-  parseDetail(await read(`${root}/${scope}/${encodeURIComponent(placeCode)}?year=${year}`, signal));
+export const readMarkers = async (year: number | 'all' | null, signal: AbortSignal) => {
+  const suffix = year === null || year === 'all' ? '' : `?year=${year}`;
+  return parseMarkers(await read(`${root}/markers${suffix}`, signal));
+};
+
+export const readDetail = async (
+  scope: Scope,
+  placeCode: string,
+  year: number,
+  signal: AbortSignal,
+  allYears = false,
+) => {
+  const query = new URLSearchParams({ year: String(year) });
+  if (allYears) query.set('all_years', 'true');
+  return parseDetail(await read(`${root}/${scope}/${encodeURIComponent(placeCode)}?${query}`, signal));
+};
 
 export const readCells = async (
   scope: Scope,
@@ -142,8 +192,10 @@ export const readCells = async (
   layer: Layer,
   viewport: Viewport | null,
   signal: AbortSignal,
+  allYears = false,
 ) => {
   const query = new URLSearchParams({ year: String(year), layer, zoom: String(viewport?.zoom ?? 5) });
   if (viewport) query.set('bbox', viewport.bounds.join(','));
+  if (allYears) query.set('all_years', 'true');
   return parseCells(await read(`${root}/${scope}/${encodeURIComponent(placeCode)}/cells?${query}`, signal));
 };

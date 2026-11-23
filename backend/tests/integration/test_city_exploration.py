@@ -26,19 +26,30 @@ def ready(client, suffix, **kwargs):
 
 def test_exploration_is_owner_only_and_private(clients):
     first, second, _, _ = clients
-    for path in ("/cities", "/global/all?year=2026", "/global/all/cells?year=2026&zoom=10"):
+    for path in (
+        "/cities",
+        "/markers",
+        "/markers?year=2026",
+        "/global/all?year=2026",
+        "/global/all/cells?year=2026&zoom=10",
+    ):
         assert first.get(BASE + path).status_code == 401
     register(first)
     register(second)
-    result = second.get(BASE + "/cities")
-    assert result.status_code == 200
-    assert result.headers["cache-control"] == "private, no-store"
-    assert result.json()["data"]["items"] == []
+    for path in ("/cities", "/markers", "/markers?year=all"):
+        result = second.get(BASE + path)
+        assert result.status_code == 200
+        assert result.headers["cache-control"] == "private, no-store"
+        assert result.json()["data"]["items"] == []
     assert second.get(BASE + "/city/missing?year=2026").status_code == 404
     assert second.get(BASE + "/city/310000?year=2026").status_code == 404
     assert second.get(BASE + "/city/310000/cells?year=2026&zoom=12").status_code == 404
     assert second.get(BASE + "/cities?owner=other").status_code == 422
+    assert second.get(BASE + "/markers?year=1800").status_code == 422
+    assert second.get(BASE + "/markers?year=bad").status_code == 422
+    assert second.get(BASE + "/markers?owner=other").status_code == 422
     assert second.get("/api/v1/showcase/footprints/exploration/cities").status_code == 404
+    assert second.get("/api/v1/showcase/footprints/exploration/markers").status_code == 404
 
 
 def test_city_allocation_preserves_crossings_repeats_and_shared_edges(clients):
@@ -149,6 +160,26 @@ def test_history_recovers_after_old_import_and_delete(clients):
     assert recalculated["new_cells"] == 0
     assert ready(first, cells + "&layer=new")["cells"] == []
     assert recalculated["source_version"] > baseline["source_version"]
+    all_markers = ready(first, "/markers?year=all")
+    assert len(all_markers["items"]) == 1
+    sh_all = all_markers["items"][0]
+    assert sh_all["code"] == "310000"
+    assert sh_all["country_code"] == "CHN"
+    assert sh_all["region_code"] == "CN-310000"
+    assert sh_all["activity_count"] == 3
+    assert sh_all["is_new_in_year"] is False
+    assert sh_all["bounds"] is not None
+    y25_markers = ready(first, "/markers?year=2025")
+    assert y25_markers["items"][0]["activity_count"] == 2
+    assert y25_markers["items"][0]["is_new_in_year"] is False
+    y24_markers = ready(first, "/markers?year=2024")
+    assert y24_markers["items"][0]["activity_count"] == 1
+    assert y24_markers["items"][0]["is_new_in_year"] is True
+    assert second.get(BASE + "/markers").json()["data"]["items"] == []
+    all_detail = ready(first, city + "&all_years=true")
+    assert all_detail["cumulative_cells"] == baseline["cumulative_cells"]
+    all_cells = ready(first, cells + "&all_years=true&bbox=121.47,31.22,121.49,31.24")
+    assert all(count == 3 for _, _, count in all_cells["cells"])
     deletion = first.delete(f"/api/v1/activities/{old}", headers=headers(first))
     assert deletion.status_code == 200, deletion.text
     assert ready(first, city)["months"] == baseline["months"]

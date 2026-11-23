@@ -1,6 +1,7 @@
 """Spatial queries for the private city exploration views."""
 
 import json
+from datetime import date
 
 from sqlalchemy import text
 
@@ -10,6 +11,7 @@ WITH segments AS MATERIALIZED (
         ST_XMax(s.geom)-ST_XMin(s.geom) > 180 AS wraps
     FROM activities a JOIN activity_segments s ON s.activity_id = a.id
     WHERE a.user_id = :owner AND s.geom IS NOT NULL
+      AND (CAST(:start AS date) IS NULL OR (a.activity_date >= :start AND a.activity_date < :end))
 ), city_inputs AS (
     SELECT code, geometry, ST_Expand(ST_MakeEnvelope(
         (bounds->>0)::float, (bounds->>1)::float,
@@ -95,6 +97,7 @@ GROUP BY c.code
 UNION ALL
 SELECT NULL, count(*), NULL, NULL, 0 FROM activities a
 WHERE a.user_id=:owner
+    AND (CAST(:start AS date) IS NULL OR (a.activity_date >= :start AND a.activity_date < :end))
     AND EXISTS (SELECT 1 FROM activity_segments s WHERE s.activity_id=a.id)
     AND NOT EXISTS (SELECT 1 FROM allocated m WHERE m.activity_id=a.id)
     AND NOT EXISTS (
@@ -106,11 +109,13 @@ ORDER BY code NULLS LAST
 """
 
 
-def city_distances(db, owner, cities, *, atlas="", point_codes=()):
+def city_distances(db, owner, cities, *, atlas="", point_codes=(), year: int | None = None):
     # Ignore non-geometric atlas metadata and keep the authoritative inputs bound.
     geometries = [
         {"code": c["code"], "geometry": c["geometry"], "bounds": c.get("bounds")} for c in cities
     ]
+    start = date(year, 1, 1) if year is not None else None
+    end = date(year + 1, 1, 1) if year is not None else None
     return db.execute(
         text(CITY_DISTANCES),
         {
@@ -118,6 +123,8 @@ def city_distances(db, owner, cities, *, atlas="", point_codes=()):
             "cities": json.dumps(geometries),
             "atlas": atlas,
             "point_codes": list(point_codes),
+            "start": start,
+            "end": end,
         },
     )
 
