@@ -52,8 +52,12 @@ export interface FootprintCitySummary extends FootprintCity {
 }
 export interface FootprintCitySummaryLocations {
   cities: FootprintCitySummary[];
+  /** Coarse (~0.5 deg) display-only fallback markers for footprints outside the China city atlas. */
+  unlocatedMarkers: FootprintCitySummary[];
   unlocatedBounds: Bounds | null;
 }
+
+const FALLBACK_BUCKET_DEG = 0.5;
 
 export { COUNTRY_MAX_ZOOM, REGION_MAX_ZOOM, zoomTier, type ClusterPoint, type ProjectedLabel, type ZoomTier };
 
@@ -256,6 +260,64 @@ export function locateFootprintCities(geometries: Geometry[], regions: CityRegio
 }
 
 /**
+ * Coarse (~0.5 deg) spatial bucketing for footprints outside the China city atlas or when atlas
+ * lookup fails, so low-zoom heatmap/track views never turn blank while 100 m polygons stay hidden.
+ */
+export function bucketUnlocatedFootprints(
+  features: FootprintCityFeatureInput[],
+  mode: FootprintMode,
+): FootprintCitySummary[] {
+  const buckets = new Map<
+    string,
+    { bounds: Bounds; activityIds: Set<string>; maxCount: number; cellCount: number }
+  >();
+  for (let index = 0; index < features.length; index++) {
+    const feature = features[index];
+    const bounds = geometryBounds([feature.geometry]);
+    if (!bounds) continue;
+    const midLon = (bounds[0][0] + bounds[1][0]) / 2;
+    const midLat = (bounds[0][1] + bounds[1][1]) / 2;
+    const bx = Math.floor(midLon / FALLBACK_BUCKET_DEG);
+    const by = Math.floor(midLat / FALLBACK_BUCKET_DEG);
+    const key = `unlocated:${bx}:${by}`;
+    const hitCount =
+      typeof feature.count === 'number' && Number.isFinite(feature.count) && feature.count > 0 ? feature.count : 1;
+    const activityKey = feature.activityId || `#${index}`;
+    const existing = buckets.get(key);
+    if (existing) {
+      existing.bounds = merge(existing.bounds, bounds);
+      if (mode === 'heatmap') {
+        existing.cellCount += 1;
+        existing.maxCount = Math.max(existing.maxCount, hitCount);
+      } else {
+        existing.activityIds.add(activityKey);
+      }
+    } else {
+      const activityIds = new Set<string>();
+      if (mode !== 'heatmap') activityIds.add(activityKey);
+      buckets.set(key, {
+        bounds,
+        activityIds,
+        maxCount: mode === 'heatmap' ? hitCount : 0,
+        cellCount: mode === 'heatmap' ? 1 : 0,
+      });
+    }
+  }
+  return [...buckets.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([code, entry]) => ({
+      code,
+      name: '未识别区域',
+      shortName: '',
+      bounds: entry.bounds,
+      lon: (entry.bounds[0][0] + entry.bounds[1][0]) / 2,
+      lat: (entry.bounds[0][1] + entry.bounds[1][1]) / 2,
+      count: mode === 'heatmap' ? Math.max(1, entry.maxCount) : Math.max(1, entry.activityIds.size),
+      cellCount: entry.cellCount,
+    }));
+}
+
+/**
  * Display-only city summaries shared by both tracks and heatmap modes at low zoom.
  * Tracks count distinct activity IDs intersecting each city; heatmap records cell count and peak cell hit count.
  */
@@ -268,6 +330,7 @@ export function locateFootprintCitySummaries(
     string,
     { code: string; name: string; bounds: Bounds; activityIds: Set<string>; maxCount: number; cellCount: number }
   >();
+  const unlocatedFeatures: FootprintCityFeatureInput[] = [];
   let unlocatedBounds: Bounds | null = null;
   for (let index = 0; index < features.length; index++) {
     const feature = features[index];
@@ -306,7 +369,10 @@ export function locateFootprintCitySummaries(
         });
       }
     }
-    if (!located) unlocatedBounds = merge(unlocatedBounds, bounds);
+    if (!located) {
+      unlocatedBounds = merge(unlocatedBounds, bounds);
+      unlocatedFeatures.push(feature);
+    }
   }
   const cities: FootprintCitySummary[] = [...found.values()]
     .sort((a, b) => a.code.localeCompare(b.code))
@@ -320,7 +386,8 @@ export function locateFootprintCitySummaries(
       count: mode === 'heatmap' ? Math.max(1, entry.maxCount) : Math.max(1, entry.activityIds.size),
       cellCount: entry.cellCount,
     }));
-  return { cities, unlocatedBounds };
+  const unlocatedMarkers = unlocatedFeatures.length ? bucketUnlocatedFootprints(unlocatedFeatures, mode) : [];
+  return { cities, unlocatedMarkers, unlocatedBounds };
 }
 
 /** Map Chinese 6-digit GB city codes to `world-base.json` province codes (e.g. `320500` -> `CN-320000`). */
@@ -368,7 +435,9 @@ export function placeFootprintLabels(
   selectedCode = '',
   maxLabels = 24,
 ): ProjectedLabel[] {
-  const markers = cities.map((city) => ({
+  const markers = cities
+    .filter((city) => city.shortName.length > 0)
+    .map((city) => ({
     code: city.code,
     name: city.name,
     short_name: city.shortName,

@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import {
   COUNTRY_MAX_ZOOM,
   REGION_MAX_ZOOM,
+  bucketUnlocatedFootprints,
   footprintCitiesToGeoJSON,
   footprintCityPalette,
   footprintCitySummaryText,
@@ -185,4 +186,48 @@ it('keeps tracks and heatmap palettes distinct while sharing base tokens', () =>
     expect(tracksPal.clusterFill).not.toBe(heatPal.clusterFill);
     expect(tracksPal.bubbleFill).not.toEqual(heatPal.bubbleFill);
   }
+});
+
+it('builds coarse fallback markers for overseas heat cells and atlas lookup failures', () => {
+  const overseasHeat = [
+    {
+      geometry: {
+        type: 'Polygon' as const,
+        coordinates: [[[-74.0, 40.7], [-73.999, 40.7], [-73.999, 40.701], [-74.0, 40.701], [-74.0, 40.7]]],
+      },
+      count: 6,
+    },
+    {
+      geometry: {
+        type: 'Polygon' as const,
+        coordinates: [[[-73.98, 40.71], [-73.979, 40.71], [-73.979, 40.711], [-73.98, 40.711], [-73.98, 40.71]]],
+      },
+      count: 3,
+    },
+    {
+      geometry: {
+        type: 'Polygon' as const,
+        coordinates: [[[-118.25, 34.05], [-118.249, 34.05], [-118.249, 34.051], [-118.25, 34.051], [-118.25, 34.05]]],
+      },
+      count: 4,
+    },
+  ];
+  const located = locateFootprintCitySummaries(overseasHeat, atlas, 'heatmap');
+  expect(located.cities).toEqual([]);
+  expect(located.unlocatedBounds).not.toBeNull();
+  expect(located.unlocatedMarkers).toHaveLength(2);
+  expect(located.unlocatedMarkers.map((m) => m.count).sort((a, b) => a - b)).toEqual([4, 6]);
+  expect(located.unlocatedMarkers.map((m) => m.cellCount).sort((a, b) => a - b)).toEqual([1, 2]);
+  // Fallback markers carry empty shortName so labels stay clean while cluster/bubble layers remain populated.
+  expect(
+    placeFootprintLabels(
+      located.unlocatedMarkers,
+      [],
+      ([lon, lat]) => ({ x: 400 + lon, y: 300 - lat }),
+      800,
+      500,
+      4.0,
+    ),
+  ).toEqual([]);
+  expect(bucketUnlocatedFootprints(overseasHeat, 'heatmap')).toHaveLength(2);
 });

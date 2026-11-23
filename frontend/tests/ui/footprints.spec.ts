@@ -1260,3 +1260,76 @@ test('mobile touch tap on low-zoom city marker opens confirmation bar before zoo
   expect(errors).toEqual([]);
   await context.close();
 });
+
+test('overseas heatmap cells and failed city atlas lookup retain low-zoom fallback markers', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (err) => errors.push(err.message));
+  await page.route('https://tiles.openfreemap.org/**', (route) => route.abort());
+  await installActivities(page);
+  await page.route('**/api/v1/showcase/footprints/all?**', (route) => {
+    const url = new URL(route.request().url());
+    const result = {
+      scope: 'all' as const,
+      type: 'FeatureCollection' as const,
+      features: [
+        {
+          type: 'Feature' as const,
+          geometry: {
+            type: 'Polygon' as const,
+            coordinates: [[[-74.0, 40.7], [-73.999, 40.7], [-73.999, 40.701], [-74.0, 40.701], [-74.0, 40.7]]],
+          },
+          properties: { i: 1, j: 1, count: 6 },
+        },
+        {
+          type: 'Feature' as const,
+          geometry: {
+            type: 'Polygon' as const,
+            coordinates: [[[-118.25, 34.05], [-118.249, 34.05], [-118.249, 34.051], [-118.25, 34.051], [-118.25, 34.05]]],
+          },
+          properties: { i: 2, j: 2, count: 4 },
+        },
+      ],
+      mode: 'heatmap' as const,
+      activity_count: 10,
+      visible_activity_count: 10,
+      unsupported_segment_count: 0,
+      grid_size_m: 100,
+      grid_crs: 'EPSG:3857',
+      count_basis: 'distinct_activity_per_cell',
+      max_count: 6,
+    };
+    return route.fulfill({
+      json: {
+        data: {
+          status: 'ready',
+          generated_at: '2026-10-15T00:00:00Z',
+          refreshing: false,
+          refresh_failed: false,
+          result: url.searchParams.get('encoding') === 'delta' ? encodeFootprints(result) : result,
+        },
+        error: null,
+      },
+    });
+  });
+  await loginRunner(page);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+
+  // 1) Overseas heatmap outside China atlas still populates 2 low-zoom fallback markers (NY + LA).
+  await page.goto('/footprints?mode=heatmap');
+  await ready(page);
+  const mapEl = page.getByTestId('footprint-map-ready');
+  await expect(mapEl).toHaveAttribute('data-zoom-tier', 'country');
+  await expect(mapEl).toHaveAttribute('data-lowzoom-markers', '2');
+  const unlocatedBtn = page.getByRole('group', { name: '有记录的城市', exact: true }).getByRole('button', { name: '未识别区域', exact: true });
+  await expect(unlocatedBtn).toBeVisible();
+  await unlocatedBtn.click();
+  await expect(mapEl).toHaveAttribute('data-lowzoom-markers', '2');
+
+  // 2) Failed city atlas download (503) also retains coarse low-zoom fallback markers for heatmap.
+  await page.route('**/china-cities*.json*', (route) => route.fulfill({ status: 503, body: '' }));
+  await page.goto('/footprints?mode=heatmap');
+  await ready(page);
+  await expect(page.getByText('城市识别暂不可用，全部足迹仍可查看。')).toBeVisible();
+  await expect(mapEl).toHaveAttribute('data-lowzoom-markers', '2');
+  expect(errors).toEqual([]);
+});

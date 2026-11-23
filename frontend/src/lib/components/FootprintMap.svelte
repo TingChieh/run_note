@@ -12,6 +12,7 @@
   import {
     COUNTRY_MAX_ZOOM,
     REGION_MAX_ZOOM,
+    bucketUnlocatedFootprints,
     footprintCitiesToGeoJSON,
     footprintCityPalette,
     footprintCitySummaryText,
@@ -19,6 +20,7 @@
     visitedProvinceCodes,
     zoomTier,
     type ClusterPoint,
+    type FootprintCityFeatureInput,
     type FootprintCitySummary,
     type FootprintCitySummaryLocations,
     type ProjectedLabel,
@@ -83,6 +85,7 @@
   let cityOpen = $state(false),
     cityName = $state('');
   let cities = $state<FootprintCitySummary[]>([]),
+    unlocatedMarkers = $state<FootprintCitySummary[]>([]),
     unlocatedBounds = $state<FootprintCitySummaryLocations['unlocatedBounds']>(null);
   let cityLookup = $state<'loading' | 'ready' | 'failed'>('loading'),
     selectedCity = $state('');
@@ -102,7 +105,8 @@
   let cachedVisibleCities: FootprintCitySummary[] = [];
   let lastQueryZoomBucket = -1;
   let queryDirty = true;
-  const cityByCode = $derived(new Map(cities.map((city) => [city.code, city])));
+  const allLowZoomMarkers = $derived([...cities, ...unlocatedMarkers]);
+  const cityByCode = $derived(new Map(allLowZoomMarkers.map((city) => [city.code, city])));
   const effectiveMapDark = $derived(basemap === 'ready' ? basemapStyle === 'dark' : dark);
   const lowZoomPalette = $derived(footprintCityPalette(effectiveMapDark, data.mode));
   const cityCache = new WeakMap<FootprintCollection, FootprintCitySummaryLocations>();
@@ -175,7 +179,7 @@
     frameEl.style.height = `${Math.min(720, Math.max(424, Math.floor(available)))}px`;
   }
   function cityMarkerData() {
-    return footprintCitiesToGeoJSON(cities, data.mode);
+    return footprintCitiesToGeoJSON(allLowZoomMarkers, data.mode);
   }
   function applyLowZoomTheme() {
     if (!map || disposed) return;
@@ -233,7 +237,7 @@
     }
     const zoom = map.getZoom();
     currentZoom = zoom;
-    if (!ready || !cities.length || zoom >= REGION_MAX_ZOOM) {
+    if (!ready || !allLowZoomMarkers.length || zoom >= REGION_MAX_ZOOM) {
       if (labels.length) labels = [];
       return;
     }
@@ -288,7 +292,7 @@
     if (!map || disposed) return;
     const zoom = map.getZoom();
     currentZoom = zoom;
-    if (!ready || !cities.length || zoom >= REGION_MAX_ZOOM) {
+    if (!ready || !allLowZoomMarkers.length || zoom >= REGION_MAX_ZOOM) {
       if (labels.length) labels = [];
       return;
     }
@@ -358,19 +362,20 @@
     const city =
       code === 'unlocated' && unlocatedBounds
         ? { name: '未识别区域', bounds: unlocatedBounds }
-        : cities.find((city) => city.code === code);
+        : (cities.find((entry) => entry.code === code) ?? unlocatedMarkers.find((entry) => entry.code === code));
     if (!map || !ready || error || !city) return;
     map.stop();
     hoveredCity = null;
     tappedCity = null;
     framing = 'picked';
-    selectedCity = code;
-    cityName = code;
+    selectedCity = code.startsWith('unlocated:') ? 'unlocated' : code;
+    cityName = selectedCity;
     applyLowZoomTheme();
     fit(city.bounds, animate);
   }
   function applyCityLocations(locations: FootprintCitySummaryLocations) {
     cities = locations.cities;
+    unlocatedMarkers = locations.unlocatedMarkers;
     unlocatedBounds = locations.unlocatedBounds;
     cityName = cities[0]?.code ?? (unlocatedBounds ? 'unlocated' : '');
     cityLookup = 'ready';
@@ -383,6 +388,21 @@
       }
       if (!disposed) syncLabels(true);
     });
+  }
+  function cityFeatureInputs(collection: FootprintCollection): FootprintCityFeatureInput[] {
+    return collection.features.map((feature) => ({
+      geometry: feature.geometry,
+      activityId: typeof feature.properties?.activity_id === 'string' ? feature.properties.activity_id : undefined,
+      count: typeof feature.properties?.count === 'number' ? feature.properties.count : undefined,
+    }));
+  }
+  function applyCityLookupFailure(collection: FootprintCollection) {
+    cities = [];
+    unlocatedMarkers = bucketUnlocatedFootprints(cityFeatureInputs(collection), collection.mode);
+    unlocatedBounds = null;
+    cityLookup = 'failed';
+    syncCityMarkers();
+    frameInitial();
   }
   function loadCities() {
     const currentData = data;
@@ -404,22 +424,16 @@
       };
       worker.onerror = () => {
         if (disposed || cityWorker !== worker) return;
-        cityLookup = 'failed';
-        frameInitial();
+        applyCityLookupFailure(currentData);
         worker.terminate();
         cityWorker = undefined;
       };
       worker.postMessage({
         mode: currentData.mode,
-        features: currentData.features.map((feature) => ({
-          geometry: feature.geometry,
-          activityId: typeof feature.properties?.activity_id === 'string' ? feature.properties.activity_id : undefined,
-          count: typeof feature.properties?.count === 'number' ? feature.properties.count : undefined,
-        })),
+        features: cityFeatureInputs(currentData),
       });
     } catch {
-      cityLookup = 'failed';
-      frameInitial();
+      applyCityLookupFailure(currentData);
       cityWorker?.terminate();
       cityWorker = undefined;
     }
@@ -1032,6 +1046,7 @@
       data-testid={ready ? 'footprint-map-ready' : 'footprint-map-loading'}
       data-zoom-tier={currentTier}
       data-city-labels={labels.length}
+      data-lowzoom-markers={allLowZoomMarkers.length}
     ></div>
     {#if ready && labels.length}
       <div class="labels-layer" aria-hidden="true">
