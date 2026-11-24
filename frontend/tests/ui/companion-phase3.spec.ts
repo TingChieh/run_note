@@ -3493,3 +3493,408 @@ test('P2 Round 11: leaving during an in-flight Web resume never turns GPS on and
   await expect(page.getByTestId('recording-points-count')).toContainText('1 点');
   expect(await isWebWatching(page)).toBe(false);
 });
+
+/**
+ * Deletes account A's recording data and active marker in a real committed IndexedDB transaction.
+ * When `relogin` is true, also establishes a fresh same-account generation (epoch + 1) in the same
+ * transaction to simulate logout + same-account re-login in another tab.
+ */
+async function commitAccountCleanupInIdb(
+  targetPage: Page,
+  accountId: string,
+  options?: { relogin?: boolean; seedQueueKey?: string },
+) {
+  return await targetPage.evaluate(
+    async ({ aId, relogin, seedQueueKey }) => {
+      return await new Promise<{ nextRevision: number | null }>((resolve, reject) => {
+        const req = indexedDB.open('runnote-recording-store', 1);
+        req.onerror = () => reject(req.error);
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction('records', 'readwrite');
+          const store = tx.objectStore('records');
+          let nextRevision: number | null = null;
+          store.delete('meta:recording_active_account');
+          store.delete(IDBKeyRange.bound(`user:${aId}:`, `user:${aId}:\uffff`));
+          if (relogin) {
+            const epochReq = store.get('meta:recording_claim_epoch');
+            epochReq.onsuccess = () => {
+              const next = Number((epochReq.result as { payload?: number } | undefined)?.payload ?? 0) + 1;
+              nextRevision = next;
+              const now = Date.now();
+              store.put({
+                key: 'meta:recording_claim_epoch',
+                accountId: null,
+                schemaVersion: 1,
+                savedAt: now,
+                claimRevision: next,
+                payload: next,
+              });
+              store.put({
+                key: 'meta:recording_active_account',
+                accountId: aId,
+                schemaVersion: 1,
+                savedAt: now,
+                claimRevision: next,
+                payload: aId,
+              });
+              if (seedQueueKey) {
+                store.put({
+                  key: `user:${aId}:upload:${seedQueueKey}`,
+                  accountId: aId,
+                  schemaVersion: 1,
+                  savedAt: now,
+                  claimRevision: next,
+                  payload: {
+                    idempotencyKey: seedQueueKey,
+                    accountId: aId,
+                    sessionId: 'new-gen-sess',
+                    title: '新登录世代记录',
+                    timezone: 'Asia/Shanghai',
+                    startedAtMs: now - 60_000,
+                    endedAtMs: now - 10_000,
+                    pointCount: 2,
+                    segmentCount: 1,
+                    previewDistanceM: 400,
+                    activeDurationMs: 50_000,
+                    gpxXml: '<gpx version="1.1"></gpx>',
+                    status: 'uploaded',
+                    attemptCount: 1,
+                    nextRetryAt: null,
+                    lastError: null,
+                    permanentError: false,
+                    uploadedActivityId: '44444444-4444-4444-8444-444444444444',
+                    serverDistanceM: 400,
+                    serverDurationS: 50,
+                    serverPaceSPerKm: 125,
+                    createdAtMs: now,
+                    updatedAtMs: now,
+                  },
+                });
+              }
+            };
+          }
+          tx.oncomplete = () => {
+            db.close();
+            resolve({ nextRevision });
+          };
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error ?? new Error('cleanup tx aborted'));
+        };
+      });
+    },
+    { aId: accountId, relogin: options?.relogin === true, seedQueueKey: options?.seedQueueKey ?? null },
+  );
+}
+
+/**
+ * Intercepts a real IndexedDB transaction's `complete` event so that AFTER the target transaction
+ * commits in IndexedDB, a real cleanup transaction commits before the target transaction's
+ * continuation resumes.
+ *
+ * Modes (armed via `window.sessionStorage.setItem('__r12_post_commit_cleanup', mode)`):
+ * - `'draft-put'`: fires after a `put` of `user:<A>:draft:active` commits.
+ * - `'upload-put'`: fires after a `put` of `user:<A>:upload:*` commits (write -> read-back window).
+ * - `'upload-readback'`: fires after a `readonly` tx reading `user:<A>:upload:*` commits (read-back -> ack window).
+ */
+async function installPostCommitCleanupInterleave(page: Page) {
+  await page.addInitScript((aId) => {
+    const win = window as unknown as Record<string, unknown>;
+    const origTransaction = IDBDatabase.prototype.transaction;
+    const origPut = IDBObjectStore.prototype.put;
+    const origGet = IDBObjectStore.prototype.get;
+    const origAddEventListener = IDBTransaction.prototype.addEventListener;
+    const taggedTxs = new WeakSet<IDBTransaction>();
+    win.__r12CleanupRuns = 0;
+
+    IDBObjectStore.prototype.put = function (value: { key?: string }, key?: IDBValidKey) {
+      const mode = window.sessionStorage.getItem('__r12_post_commit_cleanup');
+      if (mode === 'draft-put' && value?.key === `user:${aId}:draft:active`) {
+        window.sessionStorage.removeItem('__r12_post_commit_cleanup');
+        taggedTxs.add(this.transaction);
+      } else if (
+        mode === 'upload-put' &&
+        typeof value?.key === 'string' &&
+        value.key.startsWith(`user:${aId}:upload:`)
+      ) {
+        window.sessionStorage.removeItem('__r12_post_commit_cleanup');
+        taggedTxs.add(this.transaction);
+      }
+      return key !== undefined ? origPut.call(this, value, key) : origPut.call(this, value);
+    };
+
+    IDBObjectStore.prototype.get = function (query: IDBValidKey | IDBKeyRange) {
+      const mode = window.sessionStorage.getItem('__r12_post_commit_cleanup');
+      if (
+        mode === 'upload-readback' &&
+        this.transaction.mode === 'readonly' &&
+        typeof query === 'string' &&
+        query.startsWith(`user:${aId}:upload:`)
+      ) {
+        window.sessionStorage.removeItem('__r12_post_commit_cleanup');
+        taggedTxs.add(this.transaction);
+      }
+      return origGet.call(this, query);
+    };
+
+    IDBTransaction.prototype.addEventListener = function (
+      this: IDBTransaction,
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | AddEventListenerOptions,
+    ) {
+      if (type === 'complete' && listener) {
+        const tx = this;
+        const wrapped: EventListener = function (this: IDBTransaction, ev: Event) {
+          if (!taggedTxs.has(tx)) {
+            if (typeof listener === 'function') listener.call(this, ev);
+            else listener.handleEvent(ev);
+            return;
+          }
+          taggedTxs.delete(tx);
+          const cleanupTx = origTransaction.call(tx.db, 'records', 'readwrite');
+          const store = cleanupTx.objectStore('records');
+          store.delete('meta:recording_active_account');
+          store.delete(IDBKeyRange.bound(`user:${aId}:`, `user:${aId}:\uffff`));
+          cleanupTx.oncomplete = () => {
+            win.__r12CleanupRuns = Number(win.__r12CleanupRuns) + 1;
+            if (typeof listener === 'function') listener.call(tx, ev);
+            else listener.handleEvent(ev);
+          };
+        };
+        return origAddEventListener.call(this, type, wrapped, options);
+      }
+      return origAddEventListener.call(this, type, listener, options);
+    };
+  }, WEB_DRAFT_ACCOUNT_ID);
+}
+
+test('P1 Round 12: cleanup before native pin never recreates a claim, writes a queue row, or acks (auto recovery)', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await installMockLocationRecorder(page, {
+    locationPermission: 'granted',
+    initialStopped: true,
+    stoppedSessionId: 'r12-prepin-auto',
+    stoppedIdempotencyKey: 'c1111111-1111-4111-8111-111111111111',
+    getSessionStateDelayMs: 600,
+  });
+  await page.goto('/activities/record');
+  // Wait for the layout to mount and bind the initial claim while getSessionState is still pending.
+  await expect(page.locator('header')).toHaveAttribute('data-auth-ready', 'true');
+  await expect
+    .poll(async () => (await readRecordingStoreSummary(page)).activeMarker?.payload ?? null)
+    .toBe(WEB_DRAFT_ACCOUNT_ID);
+
+  // Commit account A cleanup (data + active marker deleted) BEFORE auto-recovery pins the claim.
+  await commitAccountCleanupInIdb(page, WEB_DRAFT_ACCOUNT_ID);
+  expect((await readRecordingStoreSummary(page)).activeMarker).toBeNull();
+
+  // Delayed getSessionState now resolves and triggers auto-recovery on the old page.
+  await expect(page.getByTestId('recording-pending-handoff-panel')).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByTestId('recording-error')).toContainText('未写入上传队列');
+
+  const store = await readRecordingStoreSummary(page);
+  expect(store.activeMarker).toBeNull();
+  expect(store.uploadKeys).toEqual([]);
+  const native = await readNativeMock(page);
+  expect(native.acks).toEqual([]);
+  expect(native.session?.status).toBe('stopped');
+  expect(native.pointCount).toBe(3);
+
+  // Even clicking manual retry while the active marker is still empty must NOT recreate a claim or ack.
+  await page.getByTestId('handoff-retry-btn').click();
+  await expect(page.getByTestId('recording-pending-handoff-panel')).toBeVisible();
+  const afterRetryStore = await readRecordingStoreSummary(page);
+  expect(afterRetryStore.activeMarker).toBeNull();
+  expect(afterRetryStore.uploadKeys).toEqual([]);
+  expect((await readNativeMock(page)).acks).toEqual([]);
+});
+
+test('P1 Round 12: cleanup before native pin never recreates a claim, writes a queue row, or acks (manual stop)', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await installMockLocationRecorder(page, { locationPermission: 'granted', initialRecording: true });
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await expect
+    .poll(async () => (await readRecordingStoreSummary(page)).activeMarker?.payload ?? null)
+    .toBe(WEB_DRAFT_ACCOUNT_ID);
+
+  // Account A data + active marker deleted and committed BEFORE user clicks Stop on the old page.
+  await commitAccountCleanupInIdb(page, WEB_DRAFT_ACCOUNT_ID);
+  expect((await readRecordingStoreSummary(page)).activeMarker).toBeNull();
+
+  await page.getByTestId('recording-stop-btn').click();
+  await expect(page.getByTestId('recording-pending-handoff-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-error')).toContainText('未写入上传队列');
+
+  const store = await readRecordingStoreSummary(page);
+  expect(store.activeMarker).toBeNull();
+  expect(store.uploadKeys).toEqual([]);
+  const native = await readNativeMock(page);
+  expect(native.acks).toEqual([]);
+  expect(native.session?.status).toBe('stopped');
+  expect(native.pointCount).toBe(3);
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(0);
+});
+
+test('P1 Round 12: cleanup before pin with same-account new generation blocks old page auto-recovery and manual stop', async ({
+  page,
+}) => {
+  const newGenKey = 'c2222222-2222-4222-8222-222222222222';
+
+  // Subcase A: old page auto-recovery after cleanup + same-account new generation established.
+  await loginRunner(page);
+  await installMockLocationRecorder(page, {
+    locationPermission: 'granted',
+    initialStopped: true,
+    stoppedSessionId: 'r12-newgen-auto',
+    stoppedIdempotencyKey: 'c3333333-3333-4333-8333-333333333333',
+    getSessionStateDelayMs: 600,
+  });
+  await page.goto('/activities/record');
+  await expect(page.locator('header')).toHaveAttribute('data-auth-ready', 'true');
+  const initialRev = (await readRecordingStoreSummary(page)).activeMarker?.claimRevision ?? 0;
+  expect(initialRev).toBeGreaterThan(0);
+
+  const { nextRevision: autoNewGenRev } = await commitAccountCleanupInIdb(page, WEB_DRAFT_ACCOUNT_ID, {
+    relogin: true,
+    seedQueueKey: newGenKey,
+  });
+  expect(autoNewGenRev).toBeGreaterThan(initialRev);
+
+  await expect(page.getByTestId('recording-pending-handoff-panel')).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByTestId('recording-error')).toContainText('未写入上传队列');
+  const autoStore = await readRecordingStoreSummary(page);
+  expect(autoStore.activeMarker?.claimRevision).toBe(autoNewGenRev);
+  expect(autoStore.uploadKeys).toEqual([`user:${WEB_DRAFT_ACCOUNT_ID}:upload:${newGenKey}`]);
+  const autoNative = await readNativeMock(page);
+  expect(autoNative.acks).toEqual([]);
+  expect(autoNative.session?.status).toBe('stopped');
+
+  // Subcase B: old page manual stop after cleanup + same-account new generation established.
+  await installMockLocationRecorder(page, { locationPermission: 'granted', initialRecording: true });
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+  const stopInitialRev = (await readRecordingStoreSummary(page)).activeMarker?.claimRevision ?? 0;
+  expect(stopInitialRev).toBeGreaterThan(0);
+
+  const { nextRevision: stopNewGenRev } = await commitAccountCleanupInIdb(page, WEB_DRAFT_ACCOUNT_ID, {
+    relogin: true,
+    seedQueueKey: newGenKey,
+  });
+  expect(stopNewGenRev).toBeGreaterThan(stopInitialRev);
+
+  await page.getByTestId('recording-stop-btn').click();
+  await expect(page.getByTestId('recording-pending-handoff-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-error')).toContainText('未写入上传队列');
+  const stopStore = await readRecordingStoreSummary(page);
+  expect(stopStore.activeMarker?.claimRevision).toBe(stopNewGenRev);
+  expect(stopStore.uploadKeys).toEqual([`user:${WEB_DRAFT_ACCOUNT_ID}:upload:${newGenKey}`]);
+  const stopNative = await readNativeMock(page);
+  expect(stopNative.acks).toEqual([]);
+  expect(stopNative.session?.status).toBe('stopped');
+});
+
+test('P1 Round 12: cleanup interleaved in the queue write/read-back/ack window never resurrects or acks', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await installPostCommitCleanupInterleave(page);
+
+  // Subcase A: cleanup commits right after the queue write tx commits, before read-back verification.
+  await installMockLocationRecorder(page, {
+    locationPermission: 'granted',
+    initialStopped: true,
+    stoppedSessionId: 'r12-window-write-readback',
+    stoppedIdempotencyKey: 'c4444444-4444-4444-8444-444444444444',
+  });
+  await page.evaluate(() => window.sessionStorage.setItem('__r12_post_commit_cleanup', 'upload-put'));
+  await page.goto('/activities/record');
+  await expect.poll(() => page.evaluate(() => (window as unknown as Record<string, number>).__r12CleanupRuns)).toBe(1);
+  await expect(page.getByTestId('recording-pending-handoff-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-error')).toContainText('未写入上传队列');
+  const storeAfterWriteWindow = await readRecordingStoreSummary(page);
+  expect(storeAfterWriteWindow.activeMarker).toBeNull();
+  expect(storeAfterWriteWindow.uploadKeys).toEqual([]);
+  const nativeAfterWriteWindow = await readNativeMock(page);
+  expect(nativeAfterWriteWindow.acks).toEqual([]);
+  expect(nativeAfterWriteWindow.session?.status).toBe('stopped');
+
+  // Subcase B: cleanup commits right after read-back verification commits, before acknowledgeHandoff.
+  await installMockLocationRecorder(page, {
+    locationPermission: 'granted',
+    initialStopped: true,
+    stoppedSessionId: 'r12-window-readback-ack',
+    stoppedIdempotencyKey: 'c5555555-5555-4555-8555-555555555555',
+  });
+  await page.evaluate(() => window.sessionStorage.setItem('__r12_post_commit_cleanup', 'upload-readback'));
+  await page.goto('/activities/record');
+  await expect.poll(() => page.evaluate(() => (window as unknown as Record<string, number>).__r12CleanupRuns)).toBe(1);
+  await expect(page.getByTestId('recording-pending-handoff-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-error')).toContainText('未写入上传队列');
+  const storeAfterAckWindow = await readRecordingStoreSummary(page);
+  expect(storeAfterAckWindow.activeMarker).toBeNull();
+  expect(storeAfterAckWindow.uploadKeys).toEqual([]);
+  const nativeAfterAckWindow = await readNativeMock(page);
+  expect(nativeAfterAckWindow.acks).toEqual([]);
+  expect(nativeAfterAckWindow.session?.status).toBe('stopped');
+});
+
+test('P2 Round 12: cleanup completing after Web Start draft commit and before continuation never starts GPS', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await installMockWebGeolocation(page);
+  await installPostCommitCleanupInterleave(page);
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-start-btn')).toBeEnabled();
+
+  await page.getByLabel('跑步标题（可选）').fill('开始后清理草稿');
+  await page.evaluate(() => window.sessionStorage.setItem('__r12_post_commit_cleanup', 'draft-put'));
+  await page.getByTestId('recording-start-btn').click();
+
+  await expect.poll(() => page.evaluate(() => (window as unknown as Record<string, number>).__r12CleanupRuns)).toBe(1);
+  await expect(page.getByTestId('recording-status-badge')).not.toHaveText('记录中');
+  expect(await isWebWatching(page)).toBe(false);
+  expect(await heldRecordingLocks(page)).toEqual([]);
+  const store = await readRecordingStoreSummary(page);
+  expect(store.activeMarker).toBeNull();
+  expect(store.draft).toBeNull();
+  expect(store.uploadKeys).toEqual([]);
+});
+
+test('P2 Round 12: cleanup completing after Web Resume draft commit and before continuation never starts GPS', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await installMockWebGeolocation(page);
+  await installPostCommitCleanupInterleave(page);
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-start-btn')).toBeEnabled();
+
+  await page.getByLabel('跑步标题（可选）').fill('继续后清理草稿');
+  await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await waitForWebWatch(page);
+  await emitWebFix(page, 31.23, 121.47);
+  await expect.poll(async () => (await readWebDraftRow(page)).pointCount).toBe(1);
+  await page.getByTestId('recording-pause-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('已暂停');
+  expect(await isWebWatching(page)).toBe(false);
+
+  await page.evaluate(() => window.sessionStorage.setItem('__r12_post_commit_cleanup', 'draft-put'));
+  await page.getByTestId('recording-resume-btn').click();
+
+  await expect.poll(() => page.evaluate(() => (window as unknown as Record<string, number>).__r12CleanupRuns)).toBe(1);
+  await expect(page.getByTestId('recording-status-badge')).not.toHaveText('记录中');
+  expect(await isWebWatching(page)).toBe(false);
+  expect(await heldRecordingLocks(page)).toEqual([]);
+  const store = await readRecordingStoreSummary(page);
+  expect(store.activeMarker).toBeNull();
+  expect(store.draft).toBeNull();
+  expect(store.uploadKeys).toEqual([]);
+});

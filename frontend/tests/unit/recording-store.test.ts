@@ -24,6 +24,9 @@ import {
   renewActiveRecordingDraftLease,
   saveActiveRecordingDraft,
   takeOverActiveRecordingDraft,
+  verifyRecordingClaimCurrent,
+  verifyUploadQueueItemUnderClaim,
+  verifyWebDraftOwnershipUnderClaim,
   acquireRecordingSessionLock,
   recordingSessionLockName,
   RECORDING_DRAFT_LEASE_MS,
@@ -1856,5 +1859,107 @@ describe('recording-store Round 10 atomic stopped-draft finalize', () => {
       code: 'STORAGE_CLAIM_STALE',
     });
     expect(await listUploadQueueItems('user-a', fresh)).toHaveLength(0);
+  });
+});
+
+describe('Round 12 atomic readonly claim and draft ownership verification', () => {
+  it('verifyRecordingClaimCurrent rejects missing marker, wrong account, and newer same-account generation', async () => {
+    const backend = createIndexedDbRecordingBackend('round12-claim-verify', createSerializedFakeIdbFactory().factory);
+    const rev1 = (await claimRecordingAccountAtomic('user-a', backend, 1_000)).claimRevision!;
+    expect(await verifyRecordingClaimCurrent('user-a', rev1, backend)).toBe(true);
+    expect(await verifyRecordingClaimCurrent('user-b', rev1, backend)).toBe(false);
+
+    await clearAccountRecordingData('user-a', backend);
+    expect(await verifyRecordingClaimCurrent('user-a', rev1, backend)).toBe(false);
+
+    const rev2 = (await claimRecordingAccountAtomic('user-a', backend, 2_000)).claimRevision!;
+    expect(rev2).toBeGreaterThan(rev1);
+    expect(await verifyRecordingClaimCurrent('user-a', rev1, backend)).toBe(false);
+    expect(await verifyRecordingClaimCurrent('user-a', rev2, backend)).toBe(true);
+  });
+
+  it('verifyUploadQueueItemUnderClaim detects cleanup and generation changes in one readonly transaction', async () => {
+    const fake = createSerializedFakeIdbFactory();
+    const backend = createIndexedDbRecordingBackend('round12-queue-verify', fake.factory);
+    const rev1 = (await claimRecordingAccountAtomic('user-a', backend, 1_000)).claimRevision!;
+    const item = sampleUpload('user-a', 'aaaaaaaa-1212-4121-8121-121212121212');
+    await putUploadQueueItem(item, backend);
+
+    const txBefore = fake.txLogs.length;
+    const valid = await verifyUploadQueueItemUnderClaim(
+      'user-a',
+      item.idempotencyKey,
+      { expectedClaimRevision: rev1 },
+      backend,
+    );
+    expect(valid.status).toBe('valid');
+    expect(fake.txLogs.slice(txBefore).filter((log) => log.mode === 'readonly')).toHaveLength(1);
+
+    await clearAccountRecordingData('user-a', backend);
+    expect(
+      await verifyUploadQueueItemUnderClaim('user-a', item.idempotencyKey, { expectedClaimRevision: rev1 }, backend),
+    ).toEqual({ status: 'stale' });
+
+    const rev2 = (await claimRecordingAccountAtomic('user-a', backend, 2_000)).claimRevision!;
+    await putUploadQueueItem(item, backend);
+    expect(
+      await verifyUploadQueueItemUnderClaim('user-a', item.idempotencyKey, { expectedClaimRevision: rev1 }, backend),
+    ).toEqual({ status: 'stale' });
+    expect(
+      (await verifyUploadQueueItemUnderClaim('user-a', item.idempotencyKey, { expectedClaimRevision: rev2 }, backend))
+        .status,
+    ).toBe('valid');
+  });
+
+  it('verifyWebDraftOwnershipUnderClaim distinguishes valid, claim_stale, missing, and owner_stale', async () => {
+    const backend = createIndexedDbRecordingBackend('round12-draft-verify', createSerializedFakeIdbFactory().factory);
+    const t0 = 1_800_000_000_000;
+    const rev1 = (await claimRecordingAccountAtomic('user-a', backend, t0)).claimRevision!;
+    const owner = { ownerId: 'tab-a', expectedOwnerGeneration: 1 };
+    const draft = { ...sampleDraft('user-a'), sessionId: 'sess-web-verify' };
+    await saveActiveRecordingDraft(draft, backend, {
+      expectedClaimRevision: rev1,
+      rejectIfExistingDraft: true,
+      owner: { ownerId: 'tab-a' },
+      nowMs: t0,
+    });
+
+    expect(
+      await verifyWebDraftOwnershipUnderClaim(
+        'user-a',
+        { expectedClaimRevision: rev1, expectedSessionId: 'sess-web-verify', owner },
+        backend,
+      ),
+    ).toBe('valid');
+
+    expect(
+      await verifyWebDraftOwnershipUnderClaim(
+        'user-a',
+        {
+          expectedClaimRevision: rev1,
+          expectedSessionId: 'sess-web-verify',
+          owner: { ownerId: 'tab-b', expectedOwnerGeneration: 1 },
+        },
+        backend,
+      ),
+    ).toBe('owner_stale');
+
+    await backend.delete('user:user-a:draft:active');
+    expect(
+      await verifyWebDraftOwnershipUnderClaim(
+        'user-a',
+        { expectedClaimRevision: rev1, expectedSessionId: 'sess-web-verify', owner },
+        backend,
+      ),
+    ).toBe('missing');
+
+    await clearAccountRecordingData('user-a', backend);
+    expect(
+      await verifyWebDraftOwnershipUnderClaim(
+        'user-a',
+        { expectedClaimRevision: rev1, expectedSessionId: 'sess-web-verify', owner },
+        backend,
+      ),
+    ).toBe('claim_stale');
   });
 });

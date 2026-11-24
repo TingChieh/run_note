@@ -26,6 +26,7 @@
   import { clearHealthGrantHistory } from '#lib/capacitor-health.ts';
   import { clearNativeAccountSessions } from '#lib/capacitor-recorder.ts';
   import {
+    RECORDING_CLAIM_CONTEXT,
     RecordingPersistenceError,
     claimRecordingAccountAtomic,
     clearAccountRecordingData,
@@ -34,6 +35,7 @@
     getActiveRecordingAccountSnapshot,
     reconcileVerifiedRecordingAccount,
     type ClaimAccountResult,
+    type RecordingClaimContext,
     type StaleGenerationGuard,
   } from '#lib/recording-store.ts';
   import {
@@ -90,6 +92,56 @@
   let lastIsolatedRecordingUserId: string | null = null;
   let lastIsolatedRecordingClaim: ClaimAccountResult | null = null;
   let requestIdentityVerification: (() => void) | null = null;
+  let recordingClaimRevoked = false;
+  let initialClaimAccountId: string | null = null;
+  let initialClaimSettled = false;
+  let initialClaimRevision: number | null = null;
+  let pendingInitialClaimResolvers: Array<(rev: number | null) => void> = [];
+  const recordingClaimRevokedListeners = new Set<() => void>();
+
+  function settleInitialRecordingClaim(accountId: string | null, revision: number | null) {
+    initialClaimAccountId = accountId;
+    initialClaimSettled = true;
+    initialClaimRevision = revision;
+    const resolvers = pendingInitialClaimResolvers;
+    pendingInitialClaimResolvers = [];
+    for (const resolve of resolvers) resolve(revision);
+  }
+
+  function revokePageRecordingClaim() {
+    recordingClaimRevoked = true;
+    lastIsolatedRecordingClaim = null;
+    settleInitialRecordingClaim(initialClaimAccountId, null);
+    for (const listener of recordingClaimRevokedListeners) listener();
+  }
+
+  setContext<RecordingClaimContext>(RECORDING_CLAIM_CONTEXT, {
+    waitForInitialClaim(accountId: string) {
+      if (!accountId || recordingClaimRevoked) return Promise.resolve(null);
+      if (initialClaimSettled) {
+        return Promise.resolve(initialClaimAccountId === accountId ? initialClaimRevision : null);
+      }
+      return new Promise<number | null>((resolve) => {
+        pendingInitialClaimResolvers.push((rev) => {
+          resolve(recordingClaimRevoked || initialClaimAccountId !== accountId ? null : rev);
+        });
+      });
+    },
+    getConfirmedClaimRevision(accountId: string) {
+      if (!accountId || recordingClaimRevoked || (page.data.user?.id ?? null) !== accountId) return null;
+      return initialClaimAccountId === accountId ? initialClaimRevision : null;
+    },
+    isRevoked(accountId: string) {
+      return recordingClaimRevoked || !accountId || (page.data.user?.id ?? null) !== accountId;
+    },
+    onRevoked(listener: () => void) {
+      recordingClaimRevokedListeners.add(listener);
+      return () => {
+        recordingClaimRevokedListeners.delete(listener);
+      };
+    },
+  });
+
   $effect(() => {
     const currentUserId = page.data.user?.id ?? null;
     if (currentUserId !== lastBadgeUserId) {
@@ -101,21 +153,37 @@
       if (currentUserId) {
         if (lastIsolatedRecordingUserId && lastIsolatedRecordingUserId !== currentUserId) {
           abortAllRecordingUploads(lastIsolatedRecordingUserId);
+          revokePageRecordingClaim();
+        }
+        if (recordingClaimRevoked) {
+          settleInitialRecordingClaim(currentUserId, null);
+          return;
         }
         lastIsolatedRecordingUserId = currentUserId;
         void claimRecordingAccountAtomic(currentUserId, undefined, undefined, { reuseExistingClaim: true })
           .then((claim) => {
+            if (recordingClaimRevoked || (page.data.user?.id ?? null) !== currentUserId) {
+              settleInitialRecordingClaim(currentUserId, null);
+              return;
+            }
             if (claim.status === 'claimed') {
               lastIsolatedRecordingClaim = claim;
+              settleInitialRecordingClaim(
+                currentUserId,
+                typeof claim.claimRevision === 'number' ? claim.claimRevision : null,
+              );
               void clearNativeAccountSessions(currentUserId);
             } else {
               lastIsolatedRecordingClaim = null;
+              settleInitialRecordingClaim(currentUserId, null);
               // Another account currently holds ACTIVE_ACCOUNT_KEY: ask the server who owns
               // the live session instead of deleting another account from a potentially stale tab.
               requestIdentityVerification?.();
             }
           })
-          .catch(() => {});
+          .catch(() => {
+            settleInitialRecordingClaim(currentUserId, null);
+          });
       } else if (lastIsolatedRecordingUserId !== null) {
         // Only clear on an explicit signed-in -> signed-out transition; an anonymous cold start
         // must never silently wipe an interrupted session belonging to a signed-in runner.
@@ -123,6 +191,7 @@
         const departingClaim = lastIsolatedRecordingClaim;
         lastIsolatedRecordingUserId = null;
         lastIsolatedRecordingClaim = null;
+        revokePageRecordingClaim();
         abortAllRecordingUploads(departingUserId);
         if (departingClaim) {
           void clearStaleAccountGenerationAtomic(departingUserId, {
@@ -135,6 +204,8 @@
           void clearAccountRecordingData(departingUserId).catch(() => {});
         }
         void clearNativeAccountSessions(null);
+      } else {
+        settleInitialRecordingClaim(null, null);
       }
     }
   });
@@ -287,6 +358,7 @@
     abortAllRecordingUploads(departingUserId ?? undefined);
     try {
       await authWrite('logout', {});
+      revokePageRecordingClaim();
       await clearPrivateOfflineCache();
       await clearDepartingAccount();
       await clearNativeAccountSessions(null);
@@ -300,6 +372,7 @@
       window.location.assign(viewContext(page.url.pathname).kind === 'workspace' ? '/' : page.url.pathname);
     } catch (cause) {
       if (cause instanceof AuthError && cause.status === 401) {
+        revokePageRecordingClaim();
         abortAllRecordingUploads(departingUserId ?? undefined);
         await clearPrivateOfflineCache();
         await clearDepartingAccount();
@@ -340,6 +413,7 @@
         const current = await readSession();
         if (disposed || busy || pending) return;
         if ((current?.id ?? null) !== (page.data.user?.id ?? null)) {
+          revokePageRecordingClaim();
           const staleUserId = page.data.user?.id ?? null;
           if (staleUserId) {
             abortAllRecordingUploads(staleUserId);
@@ -392,6 +466,7 @@
           }
           if (disposed || busy) return;
           if (reconciled?.status === 'stale') {
+            revokePageRecordingClaim();
             preemptRetries = 0;
             abortAllRecordingUploads(current.id);
             await clearPrivateOfflineCache();
@@ -419,6 +494,20 @@
           }
           preemptRetries = 0;
           if (reconciled?.status === 'active') {
+            if (!recordingClaimRevoked && initialClaimRevision === null) {
+              const snap = await getActiveRecordingAccountSnapshot().catch(() => null);
+              if (
+                !disposed &&
+                !busy &&
+                !recordingClaimRevoked &&
+                (page.data.user?.id ?? null) === current.id &&
+                snap?.activeAccountId === current.id &&
+                typeof snap.claimRevision === 'number' &&
+                snap.claimEpoch <= snap.claimRevision
+              ) {
+                settleInitialRecordingClaim(current.id, snap.claimRevision);
+              }
+            }
             void clearNativeAccountSessions(current.id);
           }
         }
@@ -454,6 +543,7 @@
     if (channel) {
       channel.onmessage = (event) => {
         if (isAccountChangeAuthBroadcast(event.data)) {
+          revokePageRecordingClaim();
           abortAllRecordingUploads(page.data.user?.id ?? undefined);
           checking = true;
         }

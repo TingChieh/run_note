@@ -20,6 +20,25 @@ const STORE_NAME = 'records';
 const ACTIVE_ACCOUNT_KEY = 'meta:recording_active_account';
 const CLAIM_EPOCH_KEY = 'meta:recording_claim_epoch';
 
+export const RECORDING_CLAIM_CONTEXT = Symbol('recording-claim');
+
+export interface RecordingClaimContext {
+  /**
+   * Resolves to the active claim revision bound when the layout mounted for `accountId`,
+   * or `null` if claiming failed, conflicted, or was revoked. Never creates a claim after revocation.
+   */
+  waitForInitialClaim(accountId: string): Promise<number | null>;
+  /**
+   * Returns the confirmed claim revision established for `accountId` by layout mount or initial
+   * server-verified account reconciliation, or `null` if unbound or revoked.
+   */
+  getConfirmedClaimRevision(accountId: string): number | null;
+  /** True once logout, account change, or stale-identity detection invalidated this page's claim. */
+  isRevoked(accountId: string): boolean;
+  /** Subscribe to immediate revocation notifications (returns unsubscribe). */
+  onRevoked(listener: () => void): () => void;
+}
+
 export type RecordingLifecycleStatus = 'idle' | 'recording' | 'paused' | 'interrupted' | 'stopped';
 
 export type RecordingPersistenceErrorCode =
@@ -643,6 +662,16 @@ export interface RecordingStorageBackend {
     plan: (ctx: DraftMutationContext) => DraftMutationPlan<R>,
     extraKeys?: string[],
   ): Promise<R>;
+  /**
+   * Reads the active marker, claim epoch and target row in ONE readonly transaction so callers can
+   * re-confirm claim ownership and row state without a readwrite lock or a TOCTOU gap.
+   */
+  readUnderClaimAtomic<R>(
+    key: string,
+    activeKey: string,
+    epochKey: string,
+    inspect: (ctx: DraftMutationContext) => R,
+  ): Promise<R>;
   delete(key: string): Promise<void>;
   listByPrefix(prefix: string): Promise<StoredRecord[]>;
   deleteByPrefix(prefix: string): Promise<number>;
@@ -726,6 +755,15 @@ export function createMemoryRecordingBackend(options?: { durableForTests?: boole
         map.delete(key);
       }
       return outcome.result;
+    },
+    async readUnderClaimAtomic(key, activeKey, epochKey, inspect) {
+      const ctx: DraftMutationContext = {
+        activeEntry: structuredClone(map.get(activeKey)),
+        epochEntry: structuredClone(map.get(epochKey)),
+        existing: structuredClone(map.get(key)),
+        extras: {},
+      };
+      return inspect(ctx);
     },
     async delete(key) {
       map.delete(key);
@@ -979,6 +1017,9 @@ function createUnavailableRecordingBackend(): RecordingStorageBackend {
       throw unavailable();
     },
     async mutateDraftAtomic() {
+      throw unavailable();
+    },
+    async readUnderClaimAtomic() {
       throw unavailable();
     },
     async delete() {
@@ -1274,6 +1315,16 @@ export function createIndexedDbRecordingBackend(
           await reqPromise(store.delete(key));
         }
         return outcome.result;
+      });
+    },
+    async readUnderClaimAtomic(key, activeKey, epochKey, inspect) {
+      return runTx('readonly', async (store) => {
+        const [activeEntry, epochEntry, existing] = (await Promise.all([
+          reqPromise(store.get(activeKey)),
+          reqPromise(store.get(epochKey)),
+          reqPromise(store.get(key)),
+        ])) as Array<StoredRecord | undefined>;
+        return inspect({ activeEntry, epochEntry, existing, extras: {} });
       });
     },
     async delete(key) {
@@ -2046,6 +2097,79 @@ export async function enqueueUploadItemUnderClaim(
     );
   }
   return result;
+}
+
+export type UploadQueueClaimVerification =
+  { status: 'valid'; item: UploadQueueItem } | { status: 'stale' } | { status: 'missing' };
+
+/**
+ * Verifies in ONE readonly transaction that `expectedClaimRevision` is still active for
+ * `accountId` (with no newer epoch) AND that the queue row exists and belongs to that boundary.
+ */
+export async function verifyUploadQueueItemUnderClaim(
+  accountId: string,
+  idempotencyKey: string,
+  guard: { expectedClaimRevision: number },
+  backend: RecordingStorageBackend = getDefaultRecordingBackend(),
+): Promise<UploadQueueClaimVerification> {
+  return backend.readUnderClaimAtomic(
+    uploadKey(accountId, idempotencyKey),
+    ACTIVE_ACCOUNT_KEY,
+    CLAIM_EPOCH_KEY,
+    (ctx) => {
+      if (!isClaimCurrentForDraft(accountId, ctx, guard.expectedClaimRevision)) {
+        return { status: 'stale' };
+      }
+      if (!isReusableQueueRow(ctx.existing, accountId, idempotencyKey)) {
+        return { status: 'missing' };
+      }
+      return { status: 'valid', item: ctx.existing!.payload as UploadQueueItem };
+    },
+  );
+}
+
+/**
+ * Verifies in ONE readonly transaction that `accountId` still holds `expectedClaimRevision`
+ * as the active recording claim with no newer claim epoch.
+ */
+export async function verifyRecordingClaimCurrent(
+  accountId: string,
+  expectedClaimRevision: number,
+  backend: RecordingStorageBackend = getDefaultRecordingBackend(),
+): Promise<boolean> {
+  return backend.readUnderClaimAtomic(ACTIVE_ACCOUNT_KEY, ACTIVE_ACCOUNT_KEY, CLAIM_EPOCH_KEY, (ctx) =>
+    isClaimCurrentForDraft(accountId, { ...ctx, existing: undefined }, expectedClaimRevision),
+  );
+}
+
+export type WebDraftOwnershipVerification = 'valid' | 'claim_stale' | 'owner_stale' | 'missing';
+
+/**
+ * Verifies in ONE readonly transaction that `accountId`'s claim is still at
+ * `expectedClaimRevision` AND that the persisted active draft still belongs to
+ * `expectedSessionId` and `owner`. Used immediately before registering Web GPS watchPosition.
+ */
+export async function verifyWebDraftOwnershipUnderClaim(
+  accountId: string,
+  guard: {
+    expectedClaimRevision: number;
+    expectedSessionId: string;
+    owner: DraftOwnerGuard;
+  },
+  backend: RecordingStorageBackend = getDefaultRecordingBackend(),
+): Promise<WebDraftOwnershipVerification> {
+  return backend.readUnderClaimAtomic(activeDraftKey(accountId), ACTIVE_ACCOUNT_KEY, CLAIM_EPOCH_KEY, (ctx) => {
+    if (!isClaimCurrentForDraft(accountId, ctx, guard.expectedClaimRevision)) {
+      return 'claim_stale';
+    }
+    if (!isValidDraftRecord(ctx.existing, accountId)) {
+      return 'missing';
+    }
+    if (draftSessionId(ctx.existing) !== guard.expectedSessionId || !matchesDraftOwner(ctx.existing, guard.owner)) {
+      return 'owner_stale';
+    }
+    return 'valid';
+  });
 }
 
 let tabOwnerId: string | null = null;

@@ -951,4 +951,28 @@ describe('native handoff enqueue under a pinned account claim', () => {
     ).rejects.toBeInstanceOf(RecordingPersistenceError);
     expect(await listUploadQueueItems(USER_A, backend)).toEqual([]);
   });
+
+  it('rejects with STORAGE_CLAIM_STALE when cleanup runs between queue write and read-back verification', async () => {
+    const base = createMemoryRecordingBackend({ durableForTests: true });
+    const pinned = await claimRecordingAccountAtomic(USER_A, base, 1_000);
+    const key = 'aaaaaaaa-1212-4121-8121-aaaaaaaaaaaa';
+    let cleanupFired = false;
+    const interleaveBackend: RecordingStorageBackend = {
+      ...base,
+      durable: true,
+      async readUnderClaimAtomic(targetKey, activeKey, epochKey, inspect) {
+        if (!cleanupFired && targetKey.includes(':upload:')) {
+          cleanupFired = true;
+          await base.delete(activeKey);
+          await base.deleteByPrefix(`user:${USER_A}:`);
+        }
+        return base.readUnderClaimAtomic(targetKey, activeKey, epochKey, inspect);
+      },
+    };
+    await expect(
+      enqueueFinalizedRecording(input(key), { expectedClaimRevision: pinned.claimRevision! }, interleaveBackend),
+    ).rejects.toMatchObject({ code: 'STORAGE_CLAIM_STALE' });
+    expect(cleanupFired).toBe(true);
+    expect(await listUploadQueueItems(USER_A, base)).toEqual([]);
+  });
 });

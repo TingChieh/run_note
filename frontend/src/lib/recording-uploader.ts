@@ -13,6 +13,7 @@ import {
   listUploadQueueItems,
   readUploadQueueItem,
   updateExistingUploadQueueItem,
+  verifyUploadQueueItemUnderClaim,
   type RecordingStorageBackend,
   type StoppedDraftFinalizeGuard,
   type UploadQueueItem,
@@ -258,7 +259,14 @@ export async function enqueueFinalizedRecording(
   assertDurableBackend(backend);
   const item = buildUploadQueueItem(input, nowMs);
   const result = await enqueueUploadItemUnderClaim(item, guard, backend);
-  const verified = await readUploadQueueItem(item.accountId, item.idempotencyKey, backend);
+  const verification = await verifyUploadQueueItemUnderClaim(item.accountId, item.idempotencyKey, guard, backend);
+  if (verification.status === 'stale') {
+    throw new RecordingPersistenceError(
+      'STORAGE_CLAIM_STALE',
+      '本地记录数据已被退出登录或账号切换清理，未写入上传队列，原生轨迹数据已保留。',
+    );
+  }
+  const verified = verification.status === 'valid' ? verification.item : null;
   const intact =
     verified !== null &&
     (result === 'enqueued'
