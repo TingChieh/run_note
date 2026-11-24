@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   RecordingPersistenceError,
   claimRecordingAccountAtomic,
@@ -20,7 +20,11 @@ import {
   readActiveRecordingDraftWithMeta,
   readUploadQueueItem,
   reconcileVerifiedRecordingAccount,
+  renewActiveRecordingDraftLease,
   saveActiveRecordingDraft,
+  takeOverActiveRecordingDraft,
+  acquireRecordingSessionLock,
+  RECORDING_DRAFT_LEASE_MS,
   type LocalRecordingDraft,
   type UploadQueueItem,
 } from '../../src/lib/recording-store.ts';
@@ -459,9 +463,13 @@ function createSerializedFakeIdbFactory() {
         return createReq<T>((req) => {
           void txReady.then(async () => {
             if (aborted) return;
-            if (gate && !gatedOnce) {
-              gatedOnce = true;
-              notifyStarted?.();
+            if (gate) {
+              // Hold every request of the gated transaction (not just the first), otherwise its other
+              // parallel requests let the fake auto-commit early, which real IndexedDB never does.
+              if (!gatedOnce) {
+                gatedOnce = true;
+                notifyStarted?.();
+              }
               await gate;
               if (aborted) return;
             }
@@ -1219,5 +1227,459 @@ describe('recording-store Web draft recovery P2 new-draft overwrite guard', () =
     const snap = await readActiveRecordingDraftWithMeta('user-a', backend);
     expect(snap?.draft.sessionId).toBe('sess-win');
     expect(snap?.draft.title).toBe('先到新草稿');
+  });
+});
+
+function draftWithPoints(accountId: string, sessionId: string, count: number): LocalRecordingDraft {
+  const base = sampleDraft(accountId);
+  return {
+    ...base,
+    sessionId,
+    status: 'recording',
+    points: Array.from({ length: count }, (_, i) => ({
+      lat: 31.23 + i * 0.001,
+      lon: 121.47,
+      elevationM: 10,
+      accuracyM: 6,
+      recordedAtMs: 1_700_000_000_000 + i * 1_000,
+      segmentIndex: 0,
+    })),
+  };
+}
+
+async function waitForNewReadwriteTx(fake: ReturnType<typeof createSerializedFakeIdbFactory>, afterId: number) {
+  for (let i = 0; i < 200; i += 1) {
+    if (fake.txLogs.some((log) => log.id > afterId && log.mode === 'readwrite')) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error('expected a queued readwrite transaction');
+}
+
+/** Minimal Web Locks model: exclusive, ifAvailable and steal, as used by the recording workspace. */
+function createFakeLockManager() {
+  const holders = new Map<string, { reject: (err: unknown) => void }>();
+  return {
+    holders,
+    request(
+      name: string,
+      options: { ifAvailable?: boolean; steal?: boolean },
+      callback: (lock: unknown) => Promise<void> | void,
+    ): Promise<unknown> {
+      if (holders.has(name) && options.ifAvailable) {
+        return Promise.resolve(callback(null));
+      }
+      if (holders.has(name) && options.steal) {
+        holders.get(name)!.reject(new DOMException('Lock broken by another request', 'AbortError'));
+        holders.delete(name);
+      }
+      if (holders.has(name)) throw new Error('fake lock manager does not queue waiters');
+      return new Promise((resolve, reject) => {
+        const entry = { reject };
+        holders.set(name, entry);
+        Promise.resolve(callback({ name })).then((value) => {
+          if (holders.get(name) === entry) holders.delete(name);
+          resolve(value);
+        }, reject);
+      });
+    },
+  };
+}
+
+describe('recording-store Round 9 Web draft session ownership', () => {
+  it('P1: a recovery tab cannot take over a live session or replace newer points with its older snapshot', async () => {
+    const fake = createSerializedFakeIdbFactory();
+    const tabA = createIndexedDbRecordingBackend('round9-p1', fake.factory);
+    const tabB = createIndexedDbRecordingBackend('round9-p1', fake.factory);
+    const t0 = 1_800_000_000_000;
+
+    const claim = await claimRecordingAccountAtomic('user-a', tabA, t0);
+    const rev = claim.claimRevision!;
+    // A starts recording (owner generation 1) and persists point 1
+    await saveActiveRecordingDraft(draftWithPoints('user-a', 'sess-live', 1), tabA, {
+      expectedClaimRevision: rev,
+      rejectIfExistingDraft: true,
+      owner: { ownerId: 'tab-a' },
+      nowMs: t0,
+    });
+    const aOwner = { ownerId: 'tab-a', expectedOwnerGeneration: 1 };
+
+    // B opens recovery and observes the 1-point snapshot
+    const seenByB = await readActiveRecordingDraftWithMeta('user-a', tabB);
+    expect(seenByB?.draft.points).toHaveLength(1);
+    expect(seenByB?.ownerId).toBe('tab-a');
+
+    // A records point 2 while B is looking at its stale copy
+    await saveActiveRecordingDraft(draftWithPoints('user-a', 'sess-live', 2), tabA, {
+      expectedClaimRevision: rev,
+      expectedSessionId: 'sess-live',
+      owner: aOwner,
+      nowMs: t0 + 1_000,
+    });
+
+    // B's takeover of the old revision is refused even with a free Web Lock, and nothing is written
+    const txBefore = fake.txLogs.length;
+    const staleTakeover = await takeOverActiveRecordingDraft(
+      'user-a',
+      {
+        expectedClaimRevision: rev,
+        expectedSessionId: 'sess-live',
+        expectedDraftRevision: seenByB!.draftRevision,
+        expectedSavedAt: seenByB!.savedAt,
+        ownerId: 'tab-b',
+        ownerProvenGone: true,
+        nowMs: t0 + 2_000,
+      },
+      tabB,
+    );
+    expect(staleTakeover).toEqual({ status: 'changed' });
+    expect(
+      fake.txLogs
+        .slice(txBefore)
+        .flatMap((log) => log.ops)
+        .some((o) => o.op === 'put' || o.op === 'delete'),
+    ).toBe(false);
+
+    // Re-read: even on the latest revision, B cannot take over while A's lease is live (no lock proof)
+    const latest = await readActiveRecordingDraftWithMeta('user-a', tabB);
+    expect(latest?.draft.points).toHaveLength(2);
+    const liveTakeover = await takeOverActiveRecordingDraft(
+      'user-a',
+      {
+        expectedClaimRevision: rev,
+        expectedSessionId: 'sess-live',
+        expectedDraftRevision: latest!.draftRevision,
+        expectedSavedAt: latest!.savedAt,
+        ownerId: 'tab-b',
+        nowMs: t0 + 3_000,
+      },
+      tabB,
+    );
+    expect(liveTakeover).toEqual({ status: 'live' });
+
+    // A non-owner full-snapshot write (B's 1-point copy) is rejected and cannot truncate the draft
+    await expect(
+      saveActiveRecordingDraft(seenByB!.draft, tabB, {
+        expectedClaimRevision: rev,
+        expectedSessionId: 'sess-live',
+        owner: { ownerId: 'tab-b', expectedOwnerGeneration: 1 },
+      }),
+    ).rejects.toMatchObject({ code: 'STORAGE_CLAIM_STALE' });
+    // ...and so is an owner-less session write against an owned row
+    await expect(
+      saveActiveRecordingDraft(seenByB!.draft, tabB, { expectedClaimRevision: rev, expectedSessionId: 'sess-live' }),
+    ).rejects.toMatchObject({ code: 'STORAGE_CLAIM_STALE' });
+    await expect(saveActiveRecordingDraft(seenByB!.draft, tabB, { expectedClaimRevision: rev })).rejects.toMatchObject({
+      code: 'STORAGE_DRAFT_EXISTS',
+    });
+    expect((await readActiveRecordingDraft('user-a', tabA))?.points).toHaveLength(2);
+
+    // Forced interleaving: A's point-3 write is in flight when B (lock proof) tries the latest revision it read
+    const gate = fake.holdNextReadwrite();
+    const aWrite = saveActiveRecordingDraft(draftWithPoints('user-a', 'sess-live', 3), tabA, {
+      expectedClaimRevision: rev,
+      expectedSessionId: 'sess-live',
+      owner: aOwner,
+      nowMs: t0 + 4_000,
+    });
+    await gate.started;
+    const racingTakeover = takeOverActiveRecordingDraft(
+      'user-a',
+      {
+        expectedClaimRevision: rev,
+        expectedSessionId: 'sess-live',
+        expectedDraftRevision: latest!.draftRevision,
+        expectedSavedAt: latest!.savedAt,
+        ownerId: 'tab-b',
+        ownerProvenGone: true,
+        nowMs: t0 + 4_000,
+      },
+      tabB,
+    );
+    gate.release();
+    await aWrite;
+    expect(await racingTakeover).toEqual({ status: 'changed' });
+    expect((await readActiveRecordingDraft('user-a', tabA))?.points).toHaveLength(3);
+
+    // After A is gone (lease expired, no lock proof needed), B takes over the exact stored snapshot
+    const beforeTakeover = await readActiveRecordingDraftWithMeta('user-a', tabB);
+    const taken = await takeOverActiveRecordingDraft(
+      'user-a',
+      {
+        expectedClaimRevision: rev,
+        expectedSessionId: 'sess-live',
+        expectedDraftRevision: beforeTakeover!.draftRevision,
+        expectedSavedAt: beforeTakeover!.savedAt,
+        ownerId: 'tab-b',
+        nowMs: t0 + 4_000 + RECORDING_DRAFT_LEASE_MS + 1,
+      },
+      tabB,
+    );
+    expect(taken.status).toBe('taken');
+    if (taken.status !== 'taken') throw new Error('unreachable');
+    expect(taken.draft.points).toHaveLength(3);
+    expect(taken.ownerGeneration).toBe(2);
+    const afterTakeover = await readActiveRecordingDraftWithMeta('user-a', tabB);
+    expect(afterTakeover?.ownerId).toBe('tab-b');
+    expect(afterTakeover?.draft.points).toHaveLength(3);
+
+    // A's late writes (old generation) are fenced, including a full snapshot with fewer points
+    await expect(
+      saveActiveRecordingDraft(draftWithPoints('user-a', 'sess-live', 1), tabA, {
+        expectedClaimRevision: rev,
+        expectedSessionId: 'sess-live',
+        owner: aOwner,
+      }),
+    ).rejects.toMatchObject({ code: 'STORAGE_CLAIM_STALE' });
+    await expect(
+      deleteActiveRecordingDraft('user-a', tabA, {
+        expectedClaimRevision: rev,
+        expectedSessionId: 'sess-live',
+        owner: aOwner,
+      }),
+    ).rejects.toMatchObject({ code: 'STORAGE_CLAIM_STALE' });
+    expect(
+      await renewActiveRecordingDraftLease(
+        'user-a',
+        { expectedClaimRevision: rev, expectedSessionId: 'sess-live', owner: aOwner },
+        tabA,
+      ),
+    ).toBe('stale');
+    expect((await readActiveRecordingDraft('user-a', tabB))?.points).toHaveLength(3);
+
+    // B, the new owner, appends normally
+    await saveActiveRecordingDraft(draftWithPoints('user-a', 'sess-live', 4), tabB, {
+      expectedClaimRevision: rev,
+      expectedSessionId: 'sess-live',
+      owner: { ownerId: 'tab-b', expectedOwnerGeneration: 2 },
+    });
+    expect((await readActiveRecordingDraft('user-a', tabA))?.points).toHaveLength(4);
+  });
+
+  it('P1: an owner fenced by an older claim generation can be taken over, and legacy owner-less rows stay recoverable', async () => {
+    const fake = createSerializedFakeIdbFactory();
+    const backend = createIndexedDbRecordingBackend('round9-fenced', fake.factory);
+    const t0 = 1_800_000_000_000;
+    await claimRecordingAccountAtomic('user-a', backend, t0);
+    await saveActiveRecordingDraft(draftWithPoints('user-a', 'sess-old', 2), backend, {
+      expectedClaimRevision: 1,
+      rejectIfExistingDraft: true,
+      owner: { ownerId: 'tab-old' },
+      nowMs: t0,
+    });
+    // Re-login (logout cleared the marker) -> claim 2; the old owner can no longer commit anything
+    await backend.delete('meta:recording_active_account');
+    await claimRecordingAccountAtomic('user-a', backend, t0 + 1);
+    const meta = await readActiveRecordingDraftWithMeta('user-a', backend);
+    const taken = await takeOverActiveRecordingDraft(
+      'user-a',
+      {
+        expectedClaimRevision: 2,
+        expectedSessionId: 'sess-old',
+        expectedDraftRevision: meta!.draftRevision,
+        expectedSavedAt: meta!.savedAt,
+        ownerId: 'tab-new',
+        nowMs: t0 + 2,
+      },
+      backend,
+    );
+    expect(taken.status).toBe('taken');
+
+    // Legacy row written before ownership existed (no owner / draftRevision fields)
+    const legacy = createMemoryRecordingBackend({ durableForTests: true });
+    await claimRecordingAccountAtomic('user-a', legacy, t0);
+    await legacy.put({
+      key: 'user:user-a:draft:active',
+      accountId: 'user-a',
+      schemaVersion: 1,
+      savedAt: t0,
+      claimRevision: 1,
+      payload: draftWithPoints('user-a', 'sess-legacy', 2),
+    });
+    const legacyMeta = await readActiveRecordingDraftWithMeta('user-a', legacy);
+    expect(legacyMeta?.draftRevision).toBe(0);
+    expect(legacyMeta?.ownerId).toBeUndefined();
+    const legacyTaken = await takeOverActiveRecordingDraft(
+      'user-a',
+      {
+        expectedClaimRevision: 1,
+        expectedSessionId: 'sess-legacy',
+        expectedDraftRevision: 0,
+        expectedSavedAt: t0,
+        ownerId: 'tab-new',
+        nowMs: t0 + 5,
+      },
+      legacy,
+    );
+    expect(legacyTaken.status).toBe('taken');
+    if (legacyTaken.status === 'taken') expect(legacyTaken.draft.points).toHaveLength(2);
+  });
+
+  it('P2: a draft discarded in one tab is never recreated by a delayed write from another tab', async () => {
+    const fake = createSerializedFakeIdbFactory();
+    const tabA = createIndexedDbRecordingBackend('round9-p2-discard', fake.factory);
+    const tabB = createIndexedDbRecordingBackend('round9-p2-discard', fake.factory);
+    const t0 = 1_800_000_000_000;
+    await claimRecordingAccountAtomic('user-a', tabA, t0);
+    await saveActiveRecordingDraft(draftWithPoints('user-a', 'sess-x', 2), tabA, {
+      expectedClaimRevision: 1,
+      rejectIfExistingDraft: true,
+      owner: { ownerId: 'tab-a' },
+      nowMs: t0,
+    });
+    const aOwner = { ownerId: 'tab-a', expectedOwnerGeneration: 1 };
+
+    // B takes over (A gone) and the user discards there; A's delayed write is queued behind the delete
+    const meta = await readActiveRecordingDraftWithMeta('user-a', tabB);
+    const taken = await takeOverActiveRecordingDraft(
+      'user-a',
+      {
+        expectedClaimRevision: 1,
+        expectedSessionId: 'sess-x',
+        expectedDraftRevision: meta!.draftRevision,
+        expectedSavedAt: meta!.savedAt,
+        ownerId: 'tab-b',
+        ownerProvenGone: true,
+        nowMs: t0 + 1,
+      },
+      tabB,
+    );
+    expect(taken.status).toBe('taken');
+    const gate = fake.holdNextReadwrite();
+    const discard = deleteActiveRecordingDraft('user-a', tabB, {
+      expectedClaimRevision: 1,
+      expectedSessionId: 'sess-x',
+      owner: { ownerId: 'tab-b', expectedOwnerGeneration: 2 },
+    });
+    await gate.started;
+    const delayedWrite = saveActiveRecordingDraft(draftWithPoints('user-a', 'sess-x', 3), tabA, {
+      expectedClaimRevision: 1,
+      expectedSessionId: 'sess-x',
+      owner: aOwner,
+    });
+    gate.release();
+    await discard;
+    await expect(delayedWrite).rejects.toMatchObject({ code: 'STORAGE_SESSION_GONE' });
+    expect(await readActiveRecordingDraft('user-a', tabA)).toBeNull();
+
+    // Same-tab discard: even the former owner's own delayed write cannot recreate the row
+    await saveActiveRecordingDraft(draftWithPoints('user-a', 'sess-y', 1), tabA, {
+      expectedClaimRevision: 1,
+      rejectIfExistingDraft: true,
+      owner: { ownerId: 'tab-a' },
+    });
+    await deleteActiveRecordingDraft('user-a', tabA, {
+      expectedClaimRevision: 1,
+      expectedSessionId: 'sess-y',
+      owner: aOwner,
+    });
+    const txBefore = fake.txLogs.length;
+    for (const owner of [aOwner, undefined]) {
+      await expect(
+        saveActiveRecordingDraft(draftWithPoints('user-a', 'sess-y', 2), tabA, {
+          expectedClaimRevision: 1,
+          expectedSessionId: 'sess-y',
+          owner,
+        }),
+      ).rejects.toMatchObject({ code: 'STORAGE_SESSION_GONE' });
+    }
+    expect(
+      await renewActiveRecordingDraftLease(
+        'user-a',
+        { expectedClaimRevision: 1, expectedSessionId: 'sess-y', owner: aOwner },
+        tabA,
+      ),
+    ).toBe('missing');
+    expect(
+      fake.txLogs
+        .slice(txBefore)
+        .flatMap((log) => log.ops)
+        .some((o) => o.op === 'put'),
+    ).toBe(false);
+    expect(await readActiveRecordingDraft('user-a', tabB)).toBeNull();
+  });
+
+  it('P2: malformed-row cleanup never deletes a valid draft committed after the malformed read', async () => {
+    const fake = createSerializedFakeIdbFactory();
+    const recoveringTab = createIndexedDbRecordingBackend('round9-malformed', fake.factory);
+    const writerTab = createIndexedDbRecordingBackend('round9-malformed', fake.factory);
+    const t0 = 1_800_000_000_000;
+    await claimRecordingAccountAtomic('user-a', writerTab, t0);
+    await writerTab.put({
+      key: 'user:user-a:draft:active',
+      accountId: 'user-a',
+      schemaVersion: 1,
+      savedAt: t0,
+      claimRevision: 1,
+      payload: { sessionId: 'sess-broken', idempotencyKey: 'k' },
+    });
+
+    // Writer tab's valid create is in flight (it replaces the malformed row) ...
+    const gate = fake.holdNextReadwrite();
+    const replacement = saveActiveRecordingDraft(draftWithPoints('user-a', 'sess-replacement', 2), writerTab, {
+      expectedClaimRevision: 1,
+      rejectIfExistingDraft: true,
+      owner: { ownerId: 'tab-writer' },
+      nowMs: t0 + 10,
+    });
+    await gate.started;
+    const heldTxId = fake.txLogs.at(-1)!.id;
+    // ... while the recovering tab reads the malformed row and queues its cleanup behind it
+    const recovery = readActiveRecordingDraftWithMeta('user-a', recoveringTab);
+    await waitForNewReadwriteTx(fake, heldTxId);
+    const cleanupTx = fake.txLogs.find((log) => log.id > heldTxId && log.mode === 'readwrite')!;
+    gate.release();
+    await replacement;
+    expect(await recovery).toBeNull();
+
+    // The cleanup re-checked the row in its own transaction and kept the valid replacement
+    expect(cleanupTx.ops.some((o) => o.op === 'delete')).toBe(false);
+    const survivor = await readActiveRecordingDraftWithMeta('user-a', writerTab);
+    expect(survivor?.draft.sessionId).toBe('sess-replacement');
+    expect(survivor?.draft.points).toHaveLength(2);
+
+    // An unchanged malformed row is still cleaned up (compare-and-delete hits)
+    await writerTab.put({
+      key: 'user:user-a:draft:active',
+      accountId: 'user-a',
+      schemaVersion: 1,
+      savedAt: t0 + 20,
+      claimRevision: 1,
+      payload: { sessionId: '', idempotencyKey: 'k', points: [] },
+    });
+    expect(await readActiveRecordingDraftWithMeta('user-a', recoveringTab)).toBeNull();
+    expect(await writerTab.get('user:user-a:draft:active')).toBeNull();
+  });
+
+  it('acquireRecordingSessionLock reports held/acquired/unsupported and notifies a robbed owner', async () => {
+    const locks = createFakeLockManager();
+    const onLostA = vi.fn();
+    const a = await acquireRecordingSessionLock('user-a', { locks, onLost: onLostA });
+    expect(a.status).toBe('acquired');
+    expect(await acquireRecordingSessionLock('user-a', { locks })).toEqual({ status: 'held' });
+    // Another account's lock is independent
+    const other = await acquireRecordingSessionLock('user-b', { locks });
+    expect(other.status).toBe('acquired');
+
+    const thief = await acquireRecordingSessionLock('user-a', { locks, steal: true });
+    expect(thief.status).toBe('acquired');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onLostA).toHaveBeenCalledTimes(1);
+    if (a.status === 'acquired') expect(a.lock.lost).toBe(true);
+
+    // A voluntary release frees the lock without reporting a loss
+    const onLostThief = vi.fn();
+    if (thief.status === 'acquired') thief.lock.release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const again = await acquireRecordingSessionLock('user-a', { locks, onLost: onLostThief });
+    expect(again.status).toBe('acquired');
+    expect(onLostThief).not.toHaveBeenCalled();
+
+    expect(await acquireRecordingSessionLock('user-a', { locks: null })).toEqual({ status: 'unsupported' });
+    const throwing = {
+      request: () => {
+        throw new DOMException('insecure', 'SecurityError');
+      },
+    };
+    expect(await acquireRecordingSessionLock('user-a', { locks: throwing })).toEqual({ status: 'unsupported' });
   });
 });

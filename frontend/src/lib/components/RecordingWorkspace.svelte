@@ -37,13 +37,19 @@
   } from '#lib/gpx-serializer.ts';
   import {
     RecordingPersistenceError,
+    acquireRecordingSessionLock,
     claimRecordingAccountAtomic,
     deleteActiveRecordingDraft,
     getActiveRecordingAccountSnapshot,
+    getRecordingTabOwnerId,
     listUploadQueueItems,
     readActiveRecordingDraftWithMeta,
+    renewActiveRecordingDraftLease,
     saveActiveRecordingDraft,
+    takeOverActiveRecordingDraft,
+    type DraftOwnerGuard,
     type LocalRecordingDraft,
+    type RecordingSessionLock,
     type RecordingLifecycleStatus,
     type UploadQueueItem,
   } from '#lib/recording-store.ts';
@@ -112,6 +118,10 @@
   let allowNextLeave = false;
 
   const NATIVE_RECOVERY_TIMEOUT_MS = 8_000;
+  const DRAFT_LEASE_RENEW_INTERVAL_MS = 5_000;
+  const SESSION_LIVE_ELSEWHERE_MESSAGE =
+    '这条未完成的跑步草稿正在其他标签页中使用，请在该标签页继续、保存或丢弃；关闭该标签页后可在此重试恢复。';
+  const SESSION_TAKEN_OVER_MESSAGE = '这条跑步记录已被其他标签页接管，已停止在本页写入，避免覆盖最新轨迹。';
   type SessionRecoveryState = 'pending' | 'ready' | 'failed';
 
   let disposed = false;
@@ -121,6 +131,13 @@
   let webLastFixMs: number | null = null;
   let sessionAccountId = '';
   let sessionClaimRevision: number | null = null;
+  // Web draft ownership: only the tab holding the current owner generation may write the draft row.
+  const tabOwnerId = getRecordingTabOwnerId();
+  let sessionOwnerGeneration: number | null = null;
+  let sessionLock: RecordingSessionLock | null = null;
+  let sessionOwnershipLost = false;
+  let leaseRenewInFlight = false;
+  let lastLeaseRenewMs = 0;
   let sessionRecoveryState = $state<SessionRecoveryState>('pending');
   let recoveryFailureMessage = $state('');
   let recoveryRequestToken = 0;
@@ -299,6 +316,9 @@
     idempotencyKey = '';
     sessionAccountId = '';
     sessionClaimRevision = null;
+    sessionOwnerGeneration = null;
+    sessionOwnershipLost = false;
+    releaseSessionLock();
     startedAtMs = 0;
     activeDurationMs = 0;
     lastSegmentStartMs = null;
@@ -332,6 +352,77 @@
     };
   }
 
+  function ownerGuard(): DraftOwnerGuard {
+    // Generation 0 never matches a stored owner, so a tab without ownership cannot write.
+    return { ownerId: tabOwnerId, expectedOwnerGeneration: sessionOwnerGeneration ?? 0 };
+  }
+
+  function releaseSessionLock() {
+    const lock = sessionLock;
+    sessionLock = null;
+    lock?.release();
+  }
+
+  function isSessionWriteRejection(cause: unknown): cause is RecordingPersistenceError {
+    return (
+      cause instanceof RecordingPersistenceError &&
+      (cause.code === 'STORAGE_CLAIM_STALE' ||
+        cause.code === 'STORAGE_DRAFT_EXISTS' ||
+        cause.code === 'STORAGE_SESSION_GONE')
+    );
+  }
+
+  /** Holds the account's Web Lock while this tab owns a session; losing it ends ownership here. */
+  async function acquireSessionLock(targetAccountId: string, steal = false) {
+    const result = await acquireRecordingSessionLock(targetAccountId, {
+      steal,
+      onLost: () => {
+        if (result.status !== 'acquired' || sessionLock !== result.lock) return;
+        sessionLock = null;
+        if (sessionClaimRevision !== null) {
+          handleStaleSessionWrite(sessionAccountId, sessionClaimRevision, SESSION_TAKEN_OVER_MESSAGE);
+        }
+      },
+    });
+    return result;
+  }
+
+  async function renewDraftLease() {
+    if (
+      leaseRenewInFlight ||
+      capabilities.native ||
+      sessionOwnershipLost ||
+      sessionOwnerGeneration === null ||
+      sessionClaimRevision === null ||
+      !sessionId
+    ) {
+      return;
+    }
+    const boundAccountId = sessionAccountId;
+    const boundClaimRev = sessionClaimRevision;
+    leaseRenewInFlight = true;
+    try {
+      const result = await renewActiveRecordingDraftLease(boundAccountId, {
+        expectedClaimRevision: boundClaimRev,
+        expectedSessionId: sessionId,
+        owner: ownerGuard(),
+      });
+      if (result !== 'renewed') {
+        handleStaleSessionWrite(
+          boundAccountId,
+          boundClaimRev,
+          result === 'missing'
+            ? '这条跑步草稿已在其他标签页中保存或丢弃，已停止在本页写入。'
+            : SESSION_TAKEN_OVER_MESSAGE,
+        );
+      }
+    } catch {
+      // Transient storage errors: the next tick retries; the lease only matters without Web Locks.
+    } finally {
+      leaseRenewInFlight = false;
+    }
+  }
+
   async function captureActiveSessionClaim(
     targetAccountId: string,
     options?: { bumpGeneration?: boolean },
@@ -362,6 +453,8 @@
   function handleStaleSessionWrite(boundAccountId: string, boundClaimRev: number, message: string) {
     stopWebGeolocationWatch();
     if (!disposed && sessionAccountId === boundAccountId && sessionClaimRevision === boundClaimRev) {
+      sessionOwnershipLost = true;
+      releaseSessionLock();
       activeDurationMs = displayedDurationMs;
       lastSegmentStartMs = null;
       status = 'interrupted';
@@ -463,11 +556,9 @@
           void saveActiveRecordingDraft(buildWebDraft(boundAccountId), undefined, {
             expectedClaimRevision: boundClaimRevision,
             expectedSessionId: sessionId,
+            owner: ownerGuard(),
           }).catch((cause) => {
-            if (
-              cause instanceof RecordingPersistenceError &&
-              (cause.code === 'STORAGE_CLAIM_STALE' || cause.code === 'STORAGE_DRAFT_EXISTS')
-            ) {
+            if (isSessionWriteRejection(cause)) {
               handleStaleSessionWrite(boundAccountId, boundClaimRevision, cause.message);
             }
           });
@@ -493,11 +584,9 @@
             void saveActiveRecordingDraft(buildWebDraft(boundAccountId), undefined, {
               expectedClaimRevision: boundClaimRevision,
               expectedSessionId: sessionId,
+              owner: ownerGuard(),
             }).catch((cause) => {
-              if (
-                cause instanceof RecordingPersistenceError &&
-                (cause.code === 'STORAGE_CLAIM_STALE' || cause.code === 'STORAGE_DRAFT_EXISTS')
-              ) {
+              if (isSessionWriteRejection(cause)) {
                 handleStaleSessionWrite(boundAccountId, boundClaimRevision, cause.message);
               }
             });
@@ -565,6 +654,11 @@
     sessionRecoveryState = 'pending';
     recoveryFailureMessage = '';
     errorMessage = '';
+    if (!sessionId) {
+      // A failed earlier attempt may have taken ownership without loading a session.
+      sessionOwnerGeneration = null;
+      releaseSessionLock();
+    }
     if (!accountId) {
       sessionRecoveryState = 'ready';
       return;
@@ -573,7 +667,6 @@
       const draftMeta = await readActiveRecordingDraftWithMeta(accountId);
       if (disposed || token !== recoveryRequestToken) return;
       if (draftMeta) {
-        const draft = draftMeta.draft;
         const claimedRev = await captureActiveSessionClaim(accountId);
         if (disposed || token !== recoveryRequestToken) return;
         if (typeof draftMeta.claimRevision === 'number' && draftMeta.claimRevision > claimedRev) {
@@ -581,6 +674,63 @@
           recoveryFailureMessage = '检测到其他标签页正在写入新记录草稿，请重试恢复以确认最新状态。';
           return;
         }
+        // Take ownership before showing or acting on the draft. A free Web Lock proves its previous
+        // owner is gone; a held lock may only be stolen from an owner fenced by an older claim.
+        let lockResult = await acquireSessionLock(accountId);
+        const ownerProvenGone = lockResult.status === 'acquired';
+        if (lockResult.status === 'held') {
+          const ownerFencedByClaim =
+            typeof draftMeta.claimRevision === 'number' && draftMeta.claimRevision < claimedRev;
+          if (ownerFencedByClaim) {
+            lockResult = await acquireSessionLock(accountId, true);
+          }
+        }
+        const recoveryLock = lockResult.status === 'acquired' ? lockResult.lock : null;
+        if (disposed || token !== recoveryRequestToken) {
+          recoveryLock?.release();
+          return;
+        }
+        if (lockResult.status === 'held') {
+          sessionRecoveryState = 'failed';
+          recoveryFailureMessage = SESSION_LIVE_ELSEWHERE_MESSAGE;
+          return;
+        }
+        let takeover;
+        try {
+          takeover = await takeOverActiveRecordingDraft(accountId, {
+            expectedClaimRevision: claimedRev,
+            expectedSessionId: draftMeta.draft.sessionId,
+            expectedDraftRevision: draftMeta.draftRevision,
+            expectedSavedAt: draftMeta.savedAt,
+            ownerId: tabOwnerId,
+            ownerProvenGone,
+          });
+        } catch (cause) {
+          recoveryLock?.release();
+          throw cause;
+        }
+        if (disposed || token !== recoveryRequestToken || takeover.status !== 'taken') {
+          recoveryLock?.release();
+          if (disposed || token !== recoveryRequestToken || takeover.status === 'taken') return;
+          sessionRecoveryState = 'failed';
+          recoveryFailureMessage =
+            takeover.status === 'live'
+              ? SESSION_LIVE_ELSEWHERE_MESSAGE
+              : takeover.status === 'stale'
+                ? '当前记录会话已被其他标签页或新登录接管，请重试恢复以确认最新状态。'
+                : '本地跑步草稿刚被其他标签页更新，已保留最新内容，请重试恢复以加载最新轨迹。';
+          return;
+        }
+        if (recoveryLock?.lost) {
+          // Stolen mid-takeover: this tab no longer holds the proof of ownership, so it must not write.
+          sessionRecoveryState = 'failed';
+          recoveryFailureMessage = SESSION_LIVE_ELSEWHERE_MESSAGE;
+          return;
+        }
+        const draft = takeover.draft;
+        sessionLock = recoveryLock;
+        sessionOwnerGeneration = takeover.ownerGeneration;
+        sessionOwnershipLost = false;
         if (draft.status === 'stopped' && draft.points.length > 0) {
           await enqueueFinalizedRecording({
             accountId,
@@ -598,12 +748,15 @@
             await deleteActiveRecordingDraft(accountId, undefined, {
               expectedClaimRevision: claimedRev,
               expectedSessionId: draft.sessionId,
+              owner: ownerGuard(),
             });
           } catch (cause) {
             if (!(cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE')) {
               throw cause;
             }
           }
+          sessionOwnerGeneration = null;
+          releaseSessionLock();
         } else if (draft.status === 'recording' || draft.status === 'paused' || draft.status === 'interrupted') {
           sessionAccountId = accountId;
           sessionClaimRevision = claimedRev;
@@ -621,6 +774,10 @@
           lastAccuracyM = draft.lastAccuracyM;
           interruptedReason = draft.interruptedReason ?? 'process_terminated';
           status = 'interrupted';
+          lastLeaseRenewMs = Date.now();
+        } else {
+          sessionOwnerGeneration = null;
+          releaseSessionLock();
         }
       }
       if (disposed || token !== recoveryRequestToken) return;
@@ -740,6 +897,9 @@
         errorMessage = '当前浏览器不支持地理定位。';
         return;
       }
+      if (resumeInterrupted && sessionOwnershipLost) {
+        throw new RecordingPersistenceError('STORAGE_CLAIM_STALE', SESSION_TAKEN_OVER_MESSAGE);
+      }
       const nowMs = Date.now();
       const boundAccountId = resumeInterrupted && sessionAccountId ? sessionAccountId : accountId;
       const boundClaimRev =
@@ -747,6 +907,20 @@
           ? sessionClaimRevision
           : await captureActiveSessionClaim(boundAccountId);
       if (disposed) return;
+      if (!resumeInterrupted) {
+        releaseSessionLock();
+        const lockResult = await acquireSessionLock(boundAccountId);
+        if (disposed) {
+          if (lockResult.status === 'acquired') lockResult.lock.release();
+          return;
+        }
+        if (lockResult.status === 'held') {
+          resetLocalSessionState();
+          await recoverWebDraftState();
+          throw new RecordingPersistenceError('STORAGE_SESSION_LIVE', SESSION_LIVE_ELSEWHERE_MESSAGE);
+        }
+        sessionLock = lockResult.status === 'acquired' ? lockResult.lock : null;
+      }
       if (resumeInterrupted && sessionId) {
         segmentIndex += 1;
         status = 'recording';
@@ -774,9 +948,18 @@
           buildWebDraft(boundAccountId),
           undefined,
           resumeInterrupted
-            ? { expectedClaimRevision: boundClaimRev, expectedSessionId: sessionId }
-            : { expectedClaimRevision: boundClaimRev, rejectIfExistingDraft: true },
+            ? { expectedClaimRevision: boundClaimRev, expectedSessionId: sessionId, owner: ownerGuard() }
+            : {
+                expectedClaimRevision: boundClaimRev,
+                rejectIfExistingDraft: true,
+                owner: { ownerId: tabOwnerId },
+              },
         );
+        if (!resumeInterrupted) {
+          sessionOwnerGeneration = 1;
+          sessionOwnershipLost = false;
+        }
+        lastLeaseRenewMs = Date.now();
       } catch (saveCause) {
         if (!resumeInterrupted) {
           resetLocalSessionState();
@@ -820,12 +1003,10 @@
           await saveActiveRecordingDraft(buildWebDraft(boundAccountId), undefined, {
             expectedClaimRevision: boundClaimRev,
             expectedSessionId: sessionId,
+            owner: ownerGuard(),
           });
         } catch (cause) {
-          if (
-            cause instanceof RecordingPersistenceError &&
-            (cause.code === 'STORAGE_CLAIM_STALE' || cause.code === 'STORAGE_DRAFT_EXISTS')
-          ) {
+          if (isSessionWriteRejection(cause)) {
             handleStaleSessionWrite(boundAccountId, boundClaimRev, cause.message);
             return;
           }
@@ -865,12 +1046,10 @@
           await saveActiveRecordingDraft(buildWebDraft(boundAccountId), undefined, {
             expectedClaimRevision: boundClaimRev,
             expectedSessionId: sessionId,
+            owner: ownerGuard(),
           });
         } catch (cause) {
-          if (
-            cause instanceof RecordingPersistenceError &&
-            (cause.code === 'STORAGE_CLAIM_STALE' || cause.code === 'STORAGE_DRAFT_EXISTS')
-          ) {
+          if (isSessionWriteRejection(cause)) {
             handleStaleSessionWrite(boundAccountId, boundClaimRev, cause.message);
             return;
           }
@@ -938,12 +1117,10 @@
               await saveActiveRecordingDraft(buildWebDraft(boundAccountId), undefined, {
                 expectedClaimRevision: boundClaimRev,
                 expectedSessionId: sessionId,
+                owner: ownerGuard(),
               });
             } catch (cause) {
-              if (
-                cause instanceof RecordingPersistenceError &&
-                (cause.code === 'STORAGE_CLAIM_STALE' || cause.code === 'STORAGE_DRAFT_EXISTS')
-              ) {
+              if (isSessionWriteRejection(cause)) {
                 handleStaleSessionWrite(boundAccountId, boundClaimRev, cause.message);
                 return;
               }
@@ -952,6 +1129,33 @@
           }
         }
         return;
+      }
+
+      if (!capabilities.native) {
+        // Mark the draft stopped under this tab's ownership first: a tab that lost the session
+        // (taken over, saved or discarded elsewhere) must not enqueue its own stale copy.
+        if (boundClaimRev === null || sessionOwnershipLost) {
+          throw new RecordingPersistenceError('STORAGE_CLAIM_STALE', SESSION_TAKEN_OVER_MESSAGE);
+        }
+        try {
+          await saveActiveRecordingDraft(
+            {
+              ...buildWebDraft(boundAccountId),
+              status: 'stopped',
+              endedAtMs: finalEndedAt,
+              activeDurationMs: finalActiveMs,
+              lastSegmentStartMs: null,
+              points: capturedPoints.map((pt) => ({ ...pt })),
+            },
+            undefined,
+            { expectedClaimRevision: boundClaimRev, expectedSessionId: finalSessionId, owner: ownerGuard() },
+          );
+        } catch (cause) {
+          if (isSessionWriteRejection(cause)) {
+            handleStaleSessionWrite(boundAccountId, boundClaimRev, cause.message);
+          }
+          throw cause;
+        }
       }
 
       // Persist to IndexedDB upload queue FIRST (waits for transaction complete + read-back verification);
@@ -975,6 +1179,7 @@
           await deleteActiveRecordingDraft(boundAccountId, undefined, {
             expectedClaimRevision: boundClaimRev,
             expectedSessionId: finalSessionId || undefined,
+            owner: ownerGuard(),
           });
         } catch (cause) {
           if (!(cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE')) {
@@ -1038,6 +1243,7 @@
               await deleteActiveRecordingDraft(sessionAccountId || accountId, undefined, {
                 expectedClaimRevision: sessionClaimRevision,
                 expectedSessionId: sessionId || undefined,
+                owner: ownerGuard(),
               });
             } catch (cause) {
               if (cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE') {
@@ -1175,6 +1381,10 @@
 
     const tickTimer = window.setInterval(() => {
       clockNowMs = Date.now();
+      if (clockNowMs - lastLeaseRenewMs >= DRAFT_LEASE_RENEW_INTERVAL_MS) {
+        lastLeaseRenewMs = clockNowMs;
+        void renewDraftLease();
+      }
       if (!capabilities.native && status === 'recording' && webLastFixMs !== null) {
         if (clockNowMs - webLastFixMs > 15000 && gpsStatus !== 'lost') {
           gpsStatus = 'lost';
@@ -1207,6 +1417,7 @@
       unsubscribeNative?.();
       unsubscribeNative = null;
       stopWebGeolocationWatch();
+      releaseSessionLock();
     };
   });
 </script>

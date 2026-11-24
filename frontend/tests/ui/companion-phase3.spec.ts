@@ -2030,22 +2030,25 @@ test('P2 Round 5: late GPS write and stale delete from old tab epoch 1 cannot ov
   expect(afterTab2ThirdPoint.pointCount).toBe(3);
   expect(afterTab2ThirdPoint.draftClaimRev).toBe(tab2Snap.activeClaimRev);
 
-  // While Tab 2 still holds an undiscarded paused draft, Tab 1 starting a new run must reject STORAGE_DRAFT_EXISTS and surface Tab 2's draft instead of overwriting it
+  // While Tab 2 (live owner) still holds an undiscarded paused draft, Tab 1 starting a new run must neither
+  // overwrite it nor take it over: it fails closed into the recovery-error state without exposing resume.
   await tab2.getByTestId('recording-pause-btn').click();
   await page.getByLabel('跑步标题（可选）').fill('Tab1 误覆盖尝试');
   await page.getByTestId('recording-start-btn').click();
   await expect(page.getByTestId('recording-error')).toContainText('草稿');
-  await expect(page.getByTestId('recording-recovery-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-recovery-error-panel')).toContainText('其他标签页');
+  await expect(page.getByTestId('recording-recovery-panel')).not.toBeVisible();
+  await expect(page.getByTestId('recording-start-btn')).toBeDisabled();
   const preservedWhilePaused = await readDraftRow(tab2);
   expect(preservedWhilePaused.title).toBe('Tab2 新代草稿');
   expect(preservedWhilePaused.pointCount).toBe(3);
 
-  // Explicitly discard Tab 2's paused draft, then Tab 1 retry start succeeds cleanly
+  // Explicitly discard Tab 2's paused draft, then Tab 1 retries recovery and its start succeeds cleanly
   await tab2.getByTestId('recording-discard-btn').click();
   await tab2.getByTestId('recording-discard-confirm-btn').click();
   await expect(tab2.getByTestId('recording-status-badge')).toHaveText('就绪');
-  await page.getByTestId('recovery-discard-btn').click();
-  await page.getByTestId('recording-discard-confirm-btn').click();
+  await page.getByTestId('recording-recovery-retry-btn').click();
+  await expect(page.getByTestId('recording-recovery-error-panel')).not.toBeVisible();
   await expect(page.getByTestId('recording-status-badge')).toHaveText('就绪');
 
   await page.getByLabel('跑步标题（可选）').fill('Tab1 重试新草稿');
@@ -2568,12 +2571,14 @@ test('P2 Web: enqueue failure during recovery blocks Start and preserves draft; 
   });
   await expect(tab2.getByTestId('recording-points-count')).toContainText('1 点');
 
-  // Now stale Tab 1 tries to start a brand-new run -> MUST reject STORAGE_DRAFT_EXISTS, preserve Tab 2's draft, and reconcile
+  // Now stale Tab 1 tries to start a brand-new run -> MUST NOT overwrite or take over Tab 2's live draft
   await page.getByLabel('跑步标题（可选）').fill('Tab1 误覆盖标题');
   await page.getByTestId('recording-start-btn').click();
-  await expect(page.getByTestId('recording-error')).toContainText('已阻止覆盖旧草稿');
-  await expect(page.getByTestId('recording-recovery-panel')).toBeVisible();
-  await expect(page.getByTestId('recording-points-count')).toContainText('1 点');
+  await expect(page.getByTestId('recording-error')).toContainText('其他标签页');
+  await expect(page.getByTestId('recording-recovery-error-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-recovery-panel')).not.toBeVisible();
+  await expect(page.getByTestId('recording-start-btn')).toBeDisabled();
+  await expect(tab2.getByTestId('recording-status-badge')).toHaveText('记录中');
 
   const tab2DraftAfterInterleave = await tab2.evaluate(async () => {
     return await new Promise<{ title?: string; pointCount?: number } | null>((resolve, reject) => {
@@ -2597,5 +2602,194 @@ test('P2 Web: enqueue failure during recovery blocks Start and preserves draft; 
   expect(tab2DraftAfterInterleave?.title).toBe('Tab2 已写入草稿');
   expect(tab2DraftAfterInterleave?.pointCount).toBe(1);
 
+  // Once Tab 2 closes, its Web Lock is freed and Tab 1 can take over the exact persisted snapshot
   await tab2.close();
+  await page.getByTestId('recording-recovery-retry-btn').click();
+  await expect(page.getByTestId('recording-recovery-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-points-count')).toContainText('1 点');
+});
+
+const WEB_DRAFT_ACCOUNT_ID = '00000000-0000-4000-8000-000000000001';
+
+async function readWebDraftRow(targetPage: Page) {
+  return await targetPage.evaluate(async (aId) => {
+    return await new Promise<{
+      exists: boolean;
+      sessionId?: string;
+      pointCount?: number;
+      ownerId?: string;
+      ownerGeneration?: number;
+      draftRevision?: number;
+    }>((resolve, reject) => {
+      const req = indexedDB.open('runnote-recording-store', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const rowReq = db.transaction('records', 'readonly').objectStore('records').get(`user:${aId}:draft:active`);
+        rowReq.onsuccess = () => {
+          const row = rowReq.result as
+            | {
+                ownerId?: string;
+                ownerGeneration?: number;
+                draftRevision?: number;
+                payload?: { sessionId?: string; points?: unknown[] };
+              }
+            | undefined;
+          db.close();
+          resolve(
+            row
+              ? {
+                  exists: true,
+                  sessionId: row.payload?.sessionId,
+                  pointCount: Array.isArray(row.payload?.points) ? row.payload.points.length : undefined,
+                  ownerId: row.ownerId,
+                  ownerGeneration: row.ownerGeneration,
+                  draftRevision: row.draftRevision,
+                }
+              : { exists: false },
+          );
+        };
+        rowReq.onerror = () => reject(rowReq.error);
+      };
+    });
+  }, WEB_DRAFT_ACCOUNT_ID);
+}
+
+async function emitWebFix(targetPage: Page, lat: number, lon: number) {
+  return await targetPage.evaluate(
+    ([la, lo]) =>
+      (window as unknown as Record<string, { emit: (lat: number, lon: number) => boolean }>).__geo.emit(la, lo),
+    [lat, lon] as const,
+  );
+}
+
+async function waitForWebWatch(targetPage: Page) {
+  await expect
+    .poll(() =>
+      targetPage.evaluate(() =>
+        (window as unknown as Record<string, { isWatching: () => boolean }>).__geo.isWatching(),
+      ),
+    )
+    .toBe(true);
+}
+
+test('P1 Round 9: a second tab can never take over a live Web session or truncate its persisted points', async ({
+  page,
+  context,
+}) => {
+  await loginRunner(page);
+  await installMockWebGeolocation(page);
+  await page.goto('/activities/record');
+
+  // Tab A records point 1
+  await page.getByLabel('跑步标题（可选）').fill('A 实时草稿');
+  await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await waitForWebWatch(page);
+  await emitWebFix(page, 31.23, 121.47);
+  await expect(page.getByTestId('recording-points-count')).toContainText('1 点');
+  await expect.poll(async () => (await readWebDraftRow(page)).pointCount).toBe(1);
+
+  // Tab B opens while A is live: no recovery snapshot, no resume/save/discard, Start blocked
+  const tabB = await context.newPage();
+  await installMockWebGeolocation(tabB);
+  await tabB.goto('/activities/record');
+  await expect(tabB.getByTestId('recording-recovery-error-panel')).toContainText('其他标签页');
+  await expect(tabB.getByTestId('recording-recovery-panel')).toHaveCount(0);
+  await expect(tabB.getByTestId('recovery-resume-btn')).toHaveCount(0);
+  await expect(tabB.getByTestId('recording-start-btn')).toBeDisabled();
+  const ownedByA = await readWebDraftRow(page);
+  expect(ownedByA.pointCount).toBe(1);
+  expect(ownedByA.ownerId).toBeTruthy();
+
+  // A records point 2 (IDB has 2); B retries -> still refused, persisted draft keeps 2 points
+  await emitWebFix(page, 31.232, 121.47);
+  await expect(page.getByTestId('recording-points-count')).toContainText('2 点');
+  await expect.poll(async () => (await readWebDraftRow(page)).pointCount).toBe(2);
+  await tabB.getByTestId('recording-recovery-retry-btn').click();
+  await expect(tabB.getByTestId('recording-recovery-error-panel')).toContainText('其他标签页');
+  await expect(tabB.getByTestId('recovery-resume-btn')).toHaveCount(0);
+  const afterRefusedRetry = await readWebDraftRow(page);
+  expect(afterRefusedRetry.pointCount).toBe(2);
+  expect(afterRefusedRetry.ownerId).toBe(ownedByA.ownerId);
+  expect(afterRefusedRetry.ownerGeneration).toBe(ownedByA.ownerGeneration);
+
+  // A keeps recording untouched by B's attempts
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await emitWebFix(page, 31.234, 121.47);
+  await expect(page.getByTestId('recording-points-count')).toContainText('3 点');
+  await expect.poll(async () => (await readWebDraftRow(page)).pointCount).toBe(3);
+  await expect(page.getByTestId('recording-error')).toHaveCount(0);
+
+  // A's tab closes (Web Lock released) -> B takes over the exact latest snapshot (3 points)
+  await page.close();
+  await tabB.getByTestId('recording-recovery-retry-btn').click();
+  await expect(tabB.getByTestId('recording-recovery-panel')).toBeVisible();
+  await expect(tabB.getByTestId('recording-points-count')).toContainText('3 点');
+  const ownedByB = await readWebDraftRow(tabB);
+  expect(ownedByB.pointCount).toBe(3);
+  expect(ownedByB.ownerId).not.toBe(ownedByA.ownerId);
+  expect(ownedByB.ownerGeneration).toBe((ownedByA.ownerGeneration ?? 0) + 1);
+
+  // B continues: the persisted draft is never reduced, and new points append
+  await tabB.getByTestId('recovery-resume-btn').click();
+  await expect(tabB.getByTestId('recording-status-badge')).toHaveText('记录中');
+  expect((await readWebDraftRow(tabB)).pointCount).toBe(3);
+  await waitForWebWatch(tabB);
+  // Tab B's mock clock starts slightly later than A's, so its first fixes may predate A's last point and
+  // be filtered as out-of-order; emit a few so at least one lands after the recovered track.
+  for (const lat of [31.236, 31.238, 31.24, 31.242]) {
+    await emitWebFix(tabB, lat, 121.47);
+  }
+  await expect.poll(async () => (await readWebDraftRow(tabB)).pointCount ?? 0).toBeGreaterThan(3);
+  const finalRow = await readWebDraftRow(tabB);
+  await expect(tabB.getByTestId('recording-points-count')).toContainText(`${finalRow.pointCount} 点`);
+  expect(finalRow.ownerId).toBe(ownedByB.ownerId);
+});
+
+test('P2 Round 9: a Web draft discarded elsewhere is never recreated or enqueued by the stale tab', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await installMockWebGeolocation(page);
+  await page.goto('/activities/record');
+
+  await page.getByLabel('跑步标题（可选）').fill('被丢弃的草稿');
+  await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await waitForWebWatch(page);
+  await emitWebFix(page, 31.23, 121.47);
+  await expect.poll(async () => (await readWebDraftRow(page)).pointCount).toBe(1);
+
+  // Another tab discards the draft row (simulated directly against IndexedDB)
+  await page.evaluate(async (aId) => {
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open('runnote-recording-store', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('records', 'readwrite');
+        tx.objectStore('records').delete(`user:${aId}:draft:active`);
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+  }, WEB_DRAFT_ACCOUNT_ID);
+
+  // Delayed GPS write from this tab is refused instead of recreating the row
+  await emitWebFix(page, 31.232, 121.47);
+  await expect(page.getByTestId('recording-error')).toContainText('保存或丢弃');
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('待恢复');
+  expect((await readWebDraftRow(page)).exists).toBe(false);
+
+  // Resume and save are refused too; nothing is recreated or enqueued
+  await page.getByTestId('recovery-resume-btn').click();
+  await expect(page.getByTestId('recording-error')).toContainText('接管');
+  await page.getByTestId('recovery-save-btn').click();
+  await expect(page.getByTestId('recording-error')).toContainText('接管');
+  expect((await readWebDraftRow(page)).exists).toBe(false);
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(0);
 });

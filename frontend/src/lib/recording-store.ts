@@ -28,7 +28,9 @@ export type RecordingPersistenceErrorCode =
   | 'STORAGE_TX_ERROR'
   | 'STORAGE_VERIFY_FAILED'
   | 'STORAGE_CLAIM_STALE'
-  | 'STORAGE_DRAFT_EXISTS';
+  | 'STORAGE_DRAFT_EXISTS'
+  | 'STORAGE_SESSION_GONE'
+  | 'STORAGE_SESSION_LIVE';
 
 export class RecordingPersistenceError extends Error {
   readonly code: RecordingPersistenceErrorCode;
@@ -92,6 +94,14 @@ interface StoredRecord<T = unknown> {
   schemaVersion: number;
   savedAt: number;
   claimRevision?: number;
+  /** Draft rows only: bumped on every committed write so a takeover can prove it saw the latest snapshot. */
+  draftRevision?: number;
+  /** Draft rows only: the tab (page realm) that currently owns the session. */
+  ownerId?: string;
+  /** Draft rows only: bumped on every takeover so writes from a previous owner instance are fenced. */
+  ownerGeneration?: number;
+  /** Draft rows only: owner heartbeat deadline; used when Web Locks cannot prove the owner is gone. */
+  leaseExpiresAtMs?: number;
   payload: T;
 }
 
@@ -122,20 +132,78 @@ export interface GenerationScopedCleanupResult {
   activeClaimRevision: number | undefined;
 }
 
+export interface DraftOwnerGuard {
+  ownerId: string;
+  /** Generation returned by the create/takeover that made this caller the owner. */
+  expectedOwnerGeneration: number;
+}
+
 export interface DraftWriteGuardOptions {
   expectedClaimRevision?: number;
+  /** Create mode: only succeeds when no valid draft exists; the caller becomes owner (generation 1). */
   rejectIfExistingDraft?: boolean;
+  /** Update mode: the row must still exist with this session ID (never recreated after discard). */
   expectedSessionId?: string;
+  /** Create: becomes owner. Update: must match the row's current owner and generation. */
+  owner?: DraftOwnerGuard | { ownerId: string };
+  nowMs?: number;
 }
 
 export interface DraftDeleteGuardOptions {
   expectedClaimRevision?: number;
   expectedSessionId?: string;
+  owner?: DraftOwnerGuard;
 }
 
 export interface ActiveRecordingDraftWithMeta {
   draft: LocalRecordingDraft;
   claimRevision: number | undefined;
+  savedAt: number;
+  draftRevision: number;
+  ownerId: string | undefined;
+  ownerGeneration: number | undefined;
+  leaseExpiresAtMs: number | undefined;
+}
+
+export interface DraftTakeoverOptions {
+  expectedClaimRevision: number;
+  expectedSessionId: string;
+  /** `draftRevision` and `savedAt` exactly as read; any newer write makes the takeover fail. */
+  expectedDraftRevision: number;
+  expectedSavedAt: number;
+  ownerId: string;
+  /**
+   * True only when the caller holds the account's Web Lock: every owner holds that lock for as long
+   * as it owns the session, so a free lock proves the previous owner's page is gone.
+   */
+  ownerProvenGone?: boolean;
+  nowMs?: number;
+}
+
+export type DraftTakeoverResult =
+  | {
+      status: 'taken';
+      draft: LocalRecordingDraft;
+      ownerGeneration: number;
+      draftRevision: number;
+    }
+  /** Another live tab still owns the session (unexpired lease / held lock). */
+  | { status: 'live' }
+  /** The row changed after it was read (newer points, other session, or recreated). */
+  | { status: 'changed' }
+  | { status: 'missing' }
+  | { status: 'stale' };
+
+export interface DraftMutationContext {
+  activeEntry: StoredRecord | undefined;
+  epochEntry: StoredRecord | undefined;
+  existing: StoredRecord | undefined;
+}
+
+export interface DraftMutationPlan<R> {
+  result: R;
+  put?: StoredRecord;
+  remove?: boolean;
 }
 
 export interface ClaimAccountResult {
@@ -296,42 +364,201 @@ function isValidDraftRecord(entry: StoredRecord | null | undefined, expectedAcco
   );
 }
 
-function evaluateDraftWriteGuard(
-  entry: StoredRecord,
-  activeEntry: StoredRecord | null | undefined,
-  epochEntry: StoredRecord | null | undefined,
-  existingDraft: StoredRecord | null | undefined,
+export const RECORDING_DRAFT_LEASE_MS = 30_000;
+
+function isClaimCurrentForDraft(
+  accountId: string | null,
+  ctx: DraftMutationContext,
   expectedClaimRevision: number,
-  guard?: { rejectIfExistingDraft?: boolean; expectedSessionId?: string },
-): 'saved' | 'stale' | 'draft_exists' {
-  const activeAccountId = extractActiveAccountId(activeEntry);
-  const activeClaimRev = typeof activeEntry?.claimRevision === 'number' ? activeEntry.claimRevision : undefined;
-  const currentEpoch = Math.max(extractClaimEpoch(epochEntry), activeClaimRev ?? 0);
-  const existingDraftRev = typeof existingDraft?.claimRevision === 'number' ? existingDraft.claimRevision : undefined;
+): boolean {
+  const activeAccountId = extractActiveAccountId(ctx.activeEntry);
+  const activeClaimRev = typeof ctx.activeEntry?.claimRevision === 'number' ? ctx.activeEntry.claimRevision : undefined;
+  const currentEpoch = Math.max(extractClaimEpoch(ctx.epochEntry), activeClaimRev ?? 0);
+  const existingDraftRev = typeof ctx.existing?.claimRevision === 'number' ? ctx.existing.claimRevision : undefined;
+  return Boolean(
+    accountId &&
+    activeAccountId === accountId &&
+    activeClaimRev !== undefined &&
+    activeClaimRev === expectedClaimRevision &&
+    currentEpoch <= expectedClaimRevision &&
+    (existingDraftRev === undefined || existingDraftRev <= expectedClaimRevision),
+  );
+}
+
+function draftSessionId(entry: StoredRecord | undefined): string | undefined {
+  return (entry?.payload as Partial<LocalRecordingDraft> | undefined)?.sessionId;
+}
+
+function draftRevisionOf(entry: StoredRecord | undefined): number {
+  return typeof entry?.draftRevision === 'number' ? entry.draftRevision : 0;
+}
+
+function matchesDraftOwner(entry: StoredRecord | undefined, owner: DraftOwnerGuard | undefined): boolean {
+  if (!entry) return false;
+  // Rows written before ownership existed have no owner; only an owner-less caller may touch them.
+  if (entry.ownerId === undefined) return owner === undefined;
+  return (
+    owner !== undefined && entry.ownerId === owner.ownerId && entry.ownerGeneration === owner.expectedOwnerGeneration
+  );
+}
+
+type DraftWriteVerdict = 'saved' | 'stale' | 'draft_exists' | 'missing';
+
+function planDraftWrite(
+  entry: StoredRecord,
+  ctx: DraftMutationContext,
+  expectedClaimRevision: number,
+  guard: Omit<DraftWriteGuardOptions, 'expectedClaimRevision'>,
+): DraftMutationPlan<DraftWriteVerdict> {
+  if (!isClaimCurrentForDraft(entry.accountId, ctx, expectedClaimRevision)) {
+    return { result: 'stale' };
+  }
+  const accountId = entry.accountId as string;
+  const existingValid = isValidDraftRecord(ctx.existing, accountId);
+  const nowMs = guard.nowMs ?? Date.now();
+  if (guard.rejectIfExistingDraft) {
+    if (existingValid) return { result: 'draft_exists' };
+    const ownerId = guard.owner?.ownerId;
+    return {
+      result: 'saved',
+      put: {
+        ...entry,
+        claimRevision: expectedClaimRevision,
+        draftRevision: draftRevisionOf(ctx.existing) + 1,
+        ...(ownerId ? { ownerId, ownerGeneration: 1, leaseExpiresAtMs: nowMs + RECORDING_DRAFT_LEASE_MS } : {}),
+      },
+    };
+  }
+  if (guard.expectedSessionId !== undefined) {
+    // Session-bound update: never (re)create a row that another tab saved or discarded.
+    if (!existingValid) return { result: 'missing' };
+    if (draftSessionId(ctx.existing) !== guard.expectedSessionId) return { result: 'draft_exists' };
+    const owner = guard.owner && 'expectedOwnerGeneration' in guard.owner ? guard.owner : undefined;
+    if (guard.owner && !owner) return { result: 'stale' };
+    if (!matchesDraftOwner(ctx.existing, owner)) return { result: 'stale' };
+    return {
+      result: 'saved',
+      put: {
+        ...entry,
+        claimRevision: expectedClaimRevision,
+        draftRevision: draftRevisionOf(ctx.existing) + 1,
+        ...(owner
+          ? {
+              ownerId: owner.ownerId,
+              ownerGeneration: owner.expectedOwnerGeneration,
+              leaseExpiresAtMs: nowMs + RECORDING_DRAFT_LEASE_MS,
+            }
+          : {}),
+      },
+    };
+  }
+  // Claim-only write (no session binding): may never replace a session that a tab owns.
+  if (existingValid && ctx.existing?.ownerId !== undefined) return { result: 'draft_exists' };
+  return {
+    result: 'saved',
+    put: { ...entry, claimRevision: expectedClaimRevision, draftRevision: draftRevisionOf(ctx.existing) + 1 },
+  };
+}
+
+function planDraftDelete(
+  accountId: string,
+  ctx: DraftMutationContext,
+  expectedClaimRevision: number,
+  expectedSessionId: string | undefined,
+  owner: DraftOwnerGuard | undefined,
+): DraftMutationPlan<'deleted' | 'missing' | 'stale'> {
+  if (!ctx.existing) return { result: 'missing' };
+  if (!isClaimCurrentForDraft(accountId, ctx, expectedClaimRevision)) return { result: 'stale' };
+  const existingSessionId = draftSessionId(ctx.existing);
+  if (expectedSessionId !== undefined && existingSessionId !== undefined && existingSessionId !== expectedSessionId) {
+    return { result: 'stale' };
+  }
+  if (isValidDraftRecord(ctx.existing, accountId) && !matchesDraftOwner(ctx.existing, owner)) {
+    return { result: 'stale' };
+  }
+  return { result: 'deleted', remove: true };
+}
+
+function planDraftTakeover(
+  accountId: string,
+  ctx: DraftMutationContext,
+  options: DraftTakeoverOptions,
+): DraftMutationPlan<DraftTakeoverResult> {
+  if (!isClaimCurrentForDraft(accountId, ctx, options.expectedClaimRevision)) return { result: { status: 'stale' } };
+  const existing = ctx.existing;
+  if (!existing || !isValidDraftRecord(existing, accountId)) return { result: { status: 'missing' } };
   if (
-    !entry.accountId ||
-    activeAccountId !== entry.accountId ||
-    activeClaimRev === undefined ||
-    activeClaimRev !== expectedClaimRevision ||
-    currentEpoch > expectedClaimRevision ||
-    (existingDraftRev !== undefined && existingDraftRev > expectedClaimRevision)
+    draftSessionId(existing) !== options.expectedSessionId ||
+    draftRevisionOf(existing) !== options.expectedDraftRevision ||
+    existing.savedAt !== options.expectedSavedAt
   ) {
-    return 'stale';
+    return { result: { status: 'changed' } };
   }
-  if (guard?.rejectIfExistingDraft && isValidDraftRecord(existingDraft, entry.accountId)) {
-    return 'draft_exists';
-  }
-  const existingSessionId = isValidDraftRecord(existingDraft, entry.accountId)
-    ? (existingDraft?.payload as Partial<LocalRecordingDraft> | undefined)?.sessionId
-    : undefined;
+  const nowMs = options.nowMs ?? Date.now();
+  // A previous owner whose claim generation is older can no longer commit any write, so it is fenced.
+  const ownerFencedByClaim =
+    typeof existing.claimRevision === 'number' && existing.claimRevision < options.expectedClaimRevision;
+  const ownerMayBeLive =
+    existing.ownerId !== undefined &&
+    existing.ownerId !== options.ownerId &&
+    !ownerFencedByClaim &&
+    !options.ownerProvenGone &&
+    typeof existing.leaseExpiresAtMs === 'number' &&
+    existing.leaseExpiresAtMs > nowMs;
+  if (ownerMayBeLive) return { result: { status: 'live' } };
+  const ownerGeneration = (typeof existing.ownerGeneration === 'number' ? existing.ownerGeneration : 0) + 1;
+  const draftRevision = draftRevisionOf(existing) + 1;
+  return {
+    // The stored snapshot is kept verbatim: the new owner never writes its own (possibly older) copy.
+    result: { status: 'taken', draft: existing.payload as LocalRecordingDraft, ownerGeneration, draftRevision },
+    put: {
+      ...existing,
+      savedAt: nowMs,
+      claimRevision: options.expectedClaimRevision,
+      draftRevision,
+      ownerId: options.ownerId,
+      ownerGeneration,
+      leaseExpiresAtMs: nowMs + RECORDING_DRAFT_LEASE_MS,
+    },
+  };
+}
+
+function planDraftLeaseRenewal(
+  accountId: string,
+  ctx: DraftMutationContext,
+  expectedClaimRevision: number,
+  expectedSessionId: string,
+  owner: DraftOwnerGuard,
+  nowMs: number,
+): DraftMutationPlan<'renewed' | 'missing' | 'stale'> {
+  if (!ctx.existing || !isValidDraftRecord(ctx.existing, accountId)) return { result: 'missing' };
   if (
-    guard?.expectedSessionId !== undefined &&
-    existingSessionId !== undefined &&
-    existingSessionId !== guard.expectedSessionId
+    !isClaimCurrentForDraft(accountId, ctx, expectedClaimRevision) ||
+    draftSessionId(ctx.existing) !== expectedSessionId ||
+    !matchesDraftOwner(ctx.existing, owner)
   ) {
-    return 'draft_exists';
+    return { result: 'stale' };
   }
-  return 'saved';
+  return { result: 'renewed', put: { ...ctx.existing, leaseExpiresAtMs: nowMs + RECORDING_DRAFT_LEASE_MS } };
+}
+
+function planMalformedDraftDelete(
+  accountId: string,
+  ctx: DraftMutationContext,
+  expectedSavedAt: number,
+): DraftMutationPlan<'deleted' | 'kept' | 'missing'> {
+  const existing = ctx.existing;
+  if (!existing) return { result: 'missing' };
+  // Compare-and-delete: keep anything that became valid or was rewritten after the malformed read.
+  if (
+    existing.schemaVersion !== RECORDING_STORE_SCHEMA_VERSION ||
+    existing.accountId !== accountId ||
+    isValidDraftRecord(existing, accountId) ||
+    existing.savedAt !== expectedSavedAt
+  ) {
+    return { result: 'kept' };
+  }
+  return { result: 'deleted', remove: true };
 }
 
 export interface RecordingStorageBackend {
@@ -340,21 +567,16 @@ export interface RecordingStorageBackend {
   get(key: string): Promise<StoredRecord | null>;
   put(entry: StoredRecord): Promise<void>;
   putIfExists(entry: StoredRecord): Promise<boolean>;
-  saveDraftGuardedAtomic(
-    entry: StoredRecord,
-    activeKey: string,
-    epochKey: string,
-    expectedClaimRevision: number,
-    guard?: { rejectIfExistingDraft?: boolean; expectedSessionId?: string },
-  ): Promise<'saved' | 'stale' | 'draft_exists'>;
-  deleteDraftGuardedAtomic(
+  /**
+   * Reads the active marker, claim epoch and draft row and applies `plan`'s put/delete in ONE
+   * readwrite transaction, so every draft compare-and-set decision sees exactly what it changes.
+   */
+  mutateDraftAtomic<R>(
     key: string,
-    accountId: string,
     activeKey: string,
     epochKey: string,
-    expectedClaimRevision: number,
-    expectedSessionId?: string,
-  ): Promise<'deleted' | 'missing' | 'stale'>;
+    plan: (ctx: DraftMutationContext) => DraftMutationPlan<R>,
+  ): Promise<R>;
   delete(key: string): Promise<void>;
   listByPrefix(prefix: string): Promise<StoredRecord[]>;
   deleteByPrefix(prefix: string): Promise<number>;
@@ -421,47 +643,19 @@ export function createMemoryRecordingBackend(options?: { durableForTests?: boole
       map.set(entry.key, structuredClone(stampEntryWithActiveClaim(entry, activeEntry, existingEntry)));
       return true;
     },
-    async saveDraftGuardedAtomic(entry, activeKey, epochKey, expectedClaimRevision, guard) {
-      const activeEntry = map.get(activeKey);
-      const epochEntry = map.get(epochKey);
-      const existingDraft = map.get(entry.key);
-      const verdict = evaluateDraftWriteGuard(
-        entry,
-        activeEntry,
-        epochEntry,
-        existingDraft,
-        expectedClaimRevision,
-        guard,
-      );
-      if (verdict !== 'saved') {
-        return verdict;
+    async mutateDraftAtomic(key, activeKey, epochKey, plan) {
+      const ctx: DraftMutationContext = {
+        activeEntry: structuredClone(map.get(activeKey)),
+        epochEntry: structuredClone(map.get(epochKey)),
+        existing: structuredClone(map.get(key)),
+      };
+      const outcome = plan(ctx);
+      if (outcome.put) {
+        map.set(key, structuredClone({ ...outcome.put, key }));
+      } else if (outcome.remove) {
+        map.delete(key);
       }
-      map.set(entry.key, structuredClone({ ...entry, claimRevision: expectedClaimRevision }));
-      return 'saved';
-    },
-    async deleteDraftGuardedAtomic(key, accountId, activeKey, epochKey, expectedClaimRevision, expectedSessionId) {
-      const activeEntry = map.get(activeKey);
-      const epochEntry = map.get(epochKey);
-      const existingDraft = map.get(key);
-      if (!existingDraft) return 'missing';
-      const activeAccountId = extractActiveAccountId(activeEntry);
-      const activeClaimRev = typeof activeEntry?.claimRevision === 'number' ? activeEntry.claimRevision : undefined;
-      const currentEpoch = Math.max(extractClaimEpoch(epochEntry), activeClaimRev ?? 0);
-      const existingDraftRev =
-        typeof existingDraft.claimRevision === 'number' ? existingDraft.claimRevision : undefined;
-      const existingSessionId = (existingDraft.payload as Partial<LocalRecordingDraft> | undefined)?.sessionId;
-      if (
-        activeAccountId !== accountId ||
-        activeClaimRev === undefined ||
-        activeClaimRev !== expectedClaimRevision ||
-        currentEpoch > expectedClaimRevision ||
-        (existingDraftRev !== undefined && existingDraftRev > expectedClaimRevision) ||
-        (expectedSessionId !== undefined && existingSessionId !== undefined && existingSessionId !== expectedSessionId)
-      ) {
-        return 'stale';
-      }
-      map.delete(key);
-      return 'deleted';
+      return outcome.result;
     },
     async delete(key) {
       map.delete(key);
@@ -714,11 +908,8 @@ function createUnavailableRecordingBackend(): RecordingStorageBackend {
     async putIfExists() {
       throw unavailable();
     },
-    async saveDraftGuardedAtomic() {
+    async mutateDraftAtomic() {
       throw unavailable();
-    },
-    async deleteDraftGuardedAtomic() {
-      return 'missing';
     },
     async delete() {
       return;
@@ -993,56 +1184,20 @@ export function createIndexedDbRecordingBackend(
         return true;
       });
     },
-    async saveDraftGuardedAtomic(entry, activeKey, epochKey, expectedClaimRevision, guard) {
+    async mutateDraftAtomic(key, activeKey, epochKey, plan) {
       return runTx('readwrite', async (store) => {
-        const [activeEntry, epochEntry, existingDraft] = (await Promise.all([
-          reqPromise(store.get(activeKey)),
-          reqPromise(store.get(epochKey)),
-          reqPromise(store.get(entry.key)),
-        ])) as [StoredRecord | undefined, StoredRecord | undefined, StoredRecord | undefined];
-        const verdict = evaluateDraftWriteGuard(
-          entry,
-          activeEntry,
-          epochEntry,
-          existingDraft,
-          expectedClaimRevision,
-          guard,
-        );
-        if (verdict !== 'saved') {
-          return verdict;
-        }
-        await reqPromise(store.put({ ...entry, claimRevision: expectedClaimRevision }));
-        return 'saved';
-      });
-    },
-    async deleteDraftGuardedAtomic(key, accountId, activeKey, epochKey, expectedClaimRevision, expectedSessionId) {
-      return runTx('readwrite', async (store) => {
-        const [activeEntry, epochEntry, existingDraft] = (await Promise.all([
+        const [activeEntry, epochEntry, existing] = (await Promise.all([
           reqPromise(store.get(activeKey)),
           reqPromise(store.get(epochKey)),
           reqPromise(store.get(key)),
         ])) as [StoredRecord | undefined, StoredRecord | undefined, StoredRecord | undefined];
-        if (!existingDraft) return 'missing';
-        const activeAccountId = extractActiveAccountId(activeEntry);
-        const activeClaimRev = typeof activeEntry?.claimRevision === 'number' ? activeEntry.claimRevision : undefined;
-        const currentEpoch = Math.max(extractClaimEpoch(epochEntry), activeClaimRev ?? 0);
-        const existingDraftRev =
-          typeof existingDraft.claimRevision === 'number' ? existingDraft.claimRevision : undefined;
-        const existingSessionId = (existingDraft.payload as Partial<LocalRecordingDraft> | undefined)?.sessionId;
-        if (
-          activeAccountId !== accountId ||
-          activeClaimRev === undefined ||
-          activeClaimRev !== expectedClaimRevision ||
-          currentEpoch > expectedClaimRevision ||
-          (existingDraftRev !== undefined && existingDraftRev > expectedClaimRevision) ||
-          (expectedSessionId !== undefined &&
-            existingSessionId !== undefined &&
-            existingSessionId !== expectedSessionId)
-        ) {
-          return 'stale';
+        const outcome = plan({ activeEntry, epochEntry, existing });
+        if (outcome.put) {
+          await reqPromise(store.put({ ...outcome.put, key }));
+        } else if (outcome.remove) {
+          await reqPromise(store.delete(key));
         }
-        await reqPromise(store.delete(key));
-        return 'deleted';
+        return outcome.result;
       });
     },
     async delete(key) {
@@ -1616,19 +1771,13 @@ export async function saveActiveRecordingDraft(
     key: activeDraftKey(draft.accountId),
     accountId: draft.accountId,
     schemaVersion: RECORDING_STORE_SCHEMA_VERSION,
-    savedAt: Date.now(),
+    savedAt: options?.nowMs ?? Date.now(),
     payload: draft,
   };
   if (options?.expectedClaimRevision !== undefined) {
-    const outcome = await backend.saveDraftGuardedAtomic(
-      entry,
-      ACTIVE_ACCOUNT_KEY,
-      CLAIM_EPOCH_KEY,
-      options.expectedClaimRevision,
-      {
-        rejectIfExistingDraft: options.rejectIfExistingDraft,
-        expectedSessionId: options.expectedSessionId,
-      },
+    const expectedClaimRevision = options.expectedClaimRevision;
+    const outcome = await backend.mutateDraftAtomic(entry.key, ACTIVE_ACCOUNT_KEY, CLAIM_EPOCH_KEY, (ctx) =>
+      planDraftWrite(entry, ctx, expectedClaimRevision, options),
     );
     if (outcome === 'stale') {
       throw new RecordingPersistenceError(
@@ -1642,6 +1791,12 @@ export async function saveActiveRecordingDraft(
         '检测到尚未恢复或丢弃的本地跑步草稿，已阻止覆盖旧草稿，请先恢复、保存或安全丢弃。',
       );
     }
+    if (outcome === 'missing') {
+      throw new RecordingPersistenceError(
+        'STORAGE_SESSION_GONE',
+        '这条跑步草稿已在其他标签页中保存或丢弃，已阻止在本页重新创建。',
+      );
+    }
     return;
   }
   await backend.put(entry);
@@ -1651,23 +1806,27 @@ export async function readActiveRecordingDraftWithMeta(
   accountId: string,
   backend: RecordingStorageBackend = getDefaultRecordingBackend(),
 ): Promise<ActiveRecordingDraftWithMeta | null> {
-  const entry = await backend.get(activeDraftKey(accountId));
+  const key = activeDraftKey(accountId);
+  const entry = await backend.get(key);
   if (!entry || entry.schemaVersion !== RECORDING_STORE_SCHEMA_VERSION || entry.accountId !== accountId) {
     return null;
   }
-  const payload = entry.payload as Partial<LocalRecordingDraft> | null;
-  if (
-    !payload ||
-    typeof payload.sessionId !== 'string' ||
-    typeof payload.idempotencyKey !== 'string' ||
-    !Array.isArray(payload.points)
-  ) {
-    await backend.delete(activeDraftKey(accountId));
+  if (!isValidDraftRecord(entry, accountId)) {
+    // Another tab may commit a valid draft between this read and the cleanup, so the delete
+    // re-checks the row inside its own transaction and keeps anything that changed.
+    await backend.mutateDraftAtomic(key, ACTIVE_ACCOUNT_KEY, CLAIM_EPOCH_KEY, (ctx) =>
+      planMalformedDraftDelete(accountId, ctx, entry.savedAt),
+    );
     return null;
   }
   return {
-    draft: payload as LocalRecordingDraft,
+    draft: entry.payload as LocalRecordingDraft,
     claimRevision: typeof entry.claimRevision === 'number' ? entry.claimRevision : undefined,
+    savedAt: entry.savedAt,
+    draftRevision: draftRevisionOf(entry),
+    ownerId: entry.ownerId,
+    ownerGeneration: entry.ownerGeneration,
+    leaseExpiresAtMs: entry.leaseExpiresAtMs,
   };
 }
 
@@ -1679,19 +1838,55 @@ export async function readActiveRecordingDraft(
   return hit?.draft ?? null;
 }
 
+/**
+ * Atomically makes `ownerId` the owner of the account's draft, but only if the row is byte-for-byte
+ * the revision the caller read and no other live tab owns it. The stored points are kept as-is.
+ */
+export async function takeOverActiveRecordingDraft(
+  accountId: string,
+  options: DraftTakeoverOptions,
+  backend: RecordingStorageBackend = getDefaultRecordingBackend(),
+): Promise<DraftTakeoverResult> {
+  return backend.mutateDraftAtomic(activeDraftKey(accountId), ACTIVE_ACCOUNT_KEY, CLAIM_EPOCH_KEY, (ctx) =>
+    planDraftTakeover(accountId, ctx, options),
+  );
+}
+
+export async function renewActiveRecordingDraftLease(
+  accountId: string,
+  options: {
+    expectedClaimRevision: number;
+    expectedSessionId: string;
+    owner: DraftOwnerGuard;
+    nowMs?: number;
+  },
+  backend: RecordingStorageBackend = getDefaultRecordingBackend(),
+): Promise<'renewed' | 'missing' | 'stale'> {
+  const nowMs = options.nowMs ?? Date.now();
+  return backend.mutateDraftAtomic(activeDraftKey(accountId), ACTIVE_ACCOUNT_KEY, CLAIM_EPOCH_KEY, (ctx) =>
+    planDraftLeaseRenewal(
+      accountId,
+      ctx,
+      options.expectedClaimRevision,
+      options.expectedSessionId,
+      options.owner,
+      nowMs,
+    ),
+  );
+}
+
 export async function deleteActiveRecordingDraft(
   accountId: string,
   backend: RecordingStorageBackend = getDefaultRecordingBackend(),
   options?: DraftDeleteGuardOptions,
 ): Promise<void> {
   if (options?.expectedClaimRevision !== undefined) {
-    const result = await backend.deleteDraftGuardedAtomic(
+    const expectedClaimRevision = options.expectedClaimRevision;
+    const result = await backend.mutateDraftAtomic(
       activeDraftKey(accountId),
-      accountId,
       ACTIVE_ACCOUNT_KEY,
       CLAIM_EPOCH_KEY,
-      options.expectedClaimRevision,
-      options.expectedSessionId,
+      (ctx) => planDraftDelete(accountId, ctx, expectedClaimRevision, options.expectedSessionId, options.owner),
     );
     if (result === 'stale') {
       throw new RecordingPersistenceError(
@@ -1702,6 +1897,107 @@ export async function deleteActiveRecordingDraft(
     return;
   }
   await backend.delete(activeDraftKey(accountId));
+}
+
+let tabOwnerId: string | null = null;
+
+/**
+ * Identity of this page realm (one per tab load). Deliberately not stored in sessionStorage,
+ * which a duplicated tab would copy and then share with the live original.
+ */
+export function getRecordingTabOwnerId(): string {
+  if (!tabOwnerId) {
+    const bytes = new Uint8Array(16);
+    globalThis.crypto.getRandomValues(bytes);
+    tabOwnerId = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  return tabOwnerId;
+}
+
+interface LockManagerLike {
+  request(
+    name: string,
+    options: { ifAvailable?: boolean; steal?: boolean },
+    callback: (lock: unknown) => Promise<void> | void,
+  ): Promise<unknown>;
+}
+
+export interface RecordingSessionLock {
+  release(): void;
+  /** True once another tab stole the lock; the holder must treat its ownership as ended. */
+  readonly lost: boolean;
+}
+
+export type RecordingSessionLockResult =
+  { status: 'acquired'; lock: RecordingSessionLock } | { status: 'held' } | { status: 'unsupported' };
+
+function navigatorLocks(): LockManagerLike | null {
+  const nav = (globalThis as { navigator?: { locks?: LockManagerLike } }).navigator;
+  return nav?.locks && typeof nav.locks.request === 'function' ? nav.locks : null;
+}
+
+/**
+ * The owner of a Web recording session holds this exclusive Web Lock until the session ends or the
+ * page goes away; the browser frees it when the tab closes or crashes. A free lock therefore proves
+ * that no live tab owns the account's draft. `steal` is only for owners already fenced by an older
+ * claim generation; the robbed tab is told through `onLost` and must stop writing.
+ */
+export async function acquireRecordingSessionLock(
+  accountId: string,
+  options: { steal?: boolean; onLost?: () => void; locks?: LockManagerLike | null } = {},
+): Promise<RecordingSessionLockResult> {
+  const locks = options.locks === undefined ? navigatorLocks() : options.locks;
+  if (!locks) return { status: 'unsupported' };
+  return new Promise<RecordingSessionLockResult>((resolve) => {
+    let granted = false;
+    let released = false;
+    let lost = false;
+    let releaseHeld: () => void = () => {};
+    const held = new Promise<void>((done) => {
+      releaseHeld = done;
+    });
+    let request: Promise<unknown>;
+    try {
+      request = locks.request(
+        `runnote-recording-session:${accountId}`,
+        options.steal ? { steal: true } : { ifAvailable: true },
+        (lock) => {
+          if (!lock) {
+            resolve({ status: 'held' });
+            return;
+          }
+          granted = true;
+          resolve({
+            status: 'acquired',
+            lock: {
+              release() {
+                released = true;
+                releaseHeld();
+              },
+              get lost() {
+                return lost;
+              },
+            },
+          });
+          return held;
+        },
+      );
+    } catch {
+      resolve({ status: 'unsupported' });
+      return;
+    }
+    request.then(
+      () => {},
+      () => {
+        if (!granted) {
+          resolve({ status: 'unsupported' });
+        } else if (!released) {
+          lost = true;
+          options.onLost?.();
+        }
+      },
+    );
+  });
 }
 
 export async function putUploadQueueItem(
