@@ -13,6 +13,7 @@ import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
@@ -36,6 +37,23 @@ object LocationRecordingPolicy {
     const val MAX_POINTS_PER_SESSION: Int = 50_000
     const val MAX_SEGMENTS_PER_SESSION: Int = 1_000
     const val EARTH_RADIUS_METERS: Double = 6_371_008.8
+
+    private val directoryLocks = ConcurrentHashMap<String, Any>()
+
+    @JvmStatic
+    fun canonicalDirKey(dir: File): String = try {
+        dir.canonicalPath
+    } catch (_: Exception) {
+        dir.absolutePath
+    }
+
+    /**
+     * Cross-instance lock keyed by canonical directory path so separate `RecordingStore`
+     * instances (service, plugin, recovery readers) never race on metadata or NDJSON writes.
+     */
+    @JvmStatic
+    fun lockForDirectory(dir: File): Any =
+        directoryLocks.computeIfAbsent(canonicalDirKey(dir)) { Any() }
 
     @JvmField
     val REQUIRED_MANIFEST_PERMISSIONS: List<String> = listOf(
@@ -72,6 +90,22 @@ object LocationRecordingPolicy {
         @JvmField val accepted: Boolean,
         @JvmField val reason: String?,
         @JvmField val distanceDeltaM: Double,
+    )
+
+    data class StartResult(
+        @JvmField val session: SessionRecord?,
+        @JvmField val errorCode: String?,
+    )
+
+    data class PointRecordResult(
+        @JvmField val session: SessionRecord,
+        @JvmField val accepted: Boolean,
+    )
+
+    data class FinalizedSnapshot(
+        @JvmField val session: SessionRecord,
+        @JvmField val points: List<RecordedPoint>,
+        @JvmField val newlyFinalized: Boolean,
     )
 
     data class SessionRecord(
@@ -373,10 +407,11 @@ object LocationRecordingPolicy {
 
     /**
      * Crash-safe, account-scoped disk store for the active recording session.
-     * Uses atomic temp-file replacement for metadata JSON and append-only NDJSON for track points
-     * so sudden process death or power loss never corrupts already-captured points.
+     * Uses a shared cross-instance lock per directory, atomic temp-file replacement for
+     * metadata JSON, and append-only NDJSON for track points.
      */
     class RecordingStore(private val dir: File) {
+        internal val lock: Any = lockForDirectory(dir)
         private val metaFile: File = File(dir, "active_session.json")
         private val metaTmpFile: File = File(dir, "active_session.json.tmp")
         private val pointsFile: File = File(dir, "points.ndjson")
@@ -395,8 +430,7 @@ object LocationRecordingPolicy {
             }
         }
 
-        @Synchronized
-        fun saveSession(session: SessionRecord) {
+        fun saveSession(session: SessionRecord) = synchronized(lock) {
             if (!dir.exists()) {
                 dir.mkdirs()
             }
@@ -446,8 +480,7 @@ object LocationRecordingPolicy {
             return "{${fields.joinToString(",")}}"
         }
 
-        @Synchronized
-        fun appendPoint(point: RecordedPoint) {
+        fun appendPoint(point: RecordedPoint) = synchronized(lock) {
             if (!dir.exists()) {
                 dir.mkdirs()
             }
@@ -461,44 +494,40 @@ object LocationRecordingPolicy {
             }
         }
 
-        @Synchronized
-        fun loadSessionForAccount(accountId: String?): SessionRecord? {
-            val loaded = loadSession() ?: return null
+        fun loadSessionForAccount(accountId: String?): SessionRecord? = synchronized(lock) {
+            val loaded = loadSession() ?: return@synchronized null
             if (!accountId.isNullOrBlank() && loaded.accountId != accountId) {
-                return null
+                return@synchronized null
             }
-            return loaded
+            loaded
         }
 
-        @Synchronized
-        fun loadPointsForAccount(accountId: String?, afterIndex: Int = 0): List<RecordedPoint> {
-            val loaded = loadSession() ?: return emptyList()
+        fun loadPointsForAccount(accountId: String?, afterIndex: Int = 0): List<RecordedPoint> = synchronized(lock) {
+            val loaded = loadSession() ?: return@synchronized emptyList()
             if (!accountId.isNullOrBlank() && loaded.accountId != accountId) {
-                return emptyList()
+                return@synchronized emptyList()
             }
-            return loadPoints(afterIndex)
+            loadPoints(afterIndex)
         }
 
-        @Synchronized
-        fun acknowledgeHandoff(sessionId: String): Boolean {
-            if (sessionId.isBlank()) return false
-            val existing = loadSession() ?: return false
-            if (existing.sessionId != sessionId) return false
+        fun acknowledgeHandoff(sessionId: String): Boolean = synchronized(lock) {
+            if (sessionId.isBlank()) return@synchronized false
+            val existing = loadSession() ?: return@synchronized false
+            if (existing.status != "stopped" || existing.sessionId != sessionId) return@synchronized false
             clearAll()
-            return true
+            true
         }
 
-        @Synchronized
-        fun loadSession(): SessionRecord? {
-            if (!metaFile.exists()) return null
-            return try {
+        fun loadSession(): SessionRecord? = synchronized(lock) {
+            if (!metaFile.exists()) return@synchronized null
+            try {
                 val raw = metaFile.readText(StandardCharsets.UTF_8)
-                val obj = parseFlatJsonObject(raw) ?: return null
+                val obj = parseFlatJsonObject(raw) ?: return@synchronized null
                 val sessionId = obj["sessionId"]?.trim().orEmpty()
                 val accountId = obj["accountId"]?.trim().orEmpty()
                 val idempotencyKey = obj["idempotencyKey"]?.trim().orEmpty()
                 if (sessionId.isBlank() || accountId.isBlank() || idempotencyKey.isBlank()) {
-                    return null
+                    return@synchronized null
                 }
                 val validPoints = loadPoints(0)
                 val recordedCount = validPoints.size
@@ -524,9 +553,8 @@ object LocationRecordingPolicy {
             }
         }
 
-        @Synchronized
-        fun loadPoints(afterIndex: Int = 0): List<RecordedPoint> {
-            if (!pointsFile.exists()) return emptyList()
+        fun loadPoints(afterIndex: Int = 0): List<RecordedPoint> = synchronized(lock) {
+            if (!pointsFile.exists()) return@synchronized emptyList()
             val allValid = mutableListOf<RecordedPoint>()
             var hadCorruptLine = false
             try {
@@ -551,7 +579,7 @@ object LocationRecordingPolicy {
             if (hadCorruptLine) {
                 repairPointsFile(allValid)
             }
-            return if (afterIndex <= 0) allValid else if (afterIndex >= allValid.size) emptyList() else allValid.subList(afterIndex, allValid.size).toList()
+            if (afterIndex <= 0) allValid else if (afterIndex >= allValid.size) emptyList() else allValid.subList(afterIndex, allValid.size).toList()
         }
 
         private fun repairPointsFile(validPoints: List<RecordedPoint>) {
@@ -577,22 +605,25 @@ object LocationRecordingPolicy {
             }
         }
 
-        @Synchronized
-        fun clearIfAccountMismatch(activeAccountId: String?): Boolean {
-            val existing = loadSession() ?: return false
+        fun clearIfAccountMismatch(activeAccountId: String?): Boolean = synchronized(lock) {
+            val existing = loadSession() ?: return@synchronized false
             if (activeAccountId == null || activeAccountId.isBlank() || existing.accountId != activeAccountId) {
                 clearAll()
-                return true
+                true
+            } else {
+                false
             }
-            return false
         }
 
-        @Synchronized
-        fun clearAll() {
+        fun clearAll() = synchronized(lock) {
             if (metaTmpFile.exists()) metaTmpFile.delete()
             if (metaFile.exists()) metaFile.delete()
             if (pointsTmpFile.exists()) pointsTmpFile.delete()
             if (pointsFile.exists()) pointsFile.delete()
+        }
+
+        fun hasPersistedSession(): Boolean = synchronized(lock) {
+            metaFile.exists()
         }
 
         private fun parsePointLine(line: String): RecordedPoint? {
@@ -613,5 +644,312 @@ object LocationRecordingPolicy {
                 null
             }
         }
+    }
+
+    /**
+     * Single writer/finalizer state machine coordinating point ingestion, pause/resume,
+     * freeze-before-handoff stop, and explicit acknowledgement under the directory lock.
+     */
+    class RecordingSessionCoordinator(val store: RecordingStore) {
+        private var activeSession: SessionRecord? = null
+        private var lastAcceptedPoint: RecordedPoint? = null
+        private var frozen: Boolean = false
+        private var finalizedSnapshot: FinalizedSnapshot? = null
+        private var handoffEmittedForSessionId: String? = null
+        private val acknowledgedSessionIds = LinkedHashSet<String>()
+
+        fun currentSession(): SessionRecord? = synchronized(store.lock) { activeSession }
+
+        @JvmOverloads
+        fun startSession(
+            sessionId: String,
+            accountId: String,
+            idempotencyKey: String,
+            title: String,
+            resumeInterrupted: Boolean,
+            nowMs: Long = System.currentTimeMillis(),
+        ): StartResult = synchronized(store.lock) {
+            val existing = activeSession ?: store.loadSession()
+            if (!resumeInterrupted &&
+                existing != null &&
+                existing.accountId == accountId &&
+                hasPendingHandoff(existing)
+            ) {
+                return@synchronized StartResult(existing, "UNHANDLED_STOPPED_SESSION")
+            }
+            val session = if (resumeInterrupted) {
+                if (existing == null || existing.status == "stopped" || existing.sessionId in acknowledgedSessionIds) {
+                    return@synchronized StartResult(null, "NO_RESUMABLE_SESSION")
+                }
+                if (accountId.isNotBlank() && existing.accountId != accountId) {
+                    return@synchronized StartResult(null, "ACCOUNT_MISMATCH")
+                }
+                lastAcceptedPoint = store.loadPoints(0).lastOrNull()
+                existing.copy(
+                    status = "recording",
+                    lastSegmentStartMs = nowMs,
+                    segmentIndex = existing.segmentIndex + 1,
+                    interruptedReason = null,
+                )
+            } else {
+                if (sessionId.isBlank() || accountId.isBlank() || idempotencyKey.isBlank()) {
+                    return@synchronized StartResult(null, "INVALID_SESSION_ARGS")
+                }
+                store.clearAll()
+                lastAcceptedPoint = null
+                acknowledgedSessionIds.remove(sessionId)
+                SessionRecord(
+                    sessionId = sessionId,
+                    accountId = accountId,
+                    idempotencyKey = idempotencyKey,
+                    title = title,
+                    status = "recording",
+                    startedAtMs = nowMs,
+                    endedAtMs = null,
+                    activeDurationMs = 0L,
+                    lastSegmentStartMs = nowMs,
+                    segmentIndex = 0,
+                    pointCount = 0,
+                    previewDistanceM = 0.0,
+                    lastPointTimeMs = null,
+                    lastAccuracyM = null,
+                    interruptedReason = null,
+                )
+            }
+            frozen = false
+            finalizedSnapshot = null
+            handoffEmittedForSessionId = null
+            activeSession = session
+            store.saveSession(session)
+            StartResult(session, null)
+        }
+
+        fun recordLocationPoint(candidate: RecordedPoint): PointRecordResult? = synchronized(store.lock) {
+            if (frozen) return@synchronized null
+            if (!store.hasPersistedSession()) {
+                activeSession = null
+                lastAcceptedPoint = null
+                finalizedSnapshot = null
+                handoffEmittedForSessionId = null
+                return@synchronized null
+            }
+            val session = activeSession ?: return@synchronized null
+            if (session.status != "recording" || session.sessionId in acknowledgedSessionIds) {
+                return@synchronized null
+            }
+            val decision = evaluatePoint(
+                candidate = candidate,
+                previous = lastAcceptedPoint,
+                currentPointCount = session.pointCount,
+            )
+            var updated = session.copy(lastAccuracyM = candidate.accuracyM)
+            if (decision.accepted) {
+                store.appendPoint(candidate)
+                lastAcceptedPoint = candidate
+                updated = updated.copy(
+                    pointCount = session.pointCount + 1,
+                    previewDistanceM = session.previewDistanceM + decision.distanceDeltaM,
+                    lastPointTimeMs = candidate.recordedAtMs,
+                )
+                store.saveSession(updated)
+            }
+            activeSession = updated
+            PointRecordResult(updated, decision.accepted)
+        }
+
+        @JvmOverloads
+        fun pauseSession(nowMs: Long = System.currentTimeMillis()): SessionRecord? = synchronized(store.lock) {
+            if (frozen) return@synchronized null
+            val current = activeSession ?: store.loadSession() ?: return@synchronized null
+            if (current.status != "recording" || current.sessionId in acknowledgedSessionIds) {
+                return@synchronized null
+            }
+            val updated = current.copy(
+                status = "paused",
+                activeDurationMs = current.effectiveActiveDurationMs(nowMs),
+                lastSegmentStartMs = null,
+            )
+            activeSession = updated
+            store.saveSession(updated)
+            updated
+        }
+
+        @JvmOverloads
+        fun resumeSession(nowMs: Long = System.currentTimeMillis()): SessionRecord? = synchronized(store.lock) {
+            val current = activeSession ?: store.loadSession() ?: return@synchronized null
+            if ((current.status != "paused" && current.status != "interrupted") ||
+                current.sessionId in acknowledgedSessionIds
+            ) {
+                return@synchronized null
+            }
+            if (lastAcceptedPoint == null) {
+                lastAcceptedPoint = store.loadPoints(0).lastOrNull()
+            }
+            val updated = current.copy(
+                status = "recording",
+                lastSegmentStartMs = nowMs,
+                segmentIndex = current.segmentIndex + 1,
+                interruptedReason = null,
+            )
+            frozen = false
+            finalizedSnapshot = null
+            handoffEmittedForSessionId = null
+            activeSession = updated
+            store.saveSession(updated)
+            updated
+        }
+
+        @JvmOverloads
+        fun markInterrupted(
+            reason: String,
+            nowMs: Long = System.currentTimeMillis(),
+        ): SessionRecord? = synchronized(store.lock) {
+            if (frozen) return@synchronized null
+            if (!store.hasPersistedSession()) {
+                activeSession = null
+                lastAcceptedPoint = null
+                finalizedSnapshot = null
+                handoffEmittedForSessionId = null
+                return@synchronized null
+            }
+            val current = activeSession ?: return@synchronized null
+            if ((current.status != "recording" && current.status != "paused") ||
+                current.sessionId in acknowledgedSessionIds
+            ) {
+                return@synchronized null
+            }
+            val interrupted = current.copy(
+                status = "interrupted",
+                activeDurationMs = current.effectiveActiveDurationMs(nowMs),
+                lastSegmentStartMs = null,
+                interruptedReason = current.interruptedReason ?: reason,
+            )
+            activeSession = interrupted
+            store.saveSession(interrupted)
+            interrupted
+        }
+
+        @JvmOverloads
+        fun finalizeAndFreeze(
+            nowMs: Long = System.currentTimeMillis(),
+            onFreeze: Runnable? = null,
+        ): FinalizedSnapshot? = synchronized(store.lock) {
+            frozen = true
+            onFreeze?.run()
+            if (!store.hasPersistedSession()) {
+                activeSession = null
+                lastAcceptedPoint = null
+                finalizedSnapshot = null
+                handoffEmittedForSessionId = null
+                return@synchronized null
+            }
+            val cached = finalizedSnapshot
+            if (cached != null) {
+                return@synchronized cached.copy(newlyFinalized = false)
+            }
+            val current = activeSession ?: store.loadSession() ?: return@synchronized null
+            if (current.sessionId in acknowledgedSessionIds) {
+                return@synchronized null
+            }
+            val points = store.loadPoints(0)
+            if (current.status == "stopped") {
+                val synced = current.copy(pointCount = points.size)
+                val snapshot = FinalizedSnapshot(synced, points, newlyFinalized = false)
+                activeSession = synced
+                finalizedSnapshot = snapshot
+                return@synchronized snapshot
+            }
+            val finalized = current.copy(
+                status = "stopped",
+                endedAtMs = current.endedAtMs ?: nowMs,
+                activeDurationMs = current.effectiveActiveDurationMs(nowMs),
+                lastSegmentStartMs = null,
+                pointCount = points.size,
+            )
+            store.saveSession(finalized)
+            activeSession = finalized
+            val snapshot = FinalizedSnapshot(finalized, points, newlyFinalized = true)
+            finalizedSnapshot = snapshot
+            snapshot
+        }
+
+        fun claimHandoffEmission(sessionId: String): Boolean = synchronized(store.lock) {
+            if (sessionId.isBlank() ||
+                sessionId in acknowledgedSessionIds ||
+                handoffEmittedForSessionId == sessionId
+            ) {
+                return@synchronized false
+            }
+            handoffEmittedForSessionId = sessionId
+            true
+        }
+
+        fun acknowledgeHandoff(sessionId: String): Boolean = synchronized(store.lock) {
+            if (sessionId.isBlank()) return@synchronized false
+            val existing = activeSession ?: store.loadSession() ?: return@synchronized false
+            if (existing.status != "stopped" || existing.sessionId != sessionId) {
+                return@synchronized false
+            }
+            acknowledgedSessionIds.add(sessionId)
+            frozen = true
+            activeSession = null
+            lastAcceptedPoint = null
+            finalizedSnapshot = null
+            handoffEmittedForSessionId = null
+            store.clearAll()
+            true
+        }
+
+        fun discardSession() = synchronized(store.lock) {
+            val current = activeSession ?: store.loadSession()
+            if (current != null) {
+                acknowledgedSessionIds.add(current.sessionId)
+            }
+            frozen = true
+            activeSession = null
+            lastAcceptedPoint = null
+            finalizedSnapshot = null
+            handoffEmittedForSessionId = null
+            store.clearAll()
+        }
+
+        fun hasAccountMismatch(keepAccountId: String?): Boolean = synchronized(store.lock) {
+            val existing = activeSession ?: store.loadSession() ?: return@synchronized false
+            keepAccountId == null || keepAccountId.isBlank() || existing.accountId != keepAccountId
+        }
+
+        fun clearIfAccountMismatch(keepAccountId: String?): Boolean = synchronized(store.lock) {
+            if (!hasAccountMismatch(keepAccountId)) return@synchronized false
+            discardSession()
+            true
+        }
+
+        fun loadReconciledSessionForAccount(accountId: String?, serviceRunning: Boolean): SessionRecord? =
+            synchronized(store.lock) {
+                val active = activeSession
+                val loaded = if (active != null && (accountId.isNullOrBlank() || active.accountId == accountId)) {
+                    active
+                } else {
+                    store.loadSessionForAccount(accountId)
+                }
+                val reconciled = reconcileAfterRestart(loaded, serviceRunning)
+                if (reconciled != null && reconciled != loaded) {
+                    store.saveSession(reconciled)
+                    if (activeSession?.sessionId == reconciled.sessionId) {
+                        activeSession = reconciled
+                    }
+                }
+                reconciled
+            }
+
+        @JvmOverloads
+        fun loadPointsForAccount(accountId: String?, afterIndex: Int = 0): List<RecordedPoint> =
+            synchronized(store.lock) {
+                val active = activeSession
+                if (active != null && !accountId.isNullOrBlank() && active.accountId != accountId) {
+                    return@synchronized emptyList()
+                }
+                store.loadPointsForAccount(accountId, afterIndex)
+            }
     }
 }

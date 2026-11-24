@@ -234,24 +234,9 @@ class LocationRecorderPlugin : Plugin() {
 
     @PluginMethod
     fun stopSession(call: PluginCall) {
-        val store = RecordingForegroundService.storeFor(context)
-        val existing = store.loadSession()
-        val nowMs = System.currentTimeMillis()
-        if (RecordingForegroundService.isServiceRunning) {
-            sendServiceAction(RecordingForegroundService.ACTION_STOP)
-        }
-        val finalized = existing?.copy(
-            status = "stopped",
-            endedAtMs = existing.endedAtMs ?: nowMs,
-            activeDurationMs = existing.effectiveActiveDurationMs(nowMs),
-            lastSegmentStartMs = null,
-        )
-        if (finalized != null) {
-            store.saveSession(finalized)
-        }
-        val points = store.loadPoints(0)
-        val payload = buildStatePayload(finalized, "inactive").apply {
-            put("points", pointsToJsArray(points))
+        val snapshot = RecordingForegroundService.stopAndFinalizeSync(context)
+        val payload = buildStatePayload(snapshot?.session, "inactive").apply {
+            put("points", pointsToJsArray(snapshot?.points ?: emptyList()))
         }
         call.resolve(payload)
     }
@@ -259,31 +244,24 @@ class LocationRecorderPlugin : Plugin() {
     @PluginMethod
     fun acknowledgeHandoff(call: PluginCall) {
         val sessionId = call.getString("sessionId")?.trim().orEmpty()
-        val cleared = RecordingForegroundService.storeFor(context).acknowledgeHandoff(sessionId)
+        val cleared = RecordingForegroundService.coordinatorFor(context).acknowledgeHandoff(sessionId)
         call.resolve(JSObject().put("acknowledged", cleared))
     }
 
     @PluginMethod
     fun discardSession(call: PluginCall) {
-        if (RecordingForegroundService.isServiceRunning) {
-            sendServiceAction(RecordingForegroundService.ACTION_DISCARD)
-        }
-        RecordingForegroundService.storeFor(context).clearAll()
+        RecordingForegroundService.discardSync(context)
         call.resolve(JSObject().put("discarded", true))
     }
 
     @PluginMethod
     fun getSessionState(call: PluginCall) {
         val accountId = call.getString("accountId")?.trim()
-        val store = RecordingForegroundService.storeFor(context)
-        val loaded = store.loadSessionForAccount(accountId)
-        val reconciled = LocationRecordingPolicy.reconcileAfterRestart(
-            loaded,
+        val coordinator = RecordingForegroundService.coordinatorFor(context)
+        val reconciled = coordinator.loadReconciledSessionForAccount(
+            accountId,
             RecordingForegroundService.isServiceRunning,
         )
-        if (reconciled != null && reconciled != loaded) {
-            store.saveSession(reconciled)
-        }
         val gpsStatus = if (RecordingForegroundService.isServiceRunning && reconciled != null) {
             RecordingForegroundService.currentGpsStatus
         } else {
@@ -296,7 +274,7 @@ class LocationRecorderPlugin : Plugin() {
     fun getSessionPoints(call: PluginCall) {
         val accountId = call.getString("accountId")?.trim()
         val afterIndex = (call.getInt("afterIndex", 0) ?: 0).coerceAtLeast(0)
-        val points = RecordingForegroundService.storeFor(context).loadPointsForAccount(accountId, afterIndex)
+        val points = RecordingForegroundService.coordinatorFor(context).loadPointsForAccount(accountId, afterIndex)
         call.resolve(
             JSObject().apply {
                 put("points", pointsToJsArray(points))
@@ -308,13 +286,7 @@ class LocationRecorderPlugin : Plugin() {
     @PluginMethod
     fun clearAccountSessions(call: PluginCall) {
         val keepAccountId = call.getString("keepAccountId")?.trim()
-        val store = RecordingForegroundService.storeFor(context)
-        val existing = store.loadSession()
-        val mismatch = existing != null && (keepAccountId.isNullOrBlank() || existing.accountId != keepAccountId)
-        if (mismatch && RecordingForegroundService.isServiceRunning) {
-            sendServiceAction(RecordingForegroundService.ACTION_DISCARD)
-        }
-        val cleared = store.clearIfAccountMismatch(keepAccountId)
+        val cleared = RecordingForegroundService.clearIfAccountMismatchSync(context, keepAccountId)
         call.resolve(JSObject().put("cleared", cleared))
     }
 
@@ -330,9 +302,9 @@ class LocationRecorderPlugin : Plugin() {
     }
 
     private fun pushCurrentStateEvent() {
-        val store = RecordingForegroundService.storeFor(context)
-        val reconciled = LocationRecordingPolicy.reconcileAfterRestart(
-            store.loadSession(),
+        val coordinator = RecordingForegroundService.coordinatorFor(context)
+        val reconciled = coordinator.loadReconciledSessionForAccount(
+            null,
             RecordingForegroundService.isServiceRunning,
         )
         val gpsStatus = if (RecordingForegroundService.isServiceRunning) {

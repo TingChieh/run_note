@@ -10,8 +10,15 @@ import android.content.pm.ServiceInfo;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -229,5 +236,150 @@ public class LocationRecordingPolicyTest {
         assertTrue(store.clearIfAccountMismatch("user-b"));
         assertNull(store.loadSession());
         assertTrue(store.loadPoints(0).isEmpty());
+    }
+
+    @Test
+    public void enforcesCrossInstanceLockSingleFinalizerAckOrderingAndCrashRecovery() throws Exception {
+        File dir = tmp.newFolder("concurrent_recordings");
+        LocationRecordingPolicy.RecordingStore storeA = new LocationRecordingPolicy.RecordingStore(dir);
+        LocationRecordingPolicy.RecordingStore storeB = new LocationRecordingPolicy.RecordingStore(dir);
+        LocationRecordingPolicy.RecordingSessionCoordinator coordinator =
+            new LocationRecordingPolicy.RecordingSessionCoordinator(storeA);
+
+        // 1. Cross-instance lock keeps concurrent writes from storeA and storeB consistent
+        LocationRecordingPolicy.StartResult startRes = coordinator.startSession(
+            "sess-lock",
+            "user-a",
+            "11111111-1111-4111-8111-111111111111",
+            "并发锁测试",
+            false,
+            1_700_000_000_000L
+        );
+        assertNull(startRes.errorCode);
+        assertNotNull(startRes.session);
+
+        ExecutorService pool = Executors.newFixedThreadPool(4);
+        try {
+            CyclicBarrier storeBarrier = new CyclicBarrier(2);
+            Future<?> writerA = pool.submit(() -> {
+                storeBarrier.await(5, TimeUnit.SECONDS);
+                for (int i = 0; i < 40; i++) {
+                    storeA.appendPoint(new LocationRecordingPolicy.RecordedPoint(
+                        31.23 + i * 0.0001, 121.47, 10.0, 5.0, 1_700_000_001_000L + i * 1000L, 0));
+                }
+                return null;
+            });
+            Future<?> writerB = pool.submit(() -> {
+                storeBarrier.await(5, TimeUnit.SECONDS);
+                for (int i = 0; i < 40; i++) {
+                    storeB.appendPoint(new LocationRecordingPolicy.RecordedPoint(
+                        31.24 + i * 0.0001, 121.48, 12.0, 6.0, 1_700_000_100_000L + i * 1000L, 0));
+                }
+                return null;
+            });
+            writerA.get(5, TimeUnit.SECONDS);
+            writerB.get(5, TimeUnit.SECONDS);
+            assertEquals(80, storeB.loadPoints(0).size());
+
+            // 2. Last sample vs stop concurrency: every accepted point must appear in snapshot; post-freeze rejected
+            for (int iter = 0; iter < 15; iter++) {
+                String sid = "sess-race-" + iter;
+                coordinator.discardSession();
+                LocationRecordingPolicy.StartResult sr = coordinator.startSession(
+                    sid, "user-a", "22222222-2222-4222-8222-222222222222", "停表竞态", false, 1_700_000_000_000L);
+                assertNull(sr.errorCode);
+
+                // Seed initial point so session has valid trajectory
+                coordinator.recordLocationPoint(new LocationRecordingPolicy.RecordedPoint(
+                    31.2300, 121.4700, 10.0, 5.0, 1_700_000_001_000L, 0));
+
+                CyclicBarrier raceBarrier = new CyclicBarrier(2);
+                Future<LocationRecordingPolicy.PointRecordResult> sampleFuture = pool.submit(() -> {
+                    raceBarrier.await(5, TimeUnit.SECONDS);
+                    return coordinator.recordLocationPoint(new LocationRecordingPolicy.RecordedPoint(
+                        31.2301, 121.4700, 10.0, 5.0, 1_700_000_005_000L, 0));
+                });
+                Future<LocationRecordingPolicy.FinalizedSnapshot> stopFuture = pool.submit(() -> {
+                    raceBarrier.await(5, TimeUnit.SECONDS);
+                    return coordinator.finalizeAndFreeze(1_700_000_010_000L);
+                });
+
+                LocationRecordingPolicy.PointRecordResult sampleRes = sampleFuture.get(5, TimeUnit.SECONDS);
+                LocationRecordingPolicy.FinalizedSnapshot snap = stopFuture.get(5, TimeUnit.SECONDS);
+                assertNotNull(snap);
+                int expectedCount = (sampleRes != null && sampleRes.accepted) ? 2 : 1;
+                assertEquals(expectedCount, snap.points.size());
+                assertEquals(expectedCount, snap.session.pointCount);
+                assertEquals(expectedCount, storeB.loadPoints(0).size());
+
+                // Duplicate finalize yields identical snapshot with newlyFinalized = false; single handoff claim
+                List<Callable<LocationRecordingPolicy.FinalizedSnapshot>> dupCalls = new ArrayList<>();
+                CyclicBarrier dupBarrier = new CyclicBarrier(3);
+                for (int t = 0; t < 3; t++) {
+                    dupCalls.add(() -> {
+                        dupBarrier.await(5, TimeUnit.SECONDS);
+                        return coordinator.finalizeAndFreeze(1_700_000_020_000L);
+                    });
+                }
+                List<Future<LocationRecordingPolicy.FinalizedSnapshot>> dupFutures = pool.invokeAll(dupCalls);
+                for (Future<LocationRecordingPolicy.FinalizedSnapshot> f : dupFutures) {
+                    LocationRecordingPolicy.FinalizedSnapshot d = f.get(5, TimeUnit.SECONDS);
+                    assertFalse(d.newlyFinalized);
+                    assertEquals(snap.points.size(), d.points.size());
+                    assertEquals(snap.session.endedAtMs, d.session.endedAtMs);
+                }
+                assertTrue(coordinator.claimHandoffEmission(sid));
+                assertFalse(coordinator.claimHandoffEmission(sid));
+
+                // Post-finalize late GPS samples are ignored
+                assertNull(coordinator.recordLocationPoint(new LocationRecordingPolicy.RecordedPoint(
+                    31.2302, 121.4700, 10.0, 5.0, 1_700_000_015_000L, 0)));
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        // 3. Ack ordering & crash during handoff:
+        // Cannot ack while still recording
+        coordinator.discardSession();
+        coordinator.startSession(
+            "sess-ack", "user-a", "33333333-3333-4333-8333-333333333333", "交接测试", false, 1_700_000_000_000L);
+        coordinator.recordLocationPoint(new LocationRecordingPolicy.RecordedPoint(
+            31.2300, 121.4700, 10.0, 5.0, 1_700_000_001_000L, 0));
+        assertFalse(coordinator.acknowledgeHandoff("sess-ack"));
+        assertTrue(new File(dir, "active_session.json").exists());
+
+        // Finalize -> simulate crash before ack (new store/coordinator instance reads pending handoff)
+        LocationRecordingPolicy.FinalizedSnapshot beforeCrash = coordinator.finalizeAndFreeze(1_700_000_020_000L);
+        assertNotNull(beforeCrash);
+        assertTrue(beforeCrash.newlyFinalized);
+
+        LocationRecordingPolicy.RecordingStore recoveredStore = new LocationRecordingPolicy.RecordingStore(dir);
+        LocationRecordingPolicy.RecordingSessionCoordinator recoveredCoordinator =
+            new LocationRecordingPolicy.RecordingSessionCoordinator(recoveredStore);
+        LocationRecordingPolicy.SessionRecord pending =
+            recoveredCoordinator.loadReconciledSessionForAccount("user-a", false);
+        assertNotNull(pending);
+        assertEquals("stopped", pending.status);
+        assertTrue(LocationRecordingPolicy.hasPendingHandoff(pending));
+        assertEquals(1, recoveredCoordinator.loadPointsForAccount("user-a", 0).size());
+
+        // Cannot overwrite unacknowledged stopped session with a new session
+        LocationRecordingPolicy.StartResult blockedStart = recoveredCoordinator.startSession(
+            "sess-new", "user-a", "44444444-4444-4444-8444-444444444444", "新跑步", false, 1_700_000_030_000L);
+        assertEquals("UNHANDLED_STOPPED_SESSION", blockedStart.errorCode);
+
+        // Explicit ack deletes metadata & points; subsequent late destroy/sample/finalize never recreate files
+        assertTrue(recoveredCoordinator.acknowledgeHandoff("sess-ack"));
+        assertFalse(new File(dir, "active_session.json").exists());
+        assertFalse(new File(dir, "points.ndjson").exists());
+
+        assertNull(coordinator.markInterrupted("service_destroyed", 1_700_000_040_000L));
+        assertNull(coordinator.recordLocationPoint(new LocationRecordingPolicy.RecordedPoint(
+            31.2303, 121.4700, 10.0, 5.0, 1_700_000_045_000L, 0)));
+        assertNull(coordinator.finalizeAndFreeze(1_700_000_050_000L));
+        assertNull(recoveredCoordinator.markInterrupted("service_destroyed", 1_700_000_055_000L));
+        assertFalse(new File(dir, "active_session.json").exists());
+        assertFalse(new File(dir, "points.ndjson").exists());
     }
 }

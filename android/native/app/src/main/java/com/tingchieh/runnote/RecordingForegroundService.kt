@@ -22,6 +22,9 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.getcapacitor.Logger
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * Foreground location service keeping GPS recording alive across app backgrounding, screen lock,
@@ -65,8 +68,126 @@ class RecordingForegroundService : Service(), LocationListener {
         @Volatile
         var stateListener: ((LocationRecordingPolicy.SessionRecord?, String) -> Unit)? = null
 
+        private val storesByDir = ConcurrentHashMap<String, LocationRecordingPolicy.RecordingStore>()
+        private val coordinatorsByDir = ConcurrentHashMap<String, LocationRecordingPolicy.RecordingSessionCoordinator>()
+
+        @Volatile
+        private var runningInstance: RecordingForegroundService? = null
+
         fun storeFor(context: Context): LocationRecordingPolicy.RecordingStore {
-            return LocationRecordingPolicy.RecordingStore(File(context.filesDir, "recordings"))
+            val dir = File(context.applicationContext.filesDir, "recordings")
+            val key = LocationRecordingPolicy.canonicalDirKey(dir)
+            return storesByDir.computeIfAbsent(key) { LocationRecordingPolicy.RecordingStore(dir) }
+        }
+
+        fun coordinatorFor(context: Context): LocationRecordingPolicy.RecordingSessionCoordinator {
+            val dir = File(context.applicationContext.filesDir, "recordings")
+            val key = LocationRecordingPolicy.canonicalDirKey(dir)
+            val store = storesByDir.computeIfAbsent(key) { LocationRecordingPolicy.RecordingStore(dir) }
+            return coordinatorsByDir.computeIfAbsent(key) {
+                LocationRecordingPolicy.RecordingSessionCoordinator(store)
+            }
+        }
+
+        fun stopAndFinalizeSync(
+            context: Context,
+            timeoutMs: Long = 3_000L,
+        ): LocationRecordingPolicy.FinalizedSnapshot? {
+            val coordinator = coordinatorFor(context)
+            val service = runningInstance
+            if (service != null) {
+                if (Looper.myLooper() == Looper.getMainLooper()) {
+                    return service.freezeAndStopOnMainThread(emitHandoffEvent = false)
+                }
+                var result: LocationRecordingPolicy.FinalizedSnapshot? = null
+                val latch = CountDownLatch(1)
+                val posted = service.mainHandler.post {
+                    try {
+                        result = service.freezeAndStopOnMainThread(emitHandoffEvent = false)
+                    } finally {
+                        latch.countDown()
+                    }
+                }
+                if (posted) {
+                    try {
+                        if (latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+                            return result
+                        }
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                    }
+                }
+            }
+            val fallback = coordinator.finalizeAndFreeze(System.currentTimeMillis())
+            if (fallback != null) {
+                coordinator.claimHandoffEmission(fallback.session.sessionId)
+            }
+            return fallback
+        }
+
+        fun discardSync(context: Context, timeoutMs: Long = 3_000L) {
+            val coordinator = coordinatorFor(context)
+            val service = runningInstance
+            if (service != null) {
+                if (Looper.myLooper() == Looper.getMainLooper()) {
+                    service.handleDiscard()
+                    return
+                }
+                val latch = CountDownLatch(1)
+                val posted = service.mainHandler.post {
+                    try {
+                        service.handleDiscard()
+                    } finally {
+                        latch.countDown()
+                    }
+                }
+                if (posted) {
+                    try {
+                        if (latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+                            return
+                        }
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                    }
+                }
+            }
+            coordinator.discardSession()
+        }
+
+        fun clearIfAccountMismatchSync(
+            context: Context,
+            keepAccountId: String?,
+            timeoutMs: Long = 3_000L,
+        ): Boolean {
+            val coordinator = coordinatorFor(context)
+            if (!coordinator.hasAccountMismatch(keepAccountId)) {
+                return false
+            }
+            val service = runningInstance
+            if (service != null) {
+                if (Looper.myLooper() == Looper.getMainLooper()) {
+                    return service.handleDiscardIfAccountMismatch(keepAccountId)
+                }
+                var cleared = false
+                val latch = CountDownLatch(1)
+                val posted = service.mainHandler.post {
+                    try {
+                        cleared = service.handleDiscardIfAccountMismatch(keepAccountId)
+                    } finally {
+                        latch.countDown()
+                    }
+                }
+                if (posted) {
+                    try {
+                        if (latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+                            return cleared
+                        }
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                    }
+                }
+            }
+            return coordinator.clearIfAccountMismatch(keepAccountId)
         }
 
         fun isLocationServicesEnabled(context: Context): Boolean {
@@ -86,16 +207,15 @@ class RecordingForegroundService : Service(), LocationListener {
     }
 
     private lateinit var store: LocationRecordingPolicy.RecordingStore
+    private lateinit var coordinator: LocationRecordingPolicy.RecordingSessionCoordinator
     private var locationManager: LocationManager? = null
-    private var activeSession: LocationRecordingPolicy.SessionRecord? = null
-    private var lastAcceptedPoint: LocationRecordingPolicy.RecordedPoint? = null
     private var lastFixElapsedMs: Long? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var locationSubscribed = false
 
     private val heartbeatRunnable = object : Runnable {
         override fun run() {
-            val session = activeSession ?: return
+            val session = coordinator.currentSession() ?: return
             if (session.status != "recording" && session.status != "paused") {
                 return
             }
@@ -122,7 +242,9 @@ class RecordingForegroundService : Service(), LocationListener {
 
     override fun onCreate() {
         super.onCreate()
-        store = storeFor(applicationContext)
+        runningInstance = this
+        coordinator = coordinatorFor(applicationContext)
+        store = coordinator.store
         locationManager = getSystemService(Context.LOCATION_SERVICE) as? LocationManager
         ensureNotificationChannel()
     }
@@ -146,77 +268,43 @@ class RecordingForegroundService : Service(), LocationListener {
         if (!hasFineLocationPermission()) {
             Logger.warn("RunNoteRecorder", "Cannot start recording service without precise location permission")
             currentGpsStatus = "permission_denied"
-            emitState(activeSession, currentGpsStatus)
+            emitState(coordinator.currentSession(), currentGpsStatus)
             stopSelf()
             return
         }
 
         val resumeInterrupted = intent.getBooleanExtra(EXTRA_RESUME_INTERRUPTED, false)
-        val existing = store.loadSession()
-        val requestedAccountId = intent.getStringExtra(EXTRA_ACCOUNT_ID).orEmpty()
-        if (!resumeInterrupted &&
-            existing != null &&
-            existing.accountId == requestedAccountId &&
-            LocationRecordingPolicy.hasPendingHandoff(existing)
-        ) {
+        val sessionId = intent.getStringExtra(EXTRA_SESSION_ID).orEmpty()
+        val accountId = intent.getStringExtra(EXTRA_ACCOUNT_ID).orEmpty()
+        val idempotencyKey = intent.getStringExtra(EXTRA_IDEMPOTENCY_KEY).orEmpty()
+        val title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
+
+        val startRes = coordinator.startSession(
+            sessionId = sessionId,
+            accountId = accountId,
+            idempotencyKey = idempotencyKey,
+            title = title,
+            resumeInterrupted = resumeInterrupted,
+            nowMs = nowMs,
+        )
+        if (startRes.errorCode == "UNHANDLED_STOPPED_SESSION") {
             Logger.warn("RunNoteRecorder", "Refused to overwrite unacknowledged stopped recording session")
-            emitState(existing, "inactive")
+            emitState(startRes.session, "inactive")
             stopSelf()
             return
         }
-        val session = if (resumeInterrupted && existing != null) {
-            val existingPoints = store.loadPoints(0)
-            lastAcceptedPoint = existingPoints.lastOrNull()
-            existing.copy(
-                status = "recording",
-                lastSegmentStartMs = nowMs,
-                segmentIndex = existing.segmentIndex + 1,
-                interruptedReason = null,
-            )
-        } else {
-            val sessionId = intent.getStringExtra(EXTRA_SESSION_ID).orEmpty()
-            val accountId = intent.getStringExtra(EXTRA_ACCOUNT_ID).orEmpty()
-            val idempotencyKey = intent.getStringExtra(EXTRA_IDEMPOTENCY_KEY).orEmpty()
-            val title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
-            if (sessionId.isBlank() || accountId.isBlank() || idempotencyKey.isBlank()) {
-                Logger.warn("RunNoteRecorder", "Rejected recording start with missing identifiers")
-                stopSelf()
-                return
-            }
-            store.clearAll()
-            lastAcceptedPoint = null
-            LocationRecordingPolicy.SessionRecord(
-                sessionId = sessionId,
-                accountId = accountId,
-                idempotencyKey = idempotencyKey,
-                title = title,
-                status = "recording",
-                startedAtMs = nowMs,
-                endedAtMs = null,
-                activeDurationMs = 0L,
-                lastSegmentStartMs = nowMs,
-                segmentIndex = 0,
-                pointCount = 0,
-                previewDistanceM = 0.0,
-                lastPointTimeMs = null,
-                lastAccuracyM = null,
-                interruptedReason = null,
-            )
+        val session = startRes.session
+        if (session == null) {
+            Logger.warn("RunNoteRecorder", "Rejected recording start: ${startRes.errorCode ?: "invalid_state"}")
+            stopSelf()
+            return
         }
 
-        activeSession = session
         lastFixElapsedMs = null
         currentGpsStatus = if (isLocationServicesEnabled(this)) "acquiring" else "disabled"
-        store.saveSession(session)
 
         if (!promoteToForeground(session, currentGpsStatus, nowMs)) {
-            val interrupted = session.copy(
-                status = "interrupted",
-                lastSegmentStartMs = null,
-                interruptedReason = "foreground_service_denied",
-            )
-            activeSession = interrupted
-            store.saveSession(interrupted)
+            val interrupted = coordinator.markInterrupted("foreground_service_denied", nowMs)
             isServiceRunning = false
             emitState(interrupted, "permission_denied")
             stopSelf()
@@ -231,41 +319,26 @@ class RecordingForegroundService : Service(), LocationListener {
     }
 
     private fun handlePause() {
-        val current = activeSession ?: store.loadSession() ?: return
-        if (current.status != "recording") return
         val nowMs = System.currentTimeMillis()
-        val updated = current.copy(
-            status = "paused",
-            activeDurationMs = current.effectiveActiveDurationMs(nowMs),
-            lastSegmentStartMs = null,
-        )
-        activeSession = updated
+        val updated = coordinator.pauseSession(nowMs) ?: return
         unsubscribeLocationUpdates()
         currentGpsStatus = "inactive"
-        store.saveSession(updated)
         updateNotification(updated, currentGpsStatus, nowMs)
         emitState(updated, currentGpsStatus)
         Logger.info("RunNoteRecorder", "Recording paused")
     }
 
     private fun handleResume() {
-        val current = activeSession ?: store.loadSession() ?: return
+        val current = coordinator.currentSession() ?: store.loadSession() ?: return
         if (current.status != "paused" && current.status != "interrupted") return
         val nowMs = System.currentTimeMillis()
         if (!hasFineLocationPermission()) {
             handlePermissionRevokedMidRun(nowMs)
             return
         }
-        val updated = current.copy(
-            status = "recording",
-            lastSegmentStartMs = nowMs,
-            segmentIndex = current.segmentIndex + 1,
-            interruptedReason = null,
-        )
-        activeSession = updated
+        val updated = coordinator.resumeSession(nowMs) ?: return
         lastFixElapsedMs = null
         currentGpsStatus = if (isLocationServicesEnabled(this)) "acquiring" else "disabled"
-        store.saveSession(updated)
         if (!isServiceRunning) {
             if (!promoteToForeground(updated, currentGpsStatus, nowMs)) {
                 handlePermissionRevokedMidRun(nowMs)
@@ -281,36 +354,38 @@ class RecordingForegroundService : Service(), LocationListener {
         Logger.info("RunNoteRecorder", "Recording resumed on new track segment")
     }
 
-    private fun handleStop() {
-        val current = activeSession ?: store.loadSession()
+    private fun freezeAndStopOnMainThread(emitHandoffEvent: Boolean): LocationRecordingPolicy.FinalizedSnapshot? {
         val nowMs = System.currentTimeMillis()
-        unsubscribeLocationUpdates()
-        mainHandler.removeCallbacks(heartbeatRunnable)
-        val finalized = current?.copy(
-            status = "stopped",
-            endedAtMs = nowMs,
-            activeDurationMs = current.effectiveActiveDurationMs(nowMs),
-            lastSegmentStartMs = null,
-        )
-        if (finalized != null) {
-            store.saveSession(finalized)
-            activeSession = finalized
+        val snapshot = coordinator.finalizeAndFreeze(nowMs) {
+            unsubscribeLocationUpdates()
+            mainHandler.removeCallbacks(heartbeatRunnable)
         }
         isServiceRunning = false
         currentGpsStatus = "inactive"
-        emitState(finalized, currentGpsStatus)
+        if (snapshot != null) {
+            if (emitHandoffEvent) {
+                if (snapshot.newlyFinalized && coordinator.claimHandoffEmission(snapshot.session.sessionId)) {
+                    emitState(snapshot.session, currentGpsStatus)
+                }
+            } else {
+                coordinator.claimHandoffEmission(snapshot.session.sessionId)
+            }
+        }
         stopForegroundCompat()
         stopSelf()
         Logger.info("RunNoteRecorder", "Recording stopped cleanly")
+        return snapshot
+    }
+
+    private fun handleStop() {
+        freezeAndStopOnMainThread(emitHandoffEvent = true)
     }
 
     private fun handleDiscard() {
         unsubscribeLocationUpdates()
         mainHandler.removeCallbacks(heartbeatRunnable)
-        activeSession = null
-        lastAcceptedPoint = null
         lastFixElapsedMs = null
-        store.clearAll()
+        coordinator.discardSession()
         isServiceRunning = false
         currentGpsStatus = "inactive"
         emitState(null, currentGpsStatus)
@@ -319,21 +394,19 @@ class RecordingForegroundService : Service(), LocationListener {
         Logger.info("RunNoteRecorder", "Recording discarded")
     }
 
+    private fun handleDiscardIfAccountMismatch(keepAccountId: String?): Boolean {
+        if (!coordinator.hasAccountMismatch(keepAccountId)) {
+            return false
+        }
+        handleDiscard()
+        return true
+    }
+
     private fun handlePermissionRevokedMidRun(nowMs: Long) {
         Logger.warn("RunNoteRecorder", "Location permission revoked during recording")
         unsubscribeLocationUpdates()
         mainHandler.removeCallbacks(heartbeatRunnable)
-        val current = activeSession ?: store.loadSession()
-        val interrupted = current?.copy(
-            status = "interrupted",
-            activeDurationMs = current.effectiveActiveDurationMs(nowMs),
-            lastSegmentStartMs = null,
-            interruptedReason = "permission_revoked",
-        )
-        if (interrupted != null) {
-            store.saveSession(interrupted)
-            activeSession = interrupted
-        }
+        val interrupted = coordinator.markInterrupted("permission_revoked", nowMs)
         isServiceRunning = false
         currentGpsStatus = "permission_denied"
         emitState(interrupted, currentGpsStatus)
@@ -342,7 +415,7 @@ class RecordingForegroundService : Service(), LocationListener {
     }
 
     override fun onLocationChanged(location: Location) {
-        val session = activeSession ?: return
+        val session = coordinator.currentSession() ?: return
         if (session.status != "recording") return
 
         val nowMs = System.currentTimeMillis()
@@ -359,24 +432,8 @@ class RecordingForegroundService : Service(), LocationListener {
             recordedAtMs = fixTimeMs,
             segmentIndex = session.segmentIndex,
         )
-        val decision = LocationRecordingPolicy.evaluatePoint(
-            candidate = candidate,
-            previous = lastAcceptedPoint,
-            currentPointCount = session.pointCount,
-        )
-
-        var updated = session.copy(lastAccuracyM = accuracy)
-        if (decision.accepted) {
-            store.appendPoint(candidate)
-            lastAcceptedPoint = candidate
-            updated = updated.copy(
-                pointCount = session.pointCount + 1,
-                previewDistanceM = session.previewDistanceM + decision.distanceDeltaM,
-                lastPointTimeMs = fixTimeMs,
-            )
-            store.saveSession(updated)
-        }
-        activeSession = updated
+        val recorded = coordinator.recordLocationPoint(candidate) ?: return
+        val updated = recorded.session
         currentGpsStatus = LocationRecordingPolicy.classifyGpsSignal(
             status = updated.status,
             locationServicesEnabled = true,
@@ -389,7 +446,7 @@ class RecordingForegroundService : Service(), LocationListener {
     }
 
     override fun onProviderDisabled(provider: String) {
-        val session = activeSession ?: return
+        val session = coordinator.currentSession() ?: return
         if (!isLocationServicesEnabled(this)) {
             currentGpsStatus = "disabled"
             updateNotification(session, currentGpsStatus, System.currentTimeMillis())
@@ -398,7 +455,7 @@ class RecordingForegroundService : Service(), LocationListener {
     }
 
     override fun onProviderEnabled(provider: String) {
-        val session = activeSession ?: return
+        val session = coordinator.currentSession() ?: return
         if (session.status == "recording" && hasFineLocationPermission()) {
             // Re-register location listeners when device location is re-enabled mid-run.
             unsubscribeLocationUpdates()
@@ -417,17 +474,9 @@ class RecordingForegroundService : Service(), LocationListener {
     override fun onDestroy() {
         unsubscribeLocationUpdates()
         mainHandler.removeCallbacks(heartbeatRunnable)
-        val current = activeSession
-        if (current != null && (current.status == "recording" || current.status == "paused")) {
-            val nowMs = System.currentTimeMillis()
-            val saved = current.copy(
-                status = "interrupted",
-                activeDurationMs = current.effectiveActiveDurationMs(nowMs),
-                lastSegmentStartMs = null,
-                interruptedReason = current.interruptedReason ?: "service_destroyed",
-            )
-            store.saveSession(saved)
-            activeSession = saved
+        coordinator.markInterrupted("service_destroyed", System.currentTimeMillis())
+        if (runningInstance === this) {
+            runningInstance = null
         }
         isServiceRunning = false
         currentGpsStatus = "inactive"

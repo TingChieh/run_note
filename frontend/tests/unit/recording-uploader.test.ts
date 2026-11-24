@@ -1,11 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createMemoryRecordingBackend, listUploadQueueItems } from '../../src/lib/recording-store.ts';
+import {
+  RecordingPersistenceError,
+  createMemoryRecordingBackend,
+  ensureRecordingAccountIsolation,
+  getActiveRecordingAccount,
+  listUploadQueueItems,
+  readActiveRecordingDraft,
+  saveActiveRecordingDraft,
+  type RecordingStorageBackend,
+} from '../../src/lib/recording-store.ts';
 import {
   UPLOAD_BACKOFF_MS,
   abortAllRecordingUploads,
   computeBackoffDelayMs,
   enqueueFinalizedRecording,
   flushRecordingUploadQueue,
+  isAccountChangeAuthBroadcast,
+  rearmScheduledRecordingUpload,
 } from '../../src/lib/recording-uploader.ts';
 
 const SAMPLE_POINTS = [
@@ -78,7 +89,7 @@ afterEach(() => {
 
 describe('recording-uploader idempotent queue', () => {
   it('queues offline recording and uploads once with Idempotency-Key and expected_owner_id when network returns', async () => {
-    const backend = createMemoryRecordingBackend();
+    const backend = createMemoryRecordingBackend({ durableForTests: true });
     const idempotencyKey = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     await enqueueFinalizedRecording(
       {
@@ -174,7 +185,7 @@ describe('recording-uploader idempotent queue', () => {
     expect(computeBackoffDelayMs(2)).toBe(UPLOAD_BACKOFF_MS[1]);
     expect(computeBackoffDelayMs(99)).toBe(UPLOAD_BACKOFF_MS.at(-1));
 
-    const backend = createMemoryRecordingBackend();
+    const backend = createMemoryRecordingBackend({ durableForTests: true });
     await enqueueFinalizedRecording(
       {
         accountId: USER_B,
@@ -255,7 +266,7 @@ describe('recording-uploader idempotent queue', () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_700_000_100_000);
 
-    const backend = createMemoryRecordingBackend();
+    const backend = createMemoryRecordingBackend({ durableForTests: true });
     await enqueueFinalizedRecording(
       {
         accountId: USER_A,
@@ -327,7 +338,7 @@ describe('recording-uploader idempotent queue', () => {
   });
 
   it('refuses to upload account A queue when active browser session belongs to account B (pre-flight & 409 ACCOUNT_MISMATCH)', async () => {
-    const backend = createMemoryRecordingBackend();
+    const backend = createMemoryRecordingBackend({ durableForTests: true });
     await enqueueFinalizedRecording(
       {
         accountId: USER_A,
@@ -398,7 +409,7 @@ describe('recording-uploader idempotent queue', () => {
   });
 
   it('aborts in-flight upload immediately on logout/account switch without mutating cleared store', async () => {
-    const backend = createMemoryRecordingBackend();
+    const backend = createMemoryRecordingBackend({ durableForTests: true });
     await enqueueFinalizedRecording(
       {
         accountId: USER_A,
@@ -448,7 +459,7 @@ describe('recording-uploader idempotent queue', () => {
   });
 
   it('pauses on 401 without silently dropping queued track', async () => {
-    const backend = createMemoryRecordingBackend();
+    const backend = createMemoryRecordingBackend({ durableForTests: true });
     await enqueueFinalizedRecording(
       {
         accountId: USER_C,
@@ -476,5 +487,257 @@ describe('recording-uploader idempotent queue', () => {
     const stored = await listUploadQueueItems(USER_C, backend);
     expect(stored).toHaveLength(1);
     expect(stored[0].gpxXml).toContain('<gpx');
+  });
+
+  it('rejects enqueueing on non-durable memory fallback or when durable read-back verification fails', async () => {
+    const nonDurable = createMemoryRecordingBackend();
+    expect(nonDurable.durable).toBe(false);
+    await expect(
+      enqueueFinalizedRecording(
+        {
+          accountId: USER_A,
+          sessionId: 'sess-nondurable',
+          idempotencyKey: '11111111-2222-4333-8444-555555555555',
+          title: '非持久存储测试',
+          timezone: 'Asia/Shanghai',
+          startedAtMs: 1_700_000_000_000,
+          endedAtMs: 1_700_000_030_000,
+          activeDurationMs: 30_000,
+          points: SAMPLE_POINTS,
+        },
+        nonDurable,
+      ),
+    ).rejects.toMatchObject({
+      name: 'RecordingPersistenceError',
+      code: 'STORAGE_UNAVAILABLE',
+    });
+
+    const base = createMemoryRecordingBackend({ durableForTests: true });
+    const silentDropBackend: RecordingStorageBackend = {
+      ...base,
+      durable: true,
+      async put() {
+        // Pretend write succeeded without persisting
+      },
+    };
+    await expect(
+      enqueueFinalizedRecording(
+        {
+          accountId: USER_A,
+          sessionId: 'sess-verify-fail',
+          idempotencyKey: '22222222-3333-4444-8555-666666666666',
+          title: '校验失败测试',
+          timezone: 'Asia/Shanghai',
+          startedAtMs: 1_700_000_000_000,
+          endedAtMs: 1_700_000_030_000,
+          activeDurationMs: 30_000,
+          points: SAMPLE_POINTS,
+        },
+        silentDropBackend,
+      ),
+    ).rejects.toBeInstanceOf(RecordingPersistenceError);
+  });
+
+  it('classifies auth-channel broadcasts and re-arms due-time backoff retries after same-account check', async () => {
+    expect(isAccountChangeAuthBroadcast('check')).toBe(false);
+    expect(isAccountChangeAuthBroadcast({ type: 'check' })).toBe(false);
+    expect(isAccountChangeAuthBroadcast('account-changed')).toBe(true);
+    expect(isAccountChangeAuthBroadcast({ type: 'account-changed' })).toBe(true);
+
+    vi.useFakeTimers();
+    let nowMs = 1_700_000_200_000;
+    vi.setSystemTime(nowMs);
+
+    const backend = createMemoryRecordingBackend({ durableForTests: true });
+    await ensureRecordingAccountIsolation(USER_A, backend);
+    await enqueueFinalizedRecording(
+      {
+        accountId: USER_A,
+        sessionId: 'sess-rearm',
+        idempotencyKey: '33333333-4444-4555-8666-777777777777',
+        title: '同号校验保活重试跑',
+        timezone: 'Asia/Shanghai',
+        startedAtMs: 1_700_000_000_000,
+        endedAtMs: 1_700_000_030_000,
+        activeDurationMs: 30_000,
+        points: SAMPLE_POINTS,
+      },
+      backend,
+    );
+
+    let postCount = 0;
+    const mockFetch: typeof fetch = async (input) => {
+      const path = String(input);
+      if (path === '/api/v1/auth/session') return sessionResponse(USER_A);
+      if (path === '/api/v1/auth/csrf') return jsonResponse({ data: { csrf_token: 'csrf-ok' }, error: null });
+      postCount += 1;
+      if (postCount === 1) {
+        return jsonResponse({ data: null, error: { code: 'DEPENDENCY_UNAVAILABLE', message: '服务暂不可用' } }, 503);
+      }
+      return jsonResponse(
+        {
+          data: {
+            activity: SERVER_ACTIVITY,
+            import_id: '66666666-6666-4666-8666-666666666666',
+            warnings: [],
+            point_count: 2,
+            segment_count: 1,
+            metrics_version: 'gpx-v1',
+          },
+          error: null,
+        },
+        201,
+      );
+    };
+
+    const fail = await flushRecordingUploadQueue({
+      accountId: USER_A,
+      fetcher: mockFetch,
+      backend,
+      now: () => nowMs,
+      isOnline: () => true,
+      scheduleRetry: false,
+    });
+    expect(fail.nextRetryAt).toBe(nowMs + 5_000);
+    expect(postCount).toBe(1);
+
+    // Re-arming after a same-account verification schedules for the exact due time without firing early
+    const armedDue = await rearmScheduledRecordingUpload({
+      accountId: USER_A,
+      fetcher: mockFetch,
+      backend,
+      now: () => nowMs,
+      isOnline: () => true,
+    });
+    expect(armedDue).toBe(nowMs + 5_000);
+
+    // Calling re-arm a second time (e.g. another check) keeps the existing armed timer intact
+    const alreadyArmed = await rearmScheduledRecordingUpload({
+      accountId: USER_A,
+      fetcher: mockFetch,
+      backend,
+      now: () => nowMs,
+      isOnline: () => true,
+    });
+    expect(alreadyArmed).toBe(nowMs + 5_000);
+
+    nowMs += 2_000;
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(postCount).toBe(1);
+
+    nowMs += 3_000;
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(postCount).toBe(2);
+    expect((await listUploadQueueItems(USER_A, backend))[0].status).toBe('uploaded');
+  });
+
+  it('scopes stale-account cleanup to the stale account across all mismatch paths without deleting account B data', async () => {
+    const backend = createMemoryRecordingBackend({ durableForTests: true });
+    const seedB = async () => {
+      await ensureRecordingAccountIsolation(USER_B, backend);
+      await saveActiveRecordingDraft(
+        {
+          sessionId: 'sess-b',
+          accountId: USER_B,
+          idempotencyKey: 'bbbbbbbb-1111-4111-8111-111111111111',
+          title: '账号 B 草稿',
+          status: 'paused',
+          startedAtMs: 1_700_000_000_000,
+          endedAtMs: null,
+          activeDurationMs: 60_000,
+          lastSegmentStartMs: null,
+          segmentIndex: 0,
+          previewDistanceM: 250,
+          lastPointTimeMs: 1_700_000_060_000,
+          lastAccuracyM: 6,
+          interruptedReason: null,
+          points: SAMPLE_POINTS,
+        },
+        backend,
+      );
+      await enqueueFinalizedRecording(
+        {
+          accountId: USER_B,
+          sessionId: 'sess-b-q',
+          idempotencyKey: 'bbbbbbbb-2222-4222-8222-222222222222',
+          title: '账号 B 待上传队列',
+          timezone: 'Asia/Shanghai',
+          startedAtMs: 1_700_000_000_000,
+          endedAtMs: 1_700_000_030_000,
+          activeDurationMs: 30_000,
+          points: SAMPLE_POINTS,
+        },
+        backend,
+      );
+    };
+
+    const assertBIntact = async () => {
+      expect(await getActiveRecordingAccount(backend)).toBe(USER_B);
+      expect((await readActiveRecordingDraft(USER_B, backend))?.sessionId).toBe('sess-b');
+      const itemsB = await listUploadQueueItems(USER_B, backend);
+      expect(itemsB).toHaveLength(1);
+      expect(itemsB[0].idempotencyKey).toBe('bbbbbbbb-2222-4222-8222-222222222222');
+      expect(itemsB[0].gpxXml).toContain('<gpx');
+    };
+
+    // 1. Active marker already belongs to USER_B while stale USER_A tries to flush
+    await enqueueFinalizedRecording(
+      {
+        accountId: USER_A,
+        sessionId: 'sess-a1',
+        idempotencyKey: 'aaaaaaaa-1111-4111-8111-111111111111',
+        title: '账号 A 1',
+        timezone: 'Asia/Shanghai',
+        startedAtMs: 1_700_000_000_000,
+        endedAtMs: 1_700_000_030_000,
+        activeDurationMs: 30_000,
+        points: SAMPLE_POINTS,
+      },
+      backend,
+    );
+    await seedB();
+    const markerMismatch = await flushRecordingUploadQueue({
+      accountId: USER_A,
+      fetcher: async () => sessionResponse(USER_B),
+      backend,
+      isOnline: () => true,
+    });
+    expect(markerMismatch.status).toBe('account_mismatch');
+    expect(await listUploadQueueItems(USER_A, backend)).toEqual([]);
+    await assertBIntact();
+
+    // 2. Mid-flight switch: USER_A starts uploading when active marker wasn't B yet, then B takes over before 503 returns
+    await backend.delete('meta:recording_active_account');
+    await enqueueFinalizedRecording(
+      {
+        accountId: USER_A,
+        sessionId: 'sess-a2',
+        idempotencyKey: 'aaaaaaaa-2222-4222-8222-222222222222',
+        title: '账号 A 2',
+        timezone: 'Asia/Shanghai',
+        startedAtMs: 1_700_000_000_000,
+        endedAtMs: 1_700_000_030_000,
+        activeDurationMs: 30_000,
+        points: SAMPLE_POINTS,
+      },
+      backend,
+    );
+    const raceFetch: typeof fetch = async (input) => {
+      const path = String(input);
+      if (path === '/api/v1/auth/session') return sessionResponse(USER_A);
+      if (path === '/api/v1/auth/csrf') return jsonResponse({ data: { csrf_token: 'csrf-ok' }, error: null });
+      // Another tab switches to USER_B while POST is in flight
+      await seedB();
+      return jsonResponse({ data: null, error: { code: 'DEPENDENCY_UNAVAILABLE', message: '503' } }, 503);
+    };
+    const midFlightOutcome = await flushRecordingUploadQueue({
+      accountId: USER_A,
+      fetcher: raceFetch,
+      backend,
+      isOnline: () => true,
+    });
+    expect(midFlightOutcome.status).toBe('account_mismatch');
+    expect(await listUploadQueueItems(USER_A, backend)).toEqual([]);
+    await assertBIntact();
   });
 });

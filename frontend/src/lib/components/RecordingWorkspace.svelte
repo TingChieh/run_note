@@ -109,6 +109,8 @@
   let allowNextLeave = false;
 
   let disposed = false;
+  let stoppingInFlight = false;
+  let failedHandoffSessionId: string | null = null;
   let webWatchId: number | null = null;
   let webLastFixMs: number | null = null;
 
@@ -191,10 +193,13 @@
     const s = event.session;
     if (s.status === 'stopped' && s.pointCount > 0) {
       pendingHandoffSession = s;
-      void recoverPendingStoppedHandoff(s);
+      if (!stoppingInFlight && !handoffBusy && failedHandoffSessionId !== s.sessionId) {
+        void recoverPendingStoppedHandoff(s);
+      }
       return;
     }
     pendingHandoffSession = null;
+    failedHandoffSessionId = null;
     sessionId = s.sessionId;
     idempotencyKey = s.idempotencyKey;
     if (s.title) runTitle = s.title;
@@ -214,17 +219,22 @@
    * Atomically hands off an unacknowledged native `stopped` session (e.g. after a crash between
    * `stopSession()` and IndexedDB commit) into the local upload queue BEFORE clearing native disk.
    */
-  async function recoverPendingStoppedHandoff(snapshot: RecorderSessionSnapshot) {
+  async function recoverPendingStoppedHandoff(snapshot: RecorderSessionSnapshot, manual = false) {
     if (handoffBusy || !accountId || snapshot.accountId !== accountId) return;
+    if (manual) failedHandoffSessionId = null;
     handoffBusy = true;
     errorMessage = '';
     try {
       const capturedPoints = await getNativeRecorderPoints(0, accountId);
       if (disposed) return;
       if (capturedPoints.length === 0) {
+        if (snapshot.pointCount > 0) {
+          throw new Error('未能读取到原生已保存的轨迹点，已保留原生数据，请重试保存。');
+        }
         await acknowledgeNativeHandoff(snapshot.sessionId);
         if (!disposed) {
           pendingHandoffSession = null;
+          failedHandoffSessionId = null;
           resetLocalSessionState();
         }
         return;
@@ -243,6 +253,7 @@
       await acknowledgeNativeHandoff(snapshot.sessionId);
       if (disposed) return;
       pendingHandoffSession = null;
+      failedHandoffSessionId = null;
       resetLocalSessionState();
       await refreshUploadQueue();
       if (offline) {
@@ -254,6 +265,7 @@
     } catch (cause) {
       if (!disposed) {
         pendingHandoffSession = snapshot;
+        failedHandoffSessionId = snapshot.sessionId;
         errorMessage =
           cause instanceof Error
             ? `未能将已结束记录写入本地上传队列：${cause.message}`
@@ -304,8 +316,12 @@
 
   async function refreshUploadQueue() {
     if (!accountId) return;
-    const list = await listUploadQueueItems(accountId);
-    if (!disposed) uploadItems = list;
+    try {
+      const list = await listUploadQueueItems(accountId);
+      if (!disposed) uploadItems = list;
+    } catch {
+      // Persistent storage may be temporarily unavailable; preserve any pending native handoff UI.
+    }
   }
 
   async function runUploadFlush(forceRetry = false) {
@@ -381,7 +397,7 @@
           pointCount = webPoints.length;
           previewDistanceM += decision.distanceDeltaM;
           lastPointTimeMs = candidate.recordedAtMs;
-          void saveActiveRecordingDraft(buildWebDraft());
+          void saveActiveRecordingDraft(buildWebDraft()).catch(() => {});
         }
         gpsStatus = accuracy !== null && accuracy <= 15 ? 'good' : 'weak';
       },
@@ -397,7 +413,7 @@
             lastSegmentStartMs = null;
             status = 'interrupted';
             interruptedReason = 'permission_revoked';
-            void saveActiveRecordingDraft(buildWebDraft());
+            void saveActiveRecordingDraft(buildWebDraft()).catch(() => {});
           }
         } else if (err.code === err.POSITION_UNAVAILABLE) {
           gpsStatus = 'lost';
@@ -562,8 +578,10 @@
   async function handleStopAndSave() {
     if (actionBusy || !accountId) return;
     actionBusy = true;
+    stoppingInFlight = true;
     errorMessage = '';
     statusNotice = '';
+    let stoppedSession: RecorderSessionSnapshot | null = null;
     try {
       let capturedPoints: RecordedTrackPoint[] = [];
       let finalStartedAt = startedAtMs;
@@ -578,6 +596,7 @@
         if (disposed) return;
         capturedPoints = stopped?.points ?? [];
         if (stopped?.session) {
+          stoppedSession = stopped.session;
           finalSessionId = stopped.session.sessionId;
           finalIdempotencyKey = stopped.session.idempotencyKey;
           finalStartedAt = stopped.session.startedAtMs;
@@ -604,7 +623,8 @@
         return;
       }
 
-      // Persist to IndexedDB upload queue FIRST; only acknowledge/delete native session AFTER commit succeeds.
+      // Persist to IndexedDB upload queue FIRST (waits for transaction complete + read-back verification);
+      // only acknowledge/delete native session AFTER durable commit succeeds.
       await enqueueFinalizedRecording({
         accountId,
         sessionId: finalSessionId || generateUuidV4(),
@@ -624,6 +644,7 @@
       }
 
       pendingHandoffSession = null;
+      failedHandoffSessionId = null;
       resetLocalSessionState();
       runTitle = '';
       await refreshUploadQueue();
@@ -633,8 +654,20 @@
         await runUploadFlush(true);
       }
     } catch (cause) {
-      if (!disposed) errorMessage = cause instanceof Error ? cause.message : '结束并保存记录失败';
+      if (!disposed) {
+        if (capabilities.native && stoppedSession) {
+          pendingHandoffSession = stoppedSession;
+          failedHandoffSessionId = stoppedSession.sessionId;
+          status = 'stopped';
+          lastSegmentStartMs = null;
+        }
+        errorMessage =
+          cause instanceof Error
+            ? `未能将已结束记录写入本地上传队列：${cause.message}`
+            : '结束并保存记录失败，请重试保存';
+      }
     } finally {
+      stoppingInFlight = false;
       if (!disposed) actionBusy = false;
     }
   }
@@ -764,36 +797,45 @@
           if (!disposed) applyNativeState(event);
         });
       } else if (accountId) {
-        const draft = await readActiveRecordingDraft(accountId);
-        if (!disposed && draft) {
-          if (draft.status === 'stopped' && draft.points.length > 0) {
-            await enqueueFinalizedRecording({
-              accountId,
-              sessionId: draft.sessionId,
-              idempotencyKey: draft.idempotencyKey,
-              title: draft.title,
-              timezone,
-              startedAtMs: draft.startedAtMs || draft.points[0].recordedAtMs,
-              endedAtMs: draft.endedAtMs ?? Date.now(),
-              activeDurationMs: draft.activeDurationMs,
-              points: draft.points,
-            });
-            await deleteActiveRecordingDraft(accountId);
-          } else if (draft.status === 'recording' || draft.status === 'paused' || draft.status === 'interrupted') {
-            sessionId = draft.sessionId;
-            idempotencyKey = draft.idempotencyKey;
-            runTitle = draft.title;
-            startedAtMs = draft.startedAtMs;
-            activeDurationMs = draft.activeDurationMs;
-            lastSegmentStartMs = null;
-            segmentIndex = draft.segmentIndex;
-            webPoints = draft.points;
-            pointCount = draft.points.length;
-            previewDistanceM = draft.previewDistanceM;
-            lastPointTimeMs = draft.lastPointTimeMs;
-            lastAccuracyM = draft.lastAccuracyM;
-            interruptedReason = draft.interruptedReason ?? 'process_terminated';
-            status = 'interrupted';
+        try {
+          const draft = await readActiveRecordingDraft(accountId);
+          if (!disposed && draft) {
+            if (draft.status === 'stopped' && draft.points.length > 0) {
+              await enqueueFinalizedRecording({
+                accountId,
+                sessionId: draft.sessionId,
+                idempotencyKey: draft.idempotencyKey,
+                title: draft.title,
+                timezone,
+                startedAtMs: draft.startedAtMs || draft.points[0].recordedAtMs,
+                endedAtMs: draft.endedAtMs ?? Date.now(),
+                activeDurationMs: draft.activeDurationMs,
+                points: draft.points,
+              });
+              await deleteActiveRecordingDraft(accountId);
+            } else if (draft.status === 'recording' || draft.status === 'paused' || draft.status === 'interrupted') {
+              sessionId = draft.sessionId;
+              idempotencyKey = draft.idempotencyKey;
+              runTitle = draft.title;
+              startedAtMs = draft.startedAtMs;
+              activeDurationMs = draft.activeDurationMs;
+              lastSegmentStartMs = null;
+              segmentIndex = draft.segmentIndex;
+              webPoints = draft.points;
+              pointCount = draft.points.length;
+              previewDistanceM = draft.previewDistanceM;
+              lastPointTimeMs = draft.lastPointTimeMs;
+              lastAccuracyM = draft.lastAccuracyM;
+              interruptedReason = draft.interruptedReason ?? 'process_terminated';
+              status = 'interrupted';
+            }
+          }
+        } catch (cause) {
+          if (!disposed) {
+            errorMessage =
+              cause instanceof Error
+                ? `读取或提交本地记录失败：${cause.message}`
+                : '本地持久化存储不可用，无法恢复或入队本地记录。';
           }
         }
       }
@@ -859,7 +901,7 @@
             type="button"
             class="button-primary"
             disabled={handoffBusy || actionBusy}
-            onclick={() => pendingHandoffSession && void recoverPendingStoppedHandoff(pendingHandoffSession)}
+            onclick={() => pendingHandoffSession && void recoverPendingStoppedHandoff(pendingHandoffSession, true)}
             data-testid="handoff-retry-btn"
           >
             {handoffBusy ? '正在保存…' : '重试保存到上传队列'}

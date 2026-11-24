@@ -1,11 +1,14 @@
 import { ActivityError, uploadGpx } from '#lib/api/activities.ts';
 import { readSession } from '#lib/api/auth.ts';
 import {
-  clearPrivateRecordingData,
+  RecordingPersistenceError,
+  clearAccountRecordingData,
   deleteUploadQueueItem,
+  getActiveRecordingAccount,
   getDefaultRecordingBackend,
   listUploadQueueItems,
   putUploadQueueItem,
+  readUploadQueueItem,
   type RecordingStorageBackend,
   type UploadQueueItem,
 } from '#lib/recording-store.ts';
@@ -15,13 +18,18 @@ import { serializeRecordingToGpx, type RecordedTrackPoint } from '#lib/gpx-seria
  * Single-flight, account-bound idempotent upload engine for finalized Phase 3 running recordings.
  *
  * Security & reliability guarantees:
- * - Verifies active browser session identity (`readSession`) before every upload and sends
- *   `expected_owner_id` so the backend atomically rejects cross-tab account switches (`409 ACCOUNT_MISMATCH`).
- * - Supports immediate `AbortController` cancellation on logout/account switch (`abortAllRecordingUploads`),
- *   preventing cancelled in-flight uploads from overwriting cleared storage.
+ * - Requires durable local storage (`backend.durable === true`) and verifies read-back after
+ *   IndexedDB transaction commit before `enqueueFinalizedRecording` resolves, so native handoff
+ *   files are never acknowledged/deleted before a durable queue entry exists.
+ * - Verifies active browser session identity (`readSession`) and active-account marker before
+ *   every upload and sends `expected_owner_id` so the backend atomically rejects cross-tab
+ *   account switches (`409 ACCOUNT_MISMATCH`).
+ * - Account-mismatch cleanup is strictly scoped to the stale account (`clearAccountRecordingData`)
+ *   and never deletes a newly signed-in account's drafts or upload queue.
  * - Reuses `POST /api/v1/gpx-imports` with client-generated UUID `Idempotency-Key` header.
  * - Schedules exact due-time timers for exponential backoff (`5s -> 15s -> 45s -> 120s -> 300s`),
- *   and re-arms the timer if an early `online` reconnect arrives before `nextRetryAt`.
+ *   preserves timers across routine same-account auth probes, and re-arms persisted retries after
+ *   same-account verification (`rearmScheduledRecordingUpload`).
  */
 
 export const UPLOAD_BACKOFF_MS = [5_000, 15_000, 45_000, 120_000, 300_000] as const;
@@ -62,11 +70,25 @@ export interface FlushUploadOptions {
 const inFlightByAccount = new Map<string, Promise<UploadFlushOutcome>>();
 const activeControllersByAccount = new Map<string, AbortController>();
 const retryTimersByAccount = new Map<string, ReturnType<typeof setTimeout>>();
+const retryDueAtByAccount = new Map<string, number>();
 
 function notifyQueueUpdated(detail?: { reason?: 'account_mismatch' | 'auth_expired'; message?: string }): void {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('runnote-recording-queue-updated', { detail }));
   }
+}
+
+/**
+ * Classifies `BroadcastChannel('runnote-auth')` messages so routine `'check'` probes from a
+ * newly opened same-account tab never cancel scheduled backoff retries, while explicit
+ * `'account-changed'` notifications abort immediately.
+ */
+export function isAccountChangeAuthBroadcast(data: unknown): boolean {
+  if (data === 'account-changed') return true;
+  if (typeof data === 'object' && data !== null && 'type' in data) {
+    return (data as { type?: unknown }).type === 'account-changed';
+  }
+  return false;
 }
 
 export function computeBackoffDelayMs(attemptCount: number): number {
@@ -94,17 +116,19 @@ export function cancelScheduledRecordingUpload(accountId?: string): void {
       clearTimeout(timer);
       retryTimersByAccount.delete(accountId);
     }
+    retryDueAtByAccount.delete(accountId);
     return;
   }
   for (const timer of retryTimersByAccount.values()) {
     clearTimeout(timer);
   }
   retryTimersByAccount.clear();
+  retryDueAtByAccount.clear();
 }
 
 /**
- * Immediately aborts all in-flight upload requests and clears scheduled backoff timers.
- * Must be invoked on logout, 401 session invalidation, and cross-tab account switches.
+ * Immediately aborts in-flight upload requests and clears scheduled backoff timers.
+ * Pass `accountId` whenever possible to avoid cancelling another account's work.
  */
 export function abortAllRecordingUploads(accountId?: string): void {
   cancelScheduledRecordingUpload(accountId);
@@ -127,11 +151,49 @@ export function scheduleNextRecordingUpload(options: FlushUploadOptions, dueAtMs
   cancelScheduledRecordingUpload(accountId);
   const now = options.now ?? (() => Date.now());
   const delayMs = Math.max(0, dueAtMs - now());
+  retryDueAtByAccount.set(accountId, dueAtMs);
   const timer = setTimeout(() => {
     retryTimersByAccount.delete(accountId);
+    retryDueAtByAccount.delete(accountId);
     void flushRecordingUploadQueue({ ...options, forceRetry: false });
   }, delayMs);
   retryTimersByAccount.set(accountId, timer);
+}
+
+/**
+ * Re-arms any eligible persisted retry for `accountId` (respecting `nextRetryAt`) after a
+ * same-account identity verification, without cancelling an already-armed timer or running flush.
+ */
+export async function rearmScheduledRecordingUpload(options: FlushUploadOptions): Promise<number | null> {
+  const { accountId } = options;
+  if (inFlightByAccount.has(accountId)) return null;
+  if (retryTimersByAccount.has(accountId)) {
+    return retryDueAtByAccount.get(accountId) ?? null;
+  }
+  const isOnline = options.isOnline ?? (() => (typeof navigator === 'undefined' ? true : navigator.onLine !== false));
+  if (!isOnline()) return null;
+
+  const backend = options.backend ?? getDefaultRecordingBackend();
+  const activeAccount = await getActiveRecordingAccount(backend);
+  if (activeAccount && activeAccount !== accountId) {
+    return null;
+  }
+
+  const now = options.now ?? (() => Date.now());
+  const items = await listUploadQueueItems(accountId, backend);
+  let earliestDueAt: number | null = null;
+  for (const item of items) {
+    if (item.status === 'uploaded' || item.permanentError) continue;
+    const dueAt = item.nextRetryAt !== null ? item.nextRetryAt : item.status === 'pending' ? now() : null;
+    if (dueAt !== null && (earliestDueAt === null || dueAt < earliestDueAt)) {
+      earliestDueAt = dueAt;
+    }
+  }
+  if (earliestDueAt === null) return null;
+  if (!inFlightByAccount.has(accountId) && !retryTimersByAccount.has(accountId)) {
+    scheduleNextRecordingUpload(options, earliestDueAt);
+  }
+  return earliestDueAt;
 }
 
 export async function enqueueFinalizedRecording(
@@ -139,10 +201,14 @@ export async function enqueueFinalizedRecording(
   backend: RecordingStorageBackend = getDefaultRecordingBackend(),
   nowMs = Date.now(),
 ): Promise<UploadQueueItem> {
-  const existing = (await listUploadQueueItems(input.accountId, backend)).find(
-    (entry) => entry.idempotencyKey === input.idempotencyKey,
-  );
-  if (existing) {
+  if (!backend.durable) {
+    throw new RecordingPersistenceError(
+      'STORAGE_UNAVAILABLE',
+      '当前设备本地持久化存储不可用，已保留原生轨迹数据，请检查存储空间后重试保存。',
+    );
+  }
+  const existing = await readUploadQueueItem(input.accountId, input.idempotencyKey, backend);
+  if (existing && (existing.status === 'uploaded' || existing.gpxXml.length > 0)) {
     return existing;
   }
   const serialized = serializeRecordingToGpx({
@@ -176,8 +242,20 @@ export async function enqueueFinalizedRecording(
     updatedAtMs: nowMs,
   };
   await putUploadQueueItem(item, backend);
+  const verified = await readUploadQueueItem(item.accountId, item.idempotencyKey, backend);
+  if (
+    !verified ||
+    verified.idempotencyKey !== item.idempotencyKey ||
+    verified.accountId !== item.accountId ||
+    verified.gpxXml !== item.gpxXml
+  ) {
+    throw new RecordingPersistenceError(
+      'STORAGE_VERIFY_FAILED',
+      '本地上传队列持久化校验失败，已保留原生轨迹数据，请重试保存。',
+    );
+  }
   notifyQueueUpdated();
-  return item;
+  return verified;
 }
 
 export async function flushRecordingUploadQueue(options: FlushUploadOptions): Promise<UploadFlushOutcome> {
@@ -249,6 +327,24 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
     };
   }
 
+  // Guard with active-account marker before issuing network requests: if another tab already
+  // switched to a different account, clean ONLY this stale account's records.
+  const activeMarkerBefore = await getActiveRecordingAccount(backend);
+  if (activeMarkerBefore && activeMarkerBefore !== options.accountId) {
+    const msg = '检测到当前登录账号已切换，已取消上传并清理原账号待传轨迹。';
+    await clearAccountRecordingData(options.accountId, backend);
+    notifyQueueUpdated({ reason: 'account_mismatch', message: msg });
+    return {
+      status: 'account_mismatch',
+      uploadedCount: 0,
+      failedCount: candidates.length,
+      pendingCount: 0,
+      uploadedActivityIds: [],
+      nextRetryAt: null,
+      message: msg,
+    };
+  }
+
   if (!isOnline()) {
     return {
       status: 'offline',
@@ -271,6 +367,25 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
     if (dueAt !== null && (earliestNextRetryAt === null || dueAt < earliestNextRetryAt)) {
       earliestNextRetryAt = dueAt;
     }
+  };
+
+  const abortIfAccountSwitched = async (staleAccountId: string): Promise<UploadFlushOutcome | null> => {
+    const activeMarker = await getActiveRecordingAccount(backend);
+    if (activeMarker && activeMarker !== staleAccountId) {
+      const msg = '检测到当前登录账号已切换，已取消上传并清理原账号待传轨迹。';
+      await clearAccountRecordingData(staleAccountId, backend);
+      notifyQueueUpdated({ reason: 'account_mismatch', message: msg });
+      return {
+        status: 'account_mismatch',
+        uploadedCount,
+        failedCount: failedCount + 1,
+        pendingCount: 0,
+        uploadedActivityIds,
+        nextRetryAt: null,
+        message: msg,
+      };
+    }
+    return null;
   };
 
   for (const item of candidates) {
@@ -308,7 +423,7 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
     }
     if (identityCheck === 'mismatch') {
       const msg = '检测到当前登录账号已切换，已取消上传并清理原账号待传轨迹。';
-      await clearPrivateRecordingData(backend);
+      await clearAccountRecordingData(item.accountId, backend);
       notifyQueueUpdated({ reason: 'account_mismatch', message: msg });
       return {
         status: 'account_mismatch',
@@ -321,6 +436,21 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
       };
     }
     if (identityCheck === 'expired') {
+      const activeMarker = await getActiveRecordingAccount(backend);
+      if (activeMarker && activeMarker !== item.accountId) {
+        const msg = '检测到当前登录账号已切换，已取消上传并清理原账号待传轨迹。';
+        await clearAccountRecordingData(item.accountId, backend);
+        notifyQueueUpdated({ reason: 'account_mismatch', message: msg });
+        return {
+          status: 'account_mismatch',
+          uploadedCount,
+          failedCount: failedCount + 1,
+          pendingCount: 0,
+          uploadedActivityIds,
+          nextRetryAt: null,
+          message: msg,
+        };
+      }
       await putUploadQueueItem(
         {
           ...item,
@@ -343,6 +473,8 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
       };
     }
     if (identityCheck === 'network_error') {
+      const switched = await abortIfAccountSwitched(item.accountId);
+      if (switched) return switched;
       const nextAttempts = item.attemptCount + 1;
       const dueAt = now() + computeBackoffDelayMs(nextAttempts);
       trackNextRetry(dueAt);
@@ -361,6 +493,9 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
       failedCount += 1;
       continue;
     }
+
+    const switchedBeforeUploading = await abortIfAccountSwitched(item.accountId);
+    if (switchedBeforeUploading) return switchedBeforeUploading;
 
     const uploading: UploadQueueItem = {
       ...item,
@@ -398,6 +533,9 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
         };
       }
 
+      const switchedAfterUpload = await abortIfAccountSwitched(item.accountId);
+      if (switchedAfterUpload) return switchedAfterUpload;
+
       const completed: UploadQueueItem = {
         ...uploading,
         status: 'uploaded',
@@ -430,7 +568,7 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
 
       if (cause instanceof ActivityError && cause.status === 409 && cause.code === 'ACCOUNT_MISMATCH') {
         const msg = '当前登录账号已变更，已中止上传并清理原账号待传轨迹。';
-        await clearPrivateRecordingData(backend);
+        await clearAccountRecordingData(item.accountId, backend);
         notifyQueueUpdated({ reason: 'account_mismatch', message: msg });
         return {
           status: 'account_mismatch',
@@ -444,6 +582,21 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
       }
 
       if (cause instanceof ActivityError && cause.status === 401) {
+        const activeMarker = await getActiveRecordingAccount(backend);
+        if (activeMarker && activeMarker !== item.accountId) {
+          const msg = '当前登录账号已变更，已中止上传并清理原账号待传轨迹。';
+          await clearAccountRecordingData(item.accountId, backend);
+          notifyQueueUpdated({ reason: 'account_mismatch', message: msg });
+          return {
+            status: 'account_mismatch',
+            uploadedCount,
+            failedCount: failedCount + 1,
+            pendingCount: 0,
+            uploadedActivityIds,
+            nextRetryAt: null,
+            message: msg,
+          };
+        }
         await putUploadQueueItem(
           {
             ...uploading,
@@ -467,6 +620,8 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
       }
 
       if (cause instanceof ActivityError && cause.status === 409 && cause.existingActivityId) {
+        const switchedOnDup = await abortIfAccountSwitched(item.accountId);
+        if (switchedOnDup) return switchedOnDup;
         const deduplicated: UploadQueueItem = {
           ...uploading,
           status: 'uploaded',
@@ -482,6 +637,9 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
         uploadedActivityIds.push(cause.existingActivityId);
         continue;
       }
+
+      const switchedOnFailure = await abortIfAccountSwitched(item.accountId);
+      if (switchedOnFailure) return switchedOnFailure;
 
       const nextAttempts = uploading.attemptCount + 1;
       const transient = isTransientUploadError(cause);

@@ -25,8 +25,18 @@
   import { installCapacitorThemeSync } from '#lib/capacitor-theme.ts';
   import { clearHealthGrantHistory } from '#lib/capacitor-health.ts';
   import { clearNativeAccountSessions } from '#lib/capacitor-recorder.ts';
-  import { clearPrivateRecordingData, ensureRecordingAccountIsolation } from '#lib/recording-store.ts';
-  import { abortAllRecordingUploads, flushRecordingUploadQueue } from '#lib/recording-uploader.ts';
+  import {
+    claimRecordingAccountIfUnsetOrMatch,
+    clearAccountRecordingData,
+    clearPrivateRecordingData,
+    ensureRecordingAccountIsolation,
+  } from '#lib/recording-store.ts';
+  import {
+    abortAllRecordingUploads,
+    flushRecordingUploadQueue,
+    isAccountChangeAuthBroadcast,
+    rearmScheduledRecordingUpload,
+  } from '#lib/recording-uploader.ts';
   import { buildCacheNamespace, clearPrivateOfflineCache, ensureAccountCacheIsolation } from '#lib/offline-cache.ts';
   import { syncCompanionActivities } from '#lib/companion-sync.ts';
 
@@ -73,6 +83,7 @@
   };
   let lastBadgeUserId: string | null = null;
   let lastIsolatedRecordingUserId: string | null = null;
+  let requestIdentityVerification: (() => void) | null = null;
   $effect(() => {
     const currentUserId = page.data.user?.id ?? null;
     if (currentUserId !== lastBadgeUserId) {
@@ -83,17 +94,27 @@
       void ensureAccountCacheIsolation(currentUserId);
       if (currentUserId) {
         if (lastIsolatedRecordingUserId && lastIsolatedRecordingUserId !== currentUserId) {
-          abortAllRecordingUploads();
+          abortAllRecordingUploads(lastIsolatedRecordingUserId);
         }
         lastIsolatedRecordingUserId = currentUserId;
-        void ensureRecordingAccountIsolation(currentUserId);
-        void clearNativeAccountSessions(currentUserId);
+        void claimRecordingAccountIfUnsetOrMatch(currentUserId)
+          .then((claim) => {
+            if (claim === 'claimed') {
+              void clearNativeAccountSessions(currentUserId);
+            } else {
+              // Another account currently holds ACTIVE_ACCOUNT_KEY: ask the server who owns
+              // the live session instead of deleting another account from a potentially stale tab.
+              requestIdentityVerification?.();
+            }
+          })
+          .catch(() => {});
       } else if (lastIsolatedRecordingUserId !== null) {
         // Only clear on an explicit signed-in -> signed-out transition; an anonymous cold start
         // must never silently wipe an interrupted session belonging to a signed-in runner.
+        const departingUserId = lastIsolatedRecordingUserId;
         lastIsolatedRecordingUserId = null;
-        abortAllRecordingUploads();
-        void clearPrivateRecordingData();
+        abortAllRecordingUploads(departingUserId);
+        void clearAccountRecordingData(departingUserId).catch(() => {});
         void clearNativeAccountSessions(null);
       }
     }
@@ -223,11 +244,16 @@
     if (busy) return;
     busy = true;
     message = '';
-    abortAllRecordingUploads();
+    const departingUserId = page.data.user?.id ?? null;
+    abortAllRecordingUploads(departingUserId ?? undefined);
     try {
       await authWrite('logout', {});
       await clearPrivateOfflineCache();
-      await clearPrivateRecordingData();
+      if (departingUserId) {
+        await clearAccountRecordingData(departingUserId).catch(() => {});
+      } else {
+        await clearPrivateRecordingData().catch(() => {});
+      }
       await clearNativeAccountSessions(null);
       clearHealthGrantHistory();
       if (typeof BroadcastChannel !== 'undefined') {
@@ -239,9 +265,13 @@
       window.location.assign(viewContext(page.url.pathname).kind === 'workspace' ? '/' : page.url.pathname);
     } catch (cause) {
       if (cause instanceof AuthError && cause.status === 401) {
-        abortAllRecordingUploads();
+        abortAllRecordingUploads(departingUserId ?? undefined);
         await clearPrivateOfflineCache();
-        await clearPrivateRecordingData();
+        if (departingUserId) {
+          await clearAccountRecordingData(departingUserId).catch(() => {});
+        } else {
+          await clearPrivateRecordingData().catch(() => {});
+        }
         await clearNativeAccountSessions(null);
         clearHealthGrantHistory();
         checking = true;
@@ -277,9 +307,12 @@
         const current = await readSession();
         if (disposed || busy || pending) return;
         if ((current?.id ?? null) !== (page.data.user?.id ?? null)) {
-          abortAllRecordingUploads();
+          const staleUserId = page.data.user?.id ?? null;
+          if (staleUserId) {
+            abortAllRecordingUploads(staleUserId);
+            await clearAccountRecordingData(staleUserId).catch(() => {});
+          }
           await clearPrivateOfflineCache();
-          await clearPrivateRecordingData();
           await clearNativeAccountSessions(current?.id ?? null);
           clearHealthGrantHistory();
           identityBlocked = true;
@@ -287,8 +320,15 @@
           else window.location.reload();
           return;
         }
+        if (current?.id) {
+          await ensureRecordingAccountIsolation(current.id).catch(() => {});
+          void clearNativeAccountSessions(current.id);
+        }
         identityBlocked = false;
         checking = false;
+        if (current?.id && !offline && viewContext(page.url.pathname, current.is_admin === true).kind !== 'public') {
+          void rearmScheduledRecordingUpload({ accountId: current.id }).catch(() => {});
+        }
       } catch (cause) {
         // Fail closed when online or server-side verification errors occur.
         if (page.data.user || isProtected(page.url.pathname)) {
@@ -303,6 +343,9 @@
         if (pending && !disposed && !busy) void verifyIdentity();
       }
     }
+    requestIdentityVerification = () => {
+      void verifyIdentity();
+    };
     const visible = () => {
       if (document.visibilityState === 'visible') void verifyIdentity();
     };
@@ -310,9 +353,11 @@
       if (event.persisted) void verifyIdentity();
     };
     if (channel) {
-      channel.onmessage = () => {
-        abortAllRecordingUploads();
-        checking = true;
+      channel.onmessage = (event) => {
+        if (isAccountChangeAuthBroadcast(event.data)) {
+          abortAllRecordingUploads(page.data.user?.id ?? undefined);
+          checking = true;
+        }
         void verifyIdentity();
       };
       channel.postMessage('check');
@@ -326,6 +371,7 @@
     }, 60000);
     return () => {
       disposed = true;
+      requestIdentityVerification = null;
       channel?.close();
       clearInterval(timer);
       window.removeEventListener('focus', verifyIdentity);

@@ -26,6 +26,7 @@ async def import_gpx(
     db: Annotated[Session, Depends(get_session)],
     idempotency_key: Annotated[UUID | None, Header()] = None,
 ):
+    """Import a GPX track; `Idempotency-Key` replays the existing activity's current view (200)."""
     return await import_file(
         request, identity, db, "gpx", idempotency_key=idempotency_key, response=response
     )

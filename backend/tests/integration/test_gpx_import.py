@@ -475,7 +475,7 @@ def test_gpx_import_idempotency_replay_conflict_isolation_and_no_n_plus_one(clie
             text("SELECT activity_data_version FROM users WHERE id=:id"), {"id": owner_a}
         )
 
-    # Identical retry with same Idempotency-Key replays the exact same ImportView (200)
+    # Identical retry with same Idempotency-Key replays the current ImportView (200)
     # without creating duplicates, bumping version, or issuing N+1 queries.
     statements = []
     api_engine = a.app.state.session_factory.kw["bind"]
@@ -572,3 +572,75 @@ def test_gpx_idempotency_is_isolated_from_raw_filename_and_enforces_expected_own
     bad_owner = upload(b, raw=raw_first, fields={"expected_owner_id": "not-a-uuid"})
     assert bad_owner.status_code == 422
     assert bad_owner.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_gpx_idempotent_replay_returns_current_activity_view_after_edits(clients):
+    a, _, engine, _ = clients
+    a.app.state.footprint_worker.stop()
+    owner_a = register(a)
+
+    raw = (FIXTURES / "equator-six.gpx").read_bytes()
+    key = str(uuid4())
+
+    first = upload(
+        a,
+        raw=raw,
+        fields={"title": "原始晨跑"},
+        extra_headers={"Idempotency-Key": key},
+    )
+    assert first.status_code == 201, first.text
+    first_data = first.json()["data"]
+    activity_id = first_data["activity"]["id"]
+    assert first_data["activity"]["title"] == "原始晨跑"
+    assert first_data["activity"]["visibility"] == "private"
+
+    # Unedited replay returns the identical ImportView.
+    unedited_replay = upload(
+        a,
+        raw=raw,
+        fields={"title": "原始晨跑"},
+        extra_headers={"Idempotency-Key": key},
+    )
+    assert unedited_replay.status_code == 200, unedited_replay.text
+    assert unedited_replay.json()["data"] == first_data
+
+    # Edit mutable activity metadata after initial import.
+    patched = a.patch(
+        f"/api/v1/activities/{activity_id}",
+        headers=headers(a),
+        json={"title": "编辑后晨跑", "visibility": "public"},
+    )
+    assert patched.status_code == 200, patched.text
+
+    with engine.connect() as c:
+        version_after_edit = c.scalar(
+            text("SELECT activity_data_version FROM users WHERE id=:id"), {"id": owner_a}
+        )
+
+    # Replaying the same Idempotency-Key + GPX reflects the activity's current persisted view
+    # (does not revert edits, create duplicates, or bump activity_data_version).
+    edited_replay = upload(
+        a,
+        raw=raw,
+        fields={"title": "原始晨跑"},
+        extra_headers={"Idempotency-Key": key},
+    )
+    assert edited_replay.status_code == 200, edited_replay.text
+    replay_data = edited_replay.json()["data"]
+    assert replay_data["activity"]["id"] == activity_id
+    assert replay_data["import_id"] == first_data["import_id"]
+    assert replay_data["point_count"] == first_data["point_count"]
+    assert replay_data["segment_count"] == first_data["segment_count"]
+    assert replay_data["metrics_version"] == first_data["metrics_version"]
+    assert replay_data["activity"]["title"] == "编辑后晨跑"
+    assert replay_data["activity"]["visibility"] == "public"
+
+    with engine.connect() as c:
+        assert (
+            c.scalar(text("SELECT count(*) FROM activities WHERE user_id=:id"), {"id": owner_a})
+            == 1
+        )
+        assert (
+            c.scalar(text("SELECT activity_data_version FROM users WHERE id=:id"), {"id": owner_a})
+            == version_after_edit
+        )

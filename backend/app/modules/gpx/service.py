@@ -138,6 +138,18 @@ def idempotency_filename(idempotency_key: UUID, format="gpx") -> str:
 def find_idempotent_replay(
     db, owner, idempotency_key: UUID, raw_hash: str, format="gpx"
 ) -> ImportView | None:
+    """Return the existing activity's current persisted ImportView for an idempotent GPX replay.
+
+    Contract ("current view" semantics):
+    - Matching `(owner, Idempotency-Key)` with identical GPX bytes (`raw_sha256`) returns `200 OK`
+      with the immutable import provenance/metrics (`activity.id`, `import_id`, `point_count`,
+      `segment_count`, `metrics_version`, `warnings`) and the current persisted `ActivityView`.
+    - Subsequent user edits to mutable activity fields (such as `title`, `visibility`, `notes`,
+      `category`, or `tags`) are preserved and reflected on replay rather than returning a frozen
+      pre-edit snapshot; replay never overwrites those edits or bumps `activity_data_version`.
+    - Deleting the activity cascades `GpxImport` deletion, so a later upload with the same key
+      is treated as a fresh import.
+    """
     if format != "gpx":
         return None
     tag = idempotency_filename(idempotency_key, format)

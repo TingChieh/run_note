@@ -8,6 +8,9 @@ interface MockRecorderConfig {
   onRequestLocationPermission?: 'granted' | 'approximate' | 'denied';
   initialInterrupted?: boolean;
   initialStopped?: boolean;
+  stoppedSessionId?: string;
+  stoppedIdempotencyKey?: string;
+  persistAcrossReloads?: boolean;
 }
 
 async function installMockLocationRecorder(page: Page, config: MockRecorderConfig = {}) {
@@ -17,13 +20,14 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
     let locEnabled = cfg.locationServicesEnabled ?? true;
     let serviceRunning = false;
     let gpsStatus = 'inactive';
+    const PERSIST_KEY = '__mock_native_recorder_state';
 
     const seedSession = (): Record<string, unknown> | null => {
       if (cfg.initialStopped) {
         return {
-          sessionId: 'stopped-handoff-sess-1',
+          sessionId: cfg.stoppedSessionId ?? 'stopped-handoff-sess-1',
           accountId: '00000000-0000-4000-8000-000000000001',
-          idempotencyKey: '88888888-8888-4888-8888-888888888888',
+          idempotencyKey: cfg.stoppedIdempotencyKey ?? '88888888-8888-4888-8888-888888888888',
           title: '待交接已结束晨跑',
           status: 'stopped',
           startedAtMs: Date.now() - 300_000,
@@ -90,6 +94,43 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
         : [];
 
     const listeners: Array<(event: unknown) => void> = [];
+    let clearedAccounts: Array<string | null> = [];
+    let acknowledgedSessionIds: string[] = [];
+
+    if (cfg.persistAcrossReloads) {
+      try {
+        const raw = window.sessionStorage.getItem(PERSIST_KEY);
+        if (raw) {
+          const restored = JSON.parse(raw) as {
+            session?: Record<string, unknown> | null;
+            points?: Array<Record<string, unknown>>;
+            clearedAccounts?: Array<string | null>;
+            acknowledgedSessionIds?: string[];
+          };
+          session = restored.session ?? null;
+          points = Array.isArray(restored.points) ? restored.points : [];
+          clearedAccounts = Array.isArray(restored.clearedAccounts) ? restored.clearedAccounts : [];
+          acknowledgedSessionIds = Array.isArray(restored.acknowledgedSessionIds)
+            ? restored.acknowledgedSessionIds
+            : [];
+        }
+      } catch {
+        // Ignore storage read errors in init script
+      }
+    }
+
+    const persistState = () => {
+      if (!cfg.persistAcrossReloads) return;
+      try {
+        window.sessionStorage.setItem(
+          PERSIST_KEY,
+          JSON.stringify({ session, points, clearedAccounts, acknowledgedSessionIds }),
+        );
+      } catch {
+        // Ignore storage write errors
+      }
+    };
+
     const buildPerms = () => ({
       location: locationPerm,
       notification: notificationPerm,
@@ -137,8 +178,8 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
         gpsStatus = next;
         emit();
       },
-      clearedAccounts: [] as Array<string | null>,
-      acknowledgedSessionIds: [] as string[],
+      clearedAccounts,
+      acknowledgedSessionIds,
     };
 
     win.Capacitor = {
@@ -193,12 +234,14 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
             }
             serviceRunning = true;
             gpsStatus = 'acquiring';
+            persistState();
             emit();
             return { started: true };
           },
           pauseSession: async () => {
             if (session) session.status = 'paused';
             gpsStatus = 'inactive';
+            persistState();
             emit();
             return { paused: true };
           },
@@ -211,6 +254,7 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
               session.segmentIndex = Number(session.segmentIndex ?? 0) + 1;
             }
             gpsStatus = 'acquiring';
+            persistState();
             emit();
             return { resumed: true };
           },
@@ -222,17 +266,17 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
               session.endedAtMs = Date.now();
             }
             const out = { ...buildState(), points: [...points] };
+            persistState();
             emit();
             return out;
           },
           acknowledgeHandoff: async (opts?: { sessionId?: string }) => {
             const targetId = opts?.sessionId ?? '';
             if (session && session.status === 'stopped' && (!targetId || session.sessionId === targetId)) {
-              (win.__mockRecorder as { acknowledgedSessionIds: string[] }).acknowledgedSessionIds.push(
-                String(session.sessionId),
-              );
+              acknowledgedSessionIds.push(String(session.sessionId));
               session = null;
               points = [];
+              persistState();
               emit();
               return { acknowledged: true };
             }
@@ -243,6 +287,7 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
             gpsStatus = 'inactive';
             session = null;
             points = [];
+            persistState();
             emit();
             return { discarded: true };
           },
@@ -253,9 +298,8 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
             return { points: visible, totalReturned: visible.length };
           },
           clearAccountSessions: async (opts?: { keepAccountId?: string | null }) => {
-            (win.__mockRecorder as { clearedAccounts: Array<string | null> }).clearedAccounts.push(
-              opts?.keepAccountId ?? null,
-            );
+            clearedAccounts.push(opts?.keepAccountId ?? null);
+            persistState();
             return { cleared: true };
           },
           addListener: (_name: string, fn: (event: unknown) => void) => {
@@ -640,4 +684,382 @@ test('visual QA across 390x844, 768x1024, and 1440x900 in light and dark themes 
       }
     }
   }
+});
+
+test('P1: never acknowledges/deletes native handoff when IndexedDB transaction aborts during put, and recovers on restart', async ({
+  page,
+  context,
+}) => {
+  await loginRunner(page);
+  await installMockLocationRecorder(page, { locationPermission: 'granted', persistAcrossReloads: true });
+  await page.goto('/activities/record');
+
+  await page.getByLabel('跑步标题（可选）').fill('事务中止保留原生轨迹跑');
+  await page.getByTestId('recording-start-btn').click();
+  await page.evaluate(() => {
+    const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
+    rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
+    rec.pushPoint({ lat: 31.234, lon: 121.47, accuracyM: 6, deltaM: 445 });
+  });
+
+  // Go offline and abort the upload-store transaction inside the put request's `success` event.
+  await context.setOffline(true);
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event('offline'));
+    const origPut = IDBObjectStore.prototype.put;
+    let abortedOnce = false;
+    IDBObjectStore.prototype.put = function (value: unknown, key?: IDBValidKey) {
+      const req = origPut.call(this, value, key);
+      const recordKey = (value as { key?: unknown } | null)?.key;
+      if (!abortedOnce && typeof recordKey === 'string' && recordKey.includes(':upload:')) {
+        abortedOnce = true;
+        const tx = req.transaction;
+        req.addEventListener(
+          'success',
+          () => {
+            try {
+              tx?.abort();
+            } catch {
+              // Ignore if already aborted
+            }
+          },
+          { once: true },
+        );
+      }
+      return req;
+    };
+  });
+
+  await page.getByTestId('recording-stop-btn').click();
+
+  // Native ack must NOT fire when transaction aborts; recoverable pending handoff UI stays visible.
+  await expect(page.getByTestId('recording-pending-handoff-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-error')).toContainText('事务');
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(0);
+  const ackedBeforeRestart = await page.evaluate(
+    () =>
+      (window as unknown as Record<string, { acknowledgedSessionIds: string[] }>).__mockRecorder.acknowledgedSessionIds,
+  );
+  expect(ackedBeforeRestart).toEqual([]);
+
+  // Simulate process restart with healthy IndexedDB while holding the network upload briefly to inspect durability.
+  let releaseUpload!: () => void;
+  const uploadGate = new Promise<void>((resolve) => {
+    releaseUpload = resolve;
+  });
+  let gpxPostCount = 0;
+  await page.route('**/api/v1/gpx-imports', async (route) => {
+    gpxPostCount += 1;
+    await uploadGate;
+    await route.continue();
+  });
+
+  await context.setOffline(false);
+  await page.reload();
+
+  // After restart, auto-recovery commits to IndexedDB first, THEN acknowledges native handoff.
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(1, { timeout: 5_000 });
+  await expect(page.getByTestId('recording-pending-handoff-panel')).not.toBeVisible();
+  const ackedAfterRecovery = await page.evaluate(
+    () =>
+      (window as unknown as Record<string, { acknowledgedSessionIds: string[] }>).__mockRecorder.acknowledgedSessionIds,
+  );
+  expect(ackedAfterRecovery).toHaveLength(1);
+
+  releaseUpload();
+  await expect(page.getByTestId('upload-queue-item').first()).toHaveAttribute('data-status', 'uploaded', {
+    timeout: 5_000,
+  });
+  expect(gpxPostCount).toBe(1);
+});
+
+test('P1: preserves native handoff when IndexedDB is unavailable and recovers when storage becomes available', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await installMockLocationRecorder(page, {
+    locationPermission: 'granted',
+    initialStopped: true,
+    stoppedSessionId: 'stopped-handoff-unavail-1',
+    stoppedIdempotencyKey: '77777777-7777-4777-8777-777777777777',
+  });
+  await page.addInitScript(() => {
+    const origOpen = indexedDB.open.bind(indexedDB);
+    indexedDB.open = function (name: string, version?: number) {
+      if (name === 'runnote-recording-store' && window.sessionStorage.getItem('__idb_available') !== '1') {
+        const fakeReq = new EventTarget() as IDBOpenDBRequest;
+        Object.defineProperty(fakeReq, 'error', {
+          value: new DOMException('IndexedDB unavailable', 'UnknownError'),
+        });
+        setTimeout(() => {
+          fakeReq.dispatchEvent(new Event('error'));
+        }, 0);
+        return fakeReq;
+      }
+      return version !== undefined ? origOpen(name, version) : origOpen(name);
+    };
+  });
+
+  let gpxPostCount = 0;
+  await page.route('**/api/v1/gpx-imports', async (route) => {
+    gpxPostCount += 1;
+    await route.continue();
+  });
+
+  await page.goto('/activities/record');
+
+  await expect(page.getByTestId('recording-pending-handoff-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-error')).toBeVisible();
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(0);
+  const ackedWhileUnavailable = await page.evaluate(
+    () =>
+      (window as unknown as Record<string, { acknowledgedSessionIds: string[] }>).__mockRecorder.acknowledgedSessionIds,
+  );
+  expect(ackedWhileUnavailable).toEqual([]);
+
+  // Restore persistent storage and retry handoff
+  await page.evaluate(() => {
+    window.sessionStorage.setItem('__idb_available', '1');
+  });
+  await page.getByTestId('handoff-retry-btn').click();
+
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(1, { timeout: 5_000 });
+  await expect(page.getByTestId('upload-queue-item').first()).toHaveAttribute('data-status', 'uploaded', {
+    timeout: 5_000,
+  });
+  expect(gpxPostCount).toBe(1);
+  const ackedAfterRetry = await page.evaluate(
+    () =>
+      (window as unknown as Record<string, { acknowledgedSessionIds: string[] }>).__mockRecorder.acknowledgedSessionIds,
+  );
+  expect(ackedAfterRetry).toEqual(['stopped-handoff-unavail-1']);
+});
+
+test('P2: same-account new tab BroadcastChannel check does not cancel 503 backoff retry', async ({ page, context }) => {
+  let gpxPostCount = 0;
+  await context.route('**/api/v1/gpx-imports', async (route) => {
+    gpxPostCount += 1;
+    if (gpxPostCount === 1) {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: null,
+          error: { code: 'DEPENDENCY_UNAVAILABLE', message: '服务暂时不可用' },
+        }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await loginRunner(page);
+  await installMockLocationRecorder(page, { locationPermission: 'granted' });
+  await page.goto('/activities/record');
+
+  await page.getByTestId('recording-start-btn').click();
+  await page.evaluate(() => {
+    const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
+    rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
+    rec.pushPoint({ lat: 31.233, lon: 121.47, accuracyM: 6, deltaM: 333 });
+  });
+  await page.getByTestId('recording-stop-btn').click();
+
+  await expect(page.getByTestId('upload-queue-item').first()).toHaveAttribute('data-status', 'failed');
+  await expect(page.getByTestId('upload-queue-item').first()).toContainText('等待自动重试');
+  expect(gpxPostCount).toBe(1);
+
+  // Open a real second tab on the same account, triggering BroadcastChannel('runnote-auth') `check`.
+  const secondTab = await context.newPage();
+  await secondTab.goto('/settings');
+  await expect(secondTab.locator('header')).toHaveAttribute('data-auth-ready', 'true');
+
+  // Tab 1 must NOT permanently cancel its backoff timer and must still auto-upload at due time.
+  await expect(page.getByTestId('upload-queue-item').first()).toHaveAttribute('data-status', 'uploaded', {
+    timeout: 10_000,
+  });
+  expect(gpxPostCount).toBe(2);
+  await secondTab.close();
+});
+
+test('P2: suspended stale account A tab waking after account B signs in deletes only A records and preserves B queue and draft', async ({
+  page,
+  context,
+}) => {
+  await loginRunner(page);
+
+  // Create an active second runner account B via admin API
+  const accountBEmail = `phase3_b_${Date.now()}@example.com`;
+  const accountBPassword = 'SecondRunner-2026!';
+  const createRes = await page.request.post('/api/v1/admin/users', {
+    headers: { 'x-csrf-token': 'ui-csrf' },
+    data: {
+      email: accountBEmail,
+      username: `runner_b_${Date.now().toString().slice(-6)}`,
+      display_name: 'Runner B',
+      password: accountBPassword,
+      timezone: 'Asia/Shanghai',
+      is_active: true,
+      showcase_enabled: false,
+      wellbeing_allowed: false,
+    },
+  });
+  expect(createRes.ok()).toBe(true);
+  const accountBId = (await createRes.json()).data.user?.id ?? (await createRes.json()).data.id;
+  expect(typeof accountBId).toBe('string');
+
+  let gpxPostCount = 0;
+  await context.route('**/api/v1/gpx-imports', async (route) => {
+    gpxPostCount += 1;
+    await route.continue();
+  });
+
+  await installMockLocationRecorder(page, { locationPermission: 'granted' });
+  await page.goto('/activities/record');
+
+  // Account A records and stops offline
+  await page.getByTestId('recording-start-btn').click();
+  await page.evaluate(() => {
+    const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
+    rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
+    rec.pushPoint({ lat: 31.232, lon: 121.47, accuracyM: 6, deltaM: 222 });
+  });
+  await context.setOffline(true);
+  await page.evaluate(() => window.dispatchEvent(new Event('offline')));
+  await page.getByTestId('recording-stop-btn').click();
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(1);
+
+  // While Tab 1 is suspended, another session switches cookies to Account B and writes Account B's draft & queue.
+  const loginBRes = await context.request.post('/api/v1/auth/login', {
+    data: { email: accountBEmail, password: accountBPassword },
+  });
+  expect(loginBRes.ok()).toBe(true);
+
+  const bUploadKey = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  await page.evaluate(
+    async ({ bId, bKey }) => {
+      await new Promise<void>((resolve, reject) => {
+        const req = indexedDB.open('runnote-recording-store', 1);
+        req.onerror = () => reject(req.error);
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction('records', 'readwrite');
+          const store = tx.objectStore('records');
+          const now = Date.now();
+          store.put({
+            key: 'meta:recording_active_account',
+            accountId: bId,
+            schemaVersion: 1,
+            savedAt: now,
+            payload: bId,
+          });
+          store.put({
+            key: `user:${bId}:draft:active`,
+            accountId: bId,
+            schemaVersion: 1,
+            savedAt: now,
+            payload: {
+              sessionId: 'sess-b-active',
+              accountId: bId,
+              idempotencyKey: 'bbbbbbbb-1111-4111-8111-111111111111',
+              title: '账号 B 进行中草稿',
+              status: 'paused',
+              startedAtMs: now - 60_000,
+              endedAtMs: null,
+              activeDurationMs: 60_000,
+              lastSegmentStartMs: null,
+              segmentIndex: 0,
+              previewDistanceM: 320,
+              lastPointTimeMs: now - 5_000,
+              lastAccuracyM: 6,
+              interruptedReason: null,
+              points: [
+                { lat: 31.23, lon: 121.47, elevationM: 10, accuracyM: 6, recordedAtMs: now - 60_000, segmentIndex: 0 },
+              ],
+            },
+          });
+          store.put({
+            key: `user:${bId}:upload:${bKey}`,
+            accountId: bId,
+            schemaVersion: 1,
+            savedAt: now,
+            payload: {
+              idempotencyKey: bKey,
+              accountId: bId,
+              sessionId: 'sess-b-upload',
+              title: '账号 B 待上传记录',
+              timezone: 'Asia/Shanghai',
+              startedAtMs: now - 120_000,
+              endedAtMs: now - 30_000,
+              pointCount: 2,
+              segmentCount: 1,
+              previewDistanceM: 450,
+              activeDurationMs: 90_000,
+              gpxXml: '<gpx version="1.1"><trk><name>B</name></trk></gpx>',
+              status: 'failed',
+              attemptCount: 1,
+              nextRetryAt: now + 60_000,
+              lastError: '等待退避',
+              permanentError: false,
+              uploadedActivityId: null,
+              serverDistanceM: null,
+              serverDurationS: null,
+              serverPaceSPerKm: null,
+              createdAtMs: now - 30_000,
+              updatedAtMs: now - 30_000,
+            },
+          });
+          tx.oncomplete = () => {
+            db.close();
+            resolve();
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+      });
+    },
+    { bId: accountBId, bKey: bUploadKey },
+  );
+
+  // Wake Tab 1 cleanly (comes online + focus)
+  await context.setOffline(false);
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event('online'));
+    window.dispatchEvent(new Event('focus'));
+  });
+
+  // Tab 1 detects identity switch (and redirects/reloads to /workspace/activities/record as Account B).
+  await expect(page).toHaveURL(/\/workspace\/activities\/record/, { timeout: 10_000 });
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(1);
+  await expect(page.getByTestId('upload-queue-item').first()).toContainText('账号 B 待上传记录');
+
+  // Verify IndexedDB directly: zero Account A keys remain, while Account B draft, queue, and marker are intact.
+  const idbSnapshot = await page.evaluate(async () => {
+    return await new Promise<Array<{ key: string; payload: unknown }>>((resolve, reject) => {
+      const req = indexedDB.open('runnote-recording-store', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('records', 'readonly');
+        const allReq = tx.objectStore('records').getAll();
+        allReq.onsuccess = () => {
+          const rows = (allReq.result as Array<{ key: string; payload: unknown }>).map((r) => ({
+            key: r.key,
+            payload: r.payload,
+          }));
+          db.close();
+          resolve(rows);
+        };
+        allReq.onerror = () => reject(allReq.error);
+      };
+    });
+  });
+
+  const accountAId = '00000000-0000-4000-8000-000000000001';
+  expect(idbSnapshot.filter((r) => r.key.startsWith(`user:${accountAId}:`))).toEqual([]);
+  expect(idbSnapshot.find((r) => r.key === 'meta:recording_active_account')?.payload).toBe(accountBId);
+  expect(idbSnapshot.find((r) => r.key === `user:${accountBId}:draft:active`)).toBeTruthy();
+  const bQueueRow = idbSnapshot.find((r) => r.key === `user:${accountBId}:upload:${bUploadKey}`);
+  expect(bQueueRow).toBeTruthy();
+  expect((bQueueRow?.payload as { gpxXml?: string })?.gpxXml).toContain('<gpx');
+  expect(gpxPostCount).toBe(0);
 });

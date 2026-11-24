@@ -66,7 +66,7 @@
 | 非法键或归属 UUID 格式 | `Idempotency-Key` 或 `expected_owner_id` 非合法 UUID | FastAPI 参数校验直接拒绝（解析前） | `422 VALIDATION_ERROR` |
 | 账号不匹配（跨标签切号兜底） | `expected_owner_id != 当前登录会话 user.id` | 在任何解析/写库前原子拒绝 | `409 ACCOUNT_MISMATCH` |
 | 首次实时记录上传 | 合法 UUID `Idempotency-Key` + 有效 GPX | 创建 `Activity` + `GpxImport`（`parser_version="gpx-idemp-v1"`，`original_filename="idempotency:<uuid>.gpx"`，仅本人私密）+ `ActivitySegment`/`ActivityPoint`，递增 `activity_data_version` | `201 Created`（`ApiResponse[ImportView]`） |
-| 重复提交 / 弱网重放 | 同账号 + 同 `Idempotency-Key` + 相同 GPX 字节（`raw_sha256` 一致） | 仅在 `parser_version="gpx-idemp-v1"` 命名空间中命中，不新建活动、不重复递增 `activity_data_version`，单次聚合查询还原 `ImportView` 返回（零 N+1；注意：重放读取当前持久化 `Activity` 行，如用户随后手动编辑了标题或可见性则反映最新状态，而非历史冻结快照） | `200 OK`（同一 `activity.id` 与 `import_id`） |
+| 重复提交 / 弱网重放 | 同账号 + 同 `Idempotency-Key` + 相同 GPX 字节（`raw_sha256` 一致） | 仅在 `parser_version="gpx-idemp-v1"` 命名空间中命中，不新建活动、不重复递增 `activity_data_version`，单次聚合查询还原 `ImportView` 返回（零 N+1；**当前视图语义**：保留不可变的导入溯源与轨迹指标 `activity.id`、`import_id`、`point_count`、`segment_count`、`metrics_version`，并反映活动当前的持久化元数据，如标题、可见性等后续编辑不会回滚） | `200 OK`（同一 `activity.id` 与 `import_id`） |
 | 键冲突误用 | 同账号 + 同 `Idempotency-Key` + 不同 GPX 内容 | 拒绝覆盖已有记录 | `409 IDEMPOTENCY_CONFLICT` |
 | 跨账号提交同键同轨迹 | 用户 B 使用与用户 A 相同的 `Idempotency-Key` 和 GPX | 严格按 `user_id == owner` 隔离，为用户 B 创建独立活动，不泄露用户 A 的任何 ID | `201 Created`（独立 `activity.id`） |
 
@@ -74,8 +74,13 @@
 
 ### 3.2 本地上传队列、账号强绑定、原子交接与定时退避重试
 
-- **两阶段原子交接（防 `stopped` 后崩溃丢轨迹）**：原生 `stopSession()` 将会话落盘为 `stopped` 后**不立即删除文件**；前端必须先将轨迹原子写入账号隔离 IndexedDB 上传队列，成功后才调用 `acknowledgeHandoff(sessionId)` 清理原生磁盘文件。若写入队列前发生崩溃，下次启动检测到未确认的 `stopped` 会话（`hasPendingHandoff`）会自动补录进队列并阻止新会话覆盖。
-- **账号强绑定与跨标签安全**：每次上传前先调用 `/api/v1/auth/session` 核验当前 Cookie 会话是否仍属于该队列项的 `accountId`，并在表单中携带 `expected_owner_id` 由后端二次原子校验；退出登录、401 或其他标签通过 `BroadcastChannel('runnote-auth')` 切换账号时，立即调用 `abortAllRecordingUploads()`（`AbortController`）中止在途请求并清空旧账号队列与原生会话，杜绝将账号 A 的轨迹误传到账号 B。
+- **两阶段离线优先持久化与原子交接（防 `stopped` 后崩溃/事务中止丢轨迹）**：
+  - **阶段 1（原生磁盘 → 本地 IndexedDB 上传队列）**：原生 `stopSession()` 由服务端 `RecordingSessionCoordinator` 在跨实例共享目录锁下先冻结位置采集与心跳，再返回唯一终结快照；前端必须等待 IndexedDB `IDBTransaction` 真实触发 `complete` 事件且完成独立读回校验（`enqueueFinalizedRecording`，**严禁**在存储不可用或事务 `abort`/`error` 时回退到非持久内存或返回成功）后，方才调用 `acknowledgeHandoff(sessionId)` 清理原生磁盘文件。若本地存储不可用或事务中止，原生 `stopped` 会话与点位完整保留，UI 展示可恢复的 `recording-pending-handoff-panel` 并阻止新会话覆盖。
+  - **阶段 2（本地上传队列 → 服务端持久化）**：保留完整 GPX 字节直至 `POST /api/v1/gpx-imports` 返回 `201 Created` / `200 OK` / `409 GPX_DUPLICATE` 并写入已上传状态后方才释放本地 `gpxXml`。
+- **账号强绑定与跨标签/休眠标签页安全**：
+  - 每次上传前校验 `ACTIVE_ACCOUNT_KEY` 与 `/api/v1/auth/session`，并在表单中携带 `expected_owner_id` 由后端二次原子校验；每次网络异步返回后再次核对 `ACTIVE_ACCOUNT_KEY`，防止休眠标签页在切号后覆盖新账号状态。
+  - 退出登录、401 或跨标签切换账号（含 `BroadcastChannel('runnote-auth')` 的 `'account-changed'` 通知）仅调用 `abortAllRecordingUploads(accountId)` 与作用域限定的 `clearAccountRecordingData(staleAccountId)`，绝不执行全局清表误删新登录账号 `user:<new>:*` 队列与草稿；新标签挂载遇到 `ACTIVE_ACCOUNT_KEY` 冲突时先通过 `/api/v1/auth/session` 向服务端核实实时归属，绝不盲目清理其他账号。
+- **同账号新标签探活保活重试**：`BroadcastChannel('runnote-auth')` 仅在收到显式 `'account-changed'` 消息时中止上传与清理定时器；同账号新标签挂载发出的常规 `'check'` 探活不取消已排期的退避定时器，身份核验通过后通过 `rearmScheduledRecordingUpload()` 按持久化的 `nextRetryAt` 恢复未排期重试。
 - **确定性序列化（`frontend/src/lib/gpx-serializer.ts`）**：同一已完成会话重复序列化产生字节级完全一致的 GPX 1.1（7 位小数坐标、ISO-8601 UTC 时间戳），保证重试时 `raw_sha256` 与 `canonical_sha256` 严格一致。
 - **到期定时器驱动的指数退避（`frontend/src/lib/recording-uploader.ts`）**：单飞并发控制；离线自动暂存、恢复联网（`online` 事件）自动触发一次上传；遇 `503`/`429`/网络超时执行指数退避（`5s → 15s → 45s → 120s → 300s`），并由 `scheduleNextRecordingUpload()` 在精确 `nextRetryAt` 时刻自动唤醒重试（即便用户停留在页面不刷新、或在到期前提前重连跳过了本次尝试，也会重设剩余时长的定时器）；遇 `409 GPX_DUPLICATE`（含 `existing_activity_id`）直接幂等关联已有活动；遇 `409 ACCOUNT_MISMATCH` 立即中止并清理原账号队列；遇 `401` 暂停队列提示重新登录而不静默丢弃用户轨迹；遇 `400`/`422` 永久校验错误停止无限重试并允许用户显式丢弃。上传成功后立即释放本地原始 GPX 文本并触发 `runnote-activities-changed` 驱动 Phase 2 增量同步。
 
@@ -93,9 +98,9 @@
 | 锁屏 / 切后台 / Doze | `RecordingForegroundService` 持续接收定位并即时追加写入 `points.ndjson`；锁屏通知 `VISIBILITY_PRIVATE` 隐藏距离与耗时 | 回到前台通过 `handleOnResume()` + `visibilitychange` 无缝同步最新指标 | 0 数据丢失，锁屏不泄露运动指标 |
 | 记录中按返回键 / 跳转其他页 | 原生端前台服务继续运行；Web 端提示会暂停采集 | 弹出原生 `<dialog>` 确认框，支持「留在记录页」或「确认离开」 | 防误操作中断 |
 | 进程被杀 / 系统内存回收 / 设备重启 | 重启后检测到磁盘存在未结束会话且服务未运行，自动归类为 `interrupted`；`RecordingStore` 使用原子 `Files.move` 落盘并在加载时自动重写修复电力中断造成的 `points.ndjson` 截断尾行，避免后续追加错位 | 顶部展示「检测到未完成的跑步记录」恢复面板，明确提供 **继续记录**（新 `<trkseg>`）、**结束并保存** 或 **安全丢弃**（二次确认 `<dialog>`） | 绝不静默丢数据 |
-| 结束记录后入队前崩溃（`stopped` 交接中断） | 原生保留 `status="stopped"` 会话与点位直至前端调用 `acknowledgeHandoff(sessionId)`，并拒绝新 `startSession` 覆盖 | 重启进入记录页自动补录进 IndexedDB 上传队列后确认清理；若补录失败则展示 `recording-pending-handoff-panel` 提供重试保存或显式丢弃，并阻止开始新记录 | 原子交接，0 轨迹丢失 |
-| 飞行模式 / 断网完成记录或遇 `503` | 生成 GPX 并写入账号隔离 IndexedDB 队列 | 提示「已保存到本地上传队列，恢复网络后将自动上传一次」；`503` 后展示剩余秒数并在到期定时器触发时自动重试 | 恢复网络或退避到期后自动仅上传一次 |
-| 退出登录 / 跨标签切换账号 | 立即 `AbortController` 中止在途请求、取消退避定时器、停止活动服务并调用 `clearPrivateRecordingData()` + `clearAccountSessions()`；后端校验 `expected_owner_id`（`409 ACCOUNT_MISMATCH`） | 清理旧账号全部本机记录与未上传队列并提示账号已切换 | 绝不串账号上传或泄露轨迹 |
+| 结束记录后入队前崩溃 / 存储异常（`stopped` 交接中断） | `RecordingSessionCoordinator` 先冻结采集并生成唯一终结快照，原生保留 `status="stopped"` 会话与点位直至 IndexedDB 事务 `complete` 且读回校验通过后调用 `acknowledgeHandoff(sessionId)`；未确认前拒绝新 `startSession` 覆盖；存储不可用或事务中止绝不回退内存并拒绝确认 | 重启进入记录页自动补录进 IndexedDB 上传队列后确认清理；若补录失败则展示 `recording-pending-handoff-panel` 提供重试保存或显式丢弃，并阻止开始新记录 | 原子交接，0 轨迹丢失 |
+| 飞行模式 / 断网完成记录或遇 `503` | 生成 GPX 并写入账号隔离 IndexedDB 队列 | 提示「已保存到本地上传队列，恢复网络后将自动上传一次」；`503` 后展示剩余秒数并在到期定时器触发时自动重试（同账号新标签 `check` 探活不取消该定时器） | 恢复网络或退避到期后自动仅上传一次 |
+| 退出登录 / 跨标签或休眠标签切换账号 | 立即 `AbortController` 中止原账号在途请求、取消退避定时器、按 `ACTIVE_ACCOUNT_KEY` 仅清理原账号记录（`clearAccountRecordingData`）与原生旧账号会话（`clearAccountSessions`）；后端校验 `expected_owner_id`（`409 ACCOUNT_MISMATCH`） | 清理旧账号本机记录与未上传队列并提示账号已切换；新登录账号的草稿与待传队列完整保留 | 绝不串账号上传、泄露轨迹或误删新账号队列 |
 
 ---
 
@@ -104,29 +109,30 @@
 ### 5.1 后端单元测试、契约校验、Ruff 与隔离 PostGIS 集成测试
 
 - 契约生成与代码检查：
-  - `cd backend && DATABASE_URL=postgresql+psycopg://run_note@127.0.0.1:15432/run_note_ci .venv/bin/python -m app.contract.typescript` — **PASS**（同步 `frontend/src/lib/api/generated/api.ts`）
+  - `cd backend && DATABASE_URL=postgresql+psycopg://run_note@127.0.0.1:15432/run_note_ci .venv/bin/python -m app.contract.typescript --check` — **PASS**（同步 `frontend/src/lib/api/generated/api.ts`）
   - `cd backend && .venv/bin/ruff check app migrations tests && .venv/bin/ruff format --check app migrations tests` — **PASS**（`All checks passed! 294 files already formatted`）
 - 后端单元测试：
-  - `cd backend && DATABASE_URL=postgresql+psycopg://run_note@127.0.0.1:15432/run_note_ci .venv/bin/pytest tests/unit -q` — **597 passed**（含新增 `test_gpx_idempotency.py`、`test_architecture.py`、`test_api_contract.py`、`test_version.py` 2.5.0 同步断言）
-- 隔离临时 PostgreSQL + PostGIS 集成测试（临时集群端口 `15451`，测试库 `run_note_phase3_test`，测后自动销毁，未触碰开发库）：
+  - `cd backend && DATABASE_URL=postgresql+psycopg://run_note@127.0.0.1:15432/run_note_ci .venv/bin/pytest tests/unit -q` — **598 passed**（含 `test_gpx_idempotency.py` 的当前视图语义单测、`test_architecture.py`、`test_api_contract.py`、`test_version.py` 2.5.0 同步断言）
+- 隔离临时 PostgreSQL + PostGIS 集成测试（临时集群端口 `15459`，测试库 `run_note_r2_test`，测后自动销毁，未触碰开发库）：
   - `alembic upgrade head`（确认零新增迁移，`0001_postgis` → `0034_drop_ai_reports`）— **PASS**
-  - `.venv/bin/pytest tests/integration/test_gpx_import.py tests/integration/test_cross_user_access.py -v` — **56 passed**（含 `test_gpx_import_idempotency_replay_conflict_isolation_and_no_n_plus_one` 与 `test_gpx_idempotency_is_isolated_from_raw_filename_and_enforces_expected_owner`：覆盖非法 UUID 422、首次上传 201、重复提交 200 重放且不增版本号且 SQL 次数 `<= 12` 无 N+1、同键不同载荷 409 `IDEMPOTENCY_CONFLICT`、跨用户同键同轨迹隔离 201、普通导入字面文件名 `idempotency:<uuid>.gpx` 与 `gpx-idemp-v1` 命名空间完全隔离、`expected_owner_id` 不匹配返回 409 `ACCOUNT_MISMATCH` 与格式非法返回 422）
+  - `.venv/bin/pytest tests/integration/test_gpx_import.py tests/integration/test_cross_user_access.py -v` — **57 passed**（含 `test_gpx_import_idempotency_replay_conflict_isolation_and_no_n_plus_one`、`test_gpx_idempotency_is_isolated_from_raw_filename_and_enforces_expected_owner` 与新增 `test_gpx_idempotent_replay_returns_current_activity_view_after_edits`：验证导入→编辑标题与可见性→同键重放返回 `200` 及当前持久化 `ActivityView` 且不重复创建或递增 `activity_data_version`）
 - 运维脚本单元测试与统一校验脚本：
-  - `DATABASE_URL=postgresql+psycopg://run_note@127.0.0.1:15432/run_note_ci python3 scripts/verify.py` — **8/8 PASS**（contract、ruff check/format、597 backend unit、456 frontend vitest、svelte-check 0 errors、139 ops unit、shellcheck）
+  - `DATABASE_URL=postgresql+psycopg://run_note@127.0.0.1:15432/run_note_ci python3 scripts/verify.py` — **8/8 PASS**（contract、ruff check/format、598 backend unit、462 frontend vitest、svelte-check 0 errors、139 ops unit、shellcheck）
 
 ### 5.2 前端单测、类型/样式检查、生产构建与 Playwright 端到端/视觉验收
 
 - `cd frontend && pnpm check` — **PASS**（`0 errors and 0 warnings`）
 - `cd frontend && pnpm lint:style` — **PASS**
-- `cd frontend && pnpm test` — **PASS**（**76 test files / 456 tests passed**，含 `gpx-serializer.test.ts`、`recording-store.test.ts`、`recording-uploader.test.ts`（含定时退避自动触发、提前重连重设定时器、跨标签切号预检与 `409 ACCOUNT_MISMATCH`、`AbortController` 立即中止）、`capacitor-recorder.test.ts`（含大致位置 `canRecord=false`、`acknowledgeNativeHandoff`、`accountId` 透传）与既有 `architecture.test.ts`、`api-contract.test.ts`）
+- `cd frontend && pnpm format:check src/lib/recording-store.ts src/lib/recording-uploader.ts src/lib/components/RecordingWorkspace.svelte src/routes/+layout.svelte tests/unit/recording-store.test.ts tests/unit/recording-uploader.test.ts tests/ui/companion-phase3.spec.ts` — **PASS**
+- `cd frontend && pnpm test` — **PASS**（**76 test files / 462 tests passed**，含 `recording-store.test.ts` 的 IndexedDB 事务 `complete`/`abort`/`error`/不可用/作用域清理回归、`recording-uploader.test.ts` 的非持久存储拒绝、读回校验失败、同账号 `check` 分类与 `rearmScheduledRecordingUpload`、跨标签/在途切号保护 Account B 队列与草稿测试）
 - `cd frontend && pnpm build` — **PASS**（`@sveltejs/adapter-node` 生产 SSR 构建通过）
-- `cd frontend && COMPANION_USE_PROD_BUILD=1 PHASE3_CAPTURE_SCREENSHOTS=1 pnpm exec playwright test --config playwright.companion-phase3.config.ts --reporter=list` — **8 passed**（生产构建上验证未登录重定向、Web 前台模式、权限拒绝/大致位置阻断开始/通知拒绝/定位关闭、GPS 搜星/良好/丢失/暂停耗时口径提示/继续/返回键防误退/断网暂存/联网单次幂等上传、`stopped` 未入队会话 5 秒内自动补录入队与 `acknowledgeHandoff`、503 退避到期留在页面自动重试上传、跨标签切号中止上传且 0 请求发往账号 B、进程被杀恢复与二次确认丢弃、以及 390×844 / 768×1024 / 1440×900 明暗主题零横向溢出；`companion-phase3.spec.ts` 已纳入 `playwright.ui.config.ts` 以便 GitHub CI `frontend-ui` 自动执行）
+- `cd frontend && COMPANION_USE_PROD_BUILD=1 pnpm exec playwright test --config playwright.companion-phase3.config.ts --reporter=list` — **12 passed**（含 Round 1 全量 8 项 + Round 2 新增 4 项回归：IndexedDB `put` 成功事件内事务中止后不删原生数据且重启自动恢复、IndexedDB 不可用保留原生交接且恢复后重试成功、同账号新标签挂载 `BroadcastChannel('runnote-auth')` `'check'` 不取消 503 退避重试、账号 A 休眠标签唤醒后仅清理账号 A 并完整保留账号 B 草稿与待传队列，以及 390×844 / 768×1024 / 1440×900 明暗主题零横向溢出）
 - `cd frontend && COMPANION_USE_PROD_BUILD=1 pnpm exec playwright test --config playwright.companion-phase2.config.ts --reporter=list` — **4 passed**（Phase 2 无回归）
-- `cd frontend && pnpm exec playwright test --config playwright.ui.config.ts tests/ui/ui-shell.spec.ts --reporter=list` — **PASS**（壳层交互无回归）
+- `cd frontend && pnpm exec playwright test --config playwright.ui.config.ts tests/ui/ui-shell.spec.ts --reporter=list` — **22 passed**（壳层交互无回归）
 
 ### 5.3 Android 原生构建、JUnit 单测、APK 权限审计与 API 29 模拟器实测
 
-- **Gradle 构建与单测**：`pnpm --dir android sync && (cd android/native && ./gradlew --no-daemon testDebugUnitTest assembleDebug)` — **BUILD SUCCESSFUL**，JUnit **32/32 passed**（含 `LocationRecordingPolicyTest` 4 组用例：Manifest 最小权限与禁用 `ACCESS_BACKGROUND_LOCATION` 审计、API 29–36 精确位置硬前置与 FGS 类型评估、GPS 信号分级与精度/速度跳变/分段过滤、原子 `Files.move` 落盘/截断尾行主动修复后追加/按 `accountId` 隔离读取/`stopped` 交接保留与 `acknowledgeHandoff` 会话 ID 核验/进程被杀状态归类/账号切换清理；`ServerUrlPolicyTest` 2.5.0 / 20500 断言）。
+- **Gradle 构建与单测**：`pnpm --dir android sync && (cd android/native && ./gradlew --no-daemon testDebugUnitTest assembleDebug)` — **BUILD SUCCESSFUL**，JUnit **33/33 passed**（含 `LocationRecordingPolicyTest` 5 组用例：Manifest 最小权限与禁用 `ACCESS_BACKGROUND_LOCATION` 审计、API 29–36 精确位置硬前置与 FGS 类型评估、GPS 信号分级与精度/速度跳变/分段过滤、原子 `Files.move` 落盘与截断修复、以及跨实例目录锁/末点与停表竞态/并发重复终结单次交接/`acknowledgeHandoff` 排序与确认后不重建文件/交接期崩溃恢复）。
 - **合并后 Debug APK 权限审计（`aapt2 dump permissions android/native/app/build/outputs/apk/debug/app-debug.apk`）**：
   - 仅包含 `INTERNET`、`ACCESS_NETWORK_STATE`、6 项 `android.permission.health.READ_*`（0 项 `WRITE_*`）、`ACCESS_FINE_LOCATION`、`ACCESS_COARSE_LOCATION`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_LOCATION`、`POST_NOTIFICATIONS`（**0 项 `ACCESS_BACKGROUND_LOCATION`**、**0 项宽泛存储权限**）；`versionCode=20500`、`versionName=2.5.0`。
 - **API 29 模拟器运行时实测（`RunNote_Phase0_API29`，`-no-window -gpu off`，WebView `133.0.6943.137`，`adb reverse tcp:15297` 对接本地生产 SSR + 合成 API）**：

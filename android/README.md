@@ -76,8 +76,8 @@ sha256sum android/native/app/build/outputs/apk/release/app-release.apk
 - **实时运动记录与前台后台定位（`LocationRecorderPlugin` + `RecordingForegroundService` + `LocationRecordingPolicy` + `frontend/src/lib/capacitor-recorder.ts`）**：
   - 仅在用户主动开始记录期间启动 `foregroundServiceType="location"` 的前台服务并展示锁屏脱敏常驻通知（`VISIBILITY_PRIVATE` + `setPublicVersion`），支持锁屏、切后台、Doze 持续记录；遵循 Google Play 最小权限原则，**不声明 `ACCESS_BACKGROUND_LOCATION`**；
   - 仅申请 `ACCESS_FINE_LOCATION`、`ACCESS_COARSE_LOCATION`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_LOCATION`、`POST_NOTIFICATIONS`（API 33+）；严格要求精确位置（`ACCESS_FINE_LOCATION`），仅授大致位置时阻断开始并引导升级精确位置；妥善处理权限拒绝、通知拒绝、运行中降权与「仅本次允许」失效，系统定位重新开启后自动恢复订阅；
-  - 每个有效 GPS 点即时写入应用私有目录（`files/recordings/`，原子 `Files.move` 元数据 JSON + 追加式 NDJSON，恢复时自动修复崩溃截断尾行，禁止云备份 `allowBackup="false"`），进程被杀或重启后显式提示恢复或安全丢弃；结束交接采用两阶段确认（IndexedDB 入队成功后调用 `acknowledgeHandoff`，未确认的 `stopped` 会话阻止新记录覆盖），绝不静默丢数据；
-  - 结束后生成确定性 GPX 1.1（暂停/继续分段），经本地账号强绑定队列（预检 `/api/v1/auth/session` + `expected_owner_id` + `Idempotency-Key` + `AbortController`）幂等上传至 `POST /api/v1/gpx-imports`（断网暂存、到期定时器驱动指数退避自动重试、重复提交返回同一结果），服务端保持指标权威；退出登录/跨标签切换账号立即中止在途请求并清理本机记录与队列。
+  - 每个有效 GPS 点即时写入应用私有目录（`files/recordings/`，同目录跨实例共享锁、原子 `Files.move` 元数据 JSON + 追加式 NDJSON，恢复时自动修复崩溃截断尾行，禁止云备份 `allowBackup="false"`），进程被杀或重启后显式提示恢复或安全丢弃；停止记录由服务侧单写者/单终结器先冻结采集再返回唯一快照，防止末点与停表竞态及二次交接；两阶段确认仅在 IndexedDB 事务 `complete` 且读回校验通过后调用 `acknowledgeHandoff` 清理原生文件（禁止内存回退，未确认的 `stopped` 会话阻止新记录覆盖），绝不静默丢数据；
+  - 结束后生成确定性 GPX 1.1（暂停/继续分段），经本地账号强绑定队列（预检 `/api/v1/auth/session` + `expected_owner_id` + `Idempotency-Key` + `AbortController`）幂等上传至 `POST /api/v1/gpx-imports`（断网暂存、到期定时器驱动指数退避自动重试；同账号新标签 `check` 广播不取消退避定时器；重复提交返回 `200 OK` 及该活动的当前持久化视图），服务端保持指标权威；退出登录/跨标签切换账号立即中止在途请求并仅按 `ACTIVE_ACCOUNT_KEY` 精确清理原账号数据，绝不误删新登录账号队列。
 - **文件导入（`RunNoteWebChromeClient` + `FilePickerIntentHelper`）**：沿用 Phase 0 的 SAF DocumentsUI MIME 放宽，不申请宽泛存储权限。
 - **认证与隐私**：沿用同源 HttpOnly Cookie + CSRF + Origin，`onPause()`/`onStop()` 主动 `CookieManager.flush()`；不暴露会话给 JS，不记录凭据、Cookie、健康数据原文或 GPS 坐标。
 
