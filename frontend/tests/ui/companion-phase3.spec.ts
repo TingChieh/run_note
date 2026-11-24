@@ -1495,6 +1495,22 @@ test('P2 Round 4: tab A stale cleanup aborts and preserves new A claim/draft/que
   // enqueues a new upload item (rev 2), and stores a new active draft (rev 2).
   // Suppress Tab B's routine 'check' broadcast so Tab A's Call #1 actually enters the stale cleanup path.
   await context.request.post('/api/v1/auth/logout', { headers: { 'x-csrf-token': 'ui-csrf' } });
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open('runnote-recording-store', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('records', 'readwrite');
+        tx.objectStore('records').delete('meta:recording_active_account');
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+  });
   const reloginRes = await context.request.post('/api/v1/auth/login', {
     data: { email: 'runner@example.com', password: 'Synthetic-ui-password-2026' },
   });
@@ -1727,4 +1743,266 @@ test('P2 Round 4: two-tab concurrent same-account re-login and re-claim advances
   expect(titles).toContain('账号 A 并发重认领新跑');
 
   await tabB.close();
+});
+
+async function installMockWebGeolocation(page: Page) {
+  await page.addInitScript(() => {
+    let nextWatchId = 1;
+    let activeWatchId: number | null = null;
+    let onSuccess: PositionCallback | null = null;
+    let clearWatchCount = 0;
+    let fixSeq = 0;
+    const baseMs = Date.now();
+
+    const geoMock = {
+      watchPosition(success: PositionCallback) {
+        const id = nextWatchId++;
+        activeWatchId = id;
+        onSuccess = success;
+        return id;
+      },
+      clearWatch(id: number) {
+        if (activeWatchId === id) {
+          activeWatchId = null;
+          onSuccess = null;
+        }
+        clearWatchCount += 1;
+      },
+      getCurrentPosition(success: PositionCallback) {
+        success({
+          coords: {
+            latitude: 31.23,
+            longitude: 121.47,
+            accuracy: 6,
+            altitude: 12,
+            altitudeAccuracy: 5,
+            heading: null,
+            speed: null,
+            toJSON: () => ({}),
+          },
+          timestamp: baseMs,
+          toJSON: () => ({}),
+        } as GeolocationPosition);
+      },
+    };
+
+    Object.defineProperty(navigator, 'geolocation', {
+      configurable: true,
+      value: geoMock,
+    });
+
+    const win = window as unknown as Record<string, unknown>;
+    win.__geo = {
+      emit(lat: number, lon: number, accuracy = 6) {
+        if (!onSuccess) return false;
+        fixSeq += 1;
+        onSuccess({
+          coords: {
+            latitude: lat,
+            longitude: lon,
+            accuracy,
+            altitude: 12,
+            altitudeAccuracy: 5,
+            heading: null,
+            speed: 3.1,
+            toJSON: () => ({}),
+          },
+          timestamp: baseMs + fixSeq * 60_000,
+          toJSON: () => ({}),
+        } as GeolocationPosition);
+        return true;
+      },
+      getClearWatchCount: () => clearWatchCount,
+      isWatching: () => activeWatchId !== null && onSuccess !== null,
+    };
+  });
+}
+
+test('P2 Round 5: late GPS write and stale delete from old tab epoch 1 cannot overwrite or delete epoch 2 draft', async ({
+  page,
+  context,
+}) => {
+  await loginRunner(page);
+  const accountAId = '00000000-0000-4000-8000-000000000001';
+
+  await installMockWebGeolocation(page);
+  await page.goto('/activities/record');
+
+  // Tab 1 starts Web recording under epoch 1 and records 2 GPS points
+  await page.getByLabel('跑步标题（可选）').fill('Tab1 旧代草稿');
+  await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as Record<string, { isWatching: () => boolean }>).__geo.isWatching()),
+    )
+    .toBe(true);
+  await page.evaluate(() => {
+    const geo = (window as unknown as Record<string, { emit: (lat: number, lon: number) => boolean }>).__geo;
+    geo.emit(31.23, 121.47);
+    geo.emit(31.232, 121.47);
+  });
+  await expect(page.getByTestId('recording-points-count')).toContainText('2 点');
+
+  const readDraftRow = async (targetPage: Page) =>
+    await targetPage.evaluate(async (aId) => {
+      return await new Promise<{
+        activeClaimRev?: number;
+        claimEpoch?: number;
+        draftClaimRev?: number;
+        title?: string;
+        sessionId?: string;
+        pointCount?: number;
+      }>((resolve, reject) => {
+        const req = indexedDB.open('runnote-recording-store', 1);
+        req.onerror = () => reject(req.error);
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction('records', 'readonly');
+          const store = tx.objectStore('records');
+          const rActive = store.get('meta:recording_active_account');
+          const rEpoch = store.get('meta:recording_claim_epoch');
+          const rDraft = store.get(`user:${aId}:draft:active`);
+          tx.oncomplete = () => {
+            const active = rActive.result as { claimRevision?: number } | undefined;
+            const epoch = rEpoch.result as { payload?: number } | undefined;
+            const draft = rDraft.result as
+              | { claimRevision?: number; payload?: { title?: string; sessionId?: string; points?: unknown[] } }
+              | undefined;
+            db.close();
+            resolve({
+              activeClaimRev: active?.claimRevision,
+              claimEpoch: typeof epoch?.payload === 'number' ? epoch.payload : undefined,
+              draftClaimRev: draft?.claimRevision,
+              title: draft?.payload?.title,
+              sessionId: draft?.payload?.sessionId,
+              pointCount: Array.isArray(draft?.payload?.points) ? draft.payload.points.length : undefined,
+            });
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+      });
+    }, accountAId);
+
+  const tab1Snap = await readDraftRow(page);
+  expect(tab1Snap.title).toBe('Tab1 旧代草稿');
+  expect(tab1Snap.pointCount).toBe(2);
+  expect(typeof tab1Snap.activeClaimRev).toBe('number');
+
+  // Re-login as Account A and open Tab 2 -> claims epoch 2 (> epoch 1) and writes new draft
+  await context.request.post('/api/v1/auth/logout', { headers: { 'x-csrf-token': 'ui-csrf' } });
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open('runnote-recording-store', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('records', 'readwrite');
+        tx.objectStore('records').delete('meta:recording_active_account');
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+  });
+  const reloginRes = await context.request.post('/api/v1/auth/login', {
+    data: { email: 'runner@example.com', password: 'Synthetic-ui-password-2026' },
+  });
+  expect(reloginRes.ok()).toBe(true);
+
+  const tab2 = await context.newPage();
+  await installMockWebGeolocation(tab2);
+  await tab2.goto('/activities/record');
+  await expect(tab2.locator('header')).toHaveAttribute('data-auth-ready', 'true');
+
+  // Tab 2 sees Tab 1's recovered draft and explicitly discards it before starting a new epoch-2 session
+  await expect(tab2.getByTestId('recording-recovery-panel')).toBeVisible();
+  await tab2.getByTestId('recovery-discard-btn').click();
+  await tab2.getByTestId('recording-discard-confirm-btn').click();
+  await expect(tab2.getByTestId('recording-recovery-panel')).not.toBeVisible();
+
+  await tab2.getByLabel('跑步标题（可选）').fill('Tab2 新代草稿');
+  await tab2.getByTestId('recording-start-btn').click();
+  await expect(tab2.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await expect
+    .poll(() =>
+      tab2.evaluate(() => (window as unknown as Record<string, { isWatching: () => boolean }>).__geo.isWatching()),
+    )
+    .toBe(true);
+  await tab2.evaluate(() => {
+    const geo = (window as unknown as Record<string, { emit: (lat: number, lon: number) => boolean }>).__geo;
+    geo.emit(31.24, 121.48);
+    geo.emit(31.242, 121.48);
+  });
+  await expect(tab2.getByTestId('recording-points-count')).toContainText('2 点');
+
+  const tab2Snap = await readDraftRow(tab2);
+  expect(tab2Snap.title).toBe('Tab2 新代草稿');
+  expect(tab2Snap.activeClaimRev).toBeGreaterThan(tab1Snap.activeClaimRev!);
+  expect(tab2Snap.draftClaimRev).toBe(tab2Snap.activeClaimRev);
+
+  // Fire a late GPS callback on old Tab 1 -> must reject STORAGE_CLAIM_STALE, stop watch, and NOT overwrite Tab 2's draft
+  await page.evaluate(() => {
+    const geo = (window as unknown as Record<string, { emit: (lat: number, lon: number) => boolean }>).__geo;
+    geo.emit(31.235, 121.47);
+  });
+  await expect(page.getByTestId('recording-error')).toContainText('接管');
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as Record<string, { isWatching: () => boolean }>).__geo.isWatching()),
+    )
+    .toBe(false);
+
+  const afterLateWrite = await readDraftRow(tab2);
+  expect(afterLateWrite.title).toBe('Tab2 新代草稿');
+  expect(afterLateWrite.sessionId).toBe(tab2Snap.sessionId);
+  expect(afterLateWrite.draftClaimRev).toBe(tab2Snap.activeClaimRev);
+  expect(afterLateWrite.pointCount).toBe(2);
+
+  // Stale discard/delete from old Tab 1 must NOT delete Tab 2's new draft
+  await page.getByTestId('recovery-discard-btn').click();
+  await page.getByTestId('recording-discard-confirm-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('就绪');
+  await expect(page.getByTestId('recording-error')).toContainText('接管');
+
+  const afterStaleDelete = await readDraftRow(tab2);
+  expect(afterStaleDelete.title).toBe('Tab2 新代草稿');
+  expect(afterStaleDelete.sessionId).toBe(tab2Snap.sessionId);
+  expect(afterStaleDelete.draftClaimRev).toBe(tab2Snap.activeClaimRev);
+
+  // Legitimate write within current claim (Tab 2 emits a 3rd GPS fix) still succeeds cleanly
+  await tab2.evaluate(() => {
+    const geo = (window as unknown as Record<string, { emit: (lat: number, lon: number) => boolean }>).__geo;
+    geo.emit(31.244, 121.48);
+  });
+  await expect(tab2.getByTestId('recording-points-count')).toContainText('3 点');
+  const afterTab2ThirdPoint = await readDraftRow(tab2);
+  expect(afterTab2ThirdPoint.title).toBe('Tab2 新代草稿');
+  expect(afterTab2ThirdPoint.pointCount).toBe(3);
+  expect(afterTab2ThirdPoint.draftClaimRev).toBe(tab2Snap.activeClaimRev);
+
+  // Retry after rejection: pause Tab 2, start a new session in Tab 1 (captures current epoch) and record a fix
+  await tab2.getByTestId('recording-pause-btn').click();
+  await page.getByLabel('跑步标题（可选）').fill('Tab1 重试新草稿');
+  await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as Record<string, { isWatching: () => boolean }>).__geo.isWatching()),
+    )
+    .toBe(true);
+  await page.evaluate(() => {
+    const geo = (window as unknown as Record<string, { emit: (lat: number, lon: number) => boolean }>).__geo;
+    geo.emit(31.25, 121.49);
+  });
+  await expect(page.getByTestId('recording-points-count')).toContainText('1 点');
+
+  const afterRetry = await readDraftRow(page);
+  expect(afterRetry.title).toBe('Tab1 重试新草稿');
+  expect(afterRetry.draftClaimRev).toBe(afterRetry.activeClaimRev);
+  expect(afterRetry.draftClaimRev).toBeGreaterThanOrEqual(tab2Snap.activeClaimRev!);
+
+  await tab2.close();
 });

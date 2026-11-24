@@ -103,7 +103,7 @@
           abortAllRecordingUploads(lastIsolatedRecordingUserId);
         }
         lastIsolatedRecordingUserId = currentUserId;
-        void claimRecordingAccountAtomic(currentUserId)
+        void claimRecordingAccountAtomic(currentUserId, undefined, undefined, { reuseExistingClaim: true })
           .then((claim) => {
             if (claim.status === 'claimed') {
               lastIsolatedRecordingClaim = claim;

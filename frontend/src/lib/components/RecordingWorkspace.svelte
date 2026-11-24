@@ -36,9 +36,12 @@
     type RecordedTrackPoint,
   } from '#lib/gpx-serializer.ts';
   import {
+    RecordingPersistenceError,
+    claimRecordingAccountAtomic,
     deleteActiveRecordingDraft,
+    getActiveRecordingAccountSnapshot,
     listUploadQueueItems,
-    readActiveRecordingDraft,
+    readActiveRecordingDraftWithMeta,
     saveActiveRecordingDraft,
     type LocalRecordingDraft,
     type RecordingLifecycleStatus,
@@ -113,6 +116,8 @@
   let failedHandoffSessionId: string | null = null;
   let webWatchId: number | null = null;
   let webLastFixMs: number | null = null;
+  let sessionAccountId = '';
+  let sessionClaimRevision: number | null = null;
 
   const displayedDurationMs = $derived.by(() => {
     if (status === 'recording' && lastSegmentStartMs !== null && clockNowMs > lastSegmentStartMs) {
@@ -281,6 +286,8 @@
     gpsStatus = 'inactive';
     sessionId = '';
     idempotencyKey = '';
+    sessionAccountId = '';
+    sessionClaimRevision = null;
     startedAtMs = 0;
     activeDurationMs = 0;
     lastSegmentStartMs = null;
@@ -294,10 +301,10 @@
     webLastFixMs = null;
   }
 
-  function buildWebDraft(): LocalRecordingDraft {
+  function buildWebDraft(boundAccountId = sessionAccountId || accountId): LocalRecordingDraft {
     return {
       sessionId,
-      accountId,
+      accountId: boundAccountId,
       idempotencyKey,
       title: runTitle,
       status,
@@ -310,8 +317,46 @@
       lastPointTimeMs,
       lastAccuracyM,
       interruptedReason,
-      points: webPoints,
+      points: webPoints.map((pt) => ({ ...pt })),
     };
+  }
+
+  async function captureActiveSessionClaim(
+    targetAccountId: string,
+    options?: { bumpGeneration?: boolean },
+  ): Promise<number> {
+    if (options?.bumpGeneration) {
+      const claimed = await claimRecordingAccountAtomic(targetAccountId);
+      if (claimed.status !== 'claimed' || typeof claimed.claimRevision !== 'number') {
+        throw new RecordingPersistenceError('STORAGE_CLAIM_STALE', '当前记录会话已被其他标签页接管，请刷新后重试。');
+      }
+      return claimed.claimRevision;
+    }
+    const snap = await getActiveRecordingAccountSnapshot();
+    if (snap.activeAccountId === targetAccountId && typeof snap.claimRevision === 'number') {
+      return snap.claimRevision;
+    }
+    if (snap.activeAccountId && snap.activeAccountId !== targetAccountId) {
+      throw new RecordingPersistenceError('STORAGE_CLAIM_STALE', '检测到当前登录账号已切换，请刷新页面后再开始记录。');
+    }
+    const claimed = await claimRecordingAccountAtomic(targetAccountId, undefined, undefined, {
+      reuseExistingClaim: true,
+    });
+    if (claimed.status !== 'claimed' || typeof claimed.claimRevision !== 'number') {
+      throw new RecordingPersistenceError('STORAGE_CLAIM_STALE', '当前记录会话已被其他标签页接管，请刷新后重试。');
+    }
+    return claimed.claimRevision;
+  }
+
+  function handleStaleSessionWrite(boundAccountId: string, boundClaimRev: number, message: string) {
+    stopWebGeolocationWatch();
+    if (!disposed && sessionAccountId === boundAccountId && sessionClaimRevision === boundClaimRev) {
+      activeDurationMs = displayedDurationMs;
+      lastSegmentStartMs = null;
+      status = 'interrupted';
+      gpsStatus = 'inactive';
+      errorMessage = message;
+    }
   }
 
   async function refreshUploadQueue() {
@@ -359,7 +404,7 @@
     webWatchId = null;
   }
 
-  function startWebGeolocationWatch() {
+  function startWebGeolocationWatch(boundAccountId: string, boundClaimRevision: number) {
     stopWebGeolocationWatch();
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       permissions = { ...permissions, location: 'denied', locationServicesEnabled: false, canRecord: false };
@@ -370,7 +415,14 @@
     webLastFixMs = null;
     webWatchId = navigator.geolocation.watchPosition(
       (pos) => {
-        if (disposed || status !== 'recording') return;
+        if (
+          disposed ||
+          status !== 'recording' ||
+          sessionAccountId !== boundAccountId ||
+          sessionClaimRevision !== boundClaimRevision
+        ) {
+          return;
+        }
         const nowMs = Date.now();
         webLastFixMs = nowMs;
         const accuracy = Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : null;
@@ -397,7 +449,13 @@
           pointCount = webPoints.length;
           previewDistanceM += decision.distanceDeltaM;
           lastPointTimeMs = candidate.recordedAtMs;
-          void saveActiveRecordingDraft(buildWebDraft()).catch(() => {});
+          void saveActiveRecordingDraft(buildWebDraft(boundAccountId), undefined, {
+            expectedClaimRevision: boundClaimRevision,
+          }).catch((cause) => {
+            if (cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE') {
+              handleStaleSessionWrite(boundAccountId, boundClaimRevision, cause.message);
+            }
+          });
         }
         gpsStatus = accuracy !== null && accuracy <= 15 ? 'good' : 'weak';
       },
@@ -408,12 +466,22 @@
           gpsStatus = 'permission_denied';
           errorMessage = '定位权限已被拒绝，请在浏览器或系统设置中允许 RunNote 访问精确位置。';
           stopWebGeolocationWatch();
-          if (status === 'recording') {
+          if (
+            status === 'recording' &&
+            sessionAccountId === boundAccountId &&
+            sessionClaimRevision === boundClaimRevision
+          ) {
             activeDurationMs = displayedDurationMs;
             lastSegmentStartMs = null;
             status = 'interrupted';
             interruptedReason = 'permission_revoked';
-            void saveActiveRecordingDraft(buildWebDraft()).catch(() => {});
+            void saveActiveRecordingDraft(buildWebDraft(boundAccountId), undefined, {
+              expectedClaimRevision: boundClaimRevision,
+            }).catch((cause) => {
+              if (cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE') {
+                handleStaleSessionWrite(boundAccountId, boundClaimRevision, cause.message);
+              }
+            });
           }
         } else if (err.code === err.POSITION_UNAVAILABLE) {
           gpsStatus = 'lost';
@@ -495,6 +563,12 @@
         return;
       }
       const nowMs = Date.now();
+      const boundAccountId = resumeInterrupted && sessionAccountId ? sessionAccountId : accountId;
+      const boundClaimRev =
+        resumeInterrupted && sessionId && sessionClaimRevision !== null
+          ? sessionClaimRevision
+          : await captureActiveSessionClaim(boundAccountId, { bumpGeneration: !resumeInterrupted });
+      if (disposed) return;
       if (resumeInterrupted && sessionId) {
         segmentIndex += 1;
         status = 'recording';
@@ -515,8 +589,19 @@
         webPoints = [];
         status = 'recording';
       }
-      await saveActiveRecordingDraft(buildWebDraft());
-      startWebGeolocationWatch();
+      sessionAccountId = boundAccountId;
+      sessionClaimRevision = boundClaimRev;
+      try {
+        await saveActiveRecordingDraft(buildWebDraft(boundAccountId), undefined, {
+          expectedClaimRevision: boundClaimRev,
+        });
+      } catch (saveCause) {
+        if (!resumeInterrupted) resetLocalSessionState();
+        else
+          handleStaleSessionWrite(boundAccountId, boundClaimRev, saveCause instanceof Error ? saveCause.message : '');
+        throw saveCause;
+      }
+      startWebGeolocationWatch(boundAccountId, boundClaimRev);
     } catch (cause) {
       if (!disposed) errorMessage = cause instanceof Error ? cause.message : '无法开始记录，请重试';
     } finally {
@@ -539,7 +624,22 @@
         lastSegmentStartMs = null;
         status = 'paused';
         gpsStatus = 'inactive';
-        await saveActiveRecordingDraft(buildWebDraft());
+        const boundAccountId = sessionAccountId || accountId;
+        const boundClaimRev = sessionClaimRevision;
+        if (boundClaimRev === null) {
+          throw new RecordingPersistenceError('STORAGE_CLAIM_STALE', '当前记录会话已失效，请重新开始记录。');
+        }
+        try {
+          await saveActiveRecordingDraft(buildWebDraft(boundAccountId), undefined, {
+            expectedClaimRevision: boundClaimRev,
+          });
+        } catch (cause) {
+          if (cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE') {
+            handleStaleSessionWrite(boundAccountId, boundClaimRev, cause.message);
+            return;
+          }
+          throw cause;
+        }
       }
     } catch (cause) {
       if (!disposed) errorMessage = cause instanceof Error ? cause.message : '暂停失败';
@@ -562,11 +662,26 @@
         const nextState = await getNativeRecorderState(accountId);
         if (!disposed && nextState) applyNativeState(nextState);
       } else {
+        const boundAccountId = sessionAccountId || accountId;
+        const boundClaimRev = sessionClaimRevision;
+        if (boundClaimRev === null) {
+          throw new RecordingPersistenceError('STORAGE_CLAIM_STALE', '当前记录会话已失效，请重新开始记录。');
+        }
         segmentIndex += 1;
         lastSegmentStartMs = Date.now();
         status = 'recording';
-        await saveActiveRecordingDraft(buildWebDraft());
-        startWebGeolocationWatch();
+        try {
+          await saveActiveRecordingDraft(buildWebDraft(boundAccountId), undefined, {
+            expectedClaimRevision: boundClaimRev,
+          });
+        } catch (cause) {
+          if (cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE') {
+            handleStaleSessionWrite(boundAccountId, boundClaimRev, cause.message);
+            return;
+          }
+          throw cause;
+        }
+        startWebGeolocationWatch(boundAccountId, boundClaimRev);
       }
     } catch (cause) {
       if (!disposed) errorMessage = cause instanceof Error ? cause.message : '继续记录失败';
@@ -582,6 +697,8 @@
     errorMessage = '';
     statusNotice = '';
     let stoppedSession: RecorderSessionSnapshot | null = null;
+    const boundAccountId = sessionAccountId || accountId;
+    const boundClaimRev = sessionClaimRevision;
     try {
       let capturedPoints: RecordedTrackPoint[] = [];
       let finalStartedAt = startedAtMs;
@@ -618,7 +735,19 @@
           status = 'paused';
           lastSegmentStartMs = null;
           activeDurationMs = finalActiveMs;
-          await saveActiveRecordingDraft(buildWebDraft());
+          if (boundClaimRev !== null) {
+            try {
+              await saveActiveRecordingDraft(buildWebDraft(boundAccountId), undefined, {
+                expectedClaimRevision: boundClaimRev,
+              });
+            } catch (cause) {
+              if (cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE') {
+                handleStaleSessionWrite(boundAccountId, boundClaimRev, cause.message);
+                return;
+              }
+              throw cause;
+            }
+          }
         }
         return;
       }
@@ -626,7 +755,7 @@
       // Persist to IndexedDB upload queue FIRST (waits for transaction complete + read-back verification);
       // only acknowledge/delete native session AFTER durable commit succeeds.
       await enqueueFinalizedRecording({
-        accountId,
+        accountId: boundAccountId,
         sessionId: finalSessionId || generateUuidV4(),
         idempotencyKey: finalIdempotencyKey || generateUuidV4(),
         title: finalTitle,
@@ -639,8 +768,17 @@
 
       if (capabilities.native) {
         await acknowledgeNativeHandoff(finalSessionId);
-      } else {
-        await deleteActiveRecordingDraft(accountId);
+      } else if (boundClaimRev !== null) {
+        try {
+          await deleteActiveRecordingDraft(boundAccountId, undefined, {
+            expectedClaimRevision: boundClaimRev,
+            expectedSessionId: finalSessionId || undefined,
+          });
+        } catch (cause) {
+          if (!(cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE')) {
+            throw cause;
+          }
+        }
       }
 
       pendingHandoffSession = null;
@@ -693,7 +831,23 @@
           await discardNativeRecording();
         } else {
           stopWebGeolocationWatch();
-          await deleteActiveRecordingDraft(accountId);
+          if (sessionClaimRevision !== null) {
+            try {
+              await deleteActiveRecordingDraft(sessionAccountId || accountId, undefined, {
+                expectedClaimRevision: sessionClaimRevision,
+                expectedSessionId: sessionId || undefined,
+              });
+            } catch (cause) {
+              if (cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE') {
+                pendingHandoffSession = null;
+                resetLocalSessionState();
+                runTitle = '';
+                errorMessage = cause.message;
+                return;
+              }
+              throw cause;
+            }
+          }
         }
         pendingHandoffSession = null;
         resetLocalSessionState();
@@ -798,9 +952,14 @@
         });
       } else if (accountId) {
         try {
-          const draft = await readActiveRecordingDraft(accountId);
-          if (!disposed && draft) {
-            if (draft.status === 'stopped' && draft.points.length > 0) {
+          const draftMeta = await readActiveRecordingDraftWithMeta(accountId);
+          if (!disposed && draftMeta) {
+            const draft = draftMeta.draft;
+            const claimedRev = await captureActiveSessionClaim(accountId);
+            if (disposed) return;
+            if (typeof draftMeta.claimRevision === 'number' && draftMeta.claimRevision > claimedRev) {
+              // Newer generation already owns the draft; never overwrite or adopt it as stale.
+            } else if (draft.status === 'stopped' && draft.points.length > 0) {
               await enqueueFinalizedRecording({
                 accountId,
                 sessionId: draft.sessionId,
@@ -812,8 +971,19 @@
                 activeDurationMs: draft.activeDurationMs,
                 points: draft.points,
               });
-              await deleteActiveRecordingDraft(accountId);
+              try {
+                await deleteActiveRecordingDraft(accountId, undefined, {
+                  expectedClaimRevision: claimedRev,
+                  expectedSessionId: draft.sessionId,
+                });
+              } catch (cause) {
+                if (!(cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE')) {
+                  throw cause;
+                }
+              }
             } else if (draft.status === 'recording' || draft.status === 'paused' || draft.status === 'interrupted') {
+              sessionAccountId = accountId;
+              sessionClaimRevision = claimedRev;
               sessionId = draft.sessionId;
               idempotencyKey = draft.idempotencyKey;
               runTitle = draft.title;
@@ -831,7 +1001,7 @@
             }
           }
         } catch (cause) {
-          if (!disposed) {
+          if (!disposed && !(cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE')) {
             errorMessage =
               cause instanceof Error
                 ? `读取或提交本地记录失败：${cause.message}`

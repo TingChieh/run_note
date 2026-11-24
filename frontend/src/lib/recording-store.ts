@@ -23,7 +23,7 @@ const CLAIM_EPOCH_KEY = 'meta:recording_claim_epoch';
 export type RecordingLifecycleStatus = 'idle' | 'recording' | 'paused' | 'interrupted' | 'stopped';
 
 export type RecordingPersistenceErrorCode =
-  'STORAGE_UNAVAILABLE' | 'STORAGE_TX_ABORTED' | 'STORAGE_TX_ERROR' | 'STORAGE_VERIFY_FAILED';
+  'STORAGE_UNAVAILABLE' | 'STORAGE_TX_ABORTED' | 'STORAGE_TX_ERROR' | 'STORAGE_VERIFY_FAILED' | 'STORAGE_CLAIM_STALE';
 
 export class RecordingPersistenceError extends Error {
   readonly code: RecordingPersistenceErrorCode;
@@ -117,12 +117,31 @@ export interface GenerationScopedCleanupResult {
   activeClaimRevision: number | undefined;
 }
 
+export interface DraftWriteGuardOptions {
+  expectedClaimRevision?: number;
+}
+
+export interface DraftDeleteGuardOptions {
+  expectedClaimRevision?: number;
+  expectedSessionId?: string;
+}
+
+export interface ActiveRecordingDraftWithMeta {
+  draft: LocalRecordingDraft;
+  claimRevision: number | undefined;
+}
+
 export interface ClaimAccountResult {
   status: 'claimed' | 'conflict';
   activeAccountId: string | null;
   savedAt: number | null;
   claimRevision: number | undefined;
   claimEpoch: number;
+}
+
+export interface ClaimAccountOptions {
+  /** When true, reuses an existing active claim for the same `accountId` without advancing `claimRevision`. */
+  reuseExistingClaim?: boolean;
 }
 
 export interface GuardedAccountCleanupResult {
@@ -262,6 +281,20 @@ export interface RecordingStorageBackend {
   get(key: string): Promise<StoredRecord | null>;
   put(entry: StoredRecord): Promise<void>;
   putIfExists(entry: StoredRecord): Promise<boolean>;
+  saveDraftGuardedAtomic(
+    entry: StoredRecord,
+    activeKey: string,
+    epochKey: string,
+    expectedClaimRevision: number,
+  ): Promise<boolean>;
+  deleteDraftGuardedAtomic(
+    key: string,
+    accountId: string,
+    activeKey: string,
+    epochKey: string,
+    expectedClaimRevision: number,
+    expectedSessionId?: string,
+  ): Promise<'deleted' | 'missing' | 'stale'>;
   delete(key: string): Promise<void>;
   listByPrefix(prefix: string): Promise<StoredRecord[]>;
   deleteByPrefix(prefix: string): Promise<number>;
@@ -271,6 +304,7 @@ export interface RecordingStorageBackend {
     activeKey: string,
     epochKey: string,
     nowMs: number,
+    options?: ClaimAccountOptions,
   ): Promise<ClaimAccountResult>;
   clearAccountAtomic(accountId: string, activeKey: string, prefix: string): Promise<number>;
   clearAccountIfPreemptedAtomic(
@@ -327,6 +361,52 @@ export function createMemoryRecordingBackend(options?: { durableForTests?: boole
       map.set(entry.key, structuredClone(stampEntryWithActiveClaim(entry, activeEntry, existingEntry)));
       return true;
     },
+    async saveDraftGuardedAtomic(entry, activeKey, epochKey, expectedClaimRevision) {
+      const activeEntry = map.get(activeKey);
+      const epochEntry = map.get(epochKey);
+      const existingDraft = map.get(entry.key);
+      const activeAccountId = extractActiveAccountId(activeEntry);
+      const activeClaimRev = typeof activeEntry?.claimRevision === 'number' ? activeEntry.claimRevision : undefined;
+      const currentEpoch = Math.max(extractClaimEpoch(epochEntry), activeClaimRev ?? 0);
+      const existingDraftRev =
+        typeof existingDraft?.claimRevision === 'number' ? existingDraft.claimRevision : undefined;
+      if (
+        !entry.accountId ||
+        activeAccountId !== entry.accountId ||
+        activeClaimRev === undefined ||
+        activeClaimRev !== expectedClaimRevision ||
+        currentEpoch > expectedClaimRevision ||
+        (existingDraftRev !== undefined && existingDraftRev > expectedClaimRevision)
+      ) {
+        return false;
+      }
+      map.set(entry.key, structuredClone({ ...entry, claimRevision: expectedClaimRevision }));
+      return true;
+    },
+    async deleteDraftGuardedAtomic(key, accountId, activeKey, epochKey, expectedClaimRevision, expectedSessionId) {
+      const activeEntry = map.get(activeKey);
+      const epochEntry = map.get(epochKey);
+      const existingDraft = map.get(key);
+      if (!existingDraft) return 'missing';
+      const activeAccountId = extractActiveAccountId(activeEntry);
+      const activeClaimRev = typeof activeEntry?.claimRevision === 'number' ? activeEntry.claimRevision : undefined;
+      const currentEpoch = Math.max(extractClaimEpoch(epochEntry), activeClaimRev ?? 0);
+      const existingDraftRev =
+        typeof existingDraft.claimRevision === 'number' ? existingDraft.claimRevision : undefined;
+      const existingSessionId = (existingDraft.payload as Partial<LocalRecordingDraft> | undefined)?.sessionId;
+      if (
+        activeAccountId !== accountId ||
+        activeClaimRev === undefined ||
+        activeClaimRev !== expectedClaimRevision ||
+        currentEpoch > expectedClaimRevision ||
+        (existingDraftRev !== undefined && existingDraftRev > expectedClaimRevision) ||
+        (expectedSessionId !== undefined && existingSessionId !== undefined && existingSessionId !== expectedSessionId)
+      ) {
+        return 'stale';
+      }
+      map.delete(key);
+      return 'deleted';
+    },
     async delete(key) {
       map.delete(key);
     },
@@ -359,7 +439,7 @@ export function createMemoryRecordingBackend(options?: { durableForTests?: boole
         claimEpoch: Math.max(extractClaimEpoch(epochEntry), claimRevision ?? 0),
       };
     },
-    async claimAccountAtomic(accountId, activeKey, epochKey, nowMs) {
+    async claimAccountAtomic(accountId, activeKey, epochKey, nowMs, options) {
       const existing = map.get(activeKey);
       const epochEntry = map.get(epochKey);
       const currentEpoch = Math.max(
@@ -373,6 +453,15 @@ export function createMemoryRecordingBackend(options?: { durableForTests?: boole
           activeAccountId: existingAccount,
           savedAt: typeof existing?.savedAt === 'number' ? existing.savedAt : null,
           claimRevision: existing?.claimRevision,
+          claimEpoch: currentEpoch,
+        };
+      }
+      if (options?.reuseExistingClaim && existingAccount === accountId && typeof existing?.claimRevision === 'number') {
+        return {
+          status: 'claimed',
+          activeAccountId: accountId,
+          savedAt: typeof existing.savedAt === 'number' ? existing.savedAt : null,
+          claimRevision: existing.claimRevision,
           claimEpoch: currentEpoch,
         };
       }
@@ -568,6 +657,12 @@ function createUnavailableRecordingBackend(): RecordingStorageBackend {
     },
     async putIfExists() {
       throw unavailable();
+    },
+    async saveDraftGuardedAtomic() {
+      throw unavailable();
+    },
+    async deleteDraftGuardedAtomic() {
+      return 'missing';
     },
     async delete() {
       return;
@@ -842,6 +937,62 @@ export function createIndexedDbRecordingBackend(
         return true;
       });
     },
+    async saveDraftGuardedAtomic(entry, activeKey, epochKey, expectedClaimRevision) {
+      return runTx('readwrite', async (store) => {
+        const [activeEntry, epochEntry, existingDraft] = (await Promise.all([
+          reqPromise(store.get(activeKey)),
+          reqPromise(store.get(epochKey)),
+          reqPromise(store.get(entry.key)),
+        ])) as [StoredRecord | undefined, StoredRecord | undefined, StoredRecord | undefined];
+        const activeAccountId = extractActiveAccountId(activeEntry);
+        const activeClaimRev = typeof activeEntry?.claimRevision === 'number' ? activeEntry.claimRevision : undefined;
+        const currentEpoch = Math.max(extractClaimEpoch(epochEntry), activeClaimRev ?? 0);
+        const existingDraftRev =
+          typeof existingDraft?.claimRevision === 'number' ? existingDraft.claimRevision : undefined;
+        if (
+          !entry.accountId ||
+          activeAccountId !== entry.accountId ||
+          activeClaimRev === undefined ||
+          activeClaimRev !== expectedClaimRevision ||
+          currentEpoch > expectedClaimRevision ||
+          (existingDraftRev !== undefined && existingDraftRev > expectedClaimRevision)
+        ) {
+          return false;
+        }
+        await reqPromise(store.put({ ...entry, claimRevision: expectedClaimRevision }));
+        return true;
+      });
+    },
+    async deleteDraftGuardedAtomic(key, accountId, activeKey, epochKey, expectedClaimRevision, expectedSessionId) {
+      return runTx('readwrite', async (store) => {
+        const [activeEntry, epochEntry, existingDraft] = (await Promise.all([
+          reqPromise(store.get(activeKey)),
+          reqPromise(store.get(epochKey)),
+          reqPromise(store.get(key)),
+        ])) as [StoredRecord | undefined, StoredRecord | undefined, StoredRecord | undefined];
+        if (!existingDraft) return 'missing';
+        const activeAccountId = extractActiveAccountId(activeEntry);
+        const activeClaimRev = typeof activeEntry?.claimRevision === 'number' ? activeEntry.claimRevision : undefined;
+        const currentEpoch = Math.max(extractClaimEpoch(epochEntry), activeClaimRev ?? 0);
+        const existingDraftRev =
+          typeof existingDraft.claimRevision === 'number' ? existingDraft.claimRevision : undefined;
+        const existingSessionId = (existingDraft.payload as Partial<LocalRecordingDraft> | undefined)?.sessionId;
+        if (
+          activeAccountId !== accountId ||
+          activeClaimRev === undefined ||
+          activeClaimRev !== expectedClaimRevision ||
+          currentEpoch > expectedClaimRevision ||
+          (existingDraftRev !== undefined && existingDraftRev > expectedClaimRevision) ||
+          (expectedSessionId !== undefined &&
+            existingSessionId !== undefined &&
+            existingSessionId !== expectedSessionId)
+        ) {
+          return 'stale';
+        }
+        await reqPromise(store.delete(key));
+        return 'deleted';
+      });
+    },
     async delete(key) {
       await runTx('readwrite', async (store) => {
         await reqPromise(store.delete(key));
@@ -882,7 +1033,7 @@ export function createIndexedDbRecordingBackend(
         };
       });
     },
-    async claimAccountAtomic(accountId, activeKey, epochKey, nowMs) {
+    async claimAccountAtomic(accountId, activeKey, epochKey, nowMs, options) {
       return runTx('readwrite', async (store) => {
         const [existing, epochEntry] = (await Promise.all([
           reqPromise(store.get(activeKey)),
@@ -899,6 +1050,19 @@ export function createIndexedDbRecordingBackend(
             activeAccountId: existingAccount,
             savedAt: typeof existing?.savedAt === 'number' ? existing.savedAt : null,
             claimRevision: existing?.claimRevision,
+            claimEpoch: currentEpoch,
+          };
+        }
+        if (
+          options?.reuseExistingClaim &&
+          existingAccount === accountId &&
+          typeof existing?.claimRevision === 'number'
+        ) {
+          return {
+            status: 'claimed',
+            activeAccountId: accountId,
+            savedAt: typeof existing.savedAt === 'number' ? existing.savedAt : null,
+            claimRevision: existing.claimRevision,
             claimEpoch: currentEpoch,
           };
         }
@@ -1168,11 +1332,12 @@ export async function claimRecordingAccountAtomic(
   accountId: string,
   backend: RecordingStorageBackend = getDefaultRecordingBackend(),
   nowMs = Date.now(),
+  options?: ClaimAccountOptions,
 ): Promise<ClaimAccountResult> {
   if (!accountId.trim()) {
     return { status: 'conflict', activeAccountId: null, savedAt: null, claimRevision: undefined, claimEpoch: 0 };
   }
-  return backend.claimAccountAtomic(accountId, ACTIVE_ACCOUNT_KEY, CLAIM_EPOCH_KEY, nowMs);
+  return backend.claimAccountAtomic(accountId, ACTIVE_ACCOUNT_KEY, CLAIM_EPOCH_KEY, nowMs, options);
 }
 
 /**
@@ -1319,7 +1484,7 @@ export async function reconcileVerifiedRecordingAccount(options: {
 }): Promise<ReconcileRecordingAccountResult> {
   const backend = options.backend ?? getDefaultRecordingBackend();
   const now = options.now ?? (() => Date.now());
-  const claim = await claimRecordingAccountAtomic(options.accountId, backend, now());
+  const claim = await claimRecordingAccountAtomic(options.accountId, backend, now(), { reuseExistingClaim: true });
   if (claim.status === 'claimed') {
     return { status: 'active', activeAccountId: options.accountId };
   }
@@ -1392,21 +1557,38 @@ export async function clearPrivateRecordingData(
 export async function saveActiveRecordingDraft(
   draft: LocalRecordingDraft,
   backend: RecordingStorageBackend = getDefaultRecordingBackend(),
+  options?: DraftWriteGuardOptions,
 ): Promise<void> {
   assertSafeCachePayload(draft);
-  await backend.put({
+  const entry: StoredRecord<LocalRecordingDraft> = {
     key: activeDraftKey(draft.accountId),
     accountId: draft.accountId,
     schemaVersion: RECORDING_STORE_SCHEMA_VERSION,
     savedAt: Date.now(),
     payload: draft,
-  });
+  };
+  if (options?.expectedClaimRevision !== undefined) {
+    const saved = await backend.saveDraftGuardedAtomic(
+      entry,
+      ACTIVE_ACCOUNT_KEY,
+      CLAIM_EPOCH_KEY,
+      options.expectedClaimRevision,
+    );
+    if (!saved) {
+      throw new RecordingPersistenceError(
+        'STORAGE_CLAIM_STALE',
+        '当前记录会话已被其他标签页或新登录接管，已阻止覆盖最新草稿。',
+      );
+    }
+    return;
+  }
+  await backend.put(entry);
 }
 
-export async function readActiveRecordingDraft(
+export async function readActiveRecordingDraftWithMeta(
   accountId: string,
   backend: RecordingStorageBackend = getDefaultRecordingBackend(),
-): Promise<LocalRecordingDraft | null> {
+): Promise<ActiveRecordingDraftWithMeta | null> {
   const entry = await backend.get(activeDraftKey(accountId));
   if (!entry || entry.schemaVersion !== RECORDING_STORE_SCHEMA_VERSION || entry.accountId !== accountId) {
     return null;
@@ -1421,13 +1603,42 @@ export async function readActiveRecordingDraft(
     await backend.delete(activeDraftKey(accountId));
     return null;
   }
-  return payload as LocalRecordingDraft;
+  return {
+    draft: payload as LocalRecordingDraft,
+    claimRevision: typeof entry.claimRevision === 'number' ? entry.claimRevision : undefined,
+  };
+}
+
+export async function readActiveRecordingDraft(
+  accountId: string,
+  backend: RecordingStorageBackend = getDefaultRecordingBackend(),
+): Promise<LocalRecordingDraft | null> {
+  const hit = await readActiveRecordingDraftWithMeta(accountId, backend);
+  return hit?.draft ?? null;
 }
 
 export async function deleteActiveRecordingDraft(
   accountId: string,
   backend: RecordingStorageBackend = getDefaultRecordingBackend(),
+  options?: DraftDeleteGuardOptions,
 ): Promise<void> {
+  if (options?.expectedClaimRevision !== undefined) {
+    const result = await backend.deleteDraftGuardedAtomic(
+      activeDraftKey(accountId),
+      accountId,
+      ACTIVE_ACCOUNT_KEY,
+      CLAIM_EPOCH_KEY,
+      options.expectedClaimRevision,
+      options.expectedSessionId,
+    );
+    if (result === 'stale') {
+      throw new RecordingPersistenceError(
+        'STORAGE_CLAIM_STALE',
+        '当前记录会话已被其他标签页或新登录接管，已阻止删除最新草稿。',
+      );
+    }
+    return;
+  }
   await backend.delete(activeDraftKey(accountId));
 }
 

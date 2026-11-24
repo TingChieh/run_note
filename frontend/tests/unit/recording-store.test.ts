@@ -10,12 +10,14 @@ import {
   clearStaleRecordingAccountAtomic,
   createIndexedDbRecordingBackend,
   createMemoryRecordingBackend,
+  deleteActiveRecordingDraft,
   ensureRecordingAccountIsolation,
   getActiveRecordingAccount,
   getActiveRecordingAccountSnapshot,
   listUploadQueueItems,
   putUploadQueueItem,
   readActiveRecordingDraft,
+  readActiveRecordingDraftWithMeta,
   readUploadQueueItem,
   reconcileVerifiedRecordingAccount,
   saveActiveRecordingDraft,
@@ -928,5 +930,172 @@ describe('recording-store Round 4 claim-generation guarded cleanup', () => {
     await saveActiveRecordingDraft({ ...sampleDraft('user-a'), sessionId: 'sess-a-concurrent' }, backend);
     expect((await readActiveRecordingDraft('user-a', backend))?.sessionId).toBe('sess-a-concurrent');
     expect((await getActiveRecordingAccountSnapshot(backend)).claimRevision).toBe(3);
+  });
+});
+
+describe('recording-store Round 5 caller claim-epoch guarded draft writes and deletes', () => {
+  it('rejects late GPS write from epoch 1 without overwriting or mis-stamping epoch 2 draft and preserves legitimate writes', async () => {
+    const fake = createSerializedFakeIdbFactory();
+    const backend = createIndexedDbRecordingBackend('round5-late-gps-write', fake.factory);
+
+    // Tab 1 claims epoch 1 and writes old draft
+    const claim1 = await claimRecordingAccountAtomic('user-a', backend, 1_000);
+    expect(claim1.claimRevision).toBe(1);
+    await saveActiveRecordingDraft(
+      { ...sampleDraft('user-a'), sessionId: 'sess-tab1-old', title: 'Tab1 旧草稿' },
+      backend,
+      {
+        expectedClaimRevision: 1,
+      },
+    );
+
+    // Tab 2 clears/re-claims epoch 2 and writes new draft
+    await backend.delete('meta:recording_active_account');
+    const claim2 = await claimRecordingAccountAtomic('user-a', backend, 2_000);
+    expect(claim2.claimRevision).toBe(2);
+    await saveActiveRecordingDraft(
+      { ...sampleDraft('user-a'), sessionId: 'sess-tab2-new', title: 'Tab2 新草稿' },
+      backend,
+      {
+        expectedClaimRevision: 2,
+      },
+    );
+
+    // Tab 1 late GPS write arrives carrying epoch 1 -> rejected in 1 single readwrite tx with ZERO puts
+    const txBefore = fake.txLogs.length;
+    await expect(
+      saveActiveRecordingDraft(
+        { ...sampleDraft('user-a'), sessionId: 'sess-tab1-old', title: 'Tab1 迟到GPS覆盖' },
+        backend,
+        {
+          expectedClaimRevision: 1,
+        },
+      ),
+    ).rejects.toMatchObject({ name: 'RecordingPersistenceError', code: 'STORAGE_CLAIM_STALE' });
+    const lateTxs = fake.txLogs.slice(txBefore);
+    expect(lateTxs).toHaveLength(1);
+    expect(lateTxs[0].mode).toBe('readwrite');
+    expect(lateTxs[0].ops.some((o) => o.op === 'put' || o.op === 'delete')).toBe(false);
+
+    // Tab 2's new draft remains intact at claimRevision 2 (never overwritten or mis-stamped)
+    const afterLate = await readActiveRecordingDraftWithMeta('user-a', backend);
+    expect(afterLate?.claimRevision).toBe(2);
+    expect(afterLate?.draft.sessionId).toBe('sess-tab2-new');
+    expect(afterLate?.draft.title).toBe('Tab2 新草稿');
+
+    // Legitimate same-account write within current claim (epoch 2) succeeds and stays at rev 2
+    await saveActiveRecordingDraft(
+      {
+        ...sampleDraft('user-a'),
+        sessionId: 'sess-tab2-new',
+        title: 'Tab2 新草稿续写',
+        previewDistanceM: 880,
+      },
+      backend,
+      { expectedClaimRevision: 2 },
+    );
+    const afterValid = await readActiveRecordingDraftWithMeta('user-a', backend);
+    expect(afterValid?.claimRevision).toBe(2);
+    expect(afterValid?.draft.title).toBe('Tab2 新草稿续写');
+    expect(afterValid?.draft.previewDistanceM).toBe(880);
+  });
+
+  it('rejects stale delete from epoch 1 without deleting epoch 2 draft and allows matching delete', async () => {
+    const fake = createSerializedFakeIdbFactory();
+    const backend = createIndexedDbRecordingBackend('round5-stale-delete', fake.factory);
+
+    await claimRecordingAccountAtomic('user-a', backend, 1_000);
+    await saveActiveRecordingDraft({ ...sampleDraft('user-a'), sessionId: 'sess-tab1-old' }, backend, {
+      expectedClaimRevision: 1,
+    });
+
+    await claimRecordingAccountAtomic('user-a', backend, 2_000);
+    await saveActiveRecordingDraft({ ...sampleDraft('user-a'), sessionId: 'sess-tab2-new' }, backend, {
+      expectedClaimRevision: 2,
+    });
+
+    const txBefore = fake.txLogs.length;
+    await expect(
+      deleteActiveRecordingDraft('user-a', backend, {
+        expectedClaimRevision: 1,
+        expectedSessionId: 'sess-tab1-old',
+      }),
+    ).rejects.toMatchObject({ name: 'RecordingPersistenceError', code: 'STORAGE_CLAIM_STALE' });
+    const staleDelTxs = fake.txLogs.slice(txBefore);
+    expect(staleDelTxs).toHaveLength(1);
+    expect(staleDelTxs[0].ops.some((o) => o.op === 'delete' || o.op === 'put')).toBe(false);
+
+    // Wrong sessionId even with epoch 2 also rejects without deleting
+    await expect(
+      deleteActiveRecordingDraft('user-a', backend, {
+        expectedClaimRevision: 2,
+        expectedSessionId: 'sess-tab1-old',
+      }),
+    ).rejects.toMatchObject({ code: 'STORAGE_CLAIM_STALE' });
+
+    const preserved = await readActiveRecordingDraftWithMeta('user-a', backend);
+    expect(preserved?.claimRevision).toBe(2);
+    expect(preserved?.draft.sessionId).toBe('sess-tab2-new');
+
+    // Legitimate delete at epoch 2 with matching sessionId removes draft cleanly
+    await deleteActiveRecordingDraft('user-a', backend, {
+      expectedClaimRevision: 2,
+      expectedSessionId: 'sess-tab2-new',
+    });
+    expect(await readActiveRecordingDraft('user-a', backend)).toBeNull();
+  });
+
+  it('handles concurrent claim preemption against draft write/delete and supports retry after rejection', async () => {
+    const fake = createSerializedFakeIdbFactory();
+    const backend = createIndexedDbRecordingBackend('round5-concurrent-claim-retry', fake.factory);
+
+    await claimRecordingAccountAtomic('user-a', backend, 1_000);
+    await saveActiveRecordingDraft({ ...sampleDraft('user-a'), sessionId: 'sess-a1' }, backend, {
+      expectedClaimRevision: 1,
+    });
+
+    // Hold Tab 2's re-claim (rev 2) mid-flight while Tab 1's stale write (rev 1) queues behind it
+    const gate = fake.holdNextReadwrite();
+    const claim2Promise = claimRecordingAccountAtomic('user-a', backend, 2_000);
+    await gate.started;
+    const staleWritePromise = saveActiveRecordingDraft(
+      { ...sampleDraft('user-a'), sessionId: 'sess-a1-late' },
+      backend,
+      {
+        expectedClaimRevision: 1,
+      },
+    );
+    gate.release();
+
+    const [claim2Result, writeOutcome] = await Promise.allSettled([claim2Promise, staleWritePromise]);
+    expect(claim2Result.status).toBe('fulfilled');
+    expect(writeOutcome.status).toBe('rejected');
+    expect((writeOutcome as PromiseRejectedResult).reason).toMatchObject({ code: 'STORAGE_CLAIM_STALE' });
+
+    // Caller refreshes active snapshot and retries with current epoch (rev 2) -> succeeds
+    const refreshed = await getActiveRecordingAccountSnapshot(backend);
+    expect(refreshed.claimRevision).toBe(2);
+    await saveActiveRecordingDraft({ ...sampleDraft('user-a'), sessionId: 'sess-a-retried' }, backend, {
+      expectedClaimRevision: refreshed.claimRevision,
+    });
+    expect((await readActiveRecordingDraftWithMeta('user-a', backend))?.draft.sessionId).toBe('sess-a-retried');
+    expect((await readActiveRecordingDraftWithMeta('user-a', backend))?.claimRevision).toBe(2);
+
+    // Cross-account preemption (user-b claims rev 3) causes user-a write & delete with rev 2 to reject
+    await ensureRecordingAccountIsolation('user-b', backend);
+    await saveActiveRecordingDraft({ ...sampleDraft('user-b'), sessionId: 'sess-b3' }, backend, {
+      expectedClaimRevision: 3,
+    });
+    await expect(
+      saveActiveRecordingDraft({ ...sampleDraft('user-a'), sessionId: 'sess-a-stale' }, backend, {
+        expectedClaimRevision: 2,
+      }),
+    ).rejects.toMatchObject({ code: 'STORAGE_CLAIM_STALE' });
+    await expect(
+      deleteActiveRecordingDraft('user-b', backend, {
+        expectedClaimRevision: 2,
+      }),
+    ).rejects.toMatchObject({ code: 'STORAGE_CLAIM_STALE' });
+    expect((await readActiveRecordingDraftWithMeta('user-b', backend))?.draft.sessionId).toBe('sess-b3');
   });
 });
