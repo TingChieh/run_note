@@ -333,6 +333,7 @@ export async function getNativeRecorderState(accountId?: string, win?: WinWithCa
   const plugin = getNativePlugin(win);
   if (!plugin?.getSessionState) return null;
   const raw = await plugin.getSessionState(accountId ? { accountId } : undefined);
+  if (!isRecord(raw)) return null;
   return parseStateEventPayload(raw);
 }
 

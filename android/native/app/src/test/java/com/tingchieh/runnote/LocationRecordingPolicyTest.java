@@ -382,4 +382,197 @@ public class LocationRecordingPolicyTest {
         assertFalse(new File(dir, "active_session.json").exists());
         assertFalse(new File(dir, "points.ndjson").exists());
     }
+
+    @Test
+    public void rejectsStartingNewSessionWhileAnyExistingSessionIsUnsavedOrUndiscarded() throws Exception {
+        File dir = tmp.newFolder("p1_existing_session_guard");
+        LocationRecordingPolicy.RecordingStore store = new LocationRecordingPolicy.RecordingStore(dir);
+        LocationRecordingPolicy.RecordingSessionCoordinator coordinator =
+            new LocationRecordingPolicy.RecordingSessionCoordinator(store);
+
+        // 1. Existing active "recording" session with 1 point -> new start rejected & point preserved
+        LocationRecordingPolicy.StartResult oldStart = coordinator.startSession(
+            "sess-old",
+            "user-a",
+            "11111111-1111-4111-8111-111111111111",
+            "旧跑步记录",
+            false,
+            1_700_000_000_000L
+        );
+        assertNull(oldStart.errorCode);
+        assertNotNull(coordinator.recordLocationPoint(new LocationRecordingPolicy.RecordedPoint(
+            31.2300, 121.4700, 10.0, 5.0, 1_700_000_001_000L, 0)));
+
+        LocationRecordingPolicy.StartResult recBlocked = coordinator.startSession(
+            "sess-new",
+            "user-a",
+            "22222222-2222-4222-8222-222222222222",
+            "覆盖尝试",
+            false,
+            1_700_000_010_000L
+        );
+        assertEquals("EXISTING_SESSION_ACTIVE", recBlocked.errorCode);
+        assertNotNull(recBlocked.session);
+        assertEquals("sess-old", recBlocked.session.sessionId);
+        assertEquals("sess-old", coordinator.currentSession().sessionId);
+        assertEquals(1, store.loadPoints(0).size());
+
+        // Cross-account start must also reject without returning or clearing user-a's session
+        LocationRecordingPolicy.StartResult otherAcctBlocked = coordinator.startSession(
+            "sess-other",
+            "user-b",
+            "33333333-3333-4333-8333-333333333333",
+            "跨账号尝试",
+            false,
+            1_700_000_015_000L
+        );
+        assertEquals("ACCOUNT_MISMATCH", otherAcctBlocked.errorCode);
+        assertNull(otherAcctBlocked.session);
+        assertEquals("sess-old", store.loadSession().sessionId);
+        assertEquals(1, store.loadPoints(0).size());
+
+        // 2. Existing "paused" session -> rejected & point preserved
+        assertNotNull(coordinator.pauseSession(1_700_000_020_000L));
+        LocationRecordingPolicy.StartResult pausedBlocked = coordinator.startSession(
+            "sess-new-2",
+            "user-a",
+            "44444444-4444-4444-8444-444444444444",
+            "暂停期间新起会话",
+            false,
+            1_700_000_025_000L
+        );
+        assertEquals("EXISTING_SESSION_ACTIVE", pausedBlocked.errorCode);
+        assertEquals("paused", pausedBlocked.session.status);
+        assertEquals("sess-old", store.loadSession().sessionId);
+        assertEquals(1, store.loadPoints(0).size());
+
+        // 3. Existing "interrupted" session (same coordinator + fresh coordinator simulating process restart) -> rejected
+        assertNotNull(coordinator.markInterrupted("process_terminated", 1_700_000_030_000L));
+        LocationRecordingPolicy.StartResult interruptedBlocked = coordinator.startSession(
+            "sess-new-3",
+            "user-a",
+            "55555555-5555-4555-8555-555555555555",
+            "中断期间新起会话",
+            false,
+            1_700_000_035_000L
+        );
+        assertEquals("EXISTING_SESSION_ACTIVE", interruptedBlocked.errorCode);
+        assertEquals("interrupted", interruptedBlocked.session.status);
+        assertEquals(1, store.loadPoints(0).size());
+
+        LocationRecordingPolicy.RecordingSessionCoordinator restartedCoordinator =
+            new LocationRecordingPolicy.RecordingSessionCoordinator(new LocationRecordingPolicy.RecordingStore(dir));
+        LocationRecordingPolicy.StartResult conflictCheck =
+            restartedCoordinator.checkStartConflict("user-a", false);
+        assertNotNull(conflictCheck);
+        assertEquals("EXISTING_SESSION_ACTIVE", conflictCheck.errorCode);
+        LocationRecordingPolicy.StartResult coldStartBlocked = restartedCoordinator.startSession(
+            "sess-new-4",
+            "user-a",
+            "66666666-6666-4666-8666-666666666666",
+            "重启冷启动新会话",
+            false,
+            1_700_000_040_000L
+        );
+        assertEquals("EXISTING_SESSION_ACTIVE", coldStartBlocked.errorCode);
+        assertEquals("sess-old", coldStartBlocked.session.sessionId);
+        assertEquals(1, restartedCoordinator.loadPointsForAccount("user-a", 0).size());
+
+        // 4. Only after explicit discardSession() does starting a new session succeed
+        restartedCoordinator.discardSession();
+        assertNull(restartedCoordinator.checkStartConflict("user-a", false));
+        LocationRecordingPolicy.StartResult allowedAfterDiscard = restartedCoordinator.startSession(
+            "sess-fresh",
+            "user-a",
+            "77777777-7777-4777-8777-777777777777",
+            "显式丢弃后新会话",
+            false,
+            1_700_000_050_000L
+        );
+        assertNull(allowedAfterDiscard.errorCode);
+        assertNotNull(allowedAfterDiscard.session);
+        assertEquals("sess-fresh", allowedAfterDiscard.session.sessionId);
+    }
+
+    @Test
+    public void concurrentAndRepeatedStartSessionCallsCreateAtMostOneSessionWithoutOverwritingPoints()
+        throws Exception {
+        File dir = tmp.newFolder("p1_concurrent_start");
+        LocationRecordingPolicy.RecordingStore store = new LocationRecordingPolicy.RecordingStore(dir);
+        LocationRecordingPolicy.RecordingSessionCoordinator coordinator =
+            new LocationRecordingPolicy.RecordingSessionCoordinator(store);
+
+        int threads = 8;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        try {
+            CyclicBarrier barrier = new CyclicBarrier(threads);
+            List<Callable<LocationRecordingPolicy.StartResult>> tasks = new ArrayList<>();
+            for (int i = 0; i < threads; i++) {
+                final int idx = i;
+                tasks.add(() -> {
+                    barrier.await(5, TimeUnit.SECONDS);
+                    return coordinator.startSession(
+                        "sess-race-" + idx,
+                        "user-a",
+                        "aaaaaaaa-0000-4000-8000-00000000000" + idx,
+                        "并发启动-" + idx,
+                        false,
+                        1_700_000_000_000L + idx
+                    );
+                });
+            }
+            List<Future<LocationRecordingPolicy.StartResult>> results = pool.invokeAll(tasks);
+            String winnerId = null;
+            int successCount = 0;
+            int rejectedCount = 0;
+            for (Future<LocationRecordingPolicy.StartResult> f : results) {
+                LocationRecordingPolicy.StartResult res = f.get(5, TimeUnit.SECONDS);
+                if (res.errorCode == null) {
+                    successCount++;
+                    winnerId = res.session.sessionId;
+                } else {
+                    assertEquals("EXISTING_SESSION_ACTIVE", res.errorCode);
+                    rejectedCount++;
+                }
+            }
+            assertEquals(1, successCount);
+            assertEquals(threads - 1, rejectedCount);
+            assertNotNull(winnerId);
+            assertEquals(winnerId, coordinator.currentSession().sessionId);
+            assertEquals(winnerId, store.loadSession().sessionId);
+
+            // Append 2 points to the winning session, then verify repeated/concurrent starts cannot overwrite them
+            assertNotNull(coordinator.recordLocationPoint(new LocationRecordingPolicy.RecordedPoint(
+                31.2300, 121.4700, 10.0, 5.0, 1_700_000_001_000L, 0)));
+            assertNotNull(coordinator.recordLocationPoint(new LocationRecordingPolicy.RecordedPoint(
+                31.2301, 121.4700, 10.0, 5.0, 1_700_000_005_000L, 0)));
+
+            CyclicBarrier repeatBarrier = new CyclicBarrier(threads);
+            List<Callable<LocationRecordingPolicy.StartResult>> repeatTasks = new ArrayList<>();
+            for (int i = 0; i < threads; i++) {
+                final int idx = i;
+                repeatTasks.add(() -> {
+                    repeatBarrier.await(5, TimeUnit.SECONDS);
+                    return coordinator.startSession(
+                        "sess-repeat-" + idx,
+                        "user-a",
+                        "bbbbbbbb-0000-4000-8000-00000000000" + idx,
+                        "重复启动-" + idx,
+                        false,
+                        1_700_000_020_000L + idx
+                    );
+                });
+            }
+            for (Future<LocationRecordingPolicy.StartResult> f : pool.invokeAll(repeatTasks)) {
+                LocationRecordingPolicy.StartResult res = f.get(5, TimeUnit.SECONDS);
+                assertEquals("EXISTING_SESSION_ACTIVE", res.errorCode);
+                assertNotNull(res.session);
+                assertEquals(winnerId, res.session.sessionId);
+            }
+            assertEquals(winnerId, coordinator.currentSession().sessionId);
+            assertEquals(2, store.loadPoints(0).size());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
 }

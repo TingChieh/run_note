@@ -6,11 +6,15 @@ interface MockRecorderConfig {
   notificationPermission?: 'granted' | 'denied' | 'not_required';
   locationServicesEnabled?: boolean;
   onRequestLocationPermission?: 'granted' | 'approximate' | 'denied';
+  initialRecording?: boolean;
+  initialPaused?: boolean;
   initialInterrupted?: boolean;
   initialStopped?: boolean;
   stoppedSessionId?: string;
   stoppedIdempotencyKey?: string;
   persistAcrossReloads?: boolean;
+  getSessionStateDelayMs?: number;
+  getSessionStateBehavior?: 'resolve' | 'reject' | 'null' | 'hang';
 }
 
 async function installMockLocationRecorder(page: Page, config: MockRecorderConfig = {}) {
@@ -18,8 +22,10 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
     let locationPerm = cfg.locationPermission ?? 'granted';
     let notificationPerm = cfg.notificationPermission ?? 'granted';
     let locEnabled = cfg.locationServicesEnabled ?? true;
-    let serviceRunning = false;
-    let gpsStatus = 'inactive';
+    let serviceRunning = Boolean(cfg.initialRecording);
+    let gpsStatus = cfg.initialRecording ? 'good' : 'inactive';
+    let stateBehavior = cfg.getSessionStateBehavior ?? 'resolve';
+    let stateDelayMs = cfg.getSessionStateDelayMs ?? 0;
     const PERSIST_KEY = '__mock_native_recorder_state';
 
     const seedSession = (): Record<string, unknown> | null => {
@@ -41,13 +47,24 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
           interruptedReason: null,
         };
       }
-      if (cfg.initialInterrupted) {
+      if (cfg.initialRecording || cfg.initialPaused || cfg.initialInterrupted) {
+        const seedStatus = cfg.initialRecording ? 'recording' : cfg.initialPaused ? 'paused' : 'interrupted';
+        const seedSessionId = cfg.initialRecording
+          ? 'recording-sess-1'
+          : cfg.initialPaused
+            ? 'paused-sess-1'
+            : 'interrupted-sess-1';
+        const seedTitle = cfg.initialRecording
+          ? '正在进行的原生跑步'
+          : cfg.initialPaused
+            ? '已暂停待处理晨跑'
+            : '中断待恢复晨跑';
         return {
-          sessionId: 'interrupted-sess-1',
+          sessionId: seedSessionId,
           accountId: '00000000-0000-4000-8000-000000000001',
           idempotencyKey: '99999999-9999-4999-8999-999999999999',
-          title: '中断待恢复晨跑',
-          status: 'interrupted',
+          title: seedTitle,
+          status: seedStatus,
           startedAtMs: Date.now() - 420_000,
           endedAtMs: null,
           activeDurationMs: 360_000,
@@ -56,7 +73,7 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
           previewDistanceM: 1250,
           lastPointTimeMs: Date.now() - 60_000,
           lastAccuracyM: 8,
-          interruptedReason: 'process_terminated',
+          interruptedReason: seedStatus === 'interrupted' ? 'process_terminated' : null,
         };
       }
       return null;
@@ -64,7 +81,7 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
 
     let session: Record<string, unknown> | null = seedSession();
     let points: Array<Record<string, unknown>> =
-      cfg.initialInterrupted || cfg.initialStopped
+      cfg.initialRecording || cfg.initialPaused || cfg.initialInterrupted || cfg.initialStopped
         ? [
             {
               lat: 31.23,
@@ -96,6 +113,8 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
     const listeners: Array<(event: unknown) => void> = [];
     let clearedAccounts: Array<string | null> = [];
     let acknowledgedSessionIds: string[] = [];
+    let startSessionCalls = 0;
+    let startSessionRejectedCount = 0;
 
     if (cfg.persistAcrossReloads) {
       try {
@@ -178,6 +197,14 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
         gpsStatus = next;
         emit();
       },
+      setGetSessionStateBehavior(nextBehavior: 'resolve' | 'reject' | 'null' | 'hang', delayMs = 0) {
+        stateBehavior = nextBehavior;
+        stateDelayMs = delayMs;
+      },
+      getStartSessionCalls: () => startSessionCalls,
+      getStartSessionRejectedCount: () => startSessionRejectedCount,
+      getSession: () => (session ? { ...session } : null),
+      getPointCount: () => points.length,
       clearedAccounts,
       acknowledgedSessionIds,
     };
@@ -203,11 +230,17 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
           openAppSettings: async () => ({ opened: true }),
           openLocationSettings: async () => ({ opened: true }),
           startSession: async (opts: Record<string, unknown>) => {
+            startSessionCalls += 1;
             if (locationPerm !== 'granted') {
+              startSessionRejectedCount += 1;
               throw new Error('需要精确位置权限才能记录可靠的跑步轨迹');
             }
-            if (session && session.status === 'stopped' && Number(session.pointCount ?? 0) > 0) {
-              throw new Error('存在尚未入队的已结束记录，请先保存或显式丢弃');
+            if (!opts.resumeInterrupted && session) {
+              startSessionRejectedCount += 1;
+              if (session.status === 'stopped' && Number(session.pointCount ?? 0) > 0) {
+                throw new Error('存在尚未入队的已结束记录，请先保存或显式丢弃');
+              }
+              throw new Error('存在尚未保存或丢弃的记录会话，请先恢复、保存或安全丢弃后再开始新记录');
             }
             if (opts.resumeInterrupted && session) {
               session.status = 'recording';
@@ -291,7 +324,21 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
             emit();
             return { discarded: true };
           },
-          getSessionState: async (opts?: { accountId?: string }) => buildState(opts?.accountId),
+          getSessionState: async (opts?: { accountId?: string }) => {
+            if (stateDelayMs > 0) {
+              await new Promise((r) => setTimeout(r, stateDelayMs));
+            }
+            if (stateBehavior === 'hang') {
+              return await new Promise<never>(() => {});
+            }
+            if (stateBehavior === 'reject') {
+              throw new Error('原生定位服务状态读取失败');
+            }
+            if (stateBehavior === 'null') {
+              return null;
+            }
+            return buildState(opts?.accountId);
+          },
           getSessionPoints: async (opts?: { accountId?: string }) => {
             const matches = !opts?.accountId || !session || session.accountId === opts.accountId;
             const visible = matches ? [...points] : [];
@@ -2005,4 +2052,256 @@ test('P2 Round 5: late GPS write and stale delete from old tab epoch 1 cannot ov
   expect(afterRetry.draftClaimRev).toBeGreaterThanOrEqual(tab2Snap.activeClaimRev!);
 
   await tab2.close();
+});
+
+test('P1: blocks Start until delayed native getSessionState (4s) finishes and restores existing recording session', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await installMockLocationRecorder(page, {
+    locationPermission: 'granted',
+    initialRecording: true,
+    getSessionStateDelayMs: 4_000,
+  });
+
+  await page.goto('/activities/record');
+
+  // During the 4s native recovery delay, permissions are already granted, yet Start MUST stay disabled.
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('正在恢复…');
+  await expect(page.getByTestId('recording-start-btn')).toBeDisabled();
+  await expect(page.getByTestId('recording-start-btn')).toContainText('正在恢复会话');
+
+  // Even a forced DOM click attempt during pending recovery must NOT invoke native startSession.
+  await page.getByTestId('recording-start-btn').dispatchEvent('click');
+  const callsWhilePending = await page.evaluate(() =>
+    (window as unknown as Record<string, { getStartSessionCalls: () => number }>).__mockRecorder.getStartSessionCalls(),
+  );
+  expect(callsWhilePending).toBe(0);
+
+  // Once the 4s delayed getSessionState resolves, existing recording session (3 points) is restored untouched.
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中', { timeout: 8_000 });
+  await expect(page.getByTestId('recording-points-count')).toContainText('3 点');
+  await expect(page.getByTestId('recording-start-btn')).toHaveCount(0);
+
+  const callsAfterRestore = await page.evaluate(() => {
+    const rec = (
+      window as unknown as Record<
+        string,
+        {
+          getStartSessionCalls: () => number;
+          getSession: () => { sessionId: string; status: string } | null;
+          getPointCount: () => number;
+        }
+      >
+    ).__mockRecorder;
+    return {
+      calls: rec.getStartSessionCalls(),
+      session: rec.getSession(),
+      points: rec.getPointCount(),
+    };
+  });
+  expect(callsAfterRestore.calls).toBe(0);
+  expect(callsAfterRestore.session?.sessionId).toBe('recording-sess-1');
+  expect(callsAfterRestore.session?.status).toBe('recording');
+  expect(callsAfterRestore.points).toBe(3);
+});
+
+test('P1: native startSession rejects while paused/interrupted session exists and concurrent calls create at most one session', async ({
+  page,
+}) => {
+  await loginRunner(page);
+
+  // 1. Preset paused same-account session -> direct startSession rejected, 3 points preserved
+  await installMockLocationRecorder(page, { locationPermission: 'granted', initialPaused: true });
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('已暂停');
+  await expect(page.getByTestId('recording-points-count')).toContainText('3 点');
+
+  const pausedAttempt = await page.evaluate(async () => {
+    const win = window as unknown as {
+      Capacitor: { Plugins: { LocationRecorder: { startSession: (o: Record<string, unknown>) => Promise<unknown> } } };
+      __mockRecorder: {
+        getSession: () => { sessionId: string; status: string } | null;
+        getPointCount: () => number;
+        getStartSessionRejectedCount: () => number;
+      };
+    };
+    let rejectedMsg = '';
+    try {
+      await win.Capacitor.Plugins.LocationRecorder.startSession({
+        sessionId: 'overwrite-paused',
+        accountId: '00000000-0000-4000-8000-000000000001',
+        idempotencyKey: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        title: '覆盖尝试',
+        resumeInterrupted: false,
+      });
+    } catch (err) {
+      rejectedMsg = err instanceof Error ? err.message : String(err);
+    }
+    return {
+      rejectedMsg,
+      session: win.__mockRecorder.getSession(),
+      points: win.__mockRecorder.getPointCount(),
+      rejectedCount: win.__mockRecorder.getStartSessionRejectedCount(),
+    };
+  });
+  expect(pausedAttempt.rejectedMsg).toContain('未保存或丢弃');
+  expect(pausedAttempt.session?.sessionId).toBe('paused-sess-1');
+  expect(pausedAttempt.points).toBe(3);
+  expect(pausedAttempt.rejectedCount).toBe(1);
+
+  // 2. Preset interrupted same-account session -> direct startSession rejected, 3 points preserved
+  await installMockLocationRecorder(page, { locationPermission: 'granted', initialInterrupted: true });
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('待恢复');
+  await expect(page.getByTestId('recording-points-count')).toContainText('3 点');
+
+  const interruptedAttempt = await page.evaluate(async () => {
+    const win = window as unknown as {
+      Capacitor: { Plugins: { LocationRecorder: { startSession: (o: Record<string, unknown>) => Promise<unknown> } } };
+      __mockRecorder: {
+        getSession: () => { sessionId: string; status: string } | null;
+        getPointCount: () => number;
+      };
+    };
+    let rejectedMsg = '';
+    try {
+      await win.Capacitor.Plugins.LocationRecorder.startSession({
+        sessionId: 'overwrite-interrupted',
+        accountId: '00000000-0000-4000-8000-000000000001',
+        idempotencyKey: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        title: '覆盖中断会话',
+        resumeInterrupted: false,
+      });
+    } catch (err) {
+      rejectedMsg = err instanceof Error ? err.message : String(err);
+    }
+    return {
+      rejectedMsg,
+      session: win.__mockRecorder.getSession(),
+      points: win.__mockRecorder.getPointCount(),
+    };
+  });
+  expect(interruptedAttempt.rejectedMsg).toContain('未保存或丢弃');
+  expect(interruptedAttempt.session?.sessionId).toBe('interrupted-sess-1');
+  expect(interruptedAttempt.points).toBe(3);
+
+  // 3. Concurrent/repeated startSession calls from idle -> at most 1 session created
+  await installMockLocationRecorder(page, { locationPermission: 'granted' });
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('就绪');
+  await expect(page.getByTestId('recording-start-btn')).toBeEnabled();
+
+  const concurrentOutcome = await page.evaluate(async () => {
+    const win = window as unknown as {
+      Capacitor: { Plugins: { LocationRecorder: { startSession: (o: Record<string, unknown>) => Promise<unknown> } } };
+      __mockRecorder: {
+        getSession: () => { sessionId: string; status: string } | null;
+        getPointCount: () => number;
+        pushPoint: (pt: { lat: number; lon: number }) => void;
+      };
+    };
+    const api = win.Capacitor.Plugins.LocationRecorder;
+    const settled = await Promise.allSettled([
+      api.startSession({
+        sessionId: 'race-1',
+        accountId: '00000000-0000-4000-8000-000000000001',
+        idempotencyKey: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1',
+        title: '竞态1',
+        resumeInterrupted: false,
+      }),
+      api.startSession({
+        sessionId: 'race-2',
+        accountId: '00000000-0000-4000-8000-000000000001',
+        idempotencyKey: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc2',
+        title: '竞态2',
+        resumeInterrupted: false,
+      }),
+      api.startSession({
+        sessionId: 'race-3',
+        accountId: '00000000-0000-4000-8000-000000000001',
+        idempotencyKey: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc3',
+        title: '竞态3',
+        resumeInterrupted: false,
+      }),
+    ]);
+    win.__mockRecorder.pushPoint({ lat: 31.23, lon: 121.47 });
+    const postPointRetry = await Promise.allSettled([
+      api.startSession({
+        sessionId: 'race-4',
+        accountId: '00000000-0000-4000-8000-000000000001',
+        idempotencyKey: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc4',
+        title: '重复覆盖',
+        resumeInterrupted: false,
+      }),
+    ]);
+    return {
+      fulfilledCount: settled.filter((r) => r.status === 'fulfilled').length,
+      rejectedCount: settled.filter((r) => r.status === 'rejected').length,
+      postPointRetryRejected: postPointRetry[0].status === 'rejected',
+      session: win.__mockRecorder.getSession(),
+      points: win.__mockRecorder.getPointCount(),
+    };
+  });
+  expect(concurrentOutcome.fulfilledCount).toBe(1);
+  expect(concurrentOutcome.rejectedCount).toBe(2);
+  expect(concurrentOutcome.postPointRetryRejected).toBe(true);
+  expect(concurrentOutcome.session?.sessionId).toBe('race-1');
+  expect(concurrentOutcome.points).toBe(1);
+});
+
+test('P1: recovery failure, empty payload, or no-response timeout keeps Start disabled in safe state until retry succeeds', async ({
+  page,
+}) => {
+  await loginRunner(page);
+
+  // 1. Recovery rejects -> safe disabled state + recovery error panel, no startSession call
+  await installMockLocationRecorder(page, {
+    locationPermission: 'granted',
+    getSessionStateBehavior: 'reject',
+  });
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('恢复失败');
+  await expect(page.getByTestId('recording-recovery-error-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-start-btn')).toBeDisabled();
+  await expect(page.getByTestId('recording-start-btn')).toContainText('会话状态未就绪');
+
+  // Switch mock back to healthy idle state and click retry -> recovers cleanly and Start works normally
+  await page.evaluate(() => {
+    (
+      window as unknown as Record<string, { setGetSessionStateBehavior: (b: 'resolve') => void }>
+    ).__mockRecorder.setGetSessionStateBehavior('resolve');
+  });
+  await page.getByTestId('recording-recovery-retry-btn').click();
+  await expect(page.getByTestId('recording-recovery-error-panel')).not.toBeVisible();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('就绪');
+  await expect(page.getByTestId('recording-start-btn')).toBeEnabled();
+  await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+
+  // 2. Empty (null) payload from getSessionState -> safe disabled state, never misclassified as idle
+  await installMockLocationRecorder(page, {
+    locationPermission: 'granted',
+    getSessionStateBehavior: 'null',
+  });
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('恢复失败');
+  await expect(page.getByTestId('recording-recovery-error-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-start-btn')).toBeDisabled();
+
+  // 3. No-response hang -> times out deterministically to safe failed state, 0 startSession calls
+  await installMockLocationRecorder(page, {
+    locationPermission: 'granted',
+    getSessionStateBehavior: 'hang',
+  });
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('正在恢复…');
+  await expect(page.getByTestId('recording-start-btn')).toBeDisabled();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('恢复失败', { timeout: 12_000 });
+  await expect(page.getByTestId('recording-recovery-error-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-start-btn')).toBeDisabled();
+  const hangStartCalls = await page.evaluate(() =>
+    (window as unknown as Record<string, { getStartSessionCalls: () => number }>).__mockRecorder.getStartSessionCalls(),
+  );
+  expect(hangStartCalls).toBe(0);
 });

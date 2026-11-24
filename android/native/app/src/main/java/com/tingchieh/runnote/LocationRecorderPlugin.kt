@@ -165,13 +165,25 @@ class LocationRecorderPlugin : Plugin() {
             return
         }
 
-        val existing = RecordingForegroundService.storeFor(context).loadSession()
-        if (!resumeInterrupted &&
-            existing != null &&
-            existing.accountId == accountId &&
-            LocationRecordingPolicy.hasPendingHandoff(existing)
-        ) {
-            call.reject("存在尚未保存到上传队列的已结束记录，请先完成保存或丢弃", "UNHANDLED_STOPPED_SESSION")
+        val conflict = RecordingForegroundService.coordinatorFor(context)
+            .checkStartConflict(accountId, resumeInterrupted)
+        if (conflict != null) {
+            val message = when (conflict.errorCode) {
+                "UNHANDLED_STOPPED_SESSION" -> "存在尚未保存到上传队列的已结束记录，请先完成保存或丢弃"
+                "EXISTING_SESSION_ACTIVE" -> "存在尚未保存或丢弃的记录会话，请先恢复、保存或安全丢弃后再开始新记录"
+                "ACCOUNT_MISMATCH" -> "当前原生会话属于其他账号，请先完成账号切换清理后再开始记录"
+                "NO_RESUMABLE_SESSION" -> "没有可继续的未完成记录会话"
+                else -> "当前无法开始新的记录会话"
+            }
+            if (conflict.session != null && conflict.session.accountId == accountId) {
+                val gps = if (RecordingForegroundService.isServiceRunning) {
+                    RecordingForegroundService.currentGpsStatus
+                } else {
+                    "inactive"
+                }
+                notifyListeners("sessionUpdate", buildStatePayload(conflict.session, gps))
+            }
+            call.reject(message, conflict.errorCode ?: "START_REJECTED")
             return
         }
 

@@ -161,4 +161,34 @@ describe('capacitor-recorder bridge', () => {
     expect(state.status).toBe('idle');
     expect(state.gpsStatus).toBe('inactive');
   });
+
+  it('returns null on empty/malformed native getSessionState payload and propagates rejections', async () => {
+    const nullPluginWindow = {
+      Capacitor: {
+        isNativePlatform: () => true,
+        getPlatform: () => 'android',
+        Plugins: {
+          LocationRecorder: {
+            getSessionState: vi.fn(async () => null),
+          },
+        },
+      },
+    } as unknown as Window;
+    expect(await getNativeRecorderState('user-1', nullPluginWindow)).toBeNull();
+
+    const failingPluginWindow = {
+      Capacitor: {
+        isNativePlatform: () => true,
+        getPlatform: () => 'android',
+        Plugins: {
+          LocationRecorder: {
+            getSessionState: vi.fn(async () => {
+              throw new Error('bridge unavailable');
+            }),
+          },
+        },
+      },
+    } as unknown as Window;
+    await expect(getNativeRecorderState('user-1', failingPluginWindow)).rejects.toThrow('bridge unavailable');
+  });
 });

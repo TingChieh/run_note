@@ -660,6 +660,30 @@ object LocationRecordingPolicy {
 
         fun currentSession(): SessionRecord? = synchronized(store.lock) { activeSession }
 
+        fun checkStartConflict(accountId: String, resumeInterrupted: Boolean): StartResult? =
+            synchronized(store.lock) {
+                val existing = activeSession ?: store.loadSession()
+                if (resumeInterrupted) {
+                    if (existing == null || existing.status == "stopped" || existing.sessionId in acknowledgedSessionIds) {
+                        return@synchronized StartResult(null, "NO_RESUMABLE_SESSION")
+                    }
+                    if (accountId.isNotBlank() && existing.accountId != accountId) {
+                        return@synchronized StartResult(null, "ACCOUNT_MISMATCH")
+                    }
+                    return@synchronized null
+                }
+                if (existing == null) {
+                    return@synchronized null
+                }
+                if (existing.accountId != accountId) {
+                    return@synchronized StartResult(null, "ACCOUNT_MISMATCH")
+                }
+                if (hasPendingHandoff(existing)) {
+                    return@synchronized StartResult(existing, "UNHANDLED_STOPPED_SESSION")
+                }
+                StartResult(existing, "EXISTING_SESSION_ACTIVE")
+            }
+
         @JvmOverloads
         fun startSession(
             sessionId: String,
@@ -669,21 +693,9 @@ object LocationRecordingPolicy {
             resumeInterrupted: Boolean,
             nowMs: Long = System.currentTimeMillis(),
         ): StartResult = synchronized(store.lock) {
-            val existing = activeSession ?: store.loadSession()
-            if (!resumeInterrupted &&
-                existing != null &&
-                existing.accountId == accountId &&
-                hasPendingHandoff(existing)
-            ) {
-                return@synchronized StartResult(existing, "UNHANDLED_STOPPED_SESSION")
-            }
             val session = if (resumeInterrupted) {
-                if (existing == null || existing.status == "stopped" || existing.sessionId in acknowledgedSessionIds) {
-                    return@synchronized StartResult(null, "NO_RESUMABLE_SESSION")
-                }
-                if (accountId.isNotBlank() && existing.accountId != accountId) {
-                    return@synchronized StartResult(null, "ACCOUNT_MISMATCH")
-                }
+                checkStartConflict(accountId, true)?.let { return@synchronized it }
+                val existing = activeSession ?: store.loadSession()!!
                 lastAcceptedPoint = store.loadPoints(0).lastOrNull()
                 existing.copy(
                     status = "recording",
@@ -695,6 +707,7 @@ object LocationRecordingPolicy {
                 if (sessionId.isBlank() || accountId.isBlank() || idempotencyKey.isBlank()) {
                     return@synchronized StartResult(null, "INVALID_SESSION_ARGS")
                 }
+                checkStartConflict(accountId, false)?.let { return@synchronized it }
                 store.clearAll()
                 lastAcceptedPoint = null
                 acknowledgedSessionIds.remove(sessionId)

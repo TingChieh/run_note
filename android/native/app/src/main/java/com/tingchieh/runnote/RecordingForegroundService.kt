@@ -287,16 +287,23 @@ class RecordingForegroundService : Service(), LocationListener {
             resumeInterrupted = resumeInterrupted,
             nowMs = nowMs,
         )
-        if (startRes.errorCode == "UNHANDLED_STOPPED_SESSION") {
-            Logger.warn("RunNoteRecorder", "Refused to overwrite unacknowledged stopped recording session")
-            emitState(startRes.session, "inactive")
-            stopSelf()
+        if (startRes.errorCode != null) {
+            Logger.warn("RunNoteRecorder", "Rejected recording start: ${startRes.errorCode}")
+            if (startRes.session != null) {
+                val gps = if (isServiceRunning) currentGpsStatus else "inactive"
+                emitState(startRes.session, gps)
+            }
+            if (!isServiceRunning) {
+                stopSelf()
+            }
             return
         }
         val session = startRes.session
         if (session == null) {
-            Logger.warn("RunNoteRecorder", "Rejected recording start: ${startRes.errorCode ?: "invalid_state"}")
-            stopSelf()
+            Logger.warn("RunNoteRecorder", "Rejected recording start: invalid_state")
+            if (!isServiceRunning) {
+                stopSelf()
+            }
             return
         }
 

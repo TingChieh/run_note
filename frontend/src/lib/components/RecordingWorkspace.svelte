@@ -111,6 +111,9 @@
   let pendingLeaveUrl = $state<string | null>(null);
   let allowNextLeave = false;
 
+  const NATIVE_RECOVERY_TIMEOUT_MS = 8_000;
+  type SessionRecoveryState = 'pending' | 'ready' | 'failed';
+
   let disposed = false;
   let stoppingInFlight = false;
   let failedHandoffSessionId: string | null = null;
@@ -118,6 +121,11 @@
   let webLastFixMs: number | null = null;
   let sessionAccountId = '';
   let sessionClaimRevision: number | null = null;
+  let sessionRecoveryState = $state<SessionRecoveryState>('pending');
+  let recoveryFailureMessage = $state('');
+  let recoveryRequestToken = 0;
+  let activeRecoveryTimeoutId: number | null = null;
+  let unsubscribeNative: (() => void) | null = null;
 
   const displayedDurationMs = $derived.by(() => {
     if (status === 'recording' && lastSegmentStartMs !== null && clockNowMs > lastSegmentStartMs) {
@@ -131,9 +139,12 @@
   const startBlockedByPermissions = $derived(
     capabilities.native && (permissions.location !== 'granted' || !permissions.locationServicesEnabled),
   );
+  const startBlockedByRecovery = $derived(sessionRecoveryState !== 'ready');
 
   const statusBadgeText = $derived.by(() => {
     if (pendingHandoffSession) return '待入队恢复';
+    if (sessionRecoveryState === 'pending') return '正在恢复…';
+    if (sessionRecoveryState === 'failed') return '恢复失败';
     switch (status) {
       case 'recording':
         return '记录中';
@@ -493,6 +504,54 @@
     );
   }
 
+  async function recoverNativeSessionState() {
+    const token = ++recoveryRequestToken;
+    if (activeRecoveryTimeoutId !== null) {
+      window.clearTimeout(activeRecoveryTimeoutId);
+      activeRecoveryTimeoutId = null;
+    }
+    sessionRecoveryState = 'pending';
+    recoveryFailureMessage = '';
+    let localTimerId: number | null = null;
+    try {
+      const nativeState = await new Promise<RecorderStateEvent | null>((resolve, reject) => {
+        localTimerId = window.setTimeout(() => {
+          reject(new Error('读取原生记录状态超时，为避免覆盖未保存轨迹已暂停开始记录，请重试恢复。'));
+        }, NATIVE_RECOVERY_TIMEOUT_MS);
+        activeRecoveryTimeoutId = localTimerId;
+        void getNativeRecorderState(accountId).then(resolve, reject);
+      });
+      if (disposed || token !== recoveryRequestToken) return;
+      if (!nativeState) {
+        sessionRecoveryState = 'failed';
+        recoveryFailureMessage = '未能读取原生记录会话状态（返回为空），为避免覆盖未保存轨迹已暂停开始记录。';
+        return;
+      }
+      applyNativeState(nativeState);
+      sessionRecoveryState = 'ready';
+      recoveryFailureMessage = '';
+      if (!unsubscribeNative) {
+        unsubscribeNative = subscribeNativeRecorderUpdates((event) => {
+          if (!disposed) applyNativeState(event);
+        });
+      }
+    } catch (cause) {
+      if (disposed || token !== recoveryRequestToken) return;
+      sessionRecoveryState = 'failed';
+      recoveryFailureMessage =
+        cause instanceof Error && cause.message
+          ? cause.message
+          : '读取原生记录会话状态失败，为避免覆盖未保存轨迹已暂停开始记录。';
+    } finally {
+      if (localTimerId !== null) {
+        window.clearTimeout(localTimerId);
+        if (activeRecoveryTimeoutId === localTimerId) {
+          activeRecoveryTimeoutId = null;
+        }
+      }
+    }
+  }
+
   async function handleRequestPermission() {
     if (actionBusy) return;
     actionBusy = true;
@@ -518,6 +577,13 @@
 
   async function handleStart(resumeInterrupted = false) {
     if (actionBusy || handoffBusy || !accountId) return;
+    if (!resumeInterrupted && sessionRecoveryState !== 'ready') {
+      errorMessage =
+        sessionRecoveryState === 'failed'
+          ? recoveryFailureMessage || '未能确认原生记录会话状态，为避免覆盖未保存轨迹已暂停开始记录，请先重试恢复。'
+          : '正在检查并恢复未完成的跑步记录，请稍候…';
+      return;
+    }
     if (pendingHandoffSession) {
       errorMessage = '请先完成上一条已结束记录的保存入队或安全丢弃，再开始新的记录。';
       return;
@@ -546,13 +612,22 @@
         }
         const sid = resumeInterrupted && sessionId ? sessionId : generateUuidV4();
         const ikey = resumeInterrupted && idempotencyKey ? idempotencyKey : generateUuidV4();
-        await startNativeRecording({
-          sessionId: sid,
-          accountId,
-          idempotencyKey: ikey,
-          title: runTitle.trim(),
-          resumeInterrupted,
-        });
+        try {
+          await startNativeRecording({
+            sessionId: sid,
+            accountId,
+            idempotencyKey: ikey,
+            title: runTitle.trim(),
+            resumeInterrupted,
+          });
+        } catch (nativeStartCause) {
+          await getNativeRecorderState(accountId)
+            .then((next) => {
+              if (!disposed && next) applyNativeState(next);
+            })
+            .catch(() => {});
+          throw nativeStartCause;
+        }
         const nextState = await getNativeRecorderState(accountId);
         if (!disposed && nextState) applyNativeState(nextState);
         return;
@@ -729,6 +804,9 @@
       if (capturedPoints.length === 0) {
         errorMessage = '本次记录未捕获到有效 GPS 轨迹点，无法生成轨迹文件。请移至空旷处或直接安全丢弃本次会话。';
         if (capabilities.native) {
+          if (stoppedSession && stoppedSession.status === 'stopped' && stoppedSession.pointCount === 0) {
+            await acknowledgeNativeHandoff(stoppedSession.sessionId).catch(() => {});
+          }
           const nextState = await getNativeRecorderState(accountId);
           if (!disposed && nextState) applyNativeState(nextState);
         } else {
@@ -933,83 +1011,99 @@
     window.addEventListener('offline', onNetwork);
     window.addEventListener('runnote-recording-queue-updated', onQueueUpdated);
 
-    let unsubscribeNative: (() => void) | null = null;
-
     void (async () => {
-      const caps = await getRecorderCapabilities();
-      if (disposed) return;
-      capabilities = caps;
+      try {
+        const caps = await getRecorderCapabilities();
+        if (disposed) return;
+        capabilities = caps;
 
-      const perms = await checkRecorderPermissions();
-      if (disposed) return;
-      permissions = perms;
+        const perms = await checkRecorderPermissions();
+        if (disposed) return;
+        permissions = perms;
 
-      if (caps.native && isNativeLocationRecorderAvailable()) {
-        const nativeState = await getNativeRecorderState(accountId);
-        if (!disposed && nativeState) applyNativeState(nativeState);
-        unsubscribeNative = subscribeNativeRecorderUpdates((event) => {
-          if (!disposed) applyNativeState(event);
-        });
-      } else if (accountId) {
-        try {
-          const draftMeta = await readActiveRecordingDraftWithMeta(accountId);
-          if (!disposed && draftMeta) {
-            const draft = draftMeta.draft;
-            const claimedRev = await captureActiveSessionClaim(accountId);
-            if (disposed) return;
-            if (typeof draftMeta.claimRevision === 'number' && draftMeta.claimRevision > claimedRev) {
-              // Newer generation already owns the draft; never overwrite or adopt it as stale.
-            } else if (draft.status === 'stopped' && draft.points.length > 0) {
-              await enqueueFinalizedRecording({
-                accountId,
-                sessionId: draft.sessionId,
-                idempotencyKey: draft.idempotencyKey,
-                title: draft.title,
-                timezone,
-                startedAtMs: draft.startedAtMs || draft.points[0].recordedAtMs,
-                endedAtMs: draft.endedAtMs ?? Date.now(),
-                activeDurationMs: draft.activeDurationMs,
-                points: draft.points,
-              });
-              try {
-                await deleteActiveRecordingDraft(accountId, undefined, {
-                  expectedClaimRevision: claimedRev,
-                  expectedSessionId: draft.sessionId,
+        if (caps.native) {
+          if (isNativeLocationRecorderAvailable()) {
+            await recoverNativeSessionState();
+          } else {
+            sessionRecoveryState = 'failed';
+            recoveryFailureMessage = '未能连接原生定位记录服务，为避免覆盖未保存轨迹已暂停开始记录。';
+          }
+          if (disposed) return;
+        } else if (accountId) {
+          try {
+            const draftMeta = await readActiveRecordingDraftWithMeta(accountId);
+            if (!disposed && draftMeta) {
+              const draft = draftMeta.draft;
+              const claimedRev = await captureActiveSessionClaim(accountId);
+              if (disposed) return;
+              if (typeof draftMeta.claimRevision === 'number' && draftMeta.claimRevision > claimedRev) {
+                // Newer generation already owns the draft; never overwrite or adopt it as stale.
+              } else if (draft.status === 'stopped' && draft.points.length > 0) {
+                await enqueueFinalizedRecording({
+                  accountId,
+                  sessionId: draft.sessionId,
+                  idempotencyKey: draft.idempotencyKey,
+                  title: draft.title,
+                  timezone,
+                  startedAtMs: draft.startedAtMs || draft.points[0].recordedAtMs,
+                  endedAtMs: draft.endedAtMs ?? Date.now(),
+                  activeDurationMs: draft.activeDurationMs,
+                  points: draft.points,
                 });
-              } catch (cause) {
-                if (!(cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE')) {
-                  throw cause;
+                try {
+                  await deleteActiveRecordingDraft(accountId, undefined, {
+                    expectedClaimRevision: claimedRev,
+                    expectedSessionId: draft.sessionId,
+                  });
+                } catch (cause) {
+                  if (!(cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE')) {
+                    throw cause;
+                  }
                 }
+              } else if (draft.status === 'recording' || draft.status === 'paused' || draft.status === 'interrupted') {
+                sessionAccountId = accountId;
+                sessionClaimRevision = claimedRev;
+                sessionId = draft.sessionId;
+                idempotencyKey = draft.idempotencyKey;
+                runTitle = draft.title;
+                startedAtMs = draft.startedAtMs;
+                activeDurationMs = draft.activeDurationMs;
+                lastSegmentStartMs = null;
+                segmentIndex = draft.segmentIndex;
+                webPoints = draft.points;
+                pointCount = draft.points.length;
+                previewDistanceM = draft.previewDistanceM;
+                lastPointTimeMs = draft.lastPointTimeMs;
+                lastAccuracyM = draft.lastAccuracyM;
+                interruptedReason = draft.interruptedReason ?? 'process_terminated';
+                status = 'interrupted';
               }
-            } else if (draft.status === 'recording' || draft.status === 'paused' || draft.status === 'interrupted') {
-              sessionAccountId = accountId;
-              sessionClaimRevision = claimedRev;
-              sessionId = draft.sessionId;
-              idempotencyKey = draft.idempotencyKey;
-              runTitle = draft.title;
-              startedAtMs = draft.startedAtMs;
-              activeDurationMs = draft.activeDurationMs;
-              lastSegmentStartMs = null;
-              segmentIndex = draft.segmentIndex;
-              webPoints = draft.points;
-              pointCount = draft.points.length;
-              previewDistanceM = draft.previewDistanceM;
-              lastPointTimeMs = draft.lastPointTimeMs;
-              lastAccuracyM = draft.lastAccuracyM;
-              interruptedReason = draft.interruptedReason ?? 'process_terminated';
-              status = 'interrupted';
+            }
+          } catch (cause) {
+            if (!disposed && !(cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE')) {
+              errorMessage =
+                cause instanceof Error
+                  ? `读取或提交本地记录失败：${cause.message}`
+                  : '本地持久化存储不可用，无法恢复或入队本地记录。';
             }
           }
-        } catch (cause) {
-          if (!disposed && !(cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE')) {
-            errorMessage =
-              cause instanceof Error
-                ? `读取或提交本地记录失败：${cause.message}`
-                : '本地持久化存储不可用，无法恢复或入队本地记录。';
+          if (!disposed) {
+            sessionRecoveryState = 'ready';
           }
+        } else {
+          sessionRecoveryState = 'ready';
+        }
+      } catch (cause) {
+        if (!disposed) {
+          sessionRecoveryState = 'failed';
+          recoveryFailureMessage =
+            cause instanceof Error && cause.message
+              ? cause.message
+              : '读取记录状态失败，为避免覆盖未保存轨迹已暂停开始记录。';
         }
       }
 
+      if (disposed) return;
       await refreshUploadQueue();
       if (!disposed && !offline) {
         void runUploadFlush(false);
@@ -1026,22 +1120,29 @@
     }, 1000);
 
     const onVisibility = () => {
-      if (document.visibilityState === 'visible' && capabilities.native) {
-        void getNativeRecorderState(accountId).then((next) => {
-          if (!disposed && next) applyNativeState(next);
-        });
+      if (document.visibilityState === 'visible' && capabilities.native && sessionRecoveryState === 'ready') {
+        void getNativeRecorderState(accountId)
+          .then((next) => {
+            if (!disposed && next) applyNativeState(next);
+          })
+          .catch(() => {});
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
       disposed = true;
+      if (activeRecoveryTimeoutId !== null) {
+        window.clearTimeout(activeRecoveryTimeoutId);
+        activeRecoveryTimeoutId = null;
+      }
       window.clearInterval(tickTimer);
       window.removeEventListener('online', onNetwork);
       window.removeEventListener('offline', onNetwork);
       window.removeEventListener('runnote-recording-queue-updated', onQueueUpdated);
       document.removeEventListener('visibilitychange', onVisibility);
       unsubscribeNative?.();
+      unsubscribeNative = null;
       stopWebGeolocationWatch();
     };
   });
@@ -1128,6 +1229,29 @@
             data-testid="recovery-discard-btn"
           >
             安全丢弃
+          </button>
+        </div>
+      </FeedbackState>
+    </section>
+  {/if}
+
+  {#if sessionRecoveryState === 'failed'}
+    <section
+      class="aux-panel recording-recovery"
+      aria-labelledby="recovery-error-title"
+      data-testid="recording-recovery-error-panel"
+    >
+      <FeedbackState kind="error" title="无法确认原生记录状态">
+        <p>{recoveryFailureMessage}</p>
+        <div class="recording-actions mt-3">
+          <button
+            type="button"
+            class="button-primary"
+            disabled={actionBusy || !mounted}
+            onclick={() => void recoverNativeSessionState()}
+            data-testid="recording-recovery-retry-btn"
+          >
+            重试恢复
           </button>
         </div>
       </FeedbackState>
@@ -1310,11 +1434,22 @@
         <button
           type="button"
           class="button-primary recording-main-btn"
-          disabled={actionBusy || handoffBusy || !mounted || !!pendingHandoffSession || startBlockedByPermissions}
+          disabled={actionBusy ||
+            handoffBusy ||
+            !mounted ||
+            !!pendingHandoffSession ||
+            startBlockedByPermissions ||
+            startBlockedByRecovery}
           onclick={() => void handleStart(false)}
           data-testid="recording-start-btn"
         >
-          {actionBusy ? '正在启动…' : '开始跑步'}
+          {actionBusy
+            ? '正在启动…'
+            : sessionRecoveryState === 'pending'
+              ? '正在恢复会话…'
+              : sessionRecoveryState === 'failed'
+                ? '会话状态未就绪'
+                : '开始跑步'}
         </button>
       {:else if status === 'recording'}
         <button
