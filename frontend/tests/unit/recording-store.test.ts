@@ -6,11 +6,13 @@ import {
   clearAccountIfPreemptedAtomic,
   clearAccountRecordingData,
   clearPrivateRecordingData,
+  clearStaleAccountGenerationAtomic,
   clearStaleRecordingAccountAtomic,
   createIndexedDbRecordingBackend,
   createMemoryRecordingBackend,
   ensureRecordingAccountIsolation,
   getActiveRecordingAccount,
+  getActiveRecordingAccountSnapshot,
   listUploadQueueItems,
   putUploadQueueItem,
   readActiveRecordingDraft,
@@ -755,5 +757,176 @@ describe('recording-store Round 3 atomic guard, interleaving, and preemption', (
     expect(await listUploadQueueItems('user-a', backend)).toEqual([]);
     expect((await readActiveRecordingDraft('user-b', backend))?.sessionId).toBe('sess-b');
     expect(await getActiveRecordingAccount(backend)).toBe('user-b');
+  });
+});
+
+describe('recording-store Round 4 claim-generation guarded cleanup', () => {
+  it('aborts stale cleanup and preserves new A claim and draft when Tab B re-logs in as A during verification', async () => {
+    const fake = createSerializedFakeIdbFactory();
+    const backend = createIndexedDbRecordingBackend('round4-relogin-interleave', fake.factory);
+
+    // Tab A claims user-a at rev 1 and saves old draft + old upload item (auto-stamped rev 1)
+    const claim1 = await claimRecordingAccountAtomic('user-a', backend, 1_000);
+    expect(claim1.claimRevision).toBe(1);
+    await saveActiveRecordingDraft({ ...sampleDraft('user-a'), sessionId: 'sess-a-old' }, backend);
+    await putUploadQueueItem(sampleUpload('user-a', 'aaaaaaaa-1111-4111-8111-111111111111'), backend);
+
+    // Tab A snapshots active-account state before its async session verification
+    const snapshotBeforeVerify = await getActiveRecordingAccountSnapshot(backend);
+    expect(snapshotBeforeVerify.activeAccountId).toBe('user-a');
+    expect(snapshotBeforeVerify.claimRevision).toBe(1);
+
+    // Interleaving: Tab B re-logs in as user-a (rev 2) and writes new draft + new upload item (rev 2)
+    const claim2 = await claimRecordingAccountAtomic('user-a', backend, 2_000);
+    expect(claim2.status).toBe('claimed');
+    expect(claim2.claimRevision).toBe(2);
+    await saveActiveRecordingDraft({ ...sampleDraft('user-a'), sessionId: 'sess-a-new' }, backend);
+    await putUploadQueueItem(sampleUpload('user-a', 'aaaaaaaa-2222-4222-8222-222222222222'), backend);
+
+    // Also ensure an unrelated account B record if present is untouched
+    await putUploadQueueItem(sampleUpload('user-b', 'bbbbbbbb-1111-4111-8111-111111111111'), backend);
+
+    // Tab A's verification returned stale/expired and runs generation-guarded cleanup in 1 single tx
+    const txBefore = fake.txLogs.length;
+    const cleanup = await clearStaleAccountGenerationAtomic(
+      'user-a',
+      {
+        expectedActiveAccountId: snapshotBeforeVerify.activeAccountId,
+        expectedSavedAt: snapshotBeforeVerify.savedAt,
+        expectedClaimRevision: snapshotBeforeVerify.claimRevision,
+        maxStaleClaimRevision: snapshotBeforeVerify.claimRevision ?? snapshotBeforeVerify.claimEpoch,
+      },
+      backend,
+    );
+    const cleanupTxs = fake.txLogs.slice(txBefore);
+    expect(cleanupTxs).toHaveLength(1);
+    expect(cleanupTxs[0].mode).toBe('readwrite');
+
+    // Cleanup aborts because rev 2 > rev 1: removes ONLY stale rev-1 upload, keeps rev-2 draft/upload/marker
+    expect(cleanup).toEqual({
+      status: 'aborted',
+      removedCount: 1,
+      activeAccountId: 'user-a',
+      activeClaimRevision: 2,
+    });
+    expect(await getActiveRecordingAccount(backend)).toBe('user-a');
+    expect((await getActiveRecordingAccountSnapshot(backend)).claimRevision).toBe(2);
+    expect((await readActiveRecordingDraft('user-a', backend))?.sessionId).toBe('sess-a-new');
+    const remainingA = await listUploadQueueItems('user-a', backend);
+    expect(remainingA.map((i) => i.idempotencyKey)).toEqual(['aaaaaaaa-2222-4222-8222-222222222222']);
+    expect(await listUploadQueueItems('user-b', backend)).toHaveLength(1);
+  });
+
+  it('reconcileVerifiedRecordingAccount aborts stale cleanup if Tab B re-logs in as A during verifySession', async () => {
+    const fake = createSerializedFakeIdbFactory();
+    const backend = createIndexedDbRecordingBackend('round4-reconcile-relogin', fake.factory);
+
+    await claimRecordingAccountAtomic('user-a', backend, 1_000);
+    await putUploadQueueItem(sampleUpload('user-a', 'aaaaaaaa-3333-4333-8333-333333333333'), backend);
+
+    // Account B temporarily became active (rev 2)
+    await ensureRecordingAccountIsolation('user-b', backend);
+
+    const res = await reconcileVerifiedRecordingAccount({
+      accountId: 'user-a',
+      verifySession: async () => {
+        // B logs out, then Tab B re-logs in as user-a (rev 3) and writes new draft + new upload
+        await clearAccountRecordingData('user-b', backend);
+        const reclaim = await claimRecordingAccountAtomic('user-a', backend, 3_000);
+        expect(reclaim.claimRevision).toBe(3);
+        await saveActiveRecordingDraft({ ...sampleDraft('user-a'), sessionId: 'sess-a-relogin' }, backend);
+        await putUploadQueueItem(sampleUpload('user-a', 'aaaaaaaa-4444-4444-8444-444444444444'), backend);
+        // Stale verifySession response still saw user-b
+        return { id: 'user-b' };
+      },
+      backend,
+    });
+
+    expect(res).toEqual({ status: 'preempted', activeAccountId: 'user-a' });
+    expect((await getActiveRecordingAccountSnapshot(backend)).claimRevision).toBe(3);
+    expect((await readActiveRecordingDraft('user-a', backend))?.sessionId).toBe('sess-a-relogin');
+    const items = await listUploadQueueItems('user-a', backend);
+    expect(items.map((i) => i.idempotencyKey)).toEqual(['aaaaaaaa-4444-4444-8444-444444444444']);
+  });
+
+  it('maintains monotonic claim epoch across logout and re-login so stale cleanup cannot wipe re-claimed A', async () => {
+    const fake = createSerializedFakeIdbFactory();
+    const backend = createIndexedDbRecordingBackend('round4-logout-relogin-epoch', fake.factory);
+
+    const claim1 = await claimRecordingAccountAtomic('user-a', backend, 1_000);
+    expect(claim1.claimEpoch).toBe(1);
+    await putUploadQueueItem(sampleUpload('user-a', 'aaaaaaaa-5555-4555-8555-555555555555'), backend);
+
+    // Simulate logout clearing ACTIVE_ACCOUNT_KEY while CLAIM_EPOCH_KEY remains monotonic
+    await backend.delete('meta:recording_active_account');
+    const snapAtLogout = await getActiveRecordingAccountSnapshot(backend);
+    expect(snapAtLogout.activeAccountId).toBeNull();
+    expect(snapAtLogout.claimEpoch).toBe(1);
+
+    // Tab B re-logs in as user-a -> epoch advances to 2 (> 1)
+    const claim2 = await claimRecordingAccountAtomic('user-a', backend, 2_000);
+    expect(claim2.claimRevision).toBe(2);
+    expect(claim2.claimEpoch).toBe(2);
+    await saveActiveRecordingDraft({ ...sampleDraft('user-a'), sessionId: 'sess-a-after-logout' }, backend);
+
+    const cleanup = await clearStaleAccountGenerationAtomic(
+      'user-a',
+      {
+        expectedActiveAccountId: snapAtLogout.activeAccountId,
+        expectedSavedAt: snapAtLogout.savedAt,
+        expectedClaimRevision: snapAtLogout.claimRevision,
+        maxStaleClaimRevision: snapAtLogout.claimEpoch,
+      },
+      backend,
+    );
+    expect(cleanup.status).toBe('aborted');
+    expect(cleanup.removedCount).toBe(1);
+    expect((await readActiveRecordingDraft('user-a', backend))?.sessionId).toBe('sess-a-after-logout');
+    expect(await listUploadQueueItems('user-a', backend)).toEqual([]);
+    expect((await getActiveRecordingAccountSnapshot(backend)).claimRevision).toBe(2);
+  });
+
+  it('handles concurrent same-account re-login / re-claim alongside stale-generation cleanup without losing new data', async () => {
+    const fake = createSerializedFakeIdbFactory();
+    const backend = createIndexedDbRecordingBackend('round4-same-account-concurrency', fake.factory);
+
+    await claimRecordingAccountAtomic('user-a', backend, 1_000);
+    await putUploadQueueItem(sampleUpload('user-a', 'aaaaaaaa-6666-4666-8666-666666666666'), backend);
+    const staleSnap = await getActiveRecordingAccountSnapshot(backend);
+
+    // Hold first re-claim tx mid-flight while second re-claim and stale cleanup queue behind it
+    const gate = fake.holdNextReadwrite();
+    const claimA1 = claimRecordingAccountAtomic('user-a', backend, 2_000);
+    await gate.started;
+    const claimA2 = claimRecordingAccountAtomic('user-a', backend, 3_000);
+    const staleCleanup = clearStaleAccountGenerationAtomic(
+      'user-a',
+      {
+        expectedActiveAccountId: staleSnap.activeAccountId,
+        expectedSavedAt: staleSnap.savedAt,
+        expectedClaimRevision: staleSnap.claimRevision,
+        maxStaleClaimRevision: staleSnap.claimRevision ?? staleSnap.claimEpoch,
+      },
+      backend,
+    );
+    gate.release();
+
+    const [r1, r2, cleanup] = await Promise.all([claimA1, claimA2, staleCleanup]);
+    expect(r1.status).toBe('claimed');
+    expect(r2.status).toBe('claimed');
+    expect(r1.claimRevision).toBe(2);
+    expect(r2.claimRevision).toBe(3);
+    expect(cleanup).toEqual({
+      status: 'aborted',
+      removedCount: 1,
+      activeAccountId: 'user-a',
+      activeClaimRevision: 3,
+    });
+    expect(await listUploadQueueItems('user-a', backend)).toEqual([]);
+
+    // New draft saved under rev 3 remains intact
+    await saveActiveRecordingDraft({ ...sampleDraft('user-a'), sessionId: 'sess-a-concurrent' }, backend);
+    expect((await readActiveRecordingDraft('user-a', backend))?.sessionId).toBe('sess-a-concurrent');
+    expect((await getActiveRecordingAccountSnapshot(backend)).claimRevision).toBe(3);
   });
 });

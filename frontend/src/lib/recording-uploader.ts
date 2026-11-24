@@ -3,13 +3,15 @@ import { readSession } from '#lib/api/auth.ts';
 import {
   RecordingPersistenceError,
   clearAccountIfPreemptedAtomic,
-  clearAccountRecordingData,
+  clearStaleAccountGenerationAtomic,
   deleteUploadQueueItem,
   getActiveRecordingAccount,
+  getActiveRecordingAccountSnapshot,
   getDefaultRecordingBackend,
   listUploadQueueItems,
   putUploadQueueItem,
   readUploadQueueItem,
+  updateExistingUploadQueueItem,
   type RecordingStorageBackend,
   type UploadQueueItem,
 } from '#lib/recording-store.ts';
@@ -407,6 +409,7 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
       continue;
     }
 
+    const snapshotBeforeItem = await getActiveRecordingAccountSnapshot(backend);
     // Bind upload strictly to the queue item's owning account before requesting CSRF or posting.
     const identityCheck = await verifyActiveSessionAccount(item.accountId, fetcher, controller.signal);
     if (identityCheck === 'aborted' || controller.signal.aborted) {
@@ -422,7 +425,19 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
     }
     if (identityCheck === 'mismatch') {
       const msg = '检测到当前登录账号已切换，已取消上传并清理原账号待传轨迹。';
-      await clearAccountRecordingData(item.accountId, backend);
+      await clearStaleAccountGenerationAtomic(
+        item.accountId,
+        {
+          expectedActiveAccountId: snapshotBeforeItem.activeAccountId,
+          expectedSavedAt: snapshotBeforeItem.savedAt ?? undefined,
+          expectedClaimRevision: snapshotBeforeItem.claimRevision,
+          maxStaleClaimRevision:
+            snapshotBeforeItem.activeAccountId === item.accountId
+              ? (snapshotBeforeItem.claimRevision ?? snapshotBeforeItem.claimEpoch)
+              : snapshotBeforeItem.claimEpoch,
+        },
+        backend,
+      );
       notifyQueueUpdated({ reason: 'account_mismatch', message: msg });
       return {
         status: 'account_mismatch',
@@ -449,7 +464,7 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
           message: msg,
         };
       }
-      await putUploadQueueItem(
+      await updateExistingUploadQueueItem(
         {
           ...item,
           status: 'failed',
@@ -476,7 +491,7 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
       const nextAttempts = item.attemptCount + 1;
       const dueAt = now() + computeBackoffDelayMs(nextAttempts);
       trackNextRetry(dueAt);
-      await putUploadQueueItem(
+      await updateExistingUploadQueueItem(
         {
           ...item,
           status: 'failed',
@@ -500,7 +515,10 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
       status: 'uploading',
       updatedAtMs: currentNow,
     };
-    await putUploadQueueItem(uploading, backend);
+    const markedUploading = await updateExistingUploadQueueItem(uploading, backend);
+    if (!markedUploading) {
+      continue;
+    }
     notifyQueueUpdated();
 
     try {
@@ -548,7 +566,7 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
           result.activity.avg_pace_seconds_per_km !== null ? String(result.activity.avg_pace_seconds_per_km) : null,
         updatedAtMs: now(),
       };
-      await putUploadQueueItem(completed, backend);
+      await updateExistingUploadQueueItem(completed, backend);
       uploadedCount += 1;
       uploadedActivityIds.push(result.activity.id);
     } catch (cause) {
@@ -566,7 +584,19 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
 
       if (cause instanceof ActivityError && cause.status === 409 && cause.code === 'ACCOUNT_MISMATCH') {
         const msg = '当前登录账号已变更，已中止上传并清理原账号待传轨迹。';
-        await clearAccountRecordingData(item.accountId, backend);
+        await clearStaleAccountGenerationAtomic(
+          item.accountId,
+          {
+            expectedActiveAccountId: snapshotBeforeItem.activeAccountId,
+            expectedSavedAt: snapshotBeforeItem.savedAt ?? undefined,
+            expectedClaimRevision: snapshotBeforeItem.claimRevision,
+            maxStaleClaimRevision:
+              snapshotBeforeItem.activeAccountId === item.accountId
+                ? (snapshotBeforeItem.claimRevision ?? snapshotBeforeItem.claimEpoch)
+                : snapshotBeforeItem.claimEpoch,
+          },
+          backend,
+        );
         notifyQueueUpdated({ reason: 'account_mismatch', message: msg });
         return {
           status: 'account_mismatch',
@@ -594,7 +624,7 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
             message: msg,
           };
         }
-        await putUploadQueueItem(
+        await updateExistingUploadQueueItem(
           {
             ...uploading,
             status: 'failed',
@@ -629,7 +659,7 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
           uploadedActivityId: cause.existingActivityId,
           updatedAtMs: now(),
         };
-        await putUploadQueueItem(deduplicated, backend);
+        await updateExistingUploadQueueItem(deduplicated, backend);
         uploadedCount += 1;
         uploadedActivityIds.push(cause.existingActivityId);
         continue;
@@ -644,7 +674,7 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
       const dueAt = delayMs !== null ? now() + delayMs : null;
       trackNextRetry(dueAt);
       const message = cause instanceof Error ? cause.message : '上传失败，请稍后重试';
-      await putUploadQueueItem(
+      await updateExistingUploadQueueItem(
         {
           ...uploading,
           status: 'failed',

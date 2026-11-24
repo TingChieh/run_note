@@ -1426,3 +1426,305 @@ test('P2 Round 3: two-tab concurrent claim and preemption never loses or reassig
 
   await tabB.close();
 });
+
+test('P2 Round 4: tab A stale cleanup aborts and preserves new A claim/draft/queue when tab B re-logs in as A during verification', async ({
+  page,
+  context,
+}) => {
+  await loginRunner(page);
+  const accountAId = '00000000-0000-4000-8000-000000000001';
+
+  await context.route('**/api/v1/gpx-imports', async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: null,
+        error: { code: 'DEPENDENCY_UNAVAILABLE', message: '服务暂不可用' },
+      }),
+    });
+  });
+
+  await installMockLocationRecorder(page, { locationPermission: 'granted' });
+  await page.goto('/activities/record');
+
+  // Tab A records & stops (rev 1 stale upload item stays in IndexedDB via 503)
+  await page.getByLabel('跑步标题（可选）').fill('账号 A 旧会话跑');
+  await page.getByTestId('recording-start-btn').click();
+  await page.evaluate(() => {
+    const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
+    rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
+    rec.pushPoint({ lat: 31.232, lon: 121.47, accuracyM: 6, deltaM: 222 });
+  });
+  await page.getByTestId('recording-stop-btn').click();
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(1);
+  await expect(page.getByTestId('upload-queue-item').first()).toHaveAttribute('data-status', 'failed');
+
+  // Intercept Tab A's NEXT /api/v1/auth/session call so it pauses behind a gate and returns expired (user: null);
+  // subsequent calls continue to the live server.
+  let sessionCallCount = 0;
+  let markSessionInFlight!: () => void;
+  const sessionInFlightPromise = new Promise<void>((resolve) => {
+    markSessionInFlight = resolve;
+  });
+  let releaseStaleSessionResponse!: () => void;
+  const staleSessionGate = new Promise<void>((resolve) => {
+    releaseStaleSessionResponse = resolve;
+  });
+
+  await page.route('**/api/v1/auth/session', async (route) => {
+    sessionCallCount += 1;
+    if (sessionCallCount === 1) {
+      markSessionInFlight();
+      await staleSessionGate;
+      await route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: null, error: { code: 'AUTH_REQUIRED', message: '请重新登录' } }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  // Start Tab A verification: snapshots A @ rev 1, then pauses on Call #1
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await sessionInFlightPromise;
+
+  // Meanwhile, Tab B logs out and re-logs in as Account A, opens /activities/record (claim rev 2),
+  // enqueues a new upload item (rev 2), and stores a new active draft (rev 2).
+  // Suppress Tab B's routine 'check' broadcast so Tab A's Call #1 actually enters the stale cleanup path.
+  await context.request.post('/api/v1/auth/logout', { headers: { 'x-csrf-token': 'ui-csrf' } });
+  const reloginRes = await context.request.post('/api/v1/auth/login', {
+    data: { email: 'runner@example.com', password: 'Synthetic-ui-password-2026' },
+  });
+  expect(reloginRes.ok()).toBe(true);
+
+  const tabB = await context.newPage();
+  await tabB.addInitScript(() => {
+    const OrigBroadcastChannel = window.BroadcastChannel;
+    if (!OrigBroadcastChannel) return;
+    window.BroadcastChannel = class extends OrigBroadcastChannel {
+      override postMessage(message: unknown) {
+        if (this.name === 'runnote-auth' && message === 'check') return;
+        super.postMessage(message);
+      }
+    };
+  });
+  await installMockLocationRecorder(tabB, { locationPermission: 'granted' });
+  await tabB.goto('/activities/record');
+  await expect(tabB.locator('header')).toHaveAttribute('data-auth-ready', 'true');
+
+  await tabB.getByLabel('跑步标题（可选）').fill('账号 A 重新登录新跑');
+  await tabB.getByTestId('recording-start-btn').click();
+  await tabB.evaluate(() => {
+    const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
+    rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
+    rec.pushPoint({ lat: 31.236, lon: 121.47, accuracyM: 6, deltaM: 580 });
+  });
+  await tabB.getByTestId('recording-stop-btn').click();
+  await expect(tabB.getByTestId('upload-queue-item')).toHaveCount(2);
+  await expect(tabB.getByTestId('upload-queue-item').nth(0)).toHaveAttribute('data-status', 'failed');
+  await expect(tabB.getByTestId('upload-queue-item').nth(1)).toHaveAttribute('data-status', 'failed');
+
+  // Also save a rev-2 active draft for Account A in Tab B
+  await tabB.evaluate(async (aId) => {
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open('runnote-recording-store', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('records', 'readwrite');
+        const store = tx.objectStore('records');
+        const activeReq = store.get('meta:recording_active_account');
+        activeReq.onsuccess = () => {
+          const rev = (activeReq.result as { claimRevision?: number } | undefined)?.claimRevision;
+          const now = Date.now();
+          store.put({
+            key: `user:${aId}:draft:active`,
+            accountId: aId,
+            schemaVersion: 1,
+            savedAt: now,
+            claimRevision: rev,
+            payload: {
+              sessionId: 'sess-a-relogin-new-draft',
+              accountId: aId,
+              idempotencyKey: 'aaaaaaaa-8888-4888-8888-888888888888',
+              title: '账号 A 新登录草稿',
+              status: 'paused',
+              startedAtMs: now - 30_000,
+              endedAtMs: null,
+              activeDurationMs: 30_000,
+              lastSegmentStartMs: null,
+              segmentIndex: 0,
+              previewDistanceM: 320,
+              lastPointTimeMs: now - 5_000,
+              lastAccuracyM: 6,
+              interruptedReason: null,
+              points: [
+                { lat: 31.23, lon: 121.47, elevationM: 10, accuracyM: 6, recordedAtMs: now - 30_000, segmentIndex: 0 },
+              ],
+            },
+          });
+        };
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+  }, accountAId);
+
+  // Release Tab A's stale expired session response -> Tab A attempts generation-guarded cleanup and MUST abort!
+  releaseStaleSessionResponse();
+
+  // Wait for Tab A's retry verification to confirm Account A is still signed in and keep Tab A on /activities/record
+  await expect.poll(() => sessionCallCount, { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
+  await expect(page).toHaveURL(/\/activities\/record$/);
+
+  const idbSnapshot = await tabB.evaluate(async () => {
+    return await new Promise<Array<{ key: string; claimRevision?: number; payload: unknown }>>((resolve, reject) => {
+      const req = indexedDB.open('runnote-recording-store', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('records', 'readonly');
+        const allReq = tx.objectStore('records').getAll();
+        allReq.onsuccess = () => {
+          const rows = (allReq.result as Array<{ key: string; claimRevision?: number; payload: unknown }>).map((r) => ({
+            key: r.key,
+            claimRevision: r.claimRevision,
+            payload: r.payload,
+          }));
+          db.close();
+          resolve(rows);
+        };
+        allReq.onerror = () => reject(allReq.error);
+      };
+    });
+  });
+
+  const activeRow = idbSnapshot.find((r) => r.key === 'meta:recording_active_account');
+  expect(activeRow?.payload).toBe(accountAId);
+  expect(activeRow?.claimRevision).toBeGreaterThanOrEqual(2);
+  const epochRow = idbSnapshot.find((r) => r.key === 'meta:recording_claim_epoch');
+  expect(Number(epochRow?.payload)).toBeGreaterThanOrEqual(2);
+
+  const draftRow = idbSnapshot.find((r) => r.key === `user:${accountAId}:draft:active`);
+  expect((draftRow?.payload as { sessionId?: string })?.sessionId).toBe('sess-a-relogin-new-draft');
+
+  const aUploads = idbSnapshot.filter((r) => r.key.startsWith(`user:${accountAId}:upload:`));
+  expect(aUploads).toHaveLength(1);
+  expect((aUploads[0].payload as { title?: string })?.title).toBe('账号 A 重新登录新跑');
+
+  await tabB.close();
+});
+
+test('P2 Round 4: two-tab concurrent same-account re-login and re-claim advances monotonic epoch without losing new records', async ({
+  page,
+  context,
+}) => {
+  await loginRunner(page);
+  const accountAId = '00000000-0000-4000-8000-000000000001';
+
+  await context.route('**/api/v1/gpx-imports', async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: null,
+        error: { code: 'DEPENDENCY_UNAVAILABLE', message: '服务暂不可用' },
+      }),
+    });
+  });
+
+  await installMockLocationRecorder(page, { locationPermission: 'granted' });
+  await page.goto('/activities/record');
+
+  // Claim rev 1 and record an item in Tab A
+  await page.getByLabel('跑步标题（可选）').fill('账号 A 初始跑');
+  await page.getByTestId('recording-start-btn').click();
+  await page.evaluate(() => {
+    const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
+    rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
+    rec.pushPoint({ lat: 31.232, lon: 121.47, accuracyM: 6, deltaM: 222 });
+  });
+  await page.getByTestId('recording-stop-btn').click();
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(1);
+
+  // Clear active marker (keeping meta:recording_claim_epoch) and re-login in context
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open('runnote-recording-store', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('records', 'readwrite');
+        tx.objectStore('records').delete('meta:recording_active_account');
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+  });
+
+  const reloginRes = await context.request.post('/api/v1/auth/login', {
+    data: { email: 'runner@example.com', password: 'Synthetic-ui-password-2026' },
+  });
+  expect(reloginRes.ok()).toBe(true);
+
+  const tabB = await context.newPage();
+  await installMockLocationRecorder(tabB, { locationPermission: 'granted' });
+
+  await Promise.all([page.evaluate(() => window.dispatchEvent(new Event('focus'))), tabB.goto('/activities/record')]);
+  await expect(tabB.locator('header')).toHaveAttribute('data-auth-ready', 'true');
+
+  await tabB.getByLabel('跑步标题（可选）').fill('账号 A 并发重认领新跑');
+  await tabB.getByTestId('recording-start-btn').click();
+  await tabB.evaluate(() => {
+    const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
+    rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
+    rec.pushPoint({ lat: 31.235, lon: 121.47, accuracyM: 6, deltaM: 490 });
+  });
+  await tabB.getByTestId('recording-stop-btn').click();
+  await expect(tabB.getByTestId('upload-queue-item')).toHaveCount(2);
+  await expect(tabB.getByTestId('upload-queue-item').nth(0)).toHaveAttribute('data-status', 'failed');
+  await expect(tabB.getByTestId('upload-queue-item').nth(1)).toHaveAttribute('data-status', 'failed');
+
+  const idbSnapshot = await tabB.evaluate(async () => {
+    return await new Promise<Array<{ key: string; claimRevision?: number; payload: unknown }>>((resolve, reject) => {
+      const req = indexedDB.open('runnote-recording-store', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('records', 'readonly');
+        const allReq = tx.objectStore('records').getAll();
+        allReq.onsuccess = () => {
+          const rows = (allReq.result as Array<{ key: string; claimRevision?: number; payload: unknown }>).map((r) => ({
+            key: r.key,
+            claimRevision: r.claimRevision,
+            payload: r.payload,
+          }));
+          db.close();
+          resolve(rows);
+        };
+        allReq.onerror = () => reject(allReq.error);
+      };
+    });
+  });
+
+  const activeRow = idbSnapshot.find((r) => r.key === 'meta:recording_active_account');
+  expect(activeRow?.payload).toBe(accountAId);
+  expect(activeRow?.claimRevision).toBeGreaterThanOrEqual(2);
+  const epochRow = idbSnapshot.find((r) => r.key === 'meta:recording_claim_epoch');
+  expect(Number(epochRow?.payload)).toBeGreaterThanOrEqual(2);
+  const titles = idbSnapshot
+    .filter((r) => r.key.startsWith(`user:${accountAId}:upload:`))
+    .map((r) => (r.payload as { title?: string })?.title);
+  expect(titles).toContain('账号 A 并发重认领新跑');
+
+  await tabB.close();
+});

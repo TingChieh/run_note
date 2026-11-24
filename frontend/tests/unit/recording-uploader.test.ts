@@ -774,5 +774,78 @@ describe('recording-uploader idempotent queue', () => {
     expect(expiredPreemptOutcome.status).toBe('account_mismatch');
     expect(await listUploadQueueItems(USER_A, backend)).toEqual([]);
     await assertBIntact();
+
+    // 4. Round 4 same-account re-login during mismatch check:
+    // USER_A had rev 1 item; while verifyActiveSessionAccount runs and briefly sees USER_B,
+    // another tab re-logs in as USER_A (rev 2) and writes a new draft & new upload item.
+    await backend.clearAll();
+    await claimRecordingAccountAtomic(USER_A, backend, 1_000);
+    await enqueueFinalizedRecording(
+      {
+        accountId: USER_A,
+        sessionId: 'sess-a-stale-r4',
+        idempotencyKey: 'aaaaaaaa-4444-4444-8444-444444444444',
+        title: '账号 A 旧代',
+        timezone: 'Asia/Shanghai',
+        startedAtMs: 1_700_000_000_000,
+        endedAtMs: 1_700_000_030_000,
+        activeDurationMs: 30_000,
+        points: SAMPLE_POINTS,
+      },
+      backend,
+    );
+    const sameAccountReloginFetch: typeof fetch = async (input) => {
+      const path = String(input);
+      if (path === '/api/v1/auth/session') {
+        await claimRecordingAccountAtomic(USER_A, backend, 2_000);
+        await saveActiveRecordingDraft(
+          {
+            sessionId: 'sess-a-relogin-new',
+            accountId: USER_A,
+            idempotencyKey: 'aaaaaaaa-5555-4555-8555-555555555555',
+            title: '账号 A 新代草稿',
+            status: 'paused',
+            startedAtMs: 1_700_000_100_000,
+            endedAtMs: null,
+            activeDurationMs: 20_000,
+            lastSegmentStartMs: null,
+            segmentIndex: 0,
+            previewDistanceM: 120,
+            lastPointTimeMs: 1_700_000_120_000,
+            lastAccuracyM: 6,
+            interruptedReason: null,
+            points: SAMPLE_POINTS,
+          },
+          backend,
+        );
+        await enqueueFinalizedRecording(
+          {
+            accountId: USER_A,
+            sessionId: 'sess-a-relogin-upload',
+            idempotencyKey: 'aaaaaaaa-6666-4666-8666-666666666666',
+            title: '账号 A 新代上传',
+            timezone: 'Asia/Shanghai',
+            startedAtMs: 1_700_000_100_000,
+            endedAtMs: 1_700_000_130_000,
+            activeDurationMs: 30_000,
+            points: SAMPLE_POINTS,
+          },
+          backend,
+        );
+        return sessionResponse(USER_B);
+      }
+      return jsonResponse({}, 500);
+    };
+    const reloginOutcome = await flushRecordingUploadQueue({
+      accountId: USER_A,
+      fetcher: sameAccountReloginFetch,
+      backend,
+      isOnline: () => true,
+    });
+    expect(reloginOutcome.status).toBe('account_mismatch');
+    expect(await getActiveRecordingAccount(backend)).toBe(USER_A);
+    expect((await readActiveRecordingDraft(USER_A, backend))?.sessionId).toBe('sess-a-relogin-new');
+    const survivingItems = await listUploadQueueItems(USER_A, backend);
+    expect(survivingItems.map((i) => i.idempotencyKey)).toEqual(['aaaaaaaa-6666-4666-8666-666666666666']);
   });
 });

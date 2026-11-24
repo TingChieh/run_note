@@ -27,10 +27,14 @@
   import { clearNativeAccountSessions } from '#lib/capacitor-recorder.ts';
   import {
     RecordingPersistenceError,
-    claimRecordingAccountIfUnsetOrMatch,
+    claimRecordingAccountAtomic,
     clearAccountRecordingData,
     clearPrivateRecordingData,
+    clearStaleAccountGenerationAtomic,
+    getActiveRecordingAccountSnapshot,
     reconcileVerifiedRecordingAccount,
+    type ClaimAccountResult,
+    type StaleGenerationGuard,
   } from '#lib/recording-store.ts';
   import {
     abortAllRecordingUploads,
@@ -84,6 +88,7 @@
   };
   let lastBadgeUserId: string | null = null;
   let lastIsolatedRecordingUserId: string | null = null;
+  let lastIsolatedRecordingClaim: ClaimAccountResult | null = null;
   let requestIdentityVerification: (() => void) | null = null;
   $effect(() => {
     const currentUserId = page.data.user?.id ?? null;
@@ -98,11 +103,13 @@
           abortAllRecordingUploads(lastIsolatedRecordingUserId);
         }
         lastIsolatedRecordingUserId = currentUserId;
-        void claimRecordingAccountIfUnsetOrMatch(currentUserId)
+        void claimRecordingAccountAtomic(currentUserId)
           .then((claim) => {
-            if (claim === 'claimed') {
+            if (claim.status === 'claimed') {
+              lastIsolatedRecordingClaim = claim;
               void clearNativeAccountSessions(currentUserId);
             } else {
+              lastIsolatedRecordingClaim = null;
               // Another account currently holds ACTIVE_ACCOUNT_KEY: ask the server who owns
               // the live session instead of deleting another account from a potentially stale tab.
               requestIdentityVerification?.();
@@ -113,9 +120,20 @@
         // Only clear on an explicit signed-in -> signed-out transition; an anonymous cold start
         // must never silently wipe an interrupted session belonging to a signed-in runner.
         const departingUserId = lastIsolatedRecordingUserId;
+        const departingClaim = lastIsolatedRecordingClaim;
         lastIsolatedRecordingUserId = null;
+        lastIsolatedRecordingClaim = null;
         abortAllRecordingUploads(departingUserId);
-        void clearAccountRecordingData(departingUserId).catch(() => {});
+        if (departingClaim) {
+          void clearStaleAccountGenerationAtomic(departingUserId, {
+            expectedActiveAccountId: departingClaim.activeAccountId,
+            expectedSavedAt: departingClaim.savedAt ?? undefined,
+            expectedClaimRevision: departingClaim.claimRevision,
+            maxStaleClaimRevision: departingClaim.claimRevision ?? departingClaim.claimEpoch,
+          }).catch(() => {});
+        } else {
+          void clearAccountRecordingData(departingUserId).catch(() => {});
+        }
         void clearNativeAccountSessions(null);
       }
     }
@@ -246,15 +264,31 @@
     busy = true;
     message = '';
     const departingUserId = page.data.user?.id ?? null;
+    const snapshotBeforeLogout = departingUserId ? await getActiveRecordingAccountSnapshot().catch(() => null) : null;
+    const clearDepartingAccount = async () => {
+      if (!departingUserId) {
+        await clearPrivateRecordingData().catch(() => {});
+        return;
+      }
+      if (snapshotBeforeLogout) {
+        await clearStaleAccountGenerationAtomic(departingUserId, {
+          expectedActiveAccountId: snapshotBeforeLogout.activeAccountId,
+          expectedSavedAt: snapshotBeforeLogout.savedAt ?? undefined,
+          expectedClaimRevision: snapshotBeforeLogout.claimRevision,
+          maxStaleClaimRevision:
+            snapshotBeforeLogout.activeAccountId === departingUserId
+              ? (snapshotBeforeLogout.claimRevision ?? snapshotBeforeLogout.claimEpoch)
+              : snapshotBeforeLogout.claimEpoch,
+        }).catch(() => {});
+        return;
+      }
+      await clearAccountRecordingData(departingUserId).catch(() => {});
+    };
     abortAllRecordingUploads(departingUserId ?? undefined);
     try {
       await authWrite('logout', {});
       await clearPrivateOfflineCache();
-      if (departingUserId) {
-        await clearAccountRecordingData(departingUserId).catch(() => {});
-      } else {
-        await clearPrivateRecordingData().catch(() => {});
-      }
+      await clearDepartingAccount();
       await clearNativeAccountSessions(null);
       clearHealthGrantHistory();
       if (typeof BroadcastChannel !== 'undefined') {
@@ -268,11 +302,7 @@
       if (cause instanceof AuthError && cause.status === 401) {
         abortAllRecordingUploads(departingUserId ?? undefined);
         await clearPrivateOfflineCache();
-        if (departingUserId) {
-          await clearAccountRecordingData(departingUserId).catch(() => {});
-        } else {
-          await clearPrivateRecordingData().catch(() => {});
-        }
+        await clearDepartingAccount();
         await clearNativeAccountSessions(null);
         clearHealthGrantHistory();
         checking = true;
@@ -306,15 +336,39 @@
       pending = false;
       message = '';
       try {
+        const snapshotBeforeVerify = await getActiveRecordingAccountSnapshot().catch(() => null);
         const current = await readSession();
         if (disposed || busy || pending) return;
         if ((current?.id ?? null) !== (page.data.user?.id ?? null)) {
-          preemptRetries = 0;
           const staleUserId = page.data.user?.id ?? null;
           if (staleUserId) {
             abortAllRecordingUploads(staleUserId);
-            await clearAccountRecordingData(staleUserId).catch(() => {});
+            if (snapshotBeforeVerify) {
+              const guard: StaleGenerationGuard = {
+                expectedActiveAccountId: snapshotBeforeVerify.activeAccountId,
+                expectedSavedAt: snapshotBeforeVerify.savedAt ?? undefined,
+                expectedClaimRevision: snapshotBeforeVerify.claimRevision,
+                maxStaleClaimRevision:
+                  snapshotBeforeVerify.activeAccountId === staleUserId
+                    ? (snapshotBeforeVerify.claimRevision ?? snapshotBeforeVerify.claimEpoch)
+                    : snapshotBeforeVerify.claimEpoch,
+              };
+              const cleanup = await clearStaleAccountGenerationAtomic(staleUserId, guard).catch(() => null);
+              if (cleanup?.status === 'aborted' && cleanup.activeAccountId === staleUserId) {
+                if (preemptRetries < 3) {
+                  preemptRetries += 1;
+                  pending = true;
+                  return;
+                }
+                preemptRetries = 0;
+                checking = true;
+                identityBlocked = true;
+                message = '检测到并发账号重新登录，请刷新页面确认当前登录状态';
+                return;
+              }
+            }
           }
+          preemptRetries = 0;
           await clearPrivateOfflineCache();
           await clearNativeAccountSessions(current?.id ?? null);
           clearHealthGrantHistory();
