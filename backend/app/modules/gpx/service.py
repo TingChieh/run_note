@@ -122,13 +122,16 @@ def persist_segments(db, activity_id, derived_segments):
     return len(points), len(segments)
 
 
+IDEMPOTENT_PARSER_VERSION = "gpx-idemp-v1"
+
+
 def safe_filename(name, format="gpx"):
     base = (name or f"activity.{format}").replace("\\", "/").split("/")[-1]
     return re.sub(r"[\x00-\x1f\x7f]", "_", base)[:255] or f"activity.{format}"
 
 
 def idempotency_filename(idempotency_key: UUID, format="gpx") -> str:
-    """Stable owner-private provenance tag stored in original_filename without migration."""
+    """Owner-private key stored alongside parser_version=gpx-idemp-v1 without schema migration."""
     return f"idempotency:{idempotency_key}.{format}"
 
 
@@ -138,8 +141,14 @@ def find_idempotent_replay(
     if format != "gpx":
         return None
     tag = idempotency_filename(idempotency_key, format)
+    # Filter by IDEMPOTENT_PARSER_VERSION so regular GPX uploads (gpx-parser-v1) can never
+    # collide with the idempotency namespace even if their raw filename matches the tag format.
     existing = db.scalar(
-        select(GpxImport).where(GpxImport.user_id == owner, GpxImport.original_filename == tag)
+        select(GpxImport).where(
+            GpxImport.user_id == owner,
+            GpxImport.parser_version == IDEMPOTENT_PARSER_VERSION,
+            GpxImport.original_filename == tag,
+        )
     )
     if existing is None:
         return None
@@ -298,10 +307,14 @@ def import_track(
                     if format == "tcx"
                     else dict(raw_gpx=raw)
                 )
+                is_idempotent_gpx = idempotency_key is not None and format == "gpx"
                 stored_name = (
                     idempotency_filename(idempotency_key, format)
-                    if idempotency_key is not None and format == "gpx"
+                    if is_idempotent_gpx
                     else safe_filename(filename, format)
+                )
+                stored_parser_version = (
+                    IDEMPOTENT_PARSER_VERSION if is_idempotent_gpx else f"{format}-parser-v1"
                 )
                 imported = source_model(
                     id=uuid4(),
@@ -313,7 +326,7 @@ def import_track(
                     raw_sha256=raw_hash,
                     canonical_sha256=canonical,
                     fingerprint_version="canonical-v1",
-                    parser_version=f"{format}-parser-v1",
+                    parser_version=stored_parser_version,
                 )
                 db.add(imported)
                 db.flush()

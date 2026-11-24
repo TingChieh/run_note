@@ -6,8 +6,10 @@
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import { useViewContext } from '#lib/view-context.ts';
   import {
+    acknowledgeNativeHandoff,
     checkRecorderPermissions,
     discardNativeRecording,
+    getNativeRecorderPoints,
     getNativeRecorderState,
     getRecorderCapabilities,
     isNativeLocationRecorderAvailable,
@@ -22,6 +24,7 @@
     type GpsSignalStatus,
     type RecorderCapabilities,
     type RecorderPermissions,
+    type RecorderSessionSnapshot,
     type RecorderStateEvent,
   } from '#lib/capacitor-recorder.ts';
   import {
@@ -51,6 +54,9 @@
   const view = useViewContext();
   const accountId = $derived(page.data.user?.id ?? '');
   const timezone = $derived(page.data.user?.timezone || 'Asia/Shanghai');
+  const fullShowcaseAutoPublishes = $derived(
+    page.data.user?.is_admin === true || page.data.user?.showcase_enabled === true,
+  );
 
   let mounted = $state(false);
   let offline = $state(false);
@@ -84,9 +90,11 @@
   let lastAccuracyM = $state<number | null>(null);
   let interruptedReason = $state<string | null>(null);
   let webPoints = $state<RecordedTrackPoint[]>([]);
+  let pendingHandoffSession = $state<RecorderSessionSnapshot | null>(null);
 
   let clockNowMs = $state(Date.now());
   let actionBusy = $state(false);
+  let handoffBusy = $state(false);
   let uploadBusy = $state(false);
   let errorMessage = $state('');
   let statusNotice = $state('');
@@ -113,8 +121,12 @@
 
   const pendingUploadCount = $derived(uploadItems.filter((item) => item.status !== 'uploaded').length);
   const failedUploadCount = $derived(uploadItems.filter((item) => item.status === 'failed').length);
+  const startBlockedByPermissions = $derived(
+    capabilities.native && (permissions.location !== 'granted' || !permissions.locationServicesEnabled),
+  );
 
   const statusBadgeText = $derived.by(() => {
+    if (pendingHandoffSession) return '待入队恢复';
     switch (status) {
       case 'recording':
         return '记录中';
@@ -159,10 +171,10 @@
 
   const interruptedReasonLabel = $derived.by(() => {
     if (interruptedReason === 'permission_revoked') {
-      return '记录期间定位权限被撤销或“仅本次允许”已失效，已安全保留此前捕获的轨迹点。';
+      return '记录期间精确位置权限被撤销、降级或“仅本次允许”已失效，已安全保留此前捕获的轨迹点。';
     }
     if (interruptedReason === 'foreground_service_denied') {
-      return '前台定位服务启动受限，已保留会话状态。请确认定位权限后继续或保存。';
+      return '前台定位服务启动受限，已保留会话状态。请确认精确位置权限后继续或保存。';
     }
     return '检测到上次未完成的跑步记录（可能因进程被系统终止、设备重启或页面关闭）。';
   });
@@ -171,12 +183,18 @@
     permissions = event.permissions;
     gpsStatus = event.gpsStatus;
     if (!event.session || (accountId && event.session.accountId !== accountId)) {
-      if (status !== 'idle' && !event.serviceRunning && capabilities.native) {
+      if (status !== 'idle' && !event.serviceRunning && capabilities.native && !pendingHandoffSession) {
         resetLocalSessionState();
       }
       return;
     }
     const s = event.session;
+    if (s.status === 'stopped' && s.pointCount > 0) {
+      pendingHandoffSession = s;
+      void recoverPendingStoppedHandoff(s);
+      return;
+    }
+    pendingHandoffSession = null;
     sessionId = s.sessionId;
     idempotencyKey = s.idempotencyKey;
     if (s.title) runTitle = s.title;
@@ -190,6 +208,60 @@
     lastPointTimeMs = s.lastPointTimeMs;
     lastAccuracyM = s.lastAccuracyM;
     interruptedReason = s.interruptedReason;
+  }
+
+  /**
+   * Atomically hands off an unacknowledged native `stopped` session (e.g. after a crash between
+   * `stopSession()` and IndexedDB commit) into the local upload queue BEFORE clearing native disk.
+   */
+  async function recoverPendingStoppedHandoff(snapshot: RecorderSessionSnapshot) {
+    if (handoffBusy || !accountId || snapshot.accountId !== accountId) return;
+    handoffBusy = true;
+    errorMessage = '';
+    try {
+      const capturedPoints = await getNativeRecorderPoints(0, accountId);
+      if (disposed) return;
+      if (capturedPoints.length === 0) {
+        await acknowledgeNativeHandoff(snapshot.sessionId);
+        if (!disposed) {
+          pendingHandoffSession = null;
+          resetLocalSessionState();
+        }
+        return;
+      }
+      await enqueueFinalizedRecording({
+        accountId,
+        sessionId: snapshot.sessionId,
+        idempotencyKey: snapshot.idempotencyKey,
+        title: snapshot.title || runTitle.trim(),
+        timezone,
+        startedAtMs: snapshot.startedAtMs || capturedPoints[0].recordedAtMs,
+        endedAtMs: snapshot.endedAtMs ?? Date.now(),
+        activeDurationMs: snapshot.activeDurationMs,
+        points: capturedPoints,
+      });
+      await acknowledgeNativeHandoff(snapshot.sessionId);
+      if (disposed) return;
+      pendingHandoffSession = null;
+      resetLocalSessionState();
+      await refreshUploadQueue();
+      if (offline) {
+        statusNotice = '已自动找回并暂存上次已结束的跑步轨迹，恢复联网后将自动上传一次。';
+      } else {
+        statusNotice = '已自动找回上次已结束的跑步轨迹，正在上传…';
+        void runUploadFlush(false);
+      }
+    } catch (cause) {
+      if (!disposed) {
+        pendingHandoffSession = snapshot;
+        errorMessage =
+          cause instanceof Error
+            ? `未能将已结束记录写入本地上传队列：${cause.message}`
+            : '未能将已结束记录写入本地上传队列，请点击重试保存。';
+      }
+    } finally {
+      if (!disposed) handoffBusy = false;
+    }
   }
 
   function resetLocalSessionState() {
@@ -247,7 +319,9 @@
       });
       if (disposed) return;
       await refreshUploadQueue();
-      if (outcome.status === 'auth_expired') {
+      if (outcome.status === 'account_mismatch') {
+        errorMessage = outcome.message ?? '当前登录账号已变更，已中止上传并清理原账号待传记录。';
+      } else if (outcome.status === 'auth_expired') {
         errorMessage = outcome.message ?? '登录状态已过期，请重新登录后继续上传。';
       } else if (outcome.uploadedCount > 0) {
         statusNotice = `已成功上传 ${outcome.uploadedCount} 条跑步记录，里程与配速已按服务端计算结果更新。`;
@@ -295,7 +369,13 @@
         const previous = webPoints.at(-1) ?? null;
         const decision = evaluateTrackPoint(candidate, previous);
         lastAccuracyM = accuracy;
-        permissions = { ...permissions, location: 'granted', locationServicesEnabled: true, canRecord: true };
+        permissions = {
+          ...permissions,
+          location: 'granted',
+          preciseLocation: true,
+          locationServicesEnabled: true,
+          canRecord: true,
+        };
         if (decision.accepted) {
           webPoints = [...webPoints, candidate];
           pointCount = webPoints.length;
@@ -308,9 +388,9 @@
       (err) => {
         if (disposed) return;
         if (err.code === err.PERMISSION_DENIED) {
-          permissions = { ...permissions, location: 'denied', canRecord: false };
+          permissions = { ...permissions, location: 'denied', preciseLocation: false, canRecord: false };
           gpsStatus = 'permission_denied';
-          errorMessage = '定位权限已被拒绝，请在浏览器或系统设置中允许 RunNote 访问位置。';
+          errorMessage = '定位权限已被拒绝，请在浏览器或系统设置中允许 RunNote 访问精确位置。';
           stopWebGeolocationWatch();
           if (status === 'recording') {
             activeDurationMs = displayedDurationMs;
@@ -337,13 +417,13 @@
       permissions = await requestRecorderPermissions();
       if (disposed) return;
       if (permissions.location === 'denied') {
-        errorMessage = '未获得定位权限。如需记录跑步轨迹，请允许定位权限或在系统设置中开启。';
+        errorMessage = '未获得定位权限。如需记录跑步轨迹，请允许精确位置权限或在系统设置中开启。';
+      } else if (permissions.location === 'approximate') {
+        errorMessage = '当前仅授予了大致位置权限。跑步轨迹记录需要开启“精确位置”才能开始。';
       } else if (!permissions.locationServicesEnabled) {
         errorMessage = '系统定位服务已关闭，请先开启定位开关。';
       } else {
-        statusNotice = permissions.preciseLocation
-          ? '定位权限已就绪，可以开始记录。'
-          : '已获得大致位置权限；为保证轨迹准确，建议在系统设置中开启“精确位置”。';
+        statusNotice = '精确位置权限已就绪，可以开始记录。';
       }
     } catch (cause) {
       if (!disposed) errorMessage = cause instanceof Error ? cause.message : '定位权限申请失败';
@@ -353,19 +433,27 @@
   }
 
   async function handleStart(resumeInterrupted = false) {
-    if (actionBusy || !accountId) return;
+    if (actionBusy || handoffBusy || !accountId) return;
+    if (pendingHandoffSession) {
+      errorMessage = '请先完成上一条已结束记录的保存入队或安全丢弃，再开始新的记录。';
+      return;
+    }
     actionBusy = true;
     errorMessage = '';
     statusNotice = '';
     try {
       if (capabilities.native) {
         let perms = await checkRecorderPermissions();
-        if (perms.location === 'denied' || perms.location === 'prompt') {
+        if (perms.location !== 'granted') {
           perms = await requestRecorderPermissions();
         }
         permissions = perms;
         if (perms.location === 'denied') {
-          errorMessage = '尚未授予定位权限，请先允许 RunNote 访问位置。';
+          errorMessage = '尚未授予定位权限，请先允许 RunNote 访问精确位置。';
+          return;
+        }
+        if (perms.location === 'approximate') {
+          errorMessage = '跑步轨迹记录需要精确位置权限，请在系统设置中切换为“精确位置”。';
           return;
         }
         if (!perms.locationServicesEnabled) {
@@ -381,12 +469,11 @@
           title: runTitle.trim(),
           resumeInterrupted,
         });
-        const nextState = await getNativeRecorderState();
+        const nextState = await getNativeRecorderState(accountId);
         if (!disposed && nextState) applyNativeState(nextState);
         return;
       }
 
-      // Standard web browser foreground recording mode
       if (!capabilities.locationServicesEnabled) {
         errorMessage = '当前浏览器不支持地理定位。';
         return;
@@ -428,7 +515,7 @@
     try {
       if (capabilities.native) {
         await pauseNativeRecording();
-        const nextState = await getNativeRecorderState();
+        const nextState = await getNativeRecorderState(accountId);
         if (!disposed && nextState) applyNativeState(nextState);
       } else {
         stopWebGeolocationWatch();
@@ -456,7 +543,7 @@
     try {
       if (capabilities.native) {
         await resumeNativeRecording();
-        const nextState = await getNativeRecorderState();
+        const nextState = await getNativeRecorderState(accountId);
         if (!disposed && nextState) applyNativeState(nextState);
       } else {
         segmentIndex += 1;
@@ -506,7 +593,7 @@
       if (capturedPoints.length === 0) {
         errorMessage = '本次记录未捕获到有效 GPS 轨迹点，无法生成轨迹文件。请移至空旷处或直接安全丢弃本次会话。';
         if (capabilities.native) {
-          const nextState = await getNativeRecorderState();
+          const nextState = await getNativeRecorderState(accountId);
           if (!disposed && nextState) applyNativeState(nextState);
         } else {
           status = 'paused';
@@ -517,6 +604,7 @@
         return;
       }
 
+      // Persist to IndexedDB upload queue FIRST; only acknowledge/delete native session AFTER commit succeeds.
       await enqueueFinalizedRecording({
         accountId,
         sessionId: finalSessionId || generateUuidV4(),
@@ -530,11 +618,12 @@
       });
 
       if (capabilities.native) {
-        await discardNativeRecording();
+        await acknowledgeNativeHandoff(finalSessionId);
       } else {
         await deleteActiveRecordingDraft(accountId);
       }
 
+      pendingHandoffSession = null;
       resetLocalSessionState();
       runTitle = '';
       await refreshUploadQueue();
@@ -573,6 +662,7 @@
           stopWebGeolocationWatch();
           await deleteActiveRecordingDraft(accountId);
         }
+        pendingHandoffSession = null;
         resetLocalSessionState();
         runTitle = '';
         statusNotice = '已安全丢弃未保存的记录会话。';
@@ -622,7 +712,13 @@
     if (item.status === 'uploading') return '上传中…';
     if (offline) return '等待联网';
     if (item.permanentError) return '轨迹校验失败';
-    if (item.status === 'failed') return `等待重试（第 ${item.attemptCount} 次失败）`;
+    if (item.status === 'failed') {
+      if (item.nextRetryAt !== null && item.nextRetryAt > clockNowMs) {
+        const secs = Math.max(1, Math.ceil((item.nextRetryAt - clockNowMs) / 1000));
+        return `等待自动重试（${secs}s 后）`;
+      }
+      return `等待重试（第 ${item.attemptCount} 次失败）`;
+    }
     return '待上传';
   }
 
@@ -638,9 +734,17 @@
         void runUploadFlush(false);
       }
     };
+    const onQueueUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ reason?: string; message?: string } | undefined>).detail;
+      if (detail?.reason === 'account_mismatch' && detail.message) {
+        errorMessage = detail.message;
+      }
+      void refreshUploadQueue();
+    };
 
     window.addEventListener('online', onNetwork);
     window.addEventListener('offline', onNetwork);
+    window.addEventListener('runnote-recording-queue-updated', onQueueUpdated);
 
     let unsubscribeNative: (() => void) | null = null;
 
@@ -654,32 +758,43 @@
       permissions = perms;
 
       if (caps.native && isNativeLocationRecorderAvailable()) {
-        const nativeState = await getNativeRecorderState();
+        const nativeState = await getNativeRecorderState(accountId);
         if (!disposed && nativeState) applyNativeState(nativeState);
         unsubscribeNative = subscribeNativeRecorderUpdates((event) => {
           if (!disposed) applyNativeState(event);
         });
       } else if (accountId) {
         const draft = await readActiveRecordingDraft(accountId);
-        if (
-          !disposed &&
-          draft &&
-          (draft.status === 'recording' || draft.status === 'paused' || draft.status === 'interrupted')
-        ) {
-          sessionId = draft.sessionId;
-          idempotencyKey = draft.idempotencyKey;
-          runTitle = draft.title;
-          startedAtMs = draft.startedAtMs;
-          activeDurationMs = draft.activeDurationMs;
-          lastSegmentStartMs = null;
-          segmentIndex = draft.segmentIndex;
-          webPoints = draft.points;
-          pointCount = draft.points.length;
-          previewDistanceM = draft.previewDistanceM;
-          lastPointTimeMs = draft.lastPointTimeMs;
-          lastAccuracyM = draft.lastAccuracyM;
-          interruptedReason = draft.interruptedReason ?? 'process_terminated';
-          status = 'interrupted';
+        if (!disposed && draft) {
+          if (draft.status === 'stopped' && draft.points.length > 0) {
+            await enqueueFinalizedRecording({
+              accountId,
+              sessionId: draft.sessionId,
+              idempotencyKey: draft.idempotencyKey,
+              title: draft.title,
+              timezone,
+              startedAtMs: draft.startedAtMs || draft.points[0].recordedAtMs,
+              endedAtMs: draft.endedAtMs ?? Date.now(),
+              activeDurationMs: draft.activeDurationMs,
+              points: draft.points,
+            });
+            await deleteActiveRecordingDraft(accountId);
+          } else if (draft.status === 'recording' || draft.status === 'paused' || draft.status === 'interrupted') {
+            sessionId = draft.sessionId;
+            idempotencyKey = draft.idempotencyKey;
+            runTitle = draft.title;
+            startedAtMs = draft.startedAtMs;
+            activeDurationMs = draft.activeDurationMs;
+            lastSegmentStartMs = null;
+            segmentIndex = draft.segmentIndex;
+            webPoints = draft.points;
+            pointCount = draft.points.length;
+            previewDistanceM = draft.previewDistanceM;
+            lastPointTimeMs = draft.lastPointTimeMs;
+            lastAccuracyM = draft.lastAccuracyM;
+            interruptedReason = draft.interruptedReason ?? 'process_terminated';
+            status = 'interrupted';
+          }
         }
       }
 
@@ -700,7 +815,7 @@
 
     const onVisibility = () => {
       if (document.visibilityState === 'visible' && capabilities.native) {
-        void getNativeRecorderState().then((next) => {
+        void getNativeRecorderState(accountId).then((next) => {
           if (!disposed && next) applyNativeState(next);
         });
       }
@@ -712,6 +827,7 @@
       window.clearInterval(tickTimer);
       window.removeEventListener('online', onNetwork);
       window.removeEventListener('offline', onNetwork);
+      window.removeEventListener('runnote-recording-queue-updated', onQueueUpdated);
       document.removeEventListener('visibilitychange', onVisibility);
       unsubscribeNative?.();
       stopWebGeolocationWatch();
@@ -726,7 +842,41 @@
 </PageHeader>
 
 <div class="aux-stack">
-  {#if status === 'interrupted'}
+  {#if pendingHandoffSession}
+    <section
+      class="aux-panel recording-recovery"
+      aria-labelledby="handoff-title"
+      data-testid="recording-pending-handoff-panel"
+    >
+      <FeedbackState kind="error" title="检测到已结束但尚未入队的跑步记录">
+        <p>
+          上次结束记录后应用在写入上传队列前中断。已安全保留 {pendingHandoffSession.pointCount} 个轨迹点（预览 {formatPreviewDistanceKm(
+            pendingHandoffSession.previewDistanceM,
+          )}），完成入队前不可开始新记录。
+        </p>
+        <div class="recording-actions mt-3">
+          <button
+            type="button"
+            class="button-primary"
+            disabled={handoffBusy || actionBusy}
+            onclick={() => pendingHandoffSession && void recoverPendingStoppedHandoff(pendingHandoffSession)}
+            data-testid="handoff-retry-btn"
+          >
+            {handoffBusy ? '正在保存…' : '重试保存到上传队列'}
+          </button>
+          <button
+            type="button"
+            class="button-secondary danger-outline"
+            disabled={handoffBusy || actionBusy}
+            onclick={() => requestDiscardConfirmation({ kind: 'session' })}
+            data-testid="handoff-discard-btn"
+          >
+            安全丢弃
+          </button>
+        </div>
+      </FeedbackState>
+    </section>
+  {:else if status === 'interrupted'}
     <section
       class="aux-panel recording-recovery"
       aria-labelledby="recovery-title"
@@ -799,6 +949,31 @@
         </div>
       </FeedbackState>
     </div>
+  {:else if permissions.location === 'approximate'}
+    <div data-testid="recording-approximate-warning">
+      <FeedbackState kind="error" title="需要精确位置权限">
+        <p>
+          当前仅授予了“大致位置”，误差通常超过 50
+          米，无法生成可靠的跑步轨迹。请重新授权并选择“精确位置”，或在系统应用设置中开启。
+        </p>
+        <div class="recording-actions mt-3">
+          <button
+            type="button"
+            class="button-primary"
+            disabled={actionBusy || !mounted}
+            onclick={() => void handleRequestPermission()}
+            data-testid="recording-request-precise-btn"
+          >
+            重新请求精确位置
+          </button>
+          {#if capabilities.native}
+            <button type="button" class="button-secondary" onclick={() => void openRecorderAppSettings()}>
+              打开应用设置
+            </button>
+          {/if}
+        </div>
+      </FeedbackState>
+    </div>
   {:else if !permissions.locationServicesEnabled}
     <div data-testid="recording-location-disabled">
       <FeedbackState kind="error" title="系统定位服务已关闭">
@@ -822,23 +997,10 @@
     </div>
   {/if}
 
-  {#if permissions.location === 'approximate'}
-    <div data-testid="recording-approximate-warning">
-      <FeedbackState kind="empty" title="当前仅授予了大致位置权限">
-        <p>大致位置误差较大，可能导致轨迹偏移或被过滤。建议在系统设置中开启“精确位置”。</p>
-        {#if capabilities.native}
-          <button type="button" class="button-secondary mt-3" onclick={() => void openRecorderAppSettings()}>
-            前往开启精确位置
-          </button>
-        {/if}
-      </FeedbackState>
-    </div>
-  {/if}
-
   {#if capabilities.native && permissions.notification === 'denied'}
     <div data-testid="recording-notification-warning">
       <FeedbackState kind="empty" title="通知权限未开启">
-        <p>后台定位服务仍会运行，但状态栏将不显示跑步进度常驻通知。建议在系统设置中允许通知以便锁屏查看。</p>
+        <p>后台定位服务仍会运行，但状态栏将不显示跑步进度常驻通知。建议在系统设置中允许通知以便查看运行状态。</p>
         <button type="button" class="button-secondary mt-3" onclick={() => void openRecorderAppSettings()}>
           打开通知设置
         </button>
@@ -872,7 +1034,7 @@
         <dd class="metric-primary" data-testid="recording-distance">{formatPreviewDistanceKm(previewDistanceM)}</dd>
       </div>
       <div class="metric-cell">
-        <dt>用时</dt>
+        <dt>用时（运动段）</dt>
         <dd class="metric-primary" data-testid="recording-duration">{formatClockDuration(displayedDurationMs)}</dd>
       </div>
       <div class="metric-cell">
@@ -893,9 +1055,22 @@
       </div>
     {/if}
 
+    {#if status === 'paused'}
+      <p class="block-hint mt-3" role="status" data-testid="recording-pause-note">
+        已暂停采集；继续后将开启新轨迹段（PostGIS 里程不连接暂停间隔，但服务端 GPX
+        总用时按首尾轨迹点计算，长时间暂停会影响服务端平均配速）。
+      </p>
+    {/if}
+
     {#if offline}
       <p class="block-hint mt-3" role="status" data-testid="recording-offline-note">
         当前处于无网络/飞行模式：GPS 轨迹仍正常记录，结束后将保存在本机，恢复联网后自动上传一次。
+      </p>
+    {/if}
+
+    {#if fullShowcaseAutoPublishes}
+      <p class="block-hint mt-3" data-testid="recording-showcase-privacy-note">
+        提示：当前账号已开启完整展示模式，结束保存并上传后的运动记录与完整轨迹将按展示规则自动可见。
       </p>
     {/if}
 
@@ -923,7 +1098,7 @@
         <button
           type="button"
           class="button-primary recording-main-btn"
-          disabled={actionBusy || !mounted}
+          disabled={actionBusy || handoffBusy || !mounted || !!pendingHandoffSession || startBlockedByPermissions}
           onclick={() => void handleStart(false)}
           data-testid="recording-start-btn"
         >
@@ -1080,11 +1255,17 @@
 
     <details class="block-details mt-3">
       <summary>后台定位、隐私与指标说明</summary>
-      <p>实时显示的距离与配速仅供跑步过程参考；上传后统一由服务端 PostGIS 轨迹管线重新计算权威里程、用时与配速。</p>
-      <p>每次记录会生成唯一幂等键（Idempotency-Key），断网或失败退避重试时服务端自动去重，不会产生重复活动。</p>
+      <p>
+        实时显示的距离与运动段用时仅供跑步过程参考；上传后由服务端 PostGIS GPX
+        管线权威计算里程、总用时（按首尾轨迹点间隔计算，包含暂停时长）与平均配速（里程不跨越暂停断点）。
+      </p>
+      <p>
+        每次记录生成唯一幂等键（Idempotency-Key）并与当前账号绑定，断网或瞬时失败后按退避计时自动重试，服务端去重且校验账号一致，不会产生重复或错归活动。
+      </p>
       <p>
         Android
-        端仅在主动记录期间运行位置前台服务并显示常驻通知，不申请后台常驻定位权限；退出登录或切换账号会自动清理本机未上传轨迹与会话。
+        端仅在主动记录且授予精确位置权限时运行位置前台服务（锁屏通知隐藏具体里程/时长），不申请后台常驻定位权限；上传活动默认标记为
+        private，若当前站点/账号启用了完整展示模式则会自动进入公开展示；退出登录或切换账号会自动中止在途上传并清理本机未上传轨迹。
       </p>
     </details>
   </section>
@@ -1101,7 +1282,7 @@
     {#if pendingDiscardTarget?.kind === 'upload'}
       确定要从本地队列丢弃“{pendingDiscardTarget.title}”吗？丢弃后该条未上传轨迹将无法恢复。
     {:else}
-      确定要放弃当前未保存的跑步记录吗？已捕获的 {pointCount} 个轨迹点将被永久清除。
+      确定要放弃当前未保存的跑步记录吗？已捕获的 {pendingHandoffSession?.pointCount ?? pointCount} 个轨迹点将被永久清除。
     {/if}
   </p>
   <div class="dialog-actions mt-4">

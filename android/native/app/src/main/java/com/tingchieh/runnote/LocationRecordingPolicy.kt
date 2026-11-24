@@ -9,6 +9,9 @@ import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.Locale
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -116,7 +119,8 @@ object LocationRecordingPolicy {
             hasNotifications -> "granted"
             else -> "denied"
         }
-        val canRecord = (hasFineLocation || hasCoarseLocation) && locationServicesEnabled
+        // Running tracks require precise GPS fixes (<= 50m accuracy); approximate-only cannot record.
+        val canRecord = hasFineLocation && locationServicesEnabled
         return PermissionEvaluation(
             locationStatus = locationStatus,
             notificationStatus = notificationStatus,
@@ -124,6 +128,11 @@ object LocationRecordingPolicy {
             preciseLocation = hasFineLocation,
             canRecord = canRecord,
         )
+    }
+
+    @JvmStatic
+    fun hasPendingHandoff(session: SessionRecord?): Boolean {
+        return session != null && session.status == "stopped" && session.pointCount > 0
     }
 
     @JvmStatic
@@ -371,6 +380,20 @@ object LocationRecordingPolicy {
         private val metaFile: File = File(dir, "active_session.json")
         private val metaTmpFile: File = File(dir, "active_session.json.tmp")
         private val pointsFile: File = File(dir, "points.ndjson")
+        private val pointsTmpFile: File = File(dir, "points.ndjson.tmp")
+
+        private fun atomicReplace(source: File, target: File) {
+            try {
+                Files.move(
+                    source.toPath(),
+                    target.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE,
+                )
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+        }
 
         @Synchronized
         fun saveSession(session: SessionRecord) {
@@ -404,17 +427,10 @@ object LocationRecordingPolicy {
                     // Best-effort fsync on platforms that support it.
                 }
             }
-            if (!metaTmpFile.renameTo(metaFile)) {
-                metaTmpFile.copyTo(metaFile, overwrite = true)
-                metaTmpFile.delete()
-            }
+            atomicReplace(metaTmpFile, metaFile)
         }
 
-        @Synchronized
-        fun appendPoint(point: RecordedPoint) {
-            if (!dir.exists()) {
-                dir.mkdirs()
-            }
+        private fun formatPointLine(point: RecordedPoint): String {
             val fields = mutableListOf(
                 "\"lat\":${String.format(Locale.US, "%.7f", point.lat)}",
                 "\"lon\":${String.format(Locale.US, "%.7f", point.lon)}",
@@ -427,7 +443,15 @@ object LocationRecordingPolicy {
             if (point.accuracyM != null) {
                 fields.add("\"acc\":${String.format(Locale.US, "%.2f", point.accuracyM)}")
             }
-            val line = "{${fields.joinToString(",")}}"
+            return "{${fields.joinToString(",")}}"
+        }
+
+        @Synchronized
+        fun appendPoint(point: RecordedPoint) {
+            if (!dir.exists()) {
+                dir.mkdirs()
+            }
+            val line = formatPointLine(point)
             FileOutputStream(pointsFile, true).use { fos ->
                 BufferedWriter(OutputStreamWriter(fos, StandardCharsets.UTF_8)).use { writer ->
                     writer.write(line)
@@ -435,6 +459,33 @@ object LocationRecordingPolicy {
                     writer.flush()
                 }
             }
+        }
+
+        @Synchronized
+        fun loadSessionForAccount(accountId: String?): SessionRecord? {
+            val loaded = loadSession() ?: return null
+            if (!accountId.isNullOrBlank() && loaded.accountId != accountId) {
+                return null
+            }
+            return loaded
+        }
+
+        @Synchronized
+        fun loadPointsForAccount(accountId: String?, afterIndex: Int = 0): List<RecordedPoint> {
+            val loaded = loadSession() ?: return emptyList()
+            if (!accountId.isNullOrBlank() && loaded.accountId != accountId) {
+                return emptyList()
+            }
+            return loadPoints(afterIndex)
+        }
+
+        @Synchronized
+        fun acknowledgeHandoff(sessionId: String): Boolean {
+            if (sessionId.isBlank()) return false
+            val existing = loadSession() ?: return false
+            if (existing.sessionId != sessionId) return false
+            clearAll()
+            return true
         }
 
         @Synchronized
@@ -476,8 +527,8 @@ object LocationRecordingPolicy {
         @Synchronized
         fun loadPoints(afterIndex: Int = 0): List<RecordedPoint> {
             if (!pointsFile.exists()) return emptyList()
-            val results = mutableListOf<RecordedPoint>()
-            var idx = 0
+            val allValid = mutableListOf<RecordedPoint>()
+            var hadCorruptLine = false
             try {
                 BufferedReader(InputStreamReader(FileInputStream(pointsFile), StandardCharsets.UTF_8)).use { reader ->
                     var line = reader.readLine()
@@ -486,19 +537,44 @@ object LocationRecordingPolicy {
                         if (trimmed.isNotEmpty()) {
                             val parsed = parsePointLine(trimmed)
                             if (parsed != null) {
-                                if (idx >= afterIndex) {
-                                    results.add(parsed)
-                                }
-                                idx += 1
+                                allValid.add(parsed)
+                            } else {
+                                hadCorruptLine = true
                             }
                         }
                         line = reader.readLine()
                     }
                 }
             } catch (_: Exception) {
-                // Return all valid points decoded prior to any I/O failure.
+                hadCorruptLine = true
             }
-            return results
+            if (hadCorruptLine) {
+                repairPointsFile(allValid)
+            }
+            return if (afterIndex <= 0) allValid else if (afterIndex >= allValid.size) emptyList() else allValid.subList(afterIndex, allValid.size).toList()
+        }
+
+        private fun repairPointsFile(validPoints: List<RecordedPoint>) {
+            try {
+                if (!dir.exists()) dir.mkdirs()
+                FileOutputStream(pointsTmpFile).use { fos ->
+                    BufferedWriter(OutputStreamWriter(fos, StandardCharsets.UTF_8)).use { writer ->
+                        for (pt in validPoints) {
+                            writer.write(formatPointLine(pt))
+                            writer.newLine()
+                        }
+                        writer.flush()
+                    }
+                    try {
+                        fos.fd.sync()
+                    } catch (_: Exception) {
+                        // Best-effort fsync.
+                    }
+                }
+                atomicReplace(pointsTmpFile, pointsFile)
+            } catch (_: Exception) {
+                if (pointsTmpFile.exists()) pointsTmpFile.delete()
+            }
         }
 
         @Synchronized
@@ -515,6 +591,7 @@ object LocationRecordingPolicy {
         fun clearAll() {
             if (metaTmpFile.exists()) metaTmpFile.delete()
             if (metaFile.exists()) metaFile.delete()
+            if (pointsTmpFile.exists()) pointsTmpFile.delete()
             if (pointsFile.exists()) pointsFile.delete()
         }
 

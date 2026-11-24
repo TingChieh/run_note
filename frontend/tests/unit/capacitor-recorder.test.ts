@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  acknowledgeNativeHandoff,
   checkRecorderPermissions,
+  getNativeRecorderPoints,
   getNativeRecorderState,
   getRecorderCapabilities,
   isNativeLocationRecorderAvailable,
+  parsePermissionsPayload,
   parsePointsPayload,
   parseStateEventPayload,
   stopNativeRecording,
@@ -17,12 +20,32 @@ describe('capacitor-recorder bridge', () => {
     expect(caps.native).toBe(false);
     expect(caps.platform).toBe('web');
     expect(caps.backgroundSupported).toBe(false);
-    expect(await getNativeRecorderState(undefined)).toBeNull();
+    expect(await getNativeRecorderState('user-1', undefined)).toBeNull();
+    expect(await acknowledgeNativeHandoff('sess-1', undefined)).toBe(false);
   });
 
-  it('delegates to platform-neutral LocationRecorder plugin and validates payloads', async () => {
+  it('delegates to platform-neutral LocationRecorder plugin, forwards accountId, and validates payloads', async () => {
     const callbacks: Array<(event: unknown) => void> = [];
     const remove = vi.fn();
+    const getSessionState = vi.fn(async () => ({
+      serviceRunning: false,
+      status: 'stopped',
+      gpsStatus: 'inactive',
+      permissions: {
+        location: 'granted',
+        notification: 'granted',
+        locationServicesEnabled: true,
+        preciseLocation: true,
+        canRecord: true,
+      },
+      session: null,
+    }));
+    const getSessionPoints = vi.fn(async () => ({
+      points: [{ lat: 31.23, lon: 121.47, recordedAtMs: 1_700_000_000_000, segmentIndex: 0 }],
+      totalReturned: 1,
+    }));
+    const acknowledgeHandoff = vi.fn(async () => ({ acknowledged: true }));
+
     const fakeWindow = {
       Capacitor: {
         isNativePlatform: () => true,
@@ -43,6 +66,9 @@ describe('capacitor-recorder bridge', () => {
               preciseLocation: true,
               canRecord: true,
             }),
+            getSessionState,
+            getSessionPoints,
+            acknowledgeHandoff,
             stopSession: async () => ({
               serviceRunning: false,
               status: 'stopped',
@@ -93,6 +119,16 @@ describe('capacitor-recorder bridge', () => {
     expect(perms.location).toBe('granted');
     expect(perms.canRecord).toBe(true);
 
+    await getNativeRecorderState('user-1', fakeWindow);
+    expect(getSessionState).toHaveBeenCalledWith({ accountId: 'user-1' });
+
+    const pts = await getNativeRecorderPoints(0, 'user-1', fakeWindow);
+    expect(getSessionPoints).toHaveBeenCalledWith({ afterIndex: 0, accountId: 'user-1' });
+    expect(pts).toHaveLength(1);
+
+    expect(await acknowledgeNativeHandoff('sess-1', fakeWindow)).toBe(true);
+    expect(acknowledgeHandoff).toHaveBeenCalledWith({ sessionId: 'sess-1' });
+
     const stopped = await stopNativeRecording(fakeWindow);
     expect(stopped?.points).toHaveLength(1);
     expect(stopped?.session?.previewDistanceM).toBe(320.5);
@@ -108,7 +144,18 @@ describe('capacitor-recorder bridge', () => {
     expect(remove).toHaveBeenCalledTimes(1);
   });
 
-  it('sanitizes malformed point and state payloads defensively', () => {
+  it('requires exact location (never allows approximate location to report canRecord=true) and sanitizes malformed payloads', () => {
+    const approx = parsePermissionsPayload({
+      location: 'approximate',
+      notification: 'granted',
+      locationServicesEnabled: true,
+      preciseLocation: false,
+      canRecord: true, // even if stale native payload tries to claim true, parser enforces exact location
+    });
+    expect(approx.location).toBe('approximate');
+    expect(approx.preciseLocation).toBe(false);
+    expect(approx.canRecord).toBe(false);
+
     expect(parsePointsPayload([{ lat: 'bad', lon: 120, recordedAtMs: 10 }, null])).toEqual([]);
     const state = parseStateEventPayload({ status: 'bogus', gpsStatus: 'bogus' });
     expect(state.status).toBe('idle');

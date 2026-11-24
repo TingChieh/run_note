@@ -100,9 +100,9 @@ class RecordingForegroundService : Service(), LocationListener {
                 return
             }
             val nowMs = System.currentTimeMillis()
-            val hasPerm = hasLocationPermission()
+            val hasFine = hasFineLocationPermission()
             val locEnabled = isLocationServicesEnabled(this@RecordingForegroundService)
-            if (!hasPerm && session.status == "recording") {
+            if (!hasFine && session.status == "recording") {
                 handlePermissionRevokedMidRun(nowMs)
                 return
             }
@@ -110,7 +110,7 @@ class RecordingForegroundService : Service(), LocationListener {
             currentGpsStatus = LocationRecordingPolicy.classifyGpsSignal(
                 status = session.status,
                 locationServicesEnabled = locEnabled,
-                hasLocationPermission = hasPerm,
+                hasLocationPermission = hasFine,
                 lastAccuracyM = session.lastAccuracyM,
                 lastFixAgeMs = ageMs,
             )
@@ -143,8 +143,8 @@ class RecordingForegroundService : Service(), LocationListener {
 
     private fun handleStart(intent: Intent) {
         val nowMs = System.currentTimeMillis()
-        if (!hasLocationPermission()) {
-            Logger.warn("RunNoteRecorder", "Cannot start recording service without location permission")
+        if (!hasFineLocationPermission()) {
+            Logger.warn("RunNoteRecorder", "Cannot start recording service without precise location permission")
             currentGpsStatus = "permission_denied"
             emitState(activeSession, currentGpsStatus)
             stopSelf()
@@ -153,6 +153,17 @@ class RecordingForegroundService : Service(), LocationListener {
 
         val resumeInterrupted = intent.getBooleanExtra(EXTRA_RESUME_INTERRUPTED, false)
         val existing = store.loadSession()
+        val requestedAccountId = intent.getStringExtra(EXTRA_ACCOUNT_ID).orEmpty()
+        if (!resumeInterrupted &&
+            existing != null &&
+            existing.accountId == requestedAccountId &&
+            LocationRecordingPolicy.hasPendingHandoff(existing)
+        ) {
+            Logger.warn("RunNoteRecorder", "Refused to overwrite unacknowledged stopped recording session")
+            emitState(existing, "inactive")
+            stopSelf()
+            return
+        }
         val session = if (resumeInterrupted && existing != null) {
             val existingPoints = store.loadPoints(0)
             lastAcceptedPoint = existingPoints.lastOrNull()
@@ -241,7 +252,7 @@ class RecordingForegroundService : Service(), LocationListener {
         val current = activeSession ?: store.loadSession() ?: return
         if (current.status != "paused" && current.status != "interrupted") return
         val nowMs = System.currentTimeMillis()
-        if (!hasLocationPermission()) {
+        if (!hasFineLocationPermission()) {
             handlePermissionRevokedMidRun(nowMs)
             return
         }
@@ -388,7 +399,10 @@ class RecordingForegroundService : Service(), LocationListener {
 
     override fun onProviderEnabled(provider: String) {
         val session = activeSession ?: return
-        if (session.status == "recording") {
+        if (session.status == "recording" && hasFineLocationPermission()) {
+            // Re-register location listeners when device location is re-enabled mid-run.
+            unsubscribeLocationUpdates()
+            subscribeLocationUpdates()
             currentGpsStatus = "acquiring"
             updateNotification(session, currentGpsStatus, System.currentTimeMillis())
             emitState(session, currentGpsStatus)
@@ -423,21 +437,15 @@ class RecordingForegroundService : Service(), LocationListener {
     private fun subscribeLocationUpdates() {
         if (locationSubscribed) return
         val lm = locationManager ?: return
-        if (!hasLocationPermission()) return
+        if (!hasFineLocationPermission()) return
         try {
             val providers = mutableListOf<String>()
             if (lm.allProviders.contains(LocationManager.GPS_PROVIDER)) {
                 providers.add(LocationManager.GPS_PROVIDER)
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
                 lm.allProviders.contains(LocationManager.FUSED_PROVIDER)
             ) {
-                if (providers.isEmpty()) {
-                    providers.add(LocationManager.FUSED_PROVIDER)
-                }
-            }
-            if (providers.isEmpty() && lm.allProviders.contains(LocationManager.NETWORK_PROVIDER)) {
-                providers.add(LocationManager.NETWORK_PROVIDER)
+                providers.add(LocationManager.FUSED_PROVIDER)
             }
             for (provider in providers) {
                 lm.requestLocationUpdates(provider, GPS_UPDATE_INTERVAL_MS, 0f, this, Looper.getMainLooper())
@@ -465,10 +473,11 @@ class RecordingForegroundService : Service(), LocationListener {
         mainHandler.postDelayed(heartbeatRunnable, HEARTBEAT_INTERVAL_MS)
     }
 
-    private fun hasLocationPermission(): Boolean {
-        val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        return fine || coarse
+    private fun hasFineLocationPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun promoteToForeground(
@@ -534,6 +543,16 @@ class RecordingForegroundService : Service(), LocationListener {
             else -> getString(R.string.recording_notification_progress, kmLabel, elapsedLabel)
         }
 
+        // Redacted lockscreen version hides distance/elapsed stats until device is unlocked.
+        val publicNotification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(getString(titleRes))
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_WORKOUT)
+            .setContentIntent(pendingIntent)
+            .build()
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(getString(titleRes))
@@ -541,7 +560,8 @@ class RecordingForegroundService : Service(), LocationListener {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_WORKOUT)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(publicNotification)
             .setContentIntent(pendingIntent)
             .build()
     }

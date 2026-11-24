@@ -127,9 +127,8 @@ export function parsePermissionsPayload(raw: unknown): RecorderPermissions {
   const location = parsePermissionStatus(raw.location);
   const notification = parseNotificationStatus(raw.notification);
   const locationServicesEnabled = raw.locationServicesEnabled === true;
-  const preciseLocation = raw.preciseLocation === true || location === 'granted';
-  const canRecord =
-    raw.canRecord === true && (location === 'granted' || location === 'approximate') && locationServicesEnabled;
+  const preciseLocation = raw.preciseLocation === true && location === 'granted';
+  const canRecord = raw.canRecord === true && location === 'granted' && locationServicesEnabled;
   return { location, notification, locationServicesEnabled, preciseLocation, canRecord };
 }
 
@@ -330,18 +329,35 @@ export async function openRecorderLocationSettings(win?: WinWithCap): Promise<bo
   }
 }
 
-export async function getNativeRecorderState(win?: WinWithCap): Promise<RecorderStateEvent | null> {
+export async function getNativeRecorderState(accountId?: string, win?: WinWithCap): Promise<RecorderStateEvent | null> {
   const plugin = getNativePlugin(win);
   if (!plugin?.getSessionState) return null;
-  const raw = await plugin.getSessionState();
+  const raw = await plugin.getSessionState(accountId ? { accountId } : undefined);
   return parseStateEventPayload(raw);
 }
 
-export async function getNativeRecorderPoints(afterIndex = 0, win?: WinWithCap): Promise<RecordedTrackPoint[]> {
+export async function getNativeRecorderPoints(
+  afterIndex = 0,
+  accountId?: string,
+  win?: WinWithCap,
+): Promise<RecordedTrackPoint[]> {
   const plugin = getNativePlugin(win);
   if (!plugin?.getSessionPoints) return [];
-  const raw = await plugin.getSessionPoints({ afterIndex });
+  const raw = await plugin.getSessionPoints({ afterIndex, ...(accountId ? { accountId } : {}) });
   return isRecord(raw) ? parsePointsPayload(raw.points) : [];
+}
+
+export async function acknowledgeNativeHandoff(sessionId: string, win?: WinWithCap): Promise<boolean> {
+  const plugin = getNativePlugin(win);
+  if (plugin?.acknowledgeHandoff) {
+    const raw = await plugin.acknowledgeHandoff({ sessionId });
+    return isRecord(raw) && raw.acknowledged === true;
+  }
+  if (plugin?.discardSession) {
+    await plugin.discardSession();
+    return true;
+  }
+  return false;
 }
 
 export async function startNativeRecording(

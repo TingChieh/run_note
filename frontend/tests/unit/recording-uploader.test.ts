@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryRecordingBackend, listUploadQueueItems } from '../../src/lib/recording-store.ts';
 import {
   UPLOAD_BACKOFF_MS,
+  abortAllRecordingUploads,
   computeBackoffDelayMs,
   enqueueFinalizedRecording,
   flushRecordingUploadQueue,
@@ -11,6 +12,10 @@ const SAMPLE_POINTS = [
   { lat: 31.23, lon: 121.47, elevationM: 10, accuracyM: 6, recordedAtMs: 1_700_000_000_000, segmentIndex: 0 },
   { lat: 31.231, lon: 121.47, elevationM: 11, accuracyM: 6, recordedAtMs: 1_700_000_030_000, segmentIndex: 0 },
 ];
+
+const USER_A = '11111111-1111-4111-8111-111111111111';
+const USER_B = '22222222-2222-4222-8222-222222222222';
+const USER_C = '33333333-3333-4333-8333-333333333331';
 
 const SERVER_ACTIVITY = {
   id: '33333333-3333-4333-8333-333333333333',
@@ -42,13 +47,42 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function sessionResponse(userId: string): Response {
+  return jsonResponse({
+    data: {
+      user: {
+        id: userId,
+        email: `${userId.slice(0, 8)}@example.com`,
+        username: `runner_${userId.slice(0, 4)}`,
+        display_name: 'Runner',
+        timezone: 'Asia/Shanghai',
+        created_at: '2026-01-01T00:00:00Z',
+        bio: '',
+        is_admin: false,
+        showcase_enabled: false,
+        profile_is_public: false,
+        wellbeing_allowed: false,
+        wellbeing_enabled: false,
+        together_allowed: false,
+        together_enabled: false,
+      },
+    },
+    error: null,
+  });
+}
+
+afterEach(() => {
+  abortAllRecordingUploads();
+  vi.useRealTimers();
+});
+
 describe('recording-uploader idempotent queue', () => {
-  it('queues offline recording and uploads once with Idempotency-Key when network returns', async () => {
+  it('queues offline recording and uploads once with Idempotency-Key and expected_owner_id when network returns', async () => {
     const backend = createMemoryRecordingBackend();
     const idempotencyKey = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     await enqueueFinalizedRecording(
       {
-        accountId: 'user-1',
+        accountId: USER_A,
         sessionId: 'sess-1',
         idempotencyKey,
         title: '离线晨跑',
@@ -64,14 +98,19 @@ describe('recording-uploader idempotent queue', () => {
 
     let postCount = 0;
     let seenIdempotencyHeader: string | null = null;
+    let seenExpectedOwner: string | null = null;
     const mockFetch: typeof fetch = async (input, init) => {
       const path = String(input);
+      if (path === '/api/v1/auth/session') return sessionResponse(USER_A);
       if (path === '/api/v1/auth/csrf') {
         return jsonResponse({ data: { csrf_token: 'csrf-ok' }, error: null });
       }
       if (path === '/api/v1/gpx-imports') {
         postCount += 1;
         seenIdempotencyHeader = new Headers(init?.headers).get('Idempotency-Key');
+        if (init?.body instanceof FormData) {
+          seenExpectedOwner = String(init.body.get('expected_owner_id') ?? '');
+        }
         return jsonResponse(
           {
             data: {
@@ -92,7 +131,7 @@ describe('recording-uploader idempotent queue', () => {
 
     // Offline flush sends zero requests
     const offlineOutcome = await flushRecordingUploadQueue({
-      accountId: 'user-1',
+      accountId: USER_A,
       fetcher: mockFetch,
       backend,
       isOnline: () => false,
@@ -100,9 +139,9 @@ describe('recording-uploader idempotent queue', () => {
     expect(offlineOutcome.status).toBe('offline');
     expect(postCount).toBe(0);
 
-    // Online flush uploads exactly once with Idempotency-Key
+    // Online flush uploads exactly once with Idempotency-Key and expected_owner_id
     const onlineOutcome = await flushRecordingUploadQueue({
-      accountId: 'user-1',
+      accountId: USER_A,
       fetcher: mockFetch,
       backend,
       isOnline: () => true,
@@ -111,10 +150,11 @@ describe('recording-uploader idempotent queue', () => {
     expect(onlineOutcome.uploadedCount).toBe(1);
     expect(postCount).toBe(1);
     expect(seenIdempotencyHeader).toBe(idempotencyKey);
+    expect(seenExpectedOwner).toBe(USER_A);
 
     // Second flush is a no-op (never duplicates)
     const secondOutcome = await flushRecordingUploadQueue({
-      accountId: 'user-1',
+      accountId: USER_A,
       fetcher: mockFetch,
       backend,
       isOnline: () => true,
@@ -122,7 +162,7 @@ describe('recording-uploader idempotent queue', () => {
     expect(secondOutcome.status).toBe('idle');
     expect(postCount).toBe(1);
 
-    const stored = await listUploadQueueItems('user-1', backend);
+    const stored = await listUploadQueueItems(USER_A, backend);
     expect(stored[0].status).toBe('uploaded');
     expect(stored[0].uploadedActivityId).toBe(SERVER_ACTIVITY.id);
     expect(stored[0].gpxXml).toBe(''); // Raw bytes freed after authoritative server save
@@ -137,7 +177,7 @@ describe('recording-uploader idempotent queue', () => {
     const backend = createMemoryRecordingBackend();
     await enqueueFinalizedRecording(
       {
-        accountId: 'user-2',
+        accountId: USER_B,
         sessionId: 'sess-2',
         idempotencyKey: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
         title: '退避重试跑',
@@ -154,6 +194,7 @@ describe('recording-uploader idempotent queue', () => {
     let attempt = 0;
     const flakyFetch: typeof fetch = async (input) => {
       const path = String(input);
+      if (path === '/api/v1/auth/session') return sessionResponse(USER_B);
       if (path === '/api/v1/auth/csrf') return jsonResponse({ data: { csrf_token: 'csrf-ok' }, error: null });
       attempt += 1;
       if (attempt === 1) {
@@ -173,11 +214,12 @@ describe('recording-uploader idempotent queue', () => {
     };
 
     const fail1 = await flushRecordingUploadQueue({
-      accountId: 'user-2',
+      accountId: USER_B,
       fetcher: flakyFetch,
       backend,
       now: () => nowMs,
       isOnline: () => true,
+      scheduleRetry: false,
     });
     expect(fail1.status).toBe('failed');
     expect(attempt).toBe(1);
@@ -185,11 +227,12 @@ describe('recording-uploader idempotent queue', () => {
     // Calling again before backoff expires skips without hammering server
     nowMs += 2_000;
     const skipped = await flushRecordingUploadQueue({
-      accountId: 'user-2',
+      accountId: USER_B,
       fetcher: flakyFetch,
       backend,
       now: () => nowMs,
       isOnline: () => true,
+      scheduleRetry: false,
     });
     expect(attempt).toBe(1);
     expect(skipped.pendingCount).toBe(1);
@@ -197,21 +240,218 @@ describe('recording-uploader idempotent queue', () => {
     // After backoff expires, 409 GPX_DUPLICATE resolves idempotently to existing activity
     nowMs += 10_000;
     const recovered = await flushRecordingUploadQueue({
-      accountId: 'user-2',
+      accountId: USER_B,
       fetcher: flakyFetch,
       backend,
       now: () => nowMs,
       isOnline: () => true,
+      scheduleRetry: false,
     });
     expect(recovered.status).toBe('uploaded');
     expect(recovered.uploadedActivityIds).toEqual([SERVER_ACTIVITY.id]);
+  });
+
+  it('automatically fires due-time backoff timer after 503 and reschedules after early reconnect', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_700_000_100_000);
+
+    const backend = createMemoryRecordingBackend();
+    await enqueueFinalizedRecording(
+      {
+        accountId: USER_A,
+        sessionId: 'sess-timer',
+        idempotencyKey: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        title: '定时退避自动重试跑',
+        timezone: 'Asia/Shanghai',
+        startedAtMs: 1_700_000_000_000,
+        endedAtMs: 1_700_000_030_000,
+        activeDurationMs: 30_000,
+        points: SAMPLE_POINTS,
+      },
+      backend,
+    );
+
+    let postCount = 0;
+    const mockFetch: typeof fetch = async (input) => {
+      const path = String(input);
+      if (path === '/api/v1/auth/session') return sessionResponse(USER_A);
+      if (path === '/api/v1/auth/csrf') return jsonResponse({ data: { csrf_token: 'csrf-ok' }, error: null });
+      postCount += 1;
+      if (postCount === 1) {
+        return jsonResponse({ data: null, error: { code: 'DEPENDENCY_UNAVAILABLE', message: '服务暂不可用' } }, 503);
+      }
+      return jsonResponse(
+        {
+          data: {
+            activity: SERVER_ACTIVITY,
+            import_id: '55555555-5555-4555-8555-555555555555',
+            warnings: [],
+            point_count: 2,
+            segment_count: 1,
+            metrics_version: 'gpx-v1',
+          },
+          error: null,
+        },
+        201,
+      );
+    };
+
+    const first = await flushRecordingUploadQueue({
+      accountId: USER_A,
+      fetcher: mockFetch,
+      backend,
+      isOnline: () => true,
+    });
+    expect(first.status).toBe('failed');
+    expect(first.nextRetryAt).toBe(1_700_000_105_000);
+    expect(postCount).toBe(1);
+
+    // Simulate an early reconnect 2s later (before the 5s deadline): must skip AND re-arm timer for remaining 3s
+    await vi.advanceTimersByTimeAsync(2_000);
+    const earlyReconnect = await flushRecordingUploadQueue({
+      accountId: USER_A,
+      fetcher: mockFetch,
+      backend,
+      isOnline: () => true,
+    });
+    expect(earlyReconnect.status).toBe('partial');
+    expect(earlyReconnect.nextRetryAt).toBe(1_700_000_105_000);
+    expect(postCount).toBe(1);
+
+    // Advancing the remaining 3s triggers the scheduled retry automatically
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(postCount).toBe(2);
+    const items = await listUploadQueueItems(USER_A, backend);
+    expect(items[0].status).toBe('uploaded');
+    expect(items[0].uploadedActivityId).toBe(SERVER_ACTIVITY.id);
+  });
+
+  it('refuses to upload account A queue when active browser session belongs to account B (pre-flight & 409 ACCOUNT_MISMATCH)', async () => {
+    const backend = createMemoryRecordingBackend();
+    await enqueueFinalizedRecording(
+      {
+        accountId: USER_A,
+        sessionId: 'sess-a',
+        idempotencyKey: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        title: '账号 A 轨迹',
+        timezone: 'Asia/Shanghai',
+        startedAtMs: 1_700_000_000_000,
+        endedAtMs: 1_700_000_030_000,
+        activeDurationMs: 30_000,
+        points: SAMPLE_POINTS,
+      },
+      backend,
+    );
+
+    let gpxPosts = 0;
+    const crossTabFetch: typeof fetch = async (input) => {
+      const path = String(input);
+      if (path === '/api/v1/auth/session') return sessionResponse(USER_B);
+      if (path === '/api/v1/gpx-imports') gpxPosts += 1;
+      throw new Error(`Should never reach ${path}`);
+    };
+
+    const mismatch = await flushRecordingUploadQueue({
+      accountId: USER_A,
+      fetcher: crossTabFetch,
+      backend,
+      isOnline: () => true,
+    });
+    expect(mismatch.status).toBe('account_mismatch');
+    expect(gpxPosts).toBe(0);
+    expect(await listUploadQueueItems(USER_A, backend)).toEqual([]);
+
+    // Also verify server-side 409 ACCOUNT_MISMATCH (race between pre-flight check and POST) wipes queue cleanly
+    await enqueueFinalizedRecording(
+      {
+        accountId: USER_A,
+        sessionId: 'sess-race',
+        idempotencyKey: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        title: '竞态切号轨迹',
+        timezone: 'Asia/Shanghai',
+        startedAtMs: 1_700_000_000_000,
+        endedAtMs: 1_700_000_030_000,
+        activeDurationMs: 30_000,
+        points: SAMPLE_POINTS,
+      },
+      backend,
+    );
+
+    const serverRejectFetch: typeof fetch = async (input) => {
+      const path = String(input);
+      if (path === '/api/v1/auth/session') return sessionResponse(USER_A);
+      if (path === '/api/v1/auth/csrf') return jsonResponse({ data: { csrf_token: 'csrf-ok' }, error: null });
+      return jsonResponse(
+        { data: null, error: { code: 'ACCOUNT_MISMATCH', message: '当前登录账号与待上传记录所属账号不一致' } },
+        409,
+      );
+    };
+
+    const raceOutcome = await flushRecordingUploadQueue({
+      accountId: USER_A,
+      fetcher: serverRejectFetch,
+      backend,
+      isOnline: () => true,
+    });
+    expect(raceOutcome.status).toBe('account_mismatch');
+    expect(await listUploadQueueItems(USER_A, backend)).toEqual([]);
+  });
+
+  it('aborts in-flight upload immediately on logout/account switch without mutating cleared store', async () => {
+    const backend = createMemoryRecordingBackend();
+    await enqueueFinalizedRecording(
+      {
+        accountId: USER_A,
+        sessionId: 'sess-abort',
+        idempotencyKey: '12121212-1212-4121-8121-121212121212',
+        title: '登出中断测试',
+        timezone: 'Asia/Shanghai',
+        startedAtMs: 1_700_000_000_000,
+        endedAtMs: 1_700_000_030_000,
+        activeDurationMs: 30_000,
+        points: SAMPLE_POINTS,
+      },
+      backend,
+    );
+
+    let postStarted!: () => void;
+    const postStartedPromise = new Promise<void>((resolve) => {
+      postStarted = resolve;
+    });
+    let signalAborted = false;
+
+    const slowFetch: typeof fetch = async (input, init) => {
+      const path = String(input);
+      if (path === '/api/v1/auth/session') return sessionResponse(USER_A);
+      if (path === '/api/v1/auth/csrf') return jsonResponse({ data: { csrf_token: 'csrf-ok' }, error: null });
+      postStarted();
+      return await new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          signalAborted = true;
+          reject(new DOMException('Aborted', 'AbortError'));
+        });
+      });
+    };
+
+    const flushPromise = flushRecordingUploadQueue({
+      accountId: USER_A,
+      fetcher: slowFetch,
+      backend,
+      isOnline: () => true,
+    });
+
+    await postStartedPromise;
+    abortAllRecordingUploads();
+    const outcome = await flushPromise;
+    expect(signalAborted).toBe(true);
+    expect(outcome.status).toBe('aborted');
   });
 
   it('pauses on 401 without silently dropping queued track', async () => {
     const backend = createMemoryRecordingBackend();
     await enqueueFinalizedRecording(
       {
-        accountId: 'user-3',
+        accountId: USER_C,
         sessionId: 'sess-3',
         idempotencyKey: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
         title: '会话过期测试',
@@ -227,13 +467,13 @@ describe('recording-uploader idempotent queue', () => {
     const expiredFetch: typeof fetch = async () =>
       jsonResponse({ data: null, error: { code: 'AUTH_REQUIRED', message: '请重新登录' } }, 401);
     const out = await flushRecordingUploadQueue({
-      accountId: 'user-3',
+      accountId: USER_C,
       fetcher: expiredFetch,
       backend,
       isOnline: () => true,
     });
     expect(out.status).toBe('auth_expired');
-    const stored = await listUploadQueueItems('user-3', backend);
+    const stored = await listUploadQueueItems(USER_C, backend);
     expect(stored).toHaveLength(1);
     expect(stored[0].gpxXml).toContain('<gpx');
   });

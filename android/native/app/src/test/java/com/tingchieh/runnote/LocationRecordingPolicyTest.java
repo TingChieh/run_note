@@ -55,12 +55,12 @@ public class LocationRecordingPolicyTest {
         assertEquals("denied", api33NoNotif.notificationStatus);
         assertTrue(api33NoNotif.canRecord);
 
-        // Android 12+ approximate-only grant
+        // Android 12+ approximate-only grant cannot record accurate running tracks
         LocationRecordingPolicy.PermissionEvaluation approx =
             LocationRecordingPolicy.evaluatePermissions(false, true, 34, true, true);
         assertEquals("approximate", approx.locationStatus);
         assertFalse(approx.preciseLocation);
-        assertTrue(approx.canRecord);
+        assertFalse(approx.canRecord);
 
         // Denied or location services disabled cannot record
         LocationRecordingPolicy.PermissionEvaluation denied =
@@ -171,6 +171,16 @@ public class LocationRecordingPolicyTest {
         assertEquals(2, loaded.pointCount);
         assertEquals(2, store.loadPoints(0).size());
 
+        // Truncated tail was repaired on load, so appending a new point decodes cleanly on a fresh line
+        store.appendPoint(new LocationRecordingPolicy.RecordedPoint(31.2304, 121.4700, 11.0, 6.0, 1_700_000_040_000L, 0));
+        assertEquals(3, store.loadPoints(0).size());
+
+        // Account-scoped reads isolate other accounts without leaking metadata or points
+        assertNotNull(store.loadSessionForAccount("user-a"));
+        assertEquals(3, store.loadPointsForAccount("user-a", 0).size());
+        assertNull(store.loadSessionForAccount("user-b"));
+        assertTrue(store.loadPointsForAccount("user-b", 0).isEmpty());
+
         // After process death (serviceRunning = false), recording reconciles to interrupted with frozen duration
         LocationRecordingPolicy.SessionRecord reconciled =
             LocationRecordingPolicy.reconcileAfterRestart(loaded, false);
@@ -180,7 +190,40 @@ public class LocationRecordingPolicyTest {
         assertEquals(20_000L, reconciled.activeDurationMs);
         assertNull(reconciled.lastSegmentStartMs);
 
-        // Same account keeps session; different account wipes it cleanly
+        // Stopped session with points survives restart as pending handoff until explicitly acknowledged
+        LocationRecordingPolicy.SessionRecord stopped = new LocationRecordingPolicy.SessionRecord(
+            "sess-stopped",
+            "user-a",
+            "22222222-2222-4222-8222-222222222222",
+            "待入队晨跑",
+            "stopped",
+            1_700_000_000_000L,
+            1_700_000_040_000L,
+            40_000L,
+            null,
+            0,
+            3,
+            45.0,
+            1_700_000_040_000L,
+            6.0,
+            null
+        );
+        store.saveSession(stopped);
+        LocationRecordingPolicy.SessionRecord reloadedStopped =
+            LocationRecordingPolicy.reconcileAfterRestart(store.loadSession(), false);
+        assertNotNull(reloadedStopped);
+        assertEquals("stopped", reloadedStopped.status);
+        assertTrue(LocationRecordingPolicy.hasPendingHandoff(reloadedStopped));
+
+        // Wrong sessionId does NOT clear pending handoff; matching sessionId acknowledges and clears
+        assertFalse(store.acknowledgeHandoff("wrong-session"));
+        assertNotNull(store.loadSession());
+        assertTrue(store.acknowledgeHandoff("sess-stopped"));
+        assertNull(store.loadSession());
+        assertTrue(store.loadPoints(0).isEmpty());
+
+        // Re-save and verify account switch cleanup
+        store.saveSession(session);
         assertFalse(store.clearIfAccountMismatch("user-a"));
         assertNotNull(store.loadSession());
         assertTrue(store.clearIfAccountMismatch("user-b"));

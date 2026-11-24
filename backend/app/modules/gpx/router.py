@@ -41,7 +41,7 @@ async def import_file(
     response: Response | None = None,
 ):
     label = format.upper()
-    allowed = {"file", "title", "timezone", "activity_date", "time_mode"}
+    allowed = {"file", "title", "timezone", "activity_date", "time_mode", "expected_owner_id"}
     owner, default_timezone = identity[1].id, identity[1].timezone
     # Authentication's user lock must not cover reading/parsing a file.
     await run_in_threadpool(db.commit)
@@ -60,6 +60,18 @@ async def import_file(
             fields = {key: value for key, value in values if key != "file"}
             if any(not isinstance(v, str) for v in fields.values()):
                 raise ApiError(422, "VALIDATION_ERROR", "表单字段不合法")
+            expected_owner_raw = fields.get("expected_owner_id") or None
+            if expected_owner_raw is not None:
+                try:
+                    expected_owner = UUID(expected_owner_raw)
+                except ValueError:
+                    raise ApiError(422, "VALIDATION_ERROR", "目标账号标识不合法") from None
+                if expected_owner != owner:
+                    raise ApiError(
+                        409,
+                        "ACCOUNT_MISMATCH",
+                        "当前登录账号已变更，已取消上传以防轨迹归属错误",
+                    )
             time_mode = fields.get("time_mode") or "absolute"
             if time_mode not in {"absolute", "local"}:
                 raise ApiError(422, "VALIDATION_ERROR", "时间解释方式不合法")

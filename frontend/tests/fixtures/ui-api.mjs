@@ -533,6 +533,13 @@ createServer(async (req, res) => {
     const idempotencyKey = Array.isArray(rawKey) ? rawKey[0] : rawKey;
     const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (idempotencyKey && !uuidRe.test(idempotencyKey)) return send(null, 422, '请求参数不合法');
+    const ownerMatch = rawBody.match(/name="expected_owner_id"\r?\n\r?\n([^\r\n]+)/);
+    if (ownerMatch) {
+      const expectedOwner = ownerMatch[1].trim();
+      if (!uuidRe.test(expectedOwner)) return send(null, 422, '目标账号标识不合法');
+      if (expectedOwner !== current.id)
+        return send(null, 409, '当前登录账号已变更，已取消上传以防轨迹归属错误', 'ACCOUNT_MISMATCH');
+    }
     const storeKey = idempotencyKey ? `${current.id}:${idempotencyKey}` : null;
     const prior = storeKey ? uiGpxImports.get(storeKey) : undefined;
     if (prior) {

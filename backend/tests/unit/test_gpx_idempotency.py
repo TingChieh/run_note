@@ -6,14 +6,20 @@ from uuid import UUID, uuid4
 import pytest
 
 from app.core.errors import ApiError
-from app.modules.gpx.service import find_idempotent_replay, idempotency_filename
+from app.modules.gpx.service import (
+    IDEMPOTENT_PARSER_VERSION,
+    find_idempotent_replay,
+    idempotency_filename,
+)
 
 
-def test_idempotency_filename_is_deterministic_and_bounded():
+def test_idempotency_filename_and_parser_version_are_disjoint_from_regular_uploads():
     key = UUID("11111111-2222-4333-8444-555555555555")
     tag = idempotency_filename(key, "gpx")
     assert tag == "idempotency:11111111-2222-4333-8444-555555555555.gpx"
     assert len(tag) <= 255
+    assert IDEMPOTENT_PARSER_VERSION != "gpx-parser-v1"
+    assert len(IDEMPOTENT_PARSER_VERSION) <= 32
 
 
 def test_find_idempotent_replay_ignores_non_gpx_formats():

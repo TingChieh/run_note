@@ -26,12 +26,8 @@
   import { clearHealthGrantHistory } from '#lib/capacitor-health.ts';
   import { clearNativeAccountSessions } from '#lib/capacitor-recorder.ts';
   import { clearPrivateRecordingData, ensureRecordingAccountIsolation } from '#lib/recording-store.ts';
-  import { flushRecordingUploadQueue } from '#lib/recording-uploader.ts';
-  import {
-    buildCacheNamespace,
-    clearPrivateOfflineCache,
-    ensureAccountCacheIsolation,
-  } from '#lib/offline-cache.ts';
+  import { abortAllRecordingUploads, flushRecordingUploadQueue } from '#lib/recording-uploader.ts';
+  import { buildCacheNamespace, clearPrivateOfflineCache, ensureAccountCacheIsolation } from '#lib/offline-cache.ts';
   import { syncCompanionActivities } from '#lib/companion-sync.ts';
 
   let { children }: { children: Snippet } = $props();
@@ -86,6 +82,9 @@
     if (mounted) {
       void ensureAccountCacheIsolation(currentUserId);
       if (currentUserId) {
+        if (lastIsolatedRecordingUserId && lastIsolatedRecordingUserId !== currentUserId) {
+          abortAllRecordingUploads();
+        }
         lastIsolatedRecordingUserId = currentUserId;
         void ensureRecordingAccountIsolation(currentUserId);
         void clearNativeAccountSessions(currentUserId);
@@ -93,6 +92,7 @@
         // Only clear on an explicit signed-in -> signed-out transition; an anonymous cold start
         // must never silently wipe an interrupted session belonging to a signed-in runner.
         lastIsolatedRecordingUserId = null;
+        abortAllRecordingUploads();
         void clearPrivateRecordingData();
         void clearNativeAccountSessions(null);
       }
@@ -223,16 +223,23 @@
     if (busy) return;
     busy = true;
     message = '';
+    abortAllRecordingUploads();
     try {
       await authWrite('logout', {});
       await clearPrivateOfflineCache();
       await clearPrivateRecordingData();
       await clearNativeAccountSessions(null);
       clearHealthGrantHistory();
+      if (typeof BroadcastChannel !== 'undefined') {
+        const ch = new BroadcastChannel('runnote-auth');
+        ch.postMessage('account-changed');
+        ch.close();
+      }
       checking = true;
       window.location.assign(viewContext(page.url.pathname).kind === 'workspace' ? '/' : page.url.pathname);
     } catch (cause) {
       if (cause instanceof AuthError && cause.status === 401) {
+        abortAllRecordingUploads();
         await clearPrivateOfflineCache();
         await clearPrivateRecordingData();
         await clearNativeAccountSessions(null);
@@ -270,6 +277,7 @@
         const current = await readSession();
         if (disposed || busy || pending) return;
         if ((current?.id ?? null) !== (page.data.user?.id ?? null)) {
+          abortAllRecordingUploads();
           await clearPrivateOfflineCache();
           await clearPrivateRecordingData();
           await clearNativeAccountSessions(current?.id ?? null);
@@ -303,6 +311,7 @@
     };
     if (channel) {
       channel.onmessage = () => {
+        abortAllRecordingUploads();
         checking = true;
         void verifyIdentity();
       };

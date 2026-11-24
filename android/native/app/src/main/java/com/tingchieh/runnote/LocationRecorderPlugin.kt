@@ -145,6 +145,10 @@ class LocationRecorderPlugin : Plugin() {
             call.reject("尚未授予定位权限，无法开始记录", "LOCATION_PERMISSION_DENIED")
             return
         }
+        if (eval.locationStatus == "approximate") {
+            call.reject("跑步轨迹记录需要精确位置权限，请开启精确位置", "PRECISE_LOCATION_REQUIRED")
+            return
+        }
         if (!eval.locationServicesEnabled) {
             call.reject("系统定位服务已关闭，请先开启定位", "LOCATION_SERVICES_DISABLED")
             return
@@ -158,6 +162,16 @@ class LocationRecorderPlugin : Plugin() {
 
         if (!resumeInterrupted && (sessionId.isBlank() || accountId.isBlank() || idempotencyKey.isBlank())) {
             call.reject("缺少记录会话标识", "INVALID_SESSION_ARGS")
+            return
+        }
+
+        val existing = RecordingForegroundService.storeFor(context).loadSession()
+        if (!resumeInterrupted &&
+            existing != null &&
+            existing.accountId == accountId &&
+            LocationRecordingPolicy.hasPendingHandoff(existing)
+        ) {
+            call.reject("存在尚未保存到上传队列的已结束记录，请先完成保存或丢弃", "UNHANDLED_STOPPED_SESSION")
             return
         }
 
@@ -193,6 +207,10 @@ class LocationRecorderPlugin : Plugin() {
         val eval = inspectPermissions()
         if (eval.locationStatus == "denied") {
             call.reject("尚未授予定位权限，无法继续记录", "LOCATION_PERMISSION_DENIED")
+            return
+        }
+        if (eval.locationStatus == "approximate") {
+            call.reject("跑步轨迹记录需要精确位置权限，请开启精确位置", "PRECISE_LOCATION_REQUIRED")
             return
         }
         if (!eval.locationServicesEnabled) {
@@ -239,6 +257,13 @@ class LocationRecorderPlugin : Plugin() {
     }
 
     @PluginMethod
+    fun acknowledgeHandoff(call: PluginCall) {
+        val sessionId = call.getString("sessionId")?.trim().orEmpty()
+        val cleared = RecordingForegroundService.storeFor(context).acknowledgeHandoff(sessionId)
+        call.resolve(JSObject().put("acknowledged", cleared))
+    }
+
+    @PluginMethod
     fun discardSession(call: PluginCall) {
         if (RecordingForegroundService.isServiceRunning) {
             sendServiceAction(RecordingForegroundService.ACTION_DISCARD)
@@ -249,8 +274,9 @@ class LocationRecorderPlugin : Plugin() {
 
     @PluginMethod
     fun getSessionState(call: PluginCall) {
+        val accountId = call.getString("accountId")?.trim()
         val store = RecordingForegroundService.storeFor(context)
-        val loaded = store.loadSession()
+        val loaded = store.loadSessionForAccount(accountId)
         val reconciled = LocationRecordingPolicy.reconcileAfterRestart(
             loaded,
             RecordingForegroundService.isServiceRunning,
@@ -258,7 +284,7 @@ class LocationRecorderPlugin : Plugin() {
         if (reconciled != null && reconciled != loaded) {
             store.saveSession(reconciled)
         }
-        val gpsStatus = if (RecordingForegroundService.isServiceRunning) {
+        val gpsStatus = if (RecordingForegroundService.isServiceRunning && reconciled != null) {
             RecordingForegroundService.currentGpsStatus
         } else {
             "inactive"
@@ -268,8 +294,9 @@ class LocationRecorderPlugin : Plugin() {
 
     @PluginMethod
     fun getSessionPoints(call: PluginCall) {
+        val accountId = call.getString("accountId")?.trim()
         val afterIndex = (call.getInt("afterIndex", 0) ?: 0).coerceAtLeast(0)
-        val points = RecordingForegroundService.storeFor(context).loadPoints(afterIndex)
+        val points = RecordingForegroundService.storeFor(context).loadPointsForAccount(accountId, afterIndex)
         call.resolve(
             JSObject().apply {
                 put("points", pointsToJsArray(points))

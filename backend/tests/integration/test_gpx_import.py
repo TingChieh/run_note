@@ -527,3 +527,48 @@ def test_gpx_import_idempotency_replay_conflict_isolation_and_no_n_plus_one(clie
             c.scalar(text("SELECT count(*) FROM activities WHERE user_id=:id"), {"id": owner_b})
             == 1
         )
+
+
+def test_gpx_idempotency_is_isolated_from_raw_filename_and_enforces_expected_owner(clients):
+    a, b, engine, _ = clients
+    a.app.state.footprint_worker.stop()
+    owner_a = register(a)
+    owner_b = register(b)
+
+    raw_first = (FIXTURES / "equator-six.gpx").read_bytes()
+    raw_second = raw_first.replace(b"0.002", b"0.0023")
+    key = str(uuid4())
+
+    # 1. A regular upload literally named `idempotency:<key>.gpx` (without Idempotency-Key header)
+    # must NOT collide with a subsequent idempotent upload using that key.
+    regular = upload(a, file=f"idempotency:{key}.gpx", raw=raw_first)
+    assert regular.status_code == 201, regular.text
+
+    idempotent = upload(
+        a,
+        raw=raw_second,
+        fields={"expected_owner_id": owner_a},
+        extra_headers={"Idempotency-Key": key},
+    )
+    assert idempotent.status_code == 201, idempotent.text
+    assert idempotent.json()["data"]["activity"]["id"] != regular.json()["data"]["activity"]["id"]
+
+    # 2. Mismatched expected_owner_id rejects cross-account upload before parsing or writing.
+    mismatch = upload(
+        b,
+        raw=raw_first,
+        fields={"expected_owner_id": owner_a},
+        extra_headers={"Idempotency-Key": str(uuid4())},
+    )
+    assert mismatch.status_code == 409, mismatch.text
+    assert mismatch.json()["error"]["code"] == "ACCOUNT_MISMATCH"
+    with engine.connect() as c:
+        assert (
+            c.scalar(text("SELECT count(*) FROM activities WHERE user_id=:id"), {"id": owner_b})
+            == 0
+        )
+
+    # 3. Malformed expected_owner_id is rejected with 422.
+    bad_owner = upload(b, raw=raw_first, fields={"expected_owner_id": "not-a-uuid"})
+    assert bad_owner.status_code == 422
+    assert bad_owner.json()["error"]["code"] == "VALIDATION_ERROR"

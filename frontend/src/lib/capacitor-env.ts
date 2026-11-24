@@ -30,9 +30,10 @@ export interface CapacitorLocationRecorderPlugin {
   pauseSession?: () => Promise<unknown>;
   resumeSession?: () => Promise<unknown>;
   stopSession?: () => Promise<unknown>;
+  acknowledgeHandoff?: (options: { sessionId: string }) => Promise<unknown>;
   discardSession?: () => Promise<unknown>;
-  getSessionState?: () => Promise<unknown>;
-  getSessionPoints?: (options?: { afterIndex?: number }) => Promise<unknown>;
+  getSessionState?: (options?: { accountId?: string }) => Promise<unknown>;
+  getSessionPoints?: (options?: { accountId?: string; afterIndex?: number }) => Promise<unknown>;
   clearAccountSessions?: (options?: { keepAccountId?: string | null }) => Promise<unknown>;
   addListener?: (
     eventName: 'sessionUpdate',
