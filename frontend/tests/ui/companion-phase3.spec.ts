@@ -2793,3 +2793,362 @@ test('P2 Round 9: a Web draft discarded elsewhere is never recreated or enqueued
   expect((await readWebDraftRow(page)).exists).toBe(false);
   await expect(page.getByTestId('upload-queue-item')).toHaveCount(0);
 });
+
+async function readRecordingStoreSummary(targetPage: Page) {
+  return await targetPage.evaluate(async (aId) => {
+    return await new Promise<{
+      uploadKeys: string[];
+      activeMarker: { payload?: unknown; claimRevision?: number } | null;
+      draft: { status?: string; pointCount?: number } | null;
+    }>((resolve, reject) => {
+      const req = indexedDB.open('runnote-recording-store', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const allReq = db.transaction('records', 'readonly').objectStore('records').getAll();
+        allReq.onsuccess = () => {
+          const rows = allReq.result as Array<{
+            key: string;
+            claimRevision?: number;
+            payload?: { status?: string; points?: unknown[] } | string;
+          }>;
+          const marker = rows.find((row) => row.key === 'meta:recording_active_account') ?? null;
+          const draftRow = rows.find((row) => row.key === `user:${aId}:draft:active`);
+          const draftPayload = draftRow?.payload as { status?: string; points?: unknown[] } | undefined;
+          db.close();
+          resolve({
+            uploadKeys: rows.filter((row) => row.key.includes(':upload:')).map((row) => row.key),
+            activeMarker: marker ? { payload: marker.payload, claimRevision: marker.claimRevision } : null,
+            draft: draftPayload ? { status: draftPayload.status, pointCount: draftPayload.points?.length ?? 0 } : null,
+          });
+        };
+        allReq.onerror = () => reject(allReq.error);
+      };
+    });
+  }, WEB_DRAFT_ACCOUNT_ID);
+}
+
+async function isWebWatching(targetPage: Page) {
+  return await targetPage.evaluate(() =>
+    (window as unknown as Record<string, { isWatching: () => boolean }>).__geo.isWatching(),
+  );
+}
+
+test('P1 Round 10: a stale recovery tab never steals the Web Lock from the current recorder or stops its GPS', async ({
+  page,
+  context,
+}) => {
+  await loginRunner(page);
+  await installMockWebGeolocation(page);
+  await page.goto('/activities/record');
+
+  // Tab O records and commits 1 point under the account's current claim
+  await page.getByLabel('跑步标题（可选）').fill('旧代草稿');
+  await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await waitForWebWatch(page);
+  await emitWebFix(page, 31.23, 121.47);
+  await expect.poll(async () => (await readWebDraftRow(page)).pointCount).toBe(1);
+
+  // A re-login elsewhere advances the claim generation: O is now fenced by an older claim
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open('runnote-recording-store', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('records', 'readwrite');
+        const store = tx.objectStore('records');
+        const activeReq = store.get('meta:recording_active_account');
+        activeReq.onsuccess = () => {
+          const active = activeReq.result as { claimRevision: number; payload: string };
+          const next = active.claimRevision + 1;
+          const now = Date.now();
+          store.put({
+            key: 'meta:recording_claim_epoch',
+            accountId: null,
+            schemaVersion: 1,
+            savedAt: now,
+            claimRevision: next,
+            payload: next,
+          });
+          store.put({ ...active, savedAt: now, claimRevision: next });
+        };
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+  });
+
+  // Tab S opens recovery, reads the old (fenced) draft, and its first lock request is held back
+  const staleTab = await context.newPage();
+  await installMockWebGeolocation(staleTab);
+  await staleTab.addInitScript(() => {
+    const original = LockManager.prototype.request as (...args: unknown[]) => Promise<unknown>;
+    let gated = false;
+    let open: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const win = window as unknown as Record<string, unknown>;
+    win.__lockGatePaused = false;
+    win.__openLockGate = () => open();
+    LockManager.prototype.request = function (this: LockManager, ...args: unknown[]) {
+      if (!gated && String(args[0]).startsWith('runnote-recording-session:')) {
+        gated = true;
+        win.__lockGatePaused = true;
+        return gate.then(() => original.apply(this, args));
+      }
+      return original.apply(this, args);
+    } as typeof LockManager.prototype.request;
+  });
+  await staleTab.goto('/activities/record');
+  await expect
+    .poll(() => staleTab.evaluate(() => (window as unknown as Record<string, boolean>).__lockGatePaused))
+    .toBe(true);
+
+  // Tab C recovers under the new claim and keeps recording
+  const currentTab = await context.newPage();
+  await installMockWebGeolocation(currentTab);
+  await currentTab.goto('/activities/record');
+  await expect(currentTab.getByTestId('recording-recovery-panel')).toBeVisible();
+  await expect(currentTab.getByTestId('recording-points-count')).toContainText('1 点');
+  await currentTab.getByTestId('recovery-resume-btn').click();
+  await expect(currentTab.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await waitForWebWatch(currentTab);
+  for (const lat of [31.232, 31.234]) {
+    await emitWebFix(currentTab, lat, 121.47);
+  }
+  await expect.poll(async () => (await readWebDraftRow(currentTab)).pointCount ?? 0).toBeGreaterThan(1);
+  const ownedByCurrent = await readWebDraftRow(currentTab);
+
+  // The stale tab's held-back request now runs against C's live session: it must give up, not steal
+  await staleTab.evaluate(() => (window as unknown as Record<string, () => void>).__openLockGate());
+  await expect(staleTab.getByTestId('recording-recovery-error-panel')).toContainText('其他标签页');
+  await expect(staleTab.getByTestId('recording-recovery-panel')).toHaveCount(0);
+  await expect(staleTab.getByTestId('recording-start-btn')).toBeDisabled();
+
+  // C is untouched: still recording, GPS watcher alive, next points are persisted
+  await expect(currentTab.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await expect(currentTab.getByTestId('recording-error')).toHaveCount(0);
+  expect(await isWebWatching(currentTab)).toBe(true);
+  const heldLocks = await currentTab.evaluate(async () =>
+    ((await navigator.locks.query()).held ?? []).map((lock) => lock.name ?? ''),
+  );
+  expect(heldLocks.some((name) => name.startsWith('runnote-recording-session:'))).toBe(true);
+  const afterStaleAttempt = await readWebDraftRow(currentTab);
+  expect(afterStaleAttempt.ownerId).toBe(ownedByCurrent.ownerId);
+  expect(afterStaleAttempt.ownerGeneration).toBe(ownedByCurrent.ownerGeneration);
+  for (const lat of [31.236, 31.238]) {
+    await emitWebFix(currentTab, lat, 121.47);
+  }
+  await expect
+    .poll(async () => (await readWebDraftRow(currentTab)).pointCount ?? 0)
+    .toBeGreaterThan(ownedByCurrent.pointCount ?? 0);
+  await expect(currentTab.getByTestId('recording-points-count')).toContainText(
+    `${(await readWebDraftRow(currentTab)).pointCount} 点`,
+  );
+
+  // The fenced original tab finds out on its own (lease check) and stops without touching C's draft
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('待恢复', { timeout: 15_000 });
+  expect(await isWebWatching(page)).toBe(false);
+  expect((await readWebDraftRow(currentTab)).ownerId).toBe(ownedByCurrent.ownerId);
+  await expect(currentTab.getByTestId('recording-status-badge')).toHaveText('记录中');
+});
+
+test('P2 Round 10: cleanup between Web stop and enqueue leaves no private queue row (stop and stopped-draft recovery)', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await installMockWebGeolocation(page);
+  // Real IndexedDB interleaving: right after the transaction that marks the draft "stopped", a
+  // logout-style cleanup transaction (draft + active marker) is queued ahead of the next one.
+  await page.addInitScript((aId) => {
+    const originalPut = IDBObjectStore.prototype.put;
+    const originalTransaction = IDBDatabase.prototype.transaction;
+    let cleanupPending = false;
+    const win = window as unknown as Record<string, number>;
+    win.__cleanupRuns = 0;
+    IDBObjectStore.prototype.put = function (
+      value: { key?: string; payload?: { status?: string } },
+      key?: IDBValidKey,
+    ) {
+      if (
+        window.sessionStorage.getItem('__cleanup_after_stopped_put') === '1' &&
+        value?.key === `user:${aId}:draft:active` &&
+        value?.payload?.status === 'stopped'
+      ) {
+        window.sessionStorage.removeItem('__cleanup_after_stopped_put');
+        cleanupPending = true;
+      }
+      return key !== undefined ? originalPut.call(this, value, key) : originalPut.call(this, value);
+    };
+    IDBDatabase.prototype.transaction = function (this: IDBDatabase, ...args: Parameters<IDBDatabase['transaction']>) {
+      if (cleanupPending) {
+        cleanupPending = false;
+        const cleanup = originalTransaction.call(this, 'records', 'readwrite');
+        cleanup.objectStore('records').delete(`user:${aId}:draft:active`);
+        cleanup.objectStore('records').delete('meta:recording_active_account');
+        win.__cleanupRuns += 1;
+      }
+      return originalTransaction.apply(this, args);
+    } as typeof IDBDatabase.prototype.transaction;
+  }, WEB_DRAFT_ACCOUNT_ID);
+  await page.goto('/activities/record');
+
+  // Subcase A: normal "结束并保存"
+  await page.getByLabel('跑步标题（可选）').fill('清理竞态草稿');
+  await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await waitForWebWatch(page);
+  await emitWebFix(page, 31.23, 121.47);
+  await expect.poll(async () => (await readWebDraftRow(page)).pointCount).toBe(1);
+  await page.evaluate(() => window.sessionStorage.setItem('__cleanup_after_stopped_put', '1'));
+  await page.getByTestId('recording-stop-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).not.toHaveText('记录中');
+  await expect(page.getByTestId('recording-stop-btn')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as Record<string, number>).__cleanupRuns)).toBe(1);
+  const afterStop = await readRecordingStoreSummary(page);
+  expect(afterStop.uploadKeys).toEqual([]);
+  expect(afterStop.draft).toBeNull();
+  expect(afterStop.activeMarker).toBeNull();
+  await expect(page.getByTestId('recording-error')).toContainText('未写入上传队列');
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(0);
+  expect(await isWebWatching(page)).toBe(false);
+
+  // Subcase B: a stopped draft found on load (recovery path) hits the same cleanup window
+  await page.evaluate(async (aId) => {
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open('runnote-recording-store', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('records', 'readwrite');
+        const store = tx.objectStore('records');
+        const epochReq = store.get('meta:recording_claim_epoch');
+        epochReq.onsuccess = () => {
+          const epoch = (epochReq.result as { payload?: number } | undefined)?.payload ?? 1;
+          const now = Date.now();
+          store.put({
+            key: 'meta:recording_active_account',
+            accountId: aId,
+            schemaVersion: 1,
+            savedAt: now,
+            claimRevision: epoch,
+            payload: aId,
+          });
+          store.put({
+            key: `user:${aId}:draft:active`,
+            accountId: aId,
+            schemaVersion: 1,
+            savedAt: now,
+            claimRevision: epoch,
+            draftRevision: 3,
+            ownerId: 'closed-tab',
+            ownerGeneration: 1,
+            leaseExpiresAtMs: now - 1,
+            payload: {
+              sessionId: 'sess-stopped-cleanup',
+              accountId: aId,
+              idempotencyKey: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+              title: '恢复期清理草稿',
+              status: 'stopped',
+              startedAtMs: now - 120_000,
+              endedAtMs: now - 10_000,
+              activeDurationMs: 110_000,
+              lastSegmentStartMs: null,
+              segmentIndex: 0,
+              previewDistanceM: 320,
+              lastPointTimeMs: now - 10_000,
+              lastAccuracyM: 6,
+              interruptedReason: null,
+              points: [
+                { lat: 31.23, lon: 121.47, elevationM: 10, accuracyM: 6, recordedAtMs: now - 120_000, segmentIndex: 0 },
+                { lat: 31.232, lon: 121.47, elevationM: 10, accuracyM: 6, recordedAtMs: now - 60_000, segmentIndex: 0 },
+              ],
+            },
+          });
+        };
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+    window.sessionStorage.setItem('__cleanup_after_stopped_put', '1');
+  }, WEB_DRAFT_ACCOUNT_ID);
+  await page.reload();
+  await expect(page.getByTestId('recording-status-badge')).not.toHaveText('正在恢复…');
+  expect(await page.evaluate(() => (window as unknown as Record<string, number>).__cleanupRuns)).toBe(1);
+  const afterRecovery = await readRecordingStoreSummary(page);
+  expect(afterRecovery.uploadKeys).toEqual([]);
+  expect(afterRecovery.draft).toBeNull();
+  await expect(page.getByTestId('recording-recovery-error-panel')).toContainText('未写入上传队列');
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(0);
+
+  // Retrying finds nothing left to recover and nothing is recreated
+  await page.getByTestId('recording-recovery-retry-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('就绪');
+  expect((await readRecordingStoreSummary(page)).uploadKeys).toEqual([]);
+});
+
+test('P2 Round 10: a Web enqueue transaction abort never leaves a "recording" badge with GPS stopped', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await installMockWebGeolocation(page);
+  await page.addInitScript(() => {
+    const originalPut = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (value: { key?: string }, key?: IDBValidKey) {
+      const request = key !== undefined ? originalPut.call(this, value, key) : originalPut.call(this, value);
+      if (
+        window.sessionStorage.getItem('__abort_upload_tx') === '1' &&
+        typeof value?.key === 'string' &&
+        value.key.includes(':upload:')
+      ) {
+        this.transaction.abort();
+      }
+      return request;
+    };
+  });
+  await page.goto('/activities/record');
+
+  await page.getByLabel('跑步标题（可选）').fill('入队中止草稿');
+  await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await waitForWebWatch(page);
+  await emitWebFix(page, 31.23, 121.47);
+  await emitWebFix(page, 31.232, 121.47);
+  await expect.poll(async () => (await readWebDraftRow(page)).pointCount).toBe(2);
+
+  await page.evaluate(() => window.sessionStorage.setItem('__abort_upload_tx', '1'));
+  await page.getByTestId('recording-stop-btn').click();
+  await expect(page.getByTestId('recording-error')).toContainText('未能将已结束记录写入本地上传队列');
+
+  // Watcher state and UI agree: GPS is off and nothing claims to be recording
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('待恢复');
+  await expect(page.getByTestId('recording-gps-badge')).toHaveText('GPS 未开启');
+  expect(await isWebWatching(page)).toBe(false);
+  await expect(page.getByTestId('recording-recovery-panel')).toContainText('未能写入本地上传队列');
+  await expect(page.getByTestId('recording-pause-btn')).toHaveCount(0);
+  await expect(page.getByTestId('recording-stop-btn')).toHaveCount(0);
+
+  // The aborted transaction rolled back completely: the stopped draft is intact and recoverable
+  const afterAbort = await readRecordingStoreSummary(page);
+  expect(afterAbort.uploadKeys).toEqual([]);
+  expect(afterAbort.draft).toEqual({ status: 'stopped', pointCount: 2 });
+
+  // Retry from the recovery panel enqueues once and clears the draft
+  await page.evaluate(() => window.sessionStorage.removeItem('__abort_upload_tx'));
+  await page.getByTestId('recovery-save-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('就绪');
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(1);
+  await expect(page.getByTestId('upload-queue-item').first()).toContainText('入队中止草稿');
+  const afterRetry = await readRecordingStoreSummary(page);
+  expect(afterRetry.uploadKeys).toHaveLength(1);
+  expect(afterRetry.draft).toBeNull();
+});

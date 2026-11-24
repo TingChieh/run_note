@@ -5,6 +5,7 @@ import {
   clearAccountIfPreemptedAtomic,
   clearStaleAccountGenerationAtomic,
   deleteUploadQueueItem,
+  finalizeStoppedDraftToUploadQueue,
   getActiveRecordingAccount,
   getActiveRecordingAccountSnapshot,
   getDefaultRecordingBackend,
@@ -13,6 +14,7 @@ import {
   readUploadQueueItem,
   updateExistingUploadQueueItem,
   type RecordingStorageBackend,
+  type StoppedDraftFinalizeGuard,
   type UploadQueueItem,
 } from '#lib/recording-store.ts';
 import { serializeRecordingToGpx, type RecordedTrackPoint } from '#lib/gpx-serializer.ts';
@@ -199,27 +201,22 @@ export async function rearmScheduledRecordingUpload(options: FlushUploadOptions)
   return earliestDueAt;
 }
 
-export async function enqueueFinalizedRecording(
-  input: FinalizeAndEnqueueInput,
-  backend: RecordingStorageBackend = getDefaultRecordingBackend(),
-  nowMs = Date.now(),
-): Promise<UploadQueueItem> {
+function assertDurableBackend(backend: RecordingStorageBackend): void {
   if (!backend.durable) {
     throw new RecordingPersistenceError(
       'STORAGE_UNAVAILABLE',
       '当前设备本地持久化存储不可用，已保留原生轨迹数据，请检查存储空间后重试保存。',
     );
   }
-  const existing = await readUploadQueueItem(input.accountId, input.idempotencyKey, backend);
-  if (existing && (existing.status === 'uploaded' || existing.gpxXml.length > 0)) {
-    return existing;
-  }
+}
+
+function buildUploadQueueItem(input: FinalizeAndEnqueueInput, nowMs: number): UploadQueueItem {
   const serialized = serializeRecordingToGpx({
     title: input.title,
     startedAtMs: input.startedAtMs,
     points: input.points,
   });
-  const item: UploadQueueItem = {
+  return {
     idempotencyKey: input.idempotencyKey,
     accountId: input.accountId,
     sessionId: input.sessionId,
@@ -244,6 +241,19 @@ export async function enqueueFinalizedRecording(
     createdAtMs: nowMs,
     updatedAtMs: nowMs,
   };
+}
+
+export async function enqueueFinalizedRecording(
+  input: FinalizeAndEnqueueInput,
+  backend: RecordingStorageBackend = getDefaultRecordingBackend(),
+  nowMs = Date.now(),
+): Promise<UploadQueueItem> {
+  assertDurableBackend(backend);
+  const existing = await readUploadQueueItem(input.accountId, input.idempotencyKey, backend);
+  if (existing && (existing.status === 'uploaded' || existing.gpxXml.length > 0)) {
+    return existing;
+  }
+  const item = buildUploadQueueItem(input, nowMs);
   await putUploadQueueItem(item, backend);
   const verified = await readUploadQueueItem(item.accountId, item.idempotencyKey, backend);
   if (
@@ -259,6 +269,24 @@ export async function enqueueFinalizedRecording(
   }
   notifyQueueUpdated();
   return verified;
+}
+
+/**
+ * Web counterpart of `enqueueFinalizedRecording`: the queue row is created and the caller's stopped
+ * draft removed in one committed transaction, and only while the caller still owns that draft under
+ * the current account claim (see `finalizeStoppedDraftToUploadQueue`). The transaction's `complete`
+ * event is the durability proof; there is no separate native file to acknowledge afterwards.
+ */
+export async function enqueueStoppedWebDraft(
+  input: FinalizeAndEnqueueInput,
+  guard: StoppedDraftFinalizeGuard,
+  backend: RecordingStorageBackend = getDefaultRecordingBackend(),
+  nowMs = Date.now(),
+): Promise<'enqueued' | 'existing'> {
+  assertDurableBackend(backend);
+  const result = await finalizeStoppedDraftToUploadQueue(buildUploadQueueItem(input, nowMs), guard, backend);
+  notifyQueueUpdated();
+  return result;
 }
 
 export async function flushRecordingUploadQueue(options: FlushUploadOptions): Promise<UploadFlushOutcome> {

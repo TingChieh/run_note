@@ -56,6 +56,7 @@
   import {
     discardUploadQueueItem,
     enqueueFinalizedRecording,
+    enqueueStoppedWebDraft,
     flushRecordingUploadQueue,
   } from '#lib/recording-uploader.ts';
   import { formatDistance, formatDuration, formatPace } from '#lib/api/activities.ts';
@@ -135,6 +136,7 @@
   const tabOwnerId = getRecordingTabOwnerId();
   let sessionOwnerGeneration: number | null = null;
   let sessionLock: RecordingSessionLock | null = null;
+  let lockReacquireAbort: AbortController | null = null;
   let sessionOwnershipLost = false;
   let leaseRenewInFlight = false;
   let lastLeaseRenewMs = 0;
@@ -207,6 +209,9 @@
   const interruptedReasonLabel = $derived.by(() => {
     if (interruptedReason === 'permission_revoked') {
       return '记录期间精确位置权限被撤销、降级或“仅本次允许”已失效，已安全保留此前捕获的轨迹点。';
+    }
+    if (interruptedReason === 'enqueue_failed') {
+      return '结束记录时未能写入本地上传队列，定位已停止，已保留此前捕获的轨迹点。';
     }
     if (interruptedReason === 'foreground_service_denied') {
       return '前台定位服务启动受限，已保留会话状态。请确认精确位置权限后继续或保存。';
@@ -358,6 +363,8 @@
   }
 
   function releaseSessionLock() {
+    lockReacquireAbort?.abort();
+    lockReacquireAbort = null;
     const lock = sessionLock;
     sessionLock = null;
     lock?.release();
@@ -372,19 +379,82 @@
     );
   }
 
-  /** Holds the account's Web Lock while this tab owns a session; losing it ends ownership here. */
-  async function acquireSessionLock(targetAccountId: string, steal = false) {
-    const result = await acquireRecordingSessionLock(targetAccountId, {
-      steal,
-      onLost: () => {
-        if (result.status !== 'acquired' || sessionLock !== result.lock) return;
-        sessionLock = null;
-        if (sessionClaimRevision !== null) {
-          handleStaleSessionWrite(sessionAccountId, sessionClaimRevision, SESSION_TAKEN_OVER_MESSAGE);
-        }
+  /** Holds the account's Web Lock for this claim generation while this tab owns a session. */
+  async function acquireSessionLock(targetAccountId: string, claimRevision: number, signal?: AbortSignal) {
+    const result: Awaited<ReturnType<typeof acquireRecordingSessionLock>> = await acquireRecordingSessionLock(
+      targetAccountId,
+      claimRevision,
+      {
+        wait: signal !== undefined,
+        signal,
+        onLost: () => {
+          if (result.status === 'acquired' && sessionLock === result.lock) {
+            sessionLock = null;
+            void verifyOwnershipAfterLockLoss();
+          }
+        },
       },
-    });
+    );
     return result;
+  }
+
+  /**
+   * Losing the lock alone never ends a session: only the draft row says who owns it. While this tab
+   * is still the recorded owner under the current claim it keeps recording and queues to get the
+   * lock back; otherwise it stops writing.
+   */
+  async function verifyOwnershipAfterLockLoss() {
+    const boundAccountId = sessionAccountId;
+    const boundClaimRev = sessionClaimRevision;
+    const boundSessionId = sessionId;
+    const boundGeneration = sessionOwnerGeneration;
+    if (boundClaimRev === null || boundGeneration === null || !boundSessionId || sessionOwnershipLost) return;
+    let stillOwner = false;
+    try {
+      const [meta, snap] = await Promise.all([
+        readActiveRecordingDraftWithMeta(boundAccountId),
+        getActiveRecordingAccountSnapshot(),
+      ]);
+      stillOwner =
+        meta?.draft.sessionId === boundSessionId &&
+        meta.ownerId === tabOwnerId &&
+        meta.ownerGeneration === boundGeneration &&
+        meta.claimRevision === boundClaimRev &&
+        snap.activeAccountId === boundAccountId &&
+        snap.claimRevision === boundClaimRev;
+    } catch {
+      stillOwner = false;
+    }
+    const unchanged =
+      !disposed &&
+      !sessionOwnershipLost &&
+      sessionAccountId === boundAccountId &&
+      sessionClaimRevision === boundClaimRev &&
+      sessionId === boundSessionId &&
+      sessionOwnerGeneration === boundGeneration;
+    if (!unchanged || sessionLock) return;
+    if (!stillOwner) {
+      handleStaleSessionWrite(boundAccountId, boundClaimRev, SESSION_TAKEN_OVER_MESSAGE);
+      return;
+    }
+    const abort = new AbortController();
+    lockReacquireAbort?.abort();
+    lockReacquireAbort = abort;
+    const regained = await acquireSessionLock(boundAccountId, boundClaimRev, abort.signal);
+    if (lockReacquireAbort === abort) lockReacquireAbort = null;
+    if (regained.status !== 'acquired') return;
+    if (
+      abort.signal.aborted ||
+      disposed ||
+      sessionOwnershipLost ||
+      sessionLock ||
+      sessionClaimRevision !== boundClaimRev ||
+      sessionId !== boundSessionId
+    ) {
+      regained.lock.release();
+      return;
+    }
+    sessionLock = regained.lock;
   }
 
   async function renewDraftLease() {
@@ -674,17 +744,11 @@
           recoveryFailureMessage = '检测到其他标签页正在写入新记录草稿，请重试恢复以确认最新状态。';
           return;
         }
-        // Take ownership before showing or acting on the draft. A free Web Lock proves its previous
-        // owner is gone; a held lock may only be stolen from an owner fenced by an older claim.
-        let lockResult = await acquireSessionLock(accountId);
+        // Take ownership before showing or acting on the draft. A free lock for the current claim
+        // proves no live tab owns it (an owner at an older claim is already fenced by IndexedDB);
+        // a held one means a live owner, which is never robbed, however old this tab's read is.
+        const lockResult = await acquireSessionLock(accountId, claimedRev);
         const ownerProvenGone = lockResult.status === 'acquired';
-        if (lockResult.status === 'held') {
-          const ownerFencedByClaim =
-            typeof draftMeta.claimRevision === 'number' && draftMeta.claimRevision < claimedRev;
-          if (ownerFencedByClaim) {
-            lockResult = await acquireSessionLock(accountId, true);
-          }
-        }
         const recoveryLock = lockResult.status === 'acquired' ? lockResult.lock : null;
         if (disposed || token !== recoveryRequestToken) {
           recoveryLock?.release();
@@ -732,29 +796,21 @@
         sessionOwnerGeneration = takeover.ownerGeneration;
         sessionOwnershipLost = false;
         if (draft.status === 'stopped' && draft.points.length > 0) {
-          await enqueueFinalizedRecording({
-            accountId,
-            sessionId: draft.sessionId,
-            idempotencyKey: draft.idempotencyKey,
-            title: draft.title,
-            timezone,
-            startedAtMs: draft.startedAtMs || draft.points[0].recordedAtMs,
-            endedAtMs: draft.endedAtMs ?? Date.now(),
-            activeDurationMs: draft.activeDurationMs,
-            points: draft.points,
-          });
+          await enqueueStoppedWebDraft(
+            {
+              accountId,
+              sessionId: draft.sessionId,
+              idempotencyKey: draft.idempotencyKey,
+              title: draft.title,
+              timezone,
+              startedAtMs: draft.startedAtMs || draft.points[0].recordedAtMs,
+              endedAtMs: draft.endedAtMs ?? Date.now(),
+              activeDurationMs: draft.activeDurationMs,
+              points: draft.points,
+            },
+            { expectedClaimRevision: claimedRev, expectedSessionId: draft.sessionId, owner: ownerGuard() },
+          );
           if (disposed || token !== recoveryRequestToken) return;
-          try {
-            await deleteActiveRecordingDraft(accountId, undefined, {
-              expectedClaimRevision: claimedRev,
-              expectedSessionId: draft.sessionId,
-              owner: ownerGuard(),
-            });
-          } catch (cause) {
-            if (!(cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE')) {
-              throw cause;
-            }
-          }
           sessionOwnerGeneration = null;
           releaseSessionLock();
         } else if (draft.status === 'recording' || draft.status === 'paused' || draft.status === 'interrupted') {
@@ -785,6 +841,11 @@
       recoveryFailureMessage = '';
     } catch (cause) {
       if (disposed || token !== recoveryRequestToken) return;
+      if (!sessionId) {
+        // Nothing was loaded: do not keep the lock, so this tab never blocks the session's next owner.
+        sessionOwnerGeneration = null;
+        releaseSessionLock();
+      }
       sessionRecoveryState = 'failed';
       recoveryFailureMessage =
         cause instanceof Error && cause.message
@@ -909,7 +970,7 @@
       if (disposed) return;
       if (!resumeInterrupted) {
         releaseSessionLock();
-        const lockResult = await acquireSessionLock(boundAccountId);
+        const lockResult = await acquireSessionLock(boundAccountId, boundClaimRev);
         if (disposed) {
           if (lockResult.status === 'acquired') lockResult.lock.release();
           return;
@@ -1071,6 +1132,8 @@
     errorMessage = '';
     statusNotice = '';
     let stoppedSession: RecorderSessionSnapshot | null = null;
+    // Set once the Web GPS watch is cleared, so a failure below can never leave the UI "recording".
+    let webStopActiveMs: number | null = null;
     const boundAccountId = sessionAccountId || accountId;
     const boundClaimRev = sessionClaimRevision;
     try {
@@ -1097,6 +1160,7 @@
         }
       } else {
         stopWebGeolocationWatch();
+        webStopActiveMs = finalActiveMs;
         capturedPoints = [...webPoints];
       }
 
@@ -1158,9 +1222,7 @@
         }
       }
 
-      // Persist to IndexedDB upload queue FIRST (waits for transaction complete + read-back verification);
-      // only acknowledge/delete native session AFTER durable commit succeeds.
-      await enqueueFinalizedRecording({
+      const finalizeInput = {
         accountId: boundAccountId,
         sessionId: finalSessionId || generateUuidV4(),
         idempotencyKey: finalIdempotencyKey || generateUuidV4(),
@@ -1170,21 +1232,26 @@
         endedAtMs: finalEndedAt,
         activeDurationMs: finalActiveMs,
         points: capturedPoints,
-      });
-
+      };
       if (capabilities.native) {
+        // Persist to IndexedDB upload queue FIRST (waits for transaction complete + read-back verification);
+        // only acknowledge/delete native session AFTER durable commit succeeds.
+        await enqueueFinalizedRecording(finalizeInput);
         await acknowledgeNativeHandoff(finalSessionId);
       } else if (boundClaimRev !== null) {
+        // Queue row + draft removal commit together, and only while this tab still owns the stopped
+        // draft: a logout/cleanup that ran since the stop leaves nothing to recreate.
         try {
-          await deleteActiveRecordingDraft(boundAccountId, undefined, {
+          await enqueueStoppedWebDraft(finalizeInput, {
             expectedClaimRevision: boundClaimRev,
-            expectedSessionId: finalSessionId || undefined,
+            expectedSessionId: finalSessionId,
             owner: ownerGuard(),
           });
         } catch (cause) {
-          if (!(cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE')) {
-            throw cause;
+          if (isSessionWriteRejection(cause)) {
+            handleStaleSessionWrite(boundAccountId, boundClaimRev, cause.message);
           }
+          throw cause;
         }
       }
 
@@ -1205,6 +1272,18 @@
           failedHandoffSessionId = stoppedSession.sessionId;
           status = 'stopped';
           lastSegmentStartMs = null;
+        } else if (
+          webStopActiveMs !== null &&
+          !sessionOwnershipLost &&
+          (status === 'recording' || status === 'interrupted')
+        ) {
+          // GPS is already off and the stopped draft (if it was written) stays recoverable: show the
+          // recovery panel so the user can retry saving, resume or discard.
+          if (status === 'recording') activeDurationMs = webStopActiveMs;
+          lastSegmentStartMs = null;
+          status = 'interrupted';
+          gpsStatus = 'inactive';
+          interruptedReason = 'enqueue_failed';
         }
         errorMessage =
           cause instanceof Error

@@ -11,6 +11,7 @@ import {
   createIndexedDbRecordingBackend,
   createMemoryRecordingBackend,
   deleteActiveRecordingDraft,
+  finalizeStoppedDraftToUploadQueue,
   ensureRecordingAccountIsolation,
   getActiveRecordingAccount,
   getActiveRecordingAccountSnapshot,
@@ -24,6 +25,7 @@ import {
   saveActiveRecordingDraft,
   takeOverActiveRecordingDraft,
   acquireRecordingSessionLock,
+  recordingSessionLockName,
   RECORDING_DRAFT_LEASE_MS,
   type LocalRecordingDraft,
   type UploadQueueItem,
@@ -1255,14 +1257,21 @@ async function waitForNewReadwriteTx(fake: ReturnType<typeof createSerializedFak
   throw new Error('expected a queued readwrite transaction');
 }
 
-/** Minimal Web Locks model: exclusive, ifAvailable and steal, as used by the recording workspace. */
+/** Minimal Web Locks model: exclusive, ifAvailable, steal and queued waiters with abort signals. */
 function createFakeLockManager() {
-  const holders = new Map<string, { reject: (err: unknown) => void }>();
+  type Holder = { reject: (err: unknown) => void };
+  type Waiter = { grant: () => void; reject: (err: unknown) => void };
+  const holders = new Map<string, Holder>();
+  const waiters = new Map<string, Waiter[]>();
+  const grantNext = (name: string) => {
+    const next = waiters.get(name)?.shift();
+    if (next) next.grant();
+  };
   return {
     holders,
     request(
       name: string,
-      options: { ifAvailable?: boolean; steal?: boolean },
+      options: { ifAvailable?: boolean; steal?: boolean; signal?: AbortSignal },
       callback: (lock: unknown) => Promise<void> | void,
     ): Promise<unknown> {
       if (holders.has(name) && options.ifAvailable) {
@@ -1272,14 +1281,34 @@ function createFakeLockManager() {
         holders.get(name)!.reject(new DOMException('Lock broken by another request', 'AbortError'));
         holders.delete(name);
       }
-      if (holders.has(name)) throw new Error('fake lock manager does not queue waiters');
       return new Promise((resolve, reject) => {
-        const entry = { reject };
-        holders.set(name, entry);
-        Promise.resolve(callback({ name })).then((value) => {
-          if (holders.get(name) === entry) holders.delete(name);
-          resolve(value);
-        }, reject);
+        const grant = () => {
+          const entry = { reject };
+          holders.set(name, entry);
+          Promise.resolve(callback({ name })).then((value) => {
+            if (holders.get(name) === entry) {
+              holders.delete(name);
+              grantNext(name);
+            }
+            resolve(value);
+          }, reject);
+        };
+        if (!holders.has(name)) {
+          grant();
+          return;
+        }
+        const waiter = { grant, reject };
+        waiters.set(name, [...(waiters.get(name) ?? []), waiter]);
+        options.signal?.addEventListener('abort', () => {
+          const queue = waiters.get(name) ?? [];
+          if (queue.includes(waiter)) {
+            waiters.set(
+              name,
+              queue.filter((w) => w !== waiter),
+            );
+            reject(new DOMException('Aborted', 'AbortError'));
+          }
+        });
       });
     },
   };
@@ -1650,36 +1679,182 @@ describe('recording-store Round 9 Web draft session ownership', () => {
     expect(await writerTab.get('user:user-a:draft:active')).toBeNull();
   });
 
-  it('acquireRecordingSessionLock reports held/acquired/unsupported and notifies a robbed owner', async () => {
+  it('acquireRecordingSessionLock is scoped per account and claim, never steals, and reports a lost lock', async () => {
     const locks = createFakeLockManager();
     const onLostA = vi.fn();
-    const a = await acquireRecordingSessionLock('user-a', { locks, onLost: onLostA });
+    const a = await acquireRecordingSessionLock('user-a', 2, { locks, onLost: onLostA });
     expect(a.status).toBe('acquired');
-    expect(await acquireRecordingSessionLock('user-a', { locks })).toEqual({ status: 'held' });
-    // Another account's lock is independent
-    const other = await acquireRecordingSessionLock('user-b', { locks });
-    expect(other.status).toBe('acquired');
+    expect(locks.holders.has(recordingSessionLockName('user-a', 2))).toBe(true);
+    expect(await acquireRecordingSessionLock('user-a', 2, { locks })).toEqual({ status: 'held' });
+    // Another account, or another claim generation of the same account, is an independent lock:
+    // an owner at an older claim never blocks (and is never robbed by) the current claim.
+    expect((await acquireRecordingSessionLock('user-b', 2, { locks })).status).toBe('acquired');
+    const newerClaim = await acquireRecordingSessionLock('user-a', 3, { locks });
+    expect(newerClaim.status).toBe('acquired');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onLostA).not.toHaveBeenCalled();
 
-    const thief = await acquireRecordingSessionLock('user-a', { locks, steal: true });
-    expect(thief.status).toBe('acquired');
+    // Some other context steals the lock: the holder is told through onLost and `lost`
+    let releaseThief: () => void = () => {};
+    void locks.request(
+      recordingSessionLockName('user-a', 2),
+      { steal: true },
+      () =>
+        new Promise<void>((done) => {
+          releaseThief = done;
+        }),
+    );
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(onLostA).toHaveBeenCalledTimes(1);
     if (a.status === 'acquired') expect(a.lock.lost).toBe(true);
 
+    // wait mode queues behind the thief and is granted once it lets go
+    const onLostWaiter = vi.fn();
+    const waiting = acquireRecordingSessionLock('user-a', 2, {
+      locks,
+      wait: true,
+      signal: new AbortController().signal,
+      onLost: onLostWaiter,
+    });
+    releaseThief();
+    const regained = await waiting;
+    expect(regained.status).toBe('acquired');
     // A voluntary release frees the lock without reporting a loss
-    const onLostThief = vi.fn();
-    if (thief.status === 'acquired') thief.lock.release();
+    if (regained.status === 'acquired') regained.lock.release();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    const again = await acquireRecordingSessionLock('user-a', { locks, onLost: onLostThief });
-    expect(again.status).toBe('acquired');
-    expect(onLostThief).not.toHaveBeenCalled();
+    expect(onLostWaiter).not.toHaveBeenCalled();
+    expect(locks.holders.has(recordingSessionLockName('user-a', 2))).toBe(false);
 
-    expect(await acquireRecordingSessionLock('user-a', { locks: null })).toEqual({ status: 'unsupported' });
+    // An aborted wait resolves as aborted and never acquires
+    if (newerClaim.status !== 'acquired') throw new Error('expected newer claim lock');
+    const abort = new AbortController();
+    const abortedWait = acquireRecordingSessionLock('user-a', 3, { locks, wait: true, signal: abort.signal });
+    abort.abort();
+    expect(await abortedWait).toEqual({ status: 'aborted' });
+    newerClaim.lock.release();
+
+    expect(await acquireRecordingSessionLock('user-a', 2, { locks: null })).toEqual({ status: 'unsupported' });
     const throwing = {
       request: () => {
         throw new DOMException('insecure', 'SecurityError');
       },
     };
-    expect(await acquireRecordingSessionLock('user-a', { locks: throwing })).toEqual({ status: 'unsupported' });
+    expect(await acquireRecordingSessionLock('user-a', 2, { locks: throwing })).toEqual({ status: 'unsupported' });
+  });
+});
+
+describe('recording-store Round 10 atomic stopped-draft finalize', () => {
+  async function seedStoppedDraft(backend: ReturnType<typeof createIndexedDbRecordingBackend>, t0: number) {
+    const claim = await claimRecordingAccountAtomic('user-a', backend, t0);
+    const rev = claim.claimRevision!;
+    await saveActiveRecordingDraft(draftWithPoints('user-a', 'sess-stop', 2), backend, {
+      expectedClaimRevision: rev,
+      rejectIfExistingDraft: true,
+      owner: { ownerId: 'tab-a' },
+      nowMs: t0,
+    });
+    const owner = { ownerId: 'tab-a', expectedOwnerGeneration: 1 };
+    await saveActiveRecordingDraft({ ...draftWithPoints('user-a', 'sess-stop', 2), status: 'stopped' }, backend, {
+      expectedClaimRevision: rev,
+      expectedSessionId: 'sess-stop',
+      owner,
+      nowMs: t0 + 1,
+    });
+    const idempotencyKey = sampleDraft('user-a').idempotencyKey;
+    const item = { ...sampleUpload('user-a', idempotencyKey), sessionId: 'sess-stop' };
+    return { rev, owner, item, guard: { expectedClaimRevision: rev, expectedSessionId: 'sess-stop', owner } };
+  }
+
+  it('writes the queue row and removes the stopped draft in one transaction for the current owner', async () => {
+    const fake = createSerializedFakeIdbFactory();
+    const backend = createIndexedDbRecordingBackend('round10-finalize', fake.factory);
+    const { rev, item, guard } = await seedStoppedDraft(backend, 1_800_000_000_000);
+
+    const txBefore = fake.txLogs.length;
+    expect(await finalizeStoppedDraftToUploadQueue(item, guard, backend)).toBe('enqueued');
+    const finalizeTxs = fake.txLogs.slice(txBefore).filter((log) => log.mode === 'readwrite');
+    expect(finalizeTxs).toHaveLength(1);
+    expect(await readActiveRecordingDraft('user-a', backend)).toBeNull();
+    const row = await backend.get(`user:user-a:upload:${item.idempotencyKey}`);
+    expect(row?.claimRevision).toBe(rev);
+    expect((row?.payload as UploadQueueItem).gpxXml).toBe(item.gpxXml);
+
+    // Retrying after success finds no draft and never touches the committed row
+    await expect(finalizeStoppedDraftToUploadQueue(item, guard, backend)).rejects.toMatchObject({
+      code: 'STORAGE_SESSION_GONE',
+    });
+    expect(await readUploadQueueItem('user-a', item.idempotencyKey, backend)).not.toBeNull();
+  });
+
+  it('never recreates a private queue row after logout-style cleanup removed the draft and marker', async () => {
+    const fake = createSerializedFakeIdbFactory();
+    const backend = createIndexedDbRecordingBackend('round10-cleanup', fake.factory);
+    const { item, guard } = await seedStoppedDraft(backend, 1_800_000_000_000);
+
+    // Cleanup lands between "draft marked stopped" and "enqueue"
+    await clearAccountRecordingData('user-a', backend);
+    expect(await getActiveRecordingAccount(backend)).toBeNull();
+
+    await expect(finalizeStoppedDraftToUploadQueue(item, guard, backend)).rejects.toMatchObject({
+      code: 'STORAGE_CLAIM_STALE',
+    });
+    expect(await listUploadQueueItems('user-a', backend)).toHaveLength(0);
+    expect(await getActiveRecordingAccount(backend)).toBeNull();
+
+    // Draft deleted but marker kept (e.g. saved/discarded in another tab): still nothing enqueued
+    const second = createIndexedDbRecordingBackend('round10-cleanup-2', createSerializedFakeIdbFactory().factory);
+    const seeded = await seedStoppedDraft(second, 1_800_000_000_000);
+    await second.delete('user:user-a:draft:active');
+    await expect(finalizeStoppedDraftToUploadQueue(seeded.item, seeded.guard, second)).rejects.toMatchObject({
+      code: 'STORAGE_SESSION_GONE',
+    });
+    expect(await listUploadQueueItems('user-a', second)).toHaveLength(0);
+  });
+
+  it('refuses a non-owner, a fenced claim, or a draft that is no longer stopped, and keeps an existing queue row', async () => {
+    const backend = createIndexedDbRecordingBackend('round10-guards', createSerializedFakeIdbFactory().factory);
+    const t0 = 1_800_000_000_000;
+    const { rev, owner, item, guard } = await seedStoppedDraft(backend, t0);
+
+    await expect(
+      finalizeStoppedDraftToUploadQueue(
+        item,
+        { ...guard, owner: { ownerId: 'tab-b', expectedOwnerGeneration: 1 } },
+        backend,
+      ),
+    ).rejects.toMatchObject({ code: 'STORAGE_CLAIM_STALE' });
+
+    // Owner resumed the run: the row is "recording" again and must not be enqueued
+    await saveActiveRecordingDraft(draftWithPoints('user-a', 'sess-stop', 2), backend, {
+      expectedClaimRevision: rev,
+      expectedSessionId: 'sess-stop',
+      owner,
+      nowMs: t0 + 2,
+    });
+    await expect(finalizeStoppedDraftToUploadQueue(item, guard, backend)).rejects.toMatchObject({
+      code: 'STORAGE_CLAIM_STALE',
+    });
+    expect(await listUploadQueueItems('user-a', backend)).toHaveLength(0);
+
+    // Stopped again with an already queued row for the same key: the row is kept, the draft removed
+    await saveActiveRecordingDraft({ ...draftWithPoints('user-a', 'sess-stop', 2), status: 'stopped' }, backend, {
+      expectedClaimRevision: rev,
+      expectedSessionId: 'sess-stop',
+      owner,
+      nowMs: t0 + 3,
+    });
+    await putUploadQueueItem({ ...item, gpxXml: '<gpx>first</gpx>' }, backend);
+    expect(await finalizeStoppedDraftToUploadQueue(item, guard, backend)).toBe('existing');
+    expect((await readUploadQueueItem('user-a', item.idempotencyKey, backend))?.gpxXml).toBe('<gpx>first</gpx>');
+    expect(await readActiveRecordingDraft('user-a', backend)).toBeNull();
+
+    // A newer claim fences the old owner entirely
+    const fresh = createIndexedDbRecordingBackend('round10-guards-2', createSerializedFakeIdbFactory().factory);
+    const seeded = await seedStoppedDraft(fresh, t0);
+    await claimRecordingAccountAtomic('user-a', fresh, t0 + 10);
+    await expect(finalizeStoppedDraftToUploadQueue(seeded.item, seeded.guard, fresh)).rejects.toMatchObject({
+      code: 'STORAGE_CLAIM_STALE',
+    });
+    expect(await listUploadQueueItems('user-a', fresh)).toHaveLength(0);
   });
 });

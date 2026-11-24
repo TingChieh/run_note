@@ -198,13 +198,25 @@ export interface DraftMutationContext {
   activeEntry: StoredRecord | undefined;
   epochEntry: StoredRecord | undefined;
   existing: StoredRecord | undefined;
+  /** Rows named in `extraKeys`, read in the same transaction as the draft. */
+  extras: Record<string, StoredRecord | undefined>;
 }
 
 export interface DraftMutationPlan<R> {
   result: R;
   put?: StoredRecord;
   remove?: boolean;
+  /** Further rows committed in the same transaction (each keeps its own `key`). */
+  extraPuts?: StoredRecord[];
 }
+
+export interface StoppedDraftFinalizeGuard {
+  expectedClaimRevision: number;
+  expectedSessionId: string;
+  owner: DraftOwnerGuard;
+}
+
+export type StoppedDraftFinalizeResult = 'enqueued' | 'existing' | 'missing' | 'stale';
 
 export interface ClaimAccountResult {
   status: 'claimed' | 'conflict';
@@ -542,6 +554,46 @@ function planDraftLeaseRenewal(
   return { result: 'renewed', put: { ...ctx.existing, leaseExpiresAtMs: nowMs + RECORDING_DRAFT_LEASE_MS } };
 }
 
+function isReusableQueueRow(entry: StoredRecord | undefined, accountId: string, idempotencyKey: string): boolean {
+  if (!entry || entry.schemaVersion !== RECORDING_STORE_SCHEMA_VERSION || entry.accountId !== accountId) return false;
+  const item = entry.payload as Partial<UploadQueueItem> | null | undefined;
+  return Boolean(
+    item &&
+    item.idempotencyKey === idempotencyKey &&
+    item.accountId === accountId &&
+    (item.status === 'uploaded' || (typeof item.gpxXml === 'string' && item.gpxXml.length > 0)),
+  );
+}
+
+function planStoppedDraftFinalize(
+  accountId: string,
+  ctx: DraftMutationContext,
+  guard: StoppedDraftFinalizeGuard,
+  queueEntry: StoredRecord<UploadQueueItem>,
+): DraftMutationPlan<StoppedDraftFinalizeResult> {
+  // Logout/account cleanup removes the active marker: never recreate a private queue row after it.
+  if (!isClaimCurrentForDraft(accountId, ctx, guard.expectedClaimRevision)) return { result: 'stale' };
+  const existing = ctx.existing;
+  if (!existing || !isValidDraftRecord(existing, accountId)) return { result: 'missing' };
+  const draft = existing.payload as LocalRecordingDraft;
+  if (
+    draft.sessionId !== guard.expectedSessionId ||
+    draft.idempotencyKey !== queueEntry.payload.idempotencyKey ||
+    draft.status !== 'stopped' ||
+    !matchesDraftOwner(existing, guard.owner)
+  ) {
+    return { result: 'stale' };
+  }
+  if (isReusableQueueRow(ctx.extras[queueEntry.key], accountId, queueEntry.payload.idempotencyKey)) {
+    return { result: 'existing', remove: true };
+  }
+  return {
+    result: 'enqueued',
+    remove: true,
+    extraPuts: [{ ...queueEntry, claimRevision: guard.expectedClaimRevision }],
+  };
+}
+
 function planMalformedDraftDelete(
   accountId: string,
   ctx: DraftMutationContext,
@@ -576,6 +628,7 @@ export interface RecordingStorageBackend {
     activeKey: string,
     epochKey: string,
     plan: (ctx: DraftMutationContext) => DraftMutationPlan<R>,
+    extraKeys?: string[],
   ): Promise<R>;
   delete(key: string): Promise<void>;
   listByPrefix(prefix: string): Promise<StoredRecord[]>;
@@ -643,13 +696,17 @@ export function createMemoryRecordingBackend(options?: { durableForTests?: boole
       map.set(entry.key, structuredClone(stampEntryWithActiveClaim(entry, activeEntry, existingEntry)));
       return true;
     },
-    async mutateDraftAtomic(key, activeKey, epochKey, plan) {
+    async mutateDraftAtomic(key, activeKey, epochKey, plan, extraKeys = []) {
       const ctx: DraftMutationContext = {
         activeEntry: structuredClone(map.get(activeKey)),
         epochEntry: structuredClone(map.get(epochKey)),
         existing: structuredClone(map.get(key)),
+        extras: Object.fromEntries(extraKeys.map((extraKey) => [extraKey, structuredClone(map.get(extraKey))])),
       };
       const outcome = plan(ctx);
+      for (const extra of outcome.extraPuts ?? []) {
+        map.set(extra.key, structuredClone(extra));
+      }
       if (outcome.put) {
         map.set(key, structuredClone({ ...outcome.put, key }));
       } else if (outcome.remove) {
@@ -1184,14 +1241,20 @@ export function createIndexedDbRecordingBackend(
         return true;
       });
     },
-    async mutateDraftAtomic(key, activeKey, epochKey, plan) {
+    async mutateDraftAtomic(key, activeKey, epochKey, plan, extraKeys = []) {
       return runTx('readwrite', async (store) => {
-        const [activeEntry, epochEntry, existing] = (await Promise.all([
+        const [activeEntry, epochEntry, existing, ...extraRows] = (await Promise.all([
           reqPromise(store.get(activeKey)),
           reqPromise(store.get(epochKey)),
           reqPromise(store.get(key)),
-        ])) as [StoredRecord | undefined, StoredRecord | undefined, StoredRecord | undefined];
-        const outcome = plan({ activeEntry, epochEntry, existing });
+          ...extraKeys.map((extraKey) => reqPromise(store.get(extraKey))),
+        ])) as Array<StoredRecord | undefined>;
+        const extras = Object.fromEntries(extraKeys.map((extraKey, i) => [extraKey, extraRows[i]]));
+        const outcome = plan({ activeEntry, epochEntry, existing, extras });
+        // Extra rows first: if one fails, the draft change is never even issued.
+        for (const extra of outcome.extraPuts ?? []) {
+          await reqPromise(store.put(extra));
+        }
         if (outcome.put) {
           await reqPromise(store.put({ ...outcome.put, key }));
         } else if (outcome.remove) {
@@ -1899,6 +1962,48 @@ export async function deleteActiveRecordingDraft(
   await backend.delete(activeDraftKey(accountId));
 }
 
+/**
+ * Moves the caller's own `stopped` draft into the upload queue in ONE transaction: the queue row is
+ * written and the draft removed only while the account claim, session and owner generation are
+ * still current, so a cleanup or logout that ran after the draft was stopped can never be undone
+ * by recreating a private upload row. An already queued row for the same key is kept as-is.
+ */
+export async function finalizeStoppedDraftToUploadQueue(
+  item: UploadQueueItem,
+  guard: StoppedDraftFinalizeGuard,
+  backend: RecordingStorageBackend = getDefaultRecordingBackend(),
+): Promise<'enqueued' | 'existing'> {
+  assertSafeCachePayload(item);
+  const accountId = item.accountId;
+  const queueEntry: StoredRecord<UploadQueueItem> = {
+    key: uploadKey(accountId, item.idempotencyKey),
+    accountId,
+    schemaVersion: RECORDING_STORE_SCHEMA_VERSION,
+    savedAt: Date.now(),
+    payload: item,
+  };
+  const result = await backend.mutateDraftAtomic(
+    activeDraftKey(accountId),
+    ACTIVE_ACCOUNT_KEY,
+    CLAIM_EPOCH_KEY,
+    (ctx) => planStoppedDraftFinalize(accountId, ctx, guard, queueEntry),
+    [queueEntry.key],
+  );
+  if (result === 'missing') {
+    throw new RecordingPersistenceError(
+      'STORAGE_SESSION_GONE',
+      '这条跑步草稿已在其他标签页中保存或丢弃，或本地记录数据已被清理，未写入上传队列。',
+    );
+  }
+  if (result === 'stale') {
+    throw new RecordingPersistenceError(
+      'STORAGE_CLAIM_STALE',
+      '当前记录会话已被其他标签页、新登录或退出登录清理接管，未写入上传队列。',
+    );
+  }
+  return result;
+}
+
 let tabOwnerId: string | null = null;
 
 /**
@@ -1917,19 +2022,22 @@ export function getRecordingTabOwnerId(): string {
 interface LockManagerLike {
   request(
     name: string,
-    options: { ifAvailable?: boolean; steal?: boolean },
+    options: { ifAvailable?: boolean; signal?: AbortSignal },
     callback: (lock: unknown) => Promise<void> | void,
   ): Promise<unknown>;
 }
 
 export interface RecordingSessionLock {
   release(): void;
-  /** True once another tab stole the lock; the holder must treat its ownership as ended. */
+  /** True once the browser took the lock away (another context stole it); ownership must be re-verified. */
   readonly lost: boolean;
 }
 
 export type RecordingSessionLockResult =
-  { status: 'acquired'; lock: RecordingSessionLock } | { status: 'held' } | { status: 'unsupported' };
+  | { status: 'acquired'; lock: RecordingSessionLock }
+  | { status: 'held' }
+  | { status: 'aborted' }
+  | { status: 'unsupported' };
 
 function navigatorLocks(): LockManagerLike | null {
   const nav = (globalThis as { navigator?: { locks?: LockManagerLike } }).navigator;
@@ -1937,14 +2045,24 @@ function navigatorLocks(): LockManagerLike | null {
 }
 
 /**
+ * The lock is scoped to one claim generation. Only a tab at the current claim can ever commit a
+ * draft write, so a free lock for the current claim proves no live tab owns the account's draft,
+ * and an owner at an older claim never has to be robbed: its writes are already fenced in IndexedDB.
+ */
+export function recordingSessionLockName(accountId: string, claimRevision: number): string {
+  return `runnote-recording-session:${accountId}:claim:${claimRevision}`;
+}
+
+/**
  * The owner of a Web recording session holds this exclusive Web Lock until the session ends or the
- * page goes away; the browser frees it when the tab closes or crashes. A free lock therefore proves
- * that no live tab owns the account's draft. `steal` is only for owners already fenced by an older
- * claim generation; the robbed tab is told through `onLost` and must stop writing.
+ * page goes away; the browser frees it when the tab closes or crashes. Recording code never steals
+ * it. `wait` queues behind the current holder (until `signal` aborts) instead of failing with
+ * `held`; `onLost` reports a lock the browser took away so the holder can re-verify its ownership.
  */
 export async function acquireRecordingSessionLock(
   accountId: string,
-  options: { steal?: boolean; onLost?: () => void; locks?: LockManagerLike | null } = {},
+  claimRevision: number,
+  options: { wait?: boolean; signal?: AbortSignal; onLost?: () => void; locks?: LockManagerLike | null } = {},
 ): Promise<RecordingSessionLockResult> {
   const locks = options.locks === undefined ? navigatorLocks() : options.locks;
   if (!locks) return { status: 'unsupported' };
@@ -1959,8 +2077,8 @@ export async function acquireRecordingSessionLock(
     let request: Promise<unknown>;
     try {
       request = locks.request(
-        `runnote-recording-session:${accountId}`,
-        options.steal ? { steal: true } : { ifAvailable: true },
+        recordingSessionLockName(accountId, claimRevision),
+        options.wait ? (options.signal ? { signal: options.signal } : {}) : { ifAvailable: true },
         (lock) => {
           if (!lock) {
             resolve({ status: 'held' });
@@ -1988,9 +2106,13 @@ export async function acquireRecordingSessionLock(
     }
     request.then(
       () => {},
-      () => {
+      (cause: unknown) => {
         if (!granted) {
-          resolve({ status: 'unsupported' });
+          resolve(
+            options.signal?.aborted || (cause instanceof DOMException && cause.name === 'AbortError')
+              ? { status: 'aborted' }
+              : { status: 'unsupported' },
+          );
         } else if (!released) {
           lost = true;
           options.onLost?.();
