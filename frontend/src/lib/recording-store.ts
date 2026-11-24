@@ -594,6 +594,19 @@ function planStoppedDraftFinalize(
   };
 }
 
+function planClaimedQueueEnqueue(
+  accountId: string,
+  ctx: DraftMutationContext,
+  expectedClaimRevision: number,
+  queueEntry: StoredRecord<UploadQueueItem>,
+): DraftMutationPlan<'enqueued' | 'existing' | 'stale'> {
+  // Logout/account cleanup removes the active marker and re-login advances the claim: either one
+  // since the caller pinned its claim means the row must not be (re)created.
+  if (!isClaimCurrentForDraft(accountId, ctx, expectedClaimRevision)) return { result: 'stale' };
+  if (isReusableQueueRow(ctx.existing, accountId, queueEntry.payload.idempotencyKey)) return { result: 'existing' };
+  return { result: 'enqueued', put: { ...queueEntry, claimRevision: expectedClaimRevision } };
+}
+
 function planMalformedDraftDelete(
   accountId: string,
   ctx: DraftMutationContext,
@@ -1999,6 +2012,37 @@ export async function finalizeStoppedDraftToUploadQueue(
     throw new RecordingPersistenceError(
       'STORAGE_CLAIM_STALE',
       '当前记录会话已被其他标签页、新登录或退出登录清理接管，未写入上传队列。',
+    );
+  }
+  return result;
+}
+
+/**
+ * Writes (or reuses) an upload queue row in ONE transaction that also re-checks the account claim
+ * the caller pinned before reading the track, so a logout/cleanup or re-login that committed in
+ * between can never be followed by recreating that account's private queue row.
+ */
+export async function enqueueUploadItemUnderClaim(
+  item: UploadQueueItem,
+  guard: { expectedClaimRevision: number },
+  backend: RecordingStorageBackend = getDefaultRecordingBackend(),
+): Promise<'enqueued' | 'existing'> {
+  assertSafeCachePayload(item);
+  const accountId = item.accountId;
+  const queueEntry: StoredRecord<UploadQueueItem> = {
+    key: uploadKey(accountId, item.idempotencyKey),
+    accountId,
+    schemaVersion: RECORDING_STORE_SCHEMA_VERSION,
+    savedAt: Date.now(),
+    payload: item,
+  };
+  const result = await backend.mutateDraftAtomic(queueEntry.key, ACTIVE_ACCOUNT_KEY, CLAIM_EPOCH_KEY, (ctx) =>
+    planClaimedQueueEnqueue(accountId, ctx, guard.expectedClaimRevision, queueEntry),
+  );
+  if (result === 'stale') {
+    throw new RecordingPersistenceError(
+      'STORAGE_CLAIM_STALE',
+      '本地记录数据已被退出登录或账号切换清理，未写入上传队列，原生轨迹数据已保留。',
     );
   }
   return result;

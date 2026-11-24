@@ -5,12 +5,12 @@ import {
   clearAccountIfPreemptedAtomic,
   clearStaleAccountGenerationAtomic,
   deleteUploadQueueItem,
+  enqueueUploadItemUnderClaim,
   finalizeStoppedDraftToUploadQueue,
   getActiveRecordingAccount,
   getActiveRecordingAccountSnapshot,
   getDefaultRecordingBackend,
   listUploadQueueItems,
-  putUploadQueueItem,
   readUploadQueueItem,
   updateExistingUploadQueueItem,
   type RecordingStorageBackend,
@@ -243,31 +243,34 @@ function buildUploadQueueItem(input: FinalizeAndEnqueueInput, nowMs: number): Up
   };
 }
 
+/**
+ * Native handoff enqueue. `guard.expectedClaimRevision` must be pinned BEFORE the native track is
+ * read: the queue row is only written (or an existing one reused) inside the transaction that sees
+ * that same claim still active, and the caller acknowledges the native handoff only after this
+ * resolves, so a cleanup/logout in between keeps the native data and never recreates the row.
+ */
 export async function enqueueFinalizedRecording(
   input: FinalizeAndEnqueueInput,
+  guard: { expectedClaimRevision: number },
   backend: RecordingStorageBackend = getDefaultRecordingBackend(),
   nowMs = Date.now(),
 ): Promise<UploadQueueItem> {
   assertDurableBackend(backend);
-  const existing = await readUploadQueueItem(input.accountId, input.idempotencyKey, backend);
-  if (existing && (existing.status === 'uploaded' || existing.gpxXml.length > 0)) {
-    return existing;
-  }
   const item = buildUploadQueueItem(input, nowMs);
-  await putUploadQueueItem(item, backend);
+  const result = await enqueueUploadItemUnderClaim(item, guard, backend);
   const verified = await readUploadQueueItem(item.accountId, item.idempotencyKey, backend);
-  if (
-    !verified ||
-    verified.idempotencyKey !== item.idempotencyKey ||
-    verified.accountId !== item.accountId ||
-    verified.gpxXml !== item.gpxXml
-  ) {
+  const intact =
+    verified !== null &&
+    (result === 'enqueued'
+      ? verified.gpxXml === item.gpxXml
+      : verified.status === 'uploaded' || verified.gpxXml.length > 0);
+  if (!verified || !intact) {
     throw new RecordingPersistenceError(
       'STORAGE_VERIFY_FAILED',
       '本地上传队列持久化校验失败，已保留原生轨迹数据，请重试保存。',
     );
   }
-  notifyQueueUpdated();
+  if (result === 'enqueued') notifyQueueUpdated();
   return verified;
 }
 

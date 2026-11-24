@@ -29,6 +29,19 @@ const USER_A = '11111111-1111-4111-8111-111111111111';
 const USER_B = '22222222-2222-4222-8222-222222222222';
 const USER_C = '33333333-3333-4333-8333-333333333331';
 
+/** Enqueues the way the recording page does: under the account's current (or newly made) claim. */
+async function enqueueUnderClaim(
+  input: Parameters<typeof enqueueFinalizedRecording>[0],
+  backend: RecordingStorageBackend,
+  nowMs?: number,
+) {
+  const claim = await claimRecordingAccountAtomic(input.accountId, backend, undefined, { reuseExistingClaim: true });
+  if (claim.status !== 'claimed' || typeof claim.claimRevision !== 'number') {
+    throw new Error(`test setup: ${input.accountId} cannot claim while ${claim.activeAccountId} is active`);
+  }
+  return enqueueFinalizedRecording(input, { expectedClaimRevision: claim.claimRevision }, backend, nowMs);
+}
+
 const SERVER_ACTIVITY = {
   id: '33333333-3333-4333-8333-333333333333',
   title: '离线晨跑',
@@ -92,7 +105,7 @@ describe('recording-uploader idempotent queue', () => {
   it('queues offline recording and uploads once with Idempotency-Key and expected_owner_id when network returns', async () => {
     const backend = createMemoryRecordingBackend({ durableForTests: true });
     const idempotencyKey = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-    await enqueueFinalizedRecording(
+    await enqueueUnderClaim(
       {
         accountId: USER_A,
         sessionId: 'sess-1',
@@ -187,7 +200,7 @@ describe('recording-uploader idempotent queue', () => {
     expect(computeBackoffDelayMs(99)).toBe(UPLOAD_BACKOFF_MS.at(-1));
 
     const backend = createMemoryRecordingBackend({ durableForTests: true });
-    await enqueueFinalizedRecording(
+    await enqueueUnderClaim(
       {
         accountId: USER_B,
         sessionId: 'sess-2',
@@ -268,7 +281,7 @@ describe('recording-uploader idempotent queue', () => {
     vi.setSystemTime(1_700_000_100_000);
 
     const backend = createMemoryRecordingBackend({ durableForTests: true });
-    await enqueueFinalizedRecording(
+    await enqueueUnderClaim(
       {
         accountId: USER_A,
         sessionId: 'sess-timer',
@@ -340,7 +353,7 @@ describe('recording-uploader idempotent queue', () => {
 
   it('refuses to upload account A queue when active browser session belongs to account B (pre-flight & 409 ACCOUNT_MISMATCH)', async () => {
     const backend = createMemoryRecordingBackend({ durableForTests: true });
-    await enqueueFinalizedRecording(
+    await enqueueUnderClaim(
       {
         accountId: USER_A,
         sessionId: 'sess-a',
@@ -374,7 +387,7 @@ describe('recording-uploader idempotent queue', () => {
     expect(await listUploadQueueItems(USER_A, backend)).toEqual([]);
 
     // Also verify server-side 409 ACCOUNT_MISMATCH (race between pre-flight check and POST) wipes queue cleanly
-    await enqueueFinalizedRecording(
+    await enqueueUnderClaim(
       {
         accountId: USER_A,
         sessionId: 'sess-race',
@@ -411,7 +424,7 @@ describe('recording-uploader idempotent queue', () => {
 
   it('aborts in-flight upload immediately on logout/account switch without mutating cleared store', async () => {
     const backend = createMemoryRecordingBackend({ durableForTests: true });
-    await enqueueFinalizedRecording(
+    await enqueueUnderClaim(
       {
         accountId: USER_A,
         sessionId: 'sess-abort',
@@ -461,7 +474,7 @@ describe('recording-uploader idempotent queue', () => {
 
   it('pauses on 401 without silently dropping queued track', async () => {
     const backend = createMemoryRecordingBackend({ durableForTests: true });
-    await enqueueFinalizedRecording(
+    await enqueueUnderClaim(
       {
         accountId: USER_C,
         sessionId: 'sess-3',
@@ -506,6 +519,7 @@ describe('recording-uploader idempotent queue', () => {
           activeDurationMs: 30_000,
           points: SAMPLE_POINTS,
         },
+        { expectedClaimRevision: 1 },
         nonDurable,
       ),
     ).rejects.toMatchObject({
@@ -517,10 +531,18 @@ describe('recording-uploader idempotent queue', () => {
     const silentDropBackend: RecordingStorageBackend = {
       ...base,
       durable: true,
-      async put() {
-        // Pretend write succeeded without persisting
+      async mutateDraftAtomic(key, activeKey, epochKey, plan) {
+        // Decide against the real rows, then pretend the write committed without persisting it.
+        const ctx = {
+          activeEntry: (await base.get(activeKey)) ?? undefined,
+          epochEntry: (await base.get(epochKey)) ?? undefined,
+          existing: (await base.get(key)) ?? undefined,
+          extras: {},
+        };
+        return plan(ctx).result;
       },
     };
+    const claim = await claimRecordingAccountAtomic(USER_A, base);
     await expect(
       enqueueFinalizedRecording(
         {
@@ -534,6 +556,7 @@ describe('recording-uploader idempotent queue', () => {
           activeDurationMs: 30_000,
           points: SAMPLE_POINTS,
         },
+        { expectedClaimRevision: claim.claimRevision! },
         silentDropBackend,
       ),
     ).rejects.toBeInstanceOf(RecordingPersistenceError);
@@ -551,7 +574,7 @@ describe('recording-uploader idempotent queue', () => {
 
     const backend = createMemoryRecordingBackend({ durableForTests: true });
     await ensureRecordingAccountIsolation(USER_A, backend);
-    await enqueueFinalizedRecording(
+    await enqueueUnderClaim(
       {
         accountId: USER_A,
         sessionId: 'sess-rearm',
@@ -656,7 +679,7 @@ describe('recording-uploader idempotent queue', () => {
         },
         backend,
       );
-      await enqueueFinalizedRecording(
+      await enqueueUnderClaim(
         {
           accountId: USER_B,
           sessionId: 'sess-b-q',
@@ -682,7 +705,7 @@ describe('recording-uploader idempotent queue', () => {
     };
 
     // 1. Active marker already belongs to USER_B while stale USER_A tries to flush
-    await enqueueFinalizedRecording(
+    await enqueueUnderClaim(
       {
         accountId: USER_A,
         sessionId: 'sess-a1',
@@ -696,6 +719,8 @@ describe('recording-uploader idempotent queue', () => {
       },
       backend,
     );
+    // Leave A's row behind without an active marker, as an earlier generation would have.
+    await backend.delete('meta:recording_active_account');
     await seedB();
     const markerMismatch = await flushRecordingUploadQueue({
       accountId: USER_A,
@@ -709,7 +734,7 @@ describe('recording-uploader idempotent queue', () => {
 
     // 2. Mid-flight switch: USER_A starts uploading when active marker wasn't B yet, then B takes over before 503 returns
     await backend.delete('meta:recording_active_account');
-    await enqueueFinalizedRecording(
+    await enqueueUnderClaim(
       {
         accountId: USER_A,
         sessionId: 'sess-a2',
@@ -723,6 +748,8 @@ describe('recording-uploader idempotent queue', () => {
       },
       backend,
     );
+    // Leave A's row behind without an active marker, as an earlier generation would have.
+    await backend.delete('meta:recording_active_account');
     const raceFetch: typeof fetch = async (input) => {
       const path = String(input);
       if (path === '/api/v1/auth/session') return sessionResponse(USER_A);
@@ -743,7 +770,7 @@ describe('recording-uploader idempotent queue', () => {
 
     // 3. Concurrent preemption during 401/expired session: B claims marker while A's session check is in flight
     await backend.delete('meta:recording_active_account');
-    await enqueueFinalizedRecording(
+    await enqueueUnderClaim(
       {
         accountId: USER_A,
         sessionId: 'sess-a3',
@@ -757,6 +784,8 @@ describe('recording-uploader idempotent queue', () => {
       },
       backend,
     );
+    // Leave A's row behind without an active marker, as an earlier generation would have.
+    await backend.delete('meta:recording_active_account');
     const preemptOnExpiredFetch: typeof fetch = async (input) => {
       const path = String(input);
       if (path === '/api/v1/auth/session') {
@@ -780,7 +809,7 @@ describe('recording-uploader idempotent queue', () => {
     // another tab re-logs in as USER_A (rev 2) and writes a new draft & new upload item.
     await backend.clearAll();
     await claimRecordingAccountAtomic(USER_A, backend, 1_000);
-    await enqueueFinalizedRecording(
+    await enqueueUnderClaim(
       {
         accountId: USER_A,
         sessionId: 'sess-a-stale-r4',
@@ -818,7 +847,7 @@ describe('recording-uploader idempotent queue', () => {
           },
           backend,
         );
-        await enqueueFinalizedRecording(
+        await enqueueUnderClaim(
           {
             accountId: USER_A,
             sessionId: 'sess-a-relogin-upload',
@@ -847,5 +876,79 @@ describe('recording-uploader idempotent queue', () => {
     expect((await readActiveRecordingDraft(USER_A, backend))?.sessionId).toBe('sess-a-relogin-new');
     const survivingItems = await listUploadQueueItems(USER_A, backend);
     expect(survivingItems.map((i) => i.idempotencyKey)).toEqual(['aaaaaaaa-6666-4666-8666-666666666666']);
+  });
+});
+
+describe('native handoff enqueue under a pinned account claim', () => {
+  const input = (idempotencyKey: string) => ({
+    accountId: USER_A,
+    sessionId: 'sess-native-handoff',
+    idempotencyKey,
+    title: '原生交接',
+    timezone: 'Asia/Shanghai',
+    startedAtMs: 1_700_000_000_000,
+    endedAtMs: 1_700_000_030_000,
+    activeDurationMs: 30_000,
+    points: SAMPLE_POINTS,
+  });
+
+  it('never recreates the queue row after a cleanup removed the active marker since the pin', async () => {
+    const backend = createMemoryRecordingBackend({ durableForTests: true });
+    const pinned = await claimRecordingAccountAtomic(USER_A, backend);
+    await backend.delete('meta:recording_active_account');
+    await expect(
+      enqueueFinalizedRecording(
+        input('aaaaaaaa-7777-4777-8777-777777777777'),
+        {
+          expectedClaimRevision: pinned.claimRevision!,
+        },
+        backend,
+      ),
+    ).rejects.toMatchObject({ code: 'STORAGE_CLAIM_STALE' });
+    expect(await listUploadQueueItems(USER_A, backend)).toEqual([]);
+  });
+
+  it('rejects a pin from before a same-account logout and re-login, then enqueues once under the new claim', async () => {
+    const backend = createMemoryRecordingBackend({ durableForTests: true });
+    const pinned = await claimRecordingAccountAtomic(USER_A, backend, 1_000);
+    await backend.delete('meta:recording_active_account');
+    const relogin = await claimRecordingAccountAtomic(USER_A, backend, 2_000);
+    expect(relogin.claimRevision).toBeGreaterThan(pinned.claimRevision!);
+    const key = 'aaaaaaaa-8888-4888-8888-888888888888';
+    await expect(
+      enqueueFinalizedRecording(input(key), { expectedClaimRevision: pinned.claimRevision! }, backend),
+    ).rejects.toMatchObject({ code: 'STORAGE_CLAIM_STALE' });
+    expect(await listUploadQueueItems(USER_A, backend)).toEqual([]);
+
+    const first = await enqueueFinalizedRecording(
+      input(key),
+      { expectedClaimRevision: relogin.claimRevision! },
+      backend,
+    );
+    const again = await enqueueFinalizedRecording(
+      input(key),
+      { expectedClaimRevision: relogin.claimRevision! },
+      backend,
+    );
+    expect(again.createdAtMs).toBe(first.createdAtMs);
+    const stored = await listUploadQueueItems(USER_A, backend);
+    expect(stored.map((item) => item.idempotencyKey)).toEqual([key]);
+  });
+
+  it('does not write for an account whose claim another account now holds', async () => {
+    const backend = createMemoryRecordingBackend({ durableForTests: true });
+    const pinned = await claimRecordingAccountAtomic(USER_A, backend);
+    await backend.delete('meta:recording_active_account');
+    await claimRecordingAccountAtomic(USER_B, backend);
+    await expect(
+      enqueueFinalizedRecording(
+        input('aaaaaaaa-9999-4999-8999-999999999999'),
+        {
+          expectedClaimRevision: pinned.claimRevision!,
+        },
+        backend,
+      ),
+    ).rejects.toBeInstanceOf(RecordingPersistenceError);
+    expect(await listUploadQueueItems(USER_A, backend)).toEqual([]);
   });
 });

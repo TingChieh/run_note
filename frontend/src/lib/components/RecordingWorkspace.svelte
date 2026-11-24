@@ -262,8 +262,13 @@
     if (manual) failedHandoffSessionId = null;
     handoffBusy = true;
     errorMessage = '';
+    const boundAccountId = accountId;
     try {
-      const capturedPoints = await getNativeRecorderPoints(0, accountId);
+      // Pinned before the native track is read: the enqueue transaction refuses to write if a
+      // cleanup/logout or re-login replaced this claim in between, and then nothing is acknowledged.
+      const pinnedClaimRev = await captureActiveSessionClaim(boundAccountId);
+      if (disposed) return;
+      const capturedPoints = await getNativeRecorderPoints(0, boundAccountId);
       if (disposed) return;
       if (capturedPoints.length === 0) {
         if (snapshot.pointCount > 0) {
@@ -277,17 +282,20 @@
         }
         return;
       }
-      await enqueueFinalizedRecording({
-        accountId,
-        sessionId: snapshot.sessionId,
-        idempotencyKey: snapshot.idempotencyKey,
-        title: snapshot.title || runTitle.trim(),
-        timezone,
-        startedAtMs: snapshot.startedAtMs || capturedPoints[0].recordedAtMs,
-        endedAtMs: snapshot.endedAtMs ?? Date.now(),
-        activeDurationMs: snapshot.activeDurationMs,
-        points: capturedPoints,
-      });
+      await enqueueFinalizedRecording(
+        {
+          accountId: boundAccountId,
+          sessionId: snapshot.sessionId,
+          idempotencyKey: snapshot.idempotencyKey,
+          title: snapshot.title || runTitle.trim(),
+          timezone,
+          startedAtMs: snapshot.startedAtMs || capturedPoints[0].recordedAtMs,
+          endedAtMs: snapshot.endedAtMs ?? Date.now(),
+          activeDurationMs: snapshot.activeDurationMs,
+          points: capturedPoints,
+        },
+        { expectedClaimRevision: pinnedClaimRev },
+      );
       await acknowledgeNativeHandoff(snapshot.sessionId);
       if (disposed) return;
       pendingHandoffSession = null;
@@ -578,8 +586,23 @@
     webWatchId = null;
   }
 
-  function startWebGeolocationWatch(boundAccountId: string, boundClaimRevision: number) {
+  /**
+   * Called only after the awaited draft write that starts/resumes a segment: the page may have been
+   * left (unmount cleanup already ran) or the session lost meanwhile, and a watch registered then
+   * would never be cleared. The persisted draft is left as-is for recovery.
+   */
+  function startWebGeolocationWatch(boundAccountId: string, boundClaimRevision: number, boundSessionId: string) {
     stopWebGeolocationWatch();
+    if (
+      disposed ||
+      sessionOwnershipLost ||
+      status !== 'recording' ||
+      sessionAccountId !== boundAccountId ||
+      sessionClaimRevision !== boundClaimRevision ||
+      sessionId !== boundSessionId
+    ) {
+      return;
+    }
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       permissions = { ...permissions, location: 'denied', locationServicesEnabled: false, canRecord: false };
       gpsStatus = 'disabled';
@@ -1004,6 +1027,7 @@
       }
       sessionAccountId = boundAccountId;
       sessionClaimRevision = boundClaimRev;
+      const boundSessionId = sessionId;
       try {
         await saveActiveRecordingDraft(
           buildWebDraft(boundAccountId),
@@ -1032,7 +1056,7 @@
         }
         throw saveCause;
       }
-      startWebGeolocationWatch(boundAccountId, boundClaimRev);
+      startWebGeolocationWatch(boundAccountId, boundClaimRev, boundSessionId);
     } catch (cause) {
       if (!disposed) errorMessage = cause instanceof Error ? cause.message : '无法开始记录，请重试';
     } finally {
@@ -1100,6 +1124,7 @@
         if (boundClaimRev === null) {
           throw new RecordingPersistenceError('STORAGE_CLAIM_STALE', '当前记录会话已失效，请重新开始记录。');
         }
+        const boundSessionId = sessionId;
         segmentIndex += 1;
         lastSegmentStartMs = Date.now();
         status = 'recording';
@@ -1116,7 +1141,7 @@
           }
           throw cause;
         }
-        startWebGeolocationWatch(boundAccountId, boundClaimRev);
+        startWebGeolocationWatch(boundAccountId, boundClaimRev, boundSessionId);
       }
     } catch (cause) {
       if (!disposed) errorMessage = cause instanceof Error ? cause.message : '继续记录失败';
@@ -1136,6 +1161,8 @@
     let webStopActiveMs: number | null = null;
     const boundAccountId = sessionAccountId || accountId;
     const boundClaimRev = sessionClaimRevision;
+    let nativeClaimRev: number | null = null;
+    let nativeClaimError: unknown = null;
     try {
       let capturedPoints: RecordedTrackPoint[] = [];
       let finalStartedAt = startedAtMs;
@@ -1146,6 +1173,12 @@
       let finalTitle = runTitle.trim();
 
       if (capabilities.native) {
+        // Pin the account claim before the stop returns the track (see recoverPendingStoppedHandoff).
+        // Failing to pin never blocks stopping GPS: the stopped native session stays recoverable.
+        nativeClaimRev = await captureActiveSessionClaim(boundAccountId).catch((cause: unknown) => {
+          nativeClaimError = cause;
+          return null;
+        });
         const stopped = await stopNativeRecording();
         if (disposed) return;
         capturedPoints = stopped?.points ?? [];
@@ -1236,7 +1269,8 @@
       if (capabilities.native) {
         // Persist to IndexedDB upload queue FIRST (waits for transaction complete + read-back verification);
         // only acknowledge/delete native session AFTER durable commit succeeds.
-        await enqueueFinalizedRecording(finalizeInput);
+        if (nativeClaimRev === null) throw nativeClaimError;
+        await enqueueFinalizedRecording(finalizeInput, { expectedClaimRevision: nativeClaimRev });
         await acknowledgeNativeHandoff(finalSessionId);
       } else if (boundClaimRev !== null) {
         // Queue row + draft removal commit together, and only while this tab still owns the stopped

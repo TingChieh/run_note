@@ -3152,3 +3152,344 @@ test('P2 Round 10: a Web enqueue transaction abort never leaves a "recording" ba
   expect(afterRetry.uploadKeys).toHaveLength(1);
   expect(afterRetry.draft).toBeNull();
 });
+
+/**
+ * Real IndexedDB interleaving for native handoff: right after the mock bridge returns the track
+ * (`getSessionPoints` for auto recovery, `stopSession` for manual stop), the next transaction the page
+ * opens is preceded by a committed account cleanup (active marker + all A rows) and, for 'relogin',
+ * a fresh same-account claim at a newer revision, i.e. logout then sign-in as A again.
+ */
+async function installNativeReadInterleave(page: Page, trigger: 'getSessionPoints' | 'stopSession') {
+  await page.addInitScript(
+    ({ aId, hook }) => {
+      const win = window as unknown as Record<string, unknown>;
+      const originalTransaction = IDBDatabase.prototype.transaction;
+      let pending: 'cleanup' | 'relogin' | null = null;
+      win.__interleaveRuns = 0;
+      IDBDatabase.prototype.transaction = function (
+        this: IDBDatabase,
+        ...args: Parameters<IDBDatabase['transaction']>
+      ) {
+        if (pending) {
+          const mode = pending;
+          pending = null;
+          const tx = originalTransaction.call(this, 'records', 'readwrite');
+          const store = tx.objectStore('records');
+          store.delete('meta:recording_active_account');
+          store.delete(IDBKeyRange.bound(`user:${aId}:`, `user:${aId}:￿`));
+          if (mode === 'relogin') {
+            const epochReq = store.get('meta:recording_claim_epoch');
+            epochReq.onsuccess = () => {
+              const next = Number((epochReq.result as { payload?: number } | undefined)?.payload ?? 0) + 1;
+              const now = Date.now();
+              store.put({
+                key: 'meta:recording_claim_epoch',
+                accountId: null,
+                schemaVersion: 1,
+                savedAt: now,
+                claimRevision: next,
+                payload: next,
+              });
+              store.put({
+                key: 'meta:recording_active_account',
+                accountId: aId,
+                schemaVersion: 1,
+                savedAt: now,
+                claimRevision: next,
+                payload: aId,
+              });
+            };
+          }
+          win.__interleaveRuns = Number(win.__interleaveRuns) + 1;
+        }
+        return originalTransaction.apply(this, args);
+      } as typeof IDBDatabase.prototype.transaction;
+
+      const plugin = (win.Capacitor as { Plugins: { LocationRecorder: Record<string, (...a: unknown[]) => unknown> } })
+        .Plugins.LocationRecorder;
+      const original = plugin[hook];
+      plugin[hook] = async (...callArgs: unknown[]) => {
+        const out = await original(...callArgs);
+        const mode = window.sessionStorage.getItem('__native_read_interleave');
+        if (mode === 'cleanup' || mode === 'relogin') {
+          window.sessionStorage.removeItem('__native_read_interleave');
+          pending = mode;
+        }
+        return out;
+      };
+    },
+    { aId: WEB_DRAFT_ACCOUNT_ID, hook: trigger },
+  );
+}
+
+async function readNativeMock(targetPage: Page) {
+  return await targetPage.evaluate(() => {
+    const mock = (
+      window as unknown as Record<
+        string,
+        {
+          acknowledgedSessionIds: string[];
+          getSession: () => { status?: string; sessionId?: string } | null;
+          getPointCount: () => number;
+        }
+      >
+    ).__mockRecorder;
+    return {
+      acks: [...mock.acknowledgedSessionIds],
+      session: mock.getSession(),
+      pointCount: mock.getPointCount(),
+      interleaveRuns: Number((window as unknown as Record<string, unknown>).__interleaveRuns ?? 0),
+    };
+  });
+}
+
+test('P1 Round 11: cleanup after the native handoff read never recreates the queue row or acknowledges (auto recovery)', async ({
+  page,
+}) => {
+  let gpxPostCount = 0;
+  await page.route('**/api/v1/gpx-imports', async (route) => {
+    gpxPostCount += 1;
+    await route.continue();
+  });
+  await loginRunner(page);
+  await installMockLocationRecorder(page, {
+    locationPermission: 'granted',
+    initialStopped: true,
+    stoppedSessionId: 'r11-cleanup-handoff',
+    stoppedIdempotencyKey: 'b1111111-1111-4111-8111-111111111111',
+  });
+  await installNativeReadInterleave(page, 'getSessionPoints');
+  await page.evaluate(() => window.sessionStorage.setItem('__native_read_interleave', 'cleanup'));
+  await page.goto('/activities/record');
+
+  await expect(page.getByTestId('recording-pending-handoff-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-error')).toContainText('未写入上传队列');
+  const native = await readNativeMock(page);
+  expect(native.interleaveRuns).toBe(1);
+  expect(native.acks).toEqual([]);
+  expect(native.session?.status).toBe('stopped');
+  expect(native.pointCount).toBe(3);
+  const store = await readRecordingStoreSummary(page);
+  expect(store.uploadKeys).toEqual([]);
+  expect(store.activeMarker).toBeNull();
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(0);
+
+  // Native data stayed recoverable: once the account is claimed again (fresh page), it is enqueued,
+  // acknowledged and uploaded exactly once.
+  await page.reload();
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(1, { timeout: 5_000 });
+  await expect(page.getByTestId('upload-queue-item').first()).toHaveAttribute('data-status', 'uploaded', {
+    timeout: 5_000,
+  });
+  const recovered = await readNativeMock(page);
+  expect(recovered.acks).toEqual(['r11-cleanup-handoff']);
+  expect(recovered.session).toBeNull();
+  expect((await readRecordingStoreSummary(page)).uploadKeys).toHaveLength(1);
+  expect(gpxPostCount).toBe(1);
+});
+
+test('P1 Round 11: cleanup after the native stop returns the track keeps the session for retry and never acknowledges (manual stop)', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await installMockLocationRecorder(page, { locationPermission: 'granted', initialRecording: true });
+  await installNativeReadInterleave(page, 'stopSession');
+  await page.goto('/activities/record');
+
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await page.evaluate(() => window.sessionStorage.setItem('__native_read_interleave', 'cleanup'));
+  await page.getByTestId('recording-stop-btn').click();
+
+  await expect(page.getByTestId('recording-pending-handoff-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-error')).toContainText('未写入上传队列');
+  const native = await readNativeMock(page);
+  expect(native.interleaveRuns).toBe(1);
+  expect(native.acks).toEqual([]);
+  expect(native.session?.status).toBe('stopped');
+  expect(native.pointCount).toBe(3);
+  const store = await readRecordingStoreSummary(page);
+  expect(store.uploadKeys).toEqual([]);
+  expect(store.activeMarker).toBeNull();
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(0);
+});
+
+test('P1 Round 11: same-account logout and re-login after the native read is refused, then retry enqueues and acks once', async ({
+  page,
+}) => {
+  let gpxPostCount = 0;
+  await page.route('**/api/v1/gpx-imports', async (route) => {
+    gpxPostCount += 1;
+    await route.continue();
+  });
+  await loginRunner(page);
+  await installMockLocationRecorder(page, {
+    locationPermission: 'granted',
+    initialStopped: true,
+    stoppedSessionId: 'r11-relogin-handoff',
+    stoppedIdempotencyKey: 'b2222222-2222-4222-8222-222222222222',
+  });
+  await installNativeReadInterleave(page, 'getSessionPoints');
+  await page.evaluate(() => window.sessionStorage.setItem('__native_read_interleave', 'relogin'));
+  await page.goto('/activities/record');
+
+  await expect(page.getByTestId('recording-pending-handoff-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-error')).toContainText('未写入上传队列');
+  const refused = await readNativeMock(page);
+  expect(refused.interleaveRuns).toBe(1);
+  expect(refused.acks).toEqual([]);
+  expect(refused.session?.status).toBe('stopped');
+  const afterRelogin = await readRecordingStoreSummary(page);
+  expect(afterRelogin.uploadKeys).toEqual([]);
+  expect(afterRelogin.activeMarker?.payload).toBe(WEB_DRAFT_ACCOUNT_ID);
+
+  // The retry pins the new generation of the same signed-in account and completes exactly once.
+  await page.getByTestId('handoff-retry-btn').click();
+  await expect(page.getByTestId('recording-pending-handoff-panel')).toHaveCount(0);
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(1);
+  await expect(page.getByTestId('upload-queue-item').first()).toHaveAttribute('data-status', 'uploaded', {
+    timeout: 5_000,
+  });
+  const done = await readNativeMock(page);
+  expect(done.acks).toEqual(['r11-relogin-handoff']);
+  expect(done.session).toBeNull();
+  const finalStore = await readRecordingStoreSummary(page);
+  expect(finalStore.uploadKeys).toHaveLength(1);
+  expect(gpxPostCount).toBe(1);
+});
+
+/**
+ * Holds the next draft write behind a live readwrite transaction (kept open by chained requests)
+ * until `window.__releaseHold()`: 'after-lock' arms on the Start path's Web Lock request, 'next'
+ * arms immediately (resume has no await before its draft write).
+ */
+async function installDraftWriteHold(page: Page) {
+  await page.addInitScript(() => {
+    const win = window as unknown as Record<string, unknown>;
+    const originalTransaction = IDBDatabase.prototype.transaction;
+    let armed = false;
+    let released = false;
+    win.__holdRuns = 0;
+    win.__armHold = () => {
+      armed = true;
+      released = false;
+    };
+    win.__releaseHold = () => {
+      released = true;
+    };
+    IDBDatabase.prototype.transaction = function (this: IDBDatabase, ...args: Parameters<IDBDatabase['transaction']>) {
+      if (armed) {
+        armed = false;
+        const store = originalTransaction.call(this, 'records', 'readwrite').objectStore('records');
+        const spin = () => {
+          if (released) return;
+          store.get('meta:hold-spin').onsuccess = spin;
+        };
+        spin();
+        win.__holdRuns = Number(win.__holdRuns) + 1;
+      }
+      return originalTransaction.apply(this, args);
+    } as typeof IDBDatabase.prototype.transaction;
+    const locks = navigator.locks;
+    const originalRequest = locks.request.bind(locks) as (...a: unknown[]) => Promise<unknown>;
+    (locks as unknown as { request: (...a: unknown[]) => Promise<unknown> }).request = (...callArgs: unknown[]) => {
+      if (window.sessionStorage.getItem('__hold_after_lock') === '1') {
+        window.sessionStorage.removeItem('__hold_after_lock');
+        armed = true;
+        released = false;
+      }
+      return originalRequest(...callArgs);
+    };
+  });
+}
+
+async function heldRecordingLocks(targetPage: Page) {
+  return await targetPage.evaluate(async () => {
+    const snapshot = await navigator.locks.query();
+    return (snapshot.held ?? [])
+      .map((lock) => lock.name ?? '')
+      .filter((name) => name.startsWith('runnote-recording-session:'));
+  });
+}
+
+async function leaveRecordingPageViaDialog(targetPage: Page) {
+  await targetPage.getByRole('link', { name: '跑步记录' }).first().click();
+  await expect(targetPage.getByTestId('recording-leave-dialog')).toBeVisible();
+  await targetPage.getByTestId('recording-leave-confirm-btn').click();
+  await expect(targetPage).not.toHaveURL(/\/activities\/record/);
+  await expect(targetPage.getByTestId('recording-status-badge')).toHaveCount(0);
+}
+
+test('P2 Round 11: leaving during an in-flight Web Start never turns GPS on and keeps the draft recoverable', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await installMockWebGeolocation(page);
+  await installDraftWriteHold(page);
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-start-btn')).toBeEnabled();
+
+  await page.getByLabel('跑步标题（可选）').fill('离开页面草稿');
+  await page.evaluate(() => window.sessionStorage.setItem('__hold_after_lock', '1'));
+  await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await expect.poll(() => page.evaluate(() => (window as unknown as Record<string, number>).__holdRuns)).toBe(1);
+  expect(await isWebWatching(page)).toBe(false);
+
+  await leaveRecordingPageViaDialog(page);
+  await page.evaluate(() => (window as unknown as Record<string, () => void>).__releaseHold());
+
+  // The held draft write commits after unmount; GPS must stay off and nothing keeps running.
+  await expect.poll(async () => (await readWebDraftRow(page)).exists).toBe(true);
+  const committed = await readWebDraftRow(page);
+  expect(await isWebWatching(page)).toBe(false);
+  expect(await heldRecordingLocks(page)).toEqual([]);
+  // No orphaned lease-renew interval: the row is untouched across more than one renew period (5s).
+  await page.waitForTimeout(6_000);
+  expect(await isWebWatching(page)).toBe(false);
+  expect(await readWebDraftRow(page)).toEqual(committed);
+
+  // The persisted draft is recoverable when the runner comes back.
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-recovery-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('待恢复');
+  expect(await isWebWatching(page)).toBe(false);
+  expect((await readWebDraftRow(page)).sessionId).toBe(committed.sessionId);
+});
+
+test('P2 Round 11: leaving during an in-flight Web resume never turns GPS on and keeps the draft recoverable', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await installMockWebGeolocation(page);
+  await installDraftWriteHold(page);
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-start-btn')).toBeEnabled();
+
+  await page.getByLabel('跑步标题（可选）').fill('继续时离开草稿');
+  await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await waitForWebWatch(page);
+  await emitWebFix(page, 31.23, 121.47);
+  await expect.poll(async () => (await readWebDraftRow(page)).pointCount).toBe(1);
+  await page.getByTestId('recording-pause-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('已暂停');
+  expect(await isWebWatching(page)).toBe(false);
+
+  const revisionBefore = (await readWebDraftRow(page)).draftRevision ?? 0;
+  await page.evaluate(() => (window as unknown as Record<string, () => void>).__armHold());
+  await page.getByTestId('recording-resume-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await expect.poll(() => page.evaluate(() => (window as unknown as Record<string, number>).__holdRuns)).toBe(1);
+
+  await leaveRecordingPageViaDialog(page);
+  await page.evaluate(() => (window as unknown as Record<string, () => void>).__releaseHold());
+
+  await expect.poll(async () => (await readWebDraftRow(page)).draftRevision ?? 0).toBeGreaterThan(revisionBefore);
+  expect(await isWebWatching(page)).toBe(false);
+  expect(await heldRecordingLocks(page)).toEqual([]);
+
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-recovery-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-points-count')).toContainText('1 点');
+  expect(await isWebWatching(page)).toBe(false);
+});
