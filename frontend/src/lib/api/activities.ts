@@ -134,12 +134,24 @@ export async function readRoute(id: string, fetcher: typeof fetch = fetch): Prom
   if (!uuid.test(id)) throw new ActivityError('找不到这条活动', 404);
   return unwrapRoute(await request(showcasePath(`/api/v1/activities/${id}/route`), {}, fetcher));
 }
-export const uploadGpx = (form: FormData, fetcher: typeof fetch = fetch) => uploadTrack(form, 'gpx', fetcher);
+export const uploadGpx = (form: FormData, fetcher: typeof fetch = fetch, options?: { idempotencyKey?: string }) =>
+  uploadTrack(form, 'gpx', fetcher, options);
 export const uploadTcx = (form: FormData, fetcher: typeof fetch = fetch) => uploadTrack(form, 'tcx', fetcher);
-async function uploadTrack(form: FormData, format: 'gpx' | 'tcx', fetcher: typeof fetch): Promise<{ activity: Activity; warnings: string[] }> {
+async function uploadTrack(
+  form: FormData,
+  format: 'gpx' | 'tcx',
+  fetcher: typeof fetch,
+  options?: { idempotencyKey?: string },
+): Promise<{ activity: Activity; warnings: string[] }> {
+  const idempotencyKey = options?.idempotencyKey;
+  if (idempotencyKey !== undefined && !uuid.test(idempotencyKey)) {
+    throw new ActivityError('上传幂等标识不合法', 422, 'INVALID_IDEMPOTENCY_KEY');
+  }
   const csrf = await request('/api/v1/auth/csrf', {}, fetcher);
   if (!object(csrf) || typeof csrf.csrf_token !== 'string' || !csrf.csrf_token) invalid();
-  const value = await request(`/api/v1/${format}-imports`, { method: 'POST', headers: { 'X-CSRF-Token': csrf.csrf_token }, body: form }, fetcher, 45000);
+  const headers: Record<string, string> = { 'X-CSRF-Token': csrf.csrf_token };
+  if (idempotencyKey && format === 'gpx') headers['Idempotency-Key'] = idempotencyKey;
+  const value = await request(`/api/v1/${format}-imports`, { method: 'POST', headers, body: form }, fetcher, 45000);
   if (!object(value) || !Array.isArray(value.warnings) || !value.warnings.every(w => typeof w === 'string')) invalid();
   return { activity: parseActivity(value.activity), warnings: value.warnings };
 }

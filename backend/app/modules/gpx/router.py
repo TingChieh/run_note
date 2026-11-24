@@ -1,7 +1,8 @@
 from datetime import date
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Header, Request, Response
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
@@ -20,13 +21,25 @@ router = APIRouter(prefix="/api/v1/gpx-imports", tags=["gpx"])
 @router.post("", status_code=201, response_model=ApiResponse[ImportView])
 async def import_gpx(
     request: Request,
+    response: Response,
     identity: Annotated[tuple, Depends(require_write)],
     db: Annotated[Session, Depends(get_session)],
+    idempotency_key: Annotated[UUID | None, Header()] = None,
 ):
-    return await import_file(request, identity, db, "gpx")
+    return await import_file(
+        request, identity, db, "gpx", idempotency_key=idempotency_key, response=response
+    )
 
 
-async def import_file(request, identity, db, format):
+async def import_file(
+    request,
+    identity,
+    db,
+    format,
+    *,
+    idempotency_key: UUID | None = None,
+    response: Response | None = None,
+):
     label = format.upper()
     allowed = {"file", "title", "timezone", "activity_date", "time_mode"}
     owner, default_timezone = identity[1].id, identity[1].timezone
@@ -72,6 +85,9 @@ async def import_file(request, identity, db, format):
                     raise ApiError(413, f"{label}_TOO_LARGE", "轨迹文件不能超过 10 MiB")
             importer = service.import_track
             options = {"format": format, "time_mode": time_mode}
+            if idempotency_key is not None:
+                options["idempotency_key"] = idempotency_key
+            request.state.idempotency_replayed = False
             data = await run_in_threadpool(
                 importer,
                 request,
@@ -84,6 +100,8 @@ async def import_file(request, identity, db, format):
                 activity_date,
                 **options,
             )
+            if response is not None and getattr(request.state, "idempotency_replayed", False):
+                response.status_code = 200
     except HTTPException:
         raise ApiError(
             422, "VALIDATION_ERROR", "表单超出限制，请只上传一个文件并检查字段长度"

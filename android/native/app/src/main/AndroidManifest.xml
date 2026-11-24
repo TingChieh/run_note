@@ -57,6 +57,12 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- Phase 3 active-run foreground location service (only runs while user records a run). -->
+        <service
+            android:exported="false"
+            android:foregroundServiceType="location"
+            android:name=".RecordingForegroundService" />
     </application>
 
     <!-- Query Health Connect provider availability on Android 11-13 (API 30-33). -->
@@ -78,4 +84,11 @@
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
     <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE" />
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
+
+    <!-- Phase 3 active-run GPS recording: foreground service location only (no ACCESS_BACKGROUND_LOCATION). -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

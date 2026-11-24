@@ -1,0 +1,569 @@
+package com.tingchieh.runnote
+
+import android.Manifest
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
+import com.getcapacitor.Logger
+import java.io.File
+
+/**
+ * Foreground location service keeping GPS recording alive across app backgrounding, screen lock,
+ * and Doze while the user is actively recording a run.
+ *
+ * Security & privacy invariants:
+ * - Never logs GPS coordinates, altitude, cookies, or session tokens.
+ * - Immediately persists accepted points to app-private disk storage (`allowBackup=false`).
+ * - Uses START_NOT_STICKY to comply with Android 14+ foreground service start restrictions;
+ *   if killed by the OS, persisted points are recovered cleanly when the user reopens RunNote.
+ */
+class RecordingForegroundService : Service(), LocationListener {
+
+    companion object {
+        const val CHANNEL_ID = "runnote_recording"
+        const val NOTIFICATION_ID = 30501
+
+        const val ACTION_START = "com.tingchieh.runnote.action.RECORDING_START"
+        const val ACTION_PAUSE = "com.tingchieh.runnote.action.RECORDING_PAUSE"
+        const val ACTION_RESUME = "com.tingchieh.runnote.action.RECORDING_RESUME"
+        const val ACTION_STOP = "com.tingchieh.runnote.action.RECORDING_STOP"
+        const val ACTION_DISCARD = "com.tingchieh.runnote.action.RECORDING_DISCARD"
+
+        const val EXTRA_SESSION_ID = "session_id"
+        const val EXTRA_ACCOUNT_ID = "account_id"
+        const val EXTRA_IDEMPOTENCY_KEY = "idempotency_key"
+        const val EXTRA_TITLE = "title"
+        const val EXTRA_RESUME_INTERRUPTED = "resume_interrupted"
+
+        private const val GPS_UPDATE_INTERVAL_MS = 1_000L
+        private const val HEARTBEAT_INTERVAL_MS = 2_000L
+
+        @Volatile
+        var isServiceRunning: Boolean = false
+            private set
+
+        @Volatile
+        var currentGpsStatus: String = "inactive"
+            private set
+
+        @Volatile
+        var stateListener: ((LocationRecordingPolicy.SessionRecord?, String) -> Unit)? = null
+
+        fun storeFor(context: Context): LocationRecordingPolicy.RecordingStore {
+            return LocationRecordingPolicy.RecordingStore(File(context.filesDir, "recordings"))
+        }
+
+        fun isLocationServicesEnabled(context: Context): Boolean {
+            val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return false
+            return try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    lm.isLocationEnabled
+                } else {
+                    @Suppress("DEPRECATION")
+                    lm.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                        lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+                }
+            } catch (_: Exception) {
+                false
+            }
+        }
+    }
+
+    private lateinit var store: LocationRecordingPolicy.RecordingStore
+    private var locationManager: LocationManager? = null
+    private var activeSession: LocationRecordingPolicy.SessionRecord? = null
+    private var lastAcceptedPoint: LocationRecordingPolicy.RecordedPoint? = null
+    private var lastFixElapsedMs: Long? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var locationSubscribed = false
+
+    private val heartbeatRunnable = object : Runnable {
+        override fun run() {
+            val session = activeSession ?: return
+            if (session.status != "recording" && session.status != "paused") {
+                return
+            }
+            val nowMs = System.currentTimeMillis()
+            val hasPerm = hasLocationPermission()
+            val locEnabled = isLocationServicesEnabled(this@RecordingForegroundService)
+            if (!hasPerm && session.status == "recording") {
+                handlePermissionRevokedMidRun(nowMs)
+                return
+            }
+            val ageMs = lastFixElapsedMs?.let { (nowMs - it).coerceAtLeast(0L) }
+            currentGpsStatus = LocationRecordingPolicy.classifyGpsSignal(
+                status = session.status,
+                locationServicesEnabled = locEnabled,
+                hasLocationPermission = hasPerm,
+                lastAccuracyM = session.lastAccuracyM,
+                lastFixAgeMs = ageMs,
+            )
+            updateNotification(session, currentGpsStatus, nowMs)
+            emitState(session, currentGpsStatus)
+            mainHandler.postDelayed(this, HEARTBEAT_INTERVAL_MS)
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        store = storeFor(applicationContext)
+        locationManager = getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+        ensureNotificationChannel()
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val action = intent?.action ?: return START_NOT_STICKY
+        when (action) {
+            ACTION_START -> handleStart(intent)
+            ACTION_PAUSE -> handlePause()
+            ACTION_RESUME -> handleResume()
+            ACTION_STOP -> handleStop()
+            ACTION_DISCARD -> handleDiscard()
+        }
+        return START_NOT_STICKY
+    }
+
+    private fun handleStart(intent: Intent) {
+        val nowMs = System.currentTimeMillis()
+        if (!hasLocationPermission()) {
+            Logger.warn("RunNoteRecorder", "Cannot start recording service without location permission")
+            currentGpsStatus = "permission_denied"
+            emitState(activeSession, currentGpsStatus)
+            stopSelf()
+            return
+        }
+
+        val resumeInterrupted = intent.getBooleanExtra(EXTRA_RESUME_INTERRUPTED, false)
+        val existing = store.loadSession()
+        val session = if (resumeInterrupted && existing != null) {
+            val existingPoints = store.loadPoints(0)
+            lastAcceptedPoint = existingPoints.lastOrNull()
+            existing.copy(
+                status = "recording",
+                lastSegmentStartMs = nowMs,
+                segmentIndex = existing.segmentIndex + 1,
+                interruptedReason = null,
+            )
+        } else {
+            val sessionId = intent.getStringExtra(EXTRA_SESSION_ID).orEmpty()
+            val accountId = intent.getStringExtra(EXTRA_ACCOUNT_ID).orEmpty()
+            val idempotencyKey = intent.getStringExtra(EXTRA_IDEMPOTENCY_KEY).orEmpty()
+            val title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
+            if (sessionId.isBlank() || accountId.isBlank() || idempotencyKey.isBlank()) {
+                Logger.warn("RunNoteRecorder", "Rejected recording start with missing identifiers")
+                stopSelf()
+                return
+            }
+            store.clearAll()
+            lastAcceptedPoint = null
+            LocationRecordingPolicy.SessionRecord(
+                sessionId = sessionId,
+                accountId = accountId,
+                idempotencyKey = idempotencyKey,
+                title = title,
+                status = "recording",
+                startedAtMs = nowMs,
+                endedAtMs = null,
+                activeDurationMs = 0L,
+                lastSegmentStartMs = nowMs,
+                segmentIndex = 0,
+                pointCount = 0,
+                previewDistanceM = 0.0,
+                lastPointTimeMs = null,
+                lastAccuracyM = null,
+                interruptedReason = null,
+            )
+        }
+
+        activeSession = session
+        lastFixElapsedMs = null
+        currentGpsStatus = if (isLocationServicesEnabled(this)) "acquiring" else "disabled"
+        store.saveSession(session)
+
+        if (!promoteToForeground(session, currentGpsStatus, nowMs)) {
+            val interrupted = session.copy(
+                status = "interrupted",
+                lastSegmentStartMs = null,
+                interruptedReason = "foreground_service_denied",
+            )
+            activeSession = interrupted
+            store.saveSession(interrupted)
+            isServiceRunning = false
+            emitState(interrupted, "permission_denied")
+            stopSelf()
+            return
+        }
+
+        isServiceRunning = true
+        subscribeLocationUpdates()
+        scheduleHeartbeat()
+        emitState(session, currentGpsStatus)
+        Logger.info("RunNoteRecorder", "Recording foreground service started")
+    }
+
+    private fun handlePause() {
+        val current = activeSession ?: store.loadSession() ?: return
+        if (current.status != "recording") return
+        val nowMs = System.currentTimeMillis()
+        val updated = current.copy(
+            status = "paused",
+            activeDurationMs = current.effectiveActiveDurationMs(nowMs),
+            lastSegmentStartMs = null,
+        )
+        activeSession = updated
+        unsubscribeLocationUpdates()
+        currentGpsStatus = "inactive"
+        store.saveSession(updated)
+        updateNotification(updated, currentGpsStatus, nowMs)
+        emitState(updated, currentGpsStatus)
+        Logger.info("RunNoteRecorder", "Recording paused")
+    }
+
+    private fun handleResume() {
+        val current = activeSession ?: store.loadSession() ?: return
+        if (current.status != "paused" && current.status != "interrupted") return
+        val nowMs = System.currentTimeMillis()
+        if (!hasLocationPermission()) {
+            handlePermissionRevokedMidRun(nowMs)
+            return
+        }
+        val updated = current.copy(
+            status = "recording",
+            lastSegmentStartMs = nowMs,
+            segmentIndex = current.segmentIndex + 1,
+            interruptedReason = null,
+        )
+        activeSession = updated
+        lastFixElapsedMs = null
+        currentGpsStatus = if (isLocationServicesEnabled(this)) "acquiring" else "disabled"
+        store.saveSession(updated)
+        if (!isServiceRunning) {
+            if (!promoteToForeground(updated, currentGpsStatus, nowMs)) {
+                handlePermissionRevokedMidRun(nowMs)
+                return
+            }
+            isServiceRunning = true
+        } else {
+            updateNotification(updated, currentGpsStatus, nowMs)
+        }
+        subscribeLocationUpdates()
+        scheduleHeartbeat()
+        emitState(updated, currentGpsStatus)
+        Logger.info("RunNoteRecorder", "Recording resumed on new track segment")
+    }
+
+    private fun handleStop() {
+        val current = activeSession ?: store.loadSession()
+        val nowMs = System.currentTimeMillis()
+        unsubscribeLocationUpdates()
+        mainHandler.removeCallbacks(heartbeatRunnable)
+        val finalized = current?.copy(
+            status = "stopped",
+            endedAtMs = nowMs,
+            activeDurationMs = current.effectiveActiveDurationMs(nowMs),
+            lastSegmentStartMs = null,
+        )
+        if (finalized != null) {
+            store.saveSession(finalized)
+            activeSession = finalized
+        }
+        isServiceRunning = false
+        currentGpsStatus = "inactive"
+        emitState(finalized, currentGpsStatus)
+        stopForegroundCompat()
+        stopSelf()
+        Logger.info("RunNoteRecorder", "Recording stopped cleanly")
+    }
+
+    private fun handleDiscard() {
+        unsubscribeLocationUpdates()
+        mainHandler.removeCallbacks(heartbeatRunnable)
+        activeSession = null
+        lastAcceptedPoint = null
+        lastFixElapsedMs = null
+        store.clearAll()
+        isServiceRunning = false
+        currentGpsStatus = "inactive"
+        emitState(null, currentGpsStatus)
+        stopForegroundCompat()
+        stopSelf()
+        Logger.info("RunNoteRecorder", "Recording discarded")
+    }
+
+    private fun handlePermissionRevokedMidRun(nowMs: Long) {
+        Logger.warn("RunNoteRecorder", "Location permission revoked during recording")
+        unsubscribeLocationUpdates()
+        mainHandler.removeCallbacks(heartbeatRunnable)
+        val current = activeSession ?: store.loadSession()
+        val interrupted = current?.copy(
+            status = "interrupted",
+            activeDurationMs = current.effectiveActiveDurationMs(nowMs),
+            lastSegmentStartMs = null,
+            interruptedReason = "permission_revoked",
+        )
+        if (interrupted != null) {
+            store.saveSession(interrupted)
+            activeSession = interrupted
+        }
+        isServiceRunning = false
+        currentGpsStatus = "permission_denied"
+        emitState(interrupted, currentGpsStatus)
+        stopForegroundCompat()
+        stopSelf()
+    }
+
+    override fun onLocationChanged(location: Location) {
+        val session = activeSession ?: return
+        if (session.status != "recording") return
+
+        val nowMs = System.currentTimeMillis()
+        val fixTimeMs = if (location.time > 0L) location.time else nowMs
+        val accuracy = if (location.hasAccuracy()) location.accuracy.toDouble() else null
+        val elevation = if (location.hasAltitude()) location.altitude else null
+
+        lastFixElapsedMs = nowMs
+        val candidate = LocationRecordingPolicy.RecordedPoint(
+            lat = location.latitude,
+            lon = location.longitude,
+            elevationM = elevation,
+            accuracyM = accuracy,
+            recordedAtMs = fixTimeMs,
+            segmentIndex = session.segmentIndex,
+        )
+        val decision = LocationRecordingPolicy.evaluatePoint(
+            candidate = candidate,
+            previous = lastAcceptedPoint,
+            currentPointCount = session.pointCount,
+        )
+
+        var updated = session.copy(lastAccuracyM = accuracy)
+        if (decision.accepted) {
+            store.appendPoint(candidate)
+            lastAcceptedPoint = candidate
+            updated = updated.copy(
+                pointCount = session.pointCount + 1,
+                previewDistanceM = session.previewDistanceM + decision.distanceDeltaM,
+                lastPointTimeMs = fixTimeMs,
+            )
+            store.saveSession(updated)
+        }
+        activeSession = updated
+        currentGpsStatus = LocationRecordingPolicy.classifyGpsSignal(
+            status = updated.status,
+            locationServicesEnabled = true,
+            hasLocationPermission = true,
+            lastAccuracyM = accuracy,
+            lastFixAgeMs = 0L,
+        )
+        updateNotification(updated, currentGpsStatus, nowMs)
+        emitState(updated, currentGpsStatus)
+    }
+
+    override fun onProviderDisabled(provider: String) {
+        val session = activeSession ?: return
+        if (!isLocationServicesEnabled(this)) {
+            currentGpsStatus = "disabled"
+            updateNotification(session, currentGpsStatus, System.currentTimeMillis())
+            emitState(session, currentGpsStatus)
+        }
+    }
+
+    override fun onProviderEnabled(provider: String) {
+        val session = activeSession ?: return
+        if (session.status == "recording") {
+            currentGpsStatus = "acquiring"
+            updateNotification(session, currentGpsStatus, System.currentTimeMillis())
+            emitState(session, currentGpsStatus)
+        }
+    }
+
+    @Deprecated("Deprecated in Android API 29")
+    override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {
+        // Handled via heartbeat watchdog and onProviderEnabled/onProviderDisabled.
+    }
+
+    override fun onDestroy() {
+        unsubscribeLocationUpdates()
+        mainHandler.removeCallbacks(heartbeatRunnable)
+        val current = activeSession
+        if (current != null && (current.status == "recording" || current.status == "paused")) {
+            val nowMs = System.currentTimeMillis()
+            val saved = current.copy(
+                status = "interrupted",
+                activeDurationMs = current.effectiveActiveDurationMs(nowMs),
+                lastSegmentStartMs = null,
+                interruptedReason = current.interruptedReason ?: "service_destroyed",
+            )
+            store.saveSession(saved)
+            activeSession = saved
+        }
+        isServiceRunning = false
+        currentGpsStatus = "inactive"
+        super.onDestroy()
+    }
+
+    private fun subscribeLocationUpdates() {
+        if (locationSubscribed) return
+        val lm = locationManager ?: return
+        if (!hasLocationPermission()) return
+        try {
+            val providers = mutableListOf<String>()
+            if (lm.allProviders.contains(LocationManager.GPS_PROVIDER)) {
+                providers.add(LocationManager.GPS_PROVIDER)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                lm.allProviders.contains(LocationManager.FUSED_PROVIDER)
+            ) {
+                if (providers.isEmpty()) {
+                    providers.add(LocationManager.FUSED_PROVIDER)
+                }
+            }
+            if (providers.isEmpty() && lm.allProviders.contains(LocationManager.NETWORK_PROVIDER)) {
+                providers.add(LocationManager.NETWORK_PROVIDER)
+            }
+            for (provider in providers) {
+                lm.requestLocationUpdates(provider, GPS_UPDATE_INTERVAL_MS, 0f, this, Looper.getMainLooper())
+            }
+            locationSubscribed = true
+        } catch (_: SecurityException) {
+            handlePermissionRevokedMidRun(System.currentTimeMillis())
+        } catch (ex: Exception) {
+            Logger.warn("RunNoteRecorder", "Failed to request location updates: ${ex.javaClass.simpleName}")
+        }
+    }
+
+    private fun unsubscribeLocationUpdates() {
+        if (!locationSubscribed) return
+        try {
+            locationManager?.removeUpdates(this)
+        } catch (_: Exception) {
+            // Ignore cleanup errors on teardown.
+        }
+        locationSubscribed = false
+    }
+
+    private fun scheduleHeartbeat() {
+        mainHandler.removeCallbacks(heartbeatRunnable)
+        mainHandler.postDelayed(heartbeatRunnable, HEARTBEAT_INTERVAL_MS)
+    }
+
+    private fun hasLocationPermission(): Boolean {
+        val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        return fine || coarse
+    }
+
+    private fun promoteToForeground(
+        session: LocationRecordingPolicy.SessionRecord,
+        gpsStatus: String,
+        nowMs: Long,
+    ): Boolean {
+        return try {
+            val notification = buildNotification(session, gpsStatus, nowMs)
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                notification,
+                LocationRecordingPolicy.foregroundServiceTypeForApi(Build.VERSION.SDK_INT),
+            )
+            true
+        } catch (ex: SecurityException) {
+            Logger.warn("RunNoteRecorder", "Foreground service denied by OS security policy")
+            false
+        } catch (ex: IllegalStateException) {
+            Logger.warn("RunNoteRecorder", "Foreground service start blocked in background state")
+            false
+        }
+    }
+
+    private fun updateNotification(
+        session: LocationRecordingPolicy.SessionRecord,
+        gpsStatus: String,
+        nowMs: Long,
+    ) {
+        if (!isServiceRunning) return
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+        try {
+            nm.notify(NOTIFICATION_ID, buildNotification(session, gpsStatus, nowMs))
+        } catch (_: SecurityException) {
+            // Notification permission denied on API 33+; foreground service still runs cleanly.
+        }
+    }
+
+    private fun buildNotification(
+        session: LocationRecordingPolicy.SessionRecord,
+        gpsStatus: String,
+        nowMs: Long,
+    ): Notification {
+        val openIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val pendingIntent = PendingIntent.getActivity(this, 0, openIntent, pendingFlags)
+
+        val elapsedLabel = LocationRecordingPolicy.formatDurationClock(session.effectiveActiveDurationMs(nowMs))
+        val kmLabel = LocationRecordingPolicy.formatPreviewKm(session.previewDistanceM)
+
+        val titleRes = if (session.status == "paused") {
+            R.string.recording_notification_paused_title
+        } else {
+            R.string.recording_notification_title
+        }
+        val contentText = when (gpsStatus) {
+            "disabled" -> getString(R.string.recording_notification_location_off)
+            "lost" -> getString(R.string.recording_notification_gps_lost, elapsedLabel)
+            "acquiring" -> getString(R.string.recording_notification_acquiring, elapsedLabel)
+            else -> getString(R.string.recording_notification_progress, kmLabel, elapsedLabel)
+        }
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(getString(titleRes))
+            .setContentText(contentText)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_WORKOUT)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setContentIntent(pendingIntent)
+            .build()
+    }
+
+    private fun ensureNotificationChannel() {
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            getString(R.string.recording_channel_name),
+            NotificationManager.IMPORTANCE_LOW,
+        ).apply {
+            description = getString(R.string.recording_channel_desc)
+            setShowBadge(false)
+        }
+        nm.createNotificationChannel(channel)
+    }
+
+    private fun stopForegroundCompat() {
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+    }
+
+    private fun emitState(session: LocationRecordingPolicy.SessionRecord?, gpsStatus: String) {
+        stateListener?.invoke(session, gpsStatus)
+    }
+}

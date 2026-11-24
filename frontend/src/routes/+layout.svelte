@@ -24,6 +24,9 @@
   import { isCapacitorNative } from '#lib/capacitor-env.ts';
   import { installCapacitorThemeSync } from '#lib/capacitor-theme.ts';
   import { clearHealthGrantHistory } from '#lib/capacitor-health.ts';
+  import { clearNativeAccountSessions } from '#lib/capacitor-recorder.ts';
+  import { clearPrivateRecordingData, ensureRecordingAccountIsolation } from '#lib/recording-store.ts';
+  import { flushRecordingUploadQueue } from '#lib/recording-uploader.ts';
   import {
     buildCacheNamespace,
     clearPrivateOfflineCache,
@@ -73,6 +76,7 @@
     users: { title: '用户管理', description: '管理账号、登录权限和独立个人展示链接。' },
   };
   let lastBadgeUserId: string | null = null;
+  let lastIsolatedRecordingUserId: string | null = null;
   $effect(() => {
     const currentUserId = page.data.user?.id ?? null;
     if (currentUserId !== lastBadgeUserId) {
@@ -81,6 +85,17 @@
     }
     if (mounted) {
       void ensureAccountCacheIsolation(currentUserId);
+      if (currentUserId) {
+        lastIsolatedRecordingUserId = currentUserId;
+        void ensureRecordingAccountIsolation(currentUserId);
+        void clearNativeAccountSessions(currentUserId);
+      } else if (lastIsolatedRecordingUserId !== null) {
+        // Only clear on an explicit signed-in -> signed-out transition; an anonymous cold start
+        // must never silently wipe an interrupted session belonging to a signed-in runner.
+        lastIsolatedRecordingUserId = null;
+        void clearPrivateRecordingData();
+        void clearNativeAccountSessions(null);
+      }
     }
   });
   onMount(() => {
@@ -132,6 +147,9 @@
       offline = nextOffline;
       if (reconnected) {
         runBackgroundSync();
+        if (shouldAutoSyncOnRoute()) {
+          void flushRecordingUploadQueue({ accountId: page.data.user!.id });
+        }
       }
     };
     syncNetwork();
@@ -208,12 +226,16 @@
     try {
       await authWrite('logout', {});
       await clearPrivateOfflineCache();
+      await clearPrivateRecordingData();
+      await clearNativeAccountSessions(null);
       clearHealthGrantHistory();
       checking = true;
       window.location.assign(viewContext(page.url.pathname).kind === 'workspace' ? '/' : page.url.pathname);
     } catch (cause) {
       if (cause instanceof AuthError && cause.status === 401) {
         await clearPrivateOfflineCache();
+        await clearPrivateRecordingData();
+        await clearNativeAccountSessions(null);
         clearHealthGrantHistory();
         checking = true;
         window.location.replace('/admin?reason=changed');
@@ -249,6 +271,8 @@
         if (disposed || busy || pending) return;
         if ((current?.id ?? null) !== (page.data.user?.id ?? null)) {
           await clearPrivateOfflineCache();
+          await clearPrivateRecordingData();
+          await clearNativeAccountSessions(current?.id ?? null);
           clearHealthGrantHistory();
           identityBlocked = true;
           if (isProtected(page.url.pathname) && !current) window.location.replace('/admin?reason=changed');

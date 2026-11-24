@@ -9,6 +9,8 @@ const user = { id: '00000000-0000-4000-8000-000000000001', email: 'runner.with.a
 /** @type {Record<string, any>[]} */
 const accounts = [{ ...user, password: 'Synthetic-ui-password-2026' }];
 const sessions = new Map([['ui-runner', user.id]]);
+/** @type {Map<string, { body: string; data: Record<string, unknown> }>} */
+const uiGpxImports = new Map();
 /** @param {Record<string, unknown>} account */
 const clean = account => Object.fromEntries(Object.entries(account).filter(([key]) => key !== 'password'));
 const summary = { activity_count: 0, distance_m: 0, duration_sum_seconds: null, known_duration_count: 0, missing_duration_count: 0, activity_days: 0, pace_eligible_count: 0, pace_eligible_distance_m: 0, avg_pace_seconds_per_km: null, quality_warning_count: 0, date_assignment: 'activity_local_date' };
@@ -521,6 +523,55 @@ createServer(async (req, res) => {
   }
   if (url.pathname.startsWith('/api/v1/ai-assistant/')) return !signedIn || showcase ? send(null, 401) : aiAssistant.handle(req, url, res, current.id, send);
   if (url.pathname === '/api/v1/activities/categories') return send([]);
+  if (url.pathname === '/api/v1/gpx-imports' && req.method === 'POST') {
+    if (showcase || !signedIn) return send(null, 401);
+    if (req.headers['x-csrf-token'] !== 'ui-csrf') return send(null, 403, '请求来源或CSRF令牌不合法');
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const rawBody = Buffer.concat(chunks).toString('utf8');
+    const rawKey = req.headers['idempotency-key'];
+    const idempotencyKey = Array.isArray(rawKey) ? rawKey[0] : rawKey;
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (idempotencyKey && !uuidRe.test(idempotencyKey)) return send(null, 422, '请求参数不合法');
+    const storeKey = idempotencyKey ? `${current.id}:${idempotencyKey}` : null;
+    const prior = storeKey ? uiGpxImports.get(storeKey) : undefined;
+    if (prior) {
+      if (prior.body !== rawBody) return send(null, 409, '该请求标识已用于其他轨迹上传', 'IDEMPOTENCY_CONFLICT');
+      return send(prior.data, 200);
+    }
+    const id = '33333333-3333-4333-8333-333333333333';
+    const data = {
+      activity: {
+        id,
+        title: '合成实时跑步记录',
+        notes: '',
+        category: '路跑',
+        tags: [],
+        activity_date: '2026-11-24',
+        timezone: current.timezone ?? 'Asia/Shanghai',
+        started_at: '2026-11-24T00:00:00Z',
+        ended_at: '2026-11-24T00:15:00Z',
+        distance_m: '2540.000',
+        elapsed_seconds: '900.000',
+        timer_seconds: null,
+        avg_pace_seconds_per_km: '354.000',
+        temporal_quality: 'complete',
+        visibility: 'private',
+        allow_shared_route: false,
+        quality_summary: { warnings: [] },
+        metrics_version: 'gpx-v1',
+        has_route: true,
+        created_at: '2026-11-24T00:15:05Z',
+      },
+      import_id: '44444444-4444-4444-8444-444444444444',
+      warnings: [],
+      point_count: 6,
+      segment_count: 2,
+      metrics_version: 'gpx-v1',
+    };
+    if (storeKey) uiGpxImports.set(storeKey, { body: rawBody, data });
+    return send(data, 201);
+  }
   if (url.pathname === '/api/v1/activities/sync') {
     if (showcase || !signedIn) return send(null, 401);
     const sinceVersion = url.searchParams.get('since_version');

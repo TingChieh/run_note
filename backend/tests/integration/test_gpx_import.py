@@ -447,3 +447,83 @@ def test_fifty_thousand_distinct_points_persist_in_batches(clients):
             {"id": imported["activity"]["id"], "owner": owner},
         ).one()
         assert tuple(row) == (50000, 50000, 50000, 0, 49999, 0, 49999)
+
+
+def test_gpx_import_idempotency_replay_conflict_isolation_and_no_n_plus_one(clients):
+    from sqlalchemy import event
+
+    a, b, engine, _ = clients
+    a.app.state.footprint_worker.stop()
+    owner_a = register(a)
+    owner_b = register(b)
+
+    raw_first = (FIXTURES / "equator-six.gpx").read_bytes()
+    raw_second = raw_first.replace(b"0.002", b"0.0021")
+    key = str(uuid4())
+
+    # Invalid non-UUID Idempotency-Key must be rejected with 422 before parsing.
+    bad = upload(a, raw=raw_first, extra_headers={"Idempotency-Key": "not-a-uuid"})
+    assert bad.status_code == 422
+    assert bad.json()["error"]["code"] == "VALIDATION_ERROR"
+
+    # First submission creates the activity (201) and bumps activity_data_version once.
+    first = upload(a, raw=raw_first, extra_headers={"Idempotency-Key": key})
+    assert first.status_code == 201, first.text
+    first_data = first.json()["data"]
+    with engine.connect() as c:
+        version_after_first = c.scalar(
+            text("SELECT activity_data_version FROM users WHERE id=:id"), {"id": owner_a}
+        )
+
+    # Identical retry with same Idempotency-Key replays the exact same ImportView (200)
+    # without creating duplicates, bumping version, or issuing N+1 queries.
+    statements = []
+    api_engine = a.app.state.session_factory.kw["bind"]
+
+    def record(connection, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    event.listen(api_engine, "before_cursor_execute", record)
+    try:
+        replayed = upload(a, raw=raw_first, extra_headers={"Idempotency-Key": key})
+    finally:
+        event.remove(api_engine, "before_cursor_execute", record)
+
+    assert replayed.status_code == 200, replayed.text
+    replayed_data = replayed.json()["data"]
+    assert replayed_data["activity"]["id"] == first_data["activity"]["id"]
+    assert replayed_data["import_id"] == first_data["import_id"]
+    assert replayed_data["point_count"] == first_data["point_count"]
+    assert replayed_data["segment_count"] == first_data["segment_count"]
+    assert len(statements) <= 12  # Bounded session + replay lookups, no N+1.
+
+    with engine.connect() as c:
+        assert (
+            c.scalar(text("SELECT count(*) FROM activities WHERE user_id=:id"), {"id": owner_a})
+            == 1
+        )
+        assert (
+            c.scalar(text("SELECT activity_data_version FROM users WHERE id=:id"), {"id": owner_a})
+            == version_after_first
+        )
+
+    # Reusing the same Idempotency-Key with a different track fails with 409 IDEMPOTENCY_CONFLICT.
+    conflict = upload(a, raw=raw_second, extra_headers={"Idempotency-Key": key})
+    assert conflict.status_code == 409, conflict.text
+    assert conflict.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+    with engine.connect() as c:
+        assert (
+            c.scalar(text("SELECT count(*) FROM activities WHERE user_id=:id"), {"id": owner_a})
+            == 1
+        )
+
+    # Cross-user isolation: user B submitting the same Idempotency-Key & GPX gets their own 201.
+    other = upload(b, raw=raw_first, extra_headers={"Idempotency-Key": key})
+    assert other.status_code == 201, other.text
+    other_data = other.json()["data"]
+    assert other_data["activity"]["id"] != first_data["activity"]["id"]
+    with engine.connect() as c:
+        assert (
+            c.scalar(text("SELECT count(*) FROM activities WHERE user_id=:id"), {"id": owner_b})
+            == 1
+        )

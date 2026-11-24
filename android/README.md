@@ -1,9 +1,9 @@
-# RunNote Android（Phase 1–2 Companion）
+# RunNote Android（Phase 1–3 Companion）
 
-RunNote 的 Android Capacitor 容器工程（#132、#133），直接复用同一套 RunNote Web UI，不改 Web SSR 架构、不引入独立页面 fork。
+RunNote 的 Android Capacitor 容器工程（#132、#133、#134），直接复用同一套 RunNote Web UI，不改 Web SSR 架构、不引入独立页面 fork。
 
 - **应用标识**：`com.tingchieh.runnote`（应用名 `RunNote`）
-- **版本**：与 `backend/pyproject.toml` / `frontend/package.json` 同步为 `2.4.0`（`versionCode = 20400`，规则 `MAJOR * 10000 + MINOR * 100 + PATCH`）
+- **版本**：与 `backend/pyproject.toml` / `frontend/package.json` 同步为 `2.5.0`（`versionCode = 20500`，规则 `MAJOR * 10000 + MINOR * 100 + PATCH`）
 - **最低系统要求**：Android 10（API 29）、Android System WebView / Chrome **116+**
 - **工具链**：Capacitor 8.6.2、`@capacitor/app` 8.1.2、`androidx.health.connect:connect-client` 1.1.0、Kotlin 2.1.21、JDK 21、Gradle 8.14.3、AGP 8.13.0、Android SDK 36、Build Tools 35.0.0
 
@@ -73,7 +73,12 @@ sha256sum android/native/app/build/outputs/apk/release/app-release.apk
 - **离线缓存与增量同步（`frontend/src/lib/offline-cache.ts` + `companion-sync.ts`）**：
   - 使用按账号命名空间隔离的 IndexedDB 缓存数据汇总、活动列表/详情与足迹元数据（不缓存明文 Token、Cookie、原始 GPX/TCX、离线底图或私人身心健康日记）；
   - 通过 `GET /api/v1/activities/sync` 基于 `activity_data_version` + `updated_at` 游标分页增量同步、去重、断网重试与删除对齐；退出登录、401 或切换账号自动清空私有缓存。
+- **实时运动记录与前台后台定位（`LocationRecorderPlugin` + `RecordingForegroundService` + `LocationRecordingPolicy` + `frontend/src/lib/capacitor-recorder.ts`）**：
+  - 仅在用户主动开始记录期间启动 `foregroundServiceType="location"` 的前台服务并展示常驻通知，支持锁屏、切后台、Doze 持续记录；遵循 Google Play 最小权限原则，**不声明 `ACCESS_BACKGROUND_LOCATION`**；
+  - 仅申请 `ACCESS_FINE_LOCATION`、`ACCESS_COARSE_LOCATION`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_LOCATION`、`POST_NOTIFICATIONS`（API 33+）；妥善处理权限拒绝、大致位置、通知拒绝与「仅本次允许」失效；
+  - 每个有效 GPS 点即时写入应用私有目录（`files/recordings/`，原子元数据 JSON + 追加式 NDJSON，禁止云备份 `allowBackup="false"`），进程被杀或重启后显式提示恢复或安全丢弃，绝不静默丢数据；
+  - 结束后生成确定性 GPX 1.1（暂停/继续分段），经本地账号隔离队列携带 `Idempotency-Key` 幂等上传至 `POST /api/v1/gpx-imports`（断网暂存、指数退避重试、重复提交返回同一结果），服务端保持指标权威；退出登录/切换账号自动清理本机记录与队列。
 - **文件导入（`RunNoteWebChromeClient` + `FilePickerIntentHelper`）**：沿用 Phase 0 的 SAF DocumentsUI MIME 放宽，不申请宽泛存储权限。
-- **认证与隐私**：沿用同源 HttpOnly Cookie + CSRF + Origin，`onPause()`/`onStop()` 主动 `CookieManager.flush()`；不暴露会话给 JS，不记录凭据、Cookie、健康数据原文或轨迹信息。
+- **认证与隐私**：沿用同源 HttpOnly Cookie + CSRF + Origin，`onPause()`/`onStop()` 主动 `CookieManager.flush()`；不暴露会话给 JS，不记录凭据、Cookie、健康数据原文或 GPS 坐标。
 
-详细验证记录与阶段边界见 [Phase 1 交付记录](../docs/97-android-capacitor-phase1.md) 与 [Phase 2 交付记录](../docs/98-android-capacitor-phase2.md)。
+详细验证记录与阶段边界见 [Phase 1 交付记录](../docs/97-android-capacitor-phase1.md)、[Phase 2 交付记录](../docs/98-android-capacitor-phase2.md) 与 [Phase 3 交付记录](../docs/99-android-capacitor-phase3.md)。

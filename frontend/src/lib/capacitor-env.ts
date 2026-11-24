@@ -14,6 +14,32 @@ export interface CapacitorHealthDataPlugin {
   openSettings?: () => Promise<unknown>;
 }
 
+export interface CapacitorLocationRecorderPlugin {
+  getCapabilities?: () => Promise<unknown>;
+  checkPermissions?: () => Promise<unknown>;
+  requestPermissions?: () => Promise<unknown>;
+  openAppSettings?: () => Promise<unknown>;
+  openLocationSettings?: () => Promise<unknown>;
+  startSession?: (options: {
+    sessionId: string;
+    accountId: string;
+    idempotencyKey: string;
+    title?: string;
+    resumeInterrupted?: boolean;
+  }) => Promise<unknown>;
+  pauseSession?: () => Promise<unknown>;
+  resumeSession?: () => Promise<unknown>;
+  stopSession?: () => Promise<unknown>;
+  discardSession?: () => Promise<unknown>;
+  getSessionState?: () => Promise<unknown>;
+  getSessionPoints?: (options?: { afterIndex?: number }) => Promise<unknown>;
+  clearAccountSessions?: (options?: { keepAccountId?: string | null }) => Promise<unknown>;
+  addListener?: (
+    eventName: 'sessionUpdate',
+    listenerFunc: (event: unknown) => void,
+  ) => Promise<{ remove: () => Promise<void> | void }> | { remove: () => Promise<void> | void };
+}
+
 export interface CapacitorWindowRuntime {
   isNativePlatform?: () => boolean;
   getPlatform?: () => string;
@@ -21,6 +47,7 @@ export interface CapacitorWindowRuntime {
     SystemBars?: CapacitorSystemBarsPlugin;
     SystemAppearance?: CapacitorSystemAppearancePlugin;
     HealthData?: CapacitorHealthDataPlugin;
+    LocationRecorder?: CapacitorLocationRecorderPlugin;
   };
 }
 

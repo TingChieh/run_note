@@ -5,9 +5,9 @@ import re
 from contextlib import contextmanager
 from datetime import date
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from sqlalchemy import insert, select, text
+from sqlalchemy import func, insert, select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.core.errors import ApiError
@@ -127,6 +127,46 @@ def safe_filename(name, format="gpx"):
     return re.sub(r"[\x00-\x1f\x7f]", "_", base)[:255] or f"activity.{format}"
 
 
+def idempotency_filename(idempotency_key: UUID, format="gpx") -> str:
+    """Stable owner-private provenance tag stored in original_filename without migration."""
+    return f"idempotency:{idempotency_key}.{format}"
+
+
+def find_idempotent_replay(
+    db, owner, idempotency_key: UUID, raw_hash: str, format="gpx"
+) -> ImportView | None:
+    if format != "gpx":
+        return None
+    tag = idempotency_filename(idempotency_key, format)
+    existing = db.scalar(
+        select(GpxImport).where(GpxImport.user_id == owner, GpxImport.original_filename == tag)
+    )
+    if existing is None:
+        return None
+    if existing.raw_sha256 != raw_hash:
+        raise ApiError(409, "IDEMPOTENCY_CONFLICT", "该请求标识已用于其他轨迹上传")
+    activity = db.scalar(
+        select(Activity).where(Activity.id == existing.activity_id, Activity.user_id == owner)
+    )
+    if activity is None:
+        return None
+    segment_count, point_count = db.execute(
+        select(
+            func.count(ActivitySegment.id),
+            func.coalesce(func.sum(ActivitySegment.point_count), 0),
+        ).where(ActivitySegment.activity_id == activity.id)
+    ).one()
+    warnings = list((activity.quality_summary or {}).get("warnings", []))
+    return ImportView(
+        activity=view(activity, has_route=bool(segment_count)),
+        import_id=existing.id,
+        warnings=warnings,
+        point_count=int(point_count),
+        segment_count=int(segment_count),
+        metrics_version=activity.metrics_version,
+    )
+
+
 def import_track(
     request,
     db,
@@ -139,6 +179,7 @@ def import_track(
     *,
     format="gpx",
     time_mode="absolute",
+    idempotency_key: UUID | None = None,
 ):
     raw_hash = hashlib.sha256(raw).hexdigest()
     canonical = None
@@ -146,6 +187,13 @@ def import_track(
     engine = db.get_bind()
     try:
         with import_lock(engine, owner):
+            if idempotency_key is not None:
+                replayed = find_idempotent_replay(
+                    db, owner, idempotency_key, raw_hash, format=format
+                )
+                if replayed is not None:
+                    request.state.idempotency_replayed = True
+                    return replayed
             duplicate(db, owner, raw_hash, format=format)
             db.rollback()  # No pool slot or transaction held during the child parse.
             parsed = bounded_parse(raw, format=format, timezone=timezone, time_mode=time_mode)
@@ -250,11 +298,16 @@ def import_track(
                     if format == "tcx"
                     else dict(raw_gpx=raw)
                 )
+                stored_name = (
+                    idempotency_filename(idempotency_key, format)
+                    if idempotency_key is not None and format == "gpx"
+                    else safe_filename(filename, format)
+                )
                 imported = source_model(
                     id=uuid4(),
                     activity_id=activity.id,
                     user_id=owner,
-                    original_filename=safe_filename(filename, format),
+                    original_filename=stored_name,
                     **provenance,
                     byte_size=len(raw),
                     raw_sha256=raw_hash,
@@ -288,6 +341,13 @@ def import_track(
             "uq_tcx_imports_owner_raw",
             "uq_tcx_imports_owner_canonical",
         }:
+            if idempotency_key is not None and format == "gpx":
+                replayed = find_idempotent_replay(
+                    db, owner, idempotency_key, raw_hash, format=format
+                )
+                if replayed is not None:
+                    request.state.idempotency_replayed = True
+                    return replayed
             duplicate(db, owner, raw_hash, canonical, format=format)
         raise ApiError(503, "DEPENDENCY_UNAVAILABLE", "保存暂时失败，请稍后重试") from None
     except SQLAlchemyError:
