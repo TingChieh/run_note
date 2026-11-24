@@ -348,17 +348,82 @@ export async function getNativeRecorderPoints(
   return isRecord(raw) ? parsePointsPayload(raw.points) : [];
 }
 
-export async function acknowledgeNativeHandoff(sessionId: string, win?: WinWithCap): Promise<boolean> {
+export interface NativeAcknowledgeHandoffOptions {
+  sessionId: string;
+  accountId: string;
+  claimRevision: number;
+  claimToken?: string;
+}
+
+export interface NativeStopRecordingOptions {
+  accountId: string;
+  sessionId: string;
+  claimRevision: number;
+  claimToken?: string;
+}
+
+export async function acknowledgeNativeHandoff(
+  options: NativeAcknowledgeHandoffOptions,
+  win?: WinWithCap,
+): Promise<boolean> {
+  const sessionId = options.sessionId.trim();
+  const accountId = options.accountId.trim();
+  const claimRevision = options.claimRevision;
+  const claimToken = options.claimToken?.trim() || undefined;
+  if (!sessionId || !accountId || !Number.isInteger(claimRevision) || claimRevision <= 0) {
+    return false;
+  }
   const plugin = getNativePlugin(win);
-  if (plugin?.acknowledgeHandoff) {
-    const raw = await plugin.acknowledgeHandoff({ sessionId });
-    return isRecord(raw) && raw.acknowledged === true;
+  if (!plugin?.acknowledgeHandoff) {
+    return false;
   }
-  if (plugin?.discardSession) {
-    await plugin.discardSession();
-    return true;
+  const raw = await plugin.acknowledgeHandoff({
+    sessionId,
+    accountId,
+    claimRevision,
+    ...(claimToken ? { claimToken } : {}),
+  });
+  return isRecord(raw) && raw.acknowledged === true;
+}
+
+export async function syncNativeAccountClaim(
+  accountId: string | null,
+  claimRevision: number,
+  claimToken?: string,
+  win?: WinWithCap,
+): Promise<boolean> {
+  const plugin = getNativePlugin(win);
+  if (!plugin?.syncAccountClaim) return false;
+  try {
+    const raw = await plugin.syncAccountClaim({
+      accountId: accountId && accountId.trim() ? accountId.trim() : null,
+      claimRevision: Number.isInteger(claimRevision) && claimRevision > 0 ? claimRevision : 0,
+      ...(claimToken?.trim() ? { claimToken: claimToken.trim() } : {}),
+    });
+    return isRecord(raw) && raw.synced === true;
+  } catch {
+    return false;
   }
-  return false;
+}
+
+export async function revokeNativeAccountClaim(
+  accountId: string | null,
+  claimRevision?: number,
+  win?: WinWithCap,
+): Promise<boolean> {
+  const plugin = getNativePlugin(win);
+  if (!plugin?.revokeAccountClaim) return false;
+  try {
+    const raw = await plugin.revokeAccountClaim({
+      accountId: accountId && accountId.trim() ? accountId.trim() : null,
+      ...(typeof claimRevision === 'number' && Number.isInteger(claimRevision) && claimRevision > 0
+        ? { claimRevision }
+        : {}),
+    });
+    return isRecord(raw) && raw.revoked === true;
+  } catch {
+    return false;
+  }
 }
 
 export async function startNativeRecording(
@@ -368,6 +433,8 @@ export async function startNativeRecording(
     idempotencyKey: string;
     title?: string;
     resumeInterrupted?: boolean;
+    claimRevision?: number;
+    claimToken?: string;
   },
   win?: WinWithCap,
 ): Promise<void> {
@@ -386,11 +453,29 @@ export async function resumeNativeRecording(win?: WinWithCap): Promise<void> {
   if (plugin?.resumeSession) await plugin.resumeSession();
 }
 
-export async function stopNativeRecording(win?: WinWithCap): Promise<RecorderStopResult | null> {
+export async function stopNativeRecording(
+  options: NativeStopRecordingOptions,
+  win?: WinWithCap,
+): Promise<RecorderStopResult | null> {
+  const accountId = options.accountId.trim();
+  const sessionId = options.sessionId.trim();
+  const claimRevision = options.claimRevision;
+  const claimToken = options.claimToken?.trim() || undefined;
+  if (!accountId || !sessionId || !Number.isInteger(claimRevision) || claimRevision <= 0) {
+    throw new Error('缺少有效的账号或会话归属凭据，已阻止停止原生记录。');
+  }
   const plugin = getNativePlugin(win);
   if (!plugin?.stopSession) return null;
-  const raw = await plugin.stopSession();
+  const raw = await plugin.stopSession({
+    accountId,
+    sessionId,
+    claimRevision,
+    ...(claimToken ? { claimToken } : {}),
+  });
   const base = parseStateEventPayload(raw);
+  if (base.session && (base.session.accountId !== accountId || base.session.sessionId !== sessionId)) {
+    throw new Error('原生记录会话归属不匹配，已阻止读取或显示其他账号的数据。');
+  }
   const points = isRecord(raw) ? parsePointsPayload(raw.points) : [];
   return { ...base, points };
 }
@@ -400,11 +485,21 @@ export async function discardNativeRecording(win?: WinWithCap): Promise<void> {
   if (plugin?.discardSession) await plugin.discardSession();
 }
 
-export async function clearNativeAccountSessions(keepAccountId: string | null, win?: WinWithCap): Promise<void> {
+export async function clearNativeAccountSessions(
+  keepAccountId: string | null,
+  options?: { claimRevision?: number; claimToken?: string },
+  win?: WinWithCap,
+): Promise<void> {
   const plugin = getNativePlugin(win);
   if (!plugin?.clearAccountSessions) return;
   try {
-    await plugin.clearAccountSessions({ keepAccountId });
+    await plugin.clearAccountSessions({
+      keepAccountId,
+      ...(typeof options?.claimRevision === 'number' && options.claimRevision > 0
+        ? { claimRevision: options.claimRevision }
+        : {}),
+      ...(options?.claimToken?.trim() ? { claimToken: options.claimToken.trim() } : {}),
+    });
   } catch {
     // Non-fatal cleanup when native bridge is unavailable.
   }

@@ -53,6 +53,8 @@ class RecordingForegroundService : Service(), LocationListener {
         const val EXTRA_IDEMPOTENCY_KEY = "idempotency_key"
         const val EXTRA_TITLE = "title"
         const val EXTRA_RESUME_INTERRUPTED = "resume_interrupted"
+        const val EXTRA_CLAIM_REVISION = "claim_revision"
+        const val EXTRA_CLAIM_TOKEN = "claim_token"
 
         private const val GPS_UPDATE_INTERVAL_MS = 1_000L
         private const val HEARTBEAT_INTERVAL_MS = 2_000L
@@ -154,19 +156,79 @@ class RecordingForegroundService : Service(), LocationListener {
             coordinator.discardSession()
         }
 
-        fun clearIfAccountMismatchSync(
+        fun stopAndFinalizeForOwnerSync(
             context: Context,
-            keepAccountId: String?,
+            expectedAccountId: String,
+            expectedSessionId: String,
+            expectedClaimRevision: Long,
+            expectedClaimToken: String? = null,
             timeoutMs: Long = 3_000L,
-        ): Boolean {
+        ): LocationRecordingPolicy.StopResult {
             val coordinator = coordinatorFor(context)
-            if (!coordinator.hasAccountMismatch(keepAccountId)) {
-                return false
-            }
             val service = runningInstance
             if (service != null) {
                 if (Looper.myLooper() == Looper.getMainLooper()) {
-                    return service.handleDiscardIfAccountMismatch(keepAccountId)
+                    return service.freezeAndStopForOwnerOnMainThread(
+                        expectedAccountId = expectedAccountId,
+                        expectedSessionId = expectedSessionId,
+                        expectedClaimRevision = expectedClaimRevision,
+                        expectedClaimToken = expectedClaimToken,
+                        emitHandoffEvent = false,
+                    )
+                }
+                var result: LocationRecordingPolicy.StopResult? = null
+                val latch = CountDownLatch(1)
+                val posted = service.mainHandler.post {
+                    try {
+                        result = service.freezeAndStopForOwnerOnMainThread(
+                            expectedAccountId = expectedAccountId,
+                            expectedSessionId = expectedSessionId,
+                            expectedClaimRevision = expectedClaimRevision,
+                            expectedClaimToken = expectedClaimToken,
+                            emitHandoffEvent = false,
+                        )
+                    } finally {
+                        latch.countDown()
+                    }
+                }
+                if (posted) {
+                    try {
+                        if (latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+                            return result ?: LocationRecordingPolicy.StopResult(null, "NO_ACTIVE_SESSION")
+                        }
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                    }
+                }
+            }
+            val fallback = coordinator.finalizeAndFreezeForOwner(
+                expectedAccountId = expectedAccountId,
+                expectedSessionId = expectedSessionId,
+                expectedClaimRevision = expectedClaimRevision,
+                expectedClaimToken = expectedClaimToken,
+                nowMs = System.currentTimeMillis(),
+            )
+            if (fallback.snapshot != null) {
+                coordinator.claimHandoffEmission(fallback.snapshot.session.sessionId)
+            }
+            return fallback
+        }
+
+        fun clearIfAccountMismatchSync(
+            context: Context,
+            keepAccountId: String?,
+            claimRevision: Long? = null,
+            claimToken: String? = null,
+            timeoutMs: Long = 3_000L,
+        ): Boolean {
+            val coordinator = coordinatorFor(context)
+            val hasMismatch = coordinator.hasAccountMismatch(keepAccountId)
+            val service = runningInstance
+            if (hasMismatch && service != null) {
+                if (Looper.myLooper() == Looper.getMainLooper()) {
+                    val cleared = service.handleDiscardIfAccountMismatch(keepAccountId)
+                    coordinator.clearIfAccountMismatch(keepAccountId, claimRevision, claimToken)
+                    return cleared
                 }
                 var cleared = false
                 val latch = CountDownLatch(1)
@@ -180,6 +242,7 @@ class RecordingForegroundService : Service(), LocationListener {
                 if (posted) {
                     try {
                         if (latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+                            coordinator.clearIfAccountMismatch(keepAccountId, claimRevision, claimToken)
                             return cleared
                         }
                     } catch (_: InterruptedException) {
@@ -187,7 +250,7 @@ class RecordingForegroundService : Service(), LocationListener {
                     }
                 }
             }
-            return coordinator.clearIfAccountMismatch(keepAccountId)
+            return coordinator.clearIfAccountMismatch(keepAccountId, claimRevision, claimToken)
         }
 
         fun isLocationServicesEnabled(context: Context): Boolean {
@@ -278,6 +341,8 @@ class RecordingForegroundService : Service(), LocationListener {
         val accountId = intent.getStringExtra(EXTRA_ACCOUNT_ID).orEmpty()
         val idempotencyKey = intent.getStringExtra(EXTRA_IDEMPOTENCY_KEY).orEmpty()
         val title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
+        val claimRevision = intent.getLongExtra(EXTRA_CLAIM_REVISION, 0L)
+        val claimToken = intent.getStringExtra(EXTRA_CLAIM_TOKEN)
 
         val startRes = coordinator.startSession(
             sessionId = sessionId,
@@ -286,6 +351,8 @@ class RecordingForegroundService : Service(), LocationListener {
             title = title,
             resumeInterrupted = resumeInterrupted,
             nowMs = nowMs,
+            claimRevision = claimRevision,
+            claimToken = claimToken,
         )
         if (startRes.errorCode != null) {
             Logger.warn("RunNoteRecorder", "Rejected recording start: ${startRes.errorCode}")
@@ -359,6 +426,46 @@ class RecordingForegroundService : Service(), LocationListener {
         scheduleHeartbeat()
         emitState(updated, currentGpsStatus)
         Logger.info("RunNoteRecorder", "Recording resumed on new track segment")
+    }
+
+    private fun freezeAndStopForOwnerOnMainThread(
+        expectedAccountId: String,
+        expectedSessionId: String,
+        expectedClaimRevision: Long,
+        expectedClaimToken: String?,
+        emitHandoffEvent: Boolean,
+    ): LocationRecordingPolicy.StopResult {
+        val nowMs = System.currentTimeMillis()
+        val result = coordinator.finalizeAndFreezeForOwner(
+            expectedAccountId = expectedAccountId,
+            expectedSessionId = expectedSessionId,
+            expectedClaimRevision = expectedClaimRevision,
+            expectedClaimToken = expectedClaimToken,
+            nowMs = nowMs,
+        ) {
+            unsubscribeLocationUpdates()
+            mainHandler.removeCallbacks(heartbeatRunnable)
+        }
+        if (result.errorCode != null) {
+            Logger.warn("RunNoteRecorder", "Rejected manual recording stop: ${result.errorCode}")
+            return result
+        }
+        val snapshot = result.snapshot
+        isServiceRunning = false
+        currentGpsStatus = "inactive"
+        if (snapshot != null) {
+            if (emitHandoffEvent) {
+                if (snapshot.newlyFinalized && coordinator.claimHandoffEmission(snapshot.session.sessionId)) {
+                    emitState(snapshot.session, currentGpsStatus)
+                }
+            } else {
+                coordinator.claimHandoffEmission(snapshot.session.sessionId)
+            }
+        }
+        stopForegroundCompat()
+        stopSelf()
+        Logger.info("RunNoteRecorder", "Recording stopped cleanly for owner")
+        return result
     }
 
     private fun freezeAndStopOnMainThread(emitHandoffEvent: Boolean): LocationRecordingPolicy.FinalizedSnapshot? {

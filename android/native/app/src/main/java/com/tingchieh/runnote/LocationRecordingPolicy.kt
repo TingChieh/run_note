@@ -108,7 +108,19 @@ object LocationRecordingPolicy {
         @JvmField val newlyFinalized: Boolean,
     )
 
-    data class SessionRecord(
+    data class StopResult(
+        @JvmField val snapshot: FinalizedSnapshot?,
+        @JvmField val errorCode: String?,
+    )
+
+    data class ClaimFence(
+        @JvmField val authorizedAccountId: String?,
+        @JvmField val authorizedClaimRevision: Long?,
+        @JvmField val authorizedClaimToken: String?,
+        @JvmField val claimEpoch: Long,
+    )
+
+    data class SessionRecord @JvmOverloads constructor(
         @JvmField val sessionId: String,
         @JvmField val accountId: String,
         @JvmField val idempotencyKey: String,
@@ -124,6 +136,7 @@ object LocationRecordingPolicy {
         @JvmField val lastPointTimeMs: Long?,
         @JvmField val lastAccuracyM: Double?,
         @JvmField val interruptedReason: String?,
+        @JvmField val claimRevision: Long? = null,
     ) {
         fun effectiveActiveDurationMs(nowMs: Long): Long {
             val runningDelta = if (status == "recording" && lastSegmentStartMs != null && nowMs > lastSegmentStartMs) {
@@ -416,6 +429,8 @@ object LocationRecordingPolicy {
         private val metaTmpFile: File = File(dir, "active_session.json.tmp")
         private val pointsFile: File = File(dir, "points.ndjson")
         private val pointsTmpFile: File = File(dir, "points.ndjson.tmp")
+        private val claimFenceFile: File = File(dir, "claim_fence.json")
+        private val claimFenceTmpFile: File = File(dir, "claim_fence.json.tmp")
 
         private fun atomicReplace(source: File, target: File) {
             try {
@@ -450,6 +465,7 @@ object LocationRecordingPolicy {
                 "\"lastPointTimeMs\":${session.lastPointTimeMs?.toString() ?: "null"}",
                 "\"lastAccuracyM\":${session.lastAccuracyM?.let { String.format(Locale.US, "%.3f", it) } ?: "null"}",
                 "\"interruptedReason\":${session.interruptedReason?.let { jsonQuote(it) } ?: "null"}",
+                "\"claimRevision\":${session.claimRevision?.toString() ?: "null"}",
             )
             val payload = "{${fields.joinToString(",")}}"
             FileOutputStream(metaTmpFile).use { fos ->
@@ -510,10 +526,80 @@ object LocationRecordingPolicy {
             loadPoints(afterIndex)
         }
 
-        fun acknowledgeHandoff(sessionId: String): Boolean = synchronized(lock) {
-            if (sessionId.isBlank()) return@synchronized false
+        fun saveClaimFence(fence: ClaimFence) = synchronized(lock) {
+            if (!dir.exists()) {
+                dir.mkdirs()
+            }
+            val fields = listOf(
+                "\"authorizedAccountId\":${fence.authorizedAccountId?.let { jsonQuote(it) } ?: "null"}",
+                "\"authorizedClaimRevision\":${fence.authorizedClaimRevision?.toString() ?: "null"}",
+                "\"authorizedClaimToken\":${fence.authorizedClaimToken?.let { jsonQuote(it) } ?: "null"}",
+                "\"claimEpoch\":${fence.claimEpoch.coerceAtLeast(0L)}",
+            )
+            val payload = "{${fields.joinToString(",")}}"
+            FileOutputStream(claimFenceTmpFile).use { fos ->
+                fos.write(payload.toByteArray(StandardCharsets.UTF_8))
+                fos.flush()
+                try {
+                    fos.fd.sync()
+                } catch (_: Exception) {
+                    // Best-effort fsync on platforms that support it.
+                }
+            }
+            atomicReplace(claimFenceTmpFile, claimFenceFile)
+        }
+
+        fun loadClaimFence(): ClaimFence? = synchronized(lock) {
+            if (!claimFenceFile.exists()) return@synchronized null
+            try {
+                val raw = claimFenceFile.readText(StandardCharsets.UTF_8)
+                val obj = parseFlatJsonObject(raw) ?: return@synchronized null
+                val authorizedAccountId = obj["authorizedAccountId"]?.trim()?.takeIf { it.isNotEmpty() }
+                val authorizedClaimRevision = obj["authorizedClaimRevision"]?.toLongOrNull()?.takeIf { it > 0L }
+                val authorizedClaimToken = obj["authorizedClaimToken"]?.trim()?.takeIf { it.isNotEmpty() }
+                val claimEpoch = (obj["claimEpoch"]?.toLongOrNull() ?: 0L).coerceAtLeast(0L)
+                ClaimFence(
+                    authorizedAccountId = authorizedAccountId,
+                    authorizedClaimRevision = authorizedClaimRevision,
+                    authorizedClaimToken = authorizedClaimToken,
+                    claimEpoch = maxOf(claimEpoch, authorizedClaimRevision ?: 0L),
+                )
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+        @JvmOverloads
+        fun acknowledgeHandoff(
+            sessionId: String,
+            accountId: String,
+            claimRevision: Long,
+            claimToken: String? = null,
+        ): Boolean = synchronized(lock) {
+            if (sessionId.isBlank() || accountId.isBlank() || claimRevision <= 0L) return@synchronized false
             val existing = loadSession() ?: return@synchronized false
-            if (existing.status != "stopped" || existing.sessionId != sessionId) return@synchronized false
+            if (existing.status != "stopped" ||
+                existing.sessionId != sessionId ||
+                existing.accountId != accountId
+            ) {
+                return@synchronized false
+            }
+            if (existing.claimRevision != null && claimRevision < existing.claimRevision) {
+                return@synchronized false
+            }
+            val fence = loadClaimFence()
+            if (fence != null) {
+                if (fence.authorizedAccountId == null ||
+                    fence.authorizedAccountId != accountId ||
+                    fence.authorizedClaimRevision != claimRevision ||
+                    claimRevision < fence.claimEpoch
+                ) {
+                    return@synchronized false
+                }
+                if (!fence.authorizedClaimToken.isNullOrBlank() && fence.authorizedClaimToken != claimToken?.trim()) {
+                    return@synchronized false
+                }
+            }
             clearAll()
             true
         }
@@ -547,6 +633,7 @@ object LocationRecordingPolicy {
                     lastPointTimeMs = obj["lastPointTimeMs"]?.toLongOrNull(),
                     lastAccuracyM = obj["lastAccuracyM"]?.toDoubleOrNull()?.takeIf { it.isFinite() },
                     interruptedReason = obj["interruptedReason"],
+                    claimRevision = obj["claimRevision"]?.toLongOrNull()?.takeIf { it > 0L },
                 )
             } catch (_: Exception) {
                 null
@@ -660,8 +747,117 @@ object LocationRecordingPolicy {
 
         fun currentSession(): SessionRecord? = synchronized(store.lock) { activeSession }
 
-        fun checkStartConflict(accountId: String, resumeInterrupted: Boolean): StartResult? =
+        fun currentClaimFence(): ClaimFence? = synchronized(store.lock) { store.loadClaimFence() }
+
+        @JvmOverloads
+        fun syncAccountClaim(
+            accountId: String?,
+            claimRevision: Long,
+            claimToken: String? = null,
+        ): Boolean = synchronized(store.lock) {
+            val existing = store.loadClaimFence()
+            val normalizedAccount = accountId?.trim()?.takeIf { it.isNotEmpty() }
+            if (normalizedAccount != null && claimRevision > 0L) {
+                if (existing != null) {
+                    if (claimRevision < existing.claimEpoch) {
+                        return@synchronized false
+                    }
+                    if (claimRevision == existing.claimEpoch && existing.authorizedAccountId == null) {
+                        return@synchronized false
+                    }
+                }
+                store.saveClaimFence(
+                    ClaimFence(
+                        authorizedAccountId = normalizedAccount,
+                        authorizedClaimRevision = claimRevision,
+                        authorizedClaimToken = claimToken?.trim()?.takeIf { it.isNotEmpty() },
+                        claimEpoch = maxOf(existing?.claimEpoch ?: 0L, claimRevision),
+                    )
+                )
+                return@synchronized true
+            }
+            revokeAccountClaim(null, claimRevision.coerceAtLeast(0L))
+        }
+
+        @JvmOverloads
+        fun revokeAccountClaim(
+            accountId: String?,
+            revokedClaimRevision: Long = 0L,
+        ): Boolean = synchronized(store.lock) {
+            val existing = store.loadClaimFence()
+            val normalizedAccount = accountId?.trim()?.takeIf { it.isNotEmpty() }
+            if (existing != null && revokedClaimRevision > 0L && revokedClaimRevision < existing.claimEpoch) {
+                return@synchronized false
+            }
+            if (normalizedAccount != null &&
+                existing?.authorizedAccountId != null &&
+                existing.authorizedAccountId != normalizedAccount
+            ) {
+                return@synchronized false
+            }
+            val nextEpoch = maxOf(existing?.claimEpoch ?: 0L, revokedClaimRevision.coerceAtLeast(0L))
+            store.saveClaimFence(
+                ClaimFence(
+                    authorizedAccountId = null,
+                    authorizedClaimRevision = null,
+                    authorizedClaimToken = null,
+                    claimEpoch = nextEpoch,
+                )
+            )
+            true
+        }
+
+        private fun isClaimAuthorizedLocked(
+            accountId: String,
+            claimRevision: Long,
+            claimToken: String?,
+            sessionClaimRevision: Long?,
+        ): Boolean {
+            if (accountId.isBlank() || claimRevision <= 0L) return false
+            if (sessionClaimRevision != null && claimRevision < sessionClaimRevision) return false
+            val fence = store.loadClaimFence() ?: return true
+            if (fence.authorizedAccountId == null ||
+                fence.authorizedAccountId != accountId ||
+                fence.authorizedClaimRevision != claimRevision ||
+                claimRevision < fence.claimEpoch
+            ) {
+                return false
+            }
+            if (!fence.authorizedClaimToken.isNullOrBlank() && fence.authorizedClaimToken != claimToken?.trim()) {
+                return false
+            }
+            return true
+        }
+
+        @JvmOverloads
+        fun checkStartConflict(
+            accountId: String,
+            resumeInterrupted: Boolean,
+            claimRevision: Long = 0L,
+            claimToken: String? = null,
+        ): StartResult? =
             synchronized(store.lock) {
+                if (claimRevision > 0L) {
+                    val fence = store.loadClaimFence()
+                    if (fence != null) {
+                        if (claimRevision < fence.claimEpoch ||
+                            (claimRevision == fence.claimEpoch && fence.authorizedAccountId == null) ||
+                            (fence.authorizedAccountId != null &&
+                                fence.authorizedAccountId != accountId &&
+                                claimRevision <= fence.claimEpoch)
+                        ) {
+                            return@synchronized StartResult(null, "STALE_CLAIM")
+                        }
+                        if (fence.authorizedAccountId == accountId &&
+                            fence.authorizedClaimRevision == claimRevision &&
+                            !fence.authorizedClaimToken.isNullOrBlank() &&
+                            !claimToken.isNullOrBlank() &&
+                            fence.authorizedClaimToken != claimToken.trim()
+                        ) {
+                            return@synchronized StartResult(null, "STALE_CLAIM")
+                        }
+                    }
+                }
                 val existing = activeSession ?: store.loadSession()
                 if (resumeInterrupted) {
                     if (existing == null || existing.status == "stopped" || existing.sessionId in acknowledgedSessionIds) {
@@ -692,9 +888,11 @@ object LocationRecordingPolicy {
             title: String,
             resumeInterrupted: Boolean,
             nowMs: Long = System.currentTimeMillis(),
+            claimRevision: Long = 0L,
+            claimToken: String? = null,
         ): StartResult = synchronized(store.lock) {
             val session = if (resumeInterrupted) {
-                checkStartConflict(accountId, true)?.let { return@synchronized it }
+                checkStartConflict(accountId, true, claimRevision, claimToken)?.let { return@synchronized it }
                 val existing = activeSession ?: store.loadSession()!!
                 lastAcceptedPoint = store.loadPoints(0).lastOrNull()
                 existing.copy(
@@ -702,12 +900,13 @@ object LocationRecordingPolicy {
                     lastSegmentStartMs = nowMs,
                     segmentIndex = existing.segmentIndex + 1,
                     interruptedReason = null,
+                    claimRevision = if (claimRevision > 0L) claimRevision else existing.claimRevision,
                 )
             } else {
                 if (sessionId.isBlank() || accountId.isBlank() || idempotencyKey.isBlank()) {
                     return@synchronized StartResult(null, "INVALID_SESSION_ARGS")
                 }
-                checkStartConflict(accountId, false)?.let { return@synchronized it }
+                checkStartConflict(accountId, false, claimRevision, claimToken)?.let { return@synchronized it }
                 store.clearAll()
                 lastAcceptedPoint = null
                 acknowledgedSessionIds.remove(sessionId)
@@ -727,7 +926,11 @@ object LocationRecordingPolicy {
                     lastPointTimeMs = null,
                     lastAccuracyM = null,
                     interruptedReason = null,
+                    claimRevision = if (claimRevision > 0L) claimRevision else null,
                 )
+            }
+            if (claimRevision > 0L) {
+                syncAccountClaim(accountId, claimRevision, claimToken)
             }
             frozen = false
             finalizedSnapshot = null
@@ -886,6 +1089,49 @@ object LocationRecordingPolicy {
             snapshot
         }
 
+        @JvmOverloads
+        fun finalizeAndFreezeForOwner(
+            expectedAccountId: String,
+            expectedSessionId: String,
+            expectedClaimRevision: Long,
+            expectedClaimToken: String? = null,
+            nowMs: Long = System.currentTimeMillis(),
+            onFreeze: Runnable? = null,
+        ): StopResult = synchronized(store.lock) {
+            val normalizedAccount = expectedAccountId.trim()
+            val normalizedSession = expectedSessionId.trim()
+            if (normalizedAccount.isEmpty() || normalizedSession.isEmpty() || expectedClaimRevision <= 0L) {
+                return@synchronized StopResult(null, "INVALID_STOP_ARGS")
+            }
+            if (!store.hasPersistedSession()) {
+                activeSession = null
+                lastAcceptedPoint = null
+                finalizedSnapshot = null
+                handoffEmittedForSessionId = null
+                return@synchronized StopResult(null, "NO_ACTIVE_SESSION")
+            }
+            val current = activeSession ?: store.loadSession()
+                ?: return@synchronized StopResult(null, "NO_ACTIVE_SESSION")
+            if (current.sessionId in acknowledgedSessionIds) {
+                return@synchronized StopResult(null, "NO_ACTIVE_SESSION")
+            }
+            if (current.accountId != normalizedAccount) {
+                return@synchronized StopResult(null, "ACCOUNT_MISMATCH")
+            }
+            if (current.sessionId != normalizedSession) {
+                return@synchronized StopResult(null, "SESSION_MISMATCH")
+            }
+            if (!isClaimAuthorizedLocked(normalizedAccount, expectedClaimRevision, expectedClaimToken, current.claimRevision)) {
+                return@synchronized StopResult(null, "STALE_CLAIM")
+            }
+            val snapshot = finalizeAndFreeze(nowMs, onFreeze)
+            if (snapshot == null) {
+                StopResult(null, "NO_ACTIVE_SESSION")
+            } else {
+                StopResult(snapshot, null)
+            }
+        }
+
         fun claimHandoffEmission(sessionId: String): Boolean = synchronized(store.lock) {
             if (sessionId.isBlank() ||
                 sessionId in acknowledgedSessionIds ||
@@ -897,13 +1143,29 @@ object LocationRecordingPolicy {
             true
         }
 
-        fun acknowledgeHandoff(sessionId: String): Boolean = synchronized(store.lock) {
-            if (sessionId.isBlank()) return@synchronized false
-            val existing = activeSession ?: store.loadSession() ?: return@synchronized false
-            if (existing.status != "stopped" || existing.sessionId != sessionId) {
+        @JvmOverloads
+        fun acknowledgeHandoff(
+            sessionId: String,
+            accountId: String,
+            claimRevision: Long,
+            claimToken: String? = null,
+        ): Boolean = synchronized(store.lock) {
+            val normalizedSession = sessionId.trim()
+            val normalizedAccount = accountId.trim()
+            if (normalizedSession.isEmpty() || normalizedAccount.isEmpty() || claimRevision <= 0L) {
                 return@synchronized false
             }
-            acknowledgedSessionIds.add(sessionId)
+            val existing = activeSession ?: store.loadSession() ?: return@synchronized false
+            if (existing.status != "stopped" ||
+                existing.sessionId != normalizedSession ||
+                existing.accountId != normalizedAccount
+            ) {
+                return@synchronized false
+            }
+            if (!isClaimAuthorizedLocked(normalizedAccount, claimRevision, claimToken, existing.claimRevision)) {
+                return@synchronized false
+            }
+            acknowledgedSessionIds.add(normalizedSession)
             frozen = true
             activeSession = null
             lastAcceptedPoint = null
@@ -931,10 +1193,24 @@ object LocationRecordingPolicy {
             keepAccountId == null || keepAccountId.isBlank() || existing.accountId != keepAccountId
         }
 
-        fun clearIfAccountMismatch(keepAccountId: String?): Boolean = synchronized(store.lock) {
-            if (!hasAccountMismatch(keepAccountId)) return@synchronized false
-            discardSession()
-            true
+        @JvmOverloads
+        fun clearIfAccountMismatch(
+            keepAccountId: String?,
+            claimRevision: Long? = null,
+            claimToken: String? = null,
+        ): Boolean = synchronized(store.lock) {
+            val cleared = if (hasAccountMismatch(keepAccountId)) {
+                discardSession()
+                true
+            } else {
+                false
+            }
+            if (keepAccountId.isNullOrBlank()) {
+                revokeAccountClaim(null, claimRevision ?: 0L)
+            } else if (claimRevision != null && claimRevision > 0L) {
+                syncAccountClaim(keepAccountId, claimRevision, claimToken)
+            }
+            cleared
         }
 
         fun loadReconciledSessionForAccount(accountId: String?, serviceRunning: Boolean): SessionRecord? =

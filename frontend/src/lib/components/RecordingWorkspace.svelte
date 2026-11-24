@@ -22,6 +22,7 @@
     startNativeRecording,
     stopNativeRecording,
     subscribeNativeRecorderUpdates,
+    syncNativeAccountClaim,
     type GpsSignalStatus,
     type RecorderCapabilities,
     type RecorderPermissions,
@@ -41,15 +42,18 @@
     RecordingPersistenceError,
     acquireRecordingSessionLock,
     deleteActiveRecordingDraft,
+    executeUnderUploadQueueClaim,
+    executeUnderWebDraftOwnership,
     getActiveRecordingAccountSnapshot,
     getRecordingTabOwnerId,
     listUploadQueueItems,
     readActiveRecordingDraftWithMeta,
     renewActiveRecordingDraftLease,
+    runUnderRecordingClaimLock,
     saveActiveRecordingDraft,
+    subscribeRecordingClaimChanges,
     takeOverActiveRecordingDraft,
     verifyRecordingClaimCurrent,
-    verifyUploadQueueItemUnderClaim,
     verifyWebDraftOwnershipUnderClaim,
     type DraftOwnerGuard,
     type LocalRecordingDraft,
@@ -140,10 +144,13 @@
   let webLastFixMs: number | null = null;
   let pageClaimAccountId = '';
   let pageClaimRevision: number | null = null;
+  let pageClaimToken: string | undefined = undefined;
   let pageClaimRevoked = false;
   let initialClaimPromise: Promise<void> | null = null;
   let sessionAccountId = '';
   let sessionClaimRevision: number | null = null;
+  let sessionClaimToken: string | undefined = undefined;
+  type PinnedNativeClaim = { claimRevision: number; claimToken?: string };
   // Web draft ownership: only the tab holding the current owner generation may write the draft row.
   const tabOwnerId = getRecordingTabOwnerId();
   let sessionOwnerGeneration: number | null = null;
@@ -250,6 +257,7 @@
     }
     pendingHandoffSession = null;
     failedHandoffSessionId = null;
+    sessionAccountId = s.accountId;
     sessionId = s.sessionId;
     idempotencyKey = s.idempotencyKey;
     if (s.title) runTitle = s.title;
@@ -278,17 +286,17 @@
     try {
       // Pin against this page's confirmed account generation before reading the native track; never
       // recreate a revoked/deleted claim from a stale component accountId.
-      const pinnedClaimRev = await pinNativeHandoffClaim(boundAccountId, { allowConfirmedRelogin: manual });
+      const pinnedClaim = await pinNativeHandoffClaim(boundAccountId, { allowConfirmedRelogin: manual });
       if (disposed || pageClaimRevoked || accountId !== boundAccountId) return;
       const capturedPoints = await getNativeRecorderPoints(0, boundAccountId);
       if (disposed || pageClaimRevoked || accountId !== boundAccountId) return;
-      await assertNativeClaimCurrent(boundAccountId, pinnedClaimRev);
+      await assertNativeClaimCurrent(boundAccountId, pinnedClaim);
       if (disposed || pageClaimRevoked || accountId !== boundAccountId) return;
       if (capturedPoints.length === 0) {
         if (snapshot.pointCount > 0) {
           throw new Error('未能读取到原生已保存的轨迹点，已保留原生数据，请重试保存。');
         }
-        await acknowledgeNativeHandoff(snapshot.sessionId);
+        await acknowledgeEmptyNativeHandoff(boundAccountId, snapshot.sessionId, pinnedClaim);
         if (!disposed) {
           pendingHandoffSession = null;
           failedHandoffSessionId = null;
@@ -308,12 +316,10 @@
           activeDurationMs: snapshot.activeDurationMs,
           points: capturedPoints,
         },
-        { expectedClaimRevision: pinnedClaimRev },
+        { expectedClaimRevision: pinnedClaim.claimRevision, expectedClaimToken: pinnedClaim.claimToken },
       );
       if (disposed || pageClaimRevoked || accountId !== boundAccountId) return;
-      await assertUploadQueueItemCurrent(boundAccountId, snapshot.idempotencyKey, pinnedClaimRev);
-      if (disposed || pageClaimRevoked || accountId !== boundAccountId) return;
-      await acknowledgeNativeHandoff(snapshot.sessionId);
+      await acknowledgeEnqueuedNativeHandoff(boundAccountId, snapshot.sessionId, snapshot.idempotencyKey, pinnedClaim);
       if (disposed) return;
       pendingHandoffSession = null;
       failedHandoffSessionId = null;
@@ -346,6 +352,7 @@
     idempotencyKey = '';
     sessionAccountId = '';
     sessionClaimRevision = null;
+    sessionClaimToken = undefined;
     sessionOwnerGeneration = null;
     sessionOwnershipLost = false;
     releaseSessionLock();
@@ -535,8 +542,15 @@
       return;
     }
     let rev: number | null = null;
+    let token: string | undefined = undefined;
     if (layoutClaimContext) {
       rev = await layoutClaimContext.waitForInitialClaim(targetAccountId);
+      if (typeof rev === 'number') {
+        const snap = await getActiveRecordingAccountSnapshot().catch(() => null);
+        if (snap && snap.activeAccountId === targetAccountId && snap.claimRevision === rev) {
+          token = snap.claimToken;
+        }
+      }
     } else {
       const snap = await getActiveRecordingAccountSnapshot().catch(() => null);
       if (
@@ -546,23 +560,30 @@
         snap.claimEpoch <= snap.claimRevision
       ) {
         rev = snap.claimRevision;
+        token = snap.claimToken;
       }
     }
     if (isPageIdentityRevoked(targetAccountId)) return;
     if (typeof rev === 'number') {
       pageClaimAccountId = targetAccountId;
       pageClaimRevision = rev;
+      pageClaimToken = token;
     }
   }
 
-  async function assertNativeClaimCurrent(targetAccountId: string, expectedClaimRevision: number): Promise<void> {
+  async function assertNativeClaimCurrent(targetAccountId: string, pinnedClaim: PinnedNativeClaim): Promise<void> {
     if (isPageIdentityRevoked(targetAccountId)) {
       throw new RecordingPersistenceError(
         'STORAGE_CLAIM_STALE',
         '当前登录状态已变更或本地记录数据已清理，未写入上传队列，原生轨迹数据已保留。',
       );
     }
-    const stillCurrent = await verifyRecordingClaimCurrent(targetAccountId, expectedClaimRevision);
+    const stillCurrent = await verifyRecordingClaimCurrent(
+      targetAccountId,
+      pinnedClaim.claimRevision,
+      undefined,
+      pinnedClaim.claimToken,
+    );
     if (!stillCurrent || isPageIdentityRevoked(targetAccountId)) {
       throw new RecordingPersistenceError(
         'STORAGE_CLAIM_STALE',
@@ -571,10 +592,39 @@
     }
   }
 
-  async function assertUploadQueueItemCurrent(
+  async function acknowledgeEmptyNativeHandoff(
     targetAccountId: string,
+    targetSessionId: string,
+    pinnedClaim: PinnedNativeClaim,
+  ): Promise<void> {
+    if (isPageIdentityRevoked(targetAccountId)) {
+      throw new RecordingPersistenceError(
+        'STORAGE_CLAIM_STALE',
+        '当前登录状态已变更或本地记录数据已清理，未清理原生轨迹数据。',
+      );
+    }
+    await runUnderRecordingClaimLock(async () => {
+      await assertNativeClaimCurrent(targetAccountId, pinnedClaim);
+      const acked = await acknowledgeNativeHandoff({
+        sessionId: targetSessionId,
+        accountId: targetAccountId,
+        claimRevision: pinnedClaim.claimRevision,
+        claimToken: pinnedClaim.claimToken,
+      });
+      if (!acked) {
+        throw new RecordingPersistenceError(
+          'STORAGE_CLAIM_STALE',
+          '本地记录数据已被退出登录或账号切换清理，原生轨迹数据已保留。',
+        );
+      }
+    });
+  }
+
+  async function acknowledgeEnqueuedNativeHandoff(
+    targetAccountId: string,
+    targetSessionId: string,
     itemIdempotencyKey: string,
-    expectedClaimRevision: number,
+    pinnedClaim: PinnedNativeClaim,
   ): Promise<void> {
     if (isPageIdentityRevoked(targetAccountId)) {
       throw new RecordingPersistenceError(
@@ -582,16 +632,38 @@
         '当前登录状态已变更或本地记录数据已清理，未写入上传队列，原生轨迹数据已保留。',
       );
     }
-    const verification = await verifyUploadQueueItemUnderClaim(targetAccountId, itemIdempotencyKey, {
-      expectedClaimRevision,
-    });
-    if (verification.status === 'stale' || isPageIdentityRevoked(targetAccountId)) {
+    const outcome = await executeUnderUploadQueueClaim(
+      targetAccountId,
+      itemIdempotencyKey,
+      { expectedClaimRevision: pinnedClaim.claimRevision, expectedClaimToken: pinnedClaim.claimToken },
+      async () => {
+        if (isPageIdentityRevoked(targetAccountId)) {
+          throw new RecordingPersistenceError(
+            'STORAGE_CLAIM_STALE',
+            '当前登录状态已变更或本地记录数据已清理，未写入上传队列，原生轨迹数据已保留。',
+          );
+        }
+        const acked = await acknowledgeNativeHandoff({
+          sessionId: targetSessionId,
+          accountId: targetAccountId,
+          claimRevision: pinnedClaim.claimRevision,
+          claimToken: pinnedClaim.claimToken,
+        });
+        if (!acked) {
+          throw new RecordingPersistenceError(
+            'STORAGE_CLAIM_STALE',
+            '本地记录数据已被退出登录或账号切换清理，未写入上传队列，原生轨迹数据已保留。',
+          );
+        }
+      },
+    );
+    if (outcome.status === 'stale' || isPageIdentityRevoked(targetAccountId)) {
       throw new RecordingPersistenceError(
         'STORAGE_CLAIM_STALE',
         '本地记录数据已被退出登录或账号切换清理，未写入上传队列，原生轨迹数据已保留。',
       );
     }
-    if (verification.status !== 'valid') {
+    if (outcome.status !== 'valid') {
       throw new RecordingPersistenceError(
         'STORAGE_VERIFY_FAILED',
         '本地上传队列持久化校验失败，已保留原生轨迹数据，请重试保存。',
@@ -602,7 +674,7 @@
   async function pinNativeHandoffClaim(
     targetAccountId: string,
     options?: { allowConfirmedRelogin?: boolean },
-  ): Promise<number> {
+  ): Promise<PinnedNativeClaim> {
     if (initialClaimPromise) await initialClaimPromise;
     if (isPageIdentityRevoked(targetAccountId)) {
       throw new RecordingPersistenceError(
@@ -635,15 +707,20 @@
       if (typeof layoutConfirmed === 'number') {
         pageClaimAccountId = targetAccountId;
         pageClaimRevision = layoutConfirmed;
+        if (snap.claimRevision === layoutConfirmed) {
+          pageClaimToken = snap.claimToken;
+        }
       }
     }
     if (
       pageClaimAccountId === targetAccountId &&
       pageClaimRevision !== null &&
       snap.claimRevision === pageClaimRevision &&
-      snap.claimEpoch <= pageClaimRevision
+      snap.claimEpoch <= pageClaimRevision &&
+      (pageClaimToken === undefined || snap.claimToken === pageClaimToken)
     ) {
-      return pageClaimRevision;
+      pageClaimToken = snap.claimToken;
+      return { claimRevision: pageClaimRevision, claimToken: snap.claimToken };
     }
     // Auto-recovery and manual stop on an old page never silently adopt a newer generation or an
     // unbound claim. Only an explicit manual retry after live server session confirmation may pin
@@ -670,7 +747,9 @@
       }
       pageClaimAccountId = targetAccountId;
       pageClaimRevision = rechecked.claimRevision;
-      return rechecked.claimRevision;
+      pageClaimToken = rechecked.claimToken;
+      await syncNativeAccountClaim(targetAccountId, rechecked.claimRevision, rechecked.claimToken);
+      return { claimRevision: rechecked.claimRevision, claimToken: rechecked.claimToken };
     }
     throw new RecordingPersistenceError(
       'STORAGE_CLAIM_STALE',
@@ -678,7 +757,7 @@
     );
   }
 
-  async function captureActiveSessionClaim(targetAccountId: string): Promise<number> {
+  async function captureActiveSessionClaim(targetAccountId: string): Promise<PinnedNativeClaim> {
     if (initialClaimPromise) await initialClaimPromise;
     if (isPageIdentityRevoked(targetAccountId)) {
       throw new RecordingPersistenceError('STORAGE_CLAIM_STALE', '检测到当前登录状态已变更，请刷新页面后再开始记录。');
@@ -702,7 +781,7 @@
         '当前记录会话已被其他标签页或新登录接管，请刷新后重试。',
       );
     }
-    return snap.claimRevision;
+    return { claimRevision: snap.claimRevision, claimToken: snap.claimToken };
   }
 
   function handleStaleSessionWrite(boundAccountId: string, boundClaimRev: number, message: string) {
@@ -766,12 +845,14 @@
   /**
    * Called only after the awaited draft write that starts/resumes a segment: the page may have been
    * left (unmount cleanup already ran) or account cleanup/takeover may have committed before this
-   * continuation resumed. Re-confirm BOTH in-memory state and the persisted claim/draft ownership in
-   * IndexedDB immediately before calling `watchPosition` so an old page never starts GPS after cleanup.
+   * continuation resumed. Re-confirm BOTH in-memory state and the persisted claim/draft ownership
+   * inside the same atomic IndexedDB transaction & claim lock used to call `watchPosition`, and
+   * verify again on completion so an external cleanup cannot leave an active watcher behind.
    */
   async function startWebGeolocationWatch(
     boundAccountId: string,
     boundClaimRevision: number,
+    boundClaimToken: string | undefined,
     boundSessionId: string,
     boundOwnerGeneration: number,
     resumeMode: boolean,
@@ -788,110 +869,77 @@
     if (!stillBoundInMemory()) {
       return;
     }
-    let verdict: Awaited<ReturnType<typeof verifyWebDraftOwnershipUnderClaim>>;
-    try {
-      verdict = await verifyWebDraftOwnershipUnderClaim(boundAccountId, {
-        expectedClaimRevision: boundClaimRevision,
-        expectedSessionId: boundSessionId,
-        owner: { ownerId: tabOwnerId, expectedOwnerGeneration: boundOwnerGeneration },
-      });
-    } catch {
-      verdict = 'claim_stale';
-    }
-    if (!stillBoundInMemory()) {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      permissions = { ...permissions, location: 'denied', locationServicesEnabled: false, canRecord: false };
+      gpsStatus = 'disabled';
       return;
     }
-    if (verdict !== 'valid') {
-      if (verdict === 'claim_stale' || !resumeMode) {
+
+    const applyInvalidWatchVerdict = (invalidVerdict: 'claim_stale' | 'missing' | 'owner_stale') => {
+      stopWebGeolocationWatch();
+      if (invalidVerdict === 'claim_stale' || !resumeMode) {
         resetLocalSessionState();
         errorMessage =
-          verdict === 'claim_stale'
+          invalidVerdict === 'claim_stale'
             ? '当前登录账号或本地记录数据已变更，已停止启动定位。'
-            : verdict === 'missing'
+            : invalidVerdict === 'missing'
               ? '本地跑步草稿已被清理或在其他标签页结束，已停止启动定位。'
               : SESSION_TAKEN_OVER_MESSAGE;
       } else {
         handleStaleSessionWrite(
           boundAccountId,
           boundClaimRevision,
-          verdict === 'missing'
+          invalidVerdict === 'missing'
             ? '这条跑步草稿已在其他标签页中保存或丢弃，已停止启动定位。'
             : SESSION_TAKEN_OVER_MESSAGE,
         );
       }
-      return;
-    }
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      permissions = { ...permissions, location: 'denied', locationServicesEnabled: false, canRecord: false };
-      gpsStatus = 'disabled';
-      return;
-    }
-    gpsStatus = 'acquiring';
-    webLastFixMs = null;
-    webWatchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        if (
-          disposed ||
-          status !== 'recording' ||
-          sessionAccountId !== boundAccountId ||
-          sessionClaimRevision !== boundClaimRevision
-        ) {
-          return;
-        }
-        const nowMs = Date.now();
-        webLastFixMs = nowMs;
-        const accuracy = Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : null;
-        const candidate: RecordedTrackPoint = {
-          lat: pos.coords.latitude,
-          lon: pos.coords.longitude,
-          elevationM: Number.isFinite(pos.coords.altitude ?? NaN) ? pos.coords.altitude : null,
-          accuracyM: accuracy,
-          recordedAtMs: pos.timestamp > 0 ? pos.timestamp : nowMs,
-          segmentIndex,
-        };
-        const previous = webPoints.at(-1) ?? null;
-        const decision = evaluateTrackPoint(candidate, previous);
-        lastAccuracyM = accuracy;
-        permissions = {
-          ...permissions,
-          location: 'granted',
-          preciseLocation: true,
-          locationServicesEnabled: true,
-          canRecord: true,
-        };
-        if (decision.accepted) {
-          webPoints = [...webPoints, candidate];
-          pointCount = webPoints.length;
-          previewDistanceM += decision.distanceDeltaM;
-          lastPointTimeMs = candidate.recordedAtMs;
-          void saveActiveRecordingDraft(buildWebDraft(boundAccountId), undefined, {
-            expectedClaimRevision: boundClaimRevision,
-            expectedSessionId: sessionId,
-            owner: ownerGuard(),
-          }).catch((cause) => {
-            if (isSessionWriteRejection(cause)) {
-              handleStaleSessionWrite(boundAccountId, boundClaimRevision, cause.message);
-            }
-          });
-        }
-        gpsStatus = accuracy !== null && accuracy <= 15 ? 'good' : 'weak';
-      },
-      (err) => {
-        if (disposed) return;
-        if (err.code === err.PERMISSION_DENIED) {
-          permissions = { ...permissions, location: 'denied', preciseLocation: false, canRecord: false };
-          gpsStatus = 'permission_denied';
-          errorMessage = '定位权限已被拒绝，请在浏览器或系统设置中允许 RunNote 访问精确位置。';
-          stopWebGeolocationWatch();
+    };
+
+    const registerWatchNow = (): number | null => {
+      if (!stillBoundInMemory() || typeof navigator === 'undefined' || !navigator.geolocation) {
+        return null;
+      }
+      gpsStatus = 'acquiring';
+      webLastFixMs = null;
+      const watchId = navigator.geolocation.watchPosition(
+        (pos) => {
           if (
-            status === 'recording' &&
-            sessionAccountId === boundAccountId &&
-            sessionClaimRevision === boundClaimRevision
+            disposed ||
+            pageClaimRevoked ||
+            status !== 'recording' ||
+            sessionAccountId !== boundAccountId ||
+            sessionClaimRevision !== boundClaimRevision
           ) {
-            activeDurationMs = displayedDurationMs;
-            lastSegmentStartMs = null;
-            status = 'interrupted';
-            interruptedReason = 'permission_revoked';
+            stopWebGeolocationWatch();
+            return;
+          }
+          const nowMs = Date.now();
+          webLastFixMs = nowMs;
+          const accuracy = Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : null;
+          const candidate: RecordedTrackPoint = {
+            lat: pos.coords.latitude,
+            lon: pos.coords.longitude,
+            elevationM: Number.isFinite(pos.coords.altitude ?? NaN) ? pos.coords.altitude : null,
+            accuracyM: accuracy,
+            recordedAtMs: pos.timestamp > 0 ? pos.timestamp : nowMs,
+            segmentIndex,
+          };
+          const previous = webPoints.at(-1) ?? null;
+          const decision = evaluateTrackPoint(candidate, previous);
+          lastAccuracyM = accuracy;
+          permissions = {
+            ...permissions,
+            location: 'granted',
+            preciseLocation: true,
+            locationServicesEnabled: true,
+            canRecord: true,
+          };
+          if (decision.accepted) {
+            webPoints = [...webPoints, candidate];
+            pointCount = webPoints.length;
+            previewDistanceM += decision.distanceDeltaM;
+            lastPointTimeMs = candidate.recordedAtMs;
             void saveActiveRecordingDraft(buildWebDraft(boundAccountId), undefined, {
               expectedClaimRevision: boundClaimRevision,
               expectedSessionId: sessionId,
@@ -902,14 +950,91 @@
               }
             });
           }
-        } else if (err.code === err.POSITION_UNAVAILABLE) {
-          gpsStatus = 'lost';
-        } else if (err.code === err.TIMEOUT) {
-          gpsStatus = 'acquiring';
+          gpsStatus = accuracy !== null && accuracy <= 15 ? 'good' : 'weak';
+        },
+        (err) => {
+          if (disposed) return;
+          if (err.code === err.PERMISSION_DENIED) {
+            permissions = { ...permissions, location: 'denied', preciseLocation: false, canRecord: false };
+            gpsStatus = 'permission_denied';
+            errorMessage = '定位权限已被拒绝，请在浏览器或系统设置中允许 RunNote 访问精确位置。';
+            stopWebGeolocationWatch();
+            if (
+              status === 'recording' &&
+              sessionAccountId === boundAccountId &&
+              sessionClaimRevision === boundClaimRevision
+            ) {
+              activeDurationMs = displayedDurationMs;
+              lastSegmentStartMs = null;
+              status = 'interrupted';
+              interruptedReason = 'permission_revoked';
+              void saveActiveRecordingDraft(buildWebDraft(boundAccountId), undefined, {
+                expectedClaimRevision: boundClaimRevision,
+                expectedSessionId: sessionId,
+                owner: ownerGuard(),
+              }).catch((cause) => {
+                if (isSessionWriteRejection(cause)) {
+                  handleStaleSessionWrite(boundAccountId, boundClaimRevision, cause.message);
+                }
+              });
+            }
+          } else if (err.code === err.POSITION_UNAVAILABLE) {
+            gpsStatus = 'lost';
+          } else if (err.code === err.TIMEOUT) {
+            gpsStatus = 'acquiring';
+          }
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 },
+      );
+      webWatchId = watchId;
+      return watchId;
+    };
+
+    const guard = {
+      expectedClaimRevision: boundClaimRevision,
+      expectedClaimToken: boundClaimToken,
+      expectedSessionId: boundSessionId,
+      owner: { ownerId: tabOwnerId, expectedOwnerGeneration: boundOwnerGeneration },
+    };
+
+    let verdict: Awaited<ReturnType<typeof verifyWebDraftOwnershipUnderClaim>>;
+    try {
+      const result = await executeUnderWebDraftOwnership(boundAccountId, guard, registerWatchNow, (watchId) => {
+        if (watchId !== null) {
+          if (typeof navigator !== 'undefined' && navigator.geolocation) {
+            navigator.geolocation.clearWatch(watchId);
+          }
+          if (webWatchId === watchId) webWatchId = null;
         }
-      },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 },
-    );
+      });
+      verdict = result.verdict;
+    } catch {
+      stopWebGeolocationWatch();
+      verdict = 'claim_stale';
+    }
+    if (!stillBoundInMemory()) {
+      stopWebGeolocationWatch();
+      return;
+    }
+    if (verdict !== 'valid') {
+      applyInvalidWatchVerdict(verdict);
+      return;
+    }
+    // Re-confirm after the registration transaction settles so even an external cleanup that
+    // committed immediately on `tx.complete` cannot leave an active watcher running.
+    let postVerdict: Awaited<ReturnType<typeof verifyWebDraftOwnershipUnderClaim>>;
+    try {
+      postVerdict = await verifyWebDraftOwnershipUnderClaim(boundAccountId, guard);
+    } catch {
+      postVerdict = 'claim_stale';
+    }
+    if (!stillBoundInMemory()) {
+      stopWebGeolocationWatch();
+      return;
+    }
+    if (postVerdict !== 'valid') {
+      applyInvalidWatchVerdict(postVerdict);
+    }
   }
 
   async function recoverNativeSessionState() {
@@ -978,7 +1103,8 @@
       const draftMeta = await readActiveRecordingDraftWithMeta(accountId);
       if (disposed || token !== recoveryRequestToken) return;
       if (draftMeta) {
-        const claimedRev = await captureActiveSessionClaim(accountId);
+        const claimed = await captureActiveSessionClaim(accountId);
+        const claimedRev = claimed.claimRevision;
         if (disposed || token !== recoveryRequestToken) return;
         if (typeof draftMeta.claimRevision === 'number' && draftMeta.claimRevision > claimedRev) {
           sessionRecoveryState = 'failed';
@@ -1057,6 +1183,7 @@
         } else if (draft.status === 'recording' || draft.status === 'paused' || draft.status === 'interrupted') {
           sessionAccountId = accountId;
           sessionClaimRevision = claimedRev;
+          sessionClaimToken = claimed.claimToken;
           sessionId = draft.sessionId;
           idempotencyKey = draft.idempotencyKey;
           runTitle = draft.title;
@@ -1174,6 +1301,22 @@
         }
         const sid = resumeInterrupted && sessionId ? sessionId : generateUuidV4();
         const ikey = resumeInterrupted && idempotencyKey ? idempotencyKey : generateUuidV4();
+        if (isPageIdentityRevoked(accountId)) {
+          throw new RecordingPersistenceError(
+            'STORAGE_CLAIM_STALE',
+            '检测到当前登录状态已变更，请刷新页面后再开始记录。',
+          );
+        }
+        const nativeStartClaim: PinnedNativeClaim | null =
+          pageClaimAccountId === accountId && pageClaimRevision !== null
+            ? { claimRevision: pageClaimRevision, claimToken: pageClaimToken }
+            : await pinNativeHandoffClaim(accountId).catch((cause: unknown) => {
+                if (cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_UNAVAILABLE') {
+                  return null;
+                }
+                throw cause;
+              });
+        if (disposed) return;
         try {
           await startNativeRecording({
             sessionId: sid,
@@ -1181,6 +1324,9 @@
             idempotencyKey: ikey,
             title: runTitle.trim(),
             resumeInterrupted,
+            ...(nativeStartClaim
+              ? { claimRevision: nativeStartClaim.claimRevision, claimToken: nativeStartClaim.claimToken }
+              : {}),
           });
         } catch (nativeStartCause) {
           await getNativeRecorderState(accountId)
@@ -1204,10 +1350,12 @@
       }
       const nowMs = Date.now();
       const boundAccountId = resumeInterrupted && sessionAccountId ? sessionAccountId : accountId;
-      const boundClaimRev =
+      const capturedClaim =
         resumeInterrupted && sessionId && sessionClaimRevision !== null
-          ? sessionClaimRevision
+          ? { claimRevision: sessionClaimRevision, claimToken: sessionClaimToken }
           : await captureActiveSessionClaim(boundAccountId);
+      const boundClaimRev = capturedClaim.claimRevision;
+      const boundClaimToken = capturedClaim.claimToken;
       if (disposed) return;
       if (!resumeInterrupted) {
         releaseSessionLock();
@@ -1245,6 +1393,7 @@
       }
       sessionAccountId = boundAccountId;
       sessionClaimRevision = boundClaimRev;
+      sessionClaimToken = boundClaimToken;
       const boundSessionId = sessionId;
       try {
         await saveActiveRecordingDraft(
@@ -1278,6 +1427,7 @@
       await startWebGeolocationWatch(
         boundAccountId,
         boundClaimRev,
+        boundClaimToken,
         boundSessionId,
         boundOwnerGeneration,
         resumeInterrupted,
@@ -1367,7 +1517,14 @@
           throw cause;
         }
         const boundOwnerGeneration = sessionOwnerGeneration ?? 0;
-        await startWebGeolocationWatch(boundAccountId, boundClaimRev, boundSessionId, boundOwnerGeneration, true);
+        await startWebGeolocationWatch(
+          boundAccountId,
+          boundClaimRev,
+          sessionClaimToken,
+          boundSessionId,
+          boundOwnerGeneration,
+          true,
+        );
       }
     } catch (cause) {
       if (!disposed) errorMessage = cause instanceof Error ? cause.message : '继续记录失败';
@@ -1387,46 +1544,61 @@
     let webStopActiveMs: number | null = null;
     const boundAccountId = sessionAccountId || accountId;
     const boundClaimRev = sessionClaimRevision;
-    let nativeClaimRev: number | null = null;
-    let nativeClaimError: unknown = null;
+    const boundSessionId = sessionId;
+    let nativeClaim: PinnedNativeClaim | null = null;
     try {
       let capturedPoints: RecordedTrackPoint[] = [];
       let finalStartedAt = startedAtMs;
       let finalEndedAt = Date.now();
       let finalActiveMs = displayedDurationMs;
-      let finalSessionId = sessionId;
+      let finalSessionId = boundSessionId;
       let finalIdempotencyKey = idempotencyKey;
       let finalTitle = runTitle.trim();
 
       if (capabilities.native) {
-        // Pin against this page's confirmed account generation before stopping native GPS; never
-        // recreate a revoked/cleaned claim. Failing to pin never blocks stopping GPS so the stopped
-        // native session stays recoverable on disk.
-        nativeClaimRev = await pinNativeHandoffClaim(boundAccountId).catch((cause: unknown) => {
-          nativeClaimError = cause;
-          return null;
+        // Bind manual Stop strictly to this page's confirmed account claim and session ID BEFORE
+        // calling native stop: if pinning fails or ownership cannot be confirmed, never stop the
+        // native recording and never display another account's session stats.
+        if (!boundSessionId || isPageIdentityRevoked(boundAccountId)) {
+          throw new RecordingPersistenceError(
+            'STORAGE_CLAIM_STALE',
+            '当前登录状态已变更或无法确认记录归属，已阻止停止原生记录，未写入上传队列。',
+          );
+        }
+        nativeClaim = await pinNativeHandoffClaim(boundAccountId);
+        if (disposed || isPageIdentityRevoked(boundAccountId)) {
+          throw new RecordingPersistenceError(
+            'STORAGE_CLAIM_STALE',
+            '当前登录状态已变更或本地记录数据已清理，已阻止停止原生记录，未写入上传队列。',
+          );
+        }
+        const stopped = await stopNativeRecording({
+          accountId: boundAccountId,
+          sessionId: boundSessionId,
+          claimRevision: nativeClaim.claimRevision,
+          claimToken: nativeClaim.claimToken,
         });
-        const stopped = await stopNativeRecording();
         if (disposed) return;
-        capturedPoints = stopped?.points ?? [];
-        if (stopped?.session) {
-          stoppedSession = stopped.session;
-          finalSessionId = stopped.session.sessionId;
-          finalIdempotencyKey = stopped.session.idempotencyKey;
-          finalStartedAt = stopped.session.startedAtMs;
-          finalEndedAt = stopped.session.endedAtMs ?? Date.now();
-          finalActiveMs = stopped.session.activeDurationMs;
-          if (!finalTitle && stopped.session.title) finalTitle = stopped.session.title;
+        if (
+          !stopped?.session ||
+          stopped.session.accountId !== boundAccountId ||
+          stopped.session.sessionId !== boundSessionId
+        ) {
+          throw new RecordingPersistenceError(
+            'STORAGE_CLAIM_STALE',
+            '检测到原生记录归属不匹配，已阻止停止或显示其他账号的数据。',
+          );
         }
-        if (nativeClaimRev !== null) {
-          try {
-            await assertNativeClaimCurrent(boundAccountId, nativeClaimRev);
-          } catch (cause) {
-            nativeClaimRev = null;
-            nativeClaimError = cause;
-          }
-          if (disposed) return;
-        }
+        stoppedSession = stopped.session;
+        capturedPoints = stopped.points ?? [];
+        finalSessionId = stopped.session.sessionId;
+        finalIdempotencyKey = stopped.session.idempotencyKey;
+        finalStartedAt = stopped.session.startedAtMs;
+        finalEndedAt = stopped.session.endedAtMs ?? Date.now();
+        finalActiveMs = stopped.session.activeDurationMs;
+        if (!finalTitle && stopped.session.title) finalTitle = stopped.session.title;
+        await assertNativeClaimCurrent(boundAccountId, nativeClaim);
+        if (disposed) return;
       } else {
         stopWebGeolocationWatch();
         webStopActiveMs = finalActiveMs;
@@ -1437,13 +1609,13 @@
         errorMessage = '本次记录未捕获到有效 GPS 轨迹点，无法生成轨迹文件。请移至空旷处或直接安全丢弃本次会话。';
         if (capabilities.native) {
           if (
-            nativeClaimRev !== null &&
+            nativeClaim !== null &&
             !isPageIdentityRevoked(boundAccountId) &&
             stoppedSession &&
             stoppedSession.status === 'stopped' &&
             stoppedSession.pointCount === 0
           ) {
-            await acknowledgeNativeHandoff(stoppedSession.sessionId).catch(() => {});
+            await acknowledgeEmptyNativeHandoff(boundAccountId, stoppedSession.sessionId, nativeClaim).catch(() => {});
           }
           const nextState = await getNativeRecorderState(accountId);
           if (!disposed && nextState) applyNativeState(nextState);
@@ -1509,20 +1681,25 @@
         points: capturedPoints,
       };
       if (capabilities.native) {
-        // Persist to IndexedDB upload queue FIRST (waits for transaction complete + claim-guarded
-        // read-back verification); re-confirm claim and row immediately before acknowledging native.
-        if (nativeClaimRev === null) throw nativeClaimError;
-        if (isPageIdentityRevoked(boundAccountId)) {
+        // Persist to IndexedDB upload queue FIRST, then run the final claim-locked read-back and
+        // claim-bound native ack atomically so cleanup cannot commit between read-back and ack.
+        if (nativeClaim === null || isPageIdentityRevoked(boundAccountId)) {
           throw new RecordingPersistenceError(
             'STORAGE_CLAIM_STALE',
             '当前登录状态已变更或本地记录数据已清理，未写入上传队列，原生轨迹数据已保留。',
           );
         }
-        await enqueueFinalizedRecording(finalizeInput, { expectedClaimRevision: nativeClaimRev });
+        await enqueueFinalizedRecording(finalizeInput, {
+          expectedClaimRevision: nativeClaim.claimRevision,
+          expectedClaimToken: nativeClaim.claimToken,
+        });
         if (isPageIdentityRevoked(boundAccountId)) return;
-        await assertUploadQueueItemCurrent(boundAccountId, finalizeInput.idempotencyKey, nativeClaimRev);
-        if (isPageIdentityRevoked(boundAccountId)) return;
-        await acknowledgeNativeHandoff(finalSessionId);
+        await acknowledgeEnqueuedNativeHandoff(
+          boundAccountId,
+          finalSessionId,
+          finalizeInput.idempotencyKey,
+          nativeClaim,
+        );
       } else if (boundClaimRev !== null) {
         // Queue row + draft removal commit together, and only while this tab still owns the stopped
         // draft: a logout/cleanup that ran since the stop leaves nothing to recreate.
@@ -1552,7 +1729,12 @@
       }
     } catch (cause) {
       if (!disposed) {
-        if (capabilities.native && stoppedSession) {
+        if (
+          capabilities.native &&
+          stoppedSession &&
+          stoppedSession.accountId === boundAccountId &&
+          stoppedSession.sessionId === boundSessionId
+        ) {
           pendingHandoffSession = stoppedSession;
           failedHandoffSessionId = stoppedSession.sessionId;
           status = 'stopped';
@@ -1712,6 +1894,41 @@
       }
     };
     const unsubscribeRevoked = layoutClaimContext?.onRevoked(handleIdentityRevoked) ?? null;
+    const unsubscribeClaimChanges = subscribeRecordingClaimChanges((event) => {
+      const currentAccountId = accountId;
+      if (!currentAccountId) return;
+      const revokedCurrent =
+        event.kind === 'revoked' && (event.accountId === null || event.accountId === currentAccountId);
+      const switchedAccount = event.kind === 'claimed' && event.accountId !== currentAccountId;
+      if (revokedCurrent || switchedAccount) {
+        handleIdentityRevoked();
+        return;
+      }
+      const sameAccountNewerGen =
+        event.kind === 'claimed' &&
+        event.accountId === currentAccountId &&
+        typeof event.claimRevision === 'number' &&
+        ((pageClaimRevision !== null && event.claimRevision > pageClaimRevision) ||
+          (sessionClaimRevision !== null && event.claimRevision > sessionClaimRevision));
+      if (sameAccountNewerGen) {
+        if (
+          !disposed &&
+          !capabilities.native &&
+          status === 'recording' &&
+          sessionAccountId === currentAccountId &&
+          sessionClaimRevision !== null
+        ) {
+          handleStaleSessionWrite(
+            sessionAccountId,
+            sessionClaimRevision,
+            '当前记录会话已被其他标签页或新登录接管，已停止在本页写入。',
+          );
+        } else {
+          stopWebGeolocationWatch();
+          releaseSessionLock();
+        }
+      }
+    });
     const authChannel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('runnote-auth');
     if (authChannel) {
       authChannel.onmessage = (event) => {
@@ -1803,6 +2020,7 @@
       window.removeEventListener('runnote-recording-queue-updated', onQueueUpdated);
       document.removeEventListener('visibilitychange', onVisibility);
       unsubscribeRevoked?.();
+      unsubscribeClaimChanges();
       authChannel?.close();
       unsubscribeNative?.();
       unsubscribeNative = null;

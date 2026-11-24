@@ -222,10 +222,13 @@ public class LocationRecordingPolicyTest {
         assertEquals("stopped", reloadedStopped.status);
         assertTrue(LocationRecordingPolicy.hasPendingHandoff(reloadedStopped));
 
-        // Wrong sessionId does NOT clear pending handoff; matching sessionId acknowledges and clears
-        assertFalse(store.acknowledgeHandoff("wrong-session"));
+        // Wrong sessionId or accountId or non-positive claimRevision does NOT clear pending handoff;
+        // matching (sessionId, accountId, claimRevision) acknowledges and clears
+        assertFalse(store.acknowledgeHandoff("wrong-session", "user-a", 1L));
+        assertFalse(store.acknowledgeHandoff("sess-stopped", "user-b", 1L));
+        assertFalse(store.acknowledgeHandoff("sess-stopped", "user-a", 0L));
         assertNotNull(store.loadSession());
-        assertTrue(store.acknowledgeHandoff("sess-stopped"));
+        assertTrue(store.acknowledgeHandoff("sess-stopped", "user-a", 1L));
         assertNull(store.loadSession());
         assertTrue(store.loadPoints(0).isEmpty());
 
@@ -346,7 +349,7 @@ public class LocationRecordingPolicyTest {
             "sess-ack", "user-a", "33333333-3333-4333-8333-333333333333", "交接测试", false, 1_700_000_000_000L);
         coordinator.recordLocationPoint(new LocationRecordingPolicy.RecordedPoint(
             31.2300, 121.4700, 10.0, 5.0, 1_700_000_001_000L, 0));
-        assertFalse(coordinator.acknowledgeHandoff("sess-ack"));
+        assertFalse(coordinator.acknowledgeHandoff("sess-ack", "user-a", 1L));
         assertTrue(new File(dir, "active_session.json").exists());
 
         // Finalize -> simulate crash before ack (new store/coordinator instance reads pending handoff)
@@ -370,7 +373,7 @@ public class LocationRecordingPolicyTest {
         assertEquals("UNHANDLED_STOPPED_SESSION", blockedStart.errorCode);
 
         // Explicit ack deletes metadata & points; subsequent late destroy/sample/finalize never recreate files
-        assertTrue(recoveredCoordinator.acknowledgeHandoff("sess-ack"));
+        assertTrue(recoveredCoordinator.acknowledgeHandoff("sess-ack", "user-a", 1L));
         assertFalse(new File(dir, "active_session.json").exists());
         assertFalse(new File(dir, "points.ndjson").exists());
 
@@ -574,5 +577,126 @@ public class LocationRecordingPolicyTest {
         } finally {
             pool.shutdownNow();
         }
+    }
+
+    @Test
+    public void round13AcknowledgeHandoffRejectsStaleForeignAndRevokedClaimsWhilePreservingSession() throws Exception {
+        File dir = tmp.newFolder("r13_ack_claim_fence");
+        LocationRecordingPolicy.RecordingStore store = new LocationRecordingPolicy.RecordingStore(dir);
+        LocationRecordingPolicy.RecordingSessionCoordinator coordinator =
+            new LocationRecordingPolicy.RecordingSessionCoordinator(store);
+
+        assertTrue(coordinator.syncAccountClaim("user-a", 1L, "tok-a-1"));
+        LocationRecordingPolicy.StartResult started = coordinator.startSession(
+            "sess-r13-ack",
+            "user-a",
+            "11111111-1313-4111-8111-111111111111",
+            "交接校验测试",
+            false,
+            1_700_000_000_000L,
+            1L,
+            "tok-a-1"
+        );
+        assertNull(started.errorCode);
+        assertNotNull(coordinator.recordLocationPoint(new LocationRecordingPolicy.RecordedPoint(
+            31.2300, 121.4700, 10.0, 5.0, 1_700_000_001_000L, 0)));
+        LocationRecordingPolicy.StopResult stopped = coordinator.finalizeAndFreezeForOwner(
+            "user-a", "sess-r13-ack", 1L, "tok-a-1", 1_700_000_020_000L, null);
+        assertNull(stopped.errorCode);
+        assertNotNull(stopped.snapshot);
+
+        // Foreign account, wrong session, wrong token, or zero revision must be rejected.
+        assertFalse(coordinator.acknowledgeHandoff("sess-r13-ack", "user-b", 1L, "tok-a-1"));
+        assertFalse(coordinator.acknowledgeHandoff("sess-other", "user-a", 1L, "tok-a-1"));
+        assertFalse(coordinator.acknowledgeHandoff("sess-r13-ack", "user-a", 1L, "tok-wrong"));
+        assertFalse(coordinator.acknowledgeHandoff("sess-r13-ack", "user-a", 0L, "tok-a-1"));
+        assertNotNull(store.loadSession());
+
+        // Cleanup revokes claim 1: stale ack with (user-a, 1, tok-a-1) must be rejected and preserve session.
+        assertTrue(coordinator.revokeAccountClaim("user-a", 1L));
+        assertFalse(coordinator.acknowledgeHandoff("sess-r13-ack", "user-a", 1L, "tok-a-1"));
+        assertNotNull(store.loadSession());
+        assertEquals(1, store.loadPoints(0).size());
+
+        // Same-account re-login establishes generation 2: old generation 1 still rejected, generation 2 succeeds.
+        assertTrue(coordinator.syncAccountClaim("user-a", 2L, "tok-a-2"));
+        assertFalse(coordinator.acknowledgeHandoff("sess-r13-ack", "user-a", 1L, "tok-a-1"));
+        assertFalse(coordinator.acknowledgeHandoff("sess-r13-ack", "user-a", 2L, "tok-a-1"));
+        assertNotNull(store.loadSession());
+
+        // New coordinator instance reading claim_fence.json from disk enforces the same fence.
+        LocationRecordingPolicy.RecordingSessionCoordinator reloaded =
+            new LocationRecordingPolicy.RecordingSessionCoordinator(new LocationRecordingPolicy.RecordingStore(dir));
+        assertFalse(reloaded.acknowledgeHandoff("sess-r13-ack", "user-a", 1L, "tok-a-1"));
+        assertTrue(reloaded.acknowledgeHandoff("sess-r13-ack", "user-a", 2L, "tok-a-2"));
+        assertNull(store.loadSession());
+        assertTrue(store.loadPoints(0).isEmpty());
+    }
+
+    @Test
+    public void round13FinalizeForOwnerRejectsForeignAccountWrongSessionAndStaleClaimWithoutFreezing()
+        throws Exception {
+        File dir = tmp.newFolder("r13_stop_owner_guard");
+        LocationRecordingPolicy.RecordingStore store = new LocationRecordingPolicy.RecordingStore(dir);
+        LocationRecordingPolicy.RecordingSessionCoordinator coordinator =
+            new LocationRecordingPolicy.RecordingSessionCoordinator(store);
+
+        assertTrue(coordinator.syncAccountClaim("user-b", 2L, "tok-b-2"));
+        LocationRecordingPolicy.StartResult started = coordinator.startSession(
+            "sess-b-live",
+            "user-b",
+            "22222222-1313-4222-8222-222222222222",
+            "账号B跑步",
+            false,
+            1_700_000_000_000L,
+            2L,
+            "tok-b-2"
+        );
+        assertNull(started.errorCode);
+        assertNotNull(coordinator.recordLocationPoint(new LocationRecordingPolicy.RecordedPoint(
+            31.2300, 121.4700, 10.0, 5.0, 1_700_000_001_000L, 0)));
+
+        final int[] freezeCount = { 0 };
+        Runnable onFreeze = () -> freezeCount[0]++;
+
+        // Stale account A attempting stop must be rejected without freezing or leaking B's session.
+        LocationRecordingPolicy.StopResult foreignStop = coordinator.finalizeAndFreezeForOwner(
+            "user-a", "sess-a-old", 1L, "tok-a-1", 1_700_000_010_000L, onFreeze);
+        assertEquals("ACCOUNT_MISMATCH", foreignStop.errorCode);
+        assertNull(foreignStop.snapshot);
+        assertEquals(0, freezeCount[0]);
+
+        // Even guessing B's sessionId with A's accountId is rejected.
+        LocationRecordingPolicy.StopResult foreignSameSess = coordinator.finalizeAndFreezeForOwner(
+            "user-a", "sess-b-live", 2L, "tok-b-2", 1_700_000_011_000L, onFreeze);
+        assertEquals("ACCOUNT_MISMATCH", foreignSameSess.errorCode);
+        assertNull(foreignSameSess.snapshot);
+        assertEquals(0, freezeCount[0]);
+
+        // Wrong sessionId or stale claim for B is also rejected without freezing.
+        LocationRecordingPolicy.StopResult wrongSession = coordinator.finalizeAndFreezeForOwner(
+            "user-b", "sess-b-other", 2L, "tok-b-2", 1_700_000_012_000L, onFreeze);
+        assertEquals("SESSION_MISMATCH", wrongSession.errorCode);
+        assertEquals(0, freezeCount[0]);
+
+        LocationRecordingPolicy.StopResult staleClaim = coordinator.finalizeAndFreezeForOwner(
+            "user-b", "sess-b-live", 1L, "tok-b-1", 1_700_000_013_000L, onFreeze);
+        assertEquals("STALE_CLAIM", staleClaim.errorCode);
+        assertEquals(0, freezeCount[0]);
+
+        // Account B's session is still recording and accepts new GPS fixes!
+        assertEquals("recording", coordinator.currentSession().status);
+        assertNotNull(coordinator.recordLocationPoint(new LocationRecordingPolicy.RecordedPoint(
+            31.2301, 121.4700, 10.5, 5.0, 1_700_000_015_000L, 0)));
+        assertEquals(2, store.loadPoints(0).size());
+
+        // Matching owner (user-b, sess-b-live, 2, tok-b-2) freezes and stops cleanly.
+        LocationRecordingPolicy.StopResult validStop = coordinator.finalizeAndFreezeForOwner(
+            "user-b", "sess-b-live", 2L, "tok-b-2", 1_700_000_020_000L, onFreeze);
+        assertNull(validStop.errorCode);
+        assertNotNull(validStop.snapshot);
+        assertEquals(1, freezeCount[0]);
+        assertEquals("stopped", validStop.snapshot.session.status);
+        assertEquals(2, validStop.snapshot.points.size());
     }
 }

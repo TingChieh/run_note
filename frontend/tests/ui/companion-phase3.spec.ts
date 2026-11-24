@@ -115,6 +115,15 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
     let acknowledgedSessionIds: string[] = [];
     let startSessionCalls = 0;
     let startSessionRejectedCount = 0;
+    let stopSessionCalls = 0;
+    let stopSessionRejectedCount = 0;
+    let ackRejectedCount = 0;
+    let claimFence: {
+      authorizedAccountId: string | null;
+      authorizedClaimRevision: number | null;
+      authorizedClaimToken: string | null;
+      claimEpoch: number;
+    } | null = null;
 
     if (cfg.persistAcrossReloads) {
       try {
@@ -125,6 +134,12 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
             points?: Array<Record<string, unknown>>;
             clearedAccounts?: Array<string | null>;
             acknowledgedSessionIds?: string[];
+            claimFence?: {
+              authorizedAccountId: string | null;
+              authorizedClaimRevision: number | null;
+              authorizedClaimToken: string | null;
+              claimEpoch: number;
+            } | null;
           };
           session = restored.session ?? null;
           points = Array.isArray(restored.points) ? restored.points : [];
@@ -132,6 +147,7 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
           acknowledgedSessionIds = Array.isArray(restored.acknowledgedSessionIds)
             ? restored.acknowledgedSessionIds
             : [];
+          claimFence = restored.claimFence ?? null;
         }
       } catch {
         // Ignore storage read errors in init script
@@ -143,11 +159,76 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
       try {
         window.sessionStorage.setItem(
           PERSIST_KEY,
-          JSON.stringify({ session, points, clearedAccounts, acknowledgedSessionIds }),
+          JSON.stringify({ session, points, clearedAccounts, acknowledgedSessionIds, claimFence }),
         );
       } catch {
         // Ignore storage write errors
       }
+    };
+
+    const syncFence = (accountId: string | null, claimRevision: number, claimToken?: string | null) => {
+      const normalizedAccount = typeof accountId === 'string' && accountId.trim() ? accountId.trim() : null;
+      const rev = Number.isInteger(claimRevision) && claimRevision > 0 ? claimRevision : 0;
+      const tok = typeof claimToken === 'string' && claimToken.trim() ? claimToken.trim() : null;
+      if (normalizedAccount && rev > 0) {
+        if (claimFence) {
+          if (rev < claimFence.claimEpoch) return false;
+          if (rev === claimFence.claimEpoch && claimFence.authorizedAccountId === null) return false;
+        }
+        claimFence = {
+          authorizedAccountId: normalizedAccount,
+          authorizedClaimRevision: rev,
+          authorizedClaimToken: tok,
+          claimEpoch: Math.max(claimFence?.claimEpoch ?? 0, rev),
+        };
+        persistState();
+        return true;
+      }
+      return revokeFence(null, rev);
+    };
+
+    const revokeFence = (accountId: string | null, revokedClaimRevision = 0) => {
+      const normalizedAccount = typeof accountId === 'string' && accountId.trim() ? accountId.trim() : null;
+      const rev = Number.isInteger(revokedClaimRevision) && revokedClaimRevision > 0 ? revokedClaimRevision : 0;
+      if (claimFence && rev > 0 && rev < claimFence.claimEpoch) return false;
+      if (
+        normalizedAccount &&
+        claimFence?.authorizedAccountId &&
+        claimFence.authorizedAccountId !== normalizedAccount
+      ) {
+        return false;
+      }
+      claimFence = {
+        authorizedAccountId: null,
+        authorizedClaimRevision: null,
+        authorizedClaimToken: null,
+        claimEpoch: Math.max(claimFence?.claimEpoch ?? 0, rev),
+      };
+      persistState();
+      return true;
+    };
+
+    const isClaimAuthorized = (
+      accountId: string,
+      claimRevision: number,
+      claimToken?: string,
+      sessionClaimRevision?: number | null,
+    ) => {
+      if (!accountId.trim() || !Number.isInteger(claimRevision) || claimRevision <= 0) return false;
+      if (typeof sessionClaimRevision === 'number' && claimRevision < sessionClaimRevision) return false;
+      if (!claimFence) return true;
+      if (
+        claimFence.authorizedAccountId === null ||
+        claimFence.authorizedAccountId !== accountId ||
+        claimFence.authorizedClaimRevision !== claimRevision ||
+        claimRevision < claimFence.claimEpoch
+      ) {
+        return false;
+      }
+      if (claimFence.authorizedClaimToken && claimFence.authorizedClaimToken !== (claimToken?.trim() || '')) {
+        return false;
+      }
+      return true;
     };
 
     const buildPerms = () => ({
@@ -203,6 +284,23 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
       },
       getStartSessionCalls: () => startSessionCalls,
       getStartSessionRejectedCount: () => startSessionRejectedCount,
+      getStopSessionCalls: () => stopSessionCalls,
+      getStopSessionRejectedCount: () => stopSessionRejectedCount,
+      getAckRejectedCount: () => ackRejectedCount,
+      getClaimFence: () => (claimFence ? { ...claimFence } : null),
+      syncAccountClaim: (accountId: string | null, claimRevision: number, claimToken?: string | null) =>
+        syncFence(accountId, claimRevision, claimToken),
+      revokeAccountClaim: (accountId: string | null, claimRevision = 0) => revokeFence(accountId, claimRevision),
+      replaceActiveSession: (
+        nextSession: Record<string, unknown> | null,
+        nextPoints: Array<Record<string, unknown>> = [],
+      ) => {
+        session = nextSession ? { ...nextSession } : null;
+        points = nextPoints.map((pt) => ({ ...pt }));
+        serviceRunning = nextSession?.status === 'recording';
+        gpsStatus = serviceRunning ? 'good' : 'inactive';
+        persistState();
+      },
       getSession: () => (session ? { ...session } : null),
       getPointCount: () => points.length,
       clearedAccounts,
@@ -242,10 +340,27 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
               }
               throw new Error('存在尚未保存或丢弃的记录会话，请先恢复、保存或安全丢弃后再开始新记录');
             }
+            const startClaimRev = typeof opts.claimRevision === 'number' ? opts.claimRevision : 0;
+            const startClaimToken = typeof opts.claimToken === 'string' ? opts.claimToken : undefined;
+            if (startClaimRev > 0) {
+              if (
+                claimFence &&
+                (startClaimRev < claimFence.claimEpoch ||
+                  (startClaimRev === claimFence.claimEpoch && claimFence.authorizedAccountId === null) ||
+                  (claimFence.authorizedAccountId !== null &&
+                    claimFence.authorizedAccountId !== opts.accountId &&
+                    startClaimRev <= claimFence.claimEpoch))
+              ) {
+                startSessionRejectedCount += 1;
+                throw new Error('当前登录状态已变更或会话已失效，请刷新页面后再开始记录');
+              }
+              syncFence(String(opts.accountId ?? ''), startClaimRev, startClaimToken);
+            }
             if (opts.resumeInterrupted && session) {
               session.status = 'recording';
               session.segmentIndex = Number(session.segmentIndex ?? 0) + 1;
               session.interruptedReason = null;
+              if (startClaimRev > 0) session.claimRevision = startClaimRev;
             } else {
               points = [];
               session = {
@@ -263,6 +378,7 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
                 lastPointTimeMs: null,
                 lastAccuracyM: null,
                 interruptedReason: null,
+                ...(startClaimRev > 0 ? { claimRevision: startClaimRev } : {}),
               };
             }
             serviceRunning = true;
@@ -291,21 +407,67 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
             emit();
             return { resumed: true };
           },
-          stopSession: async () => {
+          stopSession: async (opts?: {
+            accountId?: string;
+            sessionId?: string;
+            claimRevision?: number;
+            claimToken?: string;
+          }) => {
+            stopSessionCalls += 1;
+            const targetAccount = typeof opts?.accountId === 'string' ? opts.accountId.trim() : '';
+            const targetSession = typeof opts?.sessionId === 'string' ? opts.sessionId.trim() : '';
+            const targetRev = typeof opts?.claimRevision === 'number' ? opts.claimRevision : 0;
+            const targetToken = typeof opts?.claimToken === 'string' ? opts.claimToken.trim() : undefined;
+            if (!targetAccount || !targetSession || !Number.isInteger(targetRev) || targetRev <= 0) {
+              stopSessionRejectedCount += 1;
+              throw new Error('缺少有效的账号或会话归属凭据，已阻止停止原生记录');
+            }
+            if (!session) {
+              stopSessionRejectedCount += 1;
+              throw new Error('当前没有可停止的原生记录会话');
+            }
+            if (session.accountId !== targetAccount) {
+              stopSessionRejectedCount += 1;
+              throw new Error('当前原生记录属于其他账号，已阻止停止或读取其他账号数据');
+            }
+            if (session.sessionId !== targetSession) {
+              stopSessionRejectedCount += 1;
+              throw new Error('当前原生记录会话已变更，已阻止停止其他会话');
+            }
+            const sessionRev = typeof session.claimRevision === 'number' ? session.claimRevision : null;
+            if (!isClaimAuthorized(targetAccount, targetRev, targetToken, sessionRev)) {
+              stopSessionRejectedCount += 1;
+              throw new Error('当前登录状态已变更或本地记录数据已清理，已阻止停止原生记录');
+            }
             serviceRunning = false;
             gpsStatus = 'inactive';
-            if (session) {
-              session.status = 'stopped';
-              session.endedAtMs = Date.now();
-            }
-            const out = { ...buildState(), points: [...points] };
+            session.status = 'stopped';
+            session.endedAtMs = Date.now();
+            const out = { ...buildState(targetAccount), points: [...points] };
             persistState();
             emit();
             return out;
           },
-          acknowledgeHandoff: async (opts?: { sessionId?: string }) => {
-            const targetId = opts?.sessionId ?? '';
-            if (session && session.status === 'stopped' && (!targetId || session.sessionId === targetId)) {
+          acknowledgeHandoff: async (opts?: {
+            sessionId?: string;
+            accountId?: string;
+            claimRevision?: number;
+            claimToken?: string;
+          }) => {
+            const targetId = typeof opts?.sessionId === 'string' ? opts.sessionId.trim() : '';
+            const targetAccount = typeof opts?.accountId === 'string' ? opts.accountId.trim() : '';
+            const targetRev = typeof opts?.claimRevision === 'number' ? opts.claimRevision : 0;
+            const targetToken = typeof opts?.claimToken === 'string' ? opts.claimToken.trim() : undefined;
+            const sessionRev = session && typeof session.claimRevision === 'number' ? session.claimRevision : null;
+            if (
+              session &&
+              session.status === 'stopped' &&
+              targetId &&
+              session.sessionId === targetId &&
+              targetAccount &&
+              session.accountId === targetAccount &&
+              isClaimAuthorized(targetAccount, targetRev, targetToken, sessionRev)
+            ) {
               acknowledgedSessionIds.push(String(session.sessionId));
               session = null;
               points = [];
@@ -313,8 +475,19 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
               emit();
               return { acknowledged: true };
             }
+            ackRejectedCount += 1;
             return { acknowledged: false };
           },
+          syncAccountClaim: async (opts?: {
+            accountId?: string | null;
+            claimRevision?: number;
+            claimToken?: string;
+          }) => ({
+            synced: syncFence(opts?.accountId ?? null, Number(opts?.claimRevision ?? 0), opts?.claimToken),
+          }),
+          revokeAccountClaim: async (opts?: { accountId?: string | null; claimRevision?: number }) => ({
+            revoked: revokeFence(opts?.accountId ?? null, Number(opts?.claimRevision ?? 0)),
+          }),
           discardSession: async () => {
             serviceRunning = false;
             gpsStatus = 'inactive';
@@ -344,8 +517,19 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
             const visible = matches ? [...points] : [];
             return { points: visible, totalReturned: visible.length };
           },
-          clearAccountSessions: async (opts?: { keepAccountId?: string | null }) => {
+          clearAccountSessions: async (opts?: {
+            keepAccountId?: string | null;
+            claimRevision?: number;
+            claimToken?: string;
+          }) => {
             clearedAccounts.push(opts?.keepAccountId ?? null);
+            const keep =
+              typeof opts?.keepAccountId === 'string' && opts.keepAccountId.trim() ? opts.keepAccountId.trim() : null;
+            if (!keep) {
+              revokeFence(null, Number(opts?.claimRevision ?? 0));
+            } else if (typeof opts?.claimRevision === 'number' && opts.claimRevision > 0) {
+              syncFence(keep, opts.claimRevision, opts.claimToken);
+            }
             persistState();
             return { cleared: true };
           },
@@ -3229,8 +3413,11 @@ async function readNativeMock(targetPage: Page) {
         string,
         {
           acknowledgedSessionIds: string[];
-          getSession: () => { status?: string; sessionId?: string } | null;
+          getSession: () => { status?: string; sessionId?: string; accountId?: string; title?: string } | null;
           getPointCount: () => number;
+          getStopSessionCalls?: () => number;
+          getStopSessionRejectedCount?: () => number;
+          getAckRejectedCount?: () => number;
         }
       >
     ).__mockRecorder;
@@ -3238,6 +3425,9 @@ async function readNativeMock(targetPage: Page) {
       acks: [...mock.acknowledgedSessionIds],
       session: mock.getSession(),
       pointCount: mock.getPointCount(),
+      stopCalls: mock.getStopSessionCalls?.() ?? 0,
+      stopRejected: mock.getStopSessionRejectedCount?.() ?? 0,
+      ackRejected: mock.getAckRejectedCount?.() ?? 0,
       interleaveRuns: Number((window as unknown as Record<string, unknown>).__interleaveRuns ?? 0),
     };
   });
@@ -3594,8 +3784,14 @@ async function commitAccountCleanupInIdb(
  *
  * Modes (armed via `window.sessionStorage.setItem('__r12_post_commit_cleanup', mode)`):
  * - `'draft-put'`: fires after a `put` of `user:<A>:draft:active` commits.
+ * - `'draft-readback'`: fires after a `readonly` tx reading `user:<A>:draft:active` commits (ownership read-back -> watch window).
  * - `'upload-put'`: fires after a `put` of `user:<A>:upload:*` commits (write -> read-back window).
- * - `'upload-readback'`: fires after a `readonly` tx reading `user:<A>:upload:*` commits (read-back -> ack window).
+ * - `'upload-readback'`: fires after the 1st `readonly` tx reading `user:<A>:upload:*` commits.
+ * - `'upload-readback-final'`: skips the 1st read-back inside enqueue and fires on the 2nd (final)
+ *   `readonly` tx reading `user:<A>:upload:*` right before `acknowledgeHandoff`, committing IDB
+ *   cleanup AND revoking native claim fence.
+ * - `'upload-readback-final-relogin'`: same as `'upload-readback-final'`, plus establishes a fresh
+ *   same-account claim generation (`rev + 1`) in IDB and syncs it to native.
  */
 async function installPostCommitCleanupInterleave(page: Page) {
   await page.addInitScript((aId) => {
@@ -3604,35 +3800,53 @@ async function installPostCommitCleanupInterleave(page: Page) {
     const origPut = IDBObjectStore.prototype.put;
     const origGet = IDBObjectStore.prototype.get;
     const origAddEventListener = IDBTransaction.prototype.addEventListener;
-    const taggedTxs = new WeakSet<IDBTransaction>();
+    const taggedTxs = new Map<IDBTransaction, string>();
+    let uploadReadbackSeen = 0;
     win.__r12CleanupRuns = 0;
+    win.__r13ResetReadbackCounter = () => {
+      uploadReadbackSeen = 0;
+    };
 
     IDBObjectStore.prototype.put = function (value: { key?: string }, key?: IDBValidKey) {
       const mode = window.sessionStorage.getItem('__r12_post_commit_cleanup');
       if (mode === 'draft-put' && value?.key === `user:${aId}:draft:active`) {
         window.sessionStorage.removeItem('__r12_post_commit_cleanup');
-        taggedTxs.add(this.transaction);
+        taggedTxs.set(this.transaction, mode);
       } else if (
         mode === 'upload-put' &&
         typeof value?.key === 'string' &&
         value.key.startsWith(`user:${aId}:upload:`)
       ) {
         window.sessionStorage.removeItem('__r12_post_commit_cleanup');
-        taggedTxs.add(this.transaction);
+        taggedTxs.set(this.transaction, mode);
       }
       return key !== undefined ? origPut.call(this, value, key) : origPut.call(this, value);
     };
 
     IDBObjectStore.prototype.get = function (query: IDBValidKey | IDBKeyRange) {
       const mode = window.sessionStorage.getItem('__r12_post_commit_cleanup');
-      if (
+      if (mode === 'draft-readback' && this.transaction.mode === 'readonly' && query === `user:${aId}:draft:active`) {
+        window.sessionStorage.removeItem('__r12_post_commit_cleanup');
+        taggedTxs.set(this.transaction, mode);
+      } else if (
         mode === 'upload-readback' &&
         this.transaction.mode === 'readonly' &&
         typeof query === 'string' &&
         query.startsWith(`user:${aId}:upload:`)
       ) {
         window.sessionStorage.removeItem('__r12_post_commit_cleanup');
-        taggedTxs.add(this.transaction);
+        taggedTxs.set(this.transaction, mode);
+      } else if (
+        (mode === 'upload-readback-final' || mode === 'upload-readback-final-relogin') &&
+        this.transaction.mode === 'readonly' &&
+        typeof query === 'string' &&
+        query.startsWith(`user:${aId}:upload:`)
+      ) {
+        uploadReadbackSeen += 1;
+        if (uploadReadbackSeen >= 2) {
+          window.sessionStorage.removeItem('__r12_post_commit_cleanup');
+          taggedTxs.set(this.transaction, mode);
+        }
       }
       return origGet.call(this, query);
     };
@@ -3646,7 +3860,8 @@ async function installPostCommitCleanupInterleave(page: Page) {
       if (type === 'complete' && listener) {
         const tx = this;
         const wrapped: EventListener = function (this: IDBTransaction, ev: Event) {
-          if (!taggedTxs.has(tx)) {
+          const taggedMode = taggedTxs.get(tx);
+          if (!taggedMode) {
             if (typeof listener === 'function') listener.call(this, ev);
             else listener.handleEvent(ev);
             return;
@@ -3654,9 +3869,47 @@ async function installPostCommitCleanupInterleave(page: Page) {
           taggedTxs.delete(tx);
           const cleanupTx = origTransaction.call(tx.db, 'records', 'readwrite');
           const store = cleanupTx.objectStore('records');
+          const mockRecorder = win.__mockRecorder as
+            | {
+                revokeAccountClaim?: (accountId: string | null, rev?: number) => boolean;
+                syncAccountClaim?: (accountId: string | null, rev: number, tok?: string) => boolean;
+              }
+            | undefined;
+          let nextReloginRev = 0;
+          let nextReloginToken = '';
           store.delete('meta:recording_active_account');
           store.delete(IDBKeyRange.bound(`user:${aId}:`, `user:${aId}:\uffff`));
+          if (taggedMode === 'upload-readback-final-relogin') {
+            const epochReq = store.get('meta:recording_claim_epoch');
+            epochReq.onsuccess = () => {
+              nextReloginRev = Number((epochReq.result as { payload?: number } | undefined)?.payload ?? 0) + 1;
+              nextReloginToken = `r13-relogin-tok-${nextReloginRev}`;
+              const now = Date.now();
+              store.put({
+                key: 'meta:recording_claim_epoch',
+                accountId: null,
+                schemaVersion: 1,
+                savedAt: now,
+                claimRevision: nextReloginRev,
+                payload: nextReloginRev,
+              });
+              store.put({
+                key: 'meta:recording_active_account',
+                accountId: aId,
+                schemaVersion: 1,
+                savedAt: now,
+                claimRevision: nextReloginRev,
+                claimToken: nextReloginToken,
+                payload: aId,
+              });
+            };
+          }
           cleanupTx.oncomplete = () => {
+            if (taggedMode === 'upload-readback-final') {
+              mockRecorder?.revokeAccountClaim?.(aId, 0);
+            } else if (taggedMode === 'upload-readback-final-relogin' && nextReloginRev > 0) {
+              mockRecorder?.syncAccountClaim?.(aId, nextReloginRev, nextReloginToken);
+            }
             win.__r12CleanupRuns = Number(win.__r12CleanupRuns) + 1;
             if (typeof listener === 'function') listener.call(tx, ev);
             else listener.handleEvent(ev);
@@ -3684,7 +3937,16 @@ test('P1 Round 12: cleanup before native pin never recreates a claim, writes a q
   // Wait for the layout to mount and bind the initial claim while getSessionState is still pending.
   await expect(page.locator('header')).toHaveAttribute('data-auth-ready', 'true');
   await expect
-    .poll(async () => (await readRecordingStoreSummary(page)).activeMarker?.payload ?? null)
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              __mockRecorder?: { getClaimFence: () => { authorizedAccountId: string | null } | null };
+            }
+          ).__mockRecorder?.getClaimFence()?.authorizedAccountId ?? null,
+      ),
+    )
     .toBe(WEB_DRAFT_ACCOUNT_ID);
 
   // Commit account A cleanup (data + active marker deleted) BEFORE auto-recovery pins the claim.
@@ -3728,15 +3990,17 @@ test('P1 Round 12: cleanup before native pin never recreates a claim, writes a q
   expect((await readRecordingStoreSummary(page)).activeMarker).toBeNull();
 
   await page.getByTestId('recording-stop-btn').click();
-  await expect(page.getByTestId('recording-pending-handoff-panel')).toBeVisible();
+  // Round 13 P2: when pinning the claim fails before stop, do NOT stop native recording or show pending handoff.
   await expect(page.getByTestId('recording-error')).toContainText('未写入上传队列');
+  await expect(page.getByTestId('recording-pending-handoff-panel')).toHaveCount(0);
 
   const store = await readRecordingStoreSummary(page);
   expect(store.activeMarker).toBeNull();
   expect(store.uploadKeys).toEqual([]);
   const native = await readNativeMock(page);
   expect(native.acks).toEqual([]);
-  expect(native.session?.status).toBe('stopped');
+  expect(native.stopCalls).toBe(0);
+  expect(native.session?.status).toBe('recording');
   expect(native.pointCount).toBe(3);
   await expect(page.getByTestId('upload-queue-item')).toHaveCount(0);
 });
@@ -3789,14 +4053,16 @@ test('P1 Round 12: cleanup before pin with same-account new generation blocks ol
   expect(stopNewGenRev).toBeGreaterThan(stopInitialRev);
 
   await page.getByTestId('recording-stop-btn').click();
-  await expect(page.getByTestId('recording-pending-handoff-panel')).toBeVisible();
+  // Round 13 P2: old page pin fails against the new generation, so it must NOT stop native recording.
   await expect(page.getByTestId('recording-error')).toContainText('未写入上传队列');
+  await expect(page.getByTestId('recording-pending-handoff-panel')).toHaveCount(0);
   const stopStore = await readRecordingStoreSummary(page);
   expect(stopStore.activeMarker?.claimRevision).toBe(stopNewGenRev);
   expect(stopStore.uploadKeys).toEqual([`user:${WEB_DRAFT_ACCOUNT_ID}:upload:${newGenKey}`]);
   const stopNative = await readNativeMock(page);
   expect(stopNative.acks).toEqual([]);
-  expect(stopNative.session?.status).toBe('stopped');
+  expect(stopNative.stopCalls).toBe(0);
+  expect(stopNative.session?.status).toBe('recording');
 });
 
 test('P1 Round 12: cleanup interleaved in the queue write/read-back/ack window never resurrects or acks', async ({
@@ -3897,4 +4163,339 @@ test('P2 Round 12: cleanup completing after Web Resume draft commit and before c
   expect(store.activeMarker).toBeNull();
   expect(store.draft).toBeNull();
   expect(store.uploadKeys).toEqual([]);
+});
+
+test('P1 Round 13: cleanup after final queue read-back before ack never clears native session (auto recovery, manual stop, and same-account new gen)', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await installPostCommitCleanupInterleave(page);
+
+  // Subcase A: auto-recovery — cleanup commits right after the 2nd (final) readonly queue read-back, before ack.
+  await installMockLocationRecorder(page, {
+    locationPermission: 'granted',
+    initialStopped: true,
+    stoppedSessionId: 'r13-final-readback-auto',
+    stoppedIdempotencyKey: 'd1111111-1111-4111-8111-111111111111',
+  });
+  await page.evaluate(() => window.sessionStorage.setItem('__r12_post_commit_cleanup', 'upload-readback-final'));
+  await page.goto('/activities/record');
+  await expect.poll(() => page.evaluate(() => (window as unknown as Record<string, number>).__r12CleanupRuns)).toBe(1);
+  await expect(page.getByTestId('recording-pending-handoff-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-error')).toContainText('未写入上传队列');
+  const storeAuto = await readRecordingStoreSummary(page);
+  expect(storeAuto.activeMarker).toBeNull();
+  expect(storeAuto.uploadKeys).toEqual([]);
+  const nativeAuto = await readNativeMock(page);
+  expect(nativeAuto.acks).toEqual([]);
+  expect(nativeAuto.ackRejected).toBeGreaterThanOrEqual(1);
+  expect(nativeAuto.session?.status).toBe('stopped');
+  expect(nativeAuto.pointCount).toBe(3);
+
+  // Subcase B: manual Stop — cleanup commits right after the final readonly queue read-back, before ack.
+  await installMockLocationRecorder(page, { locationPermission: 'granted', initialRecording: true });
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await page.evaluate(() => {
+    (window as unknown as Record<string, () => void>).__r13ResetReadbackCounter?.();
+    window.sessionStorage.setItem('__r12_post_commit_cleanup', 'upload-readback-final');
+  });
+  await page.getByTestId('recording-stop-btn').click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as Record<string, number>).__r12CleanupRuns)).toBe(1);
+  await expect(page.getByTestId('recording-pending-handoff-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-error')).toContainText('未写入上传队列');
+  const storeStop = await readRecordingStoreSummary(page);
+  expect(storeStop.activeMarker).toBeNull();
+  expect(storeStop.uploadKeys).toEqual([]);
+  const nativeStop = await readNativeMock(page);
+  expect(nativeStop.acks).toEqual([]);
+  expect(nativeStop.ackRejected).toBeGreaterThanOrEqual(1);
+  expect(nativeStop.session?.status).toBe('stopped');
+  expect(nativeStop.pointCount).toBe(3);
+
+  // Subcase C: cleanup + same-account new generation established right after final read-back, before ack.
+  await installMockLocationRecorder(page, {
+    locationPermission: 'granted',
+    initialStopped: true,
+    stoppedSessionId: 'r13-final-readback-relogin',
+    stoppedIdempotencyKey: 'd2222222-2222-4222-8222-222222222222',
+  });
+  await page.evaluate(() =>
+    window.sessionStorage.setItem('__r12_post_commit_cleanup', 'upload-readback-final-relogin'),
+  );
+  await page.goto('/activities/record');
+  await expect.poll(() => page.evaluate(() => (window as unknown as Record<string, number>).__r12CleanupRuns)).toBe(1);
+  await expect(page.getByTestId('recording-pending-handoff-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-error')).toContainText('未写入上传队列');
+  const storeRelogin = await readRecordingStoreSummary(page);
+  expect(storeRelogin.activeMarker?.payload).toBe(WEB_DRAFT_ACCOUNT_ID);
+  expect(storeRelogin.uploadKeys).toEqual([]);
+  const nativeRelogin = await readNativeMock(page);
+  expect(nativeRelogin.acks).toEqual([]);
+  expect(nativeRelogin.ackRejected).toBeGreaterThanOrEqual(1);
+  expect(nativeRelogin.session?.status).toBe('stopped');
+  expect(nativeRelogin.pointCount).toBe(3);
+});
+
+test('P1 Round 13: native acknowledgeHandoff rejects stale, foreign, and revoked claims without clearing session', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await installMockLocationRecorder(page, {
+    locationPermission: 'granted',
+    initialStopped: true,
+    stoppedSessionId: 'r13-ack-reject-sess',
+    stoppedIdempotencyKey: 'd3333333-3333-4333-8333-333333333333',
+    getSessionStateBehavior: 'hang',
+  });
+  await page.goto('/activities/record');
+  await expect(page.locator('header')).toHaveAttribute('data-auth-ready', 'true');
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              __mockRecorder?: { getClaimFence: () => { authorizedAccountId: string | null } | null };
+            }
+          ).__mockRecorder?.getClaimFence()?.authorizedAccountId ?? null,
+      ),
+    )
+    .toBe(WEB_DRAFT_ACCOUNT_ID);
+
+  const probeResult = await page.evaluate(async (aId) => {
+    const win = window as unknown as {
+      Capacitor: {
+        Plugins: {
+          LocationRecorder: {
+            acknowledgeHandoff: (opts: Record<string, unknown>) => Promise<{ acknowledged: boolean }>;
+          };
+        };
+      };
+      __mockRecorder: {
+        getClaimFence: () => { authorizedClaimRevision: number | null; authorizedClaimToken: string | null } | null;
+        syncAccountClaim: (accountId: string | null, rev: number, tok?: string) => boolean;
+        revokeAccountClaim: (accountId: string | null, rev?: number) => boolean;
+        getSession: () => { status?: string; sessionId?: string } | null;
+        getPointCount: () => number;
+      };
+    };
+    const plugin = win.Capacitor.Plugins.LocationRecorder;
+    const fence = win.__mockRecorder.getClaimFence();
+    const rev1 = fence?.authorizedClaimRevision ?? 1;
+    const tok1 = fence?.authorizedClaimToken ?? '';
+
+    const missingAccount = await plugin.acknowledgeHandoff({ sessionId: 'r13-ack-reject-sess', claimRevision: rev1 });
+    const foreignAccount = await plugin.acknowledgeHandoff({
+      sessionId: 'r13-ack-reject-sess',
+      accountId: '00000000-0000-4000-8000-000000000002',
+      claimRevision: rev1,
+      claimToken: tok1,
+    });
+    const wrongToken = await plugin.acknowledgeHandoff({
+      sessionId: 'r13-ack-reject-sess',
+      accountId: aId,
+      claimRevision: rev1,
+      claimToken: 'forged-token',
+    });
+
+    // Advance to gen 2: gen 1 must be rejected.
+    win.__mockRecorder.syncAccountClaim(aId, rev1 + 1, 'tok-gen-2');
+    const staleGen = await plugin.acknowledgeHandoff({
+      sessionId: 'r13-ack-reject-sess',
+      accountId: aId,
+      claimRevision: rev1,
+      claimToken: tok1,
+    });
+
+    // Revoke gen 2: gen 2 must also be rejected.
+    win.__mockRecorder.revokeAccountClaim(aId, rev1 + 1);
+    const revokedGen = await plugin.acknowledgeHandoff({
+      sessionId: 'r13-ack-reject-sess',
+      accountId: aId,
+      claimRevision: rev1 + 1,
+      claimToken: 'tok-gen-2',
+    });
+
+    return {
+      missingAccount: missingAccount.acknowledged,
+      foreignAccount: foreignAccount.acknowledged,
+      wrongToken: wrongToken.acknowledged,
+      staleGen: staleGen.acknowledged,
+      revokedGen: revokedGen.acknowledged,
+      sessionAfter: win.__mockRecorder.getSession(),
+      pointsAfter: win.__mockRecorder.getPointCount(),
+    };
+  }, WEB_DRAFT_ACCOUNT_ID);
+
+  expect(probeResult.missingAccount).toBe(false);
+  expect(probeResult.foreignAccount).toBe(false);
+  expect(probeResult.wrongToken).toBe(false);
+  expect(probeResult.staleGen).toBe(false);
+  expect(probeResult.revokedGen).toBe(false);
+  expect(probeResult.sessionAfter?.status).toBe('stopped');
+  expect(probeResult.pointsAfter).toBe(3);
+});
+
+test('P2 Round 13: cleanup committing after final draft-ownership read-back leaves no GPS watcher (Start, Resume, Interrupted Recovery)', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await installMockWebGeolocation(page);
+  await installPostCommitCleanupInterleave(page);
+
+  // Subcase A: Start
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-start-btn')).toBeEnabled();
+  await page.getByLabel('跑步标题（可选）').fill('R13 Start 读回后清理');
+  await page.evaluate(() => window.sessionStorage.setItem('__r12_post_commit_cleanup', 'draft-readback'));
+  await page.getByTestId('recording-start-btn').click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as Record<string, number>).__r12CleanupRuns)).toBe(1);
+  await expect(page.getByTestId('recording-status-badge')).not.toHaveText('记录中');
+  expect(await isWebWatching(page)).toBe(false);
+  expect(await heldRecordingLocks(page)).toEqual([]);
+  const startStore = await readRecordingStoreSummary(page);
+  expect(startStore.activeMarker).toBeNull();
+  expect(startStore.draft).toBeNull();
+  expect(startStore.uploadKeys).toEqual([]);
+
+  // Subcase B: Resume from paused
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-start-btn')).toBeEnabled();
+  await page.getByLabel('跑步标题（可选）').fill('R13 Resume 读回后清理');
+  await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await waitForWebWatch(page);
+  await emitWebFix(page, 31.23, 121.47);
+  await expect.poll(async () => (await readWebDraftRow(page)).pointCount).toBe(1);
+  await page.getByTestId('recording-pause-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('已暂停');
+  expect(await isWebWatching(page)).toBe(false);
+
+  await page.evaluate(() => window.sessionStorage.setItem('__r12_post_commit_cleanup', 'draft-readback'));
+  await page.getByTestId('recording-resume-btn').click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as Record<string, number>).__r12CleanupRuns)).toBe(1);
+  await expect(page.getByTestId('recording-status-badge')).not.toHaveText('记录中');
+  expect(await isWebWatching(page)).toBe(false);
+  expect(await heldRecordingLocks(page)).toEqual([]);
+  const resumeStore = await readRecordingStoreSummary(page);
+  expect(resumeStore.activeMarker).toBeNull();
+  expect(resumeStore.draft).toBeNull();
+  expect(resumeStore.uploadKeys).toEqual([]);
+
+  // Subcase C: Interrupted recovery resume
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-start-btn')).toBeEnabled();
+  await page.getByLabel('跑步标题（可选）').fill('R13 中断恢复读回后清理');
+  await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await waitForWebWatch(page);
+  await emitWebFix(page, 31.23, 121.47);
+  await expect.poll(async () => (await readWebDraftRow(page)).pointCount).toBe(1);
+  // Reload to enter interrupted recovery state.
+  await page.reload();
+  await expect(page.getByTestId('recording-recovery-panel')).toBeVisible();
+  expect(await isWebWatching(page)).toBe(false);
+
+  await page.evaluate(() => window.sessionStorage.setItem('__r12_post_commit_cleanup', 'draft-readback'));
+  await page.getByTestId('recovery-resume-btn').click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as Record<string, number>).__r12CleanupRuns)).toBe(1);
+  await expect(page.getByTestId('recording-status-badge')).not.toHaveText('记录中');
+  expect(await isWebWatching(page)).toBe(false);
+  expect(await heldRecordingLocks(page)).toEqual([]);
+  const interruptedStore = await readRecordingStoreSummary(page);
+  expect(interruptedStore.activeMarker).toBeNull();
+  expect(interruptedStore.draft).toBeNull();
+  expect(interruptedStore.uploadKeys).toEqual([]);
+});
+
+test('P2 Round 13: stale account A Stop never stops account B native session or leaks B stats, while normal same-account Stop succeeds once', async ({
+  page,
+}) => {
+  const accountBId = '00000000-0000-4000-8000-000000000002';
+
+  // Subcase A: Account A has an active native recording open; native switches to Account B's live session.
+  // Even if A's IDB claim has NOT yet been cleared (bridge-level guard) or HAS been replaced by B (pin-level guard),
+  // clicking Stop on stale page A must NOT stop B's recording and must NOT display B's stats.
+  await loginRunner(page);
+  await installMockLocationRecorder(page, { locationPermission: 'granted', initialRecording: true });
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await expect
+    .poll(async () => (await readRecordingStoreSummary(page)).activeMarker?.payload ?? null)
+    .toBe(WEB_DRAFT_ACCOUNT_ID);
+
+  // Simulate Account B now owning the active native session (with distinct points/distance/title).
+  await page.evaluate((bId) => {
+    const mock = (
+      window as unknown as Record<
+        string,
+        {
+          replaceActiveSession: (s: Record<string, unknown>, pts: Array<Record<string, unknown>>) => void;
+          syncAccountClaim: (acc: string, rev: number, tok: string) => boolean;
+        }
+      >
+    ).__mockRecorder;
+    mock.replaceActiveSession(
+      {
+        sessionId: 'account-b-live-sess',
+        accountId: bId,
+        idempotencyKey: 'bbbbbbbb-1313-4bbb-8bbb-bbbbbbbbbbbb',
+        title: '账号B机密长跑',
+        status: 'recording',
+        startedAtMs: Date.now() - 600_000,
+        endedAtMs: null,
+        activeDurationMs: 600_000,
+        segmentIndex: 0,
+        pointCount: 7,
+        previewDistanceM: 4320,
+        lastPointTimeMs: Date.now() - 10_000,
+        lastAccuracyM: 5,
+        interruptedReason: null,
+        claimRevision: 99,
+      },
+      Array.from({ length: 7 }, (_, i) => ({
+        lat: 31.23 + i * 0.001,
+        lon: 121.47,
+        elevationM: 12,
+        accuracyM: 5,
+        recordedAtMs: Date.now() - (7 - i) * 30_000,
+        segmentIndex: 0,
+      })),
+    );
+    mock.syncAccountClaim(bId, 99, 'tok-b-99');
+  }, accountBId);
+
+  await page.getByTestId('recording-stop-btn').click();
+  await expect(page.getByTestId('recording-error')).toBeVisible();
+  await expect(page.getByTestId('recording-pending-handoff-panel')).toHaveCount(0);
+  const bodyText = await page.locator('main').innerText();
+  expect(bodyText).not.toContain('账号B机密长跑');
+  expect(bodyText).not.toContain('4.32');
+  expect(bodyText).not.toContain('7 个轨迹点');
+  const nativeAfterForeignStop = await readNativeMock(page);
+  expect(nativeAfterForeignStop.session?.accountId).toBe(accountBId);
+  expect(nativeAfterForeignStop.session?.sessionId).toBe('account-b-live-sess');
+  expect(nativeAfterForeignStop.session?.status).toBe('recording');
+  expect(nativeAfterForeignStop.pointCount).toBe(7);
+  expect(nativeAfterForeignStop.stopRejected).toBeGreaterThanOrEqual(1);
+
+  // Subcase B: Normal same-account manual Stop still finalizes, enqueues, acks, and uploads exactly once.
+  let gpxPostCount = 0;
+  await page.route('**/api/v1/gpx-imports', async (route) => {
+    gpxPostCount += 1;
+    await route.continue();
+  });
+  await installMockLocationRecorder(page, { locationPermission: 'granted', initialRecording: true });
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await page.getByTestId('recording-stop-btn').click();
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(1, { timeout: 5_000 });
+  await expect(page.getByTestId('upload-queue-item').first()).toHaveAttribute('data-status', 'uploaded', {
+    timeout: 5_000,
+  });
+  const nativeDone = await readNativeMock(page);
+  expect(nativeDone.acks).toEqual(['recording-sess-1']);
+  expect(nativeDone.session).toBeNull();
+  expect(gpxPostCount).toBe(1);
 });

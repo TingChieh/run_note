@@ -159,6 +159,8 @@ class LocationRecorderPlugin : Plugin() {
         val accountId = call.getString("accountId")?.trim().orEmpty()
         val idempotencyKey = call.getString("idempotencyKey")?.trim().orEmpty()
         val title = call.getString("title")?.trim().orEmpty()
+        val claimRevision = readPositiveLongArg(call, "claimRevision")
+        val claimToken = call.getString("claimToken")?.trim()?.takeIf { it.isNotEmpty() }
 
         if (!resumeInterrupted && (sessionId.isBlank() || accountId.isBlank() || idempotencyKey.isBlank())) {
             call.reject("缺少记录会话标识", "INVALID_SESSION_ARGS")
@@ -166,12 +168,13 @@ class LocationRecorderPlugin : Plugin() {
         }
 
         val conflict = RecordingForegroundService.coordinatorFor(context)
-            .checkStartConflict(accountId, resumeInterrupted)
+            .checkStartConflict(accountId, resumeInterrupted, claimRevision, claimToken)
         if (conflict != null) {
             val message = when (conflict.errorCode) {
                 "UNHANDLED_STOPPED_SESSION" -> "存在尚未保存到上传队列的已结束记录，请先完成保存或丢弃"
                 "EXISTING_SESSION_ACTIVE" -> "存在尚未保存或丢弃的记录会话，请先恢复、保存或安全丢弃后再开始新记录"
                 "ACCOUNT_MISMATCH" -> "当前原生会话属于其他账号，请先完成账号切换清理后再开始记录"
+                "STALE_CLAIM" -> "当前登录状态已变更或会话已失效，请刷新页面后再开始记录"
                 "NO_RESUMABLE_SESSION" -> "没有可继续的未完成记录会话"
                 else -> "当前无法开始新的记录会话"
             }
@@ -194,6 +197,12 @@ class LocationRecorderPlugin : Plugin() {
             putExtra(RecordingForegroundService.EXTRA_IDEMPOTENCY_KEY, idempotencyKey)
             putExtra(RecordingForegroundService.EXTRA_TITLE, title)
             putExtra(RecordingForegroundService.EXTRA_RESUME_INTERRUPTED, resumeInterrupted)
+            if (claimRevision > 0L) {
+                putExtra(RecordingForegroundService.EXTRA_CLAIM_REVISION, claimRevision)
+            }
+            if (claimToken != null) {
+                putExtra(RecordingForegroundService.EXTRA_CLAIM_TOKEN, claimToken)
+            }
         }
 
         try {
@@ -246,7 +255,33 @@ class LocationRecorderPlugin : Plugin() {
 
     @PluginMethod
     fun stopSession(call: PluginCall) {
-        val snapshot = RecordingForegroundService.stopAndFinalizeSync(context)
+        val accountId = call.getString("accountId")?.trim().orEmpty()
+        val sessionId = call.getString("sessionId")?.trim().orEmpty()
+        val claimRevision = readPositiveLongArg(call, "claimRevision")
+        val claimToken = call.getString("claimToken")?.trim()?.takeIf { it.isNotEmpty() }
+        if (accountId.isBlank() || sessionId.isBlank() || claimRevision <= 0L) {
+            call.reject("缺少有效的账号或会话归属凭据，已阻止停止原生记录", "INVALID_STOP_ARGS")
+            return
+        }
+        val stopResult = RecordingForegroundService.stopAndFinalizeForOwnerSync(
+            context = context,
+            expectedAccountId = accountId,
+            expectedSessionId = sessionId,
+            expectedClaimRevision = claimRevision,
+            expectedClaimToken = claimToken,
+        )
+        if (stopResult.errorCode != null) {
+            val message = when (stopResult.errorCode) {
+                "ACCOUNT_MISMATCH" -> "当前原生记录属于其他账号，已阻止停止或读取其他账号数据"
+                "SESSION_MISMATCH" -> "当前原生记录会话已变更，已阻止停止其他会话"
+                "STALE_CLAIM" -> "当前登录状态已变更或本地记录数据已清理，已阻止停止原生记录"
+                "NO_ACTIVE_SESSION" -> "当前没有可停止的原生记录会话"
+                else -> "无法确认当前记录归属，已阻止停止原生记录"
+            }
+            call.reject(message, stopResult.errorCode)
+            return
+        }
+        val snapshot = stopResult.snapshot
         val payload = buildStatePayload(snapshot?.session, "inactive").apply {
             put("points", pointsToJsArray(snapshot?.points ?: emptyList()))
         }
@@ -256,8 +291,31 @@ class LocationRecorderPlugin : Plugin() {
     @PluginMethod
     fun acknowledgeHandoff(call: PluginCall) {
         val sessionId = call.getString("sessionId")?.trim().orEmpty()
-        val cleared = RecordingForegroundService.coordinatorFor(context).acknowledgeHandoff(sessionId)
+        val accountId = call.getString("accountId")?.trim().orEmpty()
+        val claimRevision = readPositiveLongArg(call, "claimRevision")
+        val claimToken = call.getString("claimToken")?.trim()?.takeIf { it.isNotEmpty() }
+        val cleared = RecordingForegroundService.coordinatorFor(context)
+            .acknowledgeHandoff(sessionId, accountId, claimRevision, claimToken)
         call.resolve(JSObject().put("acknowledged", cleared))
+    }
+
+    @PluginMethod
+    fun syncAccountClaim(call: PluginCall) {
+        val accountId = call.getString("accountId")?.trim()?.takeIf { it.isNotEmpty() }
+        val claimRevision = readPositiveLongArg(call, "claimRevision")
+        val claimToken = call.getString("claimToken")?.trim()?.takeIf { it.isNotEmpty() }
+        val synced = RecordingForegroundService.coordinatorFor(context)
+            .syncAccountClaim(accountId, claimRevision, claimToken)
+        call.resolve(JSObject().put("synced", synced))
+    }
+
+    @PluginMethod
+    fun revokeAccountClaim(call: PluginCall) {
+        val accountId = call.getString("accountId")?.trim()?.takeIf { it.isNotEmpty() }
+        val claimRevision = readPositiveLongArg(call, "claimRevision")
+        val revoked = RecordingForegroundService.coordinatorFor(context)
+            .revokeAccountClaim(accountId, claimRevision)
+        call.resolve(JSObject().put("revoked", revoked))
     }
 
     @PluginMethod
@@ -298,8 +356,25 @@ class LocationRecorderPlugin : Plugin() {
     @PluginMethod
     fun clearAccountSessions(call: PluginCall) {
         val keepAccountId = call.getString("keepAccountId")?.trim()
-        val cleared = RecordingForegroundService.clearIfAccountMismatchSync(context, keepAccountId)
+        val claimRevision = readPositiveLongArg(call, "claimRevision").takeIf { it > 0L }
+        val claimToken = call.getString("claimToken")?.trim()?.takeIf { it.isNotEmpty() }
+        val cleared = RecordingForegroundService.clearIfAccountMismatchSync(
+            context = context,
+            keepAccountId = keepAccountId,
+            claimRevision = claimRevision,
+            claimToken = claimToken,
+        )
         call.resolve(JSObject().put("cleared", cleared))
+    }
+
+    private fun readPositiveLongArg(call: PluginCall, key: String): Long {
+        val raw = call.data?.opt(key) ?: return 0L
+        val parsed = when (raw) {
+            is Number -> raw.toLong()
+            is String -> raw.trim().toLongOrNull() ?: 0L
+            else -> 0L
+        }
+        return if (parsed > 0L) parsed else 0L
     }
 
     private fun sendServiceAction(actionName: String) {

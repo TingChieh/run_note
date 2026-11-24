@@ -11,6 +11,8 @@ import {
   createIndexedDbRecordingBackend,
   createMemoryRecordingBackend,
   deleteActiveRecordingDraft,
+  executeUnderUploadQueueClaim,
+  executeUnderWebDraftOwnership,
   finalizeStoppedDraftToUploadQueue,
   ensureRecordingAccountIsolation,
   getActiveRecordingAccount,
@@ -1961,5 +1963,133 @@ describe('Round 12 atomic readonly claim and draft ownership verification', () =
         backend,
       ),
     ).toBe('claim_stale');
+  });
+});
+
+describe('Round 13 claim-locked handoff execution and inside-tx Web draft ownership gate', () => {
+  it('executeUnderUploadQueueClaim binds claimToken and serializes with cleanup under claim lock', async () => {
+    const fake = createSerializedFakeIdbFactory();
+    const backend = createIndexedDbRecordingBackend('round13-claim-lock-ack', fake.factory);
+    const claim1 = await claimRecordingAccountAtomic('user-a', backend, 1_000);
+    const rev1 = claim1.claimRevision!;
+    const tok1 = claim1.claimToken!;
+    expect(tok1).toBeTruthy();
+
+    const item = sampleUpload('user-a', 'aaaaaaaa-1313-4131-8131-131313131313');
+    await putUploadQueueItem(item, backend);
+
+    // Wrong claimToken is rejected even with matching claimRevision.
+    const wrongTok = await executeUnderUploadQueueClaim(
+      'user-a',
+      item.idempotencyKey,
+      { expectedClaimRevision: rev1, expectedClaimToken: 'wrong-token' },
+      async () => 'acked',
+      backend,
+    );
+    expect(wrongTok).toEqual({ status: 'stale' });
+
+    // Cleanup queued while executeUnderUploadQueueClaim holds the claim lock waits until ack finishes.
+    const order: string[] = [];
+    let releaseAck!: () => void;
+    const ackStarted = new Promise<void>((r) => {
+      void executeUnderUploadQueueClaim(
+        'user-a',
+        item.idempotencyKey,
+        { expectedClaimRevision: rev1, expectedClaimToken: tok1 },
+        async () => {
+          order.push('ack-start');
+          r();
+          await new Promise<void>((done) => {
+            releaseAck = done;
+          });
+          order.push('ack-end');
+          return true;
+        },
+        backend,
+      );
+    });
+    await ackStarted;
+    const cleanupPromise = clearAccountRecordingData('user-a', backend).then(() => {
+      order.push('cleanup-done');
+    });
+    await Promise.resolve();
+    expect(order).toEqual(['ack-start']);
+    releaseAck();
+    await cleanupPromise;
+    expect(order).toEqual(['ack-start', 'ack-end', 'cleanup-done']);
+
+    // Once cleanup committed, a subsequent executeUnderUploadQueueClaim never runs onValid.
+    let callbackRan = false;
+    const afterCleanup = await executeUnderUploadQueueClaim(
+      'user-a',
+      item.idempotencyKey,
+      { expectedClaimRevision: rev1, expectedClaimToken: tok1 },
+      async () => {
+        callbackRan = true;
+        return true;
+      },
+      backend,
+    );
+    expect(afterCleanup).toEqual({ status: 'stale' });
+    expect(callbackRan).toBe(false);
+  });
+
+  it('executeUnderWebDraftOwnership runs onValidInsideTx synchronously inside the readonly transaction and skips when stale', async () => {
+    const fake = createSerializedFakeIdbFactory();
+    const backend = createIndexedDbRecordingBackend('round13-watch-inside-tx', fake.factory);
+    const t0 = 1_800_000_000_000;
+    const claim1 = await claimRecordingAccountAtomic('user-a', backend, t0);
+    const rev1 = claim1.claimRevision!;
+    const tok1 = claim1.claimToken!;
+    const owner = { ownerId: 'tab-a', expectedOwnerGeneration: 1 };
+    const draft = { ...sampleDraft('user-a'), sessionId: 'sess-r13-watch' };
+    await saveActiveRecordingDraft(draft, backend, {
+      expectedClaimRevision: rev1,
+      rejectIfExistingDraft: true,
+      owner: { ownerId: 'tab-a' },
+      nowMs: t0,
+    });
+
+    let registered = 0;
+    const validRes = await executeUnderWebDraftOwnership(
+      'user-a',
+      { expectedClaimRevision: rev1, expectedClaimToken: tok1, expectedSessionId: 'sess-r13-watch', owner },
+      () => {
+        registered += 1;
+        return 42;
+      },
+      undefined,
+      backend,
+    );
+    expect(validRes).toEqual({ verdict: 'valid', value: 42 });
+    expect(registered).toBe(1);
+
+    // Wrong claimToken or post-cleanup never runs onValidInsideTx.
+    const badTok = await executeUnderWebDraftOwnership(
+      'user-a',
+      { expectedClaimRevision: rev1, expectedClaimToken: 'stale-tok', expectedSessionId: 'sess-r13-watch', owner },
+      () => {
+        registered += 1;
+        return 43;
+      },
+      undefined,
+      backend,
+    );
+    expect(badTok).toEqual({ verdict: 'claim_stale' });
+    expect(registered).toBe(1);
+
+    await clearAccountRecordingData('user-a', backend);
+    const postCleanup = await executeUnderWebDraftOwnership(
+      'user-a',
+      { expectedClaimRevision: rev1, expectedClaimToken: tok1, expectedSessionId: 'sess-r13-watch', owner },
+      () => {
+        registered += 1;
+        return 44;
+      },
+      undefined,
+      backend,
+    );
+    expect(postCleanup).toEqual({ verdict: 'claim_stale' });
+    expect(registered).toBe(1);
   });
 });

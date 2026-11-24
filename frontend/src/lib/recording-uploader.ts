@@ -252,7 +252,7 @@ function buildUploadQueueItem(input: FinalizeAndEnqueueInput, nowMs: number): Up
  */
 export async function enqueueFinalizedRecording(
   input: FinalizeAndEnqueueInput,
-  guard: { expectedClaimRevision: number },
+  guard: { expectedClaimRevision: number; expectedClaimToken?: string },
   backend: RecordingStorageBackend = getDefaultRecordingBackend(),
   nowMs = Date.now(),
 ): Promise<UploadQueueItem> {

@@ -172,7 +172,10 @@
                 currentUserId,
                 typeof claim.claimRevision === 'number' ? claim.claimRevision : null,
               );
-              void clearNativeAccountSessions(currentUserId);
+              void clearNativeAccountSessions(currentUserId, {
+                claimRevision: claim.claimRevision,
+                claimToken: claim.claimToken,
+              });
             } else {
               lastIsolatedRecordingClaim = null;
               settleInitialRecordingClaim(currentUserId, null);
@@ -203,7 +206,7 @@
         } else {
           void clearAccountRecordingData(departingUserId).catch(() => {});
         }
-        void clearNativeAccountSessions(null);
+        void clearNativeAccountSessions(null, { claimRevision: departingClaim?.claimRevision });
       } else {
         settleInitialRecordingClaim(null, null);
       }
@@ -361,7 +364,7 @@
       revokePageRecordingClaim();
       await clearPrivateOfflineCache();
       await clearDepartingAccount();
-      await clearNativeAccountSessions(null);
+      await clearNativeAccountSessions(null, { claimRevision: snapshotBeforeLogout?.claimRevision });
       clearHealthGrantHistory();
       if (typeof BroadcastChannel !== 'undefined') {
         const ch = new BroadcastChannel('runnote-auth');
@@ -376,7 +379,7 @@
         abortAllRecordingUploads(departingUserId ?? undefined);
         await clearPrivateOfflineCache();
         await clearDepartingAccount();
-        await clearNativeAccountSessions(null);
+        await clearNativeAccountSessions(null, { claimRevision: snapshotBeforeLogout?.claimRevision });
         clearHealthGrantHistory();
         checking = true;
         window.location.replace('/admin?reason=changed');
@@ -444,7 +447,9 @@
           }
           preemptRetries = 0;
           await clearPrivateOfflineCache();
-          await clearNativeAccountSessions(current?.id ?? null);
+          await clearNativeAccountSessions(current?.id ?? null, {
+            claimRevision: snapshotBeforeVerify?.claimRevision,
+          });
           clearHealthGrantHistory();
           identityBlocked = true;
           if (isProtected(page.url.pathname) && !current) window.location.replace('/admin?reason=changed');
@@ -470,7 +475,9 @@
             preemptRetries = 0;
             abortAllRecordingUploads(current.id);
             await clearPrivateOfflineCache();
-            await clearNativeAccountSessions(reconciled.confirmedAccountId);
+            await clearNativeAccountSessions(reconciled.confirmedAccountId, {
+              claimRevision: snapshotBeforeVerify?.claimRevision,
+            });
             clearHealthGrantHistory();
             identityBlocked = true;
             if (isProtected(page.url.pathname) && !reconciled.confirmedAccountId) {
@@ -494,8 +501,8 @@
           }
           preemptRetries = 0;
           if (reconciled?.status === 'active') {
+            const snap = await getActiveRecordingAccountSnapshot().catch(() => null);
             if (!recordingClaimRevoked && initialClaimRevision === null) {
-              const snap = await getActiveRecordingAccountSnapshot().catch(() => null);
               if (
                 !disposed &&
                 !busy &&
@@ -508,7 +515,12 @@
                 settleInitialRecordingClaim(current.id, snap.claimRevision);
               }
             }
-            void clearNativeAccountSessions(current.id);
+            void clearNativeAccountSessions(
+              current.id,
+              snap?.activeAccountId === current.id && typeof snap.claimRevision === 'number'
+                ? { claimRevision: snap.claimRevision, claimToken: snap.claimToken }
+                : undefined,
+            );
           }
         }
         if (disposed || busy || pending) return;
