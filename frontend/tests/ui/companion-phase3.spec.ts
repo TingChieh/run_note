@@ -2030,8 +2030,24 @@ test('P2 Round 5: late GPS write and stale delete from old tab epoch 1 cannot ov
   expect(afterTab2ThirdPoint.pointCount).toBe(3);
   expect(afterTab2ThirdPoint.draftClaimRev).toBe(tab2Snap.activeClaimRev);
 
-  // Retry after rejection: pause Tab 2, start a new session in Tab 1 (captures current epoch) and record a fix
+  // While Tab 2 still holds an undiscarded paused draft, Tab 1 starting a new run must reject STORAGE_DRAFT_EXISTS and surface Tab 2's draft instead of overwriting it
   await tab2.getByTestId('recording-pause-btn').click();
+  await page.getByLabel('跑步标题（可选）').fill('Tab1 误覆盖尝试');
+  await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-error')).toContainText('草稿');
+  await expect(page.getByTestId('recording-recovery-panel')).toBeVisible();
+  const preservedWhilePaused = await readDraftRow(tab2);
+  expect(preservedWhilePaused.title).toBe('Tab2 新代草稿');
+  expect(preservedWhilePaused.pointCount).toBe(3);
+
+  // Explicitly discard Tab 2's paused draft, then Tab 1 retry start succeeds cleanly
+  await tab2.getByTestId('recording-discard-btn').click();
+  await tab2.getByTestId('recording-discard-confirm-btn').click();
+  await expect(tab2.getByTestId('recording-status-badge')).toHaveText('就绪');
+  await page.getByTestId('recovery-discard-btn').click();
+  await page.getByTestId('recording-discard-confirm-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('就绪');
+
   await page.getByLabel('跑步标题（可选）').fill('Tab1 重试新草稿');
   await page.getByTestId('recording-start-btn').click();
   await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
@@ -2106,9 +2122,12 @@ test('P1: blocks Start until delayed native getSessionState (4s) finishes and re
   expect(callsAfterRestore.points).toBe(3);
 });
 
-test('P1: native startSession rejects while paused/interrupted session exists and concurrent calls create at most one session', async ({
+test('P1 (mock bridge contract): native startSession rejects while paused/interrupted session exists and concurrent calls create at most one session', async ({
   page,
 }) => {
+  // Note: this browser test verifies the Playwright mock LocationRecorder bridge contract & UI state;
+  // real native synchronized(store.lock) coordinator enforcement is covered in JVM LocationRecordingPolicyTest.java,
+  // while real Android Capacitor plugin/ForegroundService execution remains a pre-release real-device gate.
   await loginRunner(page);
 
   // 1. Preset paused same-account session -> direct startSession rejected, 3 points preserved
@@ -2304,4 +2323,279 @@ test('P1: recovery failure, empty payload, or no-response timeout keeps Start di
     (window as unknown as Record<string, { getStartSessionCalls: () => number }>).__mockRecorder.getStartSessionCalls(),
   );
   expect(hangStartCalls).toBe(0);
+});
+
+test('P2 Web: transient IndexedDB get failure keeps Start disabled, preserves old draft, and retry recovers cleanly', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await installMockWebGeolocation(page);
+
+  await page.addInitScript(() => {
+    const origGet = IDBObjectStore.prototype.get;
+    IDBObjectStore.prototype.get = function (key: IDBValidKey | IDBKeyRange) {
+      if (
+        typeof key === 'string' &&
+        key === 'user:00000000-0000-4000-8000-000000000001:draft:active' &&
+        window.sessionStorage.getItem('__web_get_fail_armed') === '1'
+      ) {
+        window.sessionStorage.removeItem('__web_get_fail_armed');
+        const fakeReq = new EventTarget() as IDBRequest;
+        Object.defineProperty(fakeReq, 'error', {
+          value: new DOMException('Simulated transient IndexedDB get failure', 'UnknownError'),
+        });
+        Object.defineProperty(fakeReq, 'result', { value: undefined });
+        setTimeout(() => {
+          fakeReq.dispatchEvent(new Event('error'));
+        }, 0);
+        return fakeReq;
+      }
+      return origGet.call(this, key);
+    };
+  });
+
+  const readDraftRow = async (targetPage: Page) =>
+    targetPage.evaluate(async () => {
+      return await new Promise<{ title?: string; sessionId?: string; pointCount?: number } | null>(
+        (resolve, reject) => {
+          const req = indexedDB.open('runnote-recording-store', 1);
+          req.onerror = () => reject(req.error);
+          req.onsuccess = () => {
+            const db = req.result;
+            const tx = db.transaction('records', 'readonly');
+            const rowReq = tx.objectStore('records').get('user:00000000-0000-4000-8000-000000000001:draft:active');
+            rowReq.onsuccess = () => {
+              const payload = (
+                rowReq.result as { payload?: { title?: string; sessionId?: string; points?: unknown[] } }
+              )?.payload;
+              db.close();
+              resolve(
+                payload
+                  ? { title: payload.title, sessionId: payload.sessionId, pointCount: payload.points?.length ?? 0 }
+                  : null,
+              );
+            };
+            rowReq.onerror = () => reject(rowReq.error);
+          };
+        },
+      );
+    });
+
+  // 1. Web start and save 1 synthetic GPS point
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('就绪');
+  await page.getByLabel('跑步标题（可选）').fill('旧未保存草稿');
+  await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as Record<string, { isWatching: () => boolean }>).__geo.isWatching()),
+    )
+    .toBe(true);
+  await page.evaluate(() => {
+    (window as unknown as Record<string, { emit: (lat: number, lon: number) => boolean }>).__geo.emit(31.23, 121.47);
+  });
+  await expect(page.getByTestId('recording-points-count')).toContainText('1 点');
+  const savedBeforeReload = await readDraftRow(page);
+  expect(savedBeforeReload?.title).toBe('旧未保存草稿');
+  expect(savedBeforeReload?.pointCount).toBe(1);
+
+  // 2. Refresh while arming a transient one-shot IndexedDB get error on active draft
+  await page.evaluate(() => window.sessionStorage.setItem('__web_get_fail_armed', '1'));
+  await page.reload();
+
+  // Recovery failed -> Start MUST stay disabled and old draft + point MUST remain intact in IndexedDB
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('恢复失败');
+  await expect(page.getByTestId('recording-recovery-error-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-recovery-error-panel')).toContainText('本地草稿状态');
+  await expect(page.getByTestId('recording-start-btn')).toBeDisabled();
+
+  const preservedWhileFailed = await readDraftRow(page);
+  expect(preservedWhileFailed?.title).toBe('旧未保存草稿');
+  expect(preservedWhileFailed?.sessionId).toBe(savedBeforeReload?.sessionId);
+  expect(preservedWhileFailed?.pointCount).toBe(1);
+
+  // 3. Click retry recovery -> recovers old interrupted draft cleanly
+  await page.getByTestId('recording-recovery-retry-btn').click();
+  await expect(page.getByTestId('recording-recovery-error-panel')).not.toBeVisible();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('待恢复');
+  await expect(page.getByTestId('recording-recovery-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-points-count')).toContainText('1 点');
+  await expect(page.getByLabel('跑步标题（可选）')).toHaveValue('旧未保存草稿');
+
+  // 4. Discard recovered draft -> Start becomes enabled and can start a new session cleanly
+  await page.getByTestId('recovery-discard-btn').click();
+  await page.getByTestId('recording-discard-confirm-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('就绪');
+  await expect(page.getByTestId('recording-start-btn')).toBeEnabled();
+
+  await page.getByLabel('跑步标题（可选）').fill('恢复丢弃后新跑步');
+  await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+});
+
+test('P2 Web: enqueue failure during recovery blocks Start and preserves draft; concurrent new-start interleave never overwrites', async ({
+  page,
+  context,
+}) => {
+  await loginRunner(page);
+  await installMockWebGeolocation(page);
+
+  await page.addInitScript(() => {
+    const origPut = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (value: { key?: string }, key?: IDBValidKey) {
+      if (
+        typeof value?.key === 'string' &&
+        value.key.startsWith('user:00000000-0000-4000-8000-000000000001:upload:') &&
+        window.sessionStorage.getItem('__web_enqueue_fail') === '1'
+      ) {
+        const fakeReq = new EventTarget() as IDBRequest;
+        Object.defineProperty(fakeReq, 'error', {
+          value: new DOMException('Simulated upload enqueue failure', 'QuotaExceededError'),
+        });
+        setTimeout(() => {
+          fakeReq.dispatchEvent(new Event('error'));
+        }, 0);
+        return fakeReq;
+      }
+      return key !== undefined ? origPut.call(this, value, key) : origPut.call(this, value);
+    };
+  });
+
+  // Subcase A: Stopped Web draft present + enqueue failure on mount -> Start disabled, draft preserved until retry succeeds
+  await page.goto('/activities/record');
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('就绪');
+
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open('runnote-recording-store', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('records', 'readwrite');
+        const now = Date.now();
+        tx.objectStore('records').put({
+          key: 'user:00000000-0000-4000-8000-000000000001:draft:active',
+          accountId: '00000000-0000-4000-8000-000000000001',
+          schemaVersion: 1,
+          savedAt: now,
+          claimRevision: 1,
+          payload: {
+            sessionId: 'sess-stopped-web-recovery',
+            accountId: '00000000-0000-4000-8000-000000000001',
+            idempotencyKey: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+            title: 'Web 已结束待入队草稿',
+            status: 'stopped',
+            startedAtMs: now - 120_000,
+            endedAtMs: now - 10_000,
+            activeDurationMs: 110_000,
+            lastSegmentStartMs: null,
+            segmentIndex: 0,
+            previewDistanceM: 320,
+            lastPointTimeMs: now - 10_000,
+            lastAccuracyM: 6,
+            interruptedReason: null,
+            points: [
+              { lat: 31.23, lon: 121.47, elevationM: 10, accuracyM: 6, recordedAtMs: now - 120_000, segmentIndex: 0 },
+              { lat: 31.232, lon: 121.47, elevationM: 10, accuracyM: 6, recordedAtMs: now - 60_000, segmentIndex: 0 },
+            ],
+          },
+        });
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+    window.sessionStorage.setItem('__web_enqueue_fail', '1');
+  });
+
+  await page.reload();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('恢复失败');
+  await expect(page.getByTestId('recording-recovery-error-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-start-btn')).toBeDisabled();
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(0);
+
+  // Stopped draft stays intact in IndexedDB while enqueue failed
+  const draftDuringEnqueueFail = await page.evaluate(async () => {
+    return await new Promise<string | null>((resolve, reject) => {
+      const req = indexedDB.open('runnote-recording-store', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const rowReq = db
+          .transaction('records', 'readonly')
+          .objectStore('records')
+          .get('user:00000000-0000-4000-8000-000000000001:draft:active');
+        rowReq.onsuccess = () => {
+          const id = (rowReq.result as { payload?: { sessionId?: string } })?.payload?.sessionId ?? null;
+          db.close();
+          resolve(id);
+        };
+        rowReq.onerror = () => reject(rowReq.error);
+      };
+    });
+  });
+  expect(draftDuringEnqueueFail).toBe('sess-stopped-web-recovery');
+
+  // Clear failure and retry recovery -> enqueues stopped draft, clears active draft, enables Start
+  await page.evaluate(() => window.sessionStorage.removeItem('__web_enqueue_fail'));
+  await page.getByTestId('recording-recovery-retry-btn').click();
+  await expect(page.getByTestId('recording-recovery-error-panel')).not.toBeVisible();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('就绪');
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(1);
+  await expect(page.getByTestId('upload-queue-item').first()).toContainText('Web 已结束待入队草稿');
+  await expect(page.getByTestId('recording-start-btn')).toBeEnabled();
+
+  // Subcase B: Concurrent new-start interleave between two tabs never overwrites an active draft
+  const tab2 = await context.newPage();
+  await installMockWebGeolocation(tab2);
+  await tab2.goto('/activities/record');
+  await expect(tab2.getByTestId('recording-status-badge')).toHaveText('就绪');
+
+  // Tab 2 starts and records 1 GPS point while Tab 1 still sees idle
+  await tab2.getByLabel('跑步标题（可选）').fill('Tab2 已写入草稿');
+  await tab2.getByTestId('recording-start-btn').click();
+  await expect(tab2.getByTestId('recording-status-badge')).toHaveText('记录中');
+  await expect
+    .poll(() =>
+      tab2.evaluate(() => (window as unknown as Record<string, { isWatching: () => boolean }>).__geo.isWatching()),
+    )
+    .toBe(true);
+  await tab2.evaluate(() => {
+    (window as unknown as Record<string, { emit: (lat: number, lon: number) => boolean }>).__geo.emit(31.24, 121.48);
+  });
+  await expect(tab2.getByTestId('recording-points-count')).toContainText('1 点');
+
+  // Now stale Tab 1 tries to start a brand-new run -> MUST reject STORAGE_DRAFT_EXISTS, preserve Tab 2's draft, and reconcile
+  await page.getByLabel('跑步标题（可选）').fill('Tab1 误覆盖标题');
+  await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-error')).toContainText('已阻止覆盖旧草稿');
+  await expect(page.getByTestId('recording-recovery-panel')).toBeVisible();
+  await expect(page.getByTestId('recording-points-count')).toContainText('1 点');
+
+  const tab2DraftAfterInterleave = await tab2.evaluate(async () => {
+    return await new Promise<{ title?: string; pointCount?: number } | null>((resolve, reject) => {
+      const req = indexedDB.open('runnote-recording-store', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const rowReq = db
+          .transaction('records', 'readonly')
+          .objectStore('records')
+          .get('user:00000000-0000-4000-8000-000000000001:draft:active');
+        rowReq.onsuccess = () => {
+          const payload = (rowReq.result as { payload?: { title?: string; points?: unknown[] } })?.payload;
+          db.close();
+          resolve(payload ? { title: payload.title, pointCount: payload.points?.length ?? 0 } : null);
+        };
+        rowReq.onerror = () => reject(rowReq.error);
+      };
+    });
+  });
+  expect(tab2DraftAfterInterleave?.title).toBe('Tab2 已写入草稿');
+  expect(tab2DraftAfterInterleave?.pointCount).toBe(1);
+
+  await tab2.close();
 });

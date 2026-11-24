@@ -462,8 +462,12 @@
           lastPointTimeMs = candidate.recordedAtMs;
           void saveActiveRecordingDraft(buildWebDraft(boundAccountId), undefined, {
             expectedClaimRevision: boundClaimRevision,
+            expectedSessionId: sessionId,
           }).catch((cause) => {
-            if (cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE') {
+            if (
+              cause instanceof RecordingPersistenceError &&
+              (cause.code === 'STORAGE_CLAIM_STALE' || cause.code === 'STORAGE_DRAFT_EXISTS')
+            ) {
               handleStaleSessionWrite(boundAccountId, boundClaimRevision, cause.message);
             }
           });
@@ -488,8 +492,12 @@
             interruptedReason = 'permission_revoked';
             void saveActiveRecordingDraft(buildWebDraft(boundAccountId), undefined, {
               expectedClaimRevision: boundClaimRevision,
+              expectedSessionId: sessionId,
             }).catch((cause) => {
-              if (cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE') {
+              if (
+                cause instanceof RecordingPersistenceError &&
+                (cause.code === 'STORAGE_CLAIM_STALE' || cause.code === 'STORAGE_DRAFT_EXISTS')
+              ) {
                 handleStaleSessionWrite(boundAccountId, boundClaimRevision, cause.message);
               }
             });
@@ -548,6 +556,101 @@
         if (activeRecoveryTimeoutId === localTimerId) {
           activeRecoveryTimeoutId = null;
         }
+      }
+    }
+  }
+
+  async function recoverWebDraftState() {
+    const token = ++recoveryRequestToken;
+    sessionRecoveryState = 'pending';
+    recoveryFailureMessage = '';
+    errorMessage = '';
+    if (!accountId) {
+      sessionRecoveryState = 'ready';
+      return;
+    }
+    try {
+      const draftMeta = await readActiveRecordingDraftWithMeta(accountId);
+      if (disposed || token !== recoveryRequestToken) return;
+      if (draftMeta) {
+        const draft = draftMeta.draft;
+        const claimedRev = await captureActiveSessionClaim(accountId);
+        if (disposed || token !== recoveryRequestToken) return;
+        if (typeof draftMeta.claimRevision === 'number' && draftMeta.claimRevision > claimedRev) {
+          sessionRecoveryState = 'failed';
+          recoveryFailureMessage = '检测到其他标签页正在写入新记录草稿，请重试恢复以确认最新状态。';
+          return;
+        }
+        if (draft.status === 'stopped' && draft.points.length > 0) {
+          await enqueueFinalizedRecording({
+            accountId,
+            sessionId: draft.sessionId,
+            idempotencyKey: draft.idempotencyKey,
+            title: draft.title,
+            timezone,
+            startedAtMs: draft.startedAtMs || draft.points[0].recordedAtMs,
+            endedAtMs: draft.endedAtMs ?? Date.now(),
+            activeDurationMs: draft.activeDurationMs,
+            points: draft.points,
+          });
+          if (disposed || token !== recoveryRequestToken) return;
+          try {
+            await deleteActiveRecordingDraft(accountId, undefined, {
+              expectedClaimRevision: claimedRev,
+              expectedSessionId: draft.sessionId,
+            });
+          } catch (cause) {
+            if (!(cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE')) {
+              throw cause;
+            }
+          }
+        } else if (draft.status === 'recording' || draft.status === 'paused' || draft.status === 'interrupted') {
+          sessionAccountId = accountId;
+          sessionClaimRevision = claimedRev;
+          sessionId = draft.sessionId;
+          idempotencyKey = draft.idempotencyKey;
+          runTitle = draft.title;
+          startedAtMs = draft.startedAtMs;
+          activeDurationMs = draft.activeDurationMs;
+          lastSegmentStartMs = null;
+          segmentIndex = draft.segmentIndex;
+          webPoints = draft.points;
+          pointCount = draft.points.length;
+          previewDistanceM = draft.previewDistanceM;
+          lastPointTimeMs = draft.lastPointTimeMs;
+          lastAccuracyM = draft.lastAccuracyM;
+          interruptedReason = draft.interruptedReason ?? 'process_terminated';
+          status = 'interrupted';
+        }
+      }
+      if (disposed || token !== recoveryRequestToken) return;
+      sessionRecoveryState = 'ready';
+      recoveryFailureMessage = '';
+    } catch (cause) {
+      if (disposed || token !== recoveryRequestToken) return;
+      sessionRecoveryState = 'failed';
+      recoveryFailureMessage =
+        cause instanceof Error && cause.message
+          ? `读取或恢复本地草稿失败：${cause.message}`
+          : '本地持久化存储不可用，为避免覆盖未保存草稿已暂停开始记录，请重试恢复。';
+    }
+  }
+
+  async function retrySessionRecovery() {
+    if (capabilities.native) {
+      if (isNativeLocationRecorderAvailable()) {
+        await recoverNativeSessionState();
+      } else {
+        sessionRecoveryState = 'failed';
+        recoveryFailureMessage = '未能连接原生定位记录服务，为避免覆盖未保存轨迹已暂停开始记录。';
+      }
+      return;
+    }
+    await recoverWebDraftState();
+    if (!disposed && sessionRecoveryState === 'ready') {
+      await refreshUploadQueue();
+      if (!disposed && !offline) {
+        void runUploadFlush(false);
       }
     }
   }
@@ -642,7 +745,7 @@
       const boundClaimRev =
         resumeInterrupted && sessionId && sessionClaimRevision !== null
           ? sessionClaimRevision
-          : await captureActiveSessionClaim(boundAccountId, { bumpGeneration: !resumeInterrupted });
+          : await captureActiveSessionClaim(boundAccountId);
       if (disposed) return;
       if (resumeInterrupted && sessionId) {
         segmentIndex += 1;
@@ -667,13 +770,22 @@
       sessionAccountId = boundAccountId;
       sessionClaimRevision = boundClaimRev;
       try {
-        await saveActiveRecordingDraft(buildWebDraft(boundAccountId), undefined, {
-          expectedClaimRevision: boundClaimRev,
-        });
+        await saveActiveRecordingDraft(
+          buildWebDraft(boundAccountId),
+          undefined,
+          resumeInterrupted
+            ? { expectedClaimRevision: boundClaimRev, expectedSessionId: sessionId }
+            : { expectedClaimRevision: boundClaimRev, rejectIfExistingDraft: true },
+        );
       } catch (saveCause) {
-        if (!resumeInterrupted) resetLocalSessionState();
-        else
+        if (!resumeInterrupted) {
+          resetLocalSessionState();
+          if (saveCause instanceof RecordingPersistenceError && saveCause.code === 'STORAGE_DRAFT_EXISTS') {
+            await recoverWebDraftState();
+          }
+        } else {
           handleStaleSessionWrite(boundAccountId, boundClaimRev, saveCause instanceof Error ? saveCause.message : '');
+        }
         throw saveCause;
       }
       startWebGeolocationWatch(boundAccountId, boundClaimRev);
@@ -707,9 +819,13 @@
         try {
           await saveActiveRecordingDraft(buildWebDraft(boundAccountId), undefined, {
             expectedClaimRevision: boundClaimRev,
+            expectedSessionId: sessionId,
           });
         } catch (cause) {
-          if (cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE') {
+          if (
+            cause instanceof RecordingPersistenceError &&
+            (cause.code === 'STORAGE_CLAIM_STALE' || cause.code === 'STORAGE_DRAFT_EXISTS')
+          ) {
             handleStaleSessionWrite(boundAccountId, boundClaimRev, cause.message);
             return;
           }
@@ -748,9 +864,13 @@
         try {
           await saveActiveRecordingDraft(buildWebDraft(boundAccountId), undefined, {
             expectedClaimRevision: boundClaimRev,
+            expectedSessionId: sessionId,
           });
         } catch (cause) {
-          if (cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE') {
+          if (
+            cause instanceof RecordingPersistenceError &&
+            (cause.code === 'STORAGE_CLAIM_STALE' || cause.code === 'STORAGE_DRAFT_EXISTS')
+          ) {
             handleStaleSessionWrite(boundAccountId, boundClaimRev, cause.message);
             return;
           }
@@ -817,9 +937,13 @@
             try {
               await saveActiveRecordingDraft(buildWebDraft(boundAccountId), undefined, {
                 expectedClaimRevision: boundClaimRev,
+                expectedSessionId: sessionId,
               });
             } catch (cause) {
-              if (cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE') {
+              if (
+                cause instanceof RecordingPersistenceError &&
+                (cause.code === 'STORAGE_CLAIM_STALE' || cause.code === 'STORAGE_DRAFT_EXISTS')
+              ) {
                 handleStaleSessionWrite(boundAccountId, boundClaimRev, cause.message);
                 return;
               }
@@ -1029,69 +1153,8 @@
             recoveryFailureMessage = '未能连接原生定位记录服务，为避免覆盖未保存轨迹已暂停开始记录。';
           }
           if (disposed) return;
-        } else if (accountId) {
-          try {
-            const draftMeta = await readActiveRecordingDraftWithMeta(accountId);
-            if (!disposed && draftMeta) {
-              const draft = draftMeta.draft;
-              const claimedRev = await captureActiveSessionClaim(accountId);
-              if (disposed) return;
-              if (typeof draftMeta.claimRevision === 'number' && draftMeta.claimRevision > claimedRev) {
-                // Newer generation already owns the draft; never overwrite or adopt it as stale.
-              } else if (draft.status === 'stopped' && draft.points.length > 0) {
-                await enqueueFinalizedRecording({
-                  accountId,
-                  sessionId: draft.sessionId,
-                  idempotencyKey: draft.idempotencyKey,
-                  title: draft.title,
-                  timezone,
-                  startedAtMs: draft.startedAtMs || draft.points[0].recordedAtMs,
-                  endedAtMs: draft.endedAtMs ?? Date.now(),
-                  activeDurationMs: draft.activeDurationMs,
-                  points: draft.points,
-                });
-                try {
-                  await deleteActiveRecordingDraft(accountId, undefined, {
-                    expectedClaimRevision: claimedRev,
-                    expectedSessionId: draft.sessionId,
-                  });
-                } catch (cause) {
-                  if (!(cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE')) {
-                    throw cause;
-                  }
-                }
-              } else if (draft.status === 'recording' || draft.status === 'paused' || draft.status === 'interrupted') {
-                sessionAccountId = accountId;
-                sessionClaimRevision = claimedRev;
-                sessionId = draft.sessionId;
-                idempotencyKey = draft.idempotencyKey;
-                runTitle = draft.title;
-                startedAtMs = draft.startedAtMs;
-                activeDurationMs = draft.activeDurationMs;
-                lastSegmentStartMs = null;
-                segmentIndex = draft.segmentIndex;
-                webPoints = draft.points;
-                pointCount = draft.points.length;
-                previewDistanceM = draft.previewDistanceM;
-                lastPointTimeMs = draft.lastPointTimeMs;
-                lastAccuracyM = draft.lastAccuracyM;
-                interruptedReason = draft.interruptedReason ?? 'process_terminated';
-                status = 'interrupted';
-              }
-            }
-          } catch (cause) {
-            if (!disposed && !(cause instanceof RecordingPersistenceError && cause.code === 'STORAGE_CLAIM_STALE')) {
-              errorMessage =
-                cause instanceof Error
-                  ? `读取或提交本地记录失败：${cause.message}`
-                  : '本地持久化存储不可用，无法恢复或入队本地记录。';
-            }
-          }
-          if (!disposed) {
-            sessionRecoveryState = 'ready';
-          }
         } else {
-          sessionRecoveryState = 'ready';
+          await recoverWebDraftState();
         }
       } catch (cause) {
         if (!disposed) {
@@ -1241,14 +1304,14 @@
       aria-labelledby="recovery-error-title"
       data-testid="recording-recovery-error-panel"
     >
-      <FeedbackState kind="error" title="无法确认原生记录状态">
+      <FeedbackState kind="error" title={capabilities.native ? '无法确认原生记录状态' : '无法确认本地草稿状态'}>
         <p>{recoveryFailureMessage}</p>
         <div class="recording-actions mt-3">
           <button
             type="button"
             class="button-primary"
             disabled={actionBusy || !mounted}
-            onclick={() => void recoverNativeSessionState()}
+            onclick={() => void retrySessionRecovery()}
             data-testid="recording-recovery-retry-btn"
           >
             重试恢复

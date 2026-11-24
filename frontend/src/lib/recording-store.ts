@@ -23,7 +23,12 @@ const CLAIM_EPOCH_KEY = 'meta:recording_claim_epoch';
 export type RecordingLifecycleStatus = 'idle' | 'recording' | 'paused' | 'interrupted' | 'stopped';
 
 export type RecordingPersistenceErrorCode =
-  'STORAGE_UNAVAILABLE' | 'STORAGE_TX_ABORTED' | 'STORAGE_TX_ERROR' | 'STORAGE_VERIFY_FAILED' | 'STORAGE_CLAIM_STALE';
+  | 'STORAGE_UNAVAILABLE'
+  | 'STORAGE_TX_ABORTED'
+  | 'STORAGE_TX_ERROR'
+  | 'STORAGE_VERIFY_FAILED'
+  | 'STORAGE_CLAIM_STALE'
+  | 'STORAGE_DRAFT_EXISTS';
 
 export class RecordingPersistenceError extends Error {
   readonly code: RecordingPersistenceErrorCode;
@@ -119,6 +124,8 @@ export interface GenerationScopedCleanupResult {
 
 export interface DraftWriteGuardOptions {
   expectedClaimRevision?: number;
+  rejectIfExistingDraft?: boolean;
+  expectedSessionId?: string;
 }
 
 export interface DraftDeleteGuardOptions {
@@ -275,6 +282,58 @@ function shouldDeleteEntryForGeneration(
   return entry.claimRevision === undefined || entry.claimRevision <= guard.maxStaleClaimRevision;
 }
 
+function isValidDraftRecord(entry: StoredRecord | null | undefined, expectedAccountId: string): boolean {
+  if (!entry || entry.schemaVersion !== RECORDING_STORE_SCHEMA_VERSION || entry.accountId !== expectedAccountId) {
+    return false;
+  }
+  const payload = entry.payload as Partial<LocalRecordingDraft> | null | undefined;
+  return Boolean(
+    payload &&
+    typeof payload.sessionId === 'string' &&
+    payload.sessionId.trim().length > 0 &&
+    typeof payload.idempotencyKey === 'string' &&
+    Array.isArray(payload.points),
+  );
+}
+
+function evaluateDraftWriteGuard(
+  entry: StoredRecord,
+  activeEntry: StoredRecord | null | undefined,
+  epochEntry: StoredRecord | null | undefined,
+  existingDraft: StoredRecord | null | undefined,
+  expectedClaimRevision: number,
+  guard?: { rejectIfExistingDraft?: boolean; expectedSessionId?: string },
+): 'saved' | 'stale' | 'draft_exists' {
+  const activeAccountId = extractActiveAccountId(activeEntry);
+  const activeClaimRev = typeof activeEntry?.claimRevision === 'number' ? activeEntry.claimRevision : undefined;
+  const currentEpoch = Math.max(extractClaimEpoch(epochEntry), activeClaimRev ?? 0);
+  const existingDraftRev = typeof existingDraft?.claimRevision === 'number' ? existingDraft.claimRevision : undefined;
+  if (
+    !entry.accountId ||
+    activeAccountId !== entry.accountId ||
+    activeClaimRev === undefined ||
+    activeClaimRev !== expectedClaimRevision ||
+    currentEpoch > expectedClaimRevision ||
+    (existingDraftRev !== undefined && existingDraftRev > expectedClaimRevision)
+  ) {
+    return 'stale';
+  }
+  if (guard?.rejectIfExistingDraft && isValidDraftRecord(existingDraft, entry.accountId)) {
+    return 'draft_exists';
+  }
+  const existingSessionId = isValidDraftRecord(existingDraft, entry.accountId)
+    ? (existingDraft?.payload as Partial<LocalRecordingDraft> | undefined)?.sessionId
+    : undefined;
+  if (
+    guard?.expectedSessionId !== undefined &&
+    existingSessionId !== undefined &&
+    existingSessionId !== guard.expectedSessionId
+  ) {
+    return 'draft_exists';
+  }
+  return 'saved';
+}
+
 export interface RecordingStorageBackend {
   /** True only when writes are durably persisted across process restarts (committed IndexedDB). */
   readonly durable: boolean;
@@ -286,7 +345,8 @@ export interface RecordingStorageBackend {
     activeKey: string,
     epochKey: string,
     expectedClaimRevision: number,
-  ): Promise<boolean>;
+    guard?: { rejectIfExistingDraft?: boolean; expectedSessionId?: string },
+  ): Promise<'saved' | 'stale' | 'draft_exists'>;
   deleteDraftGuardedAtomic(
     key: string,
     accountId: string,
@@ -361,27 +421,23 @@ export function createMemoryRecordingBackend(options?: { durableForTests?: boole
       map.set(entry.key, structuredClone(stampEntryWithActiveClaim(entry, activeEntry, existingEntry)));
       return true;
     },
-    async saveDraftGuardedAtomic(entry, activeKey, epochKey, expectedClaimRevision) {
+    async saveDraftGuardedAtomic(entry, activeKey, epochKey, expectedClaimRevision, guard) {
       const activeEntry = map.get(activeKey);
       const epochEntry = map.get(epochKey);
       const existingDraft = map.get(entry.key);
-      const activeAccountId = extractActiveAccountId(activeEntry);
-      const activeClaimRev = typeof activeEntry?.claimRevision === 'number' ? activeEntry.claimRevision : undefined;
-      const currentEpoch = Math.max(extractClaimEpoch(epochEntry), activeClaimRev ?? 0);
-      const existingDraftRev =
-        typeof existingDraft?.claimRevision === 'number' ? existingDraft.claimRevision : undefined;
-      if (
-        !entry.accountId ||
-        activeAccountId !== entry.accountId ||
-        activeClaimRev === undefined ||
-        activeClaimRev !== expectedClaimRevision ||
-        currentEpoch > expectedClaimRevision ||
-        (existingDraftRev !== undefined && existingDraftRev > expectedClaimRevision)
-      ) {
-        return false;
+      const verdict = evaluateDraftWriteGuard(
+        entry,
+        activeEntry,
+        epochEntry,
+        existingDraft,
+        expectedClaimRevision,
+        guard,
+      );
+      if (verdict !== 'saved') {
+        return verdict;
       }
       map.set(entry.key, structuredClone({ ...entry, claimRevision: expectedClaimRevision }));
-      return true;
+      return 'saved';
     },
     async deleteDraftGuardedAtomic(key, accountId, activeKey, epochKey, expectedClaimRevision, expectedSessionId) {
       const activeEntry = map.get(activeKey);
@@ -937,30 +993,26 @@ export function createIndexedDbRecordingBackend(
         return true;
       });
     },
-    async saveDraftGuardedAtomic(entry, activeKey, epochKey, expectedClaimRevision) {
+    async saveDraftGuardedAtomic(entry, activeKey, epochKey, expectedClaimRevision, guard) {
       return runTx('readwrite', async (store) => {
         const [activeEntry, epochEntry, existingDraft] = (await Promise.all([
           reqPromise(store.get(activeKey)),
           reqPromise(store.get(epochKey)),
           reqPromise(store.get(entry.key)),
         ])) as [StoredRecord | undefined, StoredRecord | undefined, StoredRecord | undefined];
-        const activeAccountId = extractActiveAccountId(activeEntry);
-        const activeClaimRev = typeof activeEntry?.claimRevision === 'number' ? activeEntry.claimRevision : undefined;
-        const currentEpoch = Math.max(extractClaimEpoch(epochEntry), activeClaimRev ?? 0);
-        const existingDraftRev =
-          typeof existingDraft?.claimRevision === 'number' ? existingDraft.claimRevision : undefined;
-        if (
-          !entry.accountId ||
-          activeAccountId !== entry.accountId ||
-          activeClaimRev === undefined ||
-          activeClaimRev !== expectedClaimRevision ||
-          currentEpoch > expectedClaimRevision ||
-          (existingDraftRev !== undefined && existingDraftRev > expectedClaimRevision)
-        ) {
-          return false;
+        const verdict = evaluateDraftWriteGuard(
+          entry,
+          activeEntry,
+          epochEntry,
+          existingDraft,
+          expectedClaimRevision,
+          guard,
+        );
+        if (verdict !== 'saved') {
+          return verdict;
         }
         await reqPromise(store.put({ ...entry, claimRevision: expectedClaimRevision }));
-        return true;
+        return 'saved';
       });
     },
     async deleteDraftGuardedAtomic(key, accountId, activeKey, epochKey, expectedClaimRevision, expectedSessionId) {
@@ -1568,16 +1620,26 @@ export async function saveActiveRecordingDraft(
     payload: draft,
   };
   if (options?.expectedClaimRevision !== undefined) {
-    const saved = await backend.saveDraftGuardedAtomic(
+    const outcome = await backend.saveDraftGuardedAtomic(
       entry,
       ACTIVE_ACCOUNT_KEY,
       CLAIM_EPOCH_KEY,
       options.expectedClaimRevision,
+      {
+        rejectIfExistingDraft: options.rejectIfExistingDraft,
+        expectedSessionId: options.expectedSessionId,
+      },
     );
-    if (!saved) {
+    if (outcome === 'stale') {
       throw new RecordingPersistenceError(
         'STORAGE_CLAIM_STALE',
         '当前记录会话已被其他标签页或新登录接管，已阻止覆盖最新草稿。',
+      );
+    }
+    if (outcome === 'draft_exists') {
+      throw new RecordingPersistenceError(
+        'STORAGE_DRAFT_EXISTS',
+        '检测到尚未恢复或丢弃的本地跑步草稿，已阻止覆盖旧草稿，请先恢复、保存或安全丢弃。',
       );
     }
     return;

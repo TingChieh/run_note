@@ -1099,3 +1099,125 @@ describe('recording-store Round 5 caller claim-epoch guarded draft writes and de
     expect((await readActiveRecordingDraftWithMeta('user-b', backend))?.draft.sessionId).toBe('sess-b3');
   });
 });
+
+describe('recording-store Web draft recovery P2 new-draft overwrite guard', () => {
+  it('rejects overwriting an existing valid draft on same or newer claim when rejectIfExistingDraft or sessionId mismatches', async () => {
+    const fake = createSerializedFakeIdbFactory();
+    const backend = createIndexedDbRecordingBackend('p2-web-draft-exists', fake.factory);
+
+    const claim1 = await claimRecordingAccountAtomic('user-a', backend, 1_000);
+    expect(claim1.claimRevision).toBe(1);
+    await saveActiveRecordingDraft(
+      {
+        ...sampleDraft('user-a'),
+        sessionId: 'sess-existing-1',
+        title: '已有未恢复草稿',
+        previewDistanceM: 512,
+      },
+      backend,
+      { expectedClaimRevision: 1, rejectIfExistingDraft: true },
+    );
+
+    // 1. Same-claim new start with rejectIfExistingDraft MUST reject with STORAGE_DRAFT_EXISTS and zero puts
+    const txBeforeSame = fake.txLogs.length;
+    await expect(
+      saveActiveRecordingDraft(
+        { ...sampleDraft('user-a'), sessionId: 'sess-new-same-claim', title: '覆盖尝试同代' },
+        backend,
+        { expectedClaimRevision: 1, rejectIfExistingDraft: true },
+      ),
+    ).rejects.toMatchObject({ name: 'RecordingPersistenceError', code: 'STORAGE_DRAFT_EXISTS' });
+    const sameClaimTxs = fake.txLogs.slice(txBeforeSame);
+    expect(sameClaimTxs).toHaveLength(1);
+    expect(sameClaimTxs[0].ops.some((o) => o.op === 'put' || o.op === 'delete')).toBe(false);
+
+    // 2. Re-claiming (newer claim rev 2) WITHOUT discarding the old draft MUST still reject new-draft overwrite
+    const claim2 = await claimRecordingAccountAtomic('user-a', backend, 2_000);
+    expect(claim2.claimRevision).toBe(2);
+    const txBeforeNewClaim = fake.txLogs.length;
+    await expect(
+      saveActiveRecordingDraft(
+        { ...sampleDraft('user-a'), sessionId: 'sess-new-claim2', title: '覆盖尝试新代' },
+        backend,
+        { expectedClaimRevision: 2, rejectIfExistingDraft: true },
+      ),
+    ).rejects.toMatchObject({ name: 'RecordingPersistenceError', code: 'STORAGE_DRAFT_EXISTS' });
+    const newClaimTxs = fake.txLogs.slice(txBeforeNewClaim);
+    expect(newClaimTxs).toHaveLength(1);
+    expect(newClaimTxs[0].ops.some((o) => o.op === 'put' || o.op === 'delete')).toBe(false);
+
+    // 3. Cross-session update under current claim (expectedSessionId mismatch) rejects too
+    await expect(
+      saveActiveRecordingDraft(
+        { ...sampleDraft('user-a'), sessionId: 'sess-new-claim2', title: '跨会话修改' },
+        backend,
+        { expectedClaimRevision: 2, expectedSessionId: 'sess-new-claim2' },
+      ),
+    ).rejects.toMatchObject({ code: 'STORAGE_DRAFT_EXISTS' });
+
+    // Old draft & metrics remain completely intact
+    const preserved = await readActiveRecordingDraftWithMeta('user-a', backend);
+    expect(preserved?.draft.sessionId).toBe('sess-existing-1');
+    expect(preserved?.draft.title).toBe('已有未恢复草稿');
+    expect(preserved?.draft.previewDistanceM).toBe(512);
+    expect(preserved?.claimRevision).toBe(1);
+
+    // 4. Same-session update succeeds under matching claimRevision + expectedSessionId
+    await saveActiveRecordingDraft(
+      {
+        ...sampleDraft('user-a'),
+        sessionId: 'sess-existing-1',
+        title: '已有未恢复草稿',
+        previewDistanceM: 768,
+      },
+      backend,
+      { expectedClaimRevision: 2, expectedSessionId: 'sess-existing-1' },
+    );
+    expect((await readActiveRecordingDraftWithMeta('user-a', backend))?.draft.previewDistanceM).toBe(768);
+
+    // 5. After explicit delete, a fresh new draft with rejectIfExistingDraft succeeds
+    await deleteActiveRecordingDraft('user-a', backend, {
+      expectedClaimRevision: 2,
+      expectedSessionId: 'sess-existing-1',
+    });
+    await saveActiveRecordingDraft(
+      { ...sampleDraft('user-a'), sessionId: 'sess-fresh-after-discard', title: '丢弃后新草稿' },
+      backend,
+      { expectedClaimRevision: 2, rejectIfExistingDraft: true },
+    );
+    expect((await readActiveRecordingDraftWithMeta('user-a', backend))?.draft.sessionId).toBe(
+      'sess-fresh-after-discard',
+    );
+  });
+
+  it('serializes concurrent recovery/new-start interleavings so only one new draft wins and existing drafts never overwrite', async () => {
+    const fake = createSerializedFakeIdbFactory();
+    const backend = createIndexedDbRecordingBackend('p2-web-concurrent-new-start', fake.factory);
+
+    await claimRecordingAccountAtomic('user-a', backend, 1_000);
+
+    // Hold two concurrent new-start writes racing from empty state
+    const gate = fake.holdNextReadwrite();
+    const start1 = saveActiveRecordingDraft(
+      { ...sampleDraft('user-a'), sessionId: 'sess-win', title: '先到新草稿' },
+      backend,
+      { expectedClaimRevision: 1, rejectIfExistingDraft: true },
+    );
+    await gate.started;
+    const start2 = saveActiveRecordingDraft(
+      { ...sampleDraft('user-a'), sessionId: 'sess-lose', title: '后到新草稿' },
+      backend,
+      { expectedClaimRevision: 1, rejectIfExistingDraft: true },
+    );
+    gate.release();
+
+    const [res1, res2] = await Promise.allSettled([start1, start2]);
+    expect(res1.status).toBe('fulfilled');
+    expect(res2.status).toBe('rejected');
+    expect((res2 as PromiseRejectedResult).reason).toMatchObject({ code: 'STORAGE_DRAFT_EXISTS' });
+
+    const snap = await readActiveRecordingDraftWithMeta('user-a', backend);
+    expect(snap?.draft.sessionId).toBe('sess-win');
+    expect(snap?.draft.title).toBe('先到新草稿');
+  });
+});
