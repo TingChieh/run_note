@@ -2,6 +2,7 @@ import { ActivityError, uploadGpx } from '#lib/api/activities.ts';
 import { readSession } from '#lib/api/auth.ts';
 import {
   RecordingPersistenceError,
+  clearAccountIfPreemptedAtomic,
   clearAccountRecordingData,
   deleteUploadQueueItem,
   getActiveRecordingAccount,
@@ -328,11 +329,10 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
   }
 
   // Guard with active-account marker before issuing network requests: if another tab already
-  // switched to a different account, clean ONLY this stale account's records.
-  const activeMarkerBefore = await getActiveRecordingAccount(backend);
-  if (activeMarkerBefore && activeMarkerBefore !== options.accountId) {
+  // switched to a different account, atomically clean ONLY this stale account's records.
+  const preemptedBefore = await clearAccountIfPreemptedAtomic(options.accountId, backend);
+  if (preemptedBefore.preempted) {
     const msg = '检测到当前登录账号已切换，已取消上传并清理原账号待传轨迹。';
-    await clearAccountRecordingData(options.accountId, backend);
     notifyQueueUpdated({ reason: 'account_mismatch', message: msg });
     return {
       status: 'account_mismatch',
@@ -370,10 +370,9 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
   };
 
   const abortIfAccountSwitched = async (staleAccountId: string): Promise<UploadFlushOutcome | null> => {
-    const activeMarker = await getActiveRecordingAccount(backend);
-    if (activeMarker && activeMarker !== staleAccountId) {
+    const preempted = await clearAccountIfPreemptedAtomic(staleAccountId, backend);
+    if (preempted.preempted) {
       const msg = '检测到当前登录账号已切换，已取消上传并清理原账号待传轨迹。';
-      await clearAccountRecordingData(staleAccountId, backend);
       notifyQueueUpdated({ reason: 'account_mismatch', message: msg });
       return {
         status: 'account_mismatch',
@@ -436,10 +435,9 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
       };
     }
     if (identityCheck === 'expired') {
-      const activeMarker = await getActiveRecordingAccount(backend);
-      if (activeMarker && activeMarker !== item.accountId) {
+      const preempted = await clearAccountIfPreemptedAtomic(item.accountId, backend);
+      if (preempted.preempted) {
         const msg = '检测到当前登录账号已切换，已取消上传并清理原账号待传轨迹。';
-        await clearAccountRecordingData(item.accountId, backend);
         notifyQueueUpdated({ reason: 'account_mismatch', message: msg });
         return {
           status: 'account_mismatch',
@@ -582,10 +580,9 @@ async function runFlush(options: FlushUploadOptions, controller: AbortController
       }
 
       if (cause instanceof ActivityError && cause.status === 401) {
-        const activeMarker = await getActiveRecordingAccount(backend);
-        if (activeMarker && activeMarker !== item.accountId) {
+        const preempted = await clearAccountIfPreemptedAtomic(item.accountId, backend);
+        if (preempted.preempted) {
           const msg = '当前登录账号已变更，已中止上传并清理原账号待传轨迹。';
-          await clearAccountRecordingData(item.accountId, backend);
           notifyQueueUpdated({ reason: 'account_mismatch', message: msg });
           return {
             status: 'account_mismatch',

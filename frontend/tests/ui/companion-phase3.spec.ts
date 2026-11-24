@@ -1063,3 +1063,366 @@ test('P2: suspended stale account A tab waking after account B signs in deletes 
   expect((bQueueRow?.payload as { gpxXml?: string })?.gpxXml).toContain('<gpx');
   expect(gpxPostCount).toBe(0);
 });
+
+test('P2 Round 3: interleaving A reads session then B becomes active and enqueues preserves B data and removes expired A records', async ({
+  page,
+  context,
+}) => {
+  await loginRunner(page);
+  const accountAId = '00000000-0000-4000-8000-000000000001';
+
+  const accountBEmail = `phase3_r3_interleave_${Date.now()}@example.com`;
+  const accountBPassword = 'SecondRunner-2026!';
+  const createRes = await page.request.post('/api/v1/admin/users', {
+    headers: { 'x-csrf-token': 'ui-csrf' },
+    data: {
+      email: accountBEmail,
+      username: `runner_r3a_${Date.now().toString().slice(-6)}`,
+      display_name: 'Runner R3 Interleave',
+      password: accountBPassword,
+      timezone: 'Asia/Shanghai',
+      is_active: true,
+      showcase_enabled: false,
+      wellbeing_allowed: false,
+    },
+  });
+  expect(createRes.ok()).toBe(true);
+  const createBody = await createRes.json();
+  const accountBId = createBody.data.user?.id ?? createBody.data.id;
+  expect(typeof accountBId).toBe('string');
+
+  const gpxOwnersPosted: string[] = [];
+  await context.route('**/api/v1/gpx-imports', async (route) => {
+    const raw = route.request().postData() ?? '';
+    const match = raw.match(/name="expected_owner_id"\s+([^\r\n]+)/);
+    if (match) gpxOwnersPosted.push(match[1].trim());
+    // Hold B's upload in failed/retry state so B's queued item stays inspectable in IndexedDB
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: null,
+        error: { code: 'DEPENDENCY_UNAVAILABLE', message: '服务暂不可用' },
+      }),
+    });
+  });
+
+  await installMockLocationRecorder(page, { locationPermission: 'granted' });
+  await page.goto('/activities/record');
+
+  // Account A records & stops (503 keeps A's queued item in backoff state), plus leaves an active draft in IndexedDB
+  await page.getByTestId('recording-start-btn').click();
+  await page.evaluate(() => {
+    const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
+    rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
+    rec.pushPoint({ lat: 31.232, lon: 121.47, accuracyM: 6, deltaM: 222 });
+  });
+  await page.getByTestId('recording-stop-btn').click();
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(1);
+  await expect(page.getByTestId('upload-queue-item').first()).toHaveAttribute('data-status', 'failed');
+  gpxOwnersPosted.length = 0;
+
+  await page.evaluate(async (aId) => {
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open('runnote-recording-store', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('records', 'readwrite');
+        const now = Date.now();
+        tx.objectStore('records').put({
+          key: `user:${aId}:draft:active`,
+          accountId: aId,
+          schemaVersion: 1,
+          savedAt: now,
+          payload: {
+            sessionId: 'sess-a-expired-draft',
+            accountId: aId,
+            idempotencyKey: 'aaaaaaaa-9999-4999-8999-999999999999',
+            title: '账号 A 过期草稿',
+            status: 'paused',
+            startedAtMs: now - 60_000,
+            endedAtMs: null,
+            activeDurationMs: 60_000,
+            lastSegmentStartMs: null,
+            segmentIndex: 0,
+            previewDistanceM: 200,
+            lastPointTimeMs: now - 5_000,
+            lastAccuracyM: 6,
+            interruptedReason: null,
+            points: [
+              { lat: 31.23, lon: 121.47, elevationM: 10, accuracyM: 6, recordedAtMs: now - 60_000, segmentIndex: 0 },
+            ],
+          },
+        });
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+  }, accountAId);
+
+  // Intercept Tab A's NEXT /api/v1/auth/session call so Tab A reads Account A's session and pauses before cleanup.
+  let sessionCallCount = 0;
+  let markSessionARead!: () => void;
+  const sessionAReadPromise = new Promise<void>((resolve) => {
+    markSessionARead = resolve;
+  });
+  let releaseSessionAResponse!: () => void;
+  const sessionAReleaseGate = new Promise<void>((resolve) => {
+    releaseSessionAResponse = resolve;
+  });
+
+  await page.route('**/api/v1/auth/session', async (route) => {
+    sessionCallCount += 1;
+    if (sessionCallCount === 1) {
+      const resp = await route.fetch();
+      const body = await resp.text();
+      markSessionARead();
+      await sessionAReleaseGate;
+      await route.fulfill({ status: resp.status(), headers: resp.headers(), body });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await sessionAReadPromise;
+
+  // Interleaving step: while Tab A holds Account A's session response, another tab signs in as B and enqueues B's data.
+  const loginBRes = await context.request.post('/api/v1/auth/login', {
+    data: { email: accountBEmail, password: accountBPassword },
+  });
+  expect(loginBRes.ok()).toBe(true);
+
+  const tabB = await context.newPage();
+  await installMockLocationRecorder(tabB, { locationPermission: 'granted' });
+  await tabB.goto('/workspace/activities/record');
+  await expect(tabB.locator('header')).toHaveAttribute('data-auth-ready', 'true');
+
+  await tabB.getByLabel('跑步标题（可选）').fill('账号 B 并发写入跑');
+  await tabB.getByTestId('recording-start-btn').click();
+  await tabB.evaluate(() => {
+    const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
+    rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
+    rec.pushPoint({ lat: 31.235, lon: 121.47, accuracyM: 6, deltaM: 510 });
+  });
+  await tabB.getByTestId('recording-stop-btn').click();
+  await expect(tabB.getByTestId('upload-queue-item')).toHaveCount(1);
+
+  // Also persist an active draft for B in IndexedDB before Tab A's delayed cleanup runs
+  await tabB.evaluate(async (bId) => {
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open('runnote-recording-store', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('records', 'readwrite');
+        const now = Date.now();
+        tx.objectStore('records').put({
+          key: `user:${bId}:draft:active`,
+          accountId: bId,
+          schemaVersion: 1,
+          savedAt: now,
+          payload: {
+            sessionId: 'sess-b-active-draft',
+            accountId: bId,
+            idempotencyKey: 'bbbbbbbb-9999-4999-8999-999999999999',
+            title: '账号 B 进行中草稿',
+            status: 'paused',
+            startedAtMs: now - 30_000,
+            endedAtMs: null,
+            activeDurationMs: 30_000,
+            lastSegmentStartMs: null,
+            segmentIndex: 0,
+            previewDistanceM: 310,
+            lastPointTimeMs: now - 3_000,
+            lastAccuracyM: 6,
+            interruptedReason: null,
+            points: [
+              { lat: 31.23, lon: 121.47, elevationM: 10, accuracyM: 6, recordedAtMs: now - 30_000, segmentIndex: 0 },
+            ],
+          },
+        });
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+  }, accountBId);
+
+  // Now release Tab A's stale Account A session read so Tab A's cleanup/reconciliation runs AFTER B became active.
+  releaseSessionAResponse();
+
+  await expect(page).toHaveURL(/\/workspace\/activities\/record/, { timeout: 10_000 });
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(1);
+  await expect(page.getByTestId('upload-queue-item').first()).toContainText('账号 B 并发写入跑');
+
+  const idbSnapshot = await tabB.evaluate(async () => {
+    return await new Promise<Array<{ key: string; payload: unknown }>>((resolve, reject) => {
+      const req = indexedDB.open('runnote-recording-store', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('records', 'readonly');
+        const allReq = tx.objectStore('records').getAll();
+        allReq.onsuccess = () => {
+          const rows = (allReq.result as Array<{ key: string; payload: unknown }>).map((r) => ({
+            key: r.key,
+            payload: r.payload,
+          }));
+          db.close();
+          resolve(rows);
+        };
+        allReq.onerror = () => reject(allReq.error);
+      };
+    });
+  });
+
+  expect(idbSnapshot.filter((r) => r.key.startsWith(`user:${accountAId}:`))).toEqual([]);
+  expect(idbSnapshot.find((r) => r.key === 'meta:recording_active_account')?.payload).toBe(accountBId);
+  expect(idbSnapshot.find((r) => r.key === `user:${accountBId}:draft:active`)).toBeTruthy();
+  const bUploads = idbSnapshot.filter((r) => r.key.startsWith(`user:${accountBId}:upload:`));
+  expect(bUploads).toHaveLength(1);
+  expect((bUploads[0].payload as { gpxXml?: string })?.gpxXml).toContain('<gpx');
+  expect(gpxOwnersPosted.filter((id) => id === accountAId)).toEqual([]);
+
+  await tabB.close();
+});
+
+test('P2 Round 3: two-tab concurrent claim and preemption never loses or reassigns active account B records', async ({
+  page,
+  context,
+}) => {
+  await loginRunner(page);
+  const accountAId = '00000000-0000-4000-8000-000000000001';
+
+  const accountBEmail = `phase3_r3_preempt_${Date.now()}@example.com`;
+  const accountBPassword = 'SecondRunner-2026!';
+  const createRes = await page.request.post('/api/v1/admin/users', {
+    headers: { 'x-csrf-token': 'ui-csrf' },
+    data: {
+      email: accountBEmail,
+      username: `runner_r3b_${Date.now().toString().slice(-6)}`,
+      display_name: 'Runner R3 Preempt',
+      password: accountBPassword,
+      timezone: 'Asia/Shanghai',
+      is_active: true,
+      showcase_enabled: false,
+      wellbeing_allowed: false,
+    },
+  });
+  expect(createRes.ok()).toBe(true);
+  const createBody = await createRes.json();
+  const accountBId = createBody.data.user?.id ?? createBody.data.id;
+  expect(typeof accountBId).toBe('string');
+
+  const gpxOwnersPosted: string[] = [];
+  await context.route('**/api/v1/gpx-imports', async (route) => {
+    const raw = route.request().postData() ?? '';
+    const match = raw.match(/name="expected_owner_id"\s+([^\r\n]+)/);
+    if (match) gpxOwnersPosted.push(match[1].trim());
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: null,
+        error: { code: 'DEPENDENCY_UNAVAILABLE', message: '服务暂不可用' },
+      }),
+    });
+  });
+
+  await installMockLocationRecorder(page, { locationPermission: 'granted' });
+  await page.goto('/activities/record');
+
+  // Seed Account A's offline upload item, then delete active marker so both tabs race to claim
+  await page.getByTestId('recording-start-btn').click();
+  await page.evaluate(() => {
+    const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
+    rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
+    rec.pushPoint({ lat: 31.232, lon: 121.47, accuracyM: 6, deltaM: 222 });
+  });
+  await context.setOffline(true);
+  await page.evaluate(() => window.dispatchEvent(new Event('offline')));
+  await page.getByTestId('recording-stop-btn').click();
+  await expect(page.getByTestId('upload-queue-item')).toHaveCount(1);
+
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open('runnote-recording-store', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('records', 'readwrite');
+        tx.objectStore('records').delete('meta:recording_active_account');
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+  });
+
+  const loginBRes = await context.request.post('/api/v1/auth/login', {
+    data: { email: accountBEmail, password: accountBPassword },
+  });
+  expect(loginBRes.ok()).toBe(true);
+  await context.setOffline(false);
+
+  const tabB = await context.newPage();
+  await installMockLocationRecorder(tabB, { locationPermission: 'granted' });
+
+  // Race Tab A focus verification and Tab B opening/claiming simultaneously
+  await Promise.all([
+    page.evaluate(() => window.dispatchEvent(new Event('focus'))),
+    tabB.goto('/workspace/activities/record'),
+  ]);
+  await expect(tabB.locator('header')).toHaveAttribute('data-auth-ready', 'true');
+  await expect(page).toHaveURL(/\/workspace\/activities\/record/, { timeout: 10_000 });
+
+  // Tab B records & stops a track while Tab A stays open
+  await tabB.getByLabel('跑步标题（可选）').fill('账号 B 抢占保护跑');
+  await tabB.getByTestId('recording-start-btn').click();
+  await tabB.evaluate(() => {
+    const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
+    rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
+    rec.pushPoint({ lat: 31.236, lon: 121.47, accuracyM: 6, deltaM: 620 });
+  });
+  await tabB.getByTestId('recording-stop-btn').click();
+  await expect(tabB.getByTestId('upload-queue-item')).toHaveCount(1);
+
+  const idbSnapshot = await tabB.evaluate(async () => {
+    return await new Promise<Array<{ key: string; payload: unknown }>>((resolve, reject) => {
+      const req = indexedDB.open('runnote-recording-store', 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('records', 'readonly');
+        const allReq = tx.objectStore('records').getAll();
+        allReq.onsuccess = () => {
+          const rows = (allReq.result as Array<{ key: string; payload: unknown }>).map((r) => ({
+            key: r.key,
+            payload: r.payload,
+          }));
+          db.close();
+          resolve(rows);
+        };
+        allReq.onerror = () => reject(allReq.error);
+      };
+    });
+  });
+
+  expect(idbSnapshot.filter((r) => r.key.startsWith(`user:${accountAId}:`))).toEqual([]);
+  expect(idbSnapshot.find((r) => r.key === 'meta:recording_active_account')?.payload).toBe(accountBId);
+  const bUploads = idbSnapshot.filter((r) => r.key.startsWith(`user:${accountBId}:upload:`));
+  expect(bUploads).toHaveLength(1);
+  expect((bUploads[0].payload as { gpxXml?: string })?.gpxXml).toContain('<gpx');
+  expect(gpxOwnersPosted.filter((id) => id === accountAId)).toEqual([]);
+
+  await tabB.close();
+});

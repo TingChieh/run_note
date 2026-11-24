@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   RecordingPersistenceError,
+  claimRecordingAccountAtomic,
   createMemoryRecordingBackend,
   ensureRecordingAccountIsolation,
   getActiveRecordingAccount,
@@ -737,6 +738,40 @@ describe('recording-uploader idempotent queue', () => {
       isOnline: () => true,
     });
     expect(midFlightOutcome.status).toBe('account_mismatch');
+    expect(await listUploadQueueItems(USER_A, backend)).toEqual([]);
+    await assertBIntact();
+
+    // 3. Concurrent preemption during 401/expired session: B claims marker while A's session check is in flight
+    await backend.delete('meta:recording_active_account');
+    await enqueueFinalizedRecording(
+      {
+        accountId: USER_A,
+        sessionId: 'sess-a3',
+        idempotencyKey: 'aaaaaaaa-3333-4333-8333-333333333333',
+        title: '账号 A 3',
+        timezone: 'Asia/Shanghai',
+        startedAtMs: 1_700_000_000_000,
+        endedAtMs: 1_700_000_030_000,
+        activeDurationMs: 30_000,
+        points: SAMPLE_POINTS,
+      },
+      backend,
+    );
+    const preemptOnExpiredFetch: typeof fetch = async (input) => {
+      const path = String(input);
+      if (path === '/api/v1/auth/session') {
+        await claimRecordingAccountAtomic(USER_B, backend);
+        return jsonResponse({ data: { user: null }, error: null });
+      }
+      return jsonResponse({}, 500);
+    };
+    const expiredPreemptOutcome = await flushRecordingUploadQueue({
+      accountId: USER_A,
+      fetcher: preemptOnExpiredFetch,
+      backend,
+      isOnline: () => true,
+    });
+    expect(expiredPreemptOutcome.status).toBe('account_mismatch');
     expect(await listUploadQueueItems(USER_A, backend)).toEqual([]);
     await assertBIntact();
   });

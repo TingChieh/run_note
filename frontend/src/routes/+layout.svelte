@@ -26,10 +26,11 @@
   import { clearHealthGrantHistory } from '#lib/capacitor-health.ts';
   import { clearNativeAccountSessions } from '#lib/capacitor-recorder.ts';
   import {
+    RecordingPersistenceError,
     claimRecordingAccountIfUnsetOrMatch,
     clearAccountRecordingData,
     clearPrivateRecordingData,
-    ensureRecordingAccountIsolation,
+    reconcileVerifiedRecordingAccount,
   } from '#lib/recording-store.ts';
   import {
     abortAllRecordingUploads,
@@ -286,7 +287,8 @@
     mounted = true;
     let inFlight = false,
       pending = false,
-      disposed = false;
+      disposed = false,
+      preemptRetries = 0;
     const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('runnote-auth');
     async function verifyIdentity() {
       if (disposed || busy) return;
@@ -307,6 +309,7 @@
         const current = await readSession();
         if (disposed || busy || pending) return;
         if ((current?.id ?? null) !== (page.data.user?.id ?? null)) {
+          preemptRetries = 0;
           const staleUserId = page.data.user?.id ?? null;
           if (staleUserId) {
             abortAllRecordingUploads(staleUserId);
@@ -321,9 +324,51 @@
           return;
         }
         if (current?.id) {
-          await ensureRecordingAccountIsolation(current.id).catch(() => {});
-          void clearNativeAccountSessions(current.id);
+          let reconciled: Awaited<ReturnType<typeof reconcileVerifiedRecordingAccount>> | null = null;
+          try {
+            reconciled = await reconcileVerifiedRecordingAccount({
+              accountId: current.id,
+              verifySession: () => readSession(),
+            });
+          } catch (reconcileError) {
+            if (!(reconcileError instanceof RecordingPersistenceError)) {
+              throw reconcileError;
+            }
+            // IndexedDB unavailable: do not block the page or wipe native handoff data.
+          }
+          if (disposed || busy) return;
+          if (reconciled?.status === 'stale') {
+            preemptRetries = 0;
+            abortAllRecordingUploads(current.id);
+            await clearPrivateOfflineCache();
+            await clearNativeAccountSessions(reconciled.confirmedAccountId);
+            clearHealthGrantHistory();
+            identityBlocked = true;
+            if (isProtected(page.url.pathname) && !reconciled.confirmedAccountId) {
+              window.location.replace('/admin?reason=changed');
+            } else {
+              window.location.reload();
+            }
+            return;
+          }
+          if (reconciled?.status === 'preempted') {
+            if (preemptRetries < 3) {
+              preemptRetries += 1;
+              pending = true;
+              return;
+            }
+            preemptRetries = 0;
+            checking = true;
+            identityBlocked = true;
+            message = '检测到并发账号切换，请刷新页面确认当前登录状态';
+            return;
+          }
+          preemptRetries = 0;
+          if (reconciled?.status === 'active') {
+            void clearNativeAccountSessions(current.id);
+          }
         }
+        if (disposed || busy || pending) return;
         identityBlocked = false;
         checking = false;
         if (current?.id && !offline && viewContext(page.url.pathname, current.is_admin === true).kind !== 'public') {

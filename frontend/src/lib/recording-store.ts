@@ -85,7 +85,58 @@ interface StoredRecord<T = unknown> {
   accountId: string | null;
   schemaVersion: number;
   savedAt: number;
+  claimRevision?: number;
   payload: T;
+}
+
+export interface ActiveAccountGuard {
+  expectedAccountId: string | null;
+  expectedSavedAt?: number;
+  expectedClaimRevision?: number;
+}
+
+export interface ClaimAccountResult {
+  status: 'claimed' | 'conflict';
+  activeAccountId: string | null;
+  savedAt: number | null;
+  claimRevision: number | undefined;
+}
+
+export interface GuardedAccountCleanupResult {
+  status: 'cleaned' | 'aborted';
+  removedCount: number;
+  activeAccountId: string | null;
+}
+
+export interface PreemptedAccountCleanupResult {
+  preempted: boolean;
+  removedCount: number;
+  activeAccountId: string | null;
+}
+
+export type ReconcileRecordingAccountResult =
+  | { status: 'active'; activeAccountId: string; clearedStaleAccountId?: string }
+  | { status: 'stale'; confirmedAccountId: string | null; activeAccountId: string | null }
+  | { status: 'preempted'; activeAccountId: string | null };
+
+function extractActiveAccountId(entry: StoredRecord | null | undefined): string | null {
+  return entry && typeof entry.payload === 'string' && entry.payload.trim() ? entry.payload.trim() : null;
+}
+
+function matchesActiveAccountGuard(entry: StoredRecord | null | undefined, guard: ActiveAccountGuard): boolean {
+  const actualAccountId = extractActiveAccountId(entry);
+  if (actualAccountId !== guard.expectedAccountId) {
+    return false;
+  }
+  if (guard.expectedAccountId !== null) {
+    if (guard.expectedSavedAt !== undefined && entry?.savedAt !== guard.expectedSavedAt) {
+      return false;
+    }
+    if (guard.expectedClaimRevision !== undefined && entry?.claimRevision !== guard.expectedClaimRevision) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export interface RecordingStorageBackend {
@@ -96,7 +147,22 @@ export interface RecordingStorageBackend {
   delete(key: string): Promise<void>;
   listByPrefix(prefix: string): Promise<StoredRecord[]>;
   deleteByPrefix(prefix: string): Promise<number>;
-  clearAccountAtomic?(accountId: string, activeKey: string, prefix: string): Promise<number>;
+  claimAccountAtomic(accountId: string, activeKey: string, nowMs: number): Promise<ClaimAccountResult>;
+  clearAccountAtomic(accountId: string, activeKey: string, prefix: string): Promise<number>;
+  clearAccountIfPreemptedAtomic(
+    accountId: string,
+    activeKey: string,
+    prefix: string,
+  ): Promise<PreemptedAccountCleanupResult>;
+  clearStaleAccountGuardedAtomic(
+    staleAccountId: string,
+    nextAccountId: string | null,
+    activeKey: string,
+    stalePrefix: string,
+    guard: ActiveAccountGuard,
+    nowMs: number,
+  ): Promise<GuardedAccountCleanupResult>;
+  isolateAccountAtomic(currentAccountId: string | null, activeKey: string, nowMs: number): Promise<boolean>;
   clearAll(): Promise<void>;
 }
 
@@ -131,6 +197,33 @@ export function createMemoryRecordingBackend(options?: { durableForTests?: boole
       }
       return removed;
     },
+    async claimAccountAtomic(accountId, activeKey, nowMs) {
+      const existing = map.get(activeKey);
+      const existingAccount = extractActiveAccountId(existing);
+      if (existingAccount && existingAccount !== accountId) {
+        return {
+          status: 'conflict',
+          activeAccountId: existingAccount,
+          savedAt: typeof existing?.savedAt === 'number' ? existing.savedAt : null,
+          claimRevision: existing?.claimRevision,
+        };
+      }
+      const nextRevision = (typeof existing?.claimRevision === 'number' ? existing.claimRevision : 0) + 1;
+      map.set(activeKey, {
+        key: activeKey,
+        accountId,
+        schemaVersion: RECORDING_STORE_SCHEMA_VERSION,
+        savedAt: nowMs,
+        claimRevision: nextRevision,
+        payload: accountId,
+      });
+      return {
+        status: 'claimed',
+        activeAccountId: accountId,
+        savedAt: nowMs,
+        claimRevision: nextRevision,
+      };
+    },
     async clearAccountAtomic(accountId, activeKey, prefix) {
       let removed = 0;
       for (const key of Array.from(map.keys())) {
@@ -140,10 +233,98 @@ export function createMemoryRecordingBackend(options?: { durableForTests?: boole
         }
       }
       const active = map.get(activeKey);
-      if (active && typeof active.payload === 'string' && active.payload.trim() === accountId) {
+      if (extractActiveAccountId(active) === accountId) {
         map.delete(activeKey);
       }
       return removed;
+    },
+    async clearAccountIfPreemptedAtomic(accountId, activeKey, prefix) {
+      const activeEntry = map.get(activeKey);
+      const activeAccountId = extractActiveAccountId(activeEntry);
+      if (!activeAccountId || activeAccountId === accountId) {
+        return { preempted: false, removedCount: 0, activeAccountId };
+      }
+      let removedCount = 0;
+      for (const key of Array.from(map.keys())) {
+        if (key.startsWith(prefix)) {
+          map.delete(key);
+          removedCount += 1;
+        }
+      }
+      return { preempted: true, removedCount, activeAccountId };
+    },
+    async clearStaleAccountGuardedAtomic(staleAccountId, nextAccountId, activeKey, stalePrefix, guard, nowMs) {
+      const activeEntry = map.get(activeKey);
+      const currentActive = extractActiveAccountId(activeEntry);
+      const normalizedNext = nextAccountId && nextAccountId.trim() ? nextAccountId.trim() : null;
+      if (
+        !staleAccountId.trim() ||
+        staleAccountId === normalizedNext ||
+        !matchesActiveAccountGuard(activeEntry, guard)
+      ) {
+        return { status: 'aborted', removedCount: 0, activeAccountId: currentActive };
+      }
+      let removedCount = 0;
+      for (const key of Array.from(map.keys())) {
+        if (key.startsWith(stalePrefix)) {
+          map.delete(key);
+          removedCount += 1;
+        }
+      }
+      let resultingActive: string | null = currentActive;
+      if (normalizedNext) {
+        const nextRevision = (typeof activeEntry?.claimRevision === 'number' ? activeEntry.claimRevision : 0) + 1;
+        map.set(activeKey, {
+          key: activeKey,
+          accountId: normalizedNext,
+          schemaVersion: RECORDING_STORE_SCHEMA_VERSION,
+          savedAt: nowMs,
+          claimRevision: nextRevision,
+          payload: normalizedNext,
+        });
+        resultingActive = normalizedNext;
+      } else if (currentActive === staleAccountId) {
+        map.delete(activeKey);
+        resultingActive = null;
+      }
+      return { status: 'cleaned', removedCount, activeAccountId: resultingActive };
+    },
+    async isolateAccountAtomic(currentAccountId, activeKey, nowMs) {
+      const activeEntry = map.get(activeKey);
+      const previousAccountId = extractActiveAccountId(activeEntry);
+      if (!currentAccountId) {
+        if (previousAccountId !== null) {
+          const prevPrefix = accountPrefix(previousAccountId);
+          for (const key of Array.from(map.keys())) {
+            if (key.startsWith(prevPrefix)) {
+              map.delete(key);
+            }
+          }
+          map.delete(activeKey);
+          return true;
+        }
+        return false;
+      }
+      let wiped = false;
+      if (previousAccountId && previousAccountId !== currentAccountId) {
+        const prevPrefix = accountPrefix(previousAccountId);
+        for (const key of Array.from(map.keys())) {
+          if (key.startsWith(prevPrefix)) {
+            map.delete(key);
+          }
+        }
+        wiped = true;
+      }
+      const nextRevision = (typeof activeEntry?.claimRevision === 'number' ? activeEntry.claimRevision : 0) + 1;
+      map.set(activeKey, {
+        key: activeKey,
+        accountId: currentAccountId,
+        schemaVersion: RECORDING_STORE_SCHEMA_VERSION,
+        savedAt: nowMs,
+        claimRevision: nextRevision,
+        payload: currentAccountId,
+      });
+      return wiped;
     },
     async clearAll() {
       map.clear();
@@ -173,6 +354,27 @@ function createUnavailableRecordingBackend(): RecordingStorageBackend {
     },
     async deleteByPrefix() {
       return 0;
+    },
+    async claimAccountAtomic() {
+      throw unavailable();
+    },
+    async clearAccountAtomic() {
+      return 0;
+    },
+    async clearAccountIfPreemptedAtomic() {
+      return { preempted: false, removedCount: 0, activeAccountId: null };
+    },
+    async clearStaleAccountGuardedAtomic(_staleAccountId, nextAccountId) {
+      if (nextAccountId && nextAccountId.trim()) {
+        throw unavailable();
+      }
+      return { status: 'aborted', removedCount: 0, activeAccountId: null };
+    },
+    async isolateAccountAtomic(currentAccountId) {
+      if (currentAccountId) {
+        throw unavailable();
+      }
+      return false;
     },
     async clearAll() {
       return;
@@ -414,6 +616,37 @@ export function createIndexedDbRecordingBackend(
         return deletes.length;
       });
     },
+    async claimAccountAtomic(accountId, activeKey, nowMs) {
+      return runTx('readwrite', async (store) => {
+        const existing = (await reqPromise(store.get(activeKey))) as StoredRecord | undefined;
+        const existingAccount = extractActiveAccountId(existing);
+        if (existingAccount && existingAccount !== accountId) {
+          return {
+            status: 'conflict',
+            activeAccountId: existingAccount,
+            savedAt: typeof existing?.savedAt === 'number' ? existing.savedAt : null,
+            claimRevision: existing?.claimRevision,
+          };
+        }
+        const nextRevision = (typeof existing?.claimRevision === 'number' ? existing.claimRevision : 0) + 1;
+        await reqPromise(
+          store.put({
+            key: activeKey,
+            accountId,
+            schemaVersion: RECORDING_STORE_SCHEMA_VERSION,
+            savedAt: nowMs,
+            claimRevision: nextRevision,
+            payload: accountId,
+          }),
+        );
+        return {
+          status: 'claimed',
+          activeAccountId: accountId,
+          savedAt: nowMs,
+          claimRevision: nextRevision,
+        };
+      });
+    },
     async clearAccountAtomic(accountId, activeKey, prefix) {
       return runTx('readwrite', async (store) => {
         const [all, activeEntry] = (await Promise.all([
@@ -428,11 +661,124 @@ export function createIndexedDbRecordingBackend(
             removed += 1;
           }
         }
-        if (activeEntry && typeof activeEntry.payload === 'string' && activeEntry.payload.trim() === accountId) {
+        if (extractActiveAccountId(activeEntry) === accountId) {
           deletes.push(reqPromise(store.delete(activeKey)));
         }
         await Promise.all(deletes);
         return removed;
+      });
+    },
+    async clearAccountIfPreemptedAtomic(accountId, activeKey, prefix) {
+      return runTx('readwrite', async (store) => {
+        const activeEntry = (await reqPromise(store.get(activeKey))) as StoredRecord | undefined;
+        const activeAccountId = extractActiveAccountId(activeEntry);
+        if (!activeAccountId || activeAccountId === accountId) {
+          return { preempted: false, removedCount: 0, activeAccountId };
+        }
+        const all = (await reqPromise(store.getAll())) as StoredRecord[];
+        const deletes: Array<Promise<unknown>> = [];
+        let removedCount = 0;
+        for (const entry of all) {
+          if (typeof entry?.key === 'string' && entry.key.startsWith(prefix)) {
+            deletes.push(reqPromise(store.delete(entry.key)));
+            removedCount += 1;
+          }
+        }
+        await Promise.all(deletes);
+        return { preempted: true, removedCount, activeAccountId };
+      });
+    },
+    async clearStaleAccountGuardedAtomic(staleAccountId, nextAccountId, activeKey, stalePrefix, guard, nowMs) {
+      return runTx('readwrite', async (store) => {
+        const activeEntry = (await reqPromise(store.get(activeKey))) as StoredRecord | undefined;
+        const currentActive = extractActiveAccountId(activeEntry);
+        const normalizedNext = nextAccountId && nextAccountId.trim() ? nextAccountId.trim() : null;
+        if (
+          !staleAccountId.trim() ||
+          staleAccountId === normalizedNext ||
+          !matchesActiveAccountGuard(activeEntry, guard)
+        ) {
+          return { status: 'aborted', removedCount: 0, activeAccountId: currentActive };
+        }
+        const all = (await reqPromise(store.getAll())) as StoredRecord[];
+        const writes: Array<Promise<unknown>> = [];
+        let removedCount = 0;
+        for (const entry of all) {
+          if (typeof entry?.key === 'string' && entry.key.startsWith(stalePrefix)) {
+            writes.push(reqPromise(store.delete(entry.key)));
+            removedCount += 1;
+          }
+        }
+        let resultingActive: string | null = currentActive;
+        if (normalizedNext) {
+          const nextRevision = (typeof activeEntry?.claimRevision === 'number' ? activeEntry.claimRevision : 0) + 1;
+          writes.push(
+            reqPromise(
+              store.put({
+                key: activeKey,
+                accountId: normalizedNext,
+                schemaVersion: RECORDING_STORE_SCHEMA_VERSION,
+                savedAt: nowMs,
+                claimRevision: nextRevision,
+                payload: normalizedNext,
+              }),
+            ),
+          );
+          resultingActive = normalizedNext;
+        } else if (currentActive === staleAccountId) {
+          writes.push(reqPromise(store.delete(activeKey)));
+          resultingActive = null;
+        }
+        await Promise.all(writes);
+        return { status: 'cleaned', removedCount, activeAccountId: resultingActive };
+      });
+    },
+    async isolateAccountAtomic(currentAccountId, activeKey, nowMs) {
+      return runTx('readwrite', async (store) => {
+        const activeEntry = (await reqPromise(store.get(activeKey))) as StoredRecord | undefined;
+        const previousAccountId = extractActiveAccountId(activeEntry);
+        if (!currentAccountId) {
+          if (previousAccountId !== null) {
+            const all = (await reqPromise(store.getAll())) as StoredRecord[];
+            const prevPrefix = accountPrefix(previousAccountId);
+            const writes: Array<Promise<unknown>> = [reqPromise(store.delete(activeKey))];
+            for (const entry of all) {
+              if (typeof entry?.key === 'string' && entry.key.startsWith(prevPrefix)) {
+                writes.push(reqPromise(store.delete(entry.key)));
+              }
+            }
+            await Promise.all(writes);
+            return true;
+          }
+          return false;
+        }
+        const writes: Array<Promise<unknown>> = [];
+        let wiped = false;
+        if (previousAccountId && previousAccountId !== currentAccountId) {
+          const all = (await reqPromise(store.getAll())) as StoredRecord[];
+          const prevPrefix = accountPrefix(previousAccountId);
+          for (const entry of all) {
+            if (typeof entry?.key === 'string' && entry.key.startsWith(prevPrefix)) {
+              writes.push(reqPromise(store.delete(entry.key)));
+            }
+          }
+          wiped = true;
+        }
+        const nextRevision = (typeof activeEntry?.claimRevision === 'number' ? activeEntry.claimRevision : 0) + 1;
+        writes.push(
+          reqPromise(
+            store.put({
+              key: activeKey,
+              accountId: currentAccountId,
+              schemaVersion: RECORDING_STORE_SCHEMA_VERSION,
+              savedAt: nowMs,
+              claimRevision: nextRevision,
+              payload: currentAccountId,
+            }),
+          ),
+        );
+        await Promise.all(writes);
+        return wiped;
       });
     },
     async clearAll() {
@@ -469,6 +815,21 @@ export async function getActiveRecordingAccount(
 }
 
 /**
+ * Atomically claims `ACTIVE_ACCOUNT_KEY` for `accountId` in a single transaction ONLY if it is
+ * unset or already owned by `accountId`. Never deletes or overwrites another account's marker.
+ */
+export async function claimRecordingAccountAtomic(
+  accountId: string,
+  backend: RecordingStorageBackend = getDefaultRecordingBackend(),
+  nowMs = Date.now(),
+): Promise<ClaimAccountResult> {
+  if (!accountId.trim()) {
+    return { status: 'conflict', activeAccountId: null, savedAt: null, claimRevision: undefined };
+  }
+  return backend.claimAccountAtomic(accountId, ACTIVE_ACCOUNT_KEY, nowMs);
+}
+
+/**
  * Records `accountId` as the active recording account ONLY if no other account currently holds
  * `ACTIVE_ACCOUNT_KEY`. Never deletes another account's records.
  */
@@ -476,19 +837,8 @@ export async function claimRecordingAccountIfUnsetOrMatch(
   accountId: string,
   backend: RecordingStorageBackend = getDefaultRecordingBackend(),
 ): Promise<'claimed' | 'conflict'> {
-  if (!accountId.trim()) return 'conflict';
-  const existing = await getActiveRecordingAccount(backend);
-  if (existing && existing !== accountId) {
-    return 'conflict';
-  }
-  await backend.put({
-    key: ACTIVE_ACCOUNT_KEY,
-    accountId,
-    schemaVersion: RECORDING_STORE_SCHEMA_VERSION,
-    savedAt: Date.now(),
-    payload: accountId,
-  });
-  return 'claimed';
+  const result = await claimRecordingAccountAtomic(accountId, backend);
+  return result.status;
 }
 
 /**
@@ -501,64 +851,142 @@ export async function clearAccountRecordingData(
   backend: RecordingStorageBackend = getDefaultRecordingBackend(),
 ): Promise<number> {
   if (!accountId.trim()) return 0;
-  if (backend.clearAccountAtomic) {
-    return backend.clearAccountAtomic(accountId, ACTIVE_ACCOUNT_KEY, accountPrefix(accountId));
-  }
-  const removed = await backend.deleteByPrefix(accountPrefix(accountId));
-  const activeAccount = await getActiveRecordingAccount(backend);
-  if (activeAccount === accountId) {
-    await backend.delete(ACTIVE_ACCOUNT_KEY);
-  }
-  return removed;
+  return backend.clearAccountAtomic(accountId, ACTIVE_ACCOUNT_KEY, accountPrefix(accountId));
 }
 
 /**
- * Deletes `user:*` entries belonging to any account other than `keepAccountId`,
- * never deleting `keepAccountId`'s own records.
+ * Atomically checks `ACTIVE_ACCOUNT_KEY` and deletes ONLY `accountId`'s records if another
+ * account currently owns the active marker. Never deletes another account's data.
  */
-export async function clearOtherAccountsRecordingData(
-  keepAccountId: string,
+export async function clearAccountIfPreemptedAtomic(
+  accountId: string,
   backend: RecordingStorageBackend = getDefaultRecordingBackend(),
-): Promise<number> {
-  const keepPrefix = accountPrefix(keepAccountId);
-  const all = await backend.listByPrefix('user:');
-  let removed = 0;
-  for (const entry of all) {
-    if (!entry.key.startsWith(keepPrefix)) {
-      await backend.delete(entry.key);
-      removed += 1;
-    }
+): Promise<PreemptedAccountCleanupResult> {
+  if (!accountId.trim()) {
+    return { preempted: false, removedCount: 0, activeAccountId: null };
   }
-  return removed;
+  return backend.clearAccountIfPreemptedAtomic(accountId, ACTIVE_ACCOUNT_KEY, accountPrefix(accountId));
+}
+
+/**
+ * Atomically verifies the `guard` on `ACTIVE_ACCOUNT_KEY` inside a single IndexedDB transaction,
+ * deletes ONLY `staleAccountId`'s records (`user:<staleAccountId>:*`), and updates/clears the
+ * active marker. If the active marker changed before cleanup, aborts and leaves all records intact.
+ */
+export async function clearStaleRecordingAccountAtomic(
+  options: {
+    staleAccountId: string;
+    nextAccountId?: string | null;
+    guard: ActiveAccountGuard;
+  },
+  backend: RecordingStorageBackend = getDefaultRecordingBackend(),
+  nowMs = Date.now(),
+): Promise<GuardedAccountCleanupResult> {
+  if (!options.staleAccountId.trim()) {
+    return { status: 'aborted', removedCount: 0, activeAccountId: await getActiveRecordingAccount(backend) };
+  }
+  return backend.clearStaleAccountGuardedAtomic(
+    options.staleAccountId,
+    options.nextAccountId ?? null,
+    ACTIVE_ACCOUNT_KEY,
+    accountPrefix(options.staleAccountId),
+    options.guard,
+    nowMs,
+  );
 }
 
 export async function ensureRecordingAccountIsolation(
   currentAccountId: string | null,
   backend: RecordingStorageBackend = getDefaultRecordingBackend(),
+  options?: { expectedActiveGuard?: ActiveAccountGuard },
 ): Promise<boolean> {
-  const previousAccountId = await getActiveRecordingAccount(backend);
-
-  if (!currentAccountId) {
-    if (previousAccountId !== null) {
-      await clearAccountRecordingData(previousAccountId, backend);
-      return true;
+  if (options?.expectedActiveGuard) {
+    const guard = options.expectedActiveGuard;
+    if (!currentAccountId) {
+      if (!guard.expectedAccountId) return false;
+      const res = await clearStaleRecordingAccountAtomic(
+        { staleAccountId: guard.expectedAccountId, nextAccountId: null, guard },
+        backend,
+      );
+      return res.status === 'cleaned';
     }
-    return false;
+    if (guard.expectedAccountId === null || guard.expectedAccountId === currentAccountId) {
+      await claimRecordingAccountAtomic(currentAccountId, backend);
+      return false;
+    }
+    const res = await clearStaleRecordingAccountAtomic(
+      { staleAccountId: guard.expectedAccountId, nextAccountId: currentAccountId, guard },
+      backend,
+    );
+    return res.status === 'cleaned';
+  }
+  return backend.isolateAccountAtomic(currentAccountId, ACTIVE_ACCOUNT_KEY, Date.now());
+}
+
+/**
+ * Atomically reconciles a verified tab identity (`accountId`) against `ACTIVE_ACCOUNT_KEY`:
+ * - Attempts an atomic single-transaction claim first.
+ * - On conflict with another account `observedActiveId`, re-verifies the authoritative server
+ *   session via `verifySession()` before any deletion.
+ * - If this tab's session is stale or expired (`!confirmed || confirmed.id !== accountId`),
+ *   deletes ONLY `accountId`'s own expired records and preserves `observedActiveId`'s marker/data.
+ * - If this tab's session is still authoritative (`confirmed.id === accountId`), atomically cleans
+ *   ONLY `observedActiveId` guarded by the exact `savedAt`/`claimRevision` observed during claim;
+ *   if another tab preempted in between, aborts without deleting anything.
+ */
+export async function reconcileVerifiedRecordingAccount(options: {
+  accountId: string;
+  verifySession: () => Promise<{ id: string } | null>;
+  backend?: RecordingStorageBackend;
+  now?: () => number;
+}): Promise<ReconcileRecordingAccountResult> {
+  const backend = options.backend ?? getDefaultRecordingBackend();
+  const now = options.now ?? (() => Date.now());
+  const claim = await claimRecordingAccountAtomic(options.accountId, backend, now());
+  if (claim.status === 'claimed') {
+    return { status: 'active', activeAccountId: options.accountId };
   }
 
-  let wiped = false;
-  if (previousAccountId && previousAccountId !== currentAccountId) {
-    const removed = await clearOtherAccountsRecordingData(currentAccountId, backend);
-    wiped = removed > 0 || previousAccountId !== currentAccountId;
+  const observedActiveId = claim.activeAccountId;
+  const confirmed = await options.verifySession();
+  if (!confirmed || confirmed.id !== options.accountId) {
+    await clearAccountRecordingData(options.accountId, backend);
+    return {
+      status: 'stale',
+      confirmedAccountId: confirmed?.id ?? null,
+      activeAccountId: observedActiveId,
+    };
   }
-  await backend.put({
-    key: ACTIVE_ACCOUNT_KEY,
-    accountId: currentAccountId,
-    schemaVersion: RECORDING_STORE_SCHEMA_VERSION,
-    savedAt: Date.now(),
-    payload: currentAccountId,
-  });
-  return wiped;
+
+  if (!observedActiveId || observedActiveId === options.accountId) {
+    const retryClaim = await claimRecordingAccountAtomic(options.accountId, backend, now());
+    if (retryClaim.status === 'claimed') {
+      return { status: 'active', activeAccountId: options.accountId };
+    }
+    return { status: 'preempted', activeAccountId: retryClaim.activeAccountId };
+  }
+
+  const cleanup = await clearStaleRecordingAccountAtomic(
+    {
+      staleAccountId: observedActiveId,
+      nextAccountId: options.accountId,
+      guard: {
+        expectedAccountId: observedActiveId,
+        expectedSavedAt: claim.savedAt ?? undefined,
+        expectedClaimRevision: claim.claimRevision,
+      },
+    },
+    backend,
+    now(),
+  );
+  if (cleanup.status === 'aborted') {
+    return { status: 'preempted', activeAccountId: cleanup.activeAccountId };
+  }
+  return {
+    status: 'active',
+    activeAccountId: options.accountId,
+    clearedStaleAccountId: observedActiveId,
+  };
 }
 
 export async function clearPrivateRecordingData(
