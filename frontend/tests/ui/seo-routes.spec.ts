@@ -2,7 +2,10 @@ import { expect, test } from '@playwright/test';
 
 const missingId = '00000000-0000-4000-8000-000000000404';
 
-test('server routes 404 missing resources, redirect the old home, and publish crawl rules', async ({ request, baseURL }) => {
+test('server routes 404 missing resources, redirect the old home, and publish crawl rules', async ({
+  request,
+  baseURL,
+}) => {
   const activity = await request.get('/activities/example', { maxRedirects: 0 });
   expect(activity.status()).toBe(404);
   expect(await activity.text()).toContain('找不到这条活动');
