@@ -11,7 +11,7 @@
 - 完整展示入口 `/p/{username}` 跳转到 `/p/{username}/dashboard`；另有 `activities`、`activities/{id}`、`activities/wall`、`footprints` 和 `ai`。导航、记录链接、返回、地图卡片和分页保留该用户上下文。即使站主已登录，这些页面也始终只读。
 - 完整展示会公开全部历史及未来记录（含 private/unlisted）、完整路线与精确起终点。**界面变更（见 `63-settings-ui-refresh.md`）**：列表里的“公开展示”已改为开关，点击后直接生效，不再弹出确认提示；这条说明保留在文档里，操作者需自行知晓影响。旧版摘要主页开关不控制完整展示；需要隐藏完整展示时，由管理员关闭账号展示。
 - 禁用账号会保留数据、撤销全部会话、关闭完整展示，并阻断旧摘要主页、公开记录及分享链接。重新启用不恢复会话或展示开关。修改邮箱或重置密码也撤销该账号全部会话。
-- 配置站主是唯一管理员，邮箱、启用和展示状态受保护，不允许通过管理接口重置站主密码；站主使用设置页输入当前密码修改。没有硬删除账号、模拟登录或跨用户运动记录管理。
+- 配置站主是唯一管理员，邮箱、启用和展示状态受保护，不允许通过管理接口重置站主密码或删除站主账号；站主使用设置页输入当前密码修改。后台支持通过 `POST /api/v1/admin/users/batch-delete` 批量硬删除普通用户并级联清除其关联数据（包含站主 ID 时返回 `409 OWNER_PROTECTED` 拒绝），不提供模拟登录或跨用户运动记录编辑。
 - 注册继续关闭，旧 `/login`、`/register` 返回 404；前台不增加登录/注册入口。
 
 ## 接口与隐私
@@ -24,6 +24,7 @@
 | POST `/api/v1/admin/users` | 创建邮箱/用户名/昵称/时区/初始密码/登录及展示状态 |
 | PATCH `/api/v1/admin/users/{id}` | 至少一个 email/display_name/timezone/bio/is_active/showcase_enabled 字段；不允许改用户名 |
 | POST `/api/v1/admin/users/{id}/reset-password` | `{new_password}`，撤销全部会话 |
+| POST `/api/v1/admin/users/batch-delete` | `{ids}`，批量硬删除普通用户并级联清除关联数据；站主账号受保护不可通过该接口删除（`409 OWNER_PROTECTED`） |
 
 认证及本人资料增加明确的 `is_admin`、`showcase_enabled` 布尔值；管理用户视图另含 `is_active`。后台权限由后端 `require_admin` / `require_admin_write` 执行，普通用户直接调用返回 403；本人资源继续在 service 中按 owner 过滤，他人资源统一 404。
 

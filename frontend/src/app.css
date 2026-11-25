@@ -656,8 +656,14 @@
   .app-footer span:first-child {
     font-weight: var(--weight-semibold);
   }
-  .app-footer-link {
+  .app-footer-links {
     margin-inline-start: auto;
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-4);
+  }
+  .app-footer-link {
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
