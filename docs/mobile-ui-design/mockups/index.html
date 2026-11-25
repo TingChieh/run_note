@@ -1,0 +1,2292 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light dark" />
+  <title>RunNote 移动端 UI 设计高保真原型（390×844 Light / Dark）</title>
+  <style>
+    /* ==========================================================================
+       RunNote Design System Tokens (exact match to frontend/src/app.css)
+       + Minimal Proposed Mobile Tokens (--control-border, --mobile-tabbar-height, safe-area)
+       ========================================================================== */
+    :root,
+    :root[data-theme="light"] {
+      color-scheme: light;
+      --background: #f6f7f4;
+      --surface: #ffffff;
+      --surface-raised: #ffffff;
+      --foreground: #202d23;
+      --muted-foreground: #5c695e;
+      --muted: #eff2e9;
+      --border: #e0e6da;
+      --control-border: #7c8e82;        /* Proposed mobile token: 3.37:1 on #ffffff (WCAG 1.4.11) */
+      --primary: #17745c;
+      --primary-hover: #105d49;
+      --primary-soft: #e8f6df;
+      --primary-foreground: #ffffff;
+      --sport-brand: #218538;
+      --brand-foreground: #ffffff;
+      --sport-nav-active: #e3f3d9;
+      --sport-nav-active-ink: #14532d;
+      --segment-lens: #cfeacd;
+      --segment-lens-ink: #14532d;
+      --segment-track: #ecebe7;
+      --header-tint: #fbf0bd;
+      --header-ink: #2a2a12;
+      --header-ink-muted: #5a5628;
+      --error: #a52b32;
+      --error-soft: #fff1f1;
+      --error-border: #efc9cc;
+      --success: #176448;
+      --success-soft: #ecf7ef;
+      --success-border: #bcdcca;
+      --warning: #805412;
+      --warning-soft: #fff8e9;
+      --warning-border: #ead7b3;
+      --sport-green: #86a912;
+      --sport-blue: #4bb6df;
+      --sport-coral: #f06373;
+      --sport-yellow-accent: #f5c519;
+      --sport-ink: #20332b;
+      --map-bg: #eef2e8;
+      --map-road: #dde4d5;
+      --map-park: #dcebd2;
+      --map-water: #d3e9f2;
+      --map-route: #17745c;
+      --glass-bar-bg: rgba(255, 255, 255, 0.86);
+      --glass-bar-border: rgba(32, 45, 35, 0.11);
+      --glass-bar-shadow: 0 8px 28px rgba(30, 48, 43, 0.12);
+      --gallery-bg: #e7eae3;
+      --gallery-card: #ffffff;
+      --frame-shadow: 0 20px 50px rgba(30, 48, 43, 0.16), 0 0 0 1px rgba(32, 45, 35, 0.08);
+    }
+
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --background: #292725;
+      --surface: #33312f;
+      --surface-raised: #3a3735;
+      --foreground: #f2f0ee;
+      --muted-foreground: #b1aca6;
+      --muted: #3e3b39;
+      --border: #46433f;
+      --control-border: #827d77;        /* Proposed mobile token: 3.15:1 on #33312f (WCAG 1.4.11) */
+      --primary: #77d4ac;
+      --primary-hover: #9ce4c3;
+      --primary-soft: #2c3a32;
+      --primary-foreground: #10251b;
+      --sport-brand: #f2f0ee;
+      --brand-foreground: #1d1c1a;
+      --sport-nav-active: #4d4644;
+      --sport-nav-active-ink: #f2f0ee;
+      --segment-lens: #5a5552;
+      --segment-lens-ink: #f2f0ee;
+      --segment-track: #3e3b39;
+      --header-tint: #3a3735;
+      --header-ink: #f2f0ee;
+      --header-ink-muted: #b1aca6;
+      --error: #ffadb1;
+      --error-soft: #40252a;
+      --error-border: #91525c;
+      --success: #9fe1b6;
+      --success-soft: #24392d;
+      --success-border: #4c8362;
+      --warning: #f5d391;
+      --warning-soft: #3a3020;
+      --warning-border: #806b41;
+      --sport-green: #86a912;
+      --sport-blue: #4bb6df;
+      --sport-coral: #f06373;
+      --sport-yellow-accent: #f5c519;
+      --sport-ink: #20332b;
+      --map-bg: #302e2c;
+      --map-road: #3f3c39;
+      --map-park: #2d382f;
+      --map-water: #29363d;
+      --map-route: #77d4ac;
+      --glass-bar-bg: rgba(54, 51, 49, 0.88);
+      --glass-bar-border: rgba(242, 240, 238, 0.14);
+      --glass-bar-shadow: 0 10px 30px rgba(0, 0, 0, 0.42);
+      --gallery-bg: #1e1d1b;
+      --gallery-card: #2c2a28;
+      --frame-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(242, 240, 238, 0.1);
+    }
+
+    :root {
+      --font-body: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      --radius-field: 0.75rem;
+      --radius-card: 1.5rem;
+      --radius-pill: 9999px;
+      --mobile-tabbar-height: 64px;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: var(--font-body);
+      background: var(--gallery-bg);
+      color: var(--foreground);
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.5;
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+
+    button, a, input, select {
+      font-family: inherit;
+      touch-action: manipulation;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    /* ==========================================================================
+       Gallery Chrome (hidden in ?frame=1 standalone capture mode)
+       ========================================================================== */
+    .gallery-header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: var(--glass-bar-bg);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .gallery-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: var(--sport-brand);
+      color: var(--brand-foreground);
+      font-weight: 700;
+      font-style: italic;
+      display: grid;
+      place-items: center;
+      font-size: 18px;
+      flex: none;
+    }
+    .gallery-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin: 0;
+      line-height: 1.25;
+    }
+    .gallery-sub {
+      font-size: 13px;
+      color: var(--muted-foreground);
+      margin: 2px 0 0;
+    }
+    .gallery-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .seg-control {
+      display: inline-flex;
+      background: var(--segment-track);
+      padding: 4px;
+      border-radius: var(--radius-pill);
+      gap: 2px;
+    }
+    .seg-btn {
+      border: 0;
+      background: transparent;
+      color: var(--muted-foreground);
+      font-size: 14px;
+      font-weight: 600;
+      min-height: 44px;
+      padding: 0 16px;
+      border-radius: var(--radius-pill);
+      cursor: pointer;
+    }
+    .seg-btn[aria-pressed="true"] {
+      background: var(--segment-lens);
+      color: var(--segment-lens-ink);
+    }
+    .gallery-link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 44px;
+      padding: 0 16px;
+      border-radius: var(--radius-pill);
+      background: var(--surface);
+      border: 1px solid var(--control-border);
+      color: var(--foreground);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .gallery-grid {
+      max-width: 1480px;
+      margin: 0 auto;
+      padding: 28px 20px 64px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+      gap: 32px;
+      align-items: start;
+    }
+    @media (max-width: 480px) {
+      .gallery-grid {
+        grid-template-columns: 1fr;
+        padding: 16px 8px 48px;
+      }
+    }
+
+    .showcase-unit {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+    .annotation-card {
+      width: 390px;
+      max-width: 100%;
+      background: var(--gallery-card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 16px 18px;
+      font-size: 13px;
+    }
+    .annotation-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .annotation-head h2 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--foreground);
+    }
+    .annotation-tag {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--primary);
+      background: var(--primary-soft);
+      padding: 2px 10px;
+      border-radius: var(--radius-pill);
+      white-space: nowrap;
+    }
+    .annotation-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 6px;
+      color: var(--muted-foreground);
+    }
+    .annotation-list strong {
+      color: var(--foreground);
+      font-weight: 600;
+    }
+
+    /* ==========================================================================
+       390x844 Phone Viewport Frame
+       ========================================================================== */
+    .phone-frame {
+      width: 390px;
+      height: 844px;
+      border-radius: 36px;
+      background: var(--background);
+      color: var(--foreground);
+      box-shadow: var(--frame-shadow);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      isolation: isolate;
+    }
+
+    /* Standalone exact 390x844 capture mode (?frame=1) */
+    body.frame-mode {
+      background: var(--background);
+      overflow-x: hidden;
+    }
+    body.frame-mode .gallery-header,
+    body.frame-mode .annotation-card { display: none !important; }
+    body.frame-mode .gallery-grid {
+      display: block;
+      padding: 0;
+      max-width: none;
+    }
+    body.frame-mode .showcase-unit { display: none; }
+    body.frame-mode .showcase-unit.active-frame {
+      display: block;
+    }
+    body.frame-mode .phone-frame {
+      width: 100%;
+      max-width: 390px;
+      min-height: 844px;
+      height: 100dvh;
+      max-height: 844px;
+      border-radius: 0;
+      box-shadow: none;
+      margin: 0 auto;
+    }
+    /* Support 320px stress check cleanly */
+    @media (max-width: 389px) {
+      body.frame-mode .phone-frame {
+        width: 100vw;
+        max-width: 100vw;
+      }
+    }
+
+    /* Simulated System Status Bar (safe-area-inset-top region) */
+    .sys-status-bar {
+      height: 44px;
+      padding: calc(8px + var(--safe-top)) 20px 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: var(--foreground);
+      flex: none;
+      user-select: none;
+    }
+    .sys-icons {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sys-pill-cutout {
+      width: 84px;
+      height: 22px;
+      border-radius: 999px;
+      background: rgba(128, 128, 128, 0.14);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: var(--muted-foreground);
+    }
+
+    /* Simulated Home/Gesture Indicator (safe-area-inset-bottom region) */
+    .sys-home-zone {
+      height: calc(20px + var(--safe-bottom));
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding-bottom: 6px;
+      flex: none;
+      pointer-events: none;
+    }
+    .sys-home-bar {
+      width: 128px;
+      height: 4px;
+      border-radius: 999px;
+      background: currentColor;
+      opacity: 0.24;
+    }
+
+    /* ==========================================================================
+       Mobile Top App Bar (Slim 52px contextual header)
+       ========================================================================== */
+    .m-topbar {
+      min-height: 52px;
+      padding: 4px 16px 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex: none;
+    }
+    .m-topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .m-topbar-title {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+      line-height: 1.25;
+      letter-spacing: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .m-topbar-stack-title {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 600;
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .m-topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: none;
+    }
+
+    /* Icon & Action Buttons — strictly >= 44x44 (preferred 48x48) */
+    .icon-btn {
+      min-width: 44px;
+      min-height: 44px;
+      padding: 0 10px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--foreground);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .icon-btn.quiet {
+      border-color: transparent;
+      background: transparent;
+    }
+    .icon-btn.back-btn {
+      min-width: 48px;
+      min-height: 44px;
+      padding: 0 10px 0 6px;
+      border-color: transparent;
+      background: transparent;
+      margin-left: -8px;
+    }
+
+    .sync-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 32px;
+      padding: 0 10px;
+      border-radius: var(--radius-pill);
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .sync-chip.ok {
+      background: var(--success-soft);
+      color: var(--success);
+      border: 1px solid var(--success-border);
+    }
+    .sync-chip.warn {
+      background: var(--warning-soft);
+      color: var(--warning);
+      border: 1px solid var(--warning-border);
+    }
+    .sync-chip.err {
+      background: var(--error-soft);
+      color: var(--error);
+      border: 1px solid var(--error-border);
+    }
+    .sync-chip.neutral {
+      background: var(--muted);
+      color: var(--muted-foreground);
+      border: 1px solid var(--border);
+    }
+
+    /* Scrollable Body Area inside Phone Frame */
+    .m-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior-y: contain;
+      padding: 4px 16px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      scrollbar-width: none;
+    }
+    .m-body::-webkit-scrollbar { display: none; }
+    .m-body.with-tabbar {
+      padding-bottom: 98px;
+    }
+    .m-body.with-sticky-cta {
+      padding-bottom: 106px;
+    }
+
+    /* ==========================================================================
+       Cards, Surfaces, Metrics & Badges (RunNote Design System Vocabulary)
+       ========================================================================== */
+    .rn-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-card);
+      padding: 16px;
+    }
+    .rn-card.tint-hero {
+      background: var(--header-tint);
+      color: var(--header-ink);
+      border-color: transparent;
+    }
+    :root[data-theme="dark"] .rn-card.tint-hero {
+      border-color: var(--border);
+    }
+    .rn-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .rn-card-title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      line-height: 1.35;
+    }
+    .rn-card-meta {
+      font-size: 13px;
+      color: var(--muted-foreground);
+    }
+    .rn-card.tint-hero .rn-card-meta {
+      color: var(--header-ink-muted);
+    }
+
+    .tabular { font-variant-numeric: tabular-nums; }
+
+    /* Buttons (>=48px primary, >=44px secondary) */
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 48px;
+      padding: 0 20px;
+      border: 0;
+      border-radius: var(--radius-pill);
+      background: var(--primary);
+      color: var(--primary-foreground);
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      width: 100%;
+    }
+    .btn-primary.tall {
+      min-height: 56px;
+      font-size: 17px;
+      font-weight: 700;
+    }
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 44px;
+      padding: 0 16px;
+      border: 1px solid var(--control-border);
+      border-radius: var(--radius-pill);
+      background: var(--surface);
+      color: var(--foreground);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .btn-danger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 48px;
+      padding: 0 18px;
+      border: 1px solid var(--error-border);
+      border-radius: var(--radius-pill);
+      background: var(--error-soft);
+      color: var(--error);
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-ghost-danger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 16px;
+      border: 0;
+      background: transparent;
+      color: var(--error);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    /* 3-Column Hairline Strip (RunNote Overview Bar pattern — NO card-in-card!) */
+    .metric-strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0;
+      padding-top: 2px;
+    }
+    .metric-col {
+      padding: 0 8px;
+      border-left: 1px solid var(--border);
+      min-width: 0;
+    }
+    .metric-col:first-child {
+      border-left: 0;
+      padding-left: 0;
+    }
+    .metric-col:last-child {
+      padding-right: 0;
+    }
+    .metric-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-bottom: 4px;
+      white-space: nowrap;
+    }
+    .metric-dot {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: inline-grid;
+      place-items: center;
+      color: var(--sport-ink);
+      flex: none;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .metric-val {
+      font-size: 20px;
+      font-weight: 700;
+      line-height: 1.15;
+      color: var(--foreground);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .metric-unit {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted-foreground);
+      margin-left: 2px;
+    }
+
+    /* ==========================================================================
+       Bottom Tab Bar + Ambidextrous Center Record Trigger (Floating Liquid Glass)
+       ========================================================================== */
+    .m-tabbar-wrap {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 0 12px calc(10px + var(--safe-bottom));
+      pointer-events: none;
+      z-index: 20;
+    }
+    .m-tabbar {
+      pointer-events: auto;
+      height: var(--mobile-tabbar-height);
+      background: var(--glass-bar-bg);
+      backdrop-filter: blur(16px) saturate(1.4);
+      border: 1px solid var(--glass-bar-border);
+      border-radius: 32px;
+      box-shadow: var(--glass-bar-shadow);
+      display: grid;
+      grid-template-columns: 1fr 1fr 72px 1fr 1fr;
+      align-items: center;
+      padding: 0 6px;
+    }
+    .tab-item {
+      min-height: 48px;
+      min-width: 48px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      color: var(--muted-foreground);
+      text-decoration: none;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 22px;
+      position: relative;
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+      padding: 4px 2px;
+    }
+    .tab-item[aria-current="page"] {
+      color: var(--sport-nav-active-ink);
+      background: var(--sport-nav-active);
+    }
+    .tab-record-btn {
+      width: 56px;
+      height: 52px;
+      margin: 0 auto;
+      border-radius: 26px;
+      border: 0;
+      background: var(--primary);
+      color: var(--primary-foreground);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 6px 16px rgba(23, 116, 92, 0.28);
+      text-decoration: none;
+    }
+    :root[data-theme="dark"] .tab-record-btn {
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+    }
+
+    /* Sticky Bottom Action Dock (Pre-Record, Recording, Post-Run) */
+    .m-bottom-dock {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 12px 16px calc(22px + var(--safe-bottom));
+      background: linear-gradient(to top, var(--background) 82%, transparent);
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* ==========================================================================
+       Screen-Specific Components
+       ========================================================================== */
+    /* Today Weekly Goal Ring */
+    .goal-hero-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .goal-big-num {
+      font-size: 36px;
+      font-weight: 700;
+      line-height: 1.1;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.02em;
+    }
+    .goal-big-num span {
+      font-size: 16px;
+      font-weight: 600;
+      opacity: 0.72;
+      margin-left: 3px;
+    }
+    .week-dots {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(90, 86, 40, 0.16);
+    }
+    :root[data-theme="dark"] .week-dots {
+      border-top-color: var(--border);
+    }
+    .week-dot-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      color: var(--header-ink-muted);
+    }
+    .week-dot {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 1.5px solid currentColor;
+      opacity: 0.35;
+      display: grid;
+      place-items: center;
+    }
+    .week-dot.done {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: var(--primary-foreground);
+      opacity: 1;
+    }
+    .week-dot.today {
+      border-color: var(--primary);
+      color: var(--primary);
+      opacity: 1;
+      font-weight: 700;
+    }
+
+    /* Route Map Canvas (deterministic SVG, works 100% offline in light & dark) */
+    .route-canvas {
+      position: relative;
+      border-radius: 20px;
+      background: var(--map-bg);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .route-canvas > svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    .map-pill {
+      white-space: nowrap;
+    }
+    .map-overlay-tr {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      gap: 6px;
+    }
+    .map-overlay-br {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+    }
+    .map-pill {
+      min-height: 44px;
+      padding: 0 14px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--glass-bar-border);
+      background: var(--glass-bar-bg);
+      backdrop-filter: blur(10px);
+      color: var(--foreground);
+      font-size: 13px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+
+    /* Latest Run & History Row */
+    .run-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      text-decoration: none;
+      color: inherit;
+      min-height: 76px;
+    }
+    .run-thumb {
+      width: 56px;
+      height: 48px;
+      border-radius: 12px;
+      background: var(--map-bg);
+      border: 1px solid var(--border);
+      flex: none;
+      overflow: hidden;
+    }
+    .run-row-main {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .run-row-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--foreground);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .run-row-sub {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .run-row-metrics {
+      text-align: right;
+      flex: none;
+      font-variant-numeric: tabular-nums;
+    }
+    .run-row-dist {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--primary);
+      line-height: 1.2;
+    }
+    .run-row-pace {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-top: 2px;
+    }
+
+    /* Active Recording High-Contrast Telemetry */
+    .rec-status-strip {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 4px 16px 8px;
+      flex: none;
+    }
+    .rec-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 36px;
+      padding: 0 12px;
+      border-radius: var(--radius-pill);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .rec-badge.live {
+      background: var(--success-soft);
+      color: var(--success);
+      border: 1px solid var(--success-border);
+    }
+    .rec-badge.paused {
+      background: var(--warning-soft);
+      color: var(--warning);
+      border: 1px solid var(--warning-border);
+    }
+    .rec-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .rec-hero-stage {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 8px 20px 140px;
+      gap: 26px;
+    }
+    .rec-dist-block {
+      text-align: center;
+    }
+    .rec-dist-num {
+      font-size: 68px;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: -0.03em;
+      font-variant-numeric: tabular-nums;
+      color: var(--foreground);
+    }
+    .rec-dist-label {
+      margin-top: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--muted-foreground);
+    }
+    .rec-sub-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      padding: 18px 0;
+    }
+    .rec-sub-cell {
+      text-align: center;
+      padding: 0 8px;
+    }
+    .rec-sub-cell + .rec-sub-cell {
+      border-left: 1px solid var(--border);
+    }
+    .rec-sub-val {
+      font-size: 32px;
+      font-weight: 700;
+      line-height: 1.15;
+      font-variant-numeric: tabular-nums;
+      color: var(--primary);
+    }
+    .rec-sub-lbl {
+      margin-top: 4px;
+      font-size: 13px;
+      color: var(--muted-foreground);
+    }
+    .rec-footnote {
+      text-align: center;
+      font-size: 13px;
+      color: var(--muted-foreground);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Hold-to-End Safety Button */
+    .hold-end-btn {
+      position: relative;
+      overflow: hidden;
+      min-height: 56px;
+      width: 100%;
+      border-radius: var(--radius-pill);
+      border: 1.5px solid var(--error-border);
+      background: var(--error-soft);
+      color: var(--error);
+      font-size: 16px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .hold-progress {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 0%;
+      background: var(--error);
+      opacity: 0.18;
+      pointer-events: none;
+    }
+
+    /* Form Fields (>=48px height, >=16px font — zero iOS auto-zoom!) */
+    .m-field {
+      display: grid;
+      gap: 6px;
+    }
+    .m-field label {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--foreground);
+    }
+    .m-input {
+      width: 100%;
+      min-height: 48px;
+      padding: 10px 14px;
+      font-size: 16px;
+      line-height: 1.4;
+      color: var(--foreground);
+      background: var(--surface);
+      border: 1.5px solid var(--control-border);
+      border-radius: var(--radius-field);
+    }
+
+    /* Horizontal Filter Chips (44px min-height) */
+    .chip-row {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      padding: 2px 0;
+      flex: none;
+    }
+    .chip-row::-webkit-scrollbar { display: none; }
+    .filter-chip {
+      min-height: 44px;
+      padding: 0 14px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted-foreground);
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
+      cursor: pointer;
+      flex: none;
+    }
+    .filter-chip[aria-pressed="true"] {
+      background: var(--sport-nav-active);
+      color: var(--sport-nav-active-ink);
+      border-color: transparent;
+    }
+
+    .month-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 2px 2px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted-foreground);
+    }
+    .month-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 10px;
+      border-radius: var(--radius-pill);
+      background: var(--foreground);
+      color: var(--background);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    /* Alert / State Banners */
+    .state-banner {
+      border-radius: 18px;
+      padding: 12px 14px;
+      font-size: 13px;
+      line-height: 1.45;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .state-banner.warn {
+      background: var(--warning-soft);
+      border: 1px solid var(--warning-border);
+      color: var(--warning);
+    }
+    .state-banner.err {
+      background: var(--error-soft);
+      border: 1px solid var(--error-border);
+      color: var(--error);
+    }
+    .state-banner.ok {
+      background: var(--success-soft);
+      border: 1px solid var(--success-border);
+      color: var(--success);
+    }
+    .state-banner.neutral {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--foreground);
+    }
+    .state-banner-title {
+      font-size: 14px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .state-banner-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 2px;
+    }
+    .state-banner-actions .btn-primary,
+    .state-banner-actions .btn-secondary {
+      width: auto;
+      min-height: 44px;
+      padding: 0 14px;
+      font-size: 13px;
+    }
+
+    /* Grouped Inset Settings List */
+    .group-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted-foreground);
+      padding: 2px 6px 0;
+      margin: 0;
+    }
+    .inset-group {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      overflow: hidden;
+    }
+    .inset-row {
+      width: 100%;
+      min-height: 54px;
+      padding: 10px 16px;
+      border: 0;
+      border-bottom: 1px solid var(--border);
+      background: transparent;
+      color: var(--foreground);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      text-align: left;
+      text-decoration: none;
+      cursor: pointer;
+      font-size: 15px;
+    }
+    .inset-row:last-child { border-bottom: 0; }
+    .inset-row-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+    .inset-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
+      background: var(--muted);
+      color: var(--primary);
+      display: grid;
+      place-items: center;
+      flex: none;
+    }
+    .inset-row-title {
+      font-weight: 600;
+      line-height: 1.3;
+    }
+    .inset-row-sub {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-top: 1px;
+    }
+    .inset-row-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted-foreground);
+      font-size: 13px;
+      flex: none;
+    }
+    .alert-pill {
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--warning-soft);
+      color: var(--warning);
+      border: 1px solid var(--warning-border);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .ready-list {
+      display: grid;
+      gap: 10px;
+    }
+    .ready-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 14px;
+    }
+    .ready-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+    }
+    .ready-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--success);
+      flex: none;
+    }
+  </style>
+</head>
+<body>
+  <header class="gallery-header">
+    <div class="gallery-brand">
+      <div class="brand-mark" aria-hidden="true">R</div>
+      <div>
+        <h1 class="gallery-title">RunNote 移动端 UI 设计高保真原型</h1>
+        <p class="gallery-sub">390×844 基准视口 · 共享 Android / iOS WebView 信息架构 · 仅设计评审</p>
+      </div>
+    </div>
+    <div class="gallery-controls">
+      <div class="seg-control" role="group" aria-label="切换浅色或深色主题">
+        <button type="button" class="seg-btn" data-theme-set="light" aria-pressed="true">浅色 Light</button>
+        <button type="button" class="seg-btn" data-theme-set="dark" aria-pressed="false">深色 Dark</button>
+      </div>
+      <a class="gallery-link" href="./responsive.html">响应式对照（390 / 768 / 1440）→</a>
+    </div>
+  </header>
+
+  <main class="gallery-grid" id="gallery">
+
+    <!-- ====================================================================
+         SCREEN 01: 今天 / HOME
+         ==================================================================== -->
+    <article class="showcase-unit" data-screen="today">
+      <section class="phone-frame" aria-label="今天主页原型">
+        <div class="sys-status-bar">
+          <span>07:42</span>
+          <div class="sys-pill-cutout" aria-hidden="true">safe-top</div>
+          <div class="sys-icons" aria-hidden="true">
+            <span>5G</span>
+            <svg width="20" height="12" viewBox="0 0 20 12" fill="none"><rect x="0.75" y="1" width="16" height="10" rx="2.5" stroke="currentColor" stroke-width="1.3"/><rect x="2.5" y="2.8" width="11" height="6.4" rx="1" fill="currentColor"/><rect x="17.8" y="3.8" width="1.6" height="4.4" rx="0.8" fill="currentColor"/></svg>
+          </div>
+        </div>
+
+        <header class="m-topbar">
+          <div class="m-topbar-left">
+            <div class="brand-mark" style="width:30px;height:30px;font-size:15px;border-radius:9px;" aria-hidden="true">R</div>
+            <h2 class="m-topbar-title">今天</h2>
+          </div>
+          <div class="m-topbar-actions">
+            <span class="sync-chip ok" role="status">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4.5"/></svg>
+              已同步
+            </span>
+          </div>
+        </header>
+
+        <div class="m-body with-tabbar">
+          <!-- Signature Object: Weekly Goal Ring Hero Card -->
+          <section class="rn-card tint-hero" aria-label="本周跑量目标">
+            <div class="goal-hero-row">
+              <div>
+                <div class="rn-card-meta">本周跑量 · 目标 35 km</div>
+                <div class="goal-big-num">24.8<span>km</span></div>
+                <div class="rn-card-meta" style="margin-top:4px;">已完成 71% · 还差 10.2 km</div>
+              </div>
+              <svg width="76" height="76" viewBox="0 0 76 76" role="img" aria-label="本周目标已完成 71%">
+                <circle cx="38" cy="38" r="30" fill="none" stroke="currentColor" stroke-opacity="0.16" stroke-width="7"/>
+                <circle cx="38" cy="38" r="30" fill="none" stroke="var(--primary)" stroke-width="7" stroke-linecap="round"
+                  stroke-dasharray="188.5" stroke-dashoffset="54.7" transform="rotate(-90 38 38)"/>
+                <text x="38" y="43" text-anchor="middle" fill="currentColor" font-size="16" font-weight="700" class="tabular">71%</text>
+              </svg>
+            </div>
+            <div class="week-dots" aria-label="本周运动日">
+              <div class="week-dot-item"><span class="week-dot done" aria-label="周一已跑">✓</span><span>一</span></div>
+              <div class="week-dot-item"><span class="week-dot" aria-hidden="true"></span><span>二</span></div>
+              <div class="week-dot-item"><span class="week-dot done" aria-label="周三已跑">✓</span><span>三</span></div>
+              <div class="week-dot-item"><span class="week-dot" aria-hidden="true"></span><span>四</span></div>
+              <div class="week-dot-item"><span class="week-dot done" aria-label="周五已跑">✓</span><span>五</span></div>
+              <div class="week-dot-item"><span class="week-dot today" aria-label="今天">·</span><span>六</span></div>
+              <div class="week-dot-item"><span class="week-dot" aria-hidden="true"></span><span>日</span></div>
+            </div>
+            <div style="margin-top:14px;">
+              <a href="#pre-record" class="btn-primary">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+                开始跑步
+              </a>
+            </div>
+          </section>
+
+          <!-- Recent Run Card -->
+          <div>
+            <div class="rn-card-head" style="margin-bottom:8px;padding:0 2px;">
+              <h3 class="rn-card-title">最近一次</h3>
+              <a href="#history" style="font-size:13px;font-weight:600;color:var(--primary);text-decoration:none;min-height:44px;display:inline-flex;align-items:center;">全部记录 →</a>
+            </div>
+            <a href="#detail" class="rn-card" style="display:block;text-decoration:none;color:inherit;padding:14px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;">
+                <div style="min-width:0;">
+                  <div style="font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">奥森南园 5K 节奏跑</div>
+                  <div class="rn-card-meta">昨天 06:35 · 路跑 · Pegasus 41</div>
+                </div>
+                <div class="run-thumb" aria-hidden="true">
+                  <svg viewBox="0 0 56 48"><rect width="56" height="48" fill="var(--map-bg)"/><path d="M12 34 C14 18, 24 10, 36 14 C46 18, 45 34, 30 36 C20 37, 13 38, 12 34 Z" fill="none" stroke="var(--map-route)" stroke-width="2.5" stroke-linecap="round"/></svg>
+                </div>
+              </div>
+              <div class="metric-strip">
+                <div class="metric-col">
+                  <div class="metric-label"><span class="metric-dot" style="background:var(--sport-green)">↗</span>距离</div>
+                  <div class="metric-val">5.02<span class="metric-unit">km</span></div>
+                </div>
+                <div class="metric-col">
+                  <div class="metric-label"><span class="metric-dot" style="background:var(--sport-blue)">⏱</span>用时</div>
+                  <div class="metric-val">27:00</div>
+                </div>
+                <div class="metric-col">
+                  <div class="metric-label"><span class="metric-dot" style="background:var(--sport-coral)">⚡</span>配速</div>
+                  <div class="metric-val">5:23<span class="metric-unit">/km</span></div>
+                </div>
+              </div>
+            </a>
+          </div>
+
+          <!-- Compact 7-Day Health Connect Strip (Single surface, NO nested cards!) -->
+          <section class="rn-card" style="padding:14px 16px;" aria-label="近 7 天设备健康摘要">
+            <div class="rn-card-head" style="margin-bottom:10px;">
+              <h3 class="rn-card-title" style="font-size:15px;">近 7 天恢复参考</h3>
+              <span class="rn-card-meta">Health Connect 只读</span>
+            </div>
+            <div class="metric-strip">
+              <div class="metric-col">
+                <div class="metric-label">步数</div>
+                <div class="metric-val" style="font-size:18px;">54,820</div>
+              </div>
+              <div class="metric-col">
+                <div class="metric-label">静息心率</div>
+                <div class="metric-val" style="font-size:18px;">53<span class="metric-unit">bpm</span></div>
+              </div>
+              <div class="metric-col">
+                <div class="metric-label">平均睡眠</div>
+                <div class="metric-val" style="font-size:18px;">7.4<span class="metric-unit">h</span></div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="m-tabbar-wrap">
+          <nav class="m-tabbar" aria-label="主导航">
+            <a class="tab-item" href="#today" aria-current="page">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3 3 10v11h6v-7h6v7h6V10z"/></svg>
+              <span>今天</span>
+            </a>
+            <a class="tab-item" href="#history">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 2v4M16 2v4M4 10h16"/></svg>
+              <span>记录</span>
+            </a>
+            <a class="tab-record-btn" href="#pre-record" aria-label="开始跑步记录">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+              <span>开跑</span>
+            </a>
+            <a class="tab-item" href="#detail">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="m3 6 6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></svg>
+              <span>探索</span>
+            </a>
+            <a class="tab-item" href="#settings">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.6-3.6 4.5-5 8-5s6.4 1.4 8 5"/></svg>
+              <span>我的</span>
+            </a>
+          </nav>
+        </div>
+      </section>
+
+      <aside class="annotation-card">
+        <div class="annotation-head"><h2>01 · 今天 / Home</h2><span class="annotation-tag">主入口 · Root Tab</span></div>
+        <ul class="annotation-list">
+          <li><strong>目的</strong>：2 秒扫视本周进度、最近一跑与恢复摘要，替代 3668px 桌面堆叠仪表盘。</li>
+          <li><strong>主操作与可达性</strong>：周目标卡内「开始跑步」+ 底部居中 56×52px「开跑」键，左右手拇指 1 步直达。</li>
+          <li><strong>状态</strong>：同步态安静驻留顶栏右侧；断网/待传时转为琥珀色芯片；有未完成记录时顶部插入恢复条。</li>
+          <li><strong>触控与安全区</strong>：底栏含 <code>env(safe-area-inset-bottom)</code>，滚动区底部留 98px 净空防遮挡；Health Connect 改单卡 3 列发丝线，消除卡片套卡片。</li>
+        </ul>
+      </aside>
+    </article>
+
+    <!-- ====================================================================
+         SCREEN 02: 跑前准备 / PRE-RECORD
+         ==================================================================== -->
+    <article class="showcase-unit" data-screen="pre-record">
+      <section class="phone-frame" aria-label="跑前准备原型">
+        <div class="sys-status-bar">
+          <span>07:43</span>
+          <div class="sys-pill-cutout" aria-hidden="true">safe-top</div>
+          <div class="sys-icons" aria-hidden="true"><span>GPS</span><span>5G</span></div>
+        </div>
+
+        <header class="m-topbar">
+          <div class="m-topbar-left">
+            <a href="#today" class="icon-btn back-btn" aria-label="返回今天">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+              <span>返回</span>
+            </a>
+            <h2 class="m-topbar-stack-title">准备开跑</h2>
+          </div>
+          <div class="m-topbar-actions">
+            <button type="button" class="icon-btn" style="font-size:13px;">队列 1</button>
+          </div>
+        </header>
+
+        <div class="m-body with-sticky-cta">
+          <!-- Local GPS Lock Visual Preview -->
+          <div class="route-canvas" style="height:268px;" role="img" aria-label="当前位置 GPS 精确锁定预览，精度正负 6 米">
+            <svg viewBox="0 0 358 268" preserveAspectRatio="xMidYMid slice">
+              <rect width="358" height="268" fill="var(--map-bg)"/>
+              <path d="M0 190 Q110 155 200 182 T358 148 L358 268 L0 268 Z" fill="var(--map-park)"/>
+              <path d="M-10 72 L370 112 M130 0 L158 268 M260 0 L228 268" stroke="var(--map-road)" stroke-width="8" fill="none"/>
+              <path d="M55 268 C78 190, 128 158, 179 134 C228 110, 290 88, 330 22" stroke="var(--map-road)" stroke-width="12" fill="none"/>
+              <!-- Accuracy halo + static center dot -->
+              <circle cx="179" cy="134" r="46" fill="var(--primary)" fill-opacity="0.14" stroke="var(--primary)" stroke-opacity="0.45" stroke-width="1.5"/>
+              <circle cx="179" cy="134" r="10" fill="var(--primary)" stroke="var(--surface)" stroke-width="3.5"/>
+            </svg>
+            <div class="map-overlay-tr">
+              <span class="sync-chip ok" style="min-height:36px;padding:0 12px;background:var(--glass-bar-bg);backdrop-filter:blur(8px);">
+                GPS 精确锁定 · ±6m
+              </span>
+            </div>
+          </div>
+
+          <!-- Pre-Run Readiness Checklist -->
+          <section class="rn-card" style="padding:14px 16px;">
+            <div class="ready-list">
+              <div class="ready-item">
+                <span class="ready-left"><span class="ready-dot"></span>精确位置权限</span>
+                <span class="rn-card-meta">已就绪</span>
+              </div>
+              <div class="ready-item" style="padding-top:10px;border-top:1px solid var(--border);">
+                <span class="ready-left"><span class="ready-dot"></span>Android 后台前台服务</span>
+                <span class="rn-card-meta">锁屏持续记录 · 通知脱敏</span>
+              </div>
+              <div class="ready-item" style="padding-top:10px;border-top:1px solid var(--border);">
+                <span class="ready-left"><span class="ready-dot" style="background:var(--warning);"></span>完整展示模式</span>
+                <span class="rn-card-meta">结束后将公开可见</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- Quick Pre-Run Selection (Optional enhancement) -->
+          <div class="chip-row" role="group" aria-label="跑步预设">
+            <button type="button" class="filter-chip" aria-pressed="true">室外路跑</button>
+            <button type="button" class="filter-chip" aria-pressed="false">跑鞋：Pegasus 41</button>
+            <button type="button" class="filter-chip" aria-pressed="false">离线可用</button>
+          </div>
+        </div>
+
+        <div class="m-bottom-dock">
+          <a href="#recording" class="btn-primary tall">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+            开始跑步
+          </a>
+        </div>
+      </section>
+
+      <aside class="annotation-card">
+        <div class="annotation-head"><h2>02 · 跑前准备 / Pre-Record</h2><span class="annotation-tag">沉浸式入口</span></div>
+        <ul class="annotation-list">
+          <li><strong>目的</strong>：取代原页面首屏即被页头、表单和说明挤出视口的问题，开屏即确认 GPS 与后台就绪。</li>
+          <li><strong>主操作与可达性</strong>：底部吸底 56px「开始跑步」主按钮，单手拇指无需移动即可开跑；标题输入移至跑后总结。</li>
+          <li><strong>状态</strong>：仅大致位置 / 拒权 / 定位关闭时主按钮禁用，就地替换为明确修复卡片（见 08 异常态矩阵）。</li>
+          <li><strong>触控与安全区</strong>：隐藏底部 Tab 栏防误触；系统返回键直接返回上一页，无数据丢失。</li>
+        </ul>
+      </aside>
+    </article>
+
+    <!-- ====================================================================
+         SCREEN 03: 运动记录中 / ACTIVE RECORDING (OUTDOOR HIGH CONTRAST)
+         ==================================================================== -->
+    <article class="showcase-unit" data-screen="recording">
+      <section class="phone-frame" aria-label="运动记录中原型">
+        <div class="sys-status-bar">
+          <span>08:01</span>
+          <div class="sys-pill-cutout" aria-hidden="true">safe-top</div>
+          <div class="sys-icons" aria-hidden="true"><span>GPS</span><span>离线</span></div>
+        </div>
+
+        <div class="rec-status-strip">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span class="rec-badge live"><span class="rec-dot" aria-hidden="true"></span>记录中</span>
+            <span class="sync-chip ok">GPS ±6m</span>
+            <span class="sync-chip warn">离线暂存</span>
+          </div>
+          <button type="button" class="icon-btn" aria-label="锁定屏幕防误触" title="防误触锁屏">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+          </button>
+        </div>
+
+        <div class="rec-hero-stage">
+          <div class="rec-dist-block">
+            <div class="rec-dist-num">3.42</div>
+            <div class="rec-dist-label">预览距离（km）</div>
+          </div>
+
+          <div class="rec-sub-grid" role="group" aria-label="实时运动数据">
+            <div class="rec-sub-cell">
+              <div class="rec-sub-val">18:24</div>
+              <div class="rec-sub-lbl">运动用时</div>
+            </div>
+            <div class="rec-sub-cell">
+              <div class="rec-sub-val">5:22</div>
+              <div class="rec-sub-lbl">预览配速（/km）</div>
+            </div>
+          </div>
+
+          <div class="rec-footnote">412 个轨迹点 · 第 1 段 · 锁屏后台持续落盘</div>
+        </div>
+
+        <div class="m-bottom-dock">
+          <a href="#paused" class="btn-primary tall" style="min-height:60px;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4.5" height="14" rx="1.5"/><rect x="13.5" y="5" width="4.5" height="14" rx="1.5"/></svg>
+            暂停跑步
+          </a>
+        </div>
+      </section>
+
+      <aside class="annotation-card">
+        <div class="annotation-head"><h2>03 · 运动记录中 / Active Recording</h2><span class="annotation-tag">户外高对比</span></div>
+        <ul class="annotation-list">
+          <li><strong>目的</strong>：跑步途中的一瞥即读：距离升至 68px、用时与配速升至 32px（原设计缩小到 20px/16px）。</li>
+          <li><strong>防误停设计</strong>：运动中底部<strong>仅提供单一「暂停跑步」大按钮（60px）</strong>，彻底消除原版「暂停」与「结束并保存」并排单击误停风险。</li>
+          <li><strong>状态</strong>：静态「● 记录中」标识（不闪烁耗电）；离线时安静提示「离线暂存」；GPS 丢失 &gt;15s 顶部滑入警示条。</li>
+          <li><strong>返回键拦截</strong>：按 Android 系统返回触发原生 <code>&lt;dialog&gt;</code> 离开确认，说明前台服务将继续后台记录。</li>
+        </ul>
+      </aside>
+    </article>
+
+    <!-- ====================================================================
+         SCREEN 04: 已暂停 + 防误触长按结束 / PAUSED
+         ==================================================================== -->
+    <article class="showcase-unit" data-screen="paused">
+      <section class="phone-frame" aria-label="已暂停状态原型">
+        <div class="sys-status-bar">
+          <span>08:03</span>
+          <div class="sys-pill-cutout" aria-hidden="true">safe-top</div>
+          <div class="sys-icons" aria-hidden="true"><span>GPS</span><span>5G</span></div>
+        </div>
+
+        <div class="rec-status-strip">
+          <span class="rec-badge paused"><span class="rec-dot" aria-hidden="true"></span>已暂停</span>
+          <button type="button" class="btn-ghost-danger" style="min-height:44px;padding:0 12px;">放弃本次</button>
+        </div>
+
+        <div class="rec-hero-stage" style="padding-bottom:178px;gap:20px;">
+          <div class="rec-dist-block">
+            <div class="rec-dist-num" style="opacity:0.84;">3.42</div>
+            <div class="rec-dist-label">预览距离（km）</div>
+          </div>
+
+          <div class="rec-sub-grid">
+            <div class="rec-sub-cell">
+              <div class="rec-sub-val" style="color:var(--foreground);">18:24</div>
+              <div class="rec-sub-lbl">运动用时</div>
+            </div>
+            <div class="rec-sub-cell">
+              <div class="rec-sub-val" style="color:var(--foreground);">5:22</div>
+              <div class="rec-sub-lbl">预览配速（/km）</div>
+            </div>
+          </div>
+
+          <div class="state-banner warn" role="status">
+            <div class="state-banner-title">暂停口径提醒</div>
+            <div>继续后将开启新轨迹段（不跨段连线）；服务端按首尾轨迹点计算总耗时，长时间暂停会影响平均配速。</div>
+          </div>
+        </div>
+
+        <div class="m-bottom-dock">
+          <a href="#recording" class="btn-primary tall">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+            继续跑步
+          </a>
+          <button type="button" class="hold-end-btn" id="demo-hold-btn" aria-label="长按 1.5 秒结束并保存，或轻点打开结束确认对话框">
+            <span class="hold-progress" id="demo-hold-bar" aria-hidden="true"></span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>
+            <span id="demo-hold-label">长按 1.5 秒结束并保存</span>
+          </button>
+        </div>
+      </section>
+
+      <aside class="annotation-card">
+        <div class="annotation-head"><h2>04 · 已暂停 / Paused 防误停交互</h2><span class="annotation-tag">安全门禁</span></div>
+        <ul class="annotation-list">
+          <li><strong>目的</strong>：明确区分「恢复继续」「正式结束」与「危险丢弃」三种意图层级。</li>
+          <li><strong>主操作与无障碍兜底</strong>：主绿按钮「继续跑步」；「结束并保存」采用长按 1.5s 进度条，且<strong>单击可弹出原生确认框</strong>（满足 WCAG 2.5.1 与开关控制无障碍替代）。</li>
+          <li><strong>危险隔离</strong>：「放弃本次」移至右上角远拇指区，点击必须经原生 <code>&lt;dialog&gt;</code> 二次确认。</li>
+          <li><strong>口径透明</strong>：保留 Phase 3 暂停影响服务端总耗时配速的诚实提示，避免用户对最终配速产生困惑。</li>
+        </ul>
+      </aside>
+    </article>
+
+    <!-- ====================================================================
+         SCREEN 05: 跑后总结 / POST-RUN SUMMARY
+         ==================================================================== -->
+    <article class="showcase-unit" data-screen="post-run">
+      <section class="phone-frame" aria-label="跑后总结原型">
+        <div class="sys-status-bar">
+          <span>08:15</span>
+          <div class="sys-pill-cutout" aria-hidden="true">safe-top</div>
+          <div class="sys-icons" aria-hidden="true"><span>离线</span></div>
+        </div>
+
+        <header class="m-topbar">
+          <div class="m-topbar-left">
+            <h2 class="m-topbar-title" style="font-size:20px;">跑步已保存</h2>
+          </div>
+          <div class="m-topbar-actions">
+            <button type="button" class="icon-btn" id="post-run-mode-toggle" style="font-size:12px;padding:0 12px;">切换在线/离线态</button>
+          </div>
+        </header>
+
+        <div class="m-body with-sticky-cta">
+          <!-- Honest Upload Status Banner (Pending is NEVER shown as synced!) -->
+          <div class="state-banner warn" id="post-run-banner" role="status">
+            <div class="state-banner-title">已保存在本机队列 · 等待网络自动上传</div>
+            <div>当前处于离线模式，以下为本地预览指标；恢复联网后将携带幂等键自动上传一次，由服务端生成权威里程与配速。</div>
+          </div>
+
+          <!-- Compact Route + 3-col Metrics -->
+          <section class="rn-card" style="padding:12px;">
+            <div class="route-canvas" style="height:152px;margin-bottom:12px;" role="img" aria-label="本次跑步轨迹预览">
+              <svg viewBox="0 0 330 152" preserveAspectRatio="xMidYMid slice">
+                <rect width="330" height="152" fill="var(--map-bg)"/>
+                <path d="M0 110 Q100 86 190 105 T330 92 L330 152 L0 152 Z" fill="var(--map-park)"/>
+                <path d="M46 112 C62 48, 124 28, 184 44 C244 60, 286 42, 290 96 C294 128, 178 134, 118 118 C82 108, 56 124, 46 112 Z" fill="none" stroke="var(--map-route)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="46" cy="112" r="6" fill="var(--sport-green)" stroke="var(--surface)" stroke-width="2"/>
+                <circle cx="118" cy="118" r="6" fill="var(--sport-coral)" stroke="var(--surface)" stroke-width="2"/>
+              </svg>
+            </div>
+            <div class="metric-strip" style="padding:0 4px 4px;">
+              <div class="metric-col">
+                <div class="metric-label">预览距离</div>
+                <div class="metric-val">5.02<span class="metric-unit">km</span></div>
+              </div>
+              <div class="metric-col">
+                <div class="metric-label">运动用时</div>
+                <div class="metric-val">27:00</div>
+              </div>
+              <div class="metric-col">
+                <div class="metric-label">预览配速</div>
+                <div class="metric-val">5:23<span class="metric-unit">/km</span></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Metadata Form belongs HERE, after the run! -->
+          <section class="rn-card" style="display:grid;gap:14px;">
+            <div class="m-field">
+              <label for="post-title">跑步标题（可选）</label>
+              <input id="post-title" class="m-input" type="text" placeholder="留空按日期与地点自动命名" value="奥森南园 5K 节奏跑" />
+            </div>
+            <div class="m-field">
+              <label for="post-shoe">关联跑鞋</label>
+              <select id="post-shoe" class="m-input">
+                <option selected>Nike Pegasus 41（已跑 342 km）</option>
+                <option>Asics Novablast 4（已跑 128 km）</option>
+                <option>不关联跑鞋</option>
+              </select>
+            </div>
+          </section>
+        </div>
+
+        <div class="m-bottom-dock">
+          <a href="#detail" class="btn-primary tall">完成并查看详情</a>
+        </div>
+      </section>
+
+      <aside class="annotation-card">
+        <div class="annotation-head"><h2>05 · 跑后总结 / Post-Run Summary</h2><span class="annotation-tag">收尾与离线诚实态</span></div>
+        <ul class="annotation-list">
+          <li><strong>目的</strong>：承接「结束并保存」，把原记录页里的标题/跑鞋填写放到跑后自然时刻，避免跑步中误触键盘。</li>
+          <li><strong>状态诚实性</strong>：离线时明确展示「本机队列待上传 · 预览指标」，绝不将 pending 伪装为已完成同步（可点右上角切换在线/离线预览）。</li>
+          <li><strong>表单规范</strong>：所有输入框高度 48px、字号 16px（防止 iOS Safari 聚焦缩放），边框 <code>--control-border</code> 满足 ≥3:1 对比度。</li>
+        </ul>
+      </aside>
+    </article>
+
+    <!-- ====================================================================
+         SCREEN 06: 跑步详情 / RUN DETAIL
+         ==================================================================== -->
+    <article class="showcase-unit" data-screen="detail">
+      <section class="phone-frame" aria-label="跑步详情原型">
+        <div class="sys-status-bar">
+          <span>08:20</span>
+          <div class="sys-pill-cutout" aria-hidden="true">safe-top</div>
+          <div class="sys-icons" aria-hidden="true"><span>5G</span></div>
+        </div>
+
+        <header class="m-topbar">
+          <div class="m-topbar-left">
+            <a href="#history" class="icon-btn back-btn" aria-label="返回记录列表">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+              <span>返回</span>
+            </a>
+            <h2 class="m-topbar-stack-title">跑步详情</h2>
+          </div>
+          <div class="m-topbar-actions">
+            <button type="button" class="icon-btn" aria-label="分享海报或视频">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
+              <span>分享</span>
+            </button>
+            <button type="button" class="icon-btn" aria-label="更多操作（编辑、删除）" title="更多操作">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+            </button>
+          </div>
+        </header>
+
+        <div class="m-body">
+          <!-- Route Map FIRST above the fold! -->
+          <div class="route-canvas" style="height:264px;flex:none;" role="img" aria-label="奥森南园 5K 节奏跑轨迹地图">
+            <svg viewBox="0 0 358 264" preserveAspectRatio="xMidYMid slice">
+              <rect width="358" height="264" fill="var(--map-bg)"/>
+              <path d="M0 170 Q130 132 230 158 T358 140 L358 264 L0 264 Z" fill="var(--map-park)"/>
+              <ellipse cx="288" cy="64" rx="48" ry="26" fill="var(--map-water)"/>
+              <path d="M0 105 L358 135 M120 0 L102 264 M252 0 L264 264" stroke="var(--map-road)" stroke-width="7" fill="none"/>
+              <path d="M62 192 C58 112, 118 54, 198 62 C264 68, 304 128, 286 184 C268 232, 166 232, 108 214 C82 206, 64 206, 62 192 Z" fill="none" stroke="var(--map-route)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="62" cy="192" r="7" fill="var(--sport-green)" stroke="var(--surface)" stroke-width="2.5"/>
+              <circle cx="108" cy="214" r="7" fill="var(--sport-coral)" stroke="var(--surface)" stroke-width="2.5"/>
+            </svg>
+            <div class="map-overlay-tr">
+              <button type="button" class="map-pill" aria-label="切换底图">底图</button>
+            </div>
+            <div class="map-overlay-br">
+              <button type="button" class="map-pill" aria-label="动态回放轨迹">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+                动态回放
+              </button>
+            </div>
+          </div>
+
+          <!-- Title + Warm Cream Identity Header -->
+          <section class="rn-card tint-hero" style="padding:14px 16px;">
+            <div style="font-size:20px;font-weight:700;line-height:1.3;">奥森南园 5K 节奏跑</div>
+            <div class="rn-card-meta" style="margin-top:4px;">2026-11-24 06:35 · 路跑 · #节奏跑 · #晨跑</div>
+          </section>
+
+          <!-- Primary 3-Col Hairline Metric Strip -->
+          <section class="rn-card" style="padding:14px 16px;" aria-label="核心运动指标">
+            <div class="metric-strip">
+              <div class="metric-col">
+                <div class="metric-label"><span class="metric-dot" style="background:var(--sport-green)">↗</span>距离</div>
+                <div class="metric-val">5.02<span class="metric-unit">km</span></div>
+              </div>
+              <div class="metric-col">
+                <div class="metric-label"><span class="metric-dot" style="background:var(--sport-blue)">⏱</span>设备用时</div>
+                <div class="metric-val">27:00</div>
+              </div>
+              <div class="metric-col">
+                <div class="metric-label"><span class="metric-dot" style="background:var(--sport-coral)">⚡</span>平均配速</div>
+                <div class="metric-val">5:23<span class="metric-unit">/km</span></div>
+              </div>
+            </div>
+            <div class="metric-strip" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
+              <div class="metric-col">
+                <div class="metric-label">平均心率</div>
+                <div class="metric-val" style="font-size:17px;">156<span class="metric-unit">bpm</span></div>
+              </div>
+              <div class="metric-col">
+                <div class="metric-label">热量</div>
+                <div class="metric-val" style="font-size:17px;">348<span class="metric-unit">kcal</span></div>
+              </div>
+              <div class="metric-col">
+                <div class="metric-label">步数</div>
+                <div class="metric-val" style="font-size:17px;">4,920</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Shoe + Diary compact cards -->
+          <section class="rn-card" style="padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+            <div>
+              <div style="font-size:13px;color:var(--muted-foreground);">跑鞋装备</div>
+              <div style="font-size:15px;font-weight:600;margin-top:2px;">Nike Pegasus 41 · 347 km</div>
+            </div>
+            <button type="button" class="btn-secondary">更换</button>
+          </section>
+        </div>
+        <div class="sys-home-zone"><div class="sys-home-bar" aria-hidden="true"></div></div>
+      </section>
+
+      <aside class="annotation-card">
+        <div class="annotation-head"><h2>06 · 跑步详情 / Run Detail</h2><span class="annotation-tag">Stack 子页</span></div>
+        <ul class="annotation-list">
+          <li><strong>目的</strong>：首屏直接看见路线地图 + 标题 + 3 项核心指标（原版需滚过 1.5 屏才见地图，总高 3005px）。</li>
+          <li><strong>防误删</strong>：「删除记录」从原首屏高风险区移入顶栏「···」菜单，且触发原生确认框；顶栏保留 48px 返回与分享入口。</li>
+          <li><strong>触控</strong>：地图内「底图」「动态回放」与「更换跑鞋」按钮全部 ≥44px（原版 <code>button-compact</code> 仅 33px）。</li>
+          <li><strong>离线降级</strong>：底图超时或离线时仍显示本地轨迹与缓存指标，不阻断阅读。</li>
+        </ul>
+      </aside>
+    </article>
+
+    <!-- ====================================================================
+         SCREEN 07: 历史记录 / HISTORY
+         ==================================================================== -->
+    <article class="showcase-unit" data-screen="history">
+      <section class="phone-frame" aria-label="历史记录原型">
+        <div class="sys-status-bar">
+          <span>08:22</span>
+          <div class="sys-pill-cutout" aria-hidden="true">safe-top</div>
+          <div class="sys-icons" aria-hidden="true"><span>5G</span></div>
+        </div>
+
+        <header class="m-topbar">
+          <div class="m-topbar-left">
+            <h2 class="m-topbar-title">记录</h2>
+            <span class="rn-card-meta tabular" style="font-size:14px;font-weight:600;">44 次</span>
+          </div>
+          <div class="m-topbar-actions">
+            <button type="button" class="icon-btn" aria-label="导入 GPX 或 TCX">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 4v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+              <span>导入</span>
+            </button>
+            <button type="button" class="icon-btn" aria-label="更多操作（分享图、批量编辑）">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+            </button>
+          </div>
+        </header>
+
+        <div class="m-body with-tabbar">
+          <!-- Pending Offline Upload Banner (only visible when queue > 0) -->
+          <div class="state-banner warn" role="status" style="flex-direction:row;align-items:center;justify-content:space-between;padding:10px 14px;">
+            <div style="min-width:0;">
+              <div style="font-weight:700;font-size:13px;">1 条实时记录待上传</div>
+              <div style="font-size:12px;">已安全本地保存 · 联网自动上传</div>
+            </div>
+            <button type="button" class="btn-secondary" style="min-height:44px;padding:0 12px;font-size:13px;flex:none;">立即上传</button>
+          </div>
+
+          <!-- Filter Chips -->
+          <div class="chip-row" role="group" aria-label="筛选活动">
+            <button type="button" class="filter-chip" aria-pressed="true">全部</button>
+            <button type="button" class="filter-chip" aria-pressed="false">本月</button>
+            <button type="button" class="filter-chip" aria-pressed="false">5K+</button>
+            <button type="button" class="filter-chip" aria-pressed="false">10K+</button>
+            <button type="button" class="filter-chip" aria-pressed="false">含轨迹</button>
+          </div>
+
+          <div class="month-header">
+            <span class="month-pill">2026 年 11 月</span>
+            <span class="tabular">3 次 · 19.3 km</span>
+          </div>
+
+          <a href="#detail" class="run-row">
+            <div class="run-thumb" aria-hidden="true"><svg viewBox="0 0 56 48"><rect width="56" height="48" fill="var(--map-bg)"/><path d="M10 34 C14 14, 28 10, 38 15 C46 19, 44 35, 28 36 Z" fill="none" stroke="var(--map-route)" stroke-width="2.5"/></svg></div>
+            <div class="run-row-main">
+              <div class="run-row-title">奥森南园 5K 节奏跑</div>
+              <div class="run-row-sub">11/24 周二 · 27:00 · 节奏跑</div>
+            </div>
+            <div class="run-row-metrics">
+              <div class="run-row-dist">5.02 km</div>
+              <div class="run-row-pace">5:23 /km</div>
+            </div>
+          </a>
+
+          <a href="#detail" class="run-row">
+            <div class="run-thumb" aria-hidden="true"><svg viewBox="0 0 56 48"><rect width="56" height="48" fill="var(--map-bg)"/><path d="M8 38 C18 28, 22 14, 48 12" fill="none" stroke="var(--map-route)" stroke-width="2.5" stroke-linecap="round"/></svg></div>
+            <div class="run-row-main">
+              <div class="run-row-title">滨江轻松有氧 10K</div>
+              <div class="run-row-sub">11/21 周六 · 57:40 · 轻松跑</div>
+            </div>
+            <div class="run-row-metrics">
+              <div class="run-row-dist">10.08 km</div>
+              <div class="run-row-pace">5:43 /km</div>
+            </div>
+          </a>
+
+          <a href="#detail" class="run-row">
+            <div class="run-thumb" aria-hidden="true"><svg viewBox="0 0 56 48"><rect width="56" height="48" fill="var(--map-bg)"/><path d="M12 16 L42 16 L42 34 L12 34 Z" fill="none" stroke="var(--map-route)" stroke-width="2.5" stroke-linejoin="round"/></svg></div>
+            <div class="run-row-main">
+              <div class="run-row-title">夜跑恢复 4.2K</div>
+              <div class="run-row-sub">11/18 周三 · 26:00 · 恢复跑</div>
+            </div>
+            <div class="run-row-metrics">
+              <div class="run-row-dist">4.20 km</div>
+              <div class="run-row-pace">6:11 /km</div>
+            </div>
+          </a>
+
+          <div class="month-header" style="margin-top:4px;">
+            <span class="month-pill">2026 年 10 月</span>
+            <span class="tabular">8 次 · 64.5 km</span>
+          </div>
+
+          <a href="#detail" class="run-row">
+            <div class="run-thumb" aria-hidden="true"><svg viewBox="0 0 56 48"><rect width="56" height="48" fill="var(--map-bg)"/><path d="M10 30 Q28 8 46 30" fill="none" stroke="var(--map-route)" stroke-width="2.5" stroke-linecap="round"/></svg></div>
+            <div class="run-row-main">
+              <div class="run-row-title">半程耐力拉练 15K</div>
+              <div class="run-row-sub">10/29 周四 · 1:24:15 · 长距离</div>
+            </div>
+            <div class="run-row-metrics">
+              <div class="run-row-dist">15.00 km</div>
+              <div class="run-row-pace">5:37 /km</div>
+            </div>
+          </a>
+        </div>
+
+        <div class="m-tabbar-wrap">
+          <nav class="m-tabbar" aria-label="主导航">
+            <a class="tab-item" href="#today"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M12 3 3 10v11h6v-7h6v7h6V10z"/></svg><span>今天</span></a>
+            <a class="tab-item" href="#history" aria-current="page"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2" fill="currentColor" fill-opacity="0.2"/><path d="M8 2v4M16 2v4M4 10h16"/></svg><span>记录</span></a>
+            <a class="tab-record-btn" href="#pre-record" aria-label="开始跑步记录"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg><span>开跑</span></a>
+            <a class="tab-item" href="#detail"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="m3 6 6-2 6 2 6-2v14l-6 2-6-2-6 2z"/></svg><span>探索</span></a>
+            <a class="tab-item" href="#settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.6-3.6 4.5-5 8-5s6.4 1.4 8 5"/></svg><span>我的</span></a>
+          </nav>
+        </div>
+      </section>
+
+      <aside class="annotation-card">
+        <div class="annotation-head"><h2>07 · 历史记录 / History</h2><span class="annotation-tag">Root Tab</span></div>
+        <ul class="annotation-list">
+          <li><strong>目的</strong>：首屏直接浏览 4 条跑步记录（原版顶部页头 + 默认展开导入区导致首屏 0 条记录可见）。</li>
+          <li><strong>主操作与队列</strong>：上传队列有待传记录时在列表顶部置顶提醒；GPX/TCX 导入收拢到顶栏「导入」底部抽屉。</li>
+          <li><strong>行扫描层级</strong>：左侧路线缩略图 + 中间标题/日期 + 右侧等宽数字里程/配速，整行 76px+ 可点击，无嵌套编辑/删除按钮。</li>
+        </ul>
+      </aside>
+    </article>
+
+    <!-- ====================================================================
+         SCREEN 08: 异常态矩阵 / OFFLINE, PERMISSIONS, SYNC ERROR, EMPTY
+         ==================================================================== -->
+    <article class="showcase-unit" data-screen="states">
+      <section class="phone-frame" aria-label="离线、同步错误、权限与空态矩阵原型">
+        <div class="sys-status-bar">
+          <span>08:25</span>
+          <div class="sys-pill-cutout" aria-hidden="true">safe-top</div>
+          <div class="sys-icons" aria-hidden="true"><span>离线</span></div>
+        </div>
+
+        <header class="m-topbar">
+          <div class="m-topbar-left">
+            <h2 class="m-topbar-title" style="font-size:20px;">健康 · 同步 · 异常态</h2>
+          </div>
+          <span class="sync-chip warn">离线模式</span>
+        </header>
+
+        <div class="m-body">
+          <!-- 1. Offline Stale Cache Banner -->
+          <div class="state-banner warn" role="status">
+            <div class="state-banner-title">当前离线 · 显示 2 小时前本地缓存</div>
+            <div>已缓存汇总与 24 条记录可读；编辑、导入与删除需恢复网络后操作。</div>
+          </div>
+
+          <!-- 2. Interrupted Run Recovery -->
+          <div class="state-banner err" role="alert">
+            <div class="state-banner-title">检测到未完成的跑步记录</div>
+            <div>应用上次在后台被系统回收，已安全保留 318 个轨迹点（预览 3.10 km · 16:40）。</div>
+            <div class="state-banner-actions">
+              <button type="button" class="btn-primary">继续记录</button>
+              <button type="button" class="btn-secondary">结束并保存</button>
+              <button type="button" class="btn-ghost-danger" style="padding:0 10px;">安全丢弃</button>
+            </div>
+          </div>
+
+          <!-- 3. Approximate Location Blocked -->
+          <div class="state-banner err" role="alert">
+            <div class="state-banner-title">需要精确位置权限</div>
+            <div>当前仅授予「大致位置」，误差通常超过 50 米，无法生成可靠轨迹。</div>
+            <div class="state-banner-actions">
+              <button type="button" class="btn-primary">重新请求精确位置</button>
+              <button type="button" class="btn-secondary">打开应用设置</button>
+            </div>
+          </div>
+
+          <!-- 4. Sync 503 Backoff Error -->
+          <div class="state-banner neutral" role="status">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+              <span class="state-banner-title" style="color:var(--error);">上传暂时失败（503）</span>
+              <span class="sync-chip err">15s 后重试</span>
+            </div>
+            <div class="rn-card-meta">「晨跑 5K」已保存在本机队列，网络稳定后自动重试，不会重复创建活动。</div>
+            <div class="state-banner-actions">
+              <button type="button" class="btn-secondary">立即重试</button>
+            </div>
+          </div>
+
+          <!-- 5. Health Connect Revoked + Empty -->
+          <div class="state-banner neutral">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+              <span class="state-banner-title">Health Connect 权限已撤销</span>
+              <span class="sync-chip err">已撤销</span>
+            </div>
+            <div class="rn-card-meta">不影响手动导入与 GPS 记录。如需恢复 7 天恢复摘要，可重新授权。</div>
+            <div class="state-banner-actions">
+              <button type="button" class="btn-primary">重新授权</button>
+              <button type="button" class="btn-secondary">系统权限设置</button>
+            </div>
+          </div>
+
+          <!-- 6. First-Run Empty State -->
+          <div class="state-banner neutral" style="text-align:center;align-items:center;padding:18px 16px;">
+            <div class="state-banner-title">还没有跑步记录</div>
+            <div class="rn-card-meta">完成第一次跑步或导入 GPX / TCX 后，这里会自动累计你的里程与配速。</div>
+            <div class="state-banner-actions" style="justify-content:center;">
+              <button type="button" class="btn-primary">开始第一次跑步</button>
+              <button type="button" class="btn-secondary">导入轨迹</button>
+            </div>
+          </div>
+        </div>
+        <div class="sys-home-zone"><div class="sys-home-bar" aria-hidden="true"></div></div>
+      </section>
+
+      <aside class="annotation-card">
+        <div class="annotation-head"><h2>08 · 离线 / 权限 / 同步 / 空态矩阵</h2><span class="annotation-tag">状态加固</span></div>
+        <ul class="annotation-list">
+          <li><strong>目的</strong>：集中验收 Phase 2/3 全部高风险边缘态，确保每种异常都有清晰原因与 ≥44px 恢复出口。</li>
+          <li><strong>不依赖纯颜色</strong>：所有状态卡均配明确文字标题 + 徽章 + 具体动作（不使用模糊「出错了」文案）。</li>
+          <li><strong>覆盖清单</strong>：离线带缓存年龄、进程强杀恢复、仅大致位置阻断、503 退避倒计时、Health Connect 撤销、首次空态。</li>
+        </ul>
+      </aside>
+    </article>
+
+    <!-- ====================================================================
+         SCREEN 09: 我的与设置 / ME & SETTINGS
+         ==================================================================== -->
+    <article class="showcase-unit" data-screen="settings">
+      <section class="phone-frame" aria-label="我的与设置原型">
+        <div class="sys-status-bar">
+          <span>08:26</span>
+          <div class="sys-pill-cutout" aria-hidden="true">safe-top</div>
+          <div class="sys-icons" aria-hidden="true"><span>5G</span></div>
+        </div>
+
+        <header class="m-topbar">
+          <div class="m-topbar-left">
+            <h2 class="m-topbar-title">我的</h2>
+          </div>
+          <span class="sync-chip neutral">v2.5.0</span>
+        </header>
+
+        <div class="m-body with-tabbar">
+          <!-- Compact Identity Card -->
+          <a href="#settings" class="rn-card" style="display:flex;align-items:center;justify-content:space-between;gap:12px;text-decoration:none;color:inherit;padding:14px 16px;">
+            <div style="display:flex;align-items:center;gap:12px;min-width:0;">
+              <div style="width:48px;height:48px;border-radius:50%;background:var(--sport-nav-active);color:var(--sport-nav-active-ink);display:grid;place-items:center;font-size:19px;font-weight:700;flex:none;">晨</div>
+              <div style="min-width:0;">
+                <div style="font-size:17px;font-weight:700;">晨跑者</div>
+                <div class="rn-card-meta">@runner · 管理员模式</div>
+              </div>
+            </div>
+            <span style="color:var(--muted-foreground);font-size:14px;font-weight:600;flex:none;">资料 ›</span>
+          </a>
+
+          <p class="group-label">跑步与设备</p>
+          <div class="inset-group">
+            <a class="inset-row" href="#settings">
+              <div class="inset-row-left">
+                <span class="inset-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/></svg></span>
+                <div><div class="inset-row-title">跑量目标</div><div class="inset-row-sub">周 35 km · 月 140 km · 年 1200 km</div></div>
+              </div>
+              <span class="inset-row-right">›</span>
+            </a>
+            <a class="inset-row" href="#settings">
+              <div class="inset-row-left">
+                <span class="inset-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v-3l4-4 3 3c2 1.2 4.5 1.5 7 1.5 1.1 0 2 .9 2 2v1.5H4z"/></svg></span>
+                <div><div class="inset-row-title">我的跑鞋</div><div class="inset-row-sub">3 双服役中</div></div>
+              </div>
+              <span class="inset-row-right"><span class="alert-pill">1 提醒</span> ›</span>
+            </a>
+            <a class="inset-row" href="#states">
+              <div class="inset-row-left">
+                <span class="inset-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg></span>
+                <div><div class="inset-row-title">设备健康数据（只读）</div><div class="inset-row-sub">Health Connect · 已授权 4/6 项</div></div>
+              </div>
+              <span class="inset-row-right">›</span>
+            </a>
+          </div>
+
+          <p class="group-label">同步与外观</p>
+          <div class="inset-group">
+            <a class="inset-row" href="#states">
+              <div class="inset-row-left">
+                <span class="inset-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.4 6.4M3 12a9 9 0 0 1 15.4-6.4M3 17v-5h5M21 7v5h-5"/></svg></span>
+                <div><div class="inset-row-title">离线缓存与增量同步</div><div class="inset-row-sub">已缓存 24 条 · 2 分钟前</div></div>
+              </div>
+              <span class="inset-row-right">›</span>
+            </a>
+            <div class="inset-row" style="cursor:default;">
+              <div class="inset-row-left">
+                <span class="inset-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg></span>
+                <div class="inset-row-title">外观</div>
+              </div>
+              <div class="seg-control" role="group" aria-label="切换应用外观" style="padding:3px;">
+                <button type="button" class="seg-btn" data-inline-theme="light" aria-pressed="true" style="min-width:44px;min-height:44px;padding:0 12px;font-size:13px;">浅色</button>
+                <button type="button" class="seg-btn" data-inline-theme="dark" aria-pressed="false" style="min-width:44px;min-height:44px;padding:0 12px;font-size:13px;">深色</button>
+              </div>
+            </div>
+            <a class="inset-row" href="#settings">
+              <div class="inset-row-left">
+                <span class="inset-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
+                <div><div class="inset-row-title">隐私与公开展示</div><div class="inset-row-sub">完整展示模式 · 身心健康 · AI 助手</div></div>
+              </div>
+              <span class="inset-row-right">›</span>
+            </a>
+          </div>
+
+          <div class="inset-group">
+            <button type="button" class="inset-row" style="justify-content:center;color:var(--error);font-weight:600;">退出登录</button>
+          </div>
+        </div>
+
+        <div class="m-tabbar-wrap">
+          <nav class="m-tabbar" aria-label="主导航">
+            <a class="tab-item" href="#today"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M12 3 3 10v11h6v-7h6v7h6V10z"/></svg><span>今天</span></a>
+            <a class="tab-item" href="#history"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 2v4M16 2v4M4 10h16"/></svg><span>记录</span></a>
+            <a class="tab-record-btn" href="#pre-record" aria-label="开始跑步记录"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg><span>开跑</span></a>
+            <a class="tab-item" href="#detail"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="m3 6 6-2 6 2 6-2v14l-6 2-6-2-6 2z"/></svg><span>探索</span></a>
+            <a class="tab-item" href="#settings" aria-current="page"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.6-3.6 4.5-5 8-5s6.4 1.4 8 5"/></svg><span>我的</span></a>
+          </nav>
+        </div>
+      </section>
+
+      <aside class="annotation-card">
+        <div class="annotation-head"><h2>09 · 我的与设置 / Me & Settings</h2><span class="annotation-tag">分组列表</span></div>
+        <ul class="annotation-list">
+          <li><strong>目的</strong>：替代原 345px 高度的 5 项设置标签网格与 3409px 超长单页，每项直达独立二级栈页。</li>
+          <li><strong>入口合理化</strong>：将「外观切换」从拥挤的手机顶栏迁入此处，释放顶栏空间；「退出登录」沉底隔离。</li>
+          <li><strong>状态摘要</strong>：跑鞋提醒数、Health Connect 授权进度（4/6）、最近同步时间一目了然，无需逐页翻找。</li>
+        </ul>
+      </aside>
+    </article>
+
+  </main>
+
+  <script>
+    (function () {
+      const root = document.documentElement;
+      const params = new URLSearchParams(window.location.search);
+
+      function setTheme(theme) {
+        const next = theme === 'dark' ? 'dark' : 'light';
+        root.setAttribute('data-theme', next);
+        document.querySelectorAll('[data-theme-set]').forEach(btn => {
+          btn.setAttribute('aria-pressed', String(btn.getAttribute('data-theme-set') === next));
+        });
+        document.querySelectorAll('[data-inline-theme]').forEach(btn => {
+          btn.setAttribute('aria-pressed', String(btn.getAttribute('data-inline-theme') === next));
+        });
+      }
+
+      if (params.get('theme')) setTheme(params.get('theme'));
+
+      if (params.get('frame') === '1') {
+        document.body.classList.add('frame-mode');
+        const target = params.get('screen') || 'today';
+        const match = document.querySelector(`.showcase-unit[data-screen="${target}"]`);
+        if (match) match.classList.add('active-frame');
+      }
+
+      document.querySelectorAll('[data-theme-set]').forEach(btn => {
+        btn.addEventListener('click', () => setTheme(btn.getAttribute('data-theme-set')));
+      });
+      document.querySelectorAll('[data-inline-theme]').forEach(btn => {
+        btn.addEventListener('click', () => setTheme(btn.getAttribute('data-inline-theme')));
+      });
+
+      // Interactive press-and-hold demo on Paused screen
+      const holdBtn = document.getElementById('demo-hold-btn');
+      const holdBar = document.getElementById('demo-hold-bar');
+      const holdLabel = document.getElementById('demo-hold-label');
+      if (holdBtn && holdBar && holdLabel) {
+        let timer = null;
+        let progress = 0;
+        const reset = () => {
+          if (timer) { clearInterval(timer); timer = null; }
+          progress = 0;
+          holdBar.style.width = '0%';
+          holdLabel.textContent = '长按 1.5 秒结束并保存';
+        };
+        holdBtn.addEventListener('pointerdown', () => {
+          reset();
+          const start = Date.now();
+          holdLabel.textContent = '继续按住以结束…';
+          timer = setInterval(() => {
+            progress = Math.min(100, ((Date.now() - start) / 1500) * 100);
+            holdBar.style.width = `${progress}%`;
+            if (progress >= 100) {
+              clearInterval(timer);
+              timer = null;
+              holdLabel.textContent = '已触发结束并保存 ✓';
+            }
+          }, 30);
+        });
+        ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => holdBtn.addEventListener(ev, () => {
+          if (progress < 100) reset();
+        }));
+      }
+
+      // Interactive online/offline toggle on Post-Run screen
+      const toggleBtn = document.getElementById('post-run-mode-toggle');
+      const banner = document.getElementById('post-run-banner');
+      if (toggleBtn && banner) {
+        let offline = true;
+        toggleBtn.addEventListener('click', () => {
+          offline = !offline;
+          banner.className = `state-banner ${offline ? 'warn' : 'ok'}`;
+          banner.innerHTML = offline
+            ? '<div class="state-banner-title">已保存在本机队列 · 等待网络自动上传</div><div>当前处于离线模式，以下为本地预览指标；恢复联网后将携带幂等键自动上传一次，由服务端生成权威里程与配速。</div>'
+            : '<div class="state-banner-title">✓ 已上传 · 服务端权威指标已生成</div><div>已由 PostGIS 管线计算最终里程、用时与平均配速，并自动更新本周目标进度。</div>';
+        });
+      }
+    })();
+  </script>
+</body>
+</html>
