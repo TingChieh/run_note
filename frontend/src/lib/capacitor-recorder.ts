@@ -485,20 +485,55 @@ export async function discardNativeRecording(win?: WinWithCap): Promise<void> {
   if (plugin?.discardSession) await plugin.discardSession();
 }
 
-export async function clearNativeAccountSessions(
-  keepAccountId: string | null,
-  options?: { claimRevision?: number; claimToken?: string },
-  win?: WinWithCap,
-): Promise<void> {
+export interface NativeAccountCleanupScope {
+  /** Account whose native session survives a sign-in cleanup; `null` for a sign-out cleanup. */
+  keepAccountId: string | null;
+  /** Account being signed out; a sign-out cleanup only removes this account's native session. */
+  departingAccountId?: string | null;
+  /** Claim observed by the caller; its revision/token are sent only when it belongs to the scoped account. */
+  claim?: { activeAccountId: string | null; claimRevision?: number; claimToken?: string } | null;
+}
+
+/**
+ * Scope for the native cleanup after the server reported a different identity than this page.
+ * The confirmed account is kept only when the observed claim is its own; otherwise the cleanup is
+ * limited to the stale page account so an older claim cannot remove anyone else's session.
+ */
+export function nativeIdentityCleanupScope(
+  confirmedAccountId: string | null,
+  staleAccountId: string | null,
+  claim: NativeAccountCleanupScope['claim'],
+): NativeAccountCleanupScope {
+  if (confirmedAccountId && claim?.activeAccountId === confirmedAccountId) {
+    return { keepAccountId: confirmedAccountId, claim };
+  }
+  return { keepAccountId: null, departingAccountId: staleAccountId, claim };
+}
+
+/**
+ * Asks the native recorder to drop sessions outside `scope`. Native compares the revision with its
+ * claim fence and the live session's generation before it stops anything, so a late or stale call
+ * is a no-op. A claim held by another account is never forwarded, because native would treat it as
+ * authority over that account's newer session.
+ */
+export async function clearNativeAccountSessions(scope: NativeAccountCleanupScope, win?: WinWithCap): Promise<void> {
   const plugin = getNativePlugin(win);
   if (!plugin?.clearAccountSessions) return;
+  const keepAccountId = scope.keepAccountId?.trim() || null;
+  const departingAccountId = keepAccountId ? null : scope.departingAccountId?.trim() || null;
+  const scopedAccountId = keepAccountId ?? departingAccountId;
+  const claim = scopedAccountId !== null && scope.claim?.activeAccountId === scopedAccountId ? scope.claim : null;
+  const claimRevision =
+    typeof claim?.claimRevision === 'number' && Number.isInteger(claim.claimRevision) && claim.claimRevision > 0
+      ? claim.claimRevision
+      : undefined;
+  const claimToken = claimRevision !== undefined ? claim?.claimToken?.trim() : undefined;
   try {
     await plugin.clearAccountSessions({
       keepAccountId,
-      ...(typeof options?.claimRevision === 'number' && options.claimRevision > 0
-        ? { claimRevision: options.claimRevision }
-        : {}),
-      ...(options?.claimToken?.trim() ? { claimToken: options.claimToken.trim() } : {}),
+      ...(departingAccountId ? { departingAccountId } : {}),
+      ...(claimRevision !== undefined ? { claimRevision } : {}),
+      ...(claimToken ? { claimToken } : {}),
     });
   } catch {
     // Non-fatal cleanup when native bridge is unavailable.

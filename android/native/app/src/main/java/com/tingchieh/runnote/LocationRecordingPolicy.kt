@@ -1188,29 +1188,81 @@ object LocationRecordingPolicy {
             store.clearAll()
         }
 
-        fun hasAccountMismatch(keepAccountId: String?): Boolean = synchronized(store.lock) {
-            val existing = activeSession ?: store.loadSession() ?: return@synchronized false
-            keepAccountId == null || keepAccountId.isBlank() || existing.accountId != keepAccountId
-        }
-
+        /**
+         * Account cleanup requested by the Web layer after sign-in (`keepAccountId` set) or sign-out
+         * (`keepAccountId` null, optionally scoped to `departingAccountId`).
+         *
+         * The bridge call can arrive arbitrarily late, so the fence check, the discard and the fence
+         * update happen in one critical section: a cleanup whose claim revision is older than the
+         * fence epoch or than the live session's generation, or that names a different account or
+         * token for the current revision, is a no-op. Without a revision the request can only act
+         * on a store that has never seen a claim. `onDiscard` runs inside the lock right before the
+         * session files are deleted so the caller can stop GPS for exactly the session being removed.
+         * Returns true only when a session was discarded.
+         */
         @JvmOverloads
         fun clearIfAccountMismatch(
             keepAccountId: String?,
             claimRevision: Long? = null,
             claimToken: String? = null,
+            departingAccountId: String? = null,
+            onDiscard: Runnable? = null,
         ): Boolean = synchronized(store.lock) {
-            val cleared = if (hasAccountMismatch(keepAccountId)) {
+            val keep = keepAccountId?.trim()?.takeIf { it.isNotEmpty() }
+            val departing = if (keep == null) departingAccountId?.trim()?.takeIf { it.isNotEmpty() } else null
+            val revision = claimRevision?.takeIf { it > 0L }
+            val token = claimToken?.trim()?.takeIf { it.isNotEmpty() }
+            val fence = store.loadClaimFence()
+            val session = activeSession ?: store.loadSession()
+            if (!isCleanupCurrentLocked(keep, departing, revision, token, fence, session)) {
+                return@synchronized false
+            }
+            val discard = session != null &&
+                if (keep != null) session.accountId != keep else departing == null || session.accountId == departing
+            if (discard) {
+                onDiscard?.run()
                 discardSession()
-                true
-            } else {
-                false
             }
-            if (keepAccountId.isNullOrBlank()) {
-                revokeAccountClaim(null, claimRevision ?: 0L)
-            } else if (claimRevision != null && claimRevision > 0L) {
-                syncAccountClaim(keepAccountId, claimRevision, claimToken)
+            if (revision != null) {
+                val epoch = maxOf(fence?.claimEpoch ?: 0L, revision)
+                store.saveClaimFence(
+                    if (keep != null) {
+                        ClaimFence(keep, revision, token, epoch)
+                    } else {
+                        ClaimFence(null, null, null, epoch)
+                    }
+                )
             }
-            cleared
+            discard
+        }
+
+        private fun isCleanupCurrentLocked(
+            keep: String?,
+            departing: String?,
+            revision: Long?,
+            token: String?,
+            fence: ClaimFence?,
+            session: SessionRecord?,
+        ): Boolean {
+            val epoch = fence?.claimEpoch ?: 0L
+            // A session started without a revision still belongs to the generation that currently
+            // authorizes its account.
+            val sessionGeneration = session?.let {
+                maxOf(
+                    it.claimRevision ?: 0L,
+                    if (fence?.authorizedAccountId == it.accountId) fence.authorizedClaimRevision ?: 0L else 0L,
+                )
+            } ?: 0L
+            if (revision == null) return epoch == 0L && sessionGeneration == 0L
+            if (revision < epoch || revision < sessionGeneration) return false
+            if (fence == null || revision > epoch) return true
+            val authorized = fence.authorizedAccountId
+                // This revision was already revoked: only repeating the sign-out cleanup is allowed.
+                ?: return keep == null
+            if (fence.authorizedClaimRevision != revision) return false
+            if (keep != null && authorized != keep) return false
+            if (departing != null && authorized != departing) return false
+            return fence.authorizedClaimToken.isNullOrBlank() || fence.authorizedClaimToken == token
         }
 
         fun loadReconciledSessionForAccount(accountId: String?, serviceRunning: Boolean): SessionRecord? =

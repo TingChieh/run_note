@@ -24,7 +24,7 @@
   import { isCapacitorNative } from '#lib/capacitor-env.ts';
   import { installCapacitorThemeSync } from '#lib/capacitor-theme.ts';
   import { clearHealthGrantHistory } from '#lib/capacitor-health.ts';
-  import { clearNativeAccountSessions } from '#lib/capacitor-recorder.ts';
+  import { clearNativeAccountSessions, nativeIdentityCleanupScope } from '#lib/capacitor-recorder.ts';
   import {
     RECORDING_CLAIM_CONTEXT,
     RecordingPersistenceError,
@@ -172,10 +172,7 @@
                 currentUserId,
                 typeof claim.claimRevision === 'number' ? claim.claimRevision : null,
               );
-              void clearNativeAccountSessions(currentUserId, {
-                claimRevision: claim.claimRevision,
-                claimToken: claim.claimToken,
-              });
+              void clearNativeAccountSessions({ keepAccountId: currentUserId, claim });
             } else {
               lastIsolatedRecordingClaim = null;
               settleInitialRecordingClaim(currentUserId, null);
@@ -206,7 +203,11 @@
         } else {
           void clearAccountRecordingData(departingUserId).catch(() => {});
         }
-        void clearNativeAccountSessions(null, { claimRevision: departingClaim?.claimRevision });
+        void clearNativeAccountSessions({
+          keepAccountId: null,
+          departingAccountId: departingUserId,
+          claim: departingClaim,
+        });
       } else {
         settleInitialRecordingClaim(null, null);
       }
@@ -358,13 +359,18 @@
       }
       await clearAccountRecordingData(departingUserId).catch(() => {});
     };
+    const nativeLogoutScope = {
+      keepAccountId: null,
+      departingAccountId: departingUserId,
+      claim: snapshotBeforeLogout,
+    };
     abortAllRecordingUploads(departingUserId ?? undefined);
     try {
       await authWrite('logout', {});
       revokePageRecordingClaim();
       await clearPrivateOfflineCache();
       await clearDepartingAccount();
-      await clearNativeAccountSessions(null, { claimRevision: snapshotBeforeLogout?.claimRevision });
+      await clearNativeAccountSessions(nativeLogoutScope);
       clearHealthGrantHistory();
       if (typeof BroadcastChannel !== 'undefined') {
         const ch = new BroadcastChannel('runnote-auth');
@@ -379,7 +385,7 @@
         abortAllRecordingUploads(departingUserId ?? undefined);
         await clearPrivateOfflineCache();
         await clearDepartingAccount();
-        await clearNativeAccountSessions(null, { claimRevision: snapshotBeforeLogout?.claimRevision });
+        await clearNativeAccountSessions(nativeLogoutScope);
         clearHealthGrantHistory();
         checking = true;
         window.location.replace('/admin?reason=changed');
@@ -447,9 +453,9 @@
           }
           preemptRetries = 0;
           await clearPrivateOfflineCache();
-          await clearNativeAccountSessions(current?.id ?? null, {
-            claimRevision: snapshotBeforeVerify?.claimRevision,
-          });
+          await clearNativeAccountSessions(
+            nativeIdentityCleanupScope(current?.id ?? null, staleUserId, snapshotBeforeVerify),
+          );
           clearHealthGrantHistory();
           identityBlocked = true;
           if (isProtected(page.url.pathname) && !current) window.location.replace('/admin?reason=changed');
@@ -475,9 +481,9 @@
             preemptRetries = 0;
             abortAllRecordingUploads(current.id);
             await clearPrivateOfflineCache();
-            await clearNativeAccountSessions(reconciled.confirmedAccountId, {
-              claimRevision: snapshotBeforeVerify?.claimRevision,
-            });
+            await clearNativeAccountSessions(
+              nativeIdentityCleanupScope(reconciled.confirmedAccountId, current.id, snapshotBeforeVerify),
+            );
             clearHealthGrantHistory();
             identityBlocked = true;
             if (isProtected(page.url.pathname) && !reconciled.confirmedAccountId) {
@@ -515,12 +521,7 @@
                 settleInitialRecordingClaim(current.id, snap.claimRevision);
               }
             }
-            void clearNativeAccountSessions(
-              current.id,
-              snap?.activeAccountId === current.id && typeof snap.claimRevision === 'number'
-                ? { claimRevision: snap.claimRevision, claimToken: snap.claimToken }
-                : undefined,
-            );
+            void clearNativeAccountSessions({ keepAccountId: current.id, claim: snap });
           }
         }
         if (disposed || busy || pending) return;

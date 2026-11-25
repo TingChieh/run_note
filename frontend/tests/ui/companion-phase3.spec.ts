@@ -519,19 +519,71 @@ async function installMockLocationRecorder(page: Page, config: MockRecorderConfi
           },
           clearAccountSessions: async (opts?: {
             keepAccountId?: string | null;
+            departingAccountId?: string;
             claimRevision?: number;
             claimToken?: string;
           }) => {
+            // Mirrors RecordingSessionCoordinator.clearIfAccountMismatch: fence first, then a scoped discard.
             clearedAccounts.push(opts?.keepAccountId ?? null);
             const keep =
               typeof opts?.keepAccountId === 'string' && opts.keepAccountId.trim() ? opts.keepAccountId.trim() : null;
-            if (!keep) {
-              revokeFence(null, Number(opts?.claimRevision ?? 0));
-            } else if (typeof opts?.claimRevision === 'number' && opts.claimRevision > 0) {
-              syncFence(keep, opts.claimRevision, opts.claimToken);
+            const departing =
+              !keep && typeof opts?.departingAccountId === 'string' && opts.departingAccountId.trim()
+                ? opts.departingAccountId.trim()
+                : null;
+            const rev =
+              typeof opts?.claimRevision === 'number' && Number.isInteger(opts.claimRevision) && opts.claimRevision > 0
+                ? opts.claimRevision
+                : null;
+            const tok = typeof opts?.claimToken === 'string' && opts.claimToken.trim() ? opts.claimToken.trim() : null;
+            const epoch = claimFence?.claimEpoch ?? 0;
+            const sessionGeneration = session
+              ? Math.max(
+                  Number(session.claimRevision ?? 0),
+                  claimFence && claimFence.authorizedAccountId === session.accountId
+                    ? (claimFence.authorizedClaimRevision ?? 0)
+                    : 0,
+                )
+              : 0;
+            let current: boolean;
+            if (rev === null) current = epoch === 0 && sessionGeneration === 0;
+            else if (rev < epoch || rev < sessionGeneration) current = false;
+            else if (!claimFence || rev > epoch) current = true;
+            else if (claimFence.authorizedAccountId === null) current = keep === null;
+            else {
+              current =
+                claimFence.authorizedClaimRevision === rev &&
+                (!keep || claimFence.authorizedAccountId === keep) &&
+                (!departing || claimFence.authorizedAccountId === departing) &&
+                (!claimFence.authorizedClaimToken || claimFence.authorizedClaimToken === tok);
+            }
+            if (!current) return { cleared: false };
+            const discard =
+              session !== null && (keep ? session.accountId !== keep : !departing || session.accountId === departing);
+            if (discard) {
+              serviceRunning = false;
+              gpsStatus = 'inactive';
+              session = null;
+              points = [];
+            }
+            if (rev !== null) {
+              claimFence = keep
+                ? {
+                    authorizedAccountId: keep,
+                    authorizedClaimRevision: rev,
+                    authorizedClaimToken: tok,
+                    claimEpoch: Math.max(epoch, rev),
+                  }
+                : {
+                    authorizedAccountId: null,
+                    authorizedClaimRevision: null,
+                    authorizedClaimToken: null,
+                    claimEpoch: Math.max(epoch, rev),
+                  };
             }
             persistState();
-            return { cleared: true };
+            if (discard) emit();
+            return { cleared: discard };
           },
           addListener: (_name: string, fn: (event: unknown) => void) => {
             listeners.push(fn);
@@ -734,6 +786,7 @@ test('automatically retries after 503 backoff expires while staying on the recor
   await page.goto('/activities/record');
 
   await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
   await page.evaluate(() => {
     const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
     rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
@@ -768,6 +821,7 @@ test('aborts upload and clears queue without leaking account A track when sessio
 
   // Record and stop offline as Account A
   await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
   await page.evaluate(() => {
     const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
     rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
@@ -831,6 +885,7 @@ test('aborts upload and clears queue without leaking account A track when sessio
   });
 
   await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
   await page.evaluate(() => {
     const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
     rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
@@ -890,6 +945,7 @@ test('visual QA across 390x844, 768x1024, and 1440x900 in light and dark themes 
       if (vp.name === 'mobile' && theme === 'dark') {
         // Show active recording state on mobile dark screenshot too
         await page.getByTestId('recording-start-btn').click();
+        await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
         await page.evaluate(() => {
           const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
           rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
@@ -927,6 +983,7 @@ test('P1: never acknowledges/deletes native handoff when IndexedDB transaction a
 
   await page.getByLabel('跑步标题（可选）').fill('事务中止保留原生轨迹跑');
   await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
   await page.evaluate(() => {
     const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
     rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
@@ -1089,6 +1146,7 @@ test('P2: same-account new tab BroadcastChannel check does not cancel 503 backof
   await page.goto('/activities/record');
 
   await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
   await page.evaluate(() => {
     const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
     rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
@@ -1150,6 +1208,7 @@ test('P2: suspended stale account A tab waking after account B signs in deletes 
 
   // Account A records and stops offline
   await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
   await page.evaluate(() => {
     const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
     rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
@@ -1343,6 +1402,7 @@ test('P2 Round 3: interleaving A reads session then B becomes active and enqueue
 
   // Account A records & stops (503 keeps A's queued item in backoff state), plus leaves an active draft in IndexedDB
   await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
   await page.evaluate(() => {
     const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
     rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
@@ -1435,6 +1495,7 @@ test('P2 Round 3: interleaving A reads session then B becomes active and enqueue
 
   await tabB.getByLabel('跑步标题（可选）').fill('账号 B 并发写入跑');
   await tabB.getByTestId('recording-start-btn').click();
+  await expect(tabB.getByTestId('recording-status-badge')).toHaveText('记录中');
   await tabB.evaluate(() => {
     const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
     rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
@@ -1572,6 +1633,7 @@ test('P2 Round 3: two-tab concurrent claim and preemption never loses or reassig
 
   // Seed Account A's offline upload item, then delete active marker so both tabs race to claim
   await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
   await page.evaluate(() => {
     const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
     rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
@@ -1619,6 +1681,7 @@ test('P2 Round 3: two-tab concurrent claim and preemption never loses or reassig
   // Tab B records & stops a track while Tab A stays open
   await tabB.getByLabel('跑步标题（可选）').fill('账号 B 抢占保护跑');
   await tabB.getByTestId('recording-start-btn').click();
+  await expect(tabB.getByTestId('recording-status-badge')).toHaveText('记录中');
   await tabB.evaluate(() => {
     const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
     rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
@@ -1682,6 +1745,7 @@ test('P2 Round 4: tab A stale cleanup aborts and preserves new A claim/draft/que
   // Tab A records & stops (rev 1 stale upload item stays in IndexedDB via 503)
   await page.getByLabel('跑步标题（可选）').fill('账号 A 旧会话跑');
   await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
   await page.evaluate(() => {
     const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
     rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
@@ -1764,6 +1828,7 @@ test('P2 Round 4: tab A stale cleanup aborts and preserves new A claim/draft/que
 
   await tabB.getByLabel('跑步标题（可选）').fill('账号 A 重新登录新跑');
   await tabB.getByTestId('recording-start-btn').click();
+  await expect(tabB.getByTestId('recording-status-badge')).toHaveText('记录中');
   await tabB.evaluate(() => {
     const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
     rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
@@ -1892,6 +1957,7 @@ test('P2 Round 4: two-tab concurrent same-account re-login and re-claim advances
   // Claim rev 1 and record an item in Tab A
   await page.getByLabel('跑步标题（可选）').fill('账号 A 初始跑');
   await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
   await page.evaluate(() => {
     const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
     rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });
@@ -1931,6 +1997,7 @@ test('P2 Round 4: two-tab concurrent same-account re-login and re-claim advances
 
   await tabB.getByLabel('跑步标题（可选）').fill('账号 A 并发重认领新跑');
   await tabB.getByTestId('recording-start-btn').click();
+  await expect(tabB.getByTestId('recording-status-badge')).toHaveText('记录中');
   await tabB.evaluate(() => {
     const rec = (window as unknown as Record<string, { pushPoint: (p: unknown) => void }>).__mockRecorder;
     rec.pushPoint({ lat: 31.23, lon: 121.47, accuracyM: 6, deltaM: 0 });

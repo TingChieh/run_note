@@ -214,43 +214,50 @@ class RecordingForegroundService : Service(), LocationListener {
             return fallback
         }
 
-        fun clearIfAccountMismatchSync(
+        /**
+         * Runs the fenced account cleanup on the service thread when a recording service exists, so
+         * the claim check, the discard and the GPS teardown are one decision. If the main thread does
+         * not answer in time the posted task stays the only executor; it re-checks the fence when it
+         * runs, so a late execution cannot remove a session started under a newer claim.
+         */
+        fun clearAccountSessionsSync(
             context: Context,
             keepAccountId: String?,
             claimRevision: Long? = null,
             claimToken: String? = null,
+            departingAccountId: String? = null,
             timeoutMs: Long = 3_000L,
         ): Boolean {
             val coordinator = coordinatorFor(context)
-            val hasMismatch = coordinator.hasAccountMismatch(keepAccountId)
             val service = runningInstance
-            if (hasMismatch && service != null) {
+            if (service != null) {
                 if (Looper.myLooper() == Looper.getMainLooper()) {
-                    val cleared = service.handleDiscardIfAccountMismatch(keepAccountId)
-                    coordinator.clearIfAccountMismatch(keepAccountId, claimRevision, claimToken)
-                    return cleared
+                    return service.handleFencedAccountCleanup(keepAccountId, claimRevision, claimToken, departingAccountId)
                 }
                 var cleared = false
                 val latch = CountDownLatch(1)
                 val posted = service.mainHandler.post {
                     try {
-                        cleared = service.handleDiscardIfAccountMismatch(keepAccountId)
+                        cleared = service.handleFencedAccountCleanup(
+                            keepAccountId,
+                            claimRevision,
+                            claimToken,
+                            departingAccountId,
+                        )
                     } finally {
                         latch.countDown()
                     }
                 }
                 if (posted) {
                     try {
-                        if (latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
-                            coordinator.clearIfAccountMismatch(keepAccountId, claimRevision, claimToken)
-                            return cleared
-                        }
+                        latch.await(timeoutMs, TimeUnit.MILLISECONDS)
                     } catch (_: InterruptedException) {
                         Thread.currentThread().interrupt()
                     }
+                    return cleared
                 }
             }
-            return coordinator.clearIfAccountMismatch(keepAccountId, claimRevision, claimToken)
+            return coordinator.clearIfAccountMismatch(keepAccountId, claimRevision, claimToken, departingAccountId)
         }
 
         fun isLocationServicesEnabled(context: Context): Boolean {
@@ -498,22 +505,36 @@ class RecordingForegroundService : Service(), LocationListener {
     private fun handleDiscard() {
         unsubscribeLocationUpdates()
         mainHandler.removeCallbacks(heartbeatRunnable)
-        lastFixElapsedMs = null
         coordinator.discardSession()
+        finishAfterDiscard()
+    }
+
+    private fun handleFencedAccountCleanup(
+        keepAccountId: String?,
+        claimRevision: Long?,
+        claimToken: String?,
+        departingAccountId: String?,
+    ): Boolean {
+        val cleared = coordinator.clearIfAccountMismatch(keepAccountId, claimRevision, claimToken, departingAccountId) {
+            unsubscribeLocationUpdates()
+            mainHandler.removeCallbacks(heartbeatRunnable)
+        }
+        if (cleared) {
+            finishAfterDiscard()
+        } else {
+            Logger.info("RunNoteRecorder", "Account cleanup left the current session untouched")
+        }
+        return cleared
+    }
+
+    private fun finishAfterDiscard() {
+        lastFixElapsedMs = null
         isServiceRunning = false
         currentGpsStatus = "inactive"
         emitState(null, currentGpsStatus)
         stopForegroundCompat()
         stopSelf()
         Logger.info("RunNoteRecorder", "Recording discarded")
-    }
-
-    private fun handleDiscardIfAccountMismatch(keepAccountId: String?): Boolean {
-        if (!coordinator.hasAccountMismatch(keepAccountId)) {
-            return false
-        }
-        handleDiscard()
-        return true
     }
 
     private fun handlePermissionRevokedMidRun(nowMs: Long) {

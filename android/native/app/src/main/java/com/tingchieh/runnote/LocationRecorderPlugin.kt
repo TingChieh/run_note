@@ -358,11 +358,13 @@ class LocationRecorderPlugin : Plugin() {
         val keepAccountId = call.getString("keepAccountId")?.trim()
         val claimRevision = readPositiveLongArg(call, "claimRevision").takeIf { it > 0L }
         val claimToken = call.getString("claimToken")?.trim()?.takeIf { it.isNotEmpty() }
-        val cleared = RecordingForegroundService.clearIfAccountMismatchSync(
+        val departingAccountId = call.getString("departingAccountId")?.trim()?.takeIf { it.isNotEmpty() }
+        val cleared = RecordingForegroundService.clearAccountSessionsSync(
             context = context,
             keepAccountId = keepAccountId,
             claimRevision = claimRevision,
             claimToken = claimToken,
+            departingAccountId = departingAccountId,
         )
         call.resolve(JSObject().put("cleared", cleared))
     }

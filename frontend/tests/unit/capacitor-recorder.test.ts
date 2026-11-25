@@ -2,10 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   acknowledgeNativeHandoff,
   checkRecorderPermissions,
+  clearNativeAccountSessions,
   getNativeRecorderPoints,
   getNativeRecorderState,
   getRecorderCapabilities,
   isNativeLocationRecorderAvailable,
+  nativeIdentityCleanupScope,
   parsePermissionsPayload,
   parsePointsPayload,
   parseStateEventPayload,
@@ -294,5 +296,68 @@ describe('capacitor-recorder bridge', () => {
     await expect(
       stopNativeRecording({ accountId: 'user-a', sessionId: 'sess-a', claimRevision: 1 }, foreignWindow),
     ).rejects.toThrow('归属不匹配');
+  });
+
+  it('scopes native account cleanup and never forwards a claim owned by another account', async () => {
+    const clearAccountSessions = vi.fn(async () => ({ cleared: false }));
+    const win = {
+      Capacitor: {
+        isNativePlatform: () => true,
+        getPlatform: () => 'android',
+        Plugins: { LocationRecorder: { clearAccountSessions } },
+      },
+    } as unknown as Window;
+    const claimA = { activeAccountId: 'user-a', claimRevision: 3, claimToken: ' tok-a-3 ' };
+    const claimB = { activeAccountId: 'user-b', claimRevision: 4, claimToken: 'tok-b-4' };
+
+    await clearNativeAccountSessions({ keepAccountId: 'user-a', claim: claimA }, win);
+    await clearNativeAccountSessions({ keepAccountId: null, departingAccountId: 'user-a', claim: claimA }, win);
+    // A snapshot that already belongs to another account carries no authority for this cleanup.
+    await clearNativeAccountSessions({ keepAccountId: 'user-a', claim: claimB }, win);
+    await clearNativeAccountSessions({ keepAccountId: null, departingAccountId: 'user-a', claim: claimB }, win);
+    // Without an account the revision is never sent, and departing is ignored when keeping an account.
+    await clearNativeAccountSessions({ keepAccountId: null, claim: claimA }, win);
+    await clearNativeAccountSessions({ keepAccountId: 'user-a', departingAccountId: 'user-b', claim: null }, win);
+    await clearNativeAccountSessions(
+      { keepAccountId: 'user-a', claim: { activeAccountId: 'user-a', claimRevision: 0, claimToken: 'tok' } },
+      win,
+    );
+
+    expect(clearAccountSessions.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
+      { keepAccountId: 'user-a', claimRevision: 3, claimToken: 'tok-a-3' },
+      { keepAccountId: null, departingAccountId: 'user-a', claimRevision: 3, claimToken: 'tok-a-3' },
+      { keepAccountId: 'user-a' },
+      { keepAccountId: null, departingAccountId: 'user-a' },
+      { keepAccountId: null },
+      { keepAccountId: 'user-a' },
+      { keepAccountId: 'user-a' },
+    ]);
+
+    clearAccountSessions.mockRejectedValueOnce(new Error('bridge gone'));
+    await expect(clearNativeAccountSessions({ keepAccountId: 'user-a', claim: claimA }, win)).resolves.toBeUndefined();
+    await expect(clearNativeAccountSessions({ keepAccountId: 'user-a', claim: claimA }, undefined)).resolves.toBe(
+      undefined,
+    );
+  });
+
+  it('keeps the confirmed account only when the observed claim is its own after an identity change', () => {
+    const claimB = { activeAccountId: 'user-b', claimRevision: 4, claimToken: 'tok-b-4' };
+    const claimA = { activeAccountId: 'user-a', claimRevision: 3, claimToken: 'tok-a-3' };
+    expect(nativeIdentityCleanupScope('user-b', 'user-a', claimB)).toEqual({ keepAccountId: 'user-b', claim: claimB });
+    expect(nativeIdentityCleanupScope('user-b', 'user-a', claimA)).toEqual({
+      keepAccountId: null,
+      departingAccountId: 'user-a',
+      claim: claimA,
+    });
+    expect(nativeIdentityCleanupScope(null, 'user-a', claimA)).toEqual({
+      keepAccountId: null,
+      departingAccountId: 'user-a',
+      claim: claimA,
+    });
+    expect(nativeIdentityCleanupScope('user-b', null, null)).toEqual({
+      keepAccountId: null,
+      departingAccountId: null,
+      claim: null,
+    });
   });
 });

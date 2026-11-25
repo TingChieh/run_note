@@ -54,6 +54,7 @@ export interface CapacitorLocationRecorderPlugin {
   getSessionPoints?: (options?: { accountId?: string; afterIndex?: number }) => Promise<unknown>;
   clearAccountSessions?: (options?: {
     keepAccountId?: string | null;
+    departingAccountId?: string;
     claimRevision?: number;
     claimToken?: string;
   }) => Promise<unknown>;
