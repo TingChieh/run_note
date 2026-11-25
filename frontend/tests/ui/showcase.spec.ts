@@ -6,16 +6,25 @@ for (const width of [390, 1440]) {
   for (const theme of ['light', 'dark']) {
     test(`anonymous pages expose read-only owner content at ${width}px in ${theme}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 1000 });
-      await page.addInitScript(theme => localStorage.setItem('runnote-theme', theme), theme);
+      await page.addInitScript((theme) => localStorage.setItem('runnote-theme', theme), theme);
       await installActivities(page);
       const writes: string[] = [];
-      page.on('request', r => { if (new URL(r.url()).pathname.startsWith('/api/') && r.method() !== 'GET') writes.push(r.url()); });
-      for (const [path, heading] of [['/', '数据汇总'], ['/activities', '跑步记录'], ['/footprints', '个人足迹'], ['/ai', 'AI 助手']]) {
+      page.on('request', (r) => {
+        if (new URL(r.url()).pathname.startsWith('/api/') && r.method() !== 'GET') writes.push(r.url());
+      });
+      for (const [path, heading] of [
+        ['/', '数据汇总'],
+        ['/activities', '跑步记录'],
+        ['/footprints', '个人足迹'],
+        ['/ai', 'AI 助手'],
+      ]) {
         await page.goto(path);
         await expect(page).toHaveURL(new RegExp(path.replaceAll('/', '\\/') + '(?:\\?.*)?$'));
         await expect(page.getByRole('heading', { name: heading, level: 1, exact: true })).toBeVisible();
         await expect(page.getByRole('link', { name: /^(登录|注册|设置)$/ })).toHaveCount(0);
-        await expect(page.getByRole('button', { name: /^(编辑|设置|调整|编辑记录|删除记录|导入 GPX|生成近期总结与下周建议)/ })).toHaveCount(0);
+        await expect(
+          page.getByRole('button', { name: /^(编辑|设置|调整|编辑记录|删除记录|导入 GPX|生成近期总结与下周建议)/ }),
+        ).toHaveCount(0);
         await expect(page.locator('[data-testid="current-user"]')).toContainText('个人跑步展示');
         await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       }
@@ -38,7 +47,8 @@ test('admin entry authenticates, enables mutations, and logout returns to public
   await expect(page).toHaveURL(/\/admin\?next=%2Fsettings/);
   await expect(page.getByRole('link', { name: /注册/ })).toHaveCount(0);
   await loginRunner(page);
-  await page.goto('/activities'); await openImport(page);
+  await page.goto('/activities');
+  await openImport(page);
   await expect(page.getByRole('button', { name: '导入 GPX', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '编辑', exact: true }).click();
   await page.getByRole('button', { name: `编辑 ${sampleActivity.title}` }).click();
