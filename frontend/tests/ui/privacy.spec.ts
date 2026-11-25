@@ -36,8 +36,20 @@ test('public /privacy route renders without login, includes required disclosures
   }
   await expect(main).toContainText('仅本机读取、不上传服务器');
   await expect(main).toContainText('不出售你的个人数据');
+  // UI assertions verify policy disclosure copy presence only and do not replace backend outbound data-flow tests.
   await expect(main).toContainText('原样发送');
+  for (const field of [
+    '单次活动标识',
+    '活动日期',
+    '时区',
+    '运动类别',
+    '省份/城市名称',
+    '足迹覆盖的国家/地区/城市名称',
+  ]) {
+    await expect(main).toContainText(field);
+  }
   await expect(main).toContainText('含标记为私人或不公开的记录');
+  await expect(main).toContainText('不能保证所有历史备份中的旧副本均按固定周期自动过期清除');
   await expect(main).toContainText('未成年人');
 
   const deletionSection = page.getByTestId('data-deletion-section');
@@ -45,7 +57,8 @@ test('public /privacy route renders without login, includes required disclosures
   await expect(deletionSection).toContainText('RunNote 账号删除请求');
   await expect(deletionSection).toContainText('tingchieh77@outlook.com');
   await expect(deletionSection).toContainText('身份核验');
-  await expect(deletionSection).toContainText('备份自然过期');
+  await expect(deletionSection).toContainText('历史备份留存说明');
+  await expect(deletionSection).toContainText('不能保证所有历史备份中的旧数据均按固定周期自动过期');
   await expect(deletionSection).toContainText('安全与法律保留例外');
   await expect(page.getByTestId('deletion-email-link')).toHaveAttribute(
     'href',
