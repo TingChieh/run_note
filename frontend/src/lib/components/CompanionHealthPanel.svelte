@@ -369,6 +369,13 @@
     </p>
     <p>健康数据原文不会发送给任何第三方，也不会写入日志。你可以在系统健康设置中随时撤销权限。</p>
   </details>
+  <p class="block-hint health-privacy-links" data-testid="health-privacy-links">
+    <a class="text-primary underline" href="/privacy">隐私政策</a>
+    <span aria-hidden="true">·</span>
+    <a class="text-primary underline" href="/privacy#data-deletion" data-testid="health-data-deletion-link">
+      账号与数据删除申请
+    </a>
+  </p>
 </section>
 
 <style>
@@ -385,5 +392,11 @@
   .status-badge {
     white-space: nowrap;
     flex-shrink: 0;
+  }
+  .health-privacy-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
   }
 </style>

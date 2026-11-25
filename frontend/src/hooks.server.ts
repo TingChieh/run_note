@@ -69,8 +69,9 @@ export const handle: Handle = async ({ event, resolve }) => {
       timezone: event.locals.user.timezone,
       avatar_url: event.locals.user.avatar_url ?? null,
     };
+  const isStandalonePublic = /^\/privacy(?:\/|$)/.test(event.url.pathname);
   try {
-    if (context.kind !== 'workspace')
+    if (context.kind !== 'workspace' && !isStandalonePublic)
       event.locals.showcase = await readShowcaseProfile(async () => backendRequest(profilePath, event.request));
   } catch (cause) {
     event.locals.showcaseError = cause instanceof Error ? cause.message : '展示资料暂不可用';

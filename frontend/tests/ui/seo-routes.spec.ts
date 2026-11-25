@@ -48,11 +48,15 @@ test('server routes 404 missing resources, redirect the old home, and publish cr
   expect(rules).not.toContain('Disallow: /\n');
   expect(rules).toContain(`Sitemap: ${baseURL}/sitemap.xml`);
 
+  const privacy = await request.get('/privacy', { maxRedirects: 0 });
+  expect(privacy.status()).toBe(200);
+  expect(await privacy.text()).toContain('tingchieh77@outlook.com');
+
   const sitemap = await request.get('/sitemap.xml', { maxRedirects: 0 });
   expect(sitemap.status()).toBe(200);
   expect(sitemap.headers()['content-type']).toContain('xml');
   const xml = await sitemap.text();
-  for (const path of ['/', '/activities', '/footprints', '/ai']) {
+  for (const path of ['/', '/activities', '/footprints', '/ai', '/privacy']) {
     expect(xml).toContain(`<loc>${baseURL}${path}</loc>`);
   }
   for (const path of ['/admin', '/settings', '/shared', '/public', '/workspace']) expect(xml).not.toContain(path);

@@ -27,6 +27,7 @@ export default defineConfig({
     'liquid-glass.spec.ts',
     'crossbrowser-glass.spec.ts',
     'seo-routes.spec.ts',
+    'privacy.spec.ts',
     'records.spec.ts',
     'records-banner.spec.ts',
     'recap.spec.ts',

@@ -5,11 +5,13 @@ describe('public metadata', () => {
   it('gives each public page its own description and keeps private pages out of the index', () => {
     expect(pageDescription('/', 200, 'fallback')).toContain('日历');
     expect(pageDescription('/activities', 200, 'fallback')).not.toBe(pageDescription('/', 200, 'fallback'));
+    expect(pageDescription('/privacy', 200, 'fallback')).toContain('删除');
     expect(pageDescription('/nope', 404, 'fallback')).toContain('不存在');
     expect(pageNoindex('/admin', 200)).toBe(true);
     expect(pageNoindex('/workspace/activities', 200)).toBe(true);
     expect(pageNoindex('/activities', 404)).toBe(true);
     expect(pageNoindex('/activities', 200)).toBe(false);
+    expect(pageNoindex('/privacy', 200)).toBe(false);
   });
   it('publishes a robots file and a static sitemap', () => {
     const robots = robotsTxt('https://run.example');
@@ -21,6 +23,7 @@ describe('public metadata', () => {
     const sitemap = sitemapXml('https://run.example');
     expect(sitemap).toContain('https://run.example/');
     expect(sitemap).toContain('https://run.example/activities');
+    expect(sitemap).toContain('https://run.example/privacy');
     expect(sitemap).not.toContain('/activities/wall');
     for (const path of ['/admin', '/settings', '/shared', '/public', '/api']) expect(sitemap).not.toContain(path);
   });
