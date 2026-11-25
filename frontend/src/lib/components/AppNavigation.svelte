@@ -15,6 +15,7 @@
   import AnchoredPanel from './AnchoredPanel.svelte';
   import GoalRing from './GoalRing.svelte';
   import { attachFloatingGlass } from '#lib/styles/menu-glass.ts';
+  import { canSeeAssistant, canSeeWellbeing } from '#lib/navigation.ts';
   let { pathname, user, profile = null, checking, busy, mounted, onlogout, onnav, sports = false, identityBlocked = false }: { pathname: string; user: User | null; profile?: ShowcaseProfile | null; checking: boolean; busy: boolean; mounted: boolean; onlogout: () => void; onnav: (direction: 1 | -1) => void; sports?: boolean; identityBlocked?: boolean } = $props();
   const site = $derived(page.data.site ?? SITE_DEFAULTS);
   let logoFailed = $state(false);
@@ -22,9 +23,7 @@
   let avatarFailed = $state(false);
   $effect(() => { void profile?.avatar_url; avatarFailed = false; });
   const context = $derived(viewContext(pathname, user?.is_admin === true));
-  let open = $state(false);
   let mobile = $state(false);
-  let toggle: HTMLButtonElement;
   let bar = $state<HTMLElement | undefined>(), hidden = $state(false), raised = $state(false);
   let accountMenu = $state<ReturnType<typeof AnchoredPanel>>();
   let sidebar = $state<HTMLElement | undefined>(), floating = $state(false);
@@ -54,8 +53,7 @@
   // Both bars keep their glass attached (CSS turns backdrop-filter off until data-floating): building the wide lens map and filter on the first scrolled frame, and tearing them down at the top, stalled the start of every scroll.
   $effect(() => { if (mobile || !sidebar) return; return attachFloatingGlass(sidebar); });
   $effect(() => { if (!mobile || !bar) return; return attachFloatingGlass(bar); });
-  // Phone bar: scrolling down tucks it away, scrolling back up a little brings it straight back (no need to reach the top of the page). It stays while the menu is open.
-  $effect(() => { if (open) hidden = false; });
+  // Phone bar: scrolling down tucks it away, scrolling back up a little brings it straight back (no need to reach the top of the page).
   $effect(() => {
     if (!mobile || !bar) { hidden = false; raised = false; return; }
     let last = Math.max(0, window.scrollY), direction = 0, travelled = 0, frame = 0;
@@ -64,7 +62,7 @@
       const y = Math.max(0, window.scrollY), delta = y - last;
       last = y;
       raised = y > 0;
-      if (open || y <= (bar?.offsetHeight ?? 0)) { hidden = false; direction = 0; return; }
+      if (y <= (bar?.offsetHeight ?? 0)) { hidden = false; direction = 0; return; }
       if (delta === 0) return;
       const next = delta > 0 ? 1 : -1;
       if (next !== direction) { direction = next; travelled = 0; }
@@ -97,7 +95,7 @@
     { href: '/ai', label: 'AI 助手', path: 'm12 3 3 6 6 3-6 3-3 6-3-6-6-3 6-3z' },
     { href: '/wellbeing', label: '身心健康', path: 'M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z M9 12h2l1-2 1.5 4 1-2H17' },
     ...(user && !user.is_admin ? [{ href: '/workspace/dashboard', label: '本人工作区', path: 'M3 10 12 3l9 7v10H3z' }] : [])
-  ].filter(item => (item.href !== '/ai' || (!!user && view.manage)) && (item.href !== '/wellbeing' || !!user && view.manage && user.wellbeing_allowed && user.wellbeing_enabled)));
+  ].filter(item => (item.href !== '/ai' || canSeeAssistant(user, view.manage)) && (item.href !== '/wellbeing' || canSeeWellbeing(user, view.manage))));
   const modeLabel = $derived(checking ? '正在确认身份…' : context.kind === 'workspace' ? '本人工作区' : context.manage ? '管理员模式' : '个人跑步展示');
   const settings = { href: '/settings', label: '设置', path: 'M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6' };
   const active = (href: string) => href === '/' ? pathname === '/' : href === '/settings' && pathname.startsWith('/admin/users') ? true : pathname === href || pathname.startsWith(`${href}/`);
@@ -109,26 +107,17 @@
       const currentIndex = active(view.href(settings.href)) ? navigation.length : navigation.findIndex(entry => active(view.href(entry.href)));
       if (currentIndex !== index) onnav(index > currentIndex ? 1 : -1);
     }
-    open = false;
-    if (pathname === view.href(href) && plain) {
-      event.preventDefault();
-      if (mobile) toggle?.focus({ preventScroll: true });
-    }
+    if (pathname === view.href(href) && plain) event.preventDefault();
   }
-  afterNavigate(() => { open = false; accountMenu?.close(); });
-  function close(event: KeyboardEvent) { if (event.key === 'Escape' && open) { open = false; toggle?.focus(); } }
+  afterNavigate(() => { accountMenu?.close(); });
 </script>
-<svelte:window onkeydown={close} />
 {#snippet avatarFace(alt: string)}{#if checking}…{:else if profile?.avatar_url && !avatarFailed}<img src={profile.avatar_url} {alt} onerror={() => { avatarFailed = true; }} />{:else}{Array.from(profile?.display_name || '跑者')[0]}{/if}{/snippet}
 <div bind:this={bar} class="mobile-bar" data-hidden={hidden ? '' : undefined} data-floating={raised ? '' : undefined}>
   <a href={view.href("/dashboard")} class="brand" aria-label={`${site.title} 数据汇总`}>{#if site.logo_url && !logoFailed}<img class="brand-mark brand-logo" src={site.logo_url} alt="" width="32" height="32" onerror={() => { logoFailed = true; }} />{:else}<span class="brand-mark" aria-hidden="true">{brandInitial(site.title)}</span>{/if}<span class="brand-name">{site.title}</span></a>
-  <div class="mobile-actions"><ThemeToggle compact />
-  <button bind:this={toggle} type="button" class="nav-toggle" aria-expanded={open} aria-controls="app-navigation" aria-label={open ? '关闭导航' : '打开导航'} onclick={() => { open = !open; }}>
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d={open ? 'm6 6 12 12 M6 18 18 6' : 'M4 6h16 M4 12h16 M4 18h16'} /></svg><span>导航</span>
-  </button>
-  </div>
+  <div class="mobile-actions"><ThemeToggle compact /></div>
 </div>
-<aside bind:this={sidebar} id="app-navigation" class="app-sidebar" data-floating={floating ? '' : undefined} class:nav-open={open} inert={mobile && !open}>
+<!-- Below 800px the bottom MobileTabBar replaces this list (item 49 方案 B); the aside stays in the DOM, hidden and inert. -->
+<aside bind:this={sidebar} id="app-navigation" class="app-sidebar" data-floating={floating ? '' : undefined} inert={mobile}>
   <div class="sidebar-brand">
     <a href={view.href("/dashboard")} class="brand desktop-brand" aria-label={`${site.title} 数据汇总`}>{#if site.logo_url && !logoFailed}<img class="brand-mark brand-logo" src={site.logo_url} alt="" width="32" height="32" onerror={() => { logoFailed = true; }} />{:else}<span class="brand-mark" aria-hidden="true">{brandInitial(site.title)}</span>{/if}<span class="brand-name">{site.title}</span></a>
     {#if site.subtitle}<p class="nav-caption">{site.subtitle}</p>{/if}

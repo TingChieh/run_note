@@ -9,10 +9,24 @@ const entries = [
   { name: '用户管理', href: '/admin/users' },
 ];
 
-async function openNavigation(page: Page, width: number) {
+/** Desktop: the top bar's labelled links. Below 800px (the shell breakpoint) the bottom tab bar is the navigation. */
+async function navigationLinks(page: Page, width: number) {
   await expect(page.locator('header')).toHaveAttribute('data-auth-ready', 'true');
-  if (width < 800) await page.getByRole('button', { name: '打开导航', exact: true }).click();
-  return page.getByRole('navigation', { name: '主要导航', exact: true });
+  if (width < 800) {
+    const tabs = page.getByRole('navigation', { name: '底部导航', exact: true });
+    await expect(tabs).toBeVisible();
+    return tabs
+      .locator(':scope > a')
+      .evaluateAll((elements) =>
+        elements.map((element) => ({ name: element.textContent!.trim(), href: element.getAttribute('href') })),
+      );
+  }
+  return page
+    .getByRole('navigation', { name: '主要导航', exact: true })
+    .locator(':scope > a.nav-link')
+    .evaluateAll((elements) =>
+      elements.map((element) => ({ name: element.getAttribute('aria-label'), href: element.getAttribute('href') })),
+    );
 }
 
 async function contentBounds(page: Page) {
@@ -35,12 +49,7 @@ for (const width of [375, 390, 1440]) {
       await page.goto('/dashboard');
       await expect(page.getByRole('heading', { name: '数据汇总', exact: true })).toBeVisible();
       const dashboardBounds = await contentBounds(page);
-      const dashboardNavigation = await openNavigation(page, width);
-      const links = await dashboardNavigation
-        .locator(':scope > a.nav-link')
-        .evaluateAll((elements) =>
-          elements.map((element) => ({ name: element.getAttribute('aria-label'), href: element.getAttribute('href') })),
-        );
+      const links = await navigationLinks(page, width);
       const account = await openAccountMenu(page);
       const accountLinks = await account
         .locator('a')
@@ -54,16 +63,8 @@ for (const width of [375, 390, 1440]) {
       await expect(page.getByRole('navigation', { name: '公开页面导航' })).toHaveCount(0);
       expect(await contentBounds(page)).toEqual(dashboardBounds);
 
-      const navigation = await openNavigation(page, width);
-      expect(
-        await navigation.locator(':scope > a.nav-link').evaluateAll((elements) =>
-          elements.map((element) => ({
-            name: element.getAttribute('aria-label'),
-            href: element.getAttribute('href'),
-          })),
-        ),
-      ).toEqual(links);
-      await expect(page.locator('#app-navigation [aria-current="page"]')).toHaveCount(0);
+      expect(await navigationLinks(page, width)).toEqual(links);
+      await expect(page.locator('#app-navigation [aria-current="page"], .mobile-tabbar [aria-current]')).toHaveCount(0);
       const adminAccount = await openAccountMenu(page);
       expect(
         await adminAccount.locator('a').evaluateAll((elements) => elements.map((el) => el.getAttribute('href'))),
@@ -99,14 +100,18 @@ for (const width of [375, 390, 1440]) {
       await page.keyboard.press('Tab');
       await expect(card.getByRole('link', { name: entries[1].name, exact: true })).toBeFocused();
 
-      const nav = await openNavigation(page, width);
-      await nav.getByRole('link', { name: '数据汇总', exact: true }).click();
+      // Phones reach the summary through the 今天 tab; desktop through the top bar.
+      const home =
+        width < 800
+          ? page
+              .getByRole('navigation', { name: '底部导航', exact: true })
+              .getByRole('link', { name: '今天', exact: true })
+          : page
+              .getByRole('navigation', { name: '主要导航', exact: true })
+              .getByRole('link', { name: '数据汇总', exact: true });
+      await home.click();
       await expect(page.getByRole('heading', { name: '数据汇总', exact: true })).toBeVisible();
-      const activeNavigation = await openNavigation(page, width);
-      await expect(activeNavigation.getByRole('link', { name: '数据汇总', exact: true })).toHaveAttribute(
-        'aria-current',
-        'page',
-      );
+      await expect(home).toHaveAttribute('aria-current', 'page');
       expect(errors).toEqual([]);
     });
   }

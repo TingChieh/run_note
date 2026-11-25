@@ -123,6 +123,14 @@
   --top-navigation-offset: 14px;
   --top-navigation-height: 4rem;
   --z-top-navigation: 30;
+  /* viewport-fit=cover (app.html) lets the page draw under notches and the gesture bar; chrome pads itself with these. On ordinary screens they are 0. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --mobile-tabbar-height: 4rem;
+  /* What fixed chrome covers along the bottom edge. Sticky bottom bars (SaveBar) sit above it; the phone tab bar raises it, already including --safe-bottom. */
+  --bottom-chrome: var(--safe-bottom);
   --font-body: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
   --text-caption: 0.75rem;
@@ -959,7 +967,6 @@
   @media (prefers-reduced-transparency: reduce) {
     dialog[open],
     dialog[open]::backdrop,
-    .app-sidebar.nav-open,
     :is(.rn-glass-menu, .date-popover):popover-open {
       opacity: 1 !important;
       animation: none !important;
@@ -995,7 +1002,7 @@
       position: sticky;
       top: 0;
       z-index: var(--z-top-navigation);
-      padding: var(--top-navigation-offset) var(--space-3) 0;
+      padding: calc(var(--top-navigation-offset) + var(--safe-top)) var(--space-3) 0;
       pointer-events: none;
       transition:
         transform 340ms cubic-bezier(0.22, 0.61, 0.36, 1),
@@ -1017,60 +1024,8 @@
         transition: none;
       }
     }
+    /* The bottom tab bar (MobileTabBar) is the phone navigation; the desktop list stays in the DOM but hidden. */
     .app-sidebar {
-      display: none;
-      position: absolute;
-      inset: calc(100% + var(--space-2)) var(--space-3) auto;
-      width: auto;
-      max-height: calc(100dvh - 6rem - var(--top-navigation-offset));
-      overflow-x: hidden;
-      overflow-y: auto;
-      overscroll-behavior: contain;
-      padding: var(--space-4);
-      box-shadow: 0 16px 28px color-mix(in srgb, var(--foreground) 12%, transparent);
-    }
-    .app-sidebar.nav-open {
-      display: flex;
-    }
-    .app-sidebar {
-      opacity: 0;
-      transform: translateY(calc(-1 * var(--space-3))) scale(0.96);
-      transform-origin: top right;
-      transition:
-        opacity 180ms ease,
-        transform 320ms cubic-bezier(0.16, 1.25, 0.35, 1),
-        display 320ms allow-discrete;
-    }
-    .app-sidebar.nav-open {
-      opacity: 1;
-      transform: none;
-    }
-    @starting-style {
-      .app-sidebar.nav-open {
-        opacity: 0;
-        transform: translateY(calc(-1 * var(--space-3))) scale(0.96);
-      }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .app-sidebar {
-        transition: none;
-        transform: none;
-      }
-    }
-    .sidebar-brand,
-    .desktop-brand,
-    .nav-caption {
-      display: none;
-    }
-    .nav-account {
-      margin-top: var(--space-4);
-      padding-top: var(--space-4);
-    }
-    .nav-account .appearance-row {
-      display: none;
-    }
-    .account-menu-host,
-    .account-avatar-slot {
       display: none;
     }
     .app-shell .content-column {
@@ -1089,7 +1044,7 @@
       position: sticky;
       top: 0;
       z-index: var(--z-top-navigation);
-      padding: var(--top-navigation-offset) var(--space-3) 0;
+      padding: calc(var(--top-navigation-offset) + var(--safe-top)) var(--space-3) 0;
       border: 0;
       background: transparent;
       pointer-events: none;
@@ -1164,10 +1119,6 @@
       max-width: 100%;
     }
   }
-  .mobile-bar .nav-toggle {
-    flex: none;
-    white-space: nowrap;
-  }
   .mobile-bar .brand {
     min-width: 0;
   }
@@ -1181,14 +1132,204 @@
     white-space: nowrap;
   }
   @media (max-width: 479px) {
-    .mobile-bar .nav-toggle,
     .public-header .nav-toggle {
       width: 2.75rem;
       padding: var(--space-2);
     }
-    .mobile-bar .nav-toggle > span:not(.rn-glass-surface),
     .public-header .nav-toggle > span:not(.rn-glass-surface) {
       display: none;
+    }
+  }
+}
+
+/* Phone and tablet shell (<800px), item 49 方案 B: a floating bottom tab bar 今天 | 记录 | 开跑 | 探索 | 我的,
+   the 探索 section switcher and the 我的 extras. Desktop keeps the top bar and none of these show. */
+@layer components {
+  .app-shell,
+  .public-shell {
+    padding-inline: var(--safe-left) var(--safe-right);
+  }
+  .mobile-tabbar,
+  .settings-tabs.explore-tabs,
+  .mobile-account {
+    display: none;
+  }
+  @media (max-width: 799px) {
+    .app-shell[data-tabbar] {
+      --bottom-chrome: calc(var(--mobile-tabbar-height) + var(--space-2) + var(--safe-bottom));
+    }
+    .app-shell[data-tabbar] .content-column {
+      padding-bottom: var(--bottom-chrome);
+    }
+    .mobile-tabbar {
+      position: fixed;
+      z-index: var(--z-top-navigation);
+      inset: auto calc(var(--space-3) + var(--safe-right)) calc(var(--space-2) + var(--safe-bottom))
+        calc(var(--space-3) + var(--safe-left));
+      display: flex;
+      align-items: center;
+      gap: var(--space-1);
+      max-width: 34rem;
+      height: var(--mobile-tabbar-height);
+      margin-inline: auto;
+      padding: var(--space-1) var(--space-2);
+      border: 1px solid var(--glass-edge);
+      border-radius: var(--radius-pill);
+      background: color-mix(
+        in srgb,
+        var(--glass-fill-base, var(--surface)) calc(var(--glass-opacity, 0.12) * 100% * 0.75),
+        transparent
+      );
+      box-shadow:
+        inset 0 1px var(--glass-sheen),
+        0 0.5rem 1.5rem var(--glass-shadow);
+      color: var(--foreground);
+    }
+    .mobile-tabbar.rn-frosted-glass {
+      -webkit-backdrop-filter: blur(14px) saturate(1.5);
+      backdrop-filter: blur(14px) saturate(1.5);
+      background: color-mix(in srgb, var(--surface) calc((0.5 + var(--glass-opacity, 0.12) * 0.8) * 100%), transparent);
+    }
+    /* A focused text field brings up the keyboard; the bar would ride on top of it and cover the field. */
+    .app-shell:has(
+        :is(
+          input:not(
+            [type='checkbox'],
+            [type='radio'],
+            [type='range'],
+            [type='button'],
+            [type='submit'],
+            [type='reset'],
+            [type='file'],
+            [type='color']
+          ),
+          textarea,
+          [contenteditable='true']
+        ):focus
+      )
+      .mobile-tabbar {
+      display: none;
+    }
+    .mobile-tab,
+    .mobile-tab-record {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.125rem;
+      border-radius: var(--radius-pill);
+      font-size: var(--text-caption);
+      font-weight: var(--weight-semibold);
+      line-height: var(--line-height-solid);
+      text-decoration: none;
+      transition:
+        color var(--transition-control),
+        background-color var(--transition-control),
+        transform 120ms ease-out;
+    }
+    .mobile-tab {
+      flex: 1 1 0;
+      min-width: 2.75rem;
+      min-height: 3rem;
+      color: var(--foreground);
+    }
+    .mobile-tab[aria-current] {
+      color: var(--sport-nav-active-ink);
+      background: var(--sport-nav-active);
+    }
+    .mobile-tab-record {
+      flex: 0 0 3.75rem;
+      height: 3.25rem;
+      background: var(--primary);
+      color: var(--primary-foreground);
+      box-shadow: 0 0.375rem 1rem color-mix(in srgb, var(--primary) 30%, transparent);
+    }
+    .mobile-tab:active,
+    .mobile-tab-record:active {
+      transform: scale(0.95);
+    }
+    @media (hover: hover) {
+      .mobile-tab:not([aria-current]):hover {
+        background: var(--sport-nav-hover);
+      }
+      .mobile-tab-record:hover {
+        background: var(--primary-hover);
+        color: var(--primary-foreground);
+      }
+    }
+    .mobile-tabbar :focus-visible {
+      outline-offset: 2px;
+    }
+    @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+      .mobile-tabbar,
+      .mobile-tabbar.rn-frosted-glass {
+        background: var(--surface);
+        border-color: var(--border);
+        box-shadow: none;
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .mobile-tab:active,
+      .mobile-tab-record:active {
+        transform: none;
+      }
+    }
+    .explore-tabs.settings-tabs {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      width: 100%;
+      margin: 0 0 var(--space-4);
+      /* Keep the base clip: right after a resize the liquid lens copies still have the old width and would widen the page. */
+      overflow-x: clip;
+      overflow-clip-margin: var(--space-2);
+      background: var(--segment-track);
+    }
+    .explore-tabs.settings-tabs > a {
+      min-width: 0;
+      min-height: 2.75rem;
+      justify-content: center;
+      padding-inline: var(--space-1);
+      white-space: nowrap;
+    }
+    .explore-tabs.settings-tabs > a[aria-current='page'] {
+      background: var(--segment-lens);
+      color: var(--segment-lens-ink);
+    }
+    .mobile-account {
+      display: grid;
+      gap: var(--space-3);
+      margin-top: var(--space-6);
+    }
+    .mobile-account-title {
+      font-size: var(--text-card);
+    }
+    .mobile-account-list {
+      display: grid;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .mobile-account-list li + li {
+      border-top: 1px solid var(--border);
+    }
+    .mobile-account-list a {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-3);
+      min-height: 3rem;
+      color: var(--foreground);
+      font-weight: var(--weight-medium);
+    }
+    .mobile-account-list svg {
+      flex: none;
+      color: var(--muted-foreground);
+    }
+    .mobile-account-logout {
+      width: 100%;
+      min-height: 3rem;
     }
   }
 }
@@ -1515,12 +1656,8 @@
   .sport-theme .mobile-bar :focus-visible {
     outline-color: var(--ring);
   }
-  /* Phone bar and menu: the same floating look as the desktop bar. The menu is a rounded card; the bar turns into clear glass once the page has scrolled under it (data-floating). */
+  /* Phone bar: the same floating look as the desktop bar; it turns into clear glass once the page has scrolled under it (data-floating). */
   @media (max-width: 799px) {
-    .sport-theme.app-shell .app-sidebar {
-      border: 1px solid var(--border);
-      border-radius: var(--radius-card);
-    }
     .sport-theme.app-shell .mobile-bar:not([data-floating]) {
       -webkit-backdrop-filter: none !important;
       backdrop-filter: none !important;
@@ -1556,9 +1693,13 @@
   /* Desktop top navigation: the same <aside> becomes a floating glass bar. Below 800px the mobile bar and menu take over, in the same surface/border/foreground colours. 800px is the shell breakpoint: keep it in sync with the other @media (min-width: 800px) blocks here, liquid-glass-controls.css, enhanceNavigation in liquid-glass-indicator.ts and the matchMedia in AppNavigation.svelte. */
   @media (min-width: 800px) {
     .sport-theme.app-shell .app-sidebar {
-      inset: var(--top-navigation-offset) var(--top-navigation-offset) auto;
+      inset: calc(var(--top-navigation-offset) + var(--safe-top)) calc(var(--top-navigation-offset) + var(--safe-right))
+        auto calc(var(--top-navigation-offset) + var(--safe-left));
       z-index: var(--z-top-navigation);
-      width: min(calc(100% - 2 * var(--top-navigation-offset)), var(--content-width));
+      width: min(
+        calc(100% - 2 * var(--top-navigation-offset) - var(--safe-left) - var(--safe-right)),
+        var(--content-width)
+      );
       height: var(--top-navigation-height);
       margin-inline: auto;
       flex-direction: row;
@@ -2079,7 +2220,7 @@
   }
   .save-bar-slot {
     position: sticky;
-    bottom: var(--space-4);
+    bottom: calc(var(--space-4) + var(--bottom-chrome));
     z-index: 5;
   }
   .save-bar {

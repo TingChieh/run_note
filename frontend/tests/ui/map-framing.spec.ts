@@ -26,10 +26,12 @@ async function installLoop(page: Page) {
   await loginRunner(page);
 }
 
+// Element screenshots include fixed overlays: the development tuner and, on phones, the bottom tab bar (its green
+// 开跑 button would read as route pixels).
+const overlays = '.glass-tuner, .mobile-tabbar { visibility: hidden !important; }';
+
 async function routeExtent(page: Page) {
-  const png = await page
-    .locator('.maplibregl-canvas')
-    .screenshot({ style: '.glass-tuner { visibility: hidden !important; }' });
+  const png = await page.locator('.maplibregl-canvas').screenshot({ style: overlays });
   // Read the presented WebGL frame: its offscreen drawing buffer is discarded.
   return page.evaluate(async (data) => {
     const image = new Image();
@@ -80,7 +82,7 @@ for (const view of ['detail', 'preview'])
         await page.locator(view === 'detail' ? '.detail-workspace' : '.activity-explorer').screenshot({
           path: testInfo.outputPath(`${view}-${width}.png`),
           animations: 'disabled',
-          style: '.glass-tuner { visibility: hidden !important; }',
+          style: overlays,
         });
     }
   });
@@ -162,6 +164,6 @@ for (const mode of ['tracks', 'heatmap'])
     expect((await routeExtent(page)).margin).toBeGreaterThan(20);
     await page.locator('.map-frame').screenshot({
       path: testInfo.outputPath(`${mode}.png`),
-      style: '.glass-tuner { visibility: hidden !important; }',
+      style: overlays,
     });
   });

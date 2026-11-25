@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 
-/** Desktop: opens the goal popover from the progress ring. Mobile (ring hidden): the goal is already inline in the menu. */
+/** Desktop: opens the goal popover from the progress ring. Phones have no ring (the bottom tab bar replaced the menu), so this is desktop only. */
 export async function openGoalPanel(page: Page): Promise<Locator> {
   // The goal container renders only after hydration and identity check; isVisible() below does not wait.
   await page.locator('.app-sidebar .goal-container:not([hidden])').waitFor({ state: 'attached' });
@@ -17,7 +17,7 @@ export async function openGoalPanel(page: Page): Promise<Locator> {
   return region;
 }
 
-/** Desktop: opens the avatar menu. Mobile: the inline account block is already in the opened menu. */
+/** Desktop: opens the avatar menu. Below 800px it returns the hidden inline account block, whose links and status text stay in the DOM. */
 export async function openAccountMenu(page: Page): Promise<Locator> {
   // The logout button is disabled until the page has hydrated. Opening earlier would race with hydration's afterNavigate, which closes the menu again; isVisible() below does not wait.
   await expect(page.locator('.account-menu-host button.rn-menu-option, .account-inline .account-logout').first()).toBeEnabled();

@@ -37,7 +37,7 @@ function createMockEnv(
       return [];
     },
     querySelector(selector: string) {
-      if (selector === '#app-navigation.nav-open, #public-mobile-menu') {
+      if (selector === '#public-mobile-menu') {
         return options.mobileMenuOpen ? {} : null;
       }
       return null;

@@ -247,12 +247,12 @@ test('phone navigation and the share dialog finish fully visible', async ({ page
   await loginRunner(page);
   await page.goto(`/activities/${sampleActivity.id}`);
   await expect(page.getByRole('heading', { level: 1, name: '河畔晨跑' })).toBeVisible();
-  await page.getByRole('button', { name: '打开导航' }).click();
-  const nav = page.locator('#app-navigation');
+  const nav = page.getByTestId('mobile-tabbar');
   await expect(nav).toBeVisible();
   await expect(nav).toHaveCSS('opacity', '1');
+  const box = (await nav.boundingBox())!;
+  expect(box.y + box.height, 'the tab bar ends inside the viewport').toBeLessThanOrEqual(page.viewportSize()!.height);
   await page.screenshot({ path: 'test-results/after-iphone-nav.png' });
-  await page.getByRole('button', { name: '关闭导航' }).click();
   const share = page.getByRole('button', { name: '分享', exact: true });
   await expect(share).toBeEnabled();
   await share.click();
