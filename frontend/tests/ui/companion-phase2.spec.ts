@@ -52,25 +52,53 @@ async function installMockHealthBridge(
     initialGranted?: string[];
     onRequestGranted?: string[];
     summaryStatus?: 'ok' | 'empty' | 'denied';
+    withAppPlugin?: boolean;
   },
 ) {
   await page.addInitScript((cfg) => {
     let granted = [...(cfg.initialGranted ?? [])];
     let summaryStatus = cfg.summaryStatus ?? 'ok';
+    let stepsValue = 42180;
+    let deferCheckPermissions = false;
+    let pendingCheckResolvers: Array<() => void> = [];
+    const stats = {
+      getAvailability: 0,
+      checkPermissions: 0,
+      readSummary: 0,
+      appAddListener: 0,
+      appRemoveListener: 0,
+    };
+    const appListeners = new Set<(state: { isActive: boolean }) => void>();
     const allMetrics = ['steps', 'distance', 'active_calories', 'heart_rate', 'resting_heart_rate', 'sleep'];
-    (window as unknown as Record<string, unknown>).__setMockHealthState = (next: {
+    const win = window as unknown as Record<string, unknown>;
+    win.__healthBridgeStats = stats;
+    win.__setMockHealthState = (next: {
       granted?: string[];
       summaryStatus?: 'ok' | 'empty' | 'denied';
+      steps?: number;
+      deferCheckPermissions?: boolean;
     }) => {
       if (next.granted) granted = [...next.granted];
       if (next.summaryStatus) summaryStatus = next.summaryStatus;
+      if (typeof next.steps === 'number') stepsValue = next.steps;
+      if (typeof next.deferCheckPermissions === 'boolean') deferCheckPermissions = next.deferCheckPermissions;
     };
-    (window as unknown as Record<string, unknown>).Capacitor = {
-      isNativePlatform: () => true,
-      getPlatform: () => cfg.platform ?? 'android',
-      Plugins: {
-        HealthData: {
-          getAvailability: async () => ({
+    win.__resolvePendingCheckPermissions = () => {
+      const resolvers = pendingCheckResolvers;
+      pendingCheckResolvers = [];
+      for (const resolve of resolvers) resolve();
+    };
+    win.__emitAppStateChange = (isActive: boolean) => {
+      for (const listener of Array.from(appListeners)) {
+        listener({ isActive });
+      }
+    };
+    win.__activeAppListenerCount = () => appListeners.size;
+    const plugins: Record<string, unknown> = {
+      HealthData: {
+        getAvailability: async () => {
+          stats.getAvailability += 1;
+          return {
             available: cfg.availabilityStatus === 'available',
             status: cfg.availabilityStatus,
             platform: cfg.platform ?? 'android',
@@ -82,48 +110,81 @@ async function installMockHealthBridge(
                 : cfg.availabilityStatus === 'unsupported'
                   ? '当前设备不支持 Health Connect'
                   : null,
-          }),
-          checkPermissions: async () => ({
+          };
+        },
+        checkPermissions: async () => {
+          stats.checkPermissions += 1;
+          if (deferCheckPermissions) {
+            await new Promise<void>((resolve) => {
+              pendingCheckResolvers.push(resolve);
+            });
+          }
+          return {
             status: granted.length === allMetrics.length ? 'granted' : granted.length > 0 ? 'partial' : 'denied',
             granted: [...granted],
             denied: allMetrics.filter((m) => !granted.includes(m)),
             readOnly: true,
-          }),
-          requestPermissions: async () => {
-            granted = [...(cfg.onRequestGranted ?? allMetrics)];
-            return {
-              status: granted.length === allMetrics.length ? 'granted' : granted.length > 0 ? 'partial' : 'denied',
-              granted: [...granted],
-              denied: allMetrics.filter((m) => !granted.includes(m)),
-              readOnly: true,
-            };
-          },
-          readSummary: async () => {
-            if (granted.length === 0 || summaryStatus === 'denied') {
-              return { status: 'denied', grantedMetrics: [], readOnly: true };
-            }
-            if (summaryStatus === 'empty') {
-              return { status: 'empty', grantedMetrics: [...granted], metrics: {}, readOnly: true };
-            }
-            return {
-              status: 'ok',
-              windowStart: '2026-11-16T00:00:00Z',
-              windowEnd: '2026-11-23T00:00:00Z',
-              grantedMetrics: [...granted],
-              readOnly: true,
-              metrics: {
-                steps: 42180,
-                distanceMeters: 31420.5,
-                activeCaloriesKcal: 2140,
-                heartRate: { avgBpm: 149, minBpm: 112, maxBpm: 176, sampleCount: 96 },
-                restingHeartRateBpm: 53,
-                sleepMinutes: 460,
-              },
-            };
-          },
-          openSettings: async () => ({ opened: true }),
+          };
         },
+        requestPermissions: async () => {
+          granted = [...(cfg.onRequestGranted ?? allMetrics)];
+          return {
+            status: granted.length === allMetrics.length ? 'granted' : granted.length > 0 ? 'partial' : 'denied',
+            granted: [...granted],
+            denied: allMetrics.filter((m) => !granted.includes(m)),
+            readOnly: true,
+          };
+        },
+        readSummary: async () => {
+          stats.readSummary += 1;
+          if (granted.length === 0 || summaryStatus === 'denied') {
+            return { status: 'denied', grantedMetrics: [], readOnly: true };
+          }
+          if (summaryStatus === 'empty') {
+            return { status: 'empty', grantedMetrics: [...granted], metrics: {}, readOnly: true };
+          }
+          return {
+            status: 'ok',
+            windowStart: '2026-11-16T00:00:00Z',
+            windowEnd: '2026-11-23T00:00:00Z',
+            grantedMetrics: [...granted],
+            readOnly: true,
+            metrics: {
+              steps: granted.includes('steps') ? stepsValue : null,
+              distanceMeters: granted.includes('distance') ? 31420.5 : null,
+              activeCaloriesKcal: granted.includes('active_calories') ? 2140 : null,
+              heartRate: granted.includes('heart_rate')
+                ? { avgBpm: 149, minBpm: 112, maxBpm: 176, sampleCount: 96 }
+                : null,
+              restingHeartRateBpm: granted.includes('resting_heart_rate') ? 53 : null,
+              sleepMinutes: granted.includes('sleep') ? 460 : null,
+            },
+          };
+        },
+        openSettings: async () => ({ opened: true }),
       },
+    };
+    if (cfg.withAppPlugin) {
+      plugins.App = {
+        addListener: async (eventName: string, cb: (state: { isActive: boolean }) => void) => {
+          if (eventName !== 'appStateChange') {
+            return { remove: async () => {} };
+          }
+          stats.appAddListener += 1;
+          appListeners.add(cb);
+          return {
+            remove: async () => {
+              stats.appRemoveListener += 1;
+              appListeners.delete(cb);
+            },
+          };
+        },
+      };
+    }
+    win.Capacitor = {
+      isNativePlatform: () => true,
+      getPlatform: () => cfg.platform ?? 'android',
+      Plugins: plugins,
     };
   }, config);
 }
@@ -197,6 +258,146 @@ test('health panel handles Android Health Connect authorize, empty, denied, revo
   await page.getByRole('button', { name: '刷新健康数据' }).click();
   await expect(page.getByTestId('health-revoked')).toBeVisible();
   await expect(page.getByTestId('health-status-badge')).toHaveText('权限已撤销');
+});
+
+test('health panel refreshes on visibilitychange and Capacitor appStateChange, hides stale data while refreshing, deduplicates events, and cleans up listeners', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await installMockHealthBridge(page, {
+    availabilityStatus: 'available',
+    initialGranted: ['steps', 'distance', 'active_calories', 'heart_rate', 'resting_heart_rate', 'sleep'],
+    summaryStatus: 'ok',
+    withAppPlugin: true,
+  });
+
+  await page.goto('/settings/preferences');
+  await expect(page.getByTestId('health-status-badge')).toHaveText('已授权');
+  await expect(page.getByTestId('health-steps')).toContainText('42,180');
+  await expect(page.getByTestId('health-heart-rate')).toContainText('149 bpm');
+
+  const initialStats = await page.evaluate(
+    () => (window as unknown as { __healthBridgeStats: Record<string, number> }).__healthBridgeStats,
+  );
+  expect(initialStats.checkPermissions).toBe(1);
+  expect(initialStats.readSummary).toBe(1);
+  expect(initialStats.appAddListener).toBe(1);
+
+  // 1. Both visibilitychange and appStateChange fire together on resume -> single refresh updates values.
+  await page.evaluate(() => {
+    const win = window as unknown as {
+      __setMockHealthState: (s: unknown) => void;
+      __emitAppStateChange: (isActive: boolean) => void;
+    };
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    win.__emitAppStateChange(false);
+    win.__setMockHealthState({ steps: 55120 });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    win.__emitAppStateChange(true);
+  });
+  await expect(page.getByTestId('health-steps')).toContainText('55,120');
+
+  const afterResumeStats = await page.evaluate(
+    () => (window as unknown as { __healthBridgeStats: Record<string, number> }).__healthBridgeStats,
+  );
+  expect(afterResumeStats.checkPermissions).toBe(2);
+  expect(afterResumeStats.readSummary).toBe(2);
+
+  // 2. Partial revocation via Capacitor appStateChange removes revoked metrics and shows partial banner.
+  await page.evaluate(() => {
+    const win = window as unknown as {
+      __setMockHealthState: (s: unknown) => void;
+      __emitAppStateChange: (isActive: boolean) => void;
+    };
+    win.__emitAppStateChange(false);
+    win.__setMockHealthState({ granted: ['steps'], steps: 61000 });
+    win.__emitAppStateChange(true);
+  });
+  await expect(page.getByTestId('health-status-badge')).toHaveText('部分授权');
+  await expect(page.getByTestId('health-partial-note')).toBeVisible();
+  await expect(page.getByTestId('health-steps')).toContainText('61,000');
+  await expect(page.getByTestId('health-heart-rate')).toHaveCount(0);
+
+  // 3. Full revocation on visibilitychange clears stale summary immediately while checkPermissions is in flight.
+  await page.evaluate(() => {
+    const win = window as unknown as { __setMockHealthState: (s: unknown) => void };
+    win.__setMockHealthState({ granted: [], summaryStatus: 'denied', deferCheckPermissions: true });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect(page.getByTestId('health-status-badge')).toHaveText('检测中…');
+  await expect(page.getByTestId('health-summary-metrics')).toHaveCount(0);
+  await expect(page.getByTestId('health-steps')).toHaveCount(0);
+
+  await page.evaluate(() => {
+    (window as unknown as { __resolvePendingCheckPermissions: () => void }).__resolvePendingCheckPermissions();
+  });
+  await expect(page.getByTestId('health-revoked')).toBeVisible();
+  await expect(page.getByTestId('health-status-badge')).toHaveText('权限已撤销');
+  await expect(page.getByTestId('health-summary-metrics')).toHaveCount(0);
+
+  const beforeUnmountStats = await page.evaluate(() => {
+    const stats = (
+      window as unknown as {
+        __healthBridgeStats: {
+          getAvailability: number;
+          checkPermissions: number;
+          readSummary: number;
+          appAddListener: number;
+          appRemoveListener: number;
+        };
+      }
+    ).__healthBridgeStats;
+    const activeListeners = (
+      window as unknown as { __activeAppListenerCount: () => number }
+    ).__activeAppListenerCount();
+    return {
+      checkPermissions: stats.checkPermissions,
+      readSummary: stats.readSummary,
+      activeListeners,
+    };
+  });
+  expect(beforeUnmountStats.checkPermissions).toBe(4);
+  expect(beforeUnmountStats.readSummary).toBe(3);
+  expect(beforeUnmountStats.activeListeners).toBe(1);
+
+  // 4. Navigating away cleans up both visibilitychange and Capacitor appStateChange listeners.
+  await page.getByRole('link', { name: '账户总览' }).click();
+  await page.waitForURL('**/settings');
+  await expect(page.getByTestId('companion-health-panel')).toHaveCount(0);
+
+  const afterUnmount = await page.evaluate(() => {
+    const win = window as unknown as {
+      __healthBridgeStats: {
+        getAvailability: number;
+        checkPermissions: number;
+        readSummary: number;
+        appAddListener: number;
+        appRemoveListener: number;
+      };
+      __emitAppStateChange: (isActive: boolean) => void;
+      __activeAppListenerCount: () => number;
+    };
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    win.__emitAppStateChange(true);
+    return {
+      appRemoveListener: win.__healthBridgeStats.appRemoveListener,
+      checkPermissions: win.__healthBridgeStats.checkPermissions,
+      readSummary: win.__healthBridgeStats.readSummary,
+      activeListeners: win.__activeAppListenerCount(),
+    };
+  });
+  expect(afterUnmount.appRemoveListener).toBe(1);
+  expect(afterUnmount.activeListeners).toBe(0);
+  expect(afterUnmount.checkPermissions).toBe(4);
+  expect(afterUnmount.readSummary).toBe(3);
 });
 
 test('incremental sync populates offline cache, supports offline viewing, and clears private cache on logout', async ({

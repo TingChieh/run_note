@@ -9,10 +9,12 @@
     HEALTH_METRIC_LABELS,
     HEALTH_METRICS,
     type HealthAvailability,
+    type HealthMetricId,
     type HealthPermissionSnapshot,
     type HealthProviderAdapter,
     type HealthSummaryResult,
   } from '#lib/capacitor-health.ts';
+  import { installForegroundRefresh } from '#lib/components/companion-health-lifecycle.ts';
 
   let {
     accountKey = 'default',
@@ -38,7 +40,8 @@
   }
 
   const metricItems = $derived.by(() => {
-    if (!summary || summary.status !== 'ok') return [];
+    if (!summary || summary.status !== 'ok' || !permissions || permissions.granted.length === 0) return [];
+    const granted = new Set<HealthMetricId>(permissions.granted);
     const m = summary.metrics;
     const items: {
       label: string;
@@ -46,7 +49,7 @@
       icon?: 'distance' | 'duration' | 'pace' | 'heart' | 'calories' | 'steps';
       testId?: string;
     }[] = [];
-    if (m.steps !== null) {
+    if (granted.has('steps') && m.steps !== null) {
       items.push({
         label: '近 7 天步数',
         value: `${m.steps.toLocaleString('zh-CN')} 步`,
@@ -54,7 +57,7 @@
         testId: 'health-steps',
       });
     }
-    if (m.distanceMeters !== null) {
+    if (granted.has('distance') && m.distanceMeters !== null) {
       items.push({
         label: '近 7 天距离',
         value: formatDistance(m.distanceMeters),
@@ -62,7 +65,7 @@
         testId: 'health-distance',
       });
     }
-    if (m.activeCaloriesKcal !== null) {
+    if (granted.has('active_calories') && m.activeCaloriesKcal !== null) {
       items.push({
         label: '活动热量',
         value: `${m.activeCaloriesKcal.toLocaleString('zh-CN')} kcal`,
@@ -70,7 +73,7 @@
         testId: 'health-calories',
       });
     }
-    if (m.heartRate && m.heartRate.avgBpm !== null) {
+    if (granted.has('heart_rate') && m.heartRate && m.heartRate.avgBpm !== null) {
       items.push({
         label: '平均心率',
         value: `${m.heartRate.avgBpm} bpm`,
@@ -78,7 +81,7 @@
         testId: 'health-heart-rate',
       });
     }
-    if (m.restingHeartRateBpm !== null) {
+    if (granted.has('resting_heart_rate') && m.restingHeartRateBpm !== null) {
       items.push({
         label: '静息心率',
         value: `${m.restingHeartRateBpm} bpm`,
@@ -86,7 +89,7 @@
         testId: 'health-resting-hr',
       });
     }
-    if (m.sleepMinutes !== null) {
+    if (granted.has('sleep') && m.sleepMinutes !== null) {
       items.push({
         label: '睡眠时长',
         value: formatSleepMinutes(m.sleepMinutes),
@@ -121,6 +124,7 @@
   async function refreshAll() {
     const token = ++requestToken;
     loading = true;
+    summary = null;
     errorMessage = '';
     actionNotice = '';
     try {
@@ -139,9 +143,11 @@
       if (nextPerms.granted.length > 0) {
         const nextSummary = await client.readSummary({ metrics: nextPerms.granted });
         if (disposed || token !== requestToken) return;
-        summary = nextSummary;
         if (nextSummary.status === 'revoked') {
+          summary = null;
           permissions = { ...nextPerms, status: 'revoked', granted: [], revoked: nextPerms.granted };
+        } else {
+          summary = nextSummary;
         }
       } else {
         summary = null;
@@ -203,11 +209,14 @@
       }
       const nextSummary = await client.readSummary({ metrics: nextPerms.granted });
       if (disposed || token !== requestToken) return;
-      summary = nextSummary;
       if (nextSummary.status === 'revoked') {
+        summary = null;
         permissions = { ...nextPerms, status: 'revoked', granted: [], revoked: nextPerms.granted };
-      } else if (nextSummary.status === 'ok') {
-        actionNotice = '已刷新最近 7 天设备健康摘要。';
+      } else {
+        summary = nextSummary;
+        if (nextSummary.status === 'ok') {
+          actionNotice = '已刷新最近 7 天设备健康摘要。';
+        }
       }
     } catch {
       if (!disposed && token === requestToken) {
@@ -228,9 +237,25 @@
 
   onMount(() => {
     void refreshAll();
+    const teardownLifecycle = installForegroundRefresh({
+      onForeground: () => {
+        if (availability?.status === 'web_unavailable') return;
+        return refreshAll();
+      },
+      onBackground: () => {
+        if (busy) return;
+        summary = null;
+        if (loading) {
+          requestToken++;
+          loading = false;
+        }
+      },
+      isBusy: () => loading || busy,
+    });
     return () => {
       disposed = true;
       requestToken++;
+      teardownLifecycle();
     };
   });
 </script>
