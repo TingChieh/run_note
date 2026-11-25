@@ -80,6 +80,7 @@
 - **账号强绑定与跨标签/休眠标签页安全**：
   - 每次上传前校验 `ACTIVE_ACCOUNT_KEY` 与 `/api/v1/auth/session`，并在表单中携带 `expected_owner_id` 由后端二次原子校验；每次网络异步返回后再次核对 `ACTIVE_ACCOUNT_KEY`，防止休眠标签页在切号后覆盖新账号状态。
   - 退出登录、401 或跨标签切换账号（含 `BroadcastChannel('runnote-auth')` 的 `'account-changed'` 通知）仅调用 `abortAllRecordingUploads(accountId)` 与作用域限定的 `clearAccountRecordingData(staleAccountId)`，绝不执行全局清表误删新登录账号 `user:<new>:*` 队列与草稿；新标签挂载遇到 `ACTIVE_ACCOUNT_KEY` 冲突时先通过 `/api/v1/auth/session` 向服务端核实实时归属，绝不盲目清理其他账号。
+- **原生账号清理的围栏与作用域（Round 14）**：`clearAccountSessions({ keepAccountId | departingAccountId, claimRevision, claimToken })` 在原生 `RecordingSessionCoordinator.clearIfAccountMismatch` 中于同一把目录锁内先核对围栏再删除：修订号低于 `ClaimFence.claimEpoch` 或低于当前会话代次（会话自带 `claimRevision`，或当前授权其账号的修订号）、或在当前修订号下账号/令牌不符的请求一律为空操作；不带修订号的请求只在从未出现过 claim 的存储上生效；退出登录清理只删除 `departingAccountId` 自己的会话。前台服务在同一决策内（`onDiscard`）停止 GPS 与心跳，主线程超时时由已投递任务作为唯一执行者并在执行时重新核对围栏。Web 端 `clearNativeAccountSessions` 只在观察到的 claim 属于被保留/退出的账号时才转发修订号与令牌，身份变化时由 `nativeIdentityCleanupScope` 决定保留新账号还是仅清理旧账号。
 - **Web 草稿会话归属（多标签页防截断）**：浏览器端 `user:<id>:draft:active` 行额外记录 `ownerId`（每次页面加载生成的标签页标识，不放入 `sessionStorage` 以免复制标签页共享身份）、`ownerGeneration`、`draftRevision` 与 `leaseExpiresAtMs`。所有草稿写入、删除、接管与租约续期都在同一个 IndexedDB 读写事务内比对账号 claim、会话 ID 与归属代次（`mutateDraftAtomic`）。拥有会话的标签页持有按 claim 代次划分的 Web Lock `runnote-recording-session:<accountId>:claim:<claimRevision>` 直到会话结束或页面关闭，记录代码从不抢锁：只有当前 claim 代次的标签页能提交草稿写入，所以当前代次的锁空闲即证明没有存活的拥有者，而更旧代次的拥有者已被 IndexedDB 中的 claim 比对隔离，无需抢锁（它会在下一次写入或 5 秒内的租约续期被拒后自行停止定位）。第二个标签页只有在拿到当前代次的空闲锁、或原拥有者已被更旧的 claim 代次隔离、或在不支持 Web Lock 的浏览器中租约已过期时，才会以读取时的 `draftRevision`/`savedAt` 原样接管已存储的轨迹，绝不写回自己较旧的快照；当前代次的锁被占用时，无论本页读到的草稿多旧，都进入「无法确认本地草稿状态」并提示到原标签页继续、保存或丢弃。若锁被其他上下文夺走，持有者先在 IndexedDB 中核对自己是否仍是当前 claim 下的拥有者：是则继续记录并排队重新取得锁，否则才停止写入。会话绑定的写入在草稿已被其他标签页保存或丢弃后返回 `STORAGE_SESSION_GONE`，不会重建草稿。Web 端「结束并保存」先在归属校验下把草稿标记为 `stopped`，再在同一个读写事务内核对账号 claim、会话与归属代次后写入上传队列行并删除草稿（`finalizeStoppedDraftToUploadQueue`，恢复页面中找到的 `stopped` 草稿同样走此路径）：若期间退出登录或清理已删除草稿或活动账号标记，则不写入、不重建私有上传行；入队事务失败时定位已停止，界面进入「待恢复」并保留 `stopped` 草稿，可重试「结束并保存」、继续记录或安全丢弃。「开始跑步」、暂停后「继续」及中断恢复均通过 `executeUnderWebDraftOwnership` 在互斥 `withClaimOperationLock` 与同一个 `readonly` IndexedDB 事务最终 `onsuccess` 回调内（事务仍持有 `records` 存储锁时）同步核对账号 claim 代次/令牌与草稿归属并注册 `navigator.geolocation.watchPosition`（事务 `abort`/`error` 时通过 `onAbort` 回滚 `clearWatch`，提交后再次复核并在 `subscribeRecordingClaimChanges` 收到撤销/接管广播时立即停表）；确认离开页面或发生清理后不会启动 GPS，已写入的草稿保留，回到记录页可恢复。读取到结构损坏的草稿行时，按 `savedAt` 在同一事务内比较后才删除，期间被其他标签页替换成有效草稿则保留。
 - **同账号新标签探活保活重试**：`BroadcastChannel('runnote-auth')` 仅在收到显式 `'account-changed'` 消息时中止上传与清理定时器；同账号新标签挂载发出的常规 `'check'` 探活不取消已排期的退避定时器，身份核验通过后通过 `rearmScheduledRecordingUpload()` 按持久化的 `nextRetryAt` 恢复未排期重试。
 - **确定性序列化（`frontend/src/lib/gpx-serializer.ts`）**：同一已完成会话重复序列化产生字节级完全一致的 GPX 1.1（7 位小数坐标、ISO-8601 UTC 时间戳），保证重试时 `raw_sha256` 与 `canonical_sha256` 严格一致。
@@ -101,7 +102,7 @@
 | 进程被杀 / 系统内存回收 / 设备重启 | 重启后检测到磁盘存在未结束会话且服务未运行，自动归类为 `interrupted`；`RecordingStore` 使用原子 `Files.move` 落盘并在加载时自动重写修复电力中断造成的 `points.ndjson` 截断尾行，避免后续追加错位 | 顶部展示「检测到未完成的跑步记录」恢复面板，明确提供 **继续记录**（新 `<trkseg>`）、**结束并保存** 或 **安全丢弃**（二次确认 `<dialog>`） | 绝不静默丢数据 |
 | 结束记录后入队前崩溃 / 存储异常（`stopped` 交接中断） | `RecordingSessionCoordinator` 先冻结采集并生成唯一终结快照，原生保留 `status="stopped"` 会话与点位直至互斥 claim 锁内的终检读回与绑定 `(sessionId, accountId, claimRevision, claimToken)` 且受 `ClaimFence` 校验的 `acknowledgeHandoff` 通过后方才清理；未确认前拒绝新 `startSession` 覆盖；存储不可用、事务中止或 claim 失效绝不回退内存并拒绝确认 | 重启进入记录页自动补录进 IndexedDB 上传队列后确认清理；若补录失败则展示 `recording-pending-handoff-panel` 提供重试保存或显式丢弃，并阻止开始新记录 | 原子交接，0 轨迹丢失 |
 | 飞行模式 / 断网完成记录或遇 `503` | 生成 GPX 并写入账号隔离 IndexedDB 队列 | 提示「已保存到本地上传队列，恢复网络后将自动上传一次」；`503` 后展示剩余秒数并在到期定时器触发时自动重试（同账号新标签 `check` 探活不取消该定时器） | 恢复网络或退避到期后自动仅上传一次 |
-| 退出登录 / 跨标签或休眠标签切换账号 | 立即 `AbortController` 中止原账号在途请求、取消退避定时器、按 `ACTIVE_ACCOUNT_KEY` 仅清理原账号记录（`clearAccountRecordingData`）与原生旧账号会话（`clearAccountSessions`）；后端校验 `expected_owner_id`（`409 ACCOUNT_MISMATCH`） | 清理旧账号本机记录与未上传队列并提示账号已切换；新登录账号的草稿与待传队列完整保留 | 绝不串账号上传、泄露轨迹或误删新账号队列 |
+| 退出登录 / 跨标签或休眠标签切换账号 | 立即 `AbortController` 中止原账号在途请求、取消退避定时器、按 `ACTIVE_ACCOUNT_KEY` 仅清理原账号记录（`clearAccountRecordingData`）与原生旧账号会话（`clearAccountSessions`，按账号、claim 修订号/令牌与会话代次围栏，迟到或过期的清理不会停止或删除更新代次/其他账号的记录）；后端校验 `expected_owner_id`（`409 ACCOUNT_MISMATCH`） | 清理旧账号本机记录与未上传队列并提示账号已切换；新登录账号的草稿与待传队列完整保留 | 绝不串账号上传、泄露轨迹或误删新账号队列 |
 
 ---
 
@@ -157,6 +158,40 @@
 | --- | --- | --- |
 | ![平板浅色](assets/phase3-tablet-light.png) | ![桌面浅色](assets/phase3-desktop-light.png) | ![桌面深色](assets/phase3-desktop-dark.png) |
 
+### 5.5 Round 14：原生账号清理竞态与 `frontend-ui` CI 失败（代码提交 `c9bd397` + `02d2b8b`）
+
+**P1 — 迟到的账号清理删除更新代次的记录（已修复）**：`+layout.svelte` 在退出登录、身份变化与切号时异步调用 `clearNativeAccountSessions(null, 旧修订号)`；原生 `RecordingForegroundService.clearIfAccountMismatchSync` 先按账号不匹配停止服务并丢弃会话，之后 `clearIfAccountMismatch` 才调用会拒绝旧修订号的 `revokeAccountClaim`/`syncAccountClaim`。因此代次 1 迟到的清理可以停止并删除同账号代次 2 或其他账号正在进行的记录；不带修订号的请求还会撤销当前授权，`keep=B` 携带 A 的修订号时甚至把围栏转给 B。修复后的语义见 3.2 节“原生账号清理的围栏与作用域”。
+
+| 要求 | 实现 | 测试 |
+| --- | --- | --- |
+| 先原子围栏再停止服务/删除文件 | `RecordingSessionCoordinator.clearIfAccountMismatch(keep, revision, token, departing, onDiscard)` 在目录锁内判定，`onDiscard` 只对实际删除的会话停止 GPS；服务端 `handleFencedAccountCleanup` 复用该决策，主线程超时不再追加第二次执行 | `AccountCleanupFenceTest.concurrentStaleLogoutAndNewGenerationStartNeverLoseTheNewSession`（40 轮并发） |
+| 旧退出登录与新会话竞态 | 修订号低于围栏 epoch 或会话代次即空操作 | `StaleAccountCleanupRegressionTest.delayedGenerationOneLogoutCannotDiscardSameAccountGenerationTwoLiveSession`、`AccountCleanupFenceTest.oldLogoutRacingNewSameAccountGenerationIsNoOpAndRound13AckStillWorks` |
+| 旧账号清理与他账号新会话竞态 / 跨账号 | 当前修订号下账号必须一致；退出登录只删 `departingAccountId` 的会话 | `StaleAccountCleanupRegressionTest.delayedLogoutFromOldAccount…`、`…delayedSignInCleanupForOldAccount…`、`AccountCleanupFenceTest.oldAccountCleanupRacingOtherAccountsLiveSessionIsNoOp`、`crossAccountCleanupCannotTransferTheCurrentClaimToAnotherAccount`、`logoutForAnotherAccountLeavesAnOrphanedSessionOfTheOriginalOwner` |
+| 同账号代次变化 | 旧修订号、错误令牌一律拒绝；无修订号会话按授权其账号的修订号计代次 | `sameAccountGenerationChangeRejectsOldRevisionAndWrongToken`、`legacySessionWithoutRevisionIsProtectedByTheFenceThatAuthorizesItsAccount`、`lostFenceFileStillProtectsASessionStartedUnderANewerRevision` |
+| pin / revoke 失败 | revoke 未到达时仅匹配令牌的退出登录生效；pin 失败时更新的 claim 可清掉孤儿会话并固定围栏 | `revokeFailureStillLetsTheMatchingLogoutCleanupButNotAForgedOne`、`pinFailureLetsTheNewerClaimRemoveTheOrphanAndPinsTheFence`、`currentLogoutDiscardsOnlyTheDepartingAccountsSessionWhenRevokeReachedNativeFirst` |
+| 失去 claim 后的清理 | 对新所有者为空操作，Round 13 Stop/ack 围栏不变 | `cleanupAfterClaimLossIsNoOpAgainstTheNewOwnerAndAckStillMatchesNewClaim` |
+| 不用无作用域的 null/旧修订号清当前会话 | 原生：无修订号只作用于从未出现 claim 的存储；Web：只转发属于被保留/退出账号的 claim | `unscopedCleanupWithoutRevisionCannotDiscardFencedLiveSession`、`storeWithoutClaimHistoryKeepsLegacyUnscopedCleanup`；Vitest `capacitor-recorder.test.ts` 两组作用域用例 |
+
+回归证明：把三个原生源文件换回 `51a04fc` 版本后单独运行 `StaleAccountCleanupRegressionTest`（只用旧 API）——**4 tests completed, 4 failed**（第 86/101/117 行 `assertFalse(clearIfAccountMismatch(...))` 失败，即旧代码删除了更新的会话）；恢复修复后 **4/4 通过**。合成 UI 的原生 mock 的 `clearAccountSessions` 同步改为与原生相同的围栏语义。
+
+**`frontend-ui` CI 失败（run `45433575486`，`companion-phase3.spec.ts:1444`）根因**：测试问题，非产品缺陷，有两层：
+1. Tab B 点击“开始跑步”后立即调用 mock `pushPoint`，没有等待 `记录中`。Tab B 的开始流程要先等待清理 A 持有的 claim，较慢；mock 在会话建立前丢弃了这两个点，结束时页面正确拒绝把 0 个点的轨迹写入队列（CI 同类机 trace：Tab B 显示“本次记录未捕获到有效 GPS 轨迹点”）。本机 `taskset -c 0` 单核重复 10 次，**6 次失败**，与 CI 断言完全一致。修复：本 spec 中 15 处“开始后立即推点”的位置都先等待 `recording-status-badge` 为 `记录中`。
+2. 加入上述等待后，单核重复 10 次仍失败 1 次（停在新增的 `记录中` 等待上）。只把 Tab B 的 `/api/v1/auth/session` 延迟 3 秒即可稳定复现：Tab B 在 A 仍持有 recording claim 时点击开始，页面正确地以“检测到当前登录账号已切换”安全失败。修复：两组跨账号场景在开始前等待布局确认 B 的 claim（布局随后以 `keepAccountId=B` 通知原生，mock 有记录）。
+
+断言均未放宽，也未删除覆盖。
+
+**本轮实测（代码提交 `02d2b8b`）**：
+- `git diff --check` — **PASS**；`cd frontend && pnpm check` — **0 errors / 0 warnings**；`pnpm lint:style` — **PASS**；Prettier `--check`（`capacitor-env.ts`、`capacitor-recorder.ts`、`+layout.svelte`、`tests/unit/capacitor-recorder.test.ts`、`tests/ui/companion-phase3.spec.ts`）— **PASS**
+- `cd frontend && pnpm test` — **76 files / 497 passed**
+- `cd frontend && pnpm build` — **PASS**
+- `playwright.companion-phase3.config.ts` — **42 passed**（开发服务）；`COMPANION_USE_PROD_BUILD=1` — **42 passed**（生产构建）；`taskset -c 0` 单核全量 spec — **42 passed**
+- `playwright.ui.config.ts`（CI `frontend-ui` 同一配置，全量）— **482 passed / 5 skipped / 0 failed**
+- `taskset -c 0` 单核重复：`interleaving` + `Round 3: two-tab` 各 15 次 — **30 passed / 0 failed**（修复前同条件 `interleaving` 10 次失败 6 次）
+- `cd android/native && ./gradlew --no-daemon testDebugUnitTest assembleDebug` — **BUILD SUCCESSFUL**，JUnit **54/54 passed**（新增 `AccountCleanupFenceTest` 13、`StaleAccountCleanupRegressionTest` 4；`LocationRecordingPolicyTest` 9/9 不变）；`aapt2 dump permissions` 与 Round 1/2 相同（无 `ACCESS_BACKGROUND_LOCATION`，Manifest 未改）
+- 可见 UI 无变化：本轮未改组件、样式或文案；视觉 QA 用例重新生成的 `docs/assets/phase3-*.png` 与已提交版本逐字节相同。
+
+**残余观察**：在人为把 Tab B 每次 `/api/v1/auth/session` 延迟 3 秒的探针中，Tab A 切换为 B 后首次渲染的上传队列为空，IndexedDB 中 B 的标记、草稿与队列行完整，刷新后 0.9 秒内正常显示。这是显示刷新时序，不丢数据，正常时序的 CI 用例不受影响，本轮未修。另外，跨账号 claim 协调完成前“开始跑步”按钮可点，点击会安全失败并提示账号已切换，重试即可。
+
 ---
 
 ## 6. 未关闭门禁、未运行检查与已知限制（如实标注，不声称通过）
@@ -170,9 +205,10 @@
 4. **CI 范围说明**：
    - `companion-phase3.spec.ts` 已加入 `frontend/playwright.ui.config.ts` 的 `testMatch`，随 GitHub CI `frontend-ui` 自动运行；
    - 当前 GitHub Actions 工作流（`.github/workflows/ci.yml`）**尚未包含 Android Gradle 原生构建/单测 job**，Android 原生单测与 APK 权限审计目前在本机通过 `./gradlew --no-daemon testDebugUnitTest assembleDebug` 与 `aapt2 dump permissions` 执行。
-5. **API 29 模拟器补充说明**：使用 `-gpu off` 已在 Round 1 于 API 29 模拟器完成安装、WebView 133 加载、前台服务（`isForeground=true` + 常驻通知）、锁屏落盘、`am force-stop` 强杀恢复与 0 坐标日志泄露验证；Round 13 加固后的 `VISIBILITY_PRIVATE`、claim 绑定 `acknowledgeHandoff` / `stopSession`、`ClaimFence` 与精确位置阻断已在 Android JUnit（37/37）与开发/生产构建 Playwright（42/42）中覆盖，真机（PKT110）物理运动轨迹与飞行模式重连闭环仍待签收。
-6. **全量真实后端 Playwright E2E（`playwright.config.ts`）与签名 Release APK 构建：未在本机运行**（PR CI 将覆盖全量后端集成测试、前端单测/构建/合成 UI 与运维演练）。
-7. **已知限制**：
+5. **Round 14 补充**：原生账号清理围栏由 Android JUnit（54/54）覆盖，真机上“退出登录后立即重新登录并开始记录”的时序仍待 PKT110 签收。
+6. **API 29 模拟器补充说明**：使用 `-gpu off` 已在 Round 1 于 API 29 模拟器完成安装、WebView 133 加载、前台服务（`isForeground=true` + 常驻通知）、锁屏落盘、`am force-stop` 强杀恢复与 0 坐标日志泄露验证；Round 13 加固后的 `VISIBILITY_PRIVATE`、claim 绑定 `acknowledgeHandoff` / `stopSession`、`ClaimFence` 与精确位置阻断已在 Android JUnit（37/37）与开发/生产构建 Playwright（42/42）中覆盖，真机（PKT110）物理运动轨迹与飞行模式重连闭环仍待签收。
+7. **全量真实后端 Playwright E2E（`playwright.config.ts`）与签名 Release APK 构建：未在本机运行**（PR CI 将覆盖全量后端集成测试、前端单测/构建/合成 UI 与运维演练）。
+8. **已知限制**：
    - 应用沿用 Phase 1/2 的在线 `server.url` 加载模式；若在冷启动阶段即完全断网且页面未加载，需联网加载一次页面后方可在离线/飞行模式下发起并暂存记录。
    - 服务端 GPX 导入按首尾点时间差计算总耗时，因此中途长时间暂停会影响服务端平均配速（UI 已在暂停时显式提示）。
    - 本期不实现 iOS App / Core Location、不写 Health Connect/HealthKit、不做离线底图、实时位置分享或语音播报。
