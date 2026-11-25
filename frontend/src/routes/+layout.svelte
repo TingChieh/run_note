@@ -24,11 +24,27 @@
   import { isCapacitorNative } from '#lib/capacitor-env.ts';
   import { installCapacitorThemeSync } from '#lib/capacitor-theme.ts';
   import { clearHealthGrantHistory } from '#lib/capacitor-health.ts';
+  import { clearNativeAccountSessions, nativeIdentityCleanupScope } from '#lib/capacitor-recorder.ts';
   import {
-    buildCacheNamespace,
-    clearPrivateOfflineCache,
-    ensureAccountCacheIsolation,
-  } from '#lib/offline-cache.ts';
+    RECORDING_CLAIM_CONTEXT,
+    RecordingPersistenceError,
+    claimRecordingAccountAtomic,
+    clearAccountRecordingData,
+    clearPrivateRecordingData,
+    clearStaleAccountGenerationAtomic,
+    getActiveRecordingAccountSnapshot,
+    reconcileVerifiedRecordingAccount,
+    type ClaimAccountResult,
+    type RecordingClaimContext,
+    type StaleGenerationGuard,
+  } from '#lib/recording-store.ts';
+  import {
+    abortAllRecordingUploads,
+    flushRecordingUploadQueue,
+    isAccountChangeAuthBroadcast,
+    rearmScheduledRecordingUpload,
+  } from '#lib/recording-uploader.ts';
+  import { buildCacheNamespace, clearPrivateOfflineCache, ensureAccountCacheIsolation } from '#lib/offline-cache.ts';
   import { syncCompanionActivities } from '#lib/companion-sync.ts';
 
   let { children }: { children: Snippet } = $props();
@@ -73,6 +89,59 @@
     users: { title: '用户管理', description: '管理账号、登录权限和独立个人展示链接。' },
   };
   let lastBadgeUserId: string | null = null;
+  let lastIsolatedRecordingUserId: string | null = null;
+  let lastIsolatedRecordingClaim: ClaimAccountResult | null = null;
+  let requestIdentityVerification: (() => void) | null = null;
+  let recordingClaimRevoked = false;
+  let initialClaimAccountId: string | null = null;
+  let initialClaimSettled = false;
+  let initialClaimRevision: number | null = null;
+  let pendingInitialClaimResolvers: Array<(rev: number | null) => void> = [];
+  const recordingClaimRevokedListeners = new Set<() => void>();
+
+  function settleInitialRecordingClaim(accountId: string | null, revision: number | null) {
+    initialClaimAccountId = accountId;
+    initialClaimSettled = true;
+    initialClaimRevision = revision;
+    const resolvers = pendingInitialClaimResolvers;
+    pendingInitialClaimResolvers = [];
+    for (const resolve of resolvers) resolve(revision);
+  }
+
+  function revokePageRecordingClaim() {
+    recordingClaimRevoked = true;
+    lastIsolatedRecordingClaim = null;
+    settleInitialRecordingClaim(initialClaimAccountId, null);
+    for (const listener of recordingClaimRevokedListeners) listener();
+  }
+
+  setContext<RecordingClaimContext>(RECORDING_CLAIM_CONTEXT, {
+    waitForInitialClaim(accountId: string) {
+      if (!accountId || recordingClaimRevoked) return Promise.resolve(null);
+      if (initialClaimSettled) {
+        return Promise.resolve(initialClaimAccountId === accountId ? initialClaimRevision : null);
+      }
+      return new Promise<number | null>((resolve) => {
+        pendingInitialClaimResolvers.push((rev) => {
+          resolve(recordingClaimRevoked || initialClaimAccountId !== accountId ? null : rev);
+        });
+      });
+    },
+    getConfirmedClaimRevision(accountId: string) {
+      if (!accountId || recordingClaimRevoked || (page.data.user?.id ?? null) !== accountId) return null;
+      return initialClaimAccountId === accountId ? initialClaimRevision : null;
+    },
+    isRevoked(accountId: string) {
+      return recordingClaimRevoked || !accountId || (page.data.user?.id ?? null) !== accountId;
+    },
+    onRevoked(listener: () => void) {
+      recordingClaimRevokedListeners.add(listener);
+      return () => {
+        recordingClaimRevokedListeners.delete(listener);
+      };
+    },
+  });
+
   $effect(() => {
     const currentUserId = page.data.user?.id ?? null;
     if (currentUserId !== lastBadgeUserId) {
@@ -81,6 +150,67 @@
     }
     if (mounted) {
       void ensureAccountCacheIsolation(currentUserId);
+      if (currentUserId) {
+        if (lastIsolatedRecordingUserId && lastIsolatedRecordingUserId !== currentUserId) {
+          abortAllRecordingUploads(lastIsolatedRecordingUserId);
+          revokePageRecordingClaim();
+        }
+        if (recordingClaimRevoked) {
+          settleInitialRecordingClaim(currentUserId, null);
+          return;
+        }
+        lastIsolatedRecordingUserId = currentUserId;
+        void claimRecordingAccountAtomic(currentUserId, undefined, undefined, { reuseExistingClaim: true })
+          .then((claim) => {
+            if (recordingClaimRevoked || (page.data.user?.id ?? null) !== currentUserId) {
+              settleInitialRecordingClaim(currentUserId, null);
+              return;
+            }
+            if (claim.status === 'claimed') {
+              lastIsolatedRecordingClaim = claim;
+              settleInitialRecordingClaim(
+                currentUserId,
+                typeof claim.claimRevision === 'number' ? claim.claimRevision : null,
+              );
+              void clearNativeAccountSessions({ keepAccountId: currentUserId, claim });
+            } else {
+              lastIsolatedRecordingClaim = null;
+              settleInitialRecordingClaim(currentUserId, null);
+              // Another account currently holds ACTIVE_ACCOUNT_KEY: ask the server who owns
+              // the live session instead of deleting another account from a potentially stale tab.
+              requestIdentityVerification?.();
+            }
+          })
+          .catch(() => {
+            settleInitialRecordingClaim(currentUserId, null);
+          });
+      } else if (lastIsolatedRecordingUserId !== null) {
+        // Only clear on an explicit signed-in -> signed-out transition; an anonymous cold start
+        // must never silently wipe an interrupted session belonging to a signed-in runner.
+        const departingUserId = lastIsolatedRecordingUserId;
+        const departingClaim = lastIsolatedRecordingClaim;
+        lastIsolatedRecordingUserId = null;
+        lastIsolatedRecordingClaim = null;
+        revokePageRecordingClaim();
+        abortAllRecordingUploads(departingUserId);
+        if (departingClaim) {
+          void clearStaleAccountGenerationAtomic(departingUserId, {
+            expectedActiveAccountId: departingClaim.activeAccountId,
+            expectedSavedAt: departingClaim.savedAt ?? undefined,
+            expectedClaimRevision: departingClaim.claimRevision,
+            maxStaleClaimRevision: departingClaim.claimRevision ?? departingClaim.claimEpoch,
+          }).catch(() => {});
+        } else {
+          void clearAccountRecordingData(departingUserId).catch(() => {});
+        }
+        void clearNativeAccountSessions({
+          keepAccountId: null,
+          departingAccountId: departingUserId,
+          claim: departingClaim,
+        });
+      } else {
+        settleInitialRecordingClaim(null, null);
+      }
     }
   });
   onMount(() => {
@@ -132,6 +262,9 @@
       offline = nextOffline;
       if (reconnected) {
         runBackgroundSync();
+        if (shouldAutoSyncOnRoute()) {
+          void flushRecordingUploadQueue({ accountId: page.data.user!.id });
+        }
       }
     };
     syncNetwork();
@@ -205,15 +338,54 @@
     if (busy) return;
     busy = true;
     message = '';
+    const departingUserId = page.data.user?.id ?? null;
+    const snapshotBeforeLogout = departingUserId ? await getActiveRecordingAccountSnapshot().catch(() => null) : null;
+    const clearDepartingAccount = async () => {
+      if (!departingUserId) {
+        await clearPrivateRecordingData().catch(() => {});
+        return;
+      }
+      if (snapshotBeforeLogout) {
+        await clearStaleAccountGenerationAtomic(departingUserId, {
+          expectedActiveAccountId: snapshotBeforeLogout.activeAccountId,
+          expectedSavedAt: snapshotBeforeLogout.savedAt ?? undefined,
+          expectedClaimRevision: snapshotBeforeLogout.claimRevision,
+          maxStaleClaimRevision:
+            snapshotBeforeLogout.activeAccountId === departingUserId
+              ? (snapshotBeforeLogout.claimRevision ?? snapshotBeforeLogout.claimEpoch)
+              : snapshotBeforeLogout.claimEpoch,
+        }).catch(() => {});
+        return;
+      }
+      await clearAccountRecordingData(departingUserId).catch(() => {});
+    };
+    const nativeLogoutScope = {
+      keepAccountId: null,
+      departingAccountId: departingUserId,
+      claim: snapshotBeforeLogout,
+    };
+    abortAllRecordingUploads(departingUserId ?? undefined);
     try {
       await authWrite('logout', {});
+      revokePageRecordingClaim();
       await clearPrivateOfflineCache();
+      await clearDepartingAccount();
+      await clearNativeAccountSessions(nativeLogoutScope);
       clearHealthGrantHistory();
+      if (typeof BroadcastChannel !== 'undefined') {
+        const ch = new BroadcastChannel('runnote-auth');
+        ch.postMessage('account-changed');
+        ch.close();
+      }
       checking = true;
       window.location.assign(viewContext(page.url.pathname).kind === 'workspace' ? '/' : page.url.pathname);
     } catch (cause) {
       if (cause instanceof AuthError && cause.status === 401) {
+        revokePageRecordingClaim();
+        abortAllRecordingUploads(departingUserId ?? undefined);
         await clearPrivateOfflineCache();
+        await clearDepartingAccount();
+        await clearNativeAccountSessions(nativeLogoutScope);
         clearHealthGrantHistory();
         checking = true;
         window.location.replace('/admin?reason=changed');
@@ -227,7 +399,8 @@
     mounted = true;
     let inFlight = false,
       pending = false,
-      disposed = false;
+      disposed = false,
+      preemptRetries = 0;
     const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('runnote-auth');
     async function verifyIdentity() {
       if (disposed || busy) return;
@@ -245,18 +418,118 @@
       pending = false;
       message = '';
       try {
+        const snapshotBeforeVerify = await getActiveRecordingAccountSnapshot().catch(() => null);
         const current = await readSession();
         if (disposed || busy || pending) return;
         if ((current?.id ?? null) !== (page.data.user?.id ?? null)) {
+          revokePageRecordingClaim();
+          const staleUserId = page.data.user?.id ?? null;
+          if (staleUserId) {
+            abortAllRecordingUploads(staleUserId);
+            if (snapshotBeforeVerify) {
+              const guard: StaleGenerationGuard = {
+                expectedActiveAccountId: snapshotBeforeVerify.activeAccountId,
+                expectedSavedAt: snapshotBeforeVerify.savedAt ?? undefined,
+                expectedClaimRevision: snapshotBeforeVerify.claimRevision,
+                maxStaleClaimRevision:
+                  snapshotBeforeVerify.activeAccountId === staleUserId
+                    ? (snapshotBeforeVerify.claimRevision ?? snapshotBeforeVerify.claimEpoch)
+                    : snapshotBeforeVerify.claimEpoch,
+              };
+              const cleanup = await clearStaleAccountGenerationAtomic(staleUserId, guard).catch(() => null);
+              if (cleanup?.status === 'aborted' && cleanup.activeAccountId === staleUserId) {
+                if (preemptRetries < 3) {
+                  preemptRetries += 1;
+                  pending = true;
+                  return;
+                }
+                preemptRetries = 0;
+                checking = true;
+                identityBlocked = true;
+                message = '检测到并发账号重新登录，请刷新页面确认当前登录状态';
+                return;
+              }
+            }
+          }
+          preemptRetries = 0;
           await clearPrivateOfflineCache();
+          await clearNativeAccountSessions(
+            nativeIdentityCleanupScope(current?.id ?? null, staleUserId, snapshotBeforeVerify),
+          );
           clearHealthGrantHistory();
           identityBlocked = true;
           if (isProtected(page.url.pathname) && !current) window.location.replace('/admin?reason=changed');
           else window.location.reload();
           return;
         }
+        if (current?.id) {
+          let reconciled: Awaited<ReturnType<typeof reconcileVerifiedRecordingAccount>> | null = null;
+          try {
+            reconciled = await reconcileVerifiedRecordingAccount({
+              accountId: current.id,
+              verifySession: () => readSession(),
+            });
+          } catch (reconcileError) {
+            if (!(reconcileError instanceof RecordingPersistenceError)) {
+              throw reconcileError;
+            }
+            // IndexedDB unavailable: do not block the page or wipe native handoff data.
+          }
+          if (disposed || busy) return;
+          if (reconciled?.status === 'stale') {
+            revokePageRecordingClaim();
+            preemptRetries = 0;
+            abortAllRecordingUploads(current.id);
+            await clearPrivateOfflineCache();
+            await clearNativeAccountSessions(
+              nativeIdentityCleanupScope(reconciled.confirmedAccountId, current.id, snapshotBeforeVerify),
+            );
+            clearHealthGrantHistory();
+            identityBlocked = true;
+            if (isProtected(page.url.pathname) && !reconciled.confirmedAccountId) {
+              window.location.replace('/admin?reason=changed');
+            } else {
+              window.location.reload();
+            }
+            return;
+          }
+          if (reconciled?.status === 'preempted') {
+            if (preemptRetries < 3) {
+              preemptRetries += 1;
+              pending = true;
+              return;
+            }
+            preemptRetries = 0;
+            checking = true;
+            identityBlocked = true;
+            message = '检测到并发账号切换，请刷新页面确认当前登录状态';
+            return;
+          }
+          preemptRetries = 0;
+          if (reconciled?.status === 'active') {
+            const snap = await getActiveRecordingAccountSnapshot().catch(() => null);
+            if (!recordingClaimRevoked && initialClaimRevision === null) {
+              if (
+                !disposed &&
+                !busy &&
+                !recordingClaimRevoked &&
+                (page.data.user?.id ?? null) === current.id &&
+                snap?.activeAccountId === current.id &&
+                typeof snap.claimRevision === 'number' &&
+                snap.claimEpoch <= snap.claimRevision
+              ) {
+                settleInitialRecordingClaim(current.id, snap.claimRevision);
+              }
+            }
+            void clearNativeAccountSessions({ keepAccountId: current.id, claim: snap });
+          }
+        }
+        if (disposed || busy || pending) return;
         identityBlocked = false;
         checking = false;
+        if (current?.id && !offline && viewContext(page.url.pathname, current.is_admin === true).kind !== 'public') {
+          void rearmScheduledRecordingUpload({ accountId: current.id }).catch(() => {});
+        }
       } catch (cause) {
         // Fail closed when online or server-side verification errors occur.
         if (page.data.user || isProtected(page.url.pathname)) {
@@ -271,6 +544,9 @@
         if (pending && !disposed && !busy) void verifyIdentity();
       }
     }
+    requestIdentityVerification = () => {
+      void verifyIdentity();
+    };
     const visible = () => {
       if (document.visibilityState === 'visible') void verifyIdentity();
     };
@@ -278,8 +554,12 @@
       if (event.persisted) void verifyIdentity();
     };
     if (channel) {
-      channel.onmessage = () => {
-        checking = true;
+      channel.onmessage = (event) => {
+        if (isAccountChangeAuthBroadcast(event.data)) {
+          revokePageRecordingClaim();
+          abortAllRecordingUploads(page.data.user?.id ?? undefined);
+          checking = true;
+        }
         void verifyIdentity();
       };
       channel.postMessage('check');
@@ -293,6 +573,7 @@
     }, 60000);
     return () => {
       disposed = true;
+      requestIdentityVerification = null;
       channel?.close();
       clearInterval(timer);
       window.removeEventListener('focus', verifyIdentity);

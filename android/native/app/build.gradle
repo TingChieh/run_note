@@ -96,9 +96,9 @@ android {
         applicationId "com.tingchieh.runnote"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // Formula: MAJOR * 10000 + MINOR * 100 + PATCH (2.4.0 -> 20400)
-        versionCode 20400
-        versionName "2.4.0"
+        // Formula: MAJOR * 10000 + MINOR * 100 + PATCH (2.5.0 -> 20500)
+        versionCode 20500
+        versionName "2.5.0"
         buildConfigField "String", "RUNNOTE_APP_ID", "\"com.tingchieh.runnote\""
         aaptOptions {
             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

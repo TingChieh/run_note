@@ -447,3 +447,200 @@ def test_fifty_thousand_distinct_points_persist_in_batches(clients):
             {"id": imported["activity"]["id"], "owner": owner},
         ).one()
         assert tuple(row) == (50000, 50000, 50000, 0, 49999, 0, 49999)
+
+
+def test_gpx_import_idempotency_replay_conflict_isolation_and_no_n_plus_one(clients):
+    from sqlalchemy import event
+
+    a, b, engine, _ = clients
+    a.app.state.footprint_worker.stop()
+    owner_a = register(a)
+    owner_b = register(b)
+
+    raw_first = (FIXTURES / "equator-six.gpx").read_bytes()
+    raw_second = raw_first.replace(b"0.002", b"0.0021")
+    key = str(uuid4())
+
+    # Invalid non-UUID Idempotency-Key must be rejected with 422 before parsing.
+    bad = upload(a, raw=raw_first, extra_headers={"Idempotency-Key": "not-a-uuid"})
+    assert bad.status_code == 422
+    assert bad.json()["error"]["code"] == "VALIDATION_ERROR"
+
+    # First submission creates the activity (201) and bumps activity_data_version once.
+    first = upload(a, raw=raw_first, extra_headers={"Idempotency-Key": key})
+    assert first.status_code == 201, first.text
+    first_data = first.json()["data"]
+    with engine.connect() as c:
+        version_after_first = c.scalar(
+            text("SELECT activity_data_version FROM users WHERE id=:id"), {"id": owner_a}
+        )
+
+    # Identical retry with same Idempotency-Key replays the current ImportView (200)
+    # without creating duplicates, bumping version, or issuing N+1 queries.
+    statements = []
+    api_engine = a.app.state.session_factory.kw["bind"]
+
+    def record(connection, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    event.listen(api_engine, "before_cursor_execute", record)
+    try:
+        replayed = upload(a, raw=raw_first, extra_headers={"Idempotency-Key": key})
+    finally:
+        event.remove(api_engine, "before_cursor_execute", record)
+
+    assert replayed.status_code == 200, replayed.text
+    replayed_data = replayed.json()["data"]
+    assert replayed_data["activity"]["id"] == first_data["activity"]["id"]
+    assert replayed_data["import_id"] == first_data["import_id"]
+    assert replayed_data["point_count"] == first_data["point_count"]
+    assert replayed_data["segment_count"] == first_data["segment_count"]
+    assert len(statements) <= 12  # Bounded session + replay lookups, no N+1.
+
+    with engine.connect() as c:
+        assert (
+            c.scalar(text("SELECT count(*) FROM activities WHERE user_id=:id"), {"id": owner_a})
+            == 1
+        )
+        assert (
+            c.scalar(text("SELECT activity_data_version FROM users WHERE id=:id"), {"id": owner_a})
+            == version_after_first
+        )
+
+    # Reusing the same Idempotency-Key with a different track fails with 409 IDEMPOTENCY_CONFLICT.
+    conflict = upload(a, raw=raw_second, extra_headers={"Idempotency-Key": key})
+    assert conflict.status_code == 409, conflict.text
+    assert conflict.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+    with engine.connect() as c:
+        assert (
+            c.scalar(text("SELECT count(*) FROM activities WHERE user_id=:id"), {"id": owner_a})
+            == 1
+        )
+
+    # Cross-user isolation: user B submitting the same Idempotency-Key & GPX gets their own 201.
+    other = upload(b, raw=raw_first, extra_headers={"Idempotency-Key": key})
+    assert other.status_code == 201, other.text
+    other_data = other.json()["data"]
+    assert other_data["activity"]["id"] != first_data["activity"]["id"]
+    with engine.connect() as c:
+        assert (
+            c.scalar(text("SELECT count(*) FROM activities WHERE user_id=:id"), {"id": owner_b})
+            == 1
+        )
+
+
+def test_gpx_idempotency_is_isolated_from_raw_filename_and_enforces_expected_owner(clients):
+    a, b, engine, _ = clients
+    a.app.state.footprint_worker.stop()
+    owner_a = register(a)
+    owner_b = register(b)
+
+    raw_first = (FIXTURES / "equator-six.gpx").read_bytes()
+    raw_second = raw_first.replace(b"0.002", b"0.0023")
+    key = str(uuid4())
+
+    # 1. A regular upload literally named `idempotency:<key>.gpx` (without Idempotency-Key header)
+    # must NOT collide with a subsequent idempotent upload using that key.
+    regular = upload(a, file=f"idempotency:{key}.gpx", raw=raw_first)
+    assert regular.status_code == 201, regular.text
+
+    idempotent = upload(
+        a,
+        raw=raw_second,
+        fields={"expected_owner_id": owner_a},
+        extra_headers={"Idempotency-Key": key},
+    )
+    assert idempotent.status_code == 201, idempotent.text
+    assert idempotent.json()["data"]["activity"]["id"] != regular.json()["data"]["activity"]["id"]
+
+    # 2. Mismatched expected_owner_id rejects cross-account upload before parsing or writing.
+    mismatch = upload(
+        b,
+        raw=raw_first,
+        fields={"expected_owner_id": owner_a},
+        extra_headers={"Idempotency-Key": str(uuid4())},
+    )
+    assert mismatch.status_code == 409, mismatch.text
+    assert mismatch.json()["error"]["code"] == "ACCOUNT_MISMATCH"
+    with engine.connect() as c:
+        assert (
+            c.scalar(text("SELECT count(*) FROM activities WHERE user_id=:id"), {"id": owner_b})
+            == 0
+        )
+
+    # 3. Malformed expected_owner_id is rejected with 422.
+    bad_owner = upload(b, raw=raw_first, fields={"expected_owner_id": "not-a-uuid"})
+    assert bad_owner.status_code == 422
+    assert bad_owner.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_gpx_idempotent_replay_returns_current_activity_view_after_edits(clients):
+    a, _, engine, _ = clients
+    a.app.state.footprint_worker.stop()
+    owner_a = register(a)
+
+    raw = (FIXTURES / "equator-six.gpx").read_bytes()
+    key = str(uuid4())
+
+    first = upload(
+        a,
+        raw=raw,
+        fields={"title": "原始晨跑"},
+        extra_headers={"Idempotency-Key": key},
+    )
+    assert first.status_code == 201, first.text
+    first_data = first.json()["data"]
+    activity_id = first_data["activity"]["id"]
+    assert first_data["activity"]["title"] == "原始晨跑"
+    assert first_data["activity"]["visibility"] == "private"
+
+    # Unedited replay returns the identical ImportView.
+    unedited_replay = upload(
+        a,
+        raw=raw,
+        fields={"title": "原始晨跑"},
+        extra_headers={"Idempotency-Key": key},
+    )
+    assert unedited_replay.status_code == 200, unedited_replay.text
+    assert unedited_replay.json()["data"] == first_data
+
+    # Edit mutable activity metadata after initial import.
+    patched = a.patch(
+        f"/api/v1/activities/{activity_id}",
+        headers=headers(a),
+        json={"title": "编辑后晨跑", "visibility": "public"},
+    )
+    assert patched.status_code == 200, patched.text
+
+    with engine.connect() as c:
+        version_after_edit = c.scalar(
+            text("SELECT activity_data_version FROM users WHERE id=:id"), {"id": owner_a}
+        )
+
+    # Replaying the same Idempotency-Key + GPX reflects the activity's current persisted view
+    # (does not revert edits, create duplicates, or bump activity_data_version).
+    edited_replay = upload(
+        a,
+        raw=raw,
+        fields={"title": "原始晨跑"},
+        extra_headers={"Idempotency-Key": key},
+    )
+    assert edited_replay.status_code == 200, edited_replay.text
+    replay_data = edited_replay.json()["data"]
+    assert replay_data["activity"]["id"] == activity_id
+    assert replay_data["import_id"] == first_data["import_id"]
+    assert replay_data["point_count"] == first_data["point_count"]
+    assert replay_data["segment_count"] == first_data["segment_count"]
+    assert replay_data["metrics_version"] == first_data["metrics_version"]
+    assert replay_data["activity"]["title"] == "编辑后晨跑"
+    assert replay_data["activity"]["visibility"] == "public"
+
+    with engine.connect() as c:
+        assert (
+            c.scalar(text("SELECT count(*) FROM activities WHERE user_id=:id"), {"id": owner_a})
+            == 1
+        )
+        assert (
+            c.scalar(text("SELECT activity_data_version FROM users WHERE id=:id"), {"id": owner_a})
+            == version_after_edit
+        )

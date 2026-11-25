@@ -4,6 +4,7 @@
   import { onMount, tick } from 'svelte';
   import { page } from '$app/state';
   import { authWrite, safeNext } from '#lib/api/auth.ts';
+  import { claimRecordingAccountAtomic } from '#lib/recording-store.ts';
   let email = $state(''), password = $state('');
   let errorElement = $state<HTMLDivElement>();
   let showPassword = $state(false);
@@ -16,6 +17,9 @@
     try {
       const result = await authWrite('login', { email, password });
       password = '';
+      if (result.user?.id) {
+        await claimRecordingAccountAtomic(result.user.id).catch(() => {});
+      }
       window.location.assign(safeNext(page.url.searchParams.get('next') ?? (result.user?.is_admin ? '/' : '/workspace/dashboard')));
     } catch (cause) { password = ''; message = cause instanceof Error ? cause.message : '认证失败，请重试'; busy = false; await tick(); errorElement?.focus(); }
   }

@@ -29,4 +29,13 @@
     <string name="health_rationale_title">健康数据权限说明</string>
     <string name="health_rationale_body">RunNote 仅通过 Health Connect 以只读方式读取你主动授权的运动与恢复指标（步数、距离、活动热量、心率、静息心率、睡眠时长），用于在应用内展示摘要参考。\n\n• 绝不向 Health Connect 写入或修改任何数据。\n• 绝不将健康数据、轨迹或账号凭据发送给第三方。\n• 你可以随时在系统 Health Connect 设置中撤销全部或部分权限。</string>
     <string name="health_rationale_close">关闭</string>
+
+    <string name="recording_channel_name">跑步轨迹记录</string>
+    <string name="recording_channel_desc">记录跑步轨迹期间保持后台 GPS 定位与进度通知</string>
+    <string name="recording_notification_title">RunNote 正在记录跑步</string>
+    <string name="recording_notification_paused_title">RunNote 已暂停跑步记录</string>
+    <string name="recording_notification_acquiring">正在搜寻 GPS 信号 · %1$s</string>
+    <string name="recording_notification_progress">距离 %1$s km · 用时 %2$s</string>
+    <string name="recording_notification_gps_lost">GPS 信号暂时丢失 · 用时 %1$s</string>
+    <string name="recording_notification_location_off">系统定位已关闭 · 请重新开启以继续记录</string>
 </resources>

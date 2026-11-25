@@ -1,0 +1,215 @@
+# Android Phase 3：Capacitor 原生运动记录
+
+范围为 #134（父 issue #130），基于 Phase 2 基线 `8aa7131d`（v2.4.0，见 [98 Phase 2 记录](98-android-capacitor-phase2.md)）实施。将版本同步升级至 **`2.5.0`**（Android `versionCode = 20500`），在不改 Web SSR 架构、不重写服务端权威指标算法、不做数据库 Schema 迁移、不重设计全局导航的前提下，交付完整可独立审查的运动记录切片：
+
+1. **跨平台 Web 记录界面（`/activities/record` 与 `/workspace/activities/record`）**：开始、暂停、继续、结束、放弃确认；距离（预览）、用时、配速（预览）、轨迹点数/段数、GPS 状态与上传状态；权限拒绝、定位关闭、仅大致位置阻断（要求精确位置）、通知拒绝、GPS 丢失、离线模式、进程终止恢复、未入队已结束会话原子交接与防误退出保护；复用 RunNote 设计系统令牌与组件，适配 390×844 / 768×1024 / 1440×900 与浅/深色主题。
+2. **Android 原生后台定位与前台服务（`LocationRecorderPlugin` + `RecordingForegroundService` + `LocationRecordingPolicy`）**：主动记录期间启动 `foregroundServiceType="location"` 的前台服务并展示锁屏脱敏常驻通知（`VISIBILITY_PRIVATE` + `setPublicVersion`），支持锁屏、切后台与 Doze 期间持续记录与即时落盘；严格要求 `ACCESS_FINE_LOCATION` 精确位置，并在恢复定位开关后自动重新订阅定位源；严格接口解耦以便未来 iOS（Core Location）直接复用同一套 Web UI。
+3. **本地轨迹、账号强绑定队列与零迁移幂等上传**：复用现有 `POST /api/v1/gpx-imports` 端点并扩展可选 `Idempotency-Key`（UUID）头与 `expected_owner_id` 账号一致性校验实现真正服务端幂等重放（隔离于 `parser_version="gpx-idemp-v1"` 命名空间）与跨标签切号防护；断网/飞行模式记录后在恢复网络时自动上传一次，失败按指数退避由到期定时器自动重试，退出登录、401 或切换账号立即 `AbortController` 中止在途请求并清空本机草稿与队列。
+
+---
+
+## 1. 架构决策与后台 GPS 插件选型
+
+### 1.1 候选跨平台后台 GPS 方案评估
+
+| 方案 | Capacitor 8 兼容性 | 许可与依赖 | 权限、隐私与恢复能力评估 | 结论 |
+| --- | --- | --- | --- | --- |
+| `@capacitor-community/background-geolocation` | 未官方声明支持 Capacitor 8.6.2，依赖 Play Services (`play-services-location`) | MIT，但绑定 GMS | 强依赖 Google Play Services，AOSP/无 GMS 设备不可用；缺乏针对 RunNote 暂停分段（`<trkseg>`）、账号隔离及崩溃截断行容错的原子持久化 | **不采用** |
+| `@transistorsoft/capacitor-background-geolocation` | 支持 | 商业闭源许可（Android Release 需付费 License Key） | 与 MIT 开源项目 RunNote 许可冲突，且引入高复杂度闭源黑盒状态机与冗余权限 | **不采用** |
+| `@capacitor/geolocation` | 支持 | MIT | 仅限前台定位，无 Android Foreground Service，锁屏/切后台/Doze 会立即被系统中断 | **不采用** |
+| **仓库内最小原生桥接 `LocationRecorderPlugin` + `RecordingForegroundService`** | 原生适配 Capacitor 8.6.2 | MIT（零第三方商业依赖，零 GMS 强依赖） | 基于 Android 标准框架 `LocationManager` + `ServiceCompat.startForeground(..., FOREGROUND_SERVICE_TYPE_LOCATION)`；精确控制最小权限白名单、零坐标日志、每点即时落盘 NDJSON 崩溃恢复与账号隔离；对外暴露平台无关 `LocationRecorder` 合约，未来 iOS 直接以 Core Location (`allowsBackgroundLocationUpdates`) 实现同名 Swift 插件即可复用 100% Web UI | **采用** |
+
+### 1.2 Web / SSR 与未来 iOS 复用边界
+
+- **Web SSR 硬约束**：`frontend/src/lib/capacitor-recorder.ts` 在非原生环境（SSR 与普通浏览器）下绝不访问原生桥接；在标准浏览器中优雅回退为前台 `navigator.geolocation` 模式并提示“浏览器切后台或锁屏可能暂停定位，后台持续记录请使用 Android 客户端”。
+- **未来 iOS 对接面**：`frontend/src/lib/capacitor-env.ts` 定义了平台无关的 `CapacitorLocationRecorderPlugin` 接口（`getCapabilities`、`checkPermissions`、`requestPermissions`、`openAppSettings`、`openLocationSettings`、`startSession`、`pauseSession`、`resumeSession`、`stopSession`、`acknowledgeHandoff`、`syncAccountClaim`、`revokeAccountClaim`、`discardSession`、`getSessionState`、`getSessionPoints`、`clearAccountSessions`、`addListener('sessionUpdate', ...)`）。未来接入 iOS 时只需实现 Swift 插件，**无需修改任何 Svelte 页面、序列化器或上传队列**。
+
+---
+
+## 2. 权限清单、隐私边界与前台/后台定位政策评审
+
+### 2.1 Android Manifest 最小权限清单（经 `aapt2 dump permissions` 核实）
+
+| 权限 | 适用 API | 用途 | 政策说明 |
+| --- | --- | --- | --- |
+| `android.permission.ACCESS_FINE_LOCATION` | API 29+ | 跑步精确 GPS 轨迹采集（硬前置） | 仅在用户主动点击「开始跑步」或授权时申请；仅授大致位置时阻断开始并引导升级精确位置 |
+| `android.permission.ACCESS_COARSE_LOCATION` | API 31+ | Android 12+ 需与 `FINE` 联合申请 | 不允许在仅大致位置下空跑记录，UI 明确阻断并提供「重新请求精确位置」与系统设置入口 |
+| `android.permission.FOREGROUND_SERVICE` | API 29+ | 运行运动记录前台服务 | 仅在主动记录会话期间运行 |
+| `android.permission.FOREGROUND_SERVICE_LOCATION` | API 34+ | Android 14+ 声明位置型前台服务 | 与 `<service android:foregroundServiceType="location" android:exported="false" />` 一致 |
+| `android.permission.POST_NOTIFICATIONS` | API 33+ | 展示常驻运动进度通知 | 采用 `VISIBILITY_PRIVATE` + 脱敏 `setPublicVersion`（锁屏不泄露距离/耗时）；若用户拒绝，前台服务仍正常运行，UI 提示状态栏通知已隐藏 |
+
+### 2.2 Google Play 后台定位与前台服务政策评审结论
+
+- **刻意不声明 `ACCESS_BACKGROUND_LOCATION`**：根据 Google Play 位置权限政策与 Android 10–16 官方规范，仅由用户在前台主动触发、并伴随可见常驻通知的 `foregroundServiceType="location"` 前台服务，**天然享有锁屏与切后台持续定位能力，无需申请「始终允许（`ACCESS_BACKGROUND_LOCATION`）」**，从而避免不必要的后台常驻定位审查风险与隐私过度索权。该约束已由 JUnit `LocationRecordingPolicyTest.manifestDeclaresMinimalForegroundLocationPermissionsAndNoBackgroundLocation` 与 `aapt2 dump permissions` 门禁双重强制。
+- **Android 14–16 前台服务启动限制合规**：
+  - `RecordingForegroundService` 使用 `START_NOT_STICKY`，绝不在 `BOOT_COMPLETED` 或后台静默拉起位置前台服务（避免触发 `ForegroundServiceStartNotAllowedException`）。
+  - 每次启动/恢复前显式校验精确位置权限（`ACCESS_FINE_LOCATION`）与系统定位开关；捕获 `SecurityException` 与 `IllegalStateException` 转为 `interrupted` 可恢复态而不崩溃；记录中重新打开系统定位开关后，`onProviderEnabled` 自动重新订阅定位源。
+- **「仅本次允许」（Android 11+ One-Time Permission）与运行中降权处理**：
+  - 运动期间前台服务运行中权限保持有效；若服务中止、或用户在系统设置中中途撤销或降级为仅大致位置，服务捕获 `SecurityException` 或心跳检测到失去 `ACCESS_FINE_LOCATION` 后立即落盘所有已采轨迹点、将状态标记为 `interrupted`（`interruptedReason="permission_revoked"`），恢复应用后展示显式恢复面板，绝不丢弃已有轨迹。
+- **隐私、锁屏脱敏与零敏感日志保证**：
+  - 原生 `Logger`（`RunNoteRecorder`）与前端代码**绝不输出**经纬度坐标、海拔、原始 GPX、Cookie、CSRF Token 或健康数据（API 29 / 单测与代码审计确认 0 泄露）。
+  - 前台常驻通知使用 `NotificationCompat.VISIBILITY_PRIVATE` 与脱敏 `setPublicVersion`（仅显示「RunNote 跑步记录中」），锁屏状态下不暴露里程与运动耗时。
+  - 应用私有存储 `files/recordings/` 受 `android:allowBackup="false"` 保护，不参与系统云备份；所有原生读取（`getSessionState` / `getSessionPoints`）均按 `accountId` 校验归属，本地 IndexedDB 队列由 `assertSafeCachePayload()` 拦截敏感键名；退出登录、401 或跨标签切换账号（含 `BroadcastChannel('runnote-auth')`）时立即通过 `AbortController` 中止在途上传并清空私有记录数据与原生会话文件，严防串账号。
+  - **展示模式可见性披露**：若站主启用了「完整展示模式」（`full_showcase`），后端策略会将新上传的私密活动同步对公开展示页可见；记录页对此向已开启展示模式的用户展示明确披露提示（`recording-showcase-privacy-note`）。
+
+---
+
+## 3. 幂等上传契约（复用现有接口，零数据库迁移）
+
+### 3.1 后端契约：`POST /api/v1/gpx-imports`（新增可选 `Idempotency-Key` 头与 `expected_owner_id` 字段）
+
+无需新增表或 Alembic 迁移，直接复用既有 `POST /api/v1/gpx-imports`、`GpxImport`（唯一索引 `uq_gpx_imports_owner_raw` / `uq_gpx_imports_owner_canonical`）、每用户 `pg_try_advisory_lock` 导入互斥锁，以及 SSR 代理已放行的 7 个标准请求头白名单（其中已包含 `idempotency-key`）。幂等导入记录通过独立 `parser_version="gpx-idemp-v1"`（与普通上传 `"gpx-parser-v1"` 严格隔离）识别，避免普通导入上传名为 `idempotency:<uuid>.gpx` 的文件时触发误重放或误冲突：
+
+| 场景 | 请求条件 | 服务端行为 | HTTP 状态 |
+| --- | --- | --- | --- |
+| 普通导入（兼容旧行为） | 不带 `Idempotency-Key` | 原有创建/去重逻辑完全不变（`parser_version="gpx-parser-v1"`，即使用户上传字面文件名 `idempotency:<uuid>.gpx` 也不与幂等命名空间冲突） | `201` / `409 GPX_DUPLICATE` |
+| 非法键或归属 UUID 格式 | `Idempotency-Key` 或 `expected_owner_id` 非合法 UUID | FastAPI 参数校验直接拒绝（解析前） | `422 VALIDATION_ERROR` |
+| 账号不匹配（跨标签切号兜底） | `expected_owner_id != 当前登录会话 user.id` | 在任何解析/写库前原子拒绝 | `409 ACCOUNT_MISMATCH` |
+| 首次实时记录上传 | 合法 UUID `Idempotency-Key` + 有效 GPX | 创建 `Activity` + `GpxImport`（`parser_version="gpx-idemp-v1"`，`original_filename="idempotency:<uuid>.gpx"`，仅本人私密）+ `ActivitySegment`/`ActivityPoint`，递增 `activity_data_version` | `201 Created`（`ApiResponse[ImportView]`） |
+| 重复提交 / 弱网重放 | 同账号 + 同 `Idempotency-Key` + 相同 GPX 字节（`raw_sha256` 一致） | 仅在 `parser_version="gpx-idemp-v1"` 命名空间中命中，不新建活动、不重复递增 `activity_data_version`，单次聚合查询还原 `ImportView` 返回（零 N+1；**当前视图语义**：保留不可变的导入溯源与轨迹指标 `activity.id`、`import_id`、`point_count`、`segment_count`、`metrics_version`，并反映活动当前的持久化元数据，如标题、可见性等后续编辑不会回滚） | `200 OK`（同一 `activity.id` 与 `import_id`） |
+| 键冲突误用 | 同账号 + 同 `Idempotency-Key` + 不同 GPX 内容 | 拒绝覆盖已有记录 | `409 IDEMPOTENCY_CONFLICT` |
+| 跨账号提交同键同轨迹 | 用户 B 使用与用户 A 相同的 `Idempotency-Key` 和 GPX | 严格按 `user_id == owner` 隔离，为用户 B 创建独立活动，不泄露用户 A 的任何 ID | `201 Created`（独立 `activity.id`） |
+
+- **服务端指标权威与暂停耗时口径**：前端记录界面的距离与配速明确标注为“预览”（Haversine 估算）；结束生成确定性 GPX 1.1（暂停/继续自动拆分为独立 `<trkseg>`，确保 PostGIS 不跨暂停段连线）并以 `time_mode="absolute"` 上传，最终里程、用时、配速、路线与足迹全部由服务端 PostGIS 管线权威计算。服务端当前按首尾轨迹点时间差计算总耗时（`elapsed_seconds`），包含中途暂停时长并以此计算平均配速；前端已在记录页明确标注该统计口径（`recording-pause-note`）。
+
+### 3.2 本地上传队列、账号强绑定、原子交接与定时退避重试
+
+- **两阶段离线优先持久化与原子交接（防 `stopped` 后崩溃/事务中止丢轨迹）**：
+  - **阶段 1（原生磁盘 → 本地 IndexedDB 上传队列）**：手动「结束并保存」必须先固定当前页面账号 claim（`pinNativeHandoffClaim`）并校验 `sessionId` 后才调用绑定归属凭据的 `stopSession({ accountId, sessionId, claimRevision, claimToken })`；原生侧 `RecordingSessionCoordinator.finalizeAndFreezeForOwner` 在跨实例共享目录锁下核对 `accountId`、`sessionId` 及 `ClaimFence`（`claim_fence.json`）后才冻结采集与心跳并返回唯一终结快照，若固定 claim 失败或归属不匹配则安全失败、绝不停止他人记录或泄露他账号统计。自动补录与手动「结束并保存」都在读取原生轨迹前固定账号 claim（含每次签发的唯一 `claimToken`），入队时在同一 IndexedDB 读写事务内核对 claim 代次与令牌（`enqueueUploadItemUnderClaim`），随后在互斥 `withClaimOperationLock` 锁内原子完成最终队列读回校验与绑定 `(sessionId, accountId, claimRevision, claimToken)` 的 `acknowledgeHandoff`（`executeUnderUploadQueueClaim`）；原生 `acknowledgeHandoff` 经 `ClaimFence` 拒绝任何过期、跨账号或已撤销的确认，若存储不可用、事务中止、或期间发生退出登录/账号清理/同账号重新登录推进代次，则不写入且不清理原生磁盘，保留原生 `stopped` 会话与 `recording-pending-handoff-panel` 供当前有效代次重试保存。
+  - **阶段 2（本地上传队列 → 服务端持久化）**：保留完整 GPX 字节直至 `POST /api/v1/gpx-imports` 返回 `201 Created` / `200 OK` / `409 GPX_DUPLICATE` 并写入已上传状态后方才释放本地 `gpxXml`。
+- **账号强绑定与跨标签/休眠标签页安全**：
+  - 每次上传前校验 `ACTIVE_ACCOUNT_KEY` 与 `/api/v1/auth/session`，并在表单中携带 `expected_owner_id` 由后端二次原子校验；每次网络异步返回后再次核对 `ACTIVE_ACCOUNT_KEY`，防止休眠标签页在切号后覆盖新账号状态。
+  - 退出登录、401 或跨标签切换账号（含 `BroadcastChannel('runnote-auth')` 的 `'account-changed'` 通知）仅调用 `abortAllRecordingUploads(accountId)` 与作用域限定的 `clearAccountRecordingData(staleAccountId)`，绝不执行全局清表误删新登录账号 `user:<new>:*` 队列与草稿；新标签挂载遇到 `ACTIVE_ACCOUNT_KEY` 冲突时先通过 `/api/v1/auth/session` 向服务端核实实时归属，绝不盲目清理其他账号。
+- **原生账号清理的围栏与作用域（Round 14）**：`clearAccountSessions({ keepAccountId | departingAccountId, claimRevision, claimToken })` 在原生 `RecordingSessionCoordinator.clearIfAccountMismatch` 中于同一把目录锁内先核对围栏再删除：修订号低于 `ClaimFence.claimEpoch` 或低于当前会话代次（会话自带 `claimRevision`，或当前授权其账号的修订号）、或在当前修订号下账号/令牌不符的请求一律为空操作；不带修订号的请求只在从未出现过 claim 的存储上生效；退出登录清理只删除 `departingAccountId` 自己的会话。前台服务在同一决策内（`onDiscard`）停止 GPS 与心跳，主线程超时时由已投递任务作为唯一执行者并在执行时重新核对围栏。Web 端 `clearNativeAccountSessions` 只在观察到的 claim 属于被保留/退出的账号时才转发修订号与令牌，身份变化时由 `nativeIdentityCleanupScope` 决定保留新账号还是仅清理旧账号。
+- **Web 草稿会话归属（多标签页防截断）**：浏览器端 `user:<id>:draft:active` 行额外记录 `ownerId`（每次页面加载生成的标签页标识，不放入 `sessionStorage` 以免复制标签页共享身份）、`ownerGeneration`、`draftRevision` 与 `leaseExpiresAtMs`。所有草稿写入、删除、接管与租约续期都在同一个 IndexedDB 读写事务内比对账号 claim、会话 ID 与归属代次（`mutateDraftAtomic`）。拥有会话的标签页持有按 claim 代次划分的 Web Lock `runnote-recording-session:<accountId>:claim:<claimRevision>` 直到会话结束或页面关闭，记录代码从不抢锁：只有当前 claim 代次的标签页能提交草稿写入，所以当前代次的锁空闲即证明没有存活的拥有者，而更旧代次的拥有者已被 IndexedDB 中的 claim 比对隔离，无需抢锁（它会在下一次写入或 5 秒内的租约续期被拒后自行停止定位）。第二个标签页只有在拿到当前代次的空闲锁、或原拥有者已被更旧的 claim 代次隔离、或在不支持 Web Lock 的浏览器中租约已过期时，才会以读取时的 `draftRevision`/`savedAt` 原样接管已存储的轨迹，绝不写回自己较旧的快照；当前代次的锁被占用时，无论本页读到的草稿多旧，都进入「无法确认本地草稿状态」并提示到原标签页继续、保存或丢弃。若锁被其他上下文夺走，持有者先在 IndexedDB 中核对自己是否仍是当前 claim 下的拥有者：是则继续记录并排队重新取得锁，否则才停止写入。会话绑定的写入在草稿已被其他标签页保存或丢弃后返回 `STORAGE_SESSION_GONE`，不会重建草稿。Web 端「结束并保存」先在归属校验下把草稿标记为 `stopped`，再在同一个读写事务内核对账号 claim、会话与归属代次后写入上传队列行并删除草稿（`finalizeStoppedDraftToUploadQueue`，恢复页面中找到的 `stopped` 草稿同样走此路径）：若期间退出登录或清理已删除草稿或活动账号标记，则不写入、不重建私有上传行；入队事务失败时定位已停止，界面进入「待恢复」并保留 `stopped` 草稿，可重试「结束并保存」、继续记录或安全丢弃。「开始跑步」、暂停后「继续」及中断恢复均通过 `executeUnderWebDraftOwnership` 在互斥 `withClaimOperationLock` 与同一个 `readonly` IndexedDB 事务最终 `onsuccess` 回调内（事务仍持有 `records` 存储锁时）同步核对账号 claim 代次/令牌与草稿归属并注册 `navigator.geolocation.watchPosition`（事务 `abort`/`error` 时通过 `onAbort` 回滚 `clearWatch`，提交后再次复核并在 `subscribeRecordingClaimChanges` 收到撤销/接管广播时立即停表）；确认离开页面或发生清理后不会启动 GPS，已写入的草稿保留，回到记录页可恢复。读取到结构损坏的草稿行时，按 `savedAt` 在同一事务内比较后才删除，期间被其他标签页替换成有效草稿则保留。
+- **同账号新标签探活保活重试**：`BroadcastChannel('runnote-auth')` 仅在收到显式 `'account-changed'` 消息时中止上传与清理定时器；同账号新标签挂载发出的常规 `'check'` 探活不取消已排期的退避定时器，身份核验通过后通过 `rearmScheduledRecordingUpload()` 按持久化的 `nextRetryAt` 恢复未排期重试。
+- **确定性序列化（`frontend/src/lib/gpx-serializer.ts`）**：同一已完成会话重复序列化产生字节级完全一致的 GPX 1.1（7 位小数坐标、ISO-8601 UTC 时间戳），保证重试时 `raw_sha256` 与 `canonical_sha256` 严格一致。
+- **到期定时器驱动的指数退避（`frontend/src/lib/recording-uploader.ts`）**：单飞并发控制；离线自动暂存、恢复联网（`online` 事件）自动触发一次上传；遇 `503`/`429`/网络超时执行指数退避（`5s → 15s → 45s → 120s → 300s`），并由 `scheduleNextRecordingUpload()` 在精确 `nextRetryAt` 时刻自动唤醒重试（即便用户停留在页面不刷新、或在到期前提前重连跳过了本次尝试，也会重设剩余时长的定时器）；遇 `409 GPX_DUPLICATE`（含 `existing_activity_id`）直接幂等关联已有活动；遇 `409 ACCOUNT_MISMATCH` 立即中止并清理原账号队列；遇 `401` 暂停队列提示重新登录而不静默丢弃用户轨迹；遇 `400`/`422` 永久校验错误停止无限重试并允许用户显式丢弃。上传成功后立即释放本地原始 GPX 文本并触发 `runnote-activities-changed` 驱动 Phase 2 增量同步。
+
+---
+
+## 4. 失败与异常恢复矩阵
+
+| 故障 / 场景 | 本地持久化与原生行为 | 前端可见状态与恢复操作 | 数据完整性保证 |
+| --- | --- | --- | --- |
+| 定位权限拒绝 | 不启动前台服务 | 展示「未授予定位权限」错误卡片，提供「请求定位权限」与「打开应用设置」 | 无崩溃，可重新授权 |
+| 仅授予大致位置（Android 12+） | 拒绝启动（`PRECISE_LOCATION_REQUIRED`），与 50m 精度过滤口径一致；运行中降权立即中断保存 | 展示「需要精确位置权限」错误卡片并禁用「开始跑步」，提供「重新请求精确位置」与系统设置入口 | 避免空跑零有效点；已采点位不丢失 |
+| 通知权限拒绝（Android 13+） | 前台服务仍可运行，通知被系统隐藏 | 展示「通知权限未开启」提示与「打开通知设置」 | 记录不中断 |
+| 系统定位开关关闭 / 重新开启 | 拒绝启动；记录中关闭触发 `onProviderDisabled`；重新开启时 `onProviderEnabled` 自动重新订阅定位源 | 展示「系统定位服务已关闭」+「打开定位设置」；常驻通知同步提示 | 已采点位已落盘保留，恢复后继续采点 |
+| GPS 信号丢失（> 15s 无定位） | 心跳检测置 `gpsStatus="lost"`，常驻通知更新 | 展示「GPS 信号暂时丢失」告警，引导移至空旷处 | 已有轨迹点不受影响 |
+| 锁屏 / 切后台 / Doze | `RecordingForegroundService` 持续接收定位并即时追加写入 `points.ndjson`；锁屏通知 `VISIBILITY_PRIVATE` 隐藏距离与耗时 | 回到前台通过 `handleOnResume()` + `visibilitychange` 无缝同步最新指标 | 0 数据丢失，锁屏不泄露运动指标 |
+| 记录中按返回键 / 跳转其他页 | 原生端前台服务继续运行；Web 端提示会暂停采集 | 弹出原生 `<dialog>` 确认框，支持「留在记录页」或「确认离开」 | 防误操作中断 |
+| 进程被杀 / 系统内存回收 / 设备重启 | 重启后检测到磁盘存在未结束会话且服务未运行，自动归类为 `interrupted`；`RecordingStore` 使用原子 `Files.move` 落盘并在加载时自动重写修复电力中断造成的 `points.ndjson` 截断尾行，避免后续追加错位 | 顶部展示「检测到未完成的跑步记录」恢复面板，明确提供 **继续记录**（新 `<trkseg>`）、**结束并保存** 或 **安全丢弃**（二次确认 `<dialog>`） | 绝不静默丢数据 |
+| 结束记录后入队前崩溃 / 存储异常（`stopped` 交接中断） | `RecordingSessionCoordinator` 先冻结采集并生成唯一终结快照，原生保留 `status="stopped"` 会话与点位直至互斥 claim 锁内的终检读回与绑定 `(sessionId, accountId, claimRevision, claimToken)` 且受 `ClaimFence` 校验的 `acknowledgeHandoff` 通过后方才清理；未确认前拒绝新 `startSession` 覆盖；存储不可用、事务中止或 claim 失效绝不回退内存并拒绝确认 | 重启进入记录页自动补录进 IndexedDB 上传队列后确认清理；若补录失败则展示 `recording-pending-handoff-panel` 提供重试保存或显式丢弃，并阻止开始新记录 | 原子交接，0 轨迹丢失 |
+| 飞行模式 / 断网完成记录或遇 `503` | 生成 GPX 并写入账号隔离 IndexedDB 队列 | 提示「已保存到本地上传队列，恢复网络后将自动上传一次」；`503` 后展示剩余秒数并在到期定时器触发时自动重试（同账号新标签 `check` 探活不取消该定时器） | 恢复网络或退避到期后自动仅上传一次 |
+| 退出登录 / 跨标签或休眠标签切换账号 | 立即 `AbortController` 中止原账号在途请求、取消退避定时器、按 `ACTIVE_ACCOUNT_KEY` 仅清理原账号记录（`clearAccountRecordingData`）与原生旧账号会话（`clearAccountSessions`，按账号、claim 修订号/令牌与会话代次围栏，迟到或过期的清理不会停止或删除更新代次/其他账号的记录）；后端校验 `expected_owner_id`（`409 ACCOUNT_MISMATCH`） | 清理旧账号本机记录与未上传队列并提示账号已切换；新登录账号的草稿与待传队列完整保留 | 绝不串账号上传、泄露轨迹或误删新账号队列 |
+
+---
+
+## 5. 验证命令与真实执行结果
+
+### 5.1 后端单元测试、契约校验、Ruff 与隔离 PostGIS 集成测试（Round 2 历史实测基线）
+
+> 说明：Round 3–13 未改动任何后端业务代码、Pydantic schema、Alembic 迁移或运维脚本，以下后端与统一校验脚本结果为 Round 2 实测基线（Round 13 未在本地重跑，由 PR GitHub CI `backend` / `infra` job 持续覆盖；Round 13 最新前端实测见 5.2 节）。
+
+- 契约生成与代码检查（Round 2 基线）：
+  - `cd backend && DATABASE_URL=postgresql+psycopg://run_note@127.0.0.1:15432/run_note_ci .venv/bin/python -m app.contract.typescript --check` — **PASS**（同步 `frontend/src/lib/api/generated/api.ts`）
+  - `cd backend && .venv/bin/ruff check app migrations tests && .venv/bin/ruff format --check app migrations tests` — **PASS**（`All checks passed! 294 files already formatted`）
+- 后端单元测试（Round 2 基线）：
+  - `cd backend && DATABASE_URL=postgresql+psycopg://run_note@127.0.0.1:15432/run_note_ci .venv/bin/pytest tests/unit -q` — **598 passed**（含 `test_gpx_idempotency.py` 的当前视图语义单测、`test_architecture.py`、`test_api_contract.py`、`test_version.py` 2.5.0 同步断言）
+- 隔离临时 PostgreSQL + PostGIS 集成测试（Round 2 基线，临时集群端口 `15459`，测试库 `run_note_r2_test`，测后自动销毁，未触碰开发库）：
+  - `alembic upgrade head`（确认零新增迁移，`0001_postgis` → `0034_drop_ai_reports`）— **PASS**
+  - `.venv/bin/pytest tests/integration/test_gpx_import.py tests/integration/test_cross_user_access.py -v` — **57 passed**（含 `test_gpx_import_idempotency_replay_conflict_isolation_and_no_n_plus_one`、`test_gpx_idempotency_is_isolated_from_raw_filename_and_enforces_expected_owner` 与 `test_gpx_idempotent_replay_returns_current_activity_view_after_edits`）
+- 运维脚本单元测试与统一校验脚本（Round 2 基线）：
+  - `DATABASE_URL=postgresql+psycopg://run_note@127.0.0.1:15432/run_note_ci python3 scripts/verify.py` — **全部基线区域 PASS**（contract、ruff check/format、后端 598 单测、当时基线前端单测、svelte-check 0 errors、139 ops unit、shellcheck；Round 13 最新前端单测与类型/构建结果见 5.2 节）
+
+### 5.2 前端单测、类型/样式检查、生产构建与 Playwright 端到端/视觉验收（Round 13 实测，代码提交 `bb7acc9`）
+
+- `git diff --check` — **PASS**
+- `cd frontend && pnpm check` — **PASS**（`0 errors and 0 warnings`）
+- `cd frontend && pnpm lint:style` — **PASS**
+- `cd frontend && pnpm format:check src/lib/capacitor-env.ts src/lib/capacitor-recorder.ts src/lib/recording-store.ts src/lib/recording-uploader.ts src/lib/components/RecordingWorkspace.svelte src/routes/+layout.svelte tests/unit/capacitor-recorder.test.ts tests/unit/recording-store.test.ts tests/ui/companion-phase3.spec.ts` — **PASS**
+- `cd frontend && pnpm test` — **PASS**（**76 test files / 495 tests passed**，含 `recording-store.test.ts` 的 IndexedDB 事务 `complete`/`abort`/`error`/不可用/作用域清理/`executeUnderUploadQueueClaim`/`executeUnderWebDraftOwnership` 回归、`capacitor-recorder.test.ts` 的凭据校验与跨账号拦截回归、`recording-uploader.test.ts` 的非持久存储拒绝、读回校验失败、同账号 `check` 分类与 `rearmScheduledRecordingUpload` 等测试）
+- `cd frontend && pnpm build` — **PASS**（`@sveltejs/adapter-node` 生产 SSR 构建通过）
+- `cd frontend && pnpm exec playwright test --config playwright.companion-phase3.config.ts --reporter=list` — **42 passed**（开发服务）
+- `cd frontend && COMPANION_USE_PROD_BUILD=1 pnpm exec playwright test --config playwright.companion-phase3.config.ts --reporter=list` — **42 passed**（生产构建；覆盖 Round 1–12 全部回归 + Round 13 新增 4 组真实 Chrome/IndexedDB 探针——已验证在 `1f464eb` 上 4/4 失败、在 `bb7acc9` 上 4/4 通过：最终读回后清理不清除原生会话、原生 `acknowledgeHandoff` 拒绝过期/跨账号/已撤销凭据、Start/Resume/中断恢复最终归属读回后清理不启动 GPS watcher、跨账号 stale Stop 不停止他账号原生记录且不泄露统计，以及 390×844 / 768×1024 / 1440×900 明暗主题零横向溢出）
+- `cd frontend && COMPANION_USE_PROD_BUILD=1 pnpm exec playwright test --config playwright.companion-phase2.config.ts --reporter=list` — **4 passed**（Round 2 历史实测；Round 13 未改动 Phase 2 代码，本轮未在本地重跑，由 PR CI `frontend-ui` 覆盖）
+- `cd frontend && pnpm exec playwright test --config playwright.ui.config.ts tests/ui/ui-shell.spec.ts --reporter=list` — **22 passed**（Round 2 历史实测；本轮未在本地重跑，由 PR CI `frontend-ui` 覆盖）
+
+### 5.3 Android 原生构建、JUnit 单测、APK 权限审计与 API 29 模拟器实测
+
+- **Gradle 构建与单测（Round 13 实测，代码提交 `bb7acc9`）**：`cd android/native && JAVA_HOME=…/jdk21 ANDROID_HOME=…/sdk ./gradlew testDebugUnitTest assembleDebug --console=plain` — **BUILD SUCCESSFUL**，JUnit **37/37 passed**（含 `LocationRecordingPolicyTest` **9/9**：Manifest 最小权限与禁用 `ACCESS_BACKGROUND_LOCATION` 审计、API 29–36 精确位置硬前置与 FGS 类型评估、GPS 信号分级与精度/速度跳变/分段过滤、原子 `Files.move` 落盘与截断修复、并发/生命周期竞态、以及 Round 13 新增的 `ClaimFence` 对过期/外账号/已撤销 `acknowledgeHandoff` 拒绝测试与 `finalizeAndFreezeForOwner` 对跨账号/错会话/过期 claim 拒绝且不冻结的回归测试）。
+- **合并后 Debug APK 权限审计（Round 1/2 历史实测，本轮未改 Manifest/权限）**（`aapt2 dump permissions android/native/app/build/outputs/apk/debug/app-debug.apk`）：
+  - 仅包含 `INTERNET`、`ACCESS_NETWORK_STATE`、6 项 `android.permission.health.READ_*`（0 项 `WRITE_*`）、`ACCESS_FINE_LOCATION`、`ACCESS_COARSE_LOCATION`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_LOCATION`、`POST_NOTIFICATIONS`（**0 项 `ACCESS_BACKGROUND_LOCATION`**、**0 项宽泛存储权限**）；`versionCode=20500`、`versionName=2.5.0`。
+- **API 29 模拟器运行时实测（Round 1 历史实测，本轮未重连模拟器重跑）**（`RunNote_Phase0_API29`，`-no-window -gpu off`，WebView `133.0.6943.137`，`adb reverse tcp:15297` 对接本地生产 SSR + 合成 API）：
+  - 安装与启动：`com.tingchieh.runnote`（`versionCode=20500`、`versionName=2.5.0`）安装成功；CDP 确认 `Capacitor.isNativePlatform() === true`、`Plugins.LocationRecorder` 与 `Plugins.HealthData` 均已注册、`document.cookie.length === 0`。
+  - 权限与能力：`getCapabilities()` 返回 `platform="android", backgroundSupported=true, requiresNotificationPermission=false, sdkInt=29`；`checkPermissions()` 返回 `location="granted", notification="not_required", preciseLocation=true, canRecord=true`。
+  - 前台服务与常驻通知：经 WebView CDP 调用 `LocationRecorder.startSession(...)` 后，`dumpsys activity services` 确认 `RecordingForegroundService` 运行在真实前台服务态（`isForeground=true foregroundId=30501`），`dumpsys notification` 确认常驻通知通道 `channel=runnote_recording category=workout` 正常展示（后续复审加固将通知可见性切换为 `VISIBILITY_PRIVATE` + 脱敏 `setPublicVersion`，锁屏不暴露距离/耗时）；同时验证外部直接 `am start-foreground-service` 因 `android:exported="false"` 被系统权限拦截。
+  - 锁屏后台 GPS 落盘与强杀恢复：锁屏（`KEYCODE_POWER`）后通过 `adb emu geo fix` 注入合成定位点，确认 `files/recordings/active_session.json` 与 `files/recordings/points.ndjson`（3 条定位记录）即时落盘；执行 `am force-stop com.tingchieh.runnote` 模拟进程强杀并唤醒重启应用后，`LocationRecorder.getSessionState()` 正确返回 `status="interrupted"`、`interruptedReason="process_terminated"`、`pointCount=3`、`activeDurationMs=2350`（并由此实测发现且修复了 `+layout.svelte` 冷启动匿名态误清中断会话的真实缺陷）。
+  - 隐私日志审计：`adb logcat -d -s RunNoteRecorder:* Capacitor:*` 检索全部合成坐标，确认 **`PII_COORDINATE_LEAKS=0`**。
+
+### 5.4 视觉验证截图（合成数据，生产构建，明暗主题）
+
+| 手机 390×844（浅色 · 就绪） | 手机 390×844（深色 · 记录中） | 平板 768×1024（深色） |
+| --- | --- | --- |
+| ![手机浅色](assets/phase3-mobile-light.png) | ![手机深色](assets/phase3-mobile-dark.png) | ![平板深色](assets/phase3-tablet-dark.png) |
+
+| 平板 768×1024（浅色） | 桌面 1440×900（浅色） | 桌面 1440×900（深色） |
+| --- | --- | --- |
+| ![平板浅色](assets/phase3-tablet-light.png) | ![桌面浅色](assets/phase3-desktop-light.png) | ![桌面深色](assets/phase3-desktop-dark.png) |
+
+### 5.5 Round 14：原生账号清理竞态与 `frontend-ui` CI 失败（代码提交 `c9bd397` + `02d2b8b`）
+
+**P1 — 迟到的账号清理删除更新代次的记录（已修复）**：`+layout.svelte` 在退出登录、身份变化与切号时异步调用 `clearNativeAccountSessions(null, 旧修订号)`；原生 `RecordingForegroundService.clearIfAccountMismatchSync` 先按账号不匹配停止服务并丢弃会话，之后 `clearIfAccountMismatch` 才调用会拒绝旧修订号的 `revokeAccountClaim`/`syncAccountClaim`。因此代次 1 迟到的清理可以停止并删除同账号代次 2 或其他账号正在进行的记录；不带修订号的请求还会撤销当前授权，`keep=B` 携带 A 的修订号时甚至把围栏转给 B。修复后的语义见 3.2 节“原生账号清理的围栏与作用域”。
+
+| 要求 | 实现 | 测试 |
+| --- | --- | --- |
+| 先原子围栏再停止服务/删除文件 | `RecordingSessionCoordinator.clearIfAccountMismatch(keep, revision, token, departing, onDiscard)` 在目录锁内判定，`onDiscard` 只对实际删除的会话停止 GPS；服务端 `handleFencedAccountCleanup` 复用该决策，主线程超时不再追加第二次执行 | `AccountCleanupFenceTest.concurrentStaleLogoutAndNewGenerationStartNeverLoseTheNewSession`（40 轮并发） |
+| 旧退出登录与新会话竞态 | 修订号低于围栏 epoch 或会话代次即空操作 | `StaleAccountCleanupRegressionTest.delayedGenerationOneLogoutCannotDiscardSameAccountGenerationTwoLiveSession`、`AccountCleanupFenceTest.oldLogoutRacingNewSameAccountGenerationIsNoOpAndRound13AckStillWorks` |
+| 旧账号清理与他账号新会话竞态 / 跨账号 | 当前修订号下账号必须一致；退出登录只删 `departingAccountId` 的会话 | `StaleAccountCleanupRegressionTest.delayedLogoutFromOldAccount…`、`…delayedSignInCleanupForOldAccount…`、`AccountCleanupFenceTest.oldAccountCleanupRacingOtherAccountsLiveSessionIsNoOp`、`crossAccountCleanupCannotTransferTheCurrentClaimToAnotherAccount`、`logoutForAnotherAccountLeavesAnOrphanedSessionOfTheOriginalOwner` |
+| 同账号代次变化 | 旧修订号、错误令牌一律拒绝；无修订号会话按授权其账号的修订号计代次 | `sameAccountGenerationChangeRejectsOldRevisionAndWrongToken`、`legacySessionWithoutRevisionIsProtectedByTheFenceThatAuthorizesItsAccount`、`lostFenceFileStillProtectsASessionStartedUnderANewerRevision` |
+| pin / revoke 失败 | revoke 未到达时仅匹配令牌的退出登录生效；pin 失败时更新的 claim 可清掉孤儿会话并固定围栏 | `revokeFailureStillLetsTheMatchingLogoutCleanupButNotAForgedOne`、`pinFailureLetsTheNewerClaimRemoveTheOrphanAndPinsTheFence`、`currentLogoutDiscardsOnlyTheDepartingAccountsSessionWhenRevokeReachedNativeFirst` |
+| 失去 claim 后的清理 | 对新所有者为空操作，Round 13 Stop/ack 围栏不变 | `cleanupAfterClaimLossIsNoOpAgainstTheNewOwnerAndAckStillMatchesNewClaim` |
+| 不用无作用域的 null/旧修订号清当前会话 | 原生：无修订号只作用于从未出现 claim 的存储；Web：只转发属于被保留/退出账号的 claim | `unscopedCleanupWithoutRevisionCannotDiscardFencedLiveSession`、`storeWithoutClaimHistoryKeepsLegacyUnscopedCleanup`；Vitest `capacitor-recorder.test.ts` 两组作用域用例 |
+
+回归证明：把三个原生源文件换回 `51a04fc` 版本后单独运行 `StaleAccountCleanupRegressionTest`（只用旧 API）——**4 tests completed, 4 failed**（第 86/101/117 行 `assertFalse(clearIfAccountMismatch(...))` 失败，即旧代码删除了更新的会话）；恢复修复后 **4/4 通过**。合成 UI 的原生 mock 的 `clearAccountSessions` 同步改为与原生相同的围栏语义。
+
+**`frontend-ui` CI 失败（run `45433575486`，`companion-phase3.spec.ts:1444`）根因**：测试问题，非产品缺陷，有两层：
+1. Tab B 点击“开始跑步”后立即调用 mock `pushPoint`，没有等待 `记录中`。Tab B 的开始流程要先等待清理 A 持有的 claim，较慢；mock 在会话建立前丢弃了这两个点，结束时页面正确拒绝把 0 个点的轨迹写入队列（CI 同类机 trace：Tab B 显示“本次记录未捕获到有效 GPS 轨迹点”）。本机 `taskset -c 0` 单核重复 10 次，**6 次失败**，与 CI 断言完全一致。修复：本 spec 中 15 处“开始后立即推点”的位置都先等待 `recording-status-badge` 为 `记录中`。
+2. 加入上述等待后，单核重复 10 次仍失败 1 次（停在新增的 `记录中` 等待上）。只把 Tab B 的 `/api/v1/auth/session` 延迟 3 秒即可稳定复现：Tab B 在 A 仍持有 recording claim 时点击开始，页面正确地以“检测到当前登录账号已切换”安全失败。修复：两组跨账号场景在开始前等待布局确认 B 的 claim（布局随后以 `keepAccountId=B` 通知原生，mock 有记录）。
+
+断言均未放宽，也未删除覆盖。
+
+**本轮实测（代码提交 `02d2b8b`）**：
+- `git diff --check` — **PASS**；`cd frontend && pnpm check` — **0 errors / 0 warnings**；`pnpm lint:style` — **PASS**；Prettier `--check`（`capacitor-env.ts`、`capacitor-recorder.ts`、`+layout.svelte`、`tests/unit/capacitor-recorder.test.ts`、`tests/ui/companion-phase3.spec.ts`）— **PASS**
+- `cd frontend && pnpm test` — **76 files / 497 passed**
+- `cd frontend && pnpm build` — **PASS**
+- `playwright.companion-phase3.config.ts` — **42 passed**（开发服务）；`COMPANION_USE_PROD_BUILD=1` — **42 passed**（生产构建）；`taskset -c 0` 单核全量 spec — **42 passed**
+- `playwright.ui.config.ts`（CI `frontend-ui` 同一配置，全量）— **482 passed / 5 skipped / 0 failed**
+- `taskset -c 0` 单核重复：`interleaving` + `Round 3: two-tab` 各 15 次 — **30 passed / 0 failed**（修复前同条件 `interleaving` 10 次失败 6 次）
+- `cd android/native && ./gradlew --no-daemon testDebugUnitTest assembleDebug` — **BUILD SUCCESSFUL**，JUnit **54/54 passed**（新增 `AccountCleanupFenceTest` 13、`StaleAccountCleanupRegressionTest` 4；`LocationRecordingPolicyTest` 9/9 不变）；`aapt2 dump permissions` 与 Round 1/2 相同（无 `ACCESS_BACKGROUND_LOCATION`，Manifest 未改）
+- 可见 UI 无变化：本轮未改组件、样式或文案；视觉 QA 用例重新生成的 `docs/assets/phase3-*.png` 与已提交版本逐字节相同。
+
+**残余观察**：在人为把 Tab B 每次 `/api/v1/auth/session` 延迟 3 秒的探针中，Tab A 切换为 B 后首次渲染的上传队列为空，IndexedDB 中 B 的标记、草稿与队列行完整，刷新后 0.9 秒内正常显示。这是显示刷新时序，不丢数据，正常时序的 CI 用例不受影响，本轮未修。另外，跨账号 claim 协调完成前“开始跑步”按钮可点，点击会安全失败并提示账号已切换，重试即可。
+
+---
+
+## 6. 未关闭门禁、未运行检查与已知限制（如实标注，不声称通过）
+
+1. **真机验证（PKT110 / Android 17 / WebView 144）：未完成**。
+   - 本机当前 USB 连接设备为 `F50`（Android 13 / SDK 33，`dumpsys webviewupdate` 缺少 WebView 116+，见 [97 Phase 1 记录](97-android-capacitor-phase1.md)）；`PKT110` 未接入，无法在本机执行真机飞行模式记录→恢复网络单次上传、真机锁屏/切后台/杀进程/重启、真实 GPS 丢失与真机安全区验证。待接入 `PKT110` 后补跑真机签收门禁。
+2. **Google Play 政策 / Data Safety 声明与商店审查：未签收**。
+   - 代码与 Manifest 已按最小权限原则落实（无 `ACCESS_BACKGROUND_LOCATION`、前台 `foregroundServiceType="location"`、锁屏脱敏通知 `VISIBILITY_PRIVATE`），但 Play Console 中的位置采集 Data Safety 表单、前台服务申报视频与正式上架审查尚未提交签收。
+3. **国产 ROM 后台保活与杀进程实测（MIUI/HyperOS、ColorOS、OriginOS、HarmonyOS）：未验证**。
+   - 当前无对应真机，已明确标注为未验证项。
+4. **CI 范围说明**：
+   - `companion-phase3.spec.ts` 已加入 `frontend/playwright.ui.config.ts` 的 `testMatch`，随 GitHub CI `frontend-ui` 自动运行；
+   - 当前 GitHub Actions 工作流（`.github/workflows/ci.yml`）**尚未包含 Android Gradle 原生构建/单测 job**，Android 原生单测与 APK 权限审计目前在本机通过 `./gradlew --no-daemon testDebugUnitTest assembleDebug` 与 `aapt2 dump permissions` 执行。
+5. **Round 14 补充**：原生账号清理围栏由 Android JUnit（54/54）覆盖，真机上“退出登录后立即重新登录并开始记录”的时序仍待 PKT110 签收。
+6. **API 29 模拟器补充说明**：使用 `-gpu off` 已在 Round 1 于 API 29 模拟器完成安装、WebView 133 加载、前台服务（`isForeground=true` + 常驻通知）、锁屏落盘、`am force-stop` 强杀恢复与 0 坐标日志泄露验证；Round 13 加固后的 `VISIBILITY_PRIVATE`、claim 绑定 `acknowledgeHandoff` / `stopSession`、`ClaimFence` 与精确位置阻断已在 Android JUnit（37/37）与开发/生产构建 Playwright（42/42）中覆盖，真机（PKT110）物理运动轨迹与飞行模式重连闭环仍待签收。
+7. **全量真实后端 Playwright E2E（`playwright.config.ts`）与签名 Release APK 构建：未在本机运行**（PR CI 将覆盖全量后端集成测试、前端单测/构建/合成 UI 与运维演练）。
+8. **已知限制**：
+   - 应用沿用 Phase 1/2 的在线 `server.url` 加载模式；若在冷启动阶段即完全断网且页面未加载，需联网加载一次页面后方可在离线/飞行模式下发起并暂存记录。
+   - 服务端 GPX 导入按首尾点时间差计算总耗时，因此中途长时间暂停会影响服务端平均配速（UI 已在暂停时显式提示）。
+   - 本期不实现 iOS App / Core Location、不写 Health Connect/HealthKit、不做离线底图、实时位置分享或语音播报。
+   - **回滚方式**：无数据库 Schema 迁移，后端仅对现有 `POST /api/v1/gpx-imports` 增加了向后兼容的可选 `Idempotency-Key` 头与 `expected_owner_id` 表单项；直接 revert PR 提交并重新构建发布包与 APK 即可安全回滚。

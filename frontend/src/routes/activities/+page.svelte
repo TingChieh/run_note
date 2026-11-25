@@ -469,7 +469,11 @@
       我的活动{records ? `（${records.total}）` : ''}
     </h2>
     <div class="records-heading-actions">
-      {#if view.manage}<button
+      {#if view.manage}<a
+          class="button-secondary"
+          href={view.href('/activities/record')}
+          data-testid="activities-record-link">记录跑步</a
+        ><button
           type="button"
           class="button-secondary import-toggle"
           aria-expanded={importOpen}

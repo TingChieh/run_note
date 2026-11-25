@@ -14,6 +14,56 @@ export interface CapacitorHealthDataPlugin {
   openSettings?: () => Promise<unknown>;
 }
 
+export interface CapacitorLocationRecorderPlugin {
+  getCapabilities?: () => Promise<unknown>;
+  checkPermissions?: () => Promise<unknown>;
+  requestPermissions?: () => Promise<unknown>;
+  openAppSettings?: () => Promise<unknown>;
+  openLocationSettings?: () => Promise<unknown>;
+  startSession?: (options: {
+    sessionId: string;
+    accountId: string;
+    idempotencyKey: string;
+    title?: string;
+    resumeInterrupted?: boolean;
+    claimRevision?: number;
+    claimToken?: string;
+  }) => Promise<unknown>;
+  pauseSession?: () => Promise<unknown>;
+  resumeSession?: () => Promise<unknown>;
+  stopSession?: (options: {
+    accountId: string;
+    sessionId: string;
+    claimRevision: number;
+    claimToken?: string;
+  }) => Promise<unknown>;
+  acknowledgeHandoff?: (options: {
+    sessionId: string;
+    accountId: string;
+    claimRevision: number;
+    claimToken?: string;
+  }) => Promise<unknown>;
+  syncAccountClaim?: (options: {
+    accountId: string | null;
+    claimRevision: number;
+    claimToken?: string;
+  }) => Promise<unknown>;
+  revokeAccountClaim?: (options: { accountId?: string | null; claimRevision?: number }) => Promise<unknown>;
+  discardSession?: () => Promise<unknown>;
+  getSessionState?: (options?: { accountId?: string }) => Promise<unknown>;
+  getSessionPoints?: (options?: { accountId?: string; afterIndex?: number }) => Promise<unknown>;
+  clearAccountSessions?: (options?: {
+    keepAccountId?: string | null;
+    departingAccountId?: string;
+    claimRevision?: number;
+    claimToken?: string;
+  }) => Promise<unknown>;
+  addListener?: (
+    eventName: 'sessionUpdate',
+    listenerFunc: (event: unknown) => void,
+  ) => Promise<{ remove: () => Promise<void> | void }> | { remove: () => Promise<void> | void };
+}
+
 export interface CapacitorWindowRuntime {
   isNativePlatform?: () => boolean;
   getPlatform?: () => string;
@@ -21,6 +71,7 @@ export interface CapacitorWindowRuntime {
     SystemBars?: CapacitorSystemBarsPlugin;
     SystemAppearance?: CapacitorSystemAppearancePlugin;
     HealthData?: CapacitorHealthDataPlugin;
+    LocationRecorder?: CapacitorLocationRecorderPlugin;
   };
 }
 

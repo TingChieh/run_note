@@ -1,7 +1,8 @@
 from datetime import date
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Header, Request, Response
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
@@ -20,15 +21,28 @@ router = APIRouter(prefix="/api/v1/gpx-imports", tags=["gpx"])
 @router.post("", status_code=201, response_model=ApiResponse[ImportView])
 async def import_gpx(
     request: Request,
+    response: Response,
     identity: Annotated[tuple, Depends(require_write)],
     db: Annotated[Session, Depends(get_session)],
+    idempotency_key: Annotated[UUID | None, Header()] = None,
 ):
-    return await import_file(request, identity, db, "gpx")
+    """Import a GPX track; `Idempotency-Key` replays the existing activity's current view (200)."""
+    return await import_file(
+        request, identity, db, "gpx", idempotency_key=idempotency_key, response=response
+    )
 
 
-async def import_file(request, identity, db, format):
+async def import_file(
+    request,
+    identity,
+    db,
+    format,
+    *,
+    idempotency_key: UUID | None = None,
+    response: Response | None = None,
+):
     label = format.upper()
-    allowed = {"file", "title", "timezone", "activity_date", "time_mode"}
+    allowed = {"file", "title", "timezone", "activity_date", "time_mode", "expected_owner_id"}
     owner, default_timezone = identity[1].id, identity[1].timezone
     # Authentication's user lock must not cover reading/parsing a file.
     await run_in_threadpool(db.commit)
@@ -47,6 +61,18 @@ async def import_file(request, identity, db, format):
             fields = {key: value for key, value in values if key != "file"}
             if any(not isinstance(v, str) for v in fields.values()):
                 raise ApiError(422, "VALIDATION_ERROR", "表单字段不合法")
+            expected_owner_raw = fields.get("expected_owner_id") or None
+            if expected_owner_raw is not None:
+                try:
+                    expected_owner = UUID(expected_owner_raw)
+                except ValueError:
+                    raise ApiError(422, "VALIDATION_ERROR", "目标账号标识不合法") from None
+                if expected_owner != owner:
+                    raise ApiError(
+                        409,
+                        "ACCOUNT_MISMATCH",
+                        "当前登录账号已变更，已取消上传以防轨迹归属错误",
+                    )
             time_mode = fields.get("time_mode") or "absolute"
             if time_mode not in {"absolute", "local"}:
                 raise ApiError(422, "VALIDATION_ERROR", "时间解释方式不合法")
@@ -72,6 +98,9 @@ async def import_file(request, identity, db, format):
                     raise ApiError(413, f"{label}_TOO_LARGE", "轨迹文件不能超过 10 MiB")
             importer = service.import_track
             options = {"format": format, "time_mode": time_mode}
+            if idempotency_key is not None:
+                options["idempotency_key"] = idempotency_key
+            request.state.idempotency_replayed = False
             data = await run_in_threadpool(
                 importer,
                 request,
@@ -84,6 +113,8 @@ async def import_file(request, identity, db, format):
                 activity_date,
                 **options,
             )
+            if response is not None and getattr(request.state, "idempotency_replayed", False):
+                response.status_code = 200
     except HTTPException:
         raise ApiError(
             422, "VALIDATION_ERROR", "表单超出限制，请只上传一个文件并检查字段长度"
