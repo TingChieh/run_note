@@ -641,7 +641,9 @@
                 disabled={busy || !mounted}
                 class="button-secondary public-account-action">{busy ? '退出中…' : '退出登录'}</button
               >{/if}
-          {:else}<a href="/activities" data-sveltekit-reload class="public-activities">跑步记录</a>{/if}
+          {:else}<a href="/activities" data-sveltekit-reload class="public-activities">跑步记录</a
+            >{#if !authPage && !checking}<a href="/admin" class="button-secondary public-account-action">登录</a
+              >{/if}{/if}
           <button
             type="button"
             class="nav-toggle public-menu-toggle"
@@ -679,7 +681,10 @@
                 onclick={logout}
                 disabled={busy || !mounted}>{busy ? '退出中…' : '退出登录'}</button
               >{/if}
-          {:else}<a href="/activities" data-sveltekit-reload class="nav-link">跑步记录</a>{/if}
+          {:else}<a href="/activities" data-sveltekit-reload class="nav-link">跑步记录</a>{#if !authPage && !checking}<a
+                href="/admin"
+                class="nav-link">登录</a
+              >{/if}{/if}
         </nav>
       {/if}
     {/if}
