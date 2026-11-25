@@ -1492,6 +1492,7 @@ test('P2 Round 3: interleaving A reads session then B becomes active and enqueue
   await installMockLocationRecorder(tabB, { locationPermission: 'granted' });
   await tabB.goto('/workspace/activities/record');
   await expect(tabB.locator('header')).toHaveAttribute('data-auth-ready', 'true');
+  await waitForRecordingClaimConfirmed(tabB, accountBId);
 
   await tabB.getByLabel('跑步标题（可选）').fill('账号 B 并发写入跑');
   await tabB.getByTestId('recording-start-btn').click();
@@ -1677,6 +1678,7 @@ test('P2 Round 3: two-tab concurrent claim and preemption never loses or reassig
   ]);
   await expect(tabB.locator('header')).toHaveAttribute('data-auth-ready', 'true');
   await expect(page).toHaveURL(/\/workspace\/activities\/record/, { timeout: 10_000 });
+  await waitForRecordingClaimConfirmed(tabB, accountBId);
 
   // Tab B records & stops a track while Tab A stays open
   await tabB.getByLabel('跑步标题（可选）').fill('账号 B 抢占保护跑');
@@ -2042,6 +2044,25 @@ test('P2 Round 4: two-tab concurrent same-account re-login and re-claim advances
 
   await tabB.close();
 });
+
+// The layout confirms an account's recording claim for the page and then tells native to keep that
+// account (`clearAccountSessions({ keepAccountId })`). Starting before that point fails closed with
+// "account switched", which is correct but not what the cross-account scenarios exercise.
+async function waitForRecordingClaimConfirmed(targetPage: Page, accountId: string) {
+  await expect
+    .poll(
+      () =>
+        targetPage.evaluate(
+          (id) =>
+            (
+              window as unknown as Record<string, { clearedAccounts: Array<string | null> }>
+            ).__mockRecorder.clearedAccounts.includes(id),
+          accountId,
+        ),
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+}
 
 async function installMockWebGeolocation(page: Page) {
   await page.addInitScript(() => {
