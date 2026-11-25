@@ -140,11 +140,12 @@ test.describe('signed-in site owner', () => {
     for (const path of ['/', '/activities', '/settings']) {
       await page.goto(path);
       await ready(page);
-      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      // Scroll to the current end on every attempt: the page keeps growing while its sections load.
       await expect
         .poll(
           () =>
             page.evaluate(() => {
+              window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' });
               const footer = document.querySelector('.app-footer')!.getBoundingClientRect();
               const bar = document.querySelector('.mobile-tabbar')!.getBoundingClientRect();
               return footer.bottom <= bar.top + 0.5;
