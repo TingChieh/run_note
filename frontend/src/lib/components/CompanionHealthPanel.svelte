@@ -14,7 +14,10 @@
     type HealthProviderAdapter,
     type HealthSummaryResult,
   } from '#lib/capacitor-health.ts';
-  import { installForegroundRefresh } from '#lib/components/companion-health-lifecycle.ts';
+  import {
+    installForegroundRefresh,
+    type ForegroundRefreshController,
+  } from '#lib/components/companion-health-lifecycle.ts';
 
   let {
     accountKey = 'default',
@@ -34,6 +37,8 @@
 
   let disposed = false;
   let requestToken = 0;
+  let backgroundEpoch = 0;
+  let lifecycle: ForegroundRefreshController | null = null;
 
   function resolveClient(): HealthProviderAdapter {
     return clientFactory ? clientFactory() : createHealthClient({ accountKey });
@@ -157,13 +162,17 @@
         errorMessage = '检测设备健康数据状态失败，请稍后重试。';
       }
     } finally {
-      if (!disposed && token === requestToken) loading = false;
+      if (!disposed && token === requestToken) {
+        loading = false;
+        lifecycle?.notifyIdle();
+      }
     }
   }
 
   async function authorize() {
     if (busy || !availability?.available) return;
     const token = ++requestToken;
+    const epoch = backgroundEpoch;
     busy = true;
     errorMessage = '';
     actionNotice = '';
@@ -171,30 +180,47 @@
       const client = resolveClient();
       const nextPerms = await client.requestPermissions();
       if (disposed || token !== requestToken) return;
+      if (epoch !== backgroundEpoch || lifecycle?.hasPending()) {
+        summary = null;
+        return;
+      }
       permissions = nextPerms;
       if (nextPerms.granted.length > 0) {
         const nextSummary = await client.readSummary({ metrics: nextPerms.granted });
         if (disposed || token !== requestToken) return;
-        summary = nextSummary;
-        actionNotice =
-          nextPerms.status === 'partial'
-            ? `已授权 ${nextPerms.granted.length} / ${HEALTH_METRICS.length} 项只读指标。`
-            : '只读健康数据已授权。';
+        if (epoch !== backgroundEpoch || lifecycle?.hasPending()) {
+          summary = null;
+          return;
+        }
+        if (nextSummary.status === 'revoked') {
+          summary = null;
+          permissions = { ...nextPerms, status: 'revoked', granted: [], revoked: nextPerms.granted };
+        } else {
+          summary = nextSummary;
+          actionNotice =
+            nextPerms.status === 'partial'
+              ? `已授权 ${nextPerms.granted.length} / ${HEALTH_METRICS.length} 项只读指标。`
+              : '只读健康数据已授权。';
+        }
       } else {
         summary = null;
       }
     } catch {
-      if (!disposed && token === requestToken) {
+      if (!disposed && token === requestToken && epoch === backgroundEpoch && !lifecycle?.hasPending()) {
         errorMessage = '发起健康数据授权失败，请在系统 Health Connect 设置中检查权限。';
       }
     } finally {
-      if (!disposed && token === requestToken) busy = false;
+      if (!disposed && token === requestToken) {
+        busy = false;
+        lifecycle?.notifyIdle();
+      }
     }
   }
 
   async function readLatest() {
     if (busy || !availability?.available) return;
     const token = ++requestToken;
+    const epoch = backgroundEpoch;
     busy = true;
     errorMessage = '';
     actionNotice = '';
@@ -202,6 +228,10 @@
       const client = resolveClient();
       const nextPerms = await client.checkPermissions();
       if (disposed || token !== requestToken) return;
+      if (epoch !== backgroundEpoch || lifecycle?.hasPending()) {
+        summary = null;
+        return;
+      }
       permissions = nextPerms;
       if (nextPerms.granted.length === 0) {
         summary = null;
@@ -209,6 +239,10 @@
       }
       const nextSummary = await client.readSummary({ metrics: nextPerms.granted });
       if (disposed || token !== requestToken) return;
+      if (epoch !== backgroundEpoch || lifecycle?.hasPending()) {
+        summary = null;
+        return;
+      }
       if (nextSummary.status === 'revoked') {
         summary = null;
         permissions = { ...nextPerms, status: 'revoked', granted: [], revoked: nextPerms.granted };
@@ -219,11 +253,14 @@
         }
       }
     } catch {
-      if (!disposed && token === requestToken) {
+      if (!disposed && token === requestToken && epoch === backgroundEpoch && !lifecycle?.hasPending()) {
         errorMessage = '读取设备健康数据失败，请稍后重试。';
       }
     } finally {
-      if (!disposed && token === requestToken) busy = false;
+      if (!disposed && token === requestToken) {
+        busy = false;
+        lifecycle?.notifyIdle();
+      }
     }
   }
 
@@ -237,13 +274,13 @@
 
   onMount(() => {
     void refreshAll();
-    const teardownLifecycle = installForegroundRefresh({
+    const controller = installForegroundRefresh({
       onForeground: () => {
         if (availability?.status === 'web_unavailable') return;
         return refreshAll();
       },
       onBackground: () => {
-        if (busy) return;
+        backgroundEpoch++;
         summary = null;
         if (loading) {
           requestToken++;
@@ -252,10 +289,12 @@
       },
       isBusy: () => loading || busy,
     });
+    lifecycle = controller;
     return () => {
       disposed = true;
       requestToken++;
-      teardownLifecycle();
+      lifecycle = null;
+      controller.destroy();
     };
   });
 </script>

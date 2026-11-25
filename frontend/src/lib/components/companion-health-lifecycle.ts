@@ -32,16 +32,32 @@ export interface ForegroundRefreshOptions {
   now?: () => number;
 }
 
+export interface ForegroundRefreshController {
+  /** Returns true when a foreground event arrived while busy and is queued to run once idle. */
+  hasPending(): boolean;
+  /** Flushes a queued foreground refresh if the app/page is still in the foreground and no longer busy. */
+  notifyIdle(): void;
+  /** Removes all event listeners and prevents further callbacks. */
+  destroy(): void;
+}
+
 /**
  * Listens for page visibility and native Capacitor app foreground/background transitions.
  * Coalesces duplicate foreground signals (e.g. `visibilitychange` + `appStateChange` firing
- * together on Android resume) and removes all listeners on cleanup.
+ * together on Android resume), queues foreground events received while busy so they flush
+ * once the in-flight operation settles, and removes all listeners on cleanup.
  */
-export function installForegroundRefresh(options: ForegroundRefreshOptions): () => void {
+export function installForegroundRefresh(options: ForegroundRefreshOptions): ForegroundRefreshController {
   const win =
     options.windowRef ?? (typeof window !== 'undefined' ? (window as Window & CapacitorLifecycleWindow) : undefined);
   const doc = options.documentRef ?? (typeof document !== 'undefined' ? document : undefined);
-  if (!doc) return () => {};
+  if (!doc) {
+    return {
+      hasPending: () => false,
+      notifyIdle: () => {},
+      destroy: () => {},
+    };
+  }
 
   const now = options.now ?? (() => Date.now());
   const dedupeWindowMs = options.dedupeWindowMs ?? 300;
@@ -50,24 +66,33 @@ export function installForegroundRefresh(options: ForegroundRefreshOptions): () 
   let runSeq = 0;
   let activeRunId = 0;
   let lastForegroundAt = 0;
+  let pendingForeground = false;
+  let inForeground = doc.visibilityState !== 'hidden';
   let appStateHandle: CapacitorListenerHandle | undefined;
 
   const handleBackground = () => {
     if (disposed) return;
+    inForeground = false;
+    pendingForeground = false;
     activeRunId = 0;
     lastForegroundAt = 0;
     options.onBackground?.();
   };
 
-  const triggerForeground = () => {
-    if (disposed) return;
-    if (activeRunId !== 0 || options.isBusy?.()) return;
-
-    const currentTime = now();
-    if (lastForegroundAt > 0 && currentTime - lastForegroundAt < dedupeWindowMs) {
+  const runForeground = (respectDedupe: boolean) => {
+    if (disposed || !inForeground) return;
+    if (activeRunId !== 0) return;
+    if (options.isBusy?.()) {
+      pendingForeground = true;
       return;
     }
 
+    const currentTime = now();
+    if (respectDedupe && lastForegroundAt > 0 && currentTime - lastForegroundAt < dedupeWindowMs) {
+      return;
+    }
+
+    pendingForeground = false;
     lastForegroundAt = currentTime;
     const id = ++runSeq;
     activeRunId = id;
@@ -79,16 +104,27 @@ export function installForegroundRefresh(options: ForegroundRefreshOptions): () 
           /* Refresh errors are handled by the caller. */
         })
         .finally(() => {
-          if (activeRunId === id) activeRunId = 0;
+          if (activeRunId === id) {
+            activeRunId = 0;
+            if (pendingForeground && inForeground && !disposed) {
+              runForeground(false);
+            }
+          }
         });
     } catch {
       if (activeRunId === id) activeRunId = 0;
     }
   };
 
+  const handleForeground = () => {
+    if (disposed) return;
+    inForeground = true;
+    runForeground(true);
+  };
+
   const handleVisibilityChange = () => {
     if (doc.visibilityState === 'visible') {
-      triggerForeground();
+      handleForeground();
     } else if (doc.visibilityState === 'hidden') {
       handleBackground();
     }
@@ -101,7 +137,7 @@ export function installForegroundRefresh(options: ForegroundRefreshOptions): () 
   if (cap?.isNativePlatform?.() === true && typeof app?.addListener === 'function') {
     const handleAppStateChange = (state: CapacitorAppState) => {
       if (state?.isActive === true) {
-        triggerForeground();
+        handleForeground();
       } else if (state?.isActive === false) {
         handleBackground();
       }
@@ -124,14 +160,22 @@ export function installForegroundRefresh(options: ForegroundRefreshOptions): () 
     }
   }
 
-  return () => {
-    disposed = true;
-    activeRunId = 0;
-    doc.removeEventListener('visibilitychange', handleVisibilityChange);
-    const handle = appStateHandle;
-    appStateHandle = undefined;
-    if (handle && typeof handle.remove === 'function') {
-      void Promise.resolve(handle.remove()).catch(() => {});
-    }
+  return {
+    hasPending: () => !disposed && pendingForeground,
+    notifyIdle: () => {
+      if (disposed || !pendingForeground || !inForeground) return;
+      runForeground(false);
+    },
+    destroy: () => {
+      disposed = true;
+      pendingForeground = false;
+      activeRunId = 0;
+      doc.removeEventListener('visibilitychange', handleVisibilityChange);
+      const handle = appStateHandle;
+      appStateHandle = undefined;
+      if (handle && typeof handle.remove === 'function') {
+        void Promise.resolve(handle.remove()).catch(() => {});
+      }
+    },
   };
 }

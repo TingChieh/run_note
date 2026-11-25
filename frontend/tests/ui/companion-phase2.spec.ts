@@ -60,10 +60,15 @@ async function installMockHealthBridge(
     let summaryStatus = cfg.summaryStatus ?? 'ok';
     let stepsValue = 42180;
     let deferCheckPermissions = false;
+    let deferRequestPermissions = false;
+    let deferReadSummary = false;
     let pendingCheckResolvers: Array<() => void> = [];
+    let pendingRequestResolvers: Array<() => void> = [];
+    let pendingReadSummaryResolvers: Array<() => void> = [];
     const stats = {
       getAvailability: 0,
       checkPermissions: 0,
+      requestPermissions: 0,
       readSummary: 0,
       appAddListener: 0,
       appRemoveListener: 0,
@@ -77,15 +82,29 @@ async function installMockHealthBridge(
       summaryStatus?: 'ok' | 'empty' | 'denied';
       steps?: number;
       deferCheckPermissions?: boolean;
+      deferRequestPermissions?: boolean;
+      deferReadSummary?: boolean;
     }) => {
       if (next.granted) granted = [...next.granted];
       if (next.summaryStatus) summaryStatus = next.summaryStatus;
       if (typeof next.steps === 'number') stepsValue = next.steps;
       if (typeof next.deferCheckPermissions === 'boolean') deferCheckPermissions = next.deferCheckPermissions;
+      if (typeof next.deferRequestPermissions === 'boolean') deferRequestPermissions = next.deferRequestPermissions;
+      if (typeof next.deferReadSummary === 'boolean') deferReadSummary = next.deferReadSummary;
     };
     win.__resolvePendingCheckPermissions = () => {
       const resolvers = pendingCheckResolvers;
       pendingCheckResolvers = [];
+      for (const resolve of resolvers) resolve();
+    };
+    win.__resolvePendingRequestPermissions = () => {
+      const resolvers = pendingRequestResolvers;
+      pendingRequestResolvers = [];
+      for (const resolve of resolvers) resolve();
+    };
+    win.__resolvePendingReadSummary = () => {
+      const resolvers = pendingReadSummaryResolvers;
+      pendingReadSummaryResolvers = [];
       for (const resolve of resolvers) resolve();
     };
     win.__emitAppStateChange = (isActive: boolean) => {
@@ -127,37 +146,58 @@ async function installMockHealthBridge(
           };
         },
         requestPermissions: async () => {
-          granted = [...(cfg.onRequestGranted ?? allMetrics)];
+          stats.requestPermissions += 1;
+          const snapshotGranted = [...(cfg.onRequestGranted ?? allMetrics)];
+          if (deferRequestPermissions) {
+            await new Promise<void>((resolve) => {
+              pendingRequestResolvers.push(resolve);
+            });
+          } else {
+            granted = snapshotGranted;
+          }
           return {
-            status: granted.length === allMetrics.length ? 'granted' : granted.length > 0 ? 'partial' : 'denied',
-            granted: [...granted],
-            denied: allMetrics.filter((m) => !granted.includes(m)),
+            status:
+              snapshotGranted.length === allMetrics.length
+                ? 'granted'
+                : snapshotGranted.length > 0
+                  ? 'partial'
+                  : 'denied',
+            granted: snapshotGranted,
+            denied: allMetrics.filter((m) => !snapshotGranted.includes(m)),
             readOnly: true,
           };
         },
         readSummary: async () => {
           stats.readSummary += 1;
-          if (granted.length === 0 || summaryStatus === 'denied') {
+          const snapshotGranted = [...granted];
+          const snapshotStatus = summaryStatus;
+          const snapshotSteps = stepsValue;
+          if (deferReadSummary) {
+            await new Promise<void>((resolve) => {
+              pendingReadSummaryResolvers.push(resolve);
+            });
+          }
+          if (snapshotGranted.length === 0 || snapshotStatus === 'denied') {
             return { status: 'denied', grantedMetrics: [], readOnly: true };
           }
-          if (summaryStatus === 'empty') {
-            return { status: 'empty', grantedMetrics: [...granted], metrics: {}, readOnly: true };
+          if (snapshotStatus === 'empty') {
+            return { status: 'empty', grantedMetrics: snapshotGranted, metrics: {}, readOnly: true };
           }
           return {
             status: 'ok',
             windowStart: '2026-11-16T00:00:00Z',
             windowEnd: '2026-11-23T00:00:00Z',
-            grantedMetrics: [...granted],
+            grantedMetrics: snapshotGranted,
             readOnly: true,
             metrics: {
-              steps: granted.includes('steps') ? stepsValue : null,
-              distanceMeters: granted.includes('distance') ? 31420.5 : null,
-              activeCaloriesKcal: granted.includes('active_calories') ? 2140 : null,
-              heartRate: granted.includes('heart_rate')
+              steps: snapshotGranted.includes('steps') ? snapshotSteps : null,
+              distanceMeters: snapshotGranted.includes('distance') ? 31420.5 : null,
+              activeCaloriesKcal: snapshotGranted.includes('active_calories') ? 2140 : null,
+              heartRate: snapshotGranted.includes('heart_rate')
                 ? { avgBpm: 149, minBpm: 112, maxBpm: 176, sampleCount: 96 }
                 : null,
-              restingHeartRateBpm: granted.includes('resting_heart_rate') ? 53 : null,
-              sleepMinutes: granted.includes('sleep') ? 460 : null,
+              restingHeartRateBpm: snapshotGranted.includes('resting_heart_rate') ? 53 : null,
+              sleepMinutes: snapshotGranted.includes('sleep') ? 460 : null,
             },
           };
         },
@@ -398,6 +438,129 @@ test('health panel refreshes on visibilitychange and Capacitor appStateChange, h
   expect(afterUnmount.activeListeners).toBe(0);
   expect(afterUnmount.checkPermissions).toBe(4);
   expect(afterUnmount.readSummary).toBe(3);
+});
+
+test('health panel clears summary on background while busy, discards stale responses, and auto-refreshes when busy settles', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await installMockHealthBridge(page, {
+    availabilityStatus: 'available',
+    initialGranted: ['steps', 'distance', 'active_calories', 'heart_rate', 'resting_heart_rate', 'sleep'],
+    onRequestGranted: ['steps', 'distance', 'active_calories', 'heart_rate', 'resting_heart_rate', 'sleep'],
+    summaryStatus: 'ok',
+    withAppPlugin: true,
+  });
+
+  await page.goto('/settings/preferences');
+  await expect(page.getByTestId('health-status-badge')).toHaveText('已授权');
+  await expect(page.getByTestId('health-steps')).toContainText('42,180');
+
+  // 1. Delayed readLatest across background -> revoke -> foreground -> busy settle auto-refresh.
+  await page.evaluate(() => {
+    (window as unknown as { __setMockHealthState: (s: unknown) => void }).__setMockHealthState({
+      deferReadSummary: true,
+    });
+  });
+  await page.getByRole('button', { name: '刷新健康数据' }).click();
+  await expect(page.getByRole('button', { name: '刷新中…' })).toBeDisabled();
+  await page.waitForFunction(
+    () => (window as unknown as { __healthBridgeStats: { readSummary: number } }).__healthBridgeStats.readSummary === 2,
+  );
+
+  // Enter background while readSummary is still in flight -> stale metrics must clear immediately.
+  await page.evaluate(() => {
+    const win = window as unknown as {
+      __emitAppStateChange: (isActive: boolean) => void;
+    };
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    win.__emitAppStateChange(false);
+  });
+  await expect(page.getByTestId('health-summary-metrics')).toHaveCount(0);
+  await expect(page.getByTestId('health-steps')).toHaveCount(0);
+
+  // Permissions are revoked in system settings and user returns to foreground while readLatest is still busy.
+  await page.evaluate(() => {
+    const win = window as unknown as {
+      __setMockHealthState: (s: unknown) => void;
+      __emitAppStateChange: (isActive: boolean) => void;
+    };
+    win.__setMockHealthState({ granted: [], summaryStatus: 'denied', deferReadSummary: false });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    win.__emitAppStateChange(true);
+  });
+  await expect(page.getByTestId('health-summary-metrics')).toHaveCount(0);
+
+  const midFlightStats = await page.evaluate(
+    () =>
+      (window as unknown as { __healthBridgeStats: { checkPermissions: number; readSummary: number } })
+        .__healthBridgeStats,
+  );
+  expect(midFlightStats.checkPermissions).toBe(2);
+  expect(midFlightStats.readSummary).toBe(2);
+
+  // Resolving the delayed pre-revocation readSummary must NOT render stale 42,180 data;
+  // instead, notifyIdle() automatically flushes the queued foreground refresh.
+  await page.evaluate(() => {
+    (window as unknown as { __resolvePendingReadSummary: () => void }).__resolvePendingReadSummary();
+  });
+  await expect(page.getByTestId('health-revoked')).toBeVisible();
+  await expect(page.getByTestId('health-status-badge')).toHaveText('权限已撤销');
+  await expect(page.getByTestId('health-summary-metrics')).toHaveCount(0);
+  await expect(page.getByTestId('health-steps')).toHaveCount(0);
+
+  const afterReadSettleStats = await page.evaluate(
+    () =>
+      (window as unknown as { __healthBridgeStats: { checkPermissions: number; readSummary: number } })
+        .__healthBridgeStats,
+  );
+  expect(afterReadSettleStats.checkPermissions).toBe(3);
+  expect(afterReadSettleStats.readSummary).toBe(2);
+
+  // 2. Delayed authorize() across background -> revoke -> foreground -> busy settle auto-refresh.
+  await page.evaluate(() => {
+    (window as unknown as { __setMockHealthState: (s: unknown) => void }).__setMockHealthState({
+      deferRequestPermissions: true,
+    });
+  });
+  await page.getByRole('button', { name: '重新授权' }).click();
+  await expect(page.getByRole('button', { name: '申请中…' })).toBeDisabled();
+  await page.waitForFunction(
+    () =>
+      (window as unknown as { __healthBridgeStats: { requestPermissions: number } }).__healthBridgeStats
+        .requestPermissions === 1,
+  );
+
+  await page.evaluate(() => {
+    const win = window as unknown as {
+      __setMockHealthState: (s: unknown) => void;
+      __emitAppStateChange: (isActive: boolean) => void;
+    };
+    win.__emitAppStateChange(false);
+    win.__setMockHealthState({ granted: [], summaryStatus: 'denied', deferRequestPermissions: false });
+    win.__emitAppStateChange(true);
+  });
+
+  await page.evaluate(() => {
+    (window as unknown as { __resolvePendingRequestPermissions: () => void }).__resolvePendingRequestPermissions();
+  });
+  await expect(page.getByTestId('health-revoked')).toBeVisible();
+  await expect(page.getByTestId('health-status-badge')).toHaveText('权限已撤销');
+  await expect(page.getByTestId('health-summary-metrics')).toHaveCount(0);
+
+  const afterAuthSettleStats = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __healthBridgeStats: { checkPermissions: number; requestPermissions: number; readSummary: number };
+        }
+      ).__healthBridgeStats,
+  );
+  expect(afterAuthSettleStats.requestPermissions).toBe(1);
+  expect(afterAuthSettleStats.checkPermissions).toBe(4);
+  expect(afterAuthSettleStats.readSummary).toBe(2);
 });
 
 test('incremental sync populates offline cache, supports offline viewing, and clears private cache on logout', async ({

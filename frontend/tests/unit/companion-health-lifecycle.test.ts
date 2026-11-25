@@ -86,7 +86,7 @@ describe('companion health foreground refresh lifecycle', () => {
     const onBackground = vi.fn();
     let clock = 1000;
 
-    const cleanup = installForegroundRefresh({
+    const controller = installForegroundRefresh({
       onForeground,
       onBackground,
       windowRef: env.win,
@@ -105,7 +105,7 @@ describe('companion health foreground refresh lifecycle', () => {
     env.setVisibilityAndEmit('visible');
     expect(onForeground).toHaveBeenCalledTimes(1);
 
-    cleanup();
+    controller.destroy();
     expect(env.listenerCount()).toBe(0);
 
     clock += 500;
@@ -125,7 +125,7 @@ describe('companion health foreground refresh lifecycle', () => {
     const onBackground = vi.fn();
     let clock = 2000;
 
-    const cleanup = installForegroundRefresh({
+    const controller = installForegroundRefresh({
       onForeground,
       onBackground,
       dedupeWindowMs: 300,
@@ -159,17 +159,62 @@ describe('companion health foreground refresh lifecycle', () => {
     expect(onForeground).toHaveBeenCalledTimes(2);
 
     resolveRefresh?.();
-    cleanup();
+    controller.destroy();
     expect(env.listenerCount()).toBe(0);
     expect(env.remove).toHaveBeenCalledTimes(1);
   });
 
-  it('skips foreground refresh while busy and cleans up deferred native listener if destroyed before registration settles', async () => {
+  it('always runs onBackground while busy, queues pending foreground refresh, and flushes once on notifyIdle', () => {
+    const env = createLifecycleEnv({ native: true });
+    let busy = true;
+    let clock = 4000;
+    const onForeground = vi.fn();
+    const onBackground = vi.fn();
+
+    const controller = installForegroundRefresh({
+      onForeground,
+      onBackground,
+      isBusy: () => busy,
+      dedupeWindowMs: 300,
+      windowRef: env.win,
+      documentRef: env.doc,
+      now: () => clock,
+    });
+
+    // Entering background while busy still clears via onBackground.
+    env.setVisibilityAndEmit('hidden');
+    env.emitAppState(false);
+    expect(onBackground).toHaveBeenCalledTimes(2);
+    expect(controller.hasPending()).toBe(false);
+
+    // Returning to foreground while busy queues pending refresh instead of dropping it;
+    // duplicate companion events coalesce into the same pending flag.
+    clock += 20;
+    env.setVisibilityAndEmit('visible');
+    env.emitAppState(true);
+    expect(onForeground).not.toHaveBeenCalled();
+    expect(controller.hasPending()).toBe(true);
+
+    // Idle callback while still in foreground flushes the queued refresh once.
+    busy = false;
+    controller.notifyIdle();
+    expect(controller.hasPending()).toBe(false);
+    expect(onForeground).toHaveBeenCalledTimes(1);
+
+    // A delayed duplicate event shortly after notifyIdle is still suppressed by dedupeWindowMs.
+    clock += 50;
+    env.emitAppState(true);
+    expect(onForeground).toHaveBeenCalledTimes(1);
+
+    controller.destroy();
+  });
+
+  it('drops pending queue if returned to background before notifyIdle and cleans up deferred native handle on destroy', async () => {
     const env = createLifecycleEnv({ native: true, deferAppListener: true });
     let busy = true;
     const onForeground = vi.fn();
 
-    const cleanup = installForegroundRefresh({
+    const controller = installForegroundRefresh({
       onForeground,
       isBusy: () => busy,
       windowRef: env.win,
@@ -177,15 +222,23 @@ describe('companion health foreground refresh lifecycle', () => {
       now: () => 5000,
     });
 
+    env.setVisibilityAndEmit('hidden');
     env.setVisibilityAndEmit('visible');
+    expect(controller.hasPending()).toBe(true);
+
+    // Going back to background before busy settles clears the stale pending flag.
+    env.emitAppState(false);
+    expect(controller.hasPending()).toBe(false);
+    busy = false;
+    controller.notifyIdle();
     expect(onForeground).not.toHaveBeenCalled();
 
-    busy = false;
-    env.setVisibilityAndEmit('visible');
+    // Next foreground return triggers refresh cleanly.
+    env.emitAppState(true);
     expect(onForeground).toHaveBeenCalledTimes(1);
 
     // Destroy before App.addListener promise resolves -> handle must be removed once it settles.
-    cleanup();
+    controller.destroy();
     expect(env.remove).not.toHaveBeenCalled();
     env.resolveNativeHandle();
     await Promise.resolve();
@@ -195,12 +248,14 @@ describe('companion health foreground refresh lifecycle', () => {
 
   it('no-ops cleanly during SSR without document', () => {
     const onForeground = vi.fn();
-    const cleanup = installForegroundRefresh({
+    const controller = installForegroundRefresh({
       onForeground,
       documentRef: undefined,
       windowRef: undefined,
     });
-    expect(() => cleanup()).not.toThrow();
+    expect(controller.hasPending()).toBe(false);
+    expect(() => controller.notifyIdle()).not.toThrow();
+    expect(() => controller.destroy()).not.toThrow();
     expect(onForeground).not.toHaveBeenCalled();
   });
 });
