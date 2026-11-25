@@ -36,6 +36,8 @@ test('public /privacy route renders without login, includes required disclosures
   }
   await expect(main).toContainText('仅本机读取、不上传服务器');
   await expect(main).toContainText('不出售你的个人数据');
+  await expect(main).toContainText('原样发送');
+  await expect(main).toContainText('含标记为私人或不公开的记录');
   await expect(main).toContainText('未成年人');
 
   const deletionSection = page.getByTestId('data-deletion-section');
