@@ -81,6 +81,23 @@ Turn GPX / TCX / Mi Fitness runs into calendars, trends, footprint maps and shar
 
 **<https://run.aisaka.cc>** is the owner's public showcase. Visitors can browse the dashboard, runs and footprints without logging in.
 
+## Android companion
+
+The web app remains the primary supported experience. The repository also includes a Capacitor 8 Android companion project (`android/`, requiring Android 10 / API 29 and System WebView 116+) that shares the existing SvelteKit UI via `server.url` while preserving Web SSR, server-authoritative metrics and the existing database schema.
+
+- **Current baseline**: Phase 0–3 code is merged on `main` (current baseline `v2.5.0` / `801729e4`).
+- **Capabilities merged in code**:
+  - **Container and platform integration**: application identity and brand assets (`com.tingchieh.runnote`), build-time HTTPS origin checks and navigation allowlist, light/dark system bar sync, system back/gesture navigation, native connection error overlay and DocumentsUI file import (GPX / TCX / Mi Fitness).
+  - **Read-only Health Connect, offline cache and incremental sync**: minimal read-only Health Connect bridge with 6 read permissions (no write or background health permissions); account-isolated IndexedDB read-only offline cache (excluding wellbeing journals, credentials, raw track files and offline basemap tiles) with sign-out/account-switch cleanup; incremental sync and reconnect retry via `GET /api/v1/activities/sync`.
+  - **Native GPS recording**: shared recording UI (`/activities/record`, `/workspace/activities/record`), Android foreground location service (`foregroundServiceType="location"`, without `ACCESS_BACKGROUND_LOCATION`) with privacy-redacted lock-screen notification, pause/resume track segmentation, crash recovery, account-bound local track upload queue and idempotent upload/backoff retry via `POST /api/v1/gpx-imports` (`Idempotency-Key`).
+- **Current distribution and verification status (not yet published)**: currently limited to debug and internal test builds; **no public release APK or store listing has been published**. Aside from the Phase 0 technical spike's initial real-device and public HTTPS gates, the following pre-release gates remain **pending** (not passed):
+  - Signed production release APK build and sign-off;
+  - Broader real-device validation across Phase 1–3 (Phase 1 real-device visual QA, Phase 2 Health Connect real-device grant/deny/revoke/no-data acceptance, Phase 3 real-device offline recording and recovery) and domestic-ROM background/process-kill testing;
+  - Google Play background-location / foreground-service policy, Data Safety declaration and store review;
+  - Full real-backend Playwright E2E verification.
+- **Mobile-specific UI**: a dedicated phone UI direction has been approved at the design level and is **not implemented yet**.
+- **Phase docs (Chinese)**: [Phase 0 spike](docs/95-android-capacitor-phase0.md) · [Phase 1 companion](docs/97-android-capacitor-phase1.md) · [Phase 2 health & offline cache](docs/98-android-capacitor-phase2.md) · [Phase 3 native recording](docs/99-android-capacitor-phase3.md)
+
 ## Stack and architecture
 
 ```text
