@@ -275,6 +275,13 @@
   >
   <div class="mobile-actions">
     <ThemeToggle compact />
+    {#if !user && !checking}<a
+        href="/admin"
+        class="button-secondary mobile-login-link"
+        onclick={() => {
+          open = false;
+        }}>登录</a
+      >{/if}
     <button
       bind:this={toggle}
       type="button"
@@ -396,11 +403,9 @@
             >
           </div>
         </AnchoredPanel>
-      </div>{:else if sports}<div class="account-avatar-slot">
-        <span class="runner-avatar account-avatar" aria-hidden={checking || !profile?.avatar_url || avatarFailed}
-          >{@render avatarFace(`${profile?.display_name ?? ''}的头像`)}</span
-        >
-      </div>{/if}
+      </div>{:else if checking && sports}<div class="account-avatar-slot">
+        <span class="runner-avatar account-avatar" aria-hidden="true">{@render avatarFace('')}</span>
+      </div>{:else if !checking}<a href="/admin" class="button-secondary account-login">登录</a>{/if}
     <div class="account-inline">
       <div class="runner-identity">
         {#if sports}<div class="runner-avatar" aria-hidden={checking || !profile?.avatar_url || avatarFailed}>
@@ -454,6 +459,11 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
+  }
+  .mobile-login-link,
+  .account-login {
+    flex-shrink: 0;
+    white-space: nowrap;
   }
   .runner-avatar img {
     width: 100%;

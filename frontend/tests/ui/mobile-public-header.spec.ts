@@ -94,12 +94,25 @@ for (const width of [375, 390]) {
       await expect(page.locator('.public-mobile-actions')).toHaveCount(0);
       const loggedOut = await openPublicMenu(page);
       await expect(loggedOut.getByRole('link', { name: '跑步记录' })).toBeVisible();
+      await expect(loggedOut.getByRole('link', { name: '登录', exact: true })).toHaveAttribute('href', '/admin');
       await loggedOut.getByRole('link', { name: '一起跑步' }).click();
       await expect(page).toHaveURL(/\/together$/);
     }
+    await page.goto(paths[0]);
+    await ready(page);
+    await (await openPublicMenu(page)).getByRole('link', { name: '登录', exact: true }).click();
+    await expect(page).toHaveURL(/\/admin$/);
+    await expect(page.getByRole('heading', { name: '登录', level: 1, exact: true })).toBeVisible();
   });
 }
 test('桌面保留顶栏操作，其他位置不显示', async ({ page }) => {
+  for (const path of [...paths, '/privacy']) {
+    await page.goto(path);
+    await ready(page);
+    const header = page.locator('.public-header');
+    await expect(header.getByRole('link', { name: '登录', exact: true })).toBeVisible();
+    await expect(header.getByRole('link', { name: '登录', exact: true })).toHaveAttribute('href', '/admin');
+  }
   await login(page);
   for (const path of paths) {
     await page.goto(path);
@@ -107,6 +120,7 @@ test('桌面保留顶栏操作，其他位置不显示', async ({ page }) => {
     const header = page.locator('.public-header');
     await expect(header.getByRole('link', { name: '我的运动统计' })).toBeVisible();
     await expect(header.getByRole('button', { name: '退出登录' })).toBeVisible();
+    await expect(header.getByRole('link', { name: '登录', exact: true })).toHaveCount(0);
     await expect(page.locator('.public-mobile-actions')).toHaveCount(0);
     await expect(header.locator('.nav-toggle')).toBeHidden();
   }

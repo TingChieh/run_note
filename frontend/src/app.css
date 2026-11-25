@@ -1076,7 +1076,8 @@
       display: none;
     }
     .account-menu-host,
-    .account-avatar-slot {
+    .account-avatar-slot,
+    .account-login {
       display: none;
     }
     .app-shell .content-column {

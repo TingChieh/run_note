@@ -21,7 +21,10 @@ for (const width of [390, 1440]) {
         await page.goto(path);
         await expect(page).toHaveURL(new RegExp(path.replaceAll('/', '\\/') + '(?:\\?.*)?$'));
         await expect(page.getByRole('heading', { name: heading, level: 1, exact: true })).toBeVisible();
-        await expect(page.getByRole('link', { name: /^(登录|注册|设置)$/ })).toHaveCount(0);
+        await expect(page.getByRole('link', { name: /^(注册|设置)$/ })).toHaveCount(0);
+        const loginLink = page.getByRole('link', { name: '登录', exact: true });
+        await expect(loginLink).toBeVisible();
+        await expect(loginLink).toHaveAttribute('href', '/admin');
         await expect(
           page.getByRole('button', { name: /^(编辑|设置|调整|编辑记录|删除记录|导入 GPX|生成近期总结与下周建议)/ }),
         ).toHaveCount(0);
@@ -40,6 +43,46 @@ for (const width of [390, 1440]) {
     });
   }
 }
+
+test('unauthenticated user can reach /admin login directly from public / on mobile and desktop', async ({ page }) => {
+  await installActivities(page);
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 1440, height: 900 },
+  ]) {
+    for (const theme of ['light', 'dark'] as const) {
+      await page.setViewportSize(viewport);
+      await page.emulateMedia({ colorScheme: theme });
+      await page.addInitScript((value) => localStorage.setItem('runnote-theme', value), theme);
+      await page.goto('/');
+      await expect(page).toHaveURL(/\/$/);
+      await expect(page.locator('header')).toHaveAttribute('data-auth-ready', 'true');
+      await expect(page.getByRole('heading', { name: '数据汇总', level: 1, exact: true })).toBeVisible();
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+
+      const loginLink = page.getByRole('link', { name: '登录', exact: true });
+      await expect(loginLink).toHaveCount(1);
+      await expect(loginLink).toBeVisible();
+      await expect(loginLink).toHaveAttribute('href', '/admin');
+      const box = (await loginLink.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+      expect(box.height).toBeGreaterThanOrEqual(44);
+
+      await loginLink.focus();
+      await expect(loginLink).toBeFocused();
+      await loginLink.click();
+
+      await expect(page).toHaveURL(/\/admin$/);
+      await expect(page.getByRole('heading', { name: '登录', level: 1, exact: true })).toBeVisible();
+      await expect(page.getByLabel('邮箱', { exact: true })).toBeVisible();
+      await expect(page.getByLabel('密码', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: '登录', exact: true })).toBeEnabled();
+      await expect(page.getByRole('link', { name: '用户管理' })).toHaveCount(0);
+      await expect(page.getByRole('link', { name: '登录', exact: true })).toHaveCount(0);
+    }
+  }
+});
 
 test('admin entry authenticates, enables mutations, and logout returns to public viewing', async ({ page }) => {
   const state = await installActivities(page);
