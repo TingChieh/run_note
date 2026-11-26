@@ -13,6 +13,7 @@ import java.time.Instant
 import java.time.format.DateTimeParseException
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 data class ServerConfigView(
     val serverUrl: String?,
@@ -61,7 +62,8 @@ data class TransportHttpResponse(
  * - Strict system TLS (TLS 1.2/1.3) with zero certificate bypass.
  * - Automatic redirect following disabled so Authorization headers never cross redirect hops.
  * - CookieJar disabled so WebView and native transport never mix cookies with Bearer auth.
- * - Single-flight refresh rotation so concurrent 401/expired calls share one refresh request.
+ * - Single-flight refresh rotation serialized with logout via monotonic session epochs so an
+ *   in-flight refresh or login can never resurrect a logged-out session.
  * - Access and refresh tokens remain inside [TransportVault] and are never returned to WebView JS.
  */
 class RunNoteTransportCore(
@@ -74,6 +76,10 @@ class RunNoteTransportCore(
 ) {
     private val client: OkHttpClient = clientOverride ?: buildHardenedClient(allowDebugLoopbackHttp)
     private val refreshLock = Any()
+    private val vaultMutationLock = Any()
+    private val sessionEpoch = AtomicLong(0L)
+    private var supersededRefreshAccessToken: String? = null
+    private var supersededRefreshServerUrl: String? = null
 
     fun getServerConfig(): ServerConfigView {
         val stored = vault.read().serverUrl
@@ -166,6 +172,7 @@ class RunNoteTransportCore(
                 errorMessage = "未配置有效的 RunNote 服务器地址",
             )
 
+        val loginEpoch = sessionEpoch.incrementAndGet()
         val payload = JSONObject()
             .put("email", email)
             .put("password", password)
@@ -213,15 +220,31 @@ class RunNoteTransportCore(
                         errorMessage = "认证服务返回了无效响应",
                     )
                 }
-                vault.saveActiveSession(
-                    serverUrl = server,
-                    accountId = accountId,
-                    accessToken = accessToken,
-                    accessExpiresAtIso = accessExpiresAt,
-                    refreshToken = refreshToken,
-                    refreshExpiresAtIso = refreshExpiresAt,
-                    userJson = userObj.toString(),
-                )
+                val saved = synchronized(vaultMutationLock) {
+                    if (sessionEpoch.get() != loginEpoch) {
+                        false
+                    } else {
+                        vault.saveActiveSession(
+                            serverUrl = server,
+                            accountId = accountId,
+                            accessToken = accessToken,
+                            accessExpiresAtIso = accessExpiresAt,
+                            refreshToken = refreshToken,
+                            refreshExpiresAtIso = refreshExpiresAt,
+                            userJson = userObj.toString(),
+                        )
+                        true
+                    }
+                }
+                if (!saved) {
+                    sendServerLogout(server, accessToken, revokeAllDevices = false)
+                    return LoginOutcome(
+                        ok = false,
+                        status = 409,
+                        errorCode = "SESSION_SUPERSEDED",
+                        errorMessage = "登录已被取消，请重试",
+                    )
+                }
                 LoginOutcome(
                     ok = true,
                     status = response.code,
@@ -239,31 +262,59 @@ class RunNoteTransportCore(
     }
 
     fun logout(revokeAllDevices: Boolean = false): Pair<Boolean, Int> {
-        val snap = vault.read()
-        val server = snap.serverUrl?.let {
-            ServerUrlPolicy.validate(it, allowDebugLoopbackHttp).normalizedUrl
-        } ?: requireValidatedServerUrl()
-        val access = snap.accessToken
-        var status = 200
-        if (server != null && !access.isNullOrBlank()) {
-            val payload = JSONObject().put("revoke_all_devices", revokeAllDevices).toString()
-            val req = Request.Builder()
-                .url(server + LOGOUT_PATH)
-                .post(payload.toRequestBody(JSON_MEDIA_TYPE))
-                .header("Authorization", "Bearer $access")
-                .header("Accept", "application/json")
-                .header("Content-Type", "application/json")
-                .build()
-            try {
-                client.newCall(req).execute().use { resp ->
-                    status = resp.code
+        // Bump epoch BEFORE waiting on refreshLock so any in-flight refresh discards its vault write.
+        sessionEpoch.incrementAndGet()
+        synchronized(refreshLock) {
+            val snap: TransportSessionSnapshot
+            val server: String?
+            val supersededAccess: String?
+            synchronized(vaultMutationLock) {
+                snap = vault.read()
+                server = snap.serverUrl?.let {
+                    ServerUrlPolicy.validate(it, allowDebugLoopbackHttp).normalizedUrl
+                } ?: requireValidatedServerUrl()
+                supersededAccess = if (supersededRefreshServerUrl == server) {
+                    supersededRefreshAccessToken
+                } else {
+                    null
                 }
-            } catch (_: IOException) {
-                status = 0
+                supersededRefreshAccessToken = null
+                supersededRefreshServerUrl = null
+                // Clear local credentials immediately so logout succeeds even when offline.
+                vault.clearSession(preserveServerUrl = server)
             }
+
+            if (server == null) {
+                return true to 200
+            }
+
+            val refreshToken = snap.refreshToken
+            var accessToken = supersededAccess ?: snap.accessToken
+            var refreshedDuringLogout = supersededAccess != null
+
+            // If the stored access token is already expired (>30m idle), rotate once via refresh
+            // (without writing back to the vault) so server-side logout actually revokes the family.
+            if (!refreshedDuringLogout && needsProactiveRefresh(snap) && !refreshToken.isNullOrBlank()) {
+                val exchanged = exchangeRefreshForLogout(server, refreshToken)
+                if (exchanged != null) {
+                    accessToken = exchanged
+                    refreshedDuringLogout = true
+                }
+            }
+
+            if (accessToken.isNullOrBlank()) {
+                return true to 200
+            }
+
+            var status = sendServerLogout(server, accessToken, revokeAllDevices)
+            if (status == 401 && !refreshedDuringLogout && !refreshToken.isNullOrBlank()) {
+                val exchanged = exchangeRefreshForLogout(server, refreshToken)
+                if (exchanged != null) {
+                    status = sendServerLogout(server, exchanged, revokeAllDevices)
+                }
+            }
+            return true to status
         }
-        vault.clearSession(preserveServerUrl = server)
-        return true to status
     }
 
     fun executeApiRequest(
@@ -285,13 +336,14 @@ class RunNoteTransportCore(
 
         val isPublic = path == CAPABILITIES_PATH || path.startsWith("$CAPABILITIES_PATH?")
         var usedAccessToken: String? = null
+        val startEpoch = sessionEpoch.get()
 
         if (!isPublic) {
             var snap = vault.read()
             if (snap.state == SessionLifecycleState.ACTIVE && needsProactiveRefresh(snap)) {
-                val outcome = refreshSingleFlight(server, expectedAccessToken = snap.accessToken)
-                if (outcome == RefreshOutcome.REAUTH_REQUIRED) {
-                    return errorResponse(401, "AUTH_REQUIRED", "登录已过期，请重新登录", SessionLifecycleState.REAUTH_REQUIRED)
+                val outcome = refreshSingleFlight(server, expectedAccessToken = snap.accessToken, expectedEpoch = startEpoch)
+                if (outcome == RefreshOutcome.REAUTH_REQUIRED || outcome == RefreshOutcome.SIGNED_OUT) {
+                    return errorResponse(401, "AUTH_REQUIRED", "登录已过期，请重新登录", vault.read().state)
                 }
                 snap = vault.read()
             }
@@ -304,15 +356,15 @@ class RunNoteTransportCore(
             ?: return errorResponse(503, "NETWORK_ERROR", "无法连接 RunNote 服务，请检查网络后重试", vault.read().state)
 
         if (!isPublic && first.status == 401 && usedAccessToken != null) {
-            return when (refreshSingleFlight(server, expectedAccessToken = usedAccessToken)) {
+            return when (refreshSingleFlight(server, expectedAccessToken = usedAccessToken, expectedEpoch = startEpoch)) {
                 RefreshOutcome.REFRESHED -> {
                     val freshToken = vault.read().accessToken
                     val retry = performSingleCall(server, normalizedMethod, path, headers, body, freshToken, timeoutMs)
                         ?: return errorResponse(503, "NETWORK_ERROR", "无法连接 RunNote 服务，请检查网络后重试", vault.read().state)
                     retry
                 }
-                RefreshOutcome.REAUTH_REQUIRED -> {
-                    errorResponse(401, "AUTH_REQUIRED", "登录已过期，请重新登录", SessionLifecycleState.REAUTH_REQUIRED)
+                RefreshOutcome.REAUTH_REQUIRED, RefreshOutcome.SIGNED_OUT -> {
+                    errorResponse(401, "AUTH_REQUIRED", "登录已过期，请重新登录", vault.read().state)
                 }
                 RefreshOutcome.TRANSIENT_FAILURE -> {
                     errorResponse(503, "NETWORK_ERROR", "无法刷新登录会话，请检查网络后重试", vault.read().state)
@@ -326,14 +378,28 @@ class RunNoteTransportCore(
     private enum class RefreshOutcome {
         REFRESHED,
         REAUTH_REQUIRED,
+        SIGNED_OUT,
         TRANSIENT_FAILURE,
     }
 
-    private fun refreshSingleFlight(server: String, expectedAccessToken: String?): RefreshOutcome {
+    private fun refreshSingleFlight(
+        server: String,
+        expectedAccessToken: String?,
+        expectedEpoch: Long,
+    ): RefreshOutcome {
         synchronized(refreshLock) {
+            if (sessionEpoch.get() != expectedEpoch) {
+                return RefreshOutcome.SIGNED_OUT
+            }
             val current = vault.read()
-            if (current.state == SessionLifecycleState.ACTIVE &&
-                !current.accessToken.isNullOrBlank() &&
+            if (current.state != SessionLifecycleState.ACTIVE) {
+                return if (current.state == SessionLifecycleState.SIGNED_OUT) {
+                    RefreshOutcome.SIGNED_OUT
+                } else {
+                    RefreshOutcome.REAUTH_REQUIRED
+                }
+            }
+            if (!current.accessToken.isNullOrBlank() &&
                 current.accessToken != expectedAccessToken &&
                 !needsProactiveRefresh(current)
             ) {
@@ -342,7 +408,11 @@ class RunNoteTransportCore(
             }
             val refreshToken = current.refreshToken
             if (refreshToken.isNullOrBlank()) {
-                vault.markReauthRequired(current.serverUrl ?: server, current.accountId)
+                synchronized(vaultMutationLock) {
+                    if (sessionEpoch.get() == expectedEpoch) {
+                        vault.markReauthRequired(current.serverUrl ?: server, current.accountId)
+                    }
+                }
                 return RefreshOutcome.REAUTH_REQUIRED
             }
             val payload = JSONObject()
@@ -359,7 +429,12 @@ class RunNoteTransportCore(
                 client.newCall(req).execute().use { resp ->
                     val rawBody = resp.body?.string().orEmpty()
                     if (resp.code == 401 || resp.code == 403) {
-                        vault.markReauthRequired(current.serverUrl ?: server, current.accountId)
+                        synchronized(vaultMutationLock) {
+                            if (sessionEpoch.get() != expectedEpoch) {
+                                return RefreshOutcome.SIGNED_OUT
+                            }
+                            vault.markReauthRequired(current.serverUrl ?: server, current.accountId)
+                        }
                         return RefreshOutcome.REAUTH_REQUIRED
                     }
                     if (!resp.isSuccessful) {
@@ -378,20 +453,67 @@ class RunNoteTransportCore(
                     ) {
                         return RefreshOutcome.TRANSIENT_FAILURE
                     }
-                    vault.saveActiveSession(
-                        serverUrl = server,
-                        accountId = nextAccountId,
-                        accessToken = nextAccess,
-                        accessExpiresAtIso = nextAccessExp,
-                        refreshToken = nextRefresh,
-                        refreshExpiresAtIso = nextRefreshExp,
-                        userJson = userObj?.toString() ?: current.userJson.orEmpty(),
-                    )
+                    synchronized(vaultMutationLock) {
+                        if (sessionEpoch.get() != expectedEpoch) {
+                            // Logout ran while this refresh was in flight: do not restore the
+                            // session; hand off the fresh access token so logout revokes it.
+                            supersededRefreshAccessToken = nextAccess
+                            supersededRefreshServerUrl = server
+                            return RefreshOutcome.SIGNED_OUT
+                        }
+                        vault.saveActiveSession(
+                            serverUrl = server,
+                            accountId = nextAccountId,
+                            accessToken = nextAccess,
+                            accessExpiresAtIso = nextAccessExp,
+                            refreshToken = nextRefresh,
+                            refreshExpiresAtIso = nextRefreshExp,
+                            userJson = userObj?.toString() ?: current.userJson.orEmpty(),
+                        )
+                    }
                     RefreshOutcome.REFRESHED
                 }
             } catch (_: IOException) {
                 RefreshOutcome.TRANSIENT_FAILURE
             }
+        }
+    }
+
+    private fun exchangeRefreshForLogout(server: String, refreshToken: String): String? {
+        val payload = JSONObject()
+            .put("refresh_token", refreshToken)
+            .put("client_version", appVersion.take(32))
+            .toString()
+        val req = Request.Builder()
+            .url(server + REFRESH_PATH)
+            .post(payload.toRequestBody(JSON_MEDIA_TYPE))
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .build()
+        return try {
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return null
+                val parsed = parseJsonObjectOrNull(resp.body?.string().orEmpty())
+                parsed?.optJSONObject("data")?.optString("access_token")?.takeIf { it.isNotBlank() }
+            }
+        } catch (_: IOException) {
+            null
+        }
+    }
+
+    private fun sendServerLogout(server: String, accessToken: String, revokeAllDevices: Boolean): Int {
+        val payload = JSONObject().put("revoke_all_devices", revokeAllDevices).toString()
+        val req = Request.Builder()
+            .url(server + LOGOUT_PATH)
+            .post(payload.toRequestBody(JSON_MEDIA_TYPE))
+            .header("Authorization", "Bearer $accessToken")
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .build()
+        return try {
+            client.newCall(req).execute().use { resp -> resp.code }
+        } catch (_: IOException) {
+            0
         }
     }
 

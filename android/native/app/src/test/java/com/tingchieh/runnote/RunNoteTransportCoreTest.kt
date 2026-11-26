@@ -17,8 +17,11 @@ import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.concurrent.Callable
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 class RunNoteTransportCoreTest {
 
@@ -249,6 +252,121 @@ class RunNoteTransportCoreTest {
         assertEquals(SessionLifecycleState.SIGNED_OUT, vault.read().state)
         assertNull(vault.read().accessToken)
         assertNull(vault.read().refreshToken)
+    }
+
+    @Test
+    fun logoutRefreshesExpiredAccessTokenBeforeServerRevocation() {
+        vault.saveActiveSession(
+            serverUrl = serverOrigin(),
+            accountId = "user-1",
+            accessToken = "expired-access-token",
+            accessExpiresAtIso = fixedNow.minusSeconds(3600).toString(),
+            refreshToken = "still-valid-refresh",
+            refreshExpiresAtIso = fixedNow.plusSeconds(86400 * 90L).toString(),
+            userJson = sampleUserJson("user-1").toString(),
+        )
+        val refreshBody = JSONObject()
+            .put(
+                "data",
+                JSONObject()
+                    .put("token_type", "Bearer")
+                    .put("access_token", "fresh-logout-access")
+                    .put("access_expires_at", fixedNow.plusSeconds(1800).toString())
+                    .put("refresh_token", "fresh-logout-refresh")
+                    .put("refresh_expires_at", fixedNow.plusSeconds(86400 * 90L).toString())
+                    .put("user", sampleUserJson("user-1")),
+            )
+            .toString()
+        server.enqueue(MockResponse().setResponseCode(200).setBody(refreshBody))
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"data":{"logged_out":true}}"""))
+
+        val core = buildCore()
+        val (ok, status) = core.logout(revokeAllDevices = true)
+        assertTrue(ok)
+        assertEquals(200, status)
+
+        val refreshReq = server.takeRequest()
+        assertEquals(RunNoteTransportCore.REFRESH_PATH, refreshReq.path)
+        assertTrue(refreshReq.body.readUtf8().contains("still-valid-refresh"))
+
+        val logoutReq = server.takeRequest()
+        assertEquals(RunNoteTransportCore.LOGOUT_PATH, logoutReq.path)
+        assertEquals("Bearer fresh-logout-access", logoutReq.getHeader("Authorization"))
+        assertTrue(logoutReq.body.readUtf8().contains("\"revoke_all_devices\":true"))
+
+        assertEquals(SessionLifecycleState.SIGNED_OUT, vault.read().state)
+        assertNull(vault.read().accessToken)
+        assertNull(vault.read().refreshToken)
+    }
+
+    @Test
+    fun inFlightRefreshCannotRestoreSessionAfterConcurrentLogout() {
+        vault.saveActiveSession(
+            serverUrl = serverOrigin(),
+            accountId = "user-1",
+            accessToken = "expired-access",
+            accessExpiresAtIso = fixedNow.minusSeconds(60).toString(),
+            refreshToken = "old-refresh",
+            refreshExpiresAtIso = fixedNow.plusSeconds(86400 * 90L).toString(),
+            userJson = sampleUserJson("user-1").toString(),
+        )
+
+        val refreshInFlight = CountDownLatch(1)
+        val releaseRefresh = CountDownLatch(1)
+        val logoutAuthHeader = AtomicReference<String?>(null)
+
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                return when (request.path) {
+                    RunNoteTransportCore.REFRESH_PATH -> {
+                        refreshInFlight.countDown()
+                        releaseRefresh.await(5, TimeUnit.SECONDS)
+                        val body = JSONObject()
+                            .put(
+                                "data",
+                                JSONObject()
+                                    .put("token_type", "Bearer")
+                                    .put("access_token", "rotated-during-logout")
+                                    .put("access_expires_at", fixedNow.plusSeconds(1800).toString())
+                                    .put("refresh_token", "rotated-refresh-during-logout")
+                                    .put("refresh_expires_at", fixedNow.plusSeconds(86400 * 90L).toString())
+                                    .put("user", sampleUserJson("user-1")),
+                            )
+                            .toString()
+                        MockResponse().setResponseCode(200).setBody(body)
+                    }
+                    RunNoteTransportCore.LOGOUT_PATH -> {
+                        logoutAuthHeader.set(request.getHeader("Authorization"))
+                        MockResponse().setResponseCode(200).setBody("""{"data":{"logged_out":true}}""")
+                    }
+                    else -> MockResponse().setResponseCode(200).setBody("""{"data":{}}""")
+                }
+            }
+        }
+
+        val core = buildCore()
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val apiFuture = pool.submit(Callable { core.executeApiRequest("GET", "/api/v1/me") })
+            assertTrue(refreshInFlight.await(5, TimeUnit.SECONDS))
+            val logoutFuture = pool.submit(Callable { core.logout(revokeAllDevices = true) })
+            // Give logout a brief moment to bump sessionEpoch and block on refreshLock.
+            Thread.sleep(50)
+            releaseRefresh.countDown()
+
+            val apiRes = apiFuture.get(5, TimeUnit.SECONDS)
+            val (logoutOk, logoutStatus) = logoutFuture.get(5, TimeUnit.SECONDS)
+
+            assertTrue(logoutOk)
+            assertEquals(200, logoutStatus)
+            assertEquals(401, apiRes.status)
+            assertEquals("Bearer rotated-during-logout", logoutAuthHeader.get())
+            assertEquals(SessionLifecycleState.SIGNED_OUT, vault.read().state)
+            assertNull(vault.read().accessToken)
+            assertNull(vault.read().refreshToken)
+        } finally {
+            pool.shutdownNow()
+        }
     }
 
     @Test
