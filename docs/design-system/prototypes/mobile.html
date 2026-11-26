@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RunNote · Mobile · Editorial Receipt 原型</title>
+<link rel="stylesheet" href="brand.css">
+<script src="proto.js"></script>
+<style>
+  body { min-height: 100dvh; }
+  .sbar { height: 36px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .screen { padding: 0 20px calc(64px + 10px + 28px); }
+  .screen.immersive { padding-bottom: 24px; min-height: calc(100dvh - 36px); display: flex; flex-direction: column; }
+  .tabbar { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; z-index: 30; left: 10px; right: 10px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); height: 64px; align-items: center; border-radius: 32px; background: var(--nav-surface); border: 1px solid var(--nav-edge); box-shadow: 0 6px 24px var(--nav-rim); backdrop-filter: blur(18px) saturate(1.5); -webkit-backdrop-filter: blur(18px) saturate(1.5); }
+  .tabbar a { display: grid; justify-items: center; gap: 2px; font-size: 11px; font-weight: 600; color: var(--nav-ink); min-height: 48px; align-content: center; }
+  .tabbar a[aria-current] { color: var(--primary); }
+  .tabbar .go { width: 56px; height: 48px; margin: 0 auto; border-radius: 16px; background: var(--primary); color: var(--primary-foreground); }
+  body:is([data-current='prerun'], [data-current='recording'], [data-current='done'], [data-current='share']) .tabbar { display: none; }
+  .mhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 64px; }
+  .mhead h1 { font-size: var(--text-stat); font-weight: 700; }
+  .mhead .sub { font-family: var(--font-mono); font-size: 13px; color: var(--muted-foreground); }
+  .sync { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: var(--text-small); font-weight: 600; color: var(--success); }
+  .topnav { display: grid; grid-template-columns: 64px 1fr 64px; align-items: center; min-height: 56px; }
+  .topnav h1 { text-align: center; font-size: var(--text-card); font-weight: 600; }
+  .bigbtn { width: 100%; min-height: 64px; border-radius: 14px; font-size: var(--text-card); }
+
+  /* Home */
+  .week .row { display: flex; align-items: baseline; justify-content: space-between; }
+  .week .figure-num { font-size: 5rem; }
+  .week .of { font-family: var(--font-mono); font-size: 20px; font-weight: 600; color: var(--muted-foreground); margin-left: 6px; letter-spacing: 0; }
+  .days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: var(--space-4); align-items: end; height: 92px; }
+  .days .d { display: grid; grid-template-rows: 1fr auto; height: 100%; gap: 6px; justify-items: center; }
+  .days .d .stack { display: flex; flex-direction: column-reverse; gap: 3px; align-self: end; width: 100%; align-items: center; }
+  .days .d .blk { width: 26px; height: 9px; border-radius: 2px; background: var(--primary); opacity: 0.85; }
+  .days .d.rest .blk { background: transparent; outline: 1.5px dashed var(--border); outline-offset: -1.5px; opacity: 1; }
+  .days .d.today .blk { background: transparent; outline: 2px solid var(--receipt-mark); outline-offset: -2px; opacity: 1; }
+  .days .d.future .blk { background: var(--border); opacity: 1; height: 2px; }
+  .days .d span { font-size: 12px; color: var(--muted-foreground); }
+  .days .d.today span { color: var(--foreground); font-weight: 700; }
+  .recent { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 14px; align-items: center; padding: 4px 0 14px; }
+  .recent .thumb { width: 64px; height: 52px; background: var(--well); border-radius: 3px; padding: 6px; }
+  .recent .thumb svg { width: 100%; height: 100%; }
+  .recent b { display: block; font-size: var(--text-card); font-weight: 600; }
+  .trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--border); }
+  .trio > div { padding: 12px 0 4px 14px; border-left: 1px solid var(--border); }
+  .trio > div:first-child { padding-left: 0; border-left: 0; }
+  .trio b { display: block; font-size: var(--text-stat); font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .trio b small { font-family: var(--font-mono); font-size: 12px; color: var(--muted-foreground); font-weight: 500; margin-left: 2px; }
+  .stack-gap > * + * { margin-top: var(--space-8); }
+
+  /* Pre-run */
+  .gps { padding: var(--space-8) 0 var(--space-6); }
+  .gps .figure-num { font-size: 4.5rem; }
+  .ok { color: var(--success); }
+  .warn { color: var(--warning); }
+  .check-list { list-style: none; margin: 0; padding: 0; border-top: 2px solid var(--rule); }
+  .check-list li { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; min-height: 56px; border-bottom: 1px solid var(--border); }
+  .check-list li span:last-child { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: var(--text-small); }
+  .check-list svg { width: 16px; height: 16px; }
+
+  /* Recording: outdoor first — max contrast, numbers only, one large target */
+  body[data-current='recording'] { background: var(--rec-bg); color: var(--rec-ink); }
+  .rec-top { display: flex; align-items: center; gap: 14px; min-height: 56px; font-size: 15px; font-weight: 700; }
+  .rec-top .st { display: inline-flex; align-items: center; gap: 6px; }
+  .rec-top .lock { margin-left: auto; width: 52px; height: 52px; border-radius: 14px; border: 2px solid currentColor; background: none; display: grid; place-items: center; }
+  .rec-top .lock svg { width: 22px; height: 22px; }
+  .rec-main { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+  .rec-label { font-size: 16px; font-weight: 700; opacity: 0.72; }
+  .rec-dist { font-size: min(8.5rem, 31vw); font-weight: 700; line-height: 0.9; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
+  .rec-dist small { font-size: 1.5rem; letter-spacing: 0; margin-left: 6px; }
+  .rec-pair { display: grid; grid-template-columns: 1fr 1fr; margin-top: var(--space-8); border-top: 2px solid currentColor; }
+  .rec-pair > div { padding: 14px 0 0; }
+  .rec-pair > div + div { padding-left: 16px; border-left: 2px solid currentColor; }
+  .rec-pair b { display: block; font-size: 3.25rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .rec-split { margin-top: var(--space-6); font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .rec-split span { opacity: 0.72; font-weight: 600; }
+  .btn-rec { width: 100%; min-height: 76px; border-radius: 16px; border: 0; background: var(--rec-ink); color: var(--rec-bg); font-size: 22px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 12px; }
+  .btn-rec svg { width: 26px; height: 26px; stroke-width: 2.6; }
+
+  /* Completion: the run's receipt */
+  body[data-current='done'], body[data-current='share'] { background: var(--desk); }
+  .done .sheet { --notch: var(--desk); --sheet-pad: 22px; margin-top: 8px; }
+  .done .figure-num { font-size: 4.75rem; }
+  .splits { list-style: none; margin: 0; padding: 0; font-variant-numeric: tabular-nums; }
+  .splits li { display: grid; grid-template-columns: 34px 50px 1fr; gap: 10px; align-items: center; padding: 4px 0; font-size: var(--text-small); }
+  .splits li span:first-child { font-family: var(--font-mono); color: var(--muted-foreground); }
+  .splits li b { font-weight: 700; }
+  .splits li i { display: block; height: 9px; background: var(--primary); opacity: 0.82; }
+  .splits li.best i { background: var(--receipt-mark); opacity: 1; }
+  .form { display: grid; gap: var(--space-4); margin-top: var(--space-6); }
+  .form .input, .form .select { min-height: 48px; font-size: 16px; }
+  .discard { display: flex; justify-content: center; margin-top: var(--space-2); }
+
+  /* Detail */
+  .dmap { position: relative; height: 340px; margin: -36px -20px 0; }
+  .dmap .map { position: absolute; inset: 0; border: 0; border-radius: 0; }
+  .dmap .float { position: absolute; display: flex; gap: 8px; }
+  .dmeta { font-family: var(--font-mono); font-size: 13px; color: var(--muted-foreground); margin-top: var(--space-4); }
+  .dtitle { font-size: 1.5rem; font-weight: 700; }
+  .dhero { display: flex; align-items: baseline; gap: 8px; margin: 8px 0 var(--space-4); }
+  .dhero .figure-num { font-size: 4rem; }
+
+  /* Share */
+  .share-wrap { display: grid; gap: var(--space-4); }
+  .share-wrap .poster-frame { width: min(100%, 300px); margin: 0 auto; box-shadow: 0 8px 30px rgb(0 0 0 / 0.12); }
+  .share-actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+  .check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: var(--text-small); border-bottom: 1px solid var(--border); }
+  .check input { width: 18px; height: 18px; accent-color: var(--primary); }
+
+  /* ===== Tablet 600–1023: same tab bar shell, two-pane layouts ===== */
+  @media (min-width: 600px) {
+    .screen { padding-left: 32px; padding-right: 32px; }
+    .home-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-8); align-items: start; }
+    .home-grid > * + * { margin-top: 0; }
+    .home-grid .right > * + * { margin-top: var(--space-8); }
+    .week .figure-num { font-size: 6rem; }
+    .narrow { max-width: 560px; width: 100%; margin: 0 auto; }
+    .rec-dist { font-size: 11rem; }
+    .rec-pair b { font-size: 4.5rem; }
+    .done-grid { display: grid; grid-template-columns: 400px minmax(0, 1fr); gap: var(--space-8); align-items: start; }
+    .done-grid .form { margin-top: 8px; }
+    .detail-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: var(--space-8); align-items: start; }
+    .dmap { margin: 0; height: 640px; position: sticky; top: 16px; }
+    .dmap .map { border: 1px solid var(--border); border-radius: var(--radius-sheet); }
+    .dmeta { margin-top: 0; }
+    .share-wrap { grid-template-columns: 320px minmax(0, 1fr); align-items: start; gap: var(--space-8); }
+    .share-wrap .poster-frame { width: 100%; grid-row: 1 / span 5; }
+  }
+</style>
+</head>
+<body>
+<div class="sbar" aria-hidden="true"><span>07:42</span><span>5G ▮▮▮</span></div>
+
+<!-- ================================================= 1. 今天 -->
+<main class="screen" data-page="home" aria-labelledby="m-home">
+  <div class="mhead">
+    <div><h1 id="m-home">今天</h1><p class="sub">11.26 周四</p></div>
+    <button class="sync btn" type="button" aria-label="同步状态：已同步，2 分钟前"><span class="status-dot"></span>已同步</button>
+  </div>
+  <div class="home-grid stack-gap">
+    <section class="section week" aria-labelledby="m-week">
+      <div class="row"><h2 id="m-week" class="label" style="font-size:var(--text-small);font-weight:600;color:var(--foreground)">本周跑量</h2><a class="link" href="#">目标 20 km</a></div>
+      <p><span class="figure-num">6.7</span><span class="of">/ 20 km</span></p>
+      <div class="bar-track" style="margin-top:10px"><i style="width:34%"></i><b style="left:57%"></b></div>
+      <p class="caption" style="margin-top:8px">2 次 · 还差 13.3 km · 竖线为按日期应达到的位置</p>
+      <div class="days" role="img" aria-label="本周每日跑量：周一 3.9 公里，周三 2.8 公里，今天周四尚未跑步">
+        <div class="d"><div class="stack"><i class="blk"></i><i class="blk"></i><i class="blk"></i><i class="blk"></i><i class="blk"></i></div><span>一</span></div>
+        <div class="d rest"><div class="stack"><i class="blk"></i></div><span>二</span></div>
+        <div class="d"><div class="stack"><i class="blk"></i><i class="blk"></i><i class="blk"></i><i class="blk"></i></div><span>三</span></div>
+        <div class="d today"><div class="stack"><i class="blk"></i></div><span>今天</span></div>
+        <div class="d future"><div class="stack"><i class="blk"></i></div><span>五</span></div>
+        <div class="d future"><div class="stack"><i class="blk"></i></div><span>六</span></div>
+        <div class="d future"><div class="stack"><i class="blk"></i></div><span>日</span></div>
+      </div>
+    </section>
+    <div class="right stack-gap">
+      <section class="section" aria-labelledby="m-recent">
+        <div class="section-head" style="margin-bottom:8px"><h2 id="m-recent">最近一次</h2><a class="link" href="?screen=detail" data-keep>详情 <span data-icon="arrow" data-size="14"></span></a></div>
+        <a class="recent" href="?screen=detail" data-keep><span class="thumb" id="m-recent-thumb"></span><span><b>间歇训练</b><span class="caption">昨天 07:12 · 青岬市</span></span></a>
+        <div class="trio">
+          <div><b>2.80<small>km</small></b><span class="caption">距离</span></div>
+          <div><b>16:44</b><span class="caption">用时</span></div>
+          <div><b>5:55<small>/km</small></b><span class="caption">配速</span></div>
+        </div>
+      </section>
+      <section class="section" aria-labelledby="m-month">
+        <div class="section-head" style="margin-bottom:8px"><h2 id="m-month">11 月</h2><span class="meta">目标 60 km</span></div>
+        <div class="trio" style="border-top:0">
+          <div><b>42.6<small>km</small></b><span class="caption">已跑</span></div>
+          <div><b>8<small>次</small></b><span class="caption">次数</span></div>
+          <div><b>5:41<small>/km</small></b><span class="caption">均配速</span></div>
+        </div>
+      </section>
+      <section class="section" aria-labelledby="m-health">
+        <div class="section-head" style="margin-bottom:8px"><h2 id="m-health">近 7 天</h2><span class="meta">Health Connect · 只读</span></div>
+        <div class="trio" style="border-top:0">
+          <div><b>54,820</b><span class="caption">步数</span></div>
+          <div><b>53<small>bpm</small></b><span class="caption">静息心率</span></div>
+          <div><b>7.4<small>h</small></b><span class="caption">平均睡眠</span></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<!-- ================================================= 2. 准备开跑 -->
+<main class="screen immersive" data-page="prerun" aria-labelledby="m-pre" hidden>
+  <div class="narrow" style="display:flex;flex-direction:column;flex:1">
+    <div class="topnav"><button class="btn btn-icon" type="button" aria-label="关闭" data-icon="close"></button><h1 id="m-pre">准备开跑</h1><button class="btn btn-icon" type="button" aria-label="待上传队列：1 条" style="font-weight:700;color:var(--warning);width:auto;padding:0 4px;font-size:13px">队列 1</button></div>
+    <section class="gps" aria-label="定位状态">
+      <p class="label">定位精度</p>
+      <p class="figure-num">±6<span class="unit" style="font-size:1.5rem;margin-left:6px">m</span></p>
+      <p class="ok" style="font-weight:700;margin-top:6px;display:flex;gap:6px;align-items:center"><span data-icon="check"></span>GPS 良好 · 精确位置</p>
+    </section>
+    <ul class="check-list">
+      <li><span>后台记录</span><span class="ok"><span data-icon="check"></span>已就绪</span></li>
+      <li><span>网络</span><span class="warn"><span data-icon="offline"></span>离线 · 结束后本机暂存</span></li>
+      <li><a href="#" style="display:contents"><span>跑鞋</span><span>轻云 3 代 <span data-icon="right"></span></span></a></li>
+      <li><a href="#" style="display:contents"><span>可见性</span><span>公开展示 <span data-icon="right"></span></span></a></li>
+    </ul>
+    <div style="flex:1"></div>
+    <a class="btn btn-primary bigbtn" href="?screen=recording" data-keep><span data-icon="play" data-size="22"></span>开始跑步</a>
+  </div>
+</main>
+
+<!-- ================================================= 3. 记录中 -->
+<main class="screen immersive" data-page="recording" aria-labelledby="m-rec" hidden>
+  <div class="narrow" style="display:flex;flex-direction:column;flex:1">
+    <h1 id="m-rec" class="sr-only">记录中</h1>
+    <div class="rec-top" role="status">
+      <span class="st"><span class="status-dot" style="color:var(--success)"></span>记录中</span>
+      <span class="st">GPS ±6 m</span>
+      <span class="st warn"><span data-icon="offline" data-size="16"></span>离线</span>
+      <button class="lock" type="button" aria-label="锁定屏幕，防误触" data-icon="lock"></button>
+    </div>
+    <div class="rec-main">
+      <p class="rec-label">距离</p>
+      <p class="rec-dist">3.42<small>km</small></p>
+      <div class="rec-pair">
+        <div><p class="rec-label">用时</p><b>18:24</b></div>
+        <div><p class="rec-label">平均配速</p><b>5:22</b></div>
+      </div>
+      <p class="rec-split">第 4 公里 <span>· 上一公里 5:20</span></p>
+    </div>
+    <button class="btn-rec" type="button"><span data-icon="pause"></span>暂停</button>
+  </div>
+</main>
+
+<!-- ================================================= 4. 跑步完成 -->
+<main class="screen done" data-page="done" aria-labelledby="m-done" hidden style="padding-bottom:32px">
+  <div class="topnav"><span></span><h1 id="m-done">跑步完成</h1><span></span></div>
+  <div class="done-grid">
+    <article class="sheet serrated" aria-label="本次跑步小票">
+      <div class="sheet-cap"><span><span class="mark" aria-hidden="true" style="width:18px;height:18px;font-size:12px;border-radius:5px;margin-right:6px;vertical-align:-4px">R</span>2026.11.26 周四</span><span>07:15 — 07:42</span></div>
+      <p class="figure-num">5.02<span class="unit" style="font-size:1.5rem;margin-left:6px">km</span></p>
+      <ul class="ledger leaders" style="margin-top:var(--space-4)">
+        <li><span class="k label">用时</span><i class="dots"></i><b class="v">27:00</b></li>
+        <li><span class="k label">平均配速</span><i class="dots"></i><b class="v">5:23 /km</b></li>
+        <li><span class="k label">最快公里</span><i class="dots"></i><b class="v">5:04 · 第 3 km</b></li>
+        <li><span class="k label">轨迹点</span><i class="dots"></i><b class="v">1,206</b></li>
+      </ul>
+      <div class="perf notched"></div>
+      <ul class="splits" aria-label="每公里配速">
+        <li><span>1</span><b>5:41</b><i style="width:72%"></i></li>
+        <li><span>2</span><b>5:22</b><i style="width:86%"></i></li>
+        <li class="best"><span>3</span><b>5:04</b><i style="width:100%"></i></li>
+        <li><span>4</span><b>5:20</b><i style="width:88%"></i></li>
+        <li><span>5</span><b>5:28</b><i style="width:82%"></i></li>
+      </ul>
+      <div class="perf notched"></div>
+      <p class="notice" role="status"><span data-icon="offline"></span><span>已保存在本机。联网后自动上传一次，距离与配速以上传后服务端计算为准。</span></p>
+    </article>
+    <form class="form" onsubmit="return false" aria-label="补充信息">
+      <label class="field"><span>标题</span><input class="input" placeholder="晨跑"></label>
+      <label class="field"><span>跑鞋</span><button class="select" type="button" style="justify-content:space-between;width:100%;font-weight:500">轻云 3 代<span data-icon="chevron"></span></button></label>
+      <button class="btn btn-primary bigbtn" type="submit" style="min-height:56px">保存</button>
+      <div class="discard"><button class="btn btn-danger" type="button">放弃这次记录</button></div>
+    </form>
+  </div>
+</main>
+
+<!-- ================================================= 5. 跑步详情 -->
+<main class="screen" data-page="detail" aria-labelledby="m-detail" hidden>
+  <div class="detail-grid">
+    <div class="dmap">
+      <div class="map" role="region" aria-label="路线地图（本地背景）"><div id="m-map" style="position:absolute;inset:0"></div></div>
+      <div class="float" style="left:14px;top:46px"><a class="glass-btn" href="?screen=home" data-keep aria-label="返回" data-icon="back"></a></div>
+      <div class="float" style="right:14px;top:46px"><button class="glass-btn" type="button" aria-label="更多：编辑、导出、删除记录" data-icon="more"></button></div>
+      <div class="float" style="right:14px;bottom:14px"><button class="glass-btn" type="button"><span data-icon="replay"></span>回放</button><button class="glass-btn" type="button"><span data-icon="layers"></span>底图</button></div>
+    </div>
+    <div>
+      <p class="dmeta">2026.11.25 周三 07:12 · 青岬市</p>
+      <h1 id="m-detail" class="dtitle">间歇训练</h1>
+      <p class="dhero"><span class="figure-num">2.80</span><span class="unit" style="font-size:1.375rem">km</span></p>
+      <div class="trio">
+        <div><b>16:44</b><span class="caption">用时</span></div>
+        <div><b>5:55<small>/km</small></b><span class="caption">平均配速</span></div>
+        <div><b class="muted">—</b><span class="caption">心率</span></div>
+      </div>
+      <section class="section" style="margin-top:var(--space-8)" aria-labelledby="m-splits">
+        <div class="section-head" style="margin-bottom:8px"><h2 id="m-splits">每公里配速</h2><span class="meta">最快 5:31</span></div>
+        <ul class="splits"><li><span>1</span><b>5:58</b><i style="width:78%"></i></li><li class="best"><span>2</span><b>5:31</b><i style="width:100%"></i></li><li><span>0.8</span><b>6:24</b><i style="width:62%"></i></li></ul>
+      </section>
+      <section class="section" style="margin-top:var(--space-8)" aria-label="其他信息">
+        <ul class="ledger">
+          <li><span class="label">跑鞋</span><span class="v">轻云 3 代</span></li>
+          <li><span class="label">累计爬升</span><span class="v">12 m</span></li>
+          <li><span class="label">可见性</span><span class="v">公开展示</span></li>
+        </ul>
+      </section>
+      <div class="share-actions" style="margin-top:var(--space-6)"><a class="btn btn-secondary" href="?screen=share" data-keep><span data-icon="share"></span>分享图</a><button class="btn btn-secondary" type="button"><span data-icon="edit"></span>编辑</button></div>
+    </div>
+  </div>
+</main>
+
+<!-- ================================================= 6. 分享图 -->
+<main class="screen" data-page="share" aria-labelledby="m-share" hidden style="padding-bottom:32px">
+  <div class="topnav"><a class="btn btn-icon" href="?screen=home" data-keep aria-label="关闭" data-icon="close"></a><h1 id="m-share">年度回顾分享图</h1><span></span></div>
+  <div class="share-wrap">
+    <div class="poster-frame" id="m-poster"></div>
+    <div class="radio-row" role="radiogroup" aria-label="海报外观" style="width:100%"><label aria-checked="true" style="flex:1;justify-content:center">浅色纸面</label><label aria-checked="false" style="flex:1;justify-content:center">深色暖炭</label></div>
+    <div><label class="check"><input type="checkbox">隐藏具体城市名</label><label class="check"><input type="checkbox">隐藏具体路线名</label></div>
+    <div class="share-actions"><button class="btn btn-primary" type="button">保存图片</button><button class="btn btn-secondary" type="button">系统分享</button></div>
+  </div>
+</main>
+
+<nav class="tabbar" aria-label="底部导航">
+  <a href="?screen=home" data-keep data-nav="home" data-icon="today" data-size="22">今天</a>
+  <a href="?screen=detail" data-keep data-nav="detail" data-icon="activities" data-size="22">记录</a>
+  <a href="?screen=prerun" data-keep class="go" aria-label="开跑" data-icon="play" data-size="22"></a>
+  <a href="#" data-icon="explore" data-size="22">探索</a>
+  <a href="#" data-icon="me" data-size="22">我的</a>
+</nav>
+
+<script>
+  document.getElementById('m-recent-thumb').innerHTML = thumbSVG('interval');
+  document.getElementById('m-map').innerHTML = mapSVG('interval');
+  document.getElementById('m-poster').innerHTML = posterHTML();
+  syncPosterTheme('m-poster');
+  // The status bar clock follows the scenario of each screen.
+  const clock = { home: '07:20', prerun: '07:14', recording: '07:33', done: '07:42', detail: '07:50', share: '07:52' };
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelector('.sbar span').textContent = clock[document.body.dataset.current] || '07:42';
+  });
+</script>
+</body>
+</html>

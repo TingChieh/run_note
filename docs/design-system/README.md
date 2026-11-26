@@ -11,6 +11,19 @@
 - **克制的材质**：普通表面使用边框与留白，控件保留既有 Liquid Glass 材质和弹性反馈；不将所有容器玻璃化。
 - **壳层与外观**：私人顶部玻璃条与公开顶部导航分开；详情 hero 保持业务布局；手机导航沿文档流展开。外观支持系统、手动浅色/深色及恢复自动，沿用 `runnote-theme` 和 `watchSystemTheme`，不引入新偏好体系。
 
+## Editorial Receipt 落地规范（评审稿，待确认）
+
+上述品牌语言的具体落地写在 [brand.md](brand.md)：品牌原则、场景分级（票据页 / 档案页 / 操作页 / 记录中）、拟议令牌增量、排版与网格、图表、组件与状态规则，以及 Web / Mobile / Share 的共享与差异。现状诊断见 [Web 审计](web-audit.md)，高保真原型见 [prototypes/](prototypes/index.html)。
+
+| 问题 | 单一来源 |
+| --- | --- |
+| 品牌语言、场景边界、Agent 流程 | 本文 |
+| 落地规则与拟议令牌增量 | [brand.md](brand.md)（确认实施后增量并入 [tokens.md](tokens.md)） |
+| 当前令牌实际值 | [tokens.md](tokens.md) → `frontend/src/app.css` |
+| 移动端信息架构与记录流状态机 | [移动端方案](../mobile-ui-design/README.md)（视觉以 brand.md 为准） |
+
+在负责人确认前，下方"视觉不变量"中与 brand.md 冲突的条目（24px 内容卡片、彩色圆形图标、淡奶油黄页头、内容区玻璃按钮）仍描述现行实现；确认后由本文统一改写，不另建平行规范。
+
 ## Agent 必须遵循的流程
 
 1. 修改 UI 前必须先阅读本规范及相关文档（[组件](components.md)、[页面模式](patterns.md)、[Tokens](tokens.md)），并定位当前页面、调用方与现有未提交修改。

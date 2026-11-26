@@ -1,6 +1,6 @@
 # UI 页面模式
 
-先按最相似的现有页面组合组件，再决定是否需要新抽象。以下是现有规则的规范化，不授权重写业务页面。组件与 Token 详见 [components](components.md)、[tokens](tokens.md)。
+先按最相似的现有页面组合组件，再决定是否需要新抽象。Editorial Receipt 的页面骨架与场景分级（评审稿）见 [brand.md §2、§4](brand.md#2-场景分级)。以下是现有规则的规范化，不授权重写业务页面。组件与 Token 详见 [components](components.md)、[tokens](tokens.md)。
 
 ## 1. 仪表盘
 

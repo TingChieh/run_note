@@ -1,0 +1,682 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RunNote · Web · Editorial Receipt 原型</title>
+<link rel="stylesheet" href="brand.css">
+<script src="proto.js"></script>
+<style>
+  /* ===== Shell: production top bar, reproduced unchanged (structure, order, glass, active pill) ===== */
+  .topbar { position: fixed; z-index: 30; top: 14px; left: 14px; right: 14px; height: 64px; display: flex; align-items: center; gap: 4px; padding: 0 12px 0 16px; border-radius: 32px; background: var(--nav-surface); border: 1px solid var(--nav-edge); box-shadow: 0 6px 24px var(--nav-rim); backdrop-filter: blur(18px) saturate(1.5); -webkit-backdrop-filter: blur(18px) saturate(1.5); }
+  .logo { display: flex; align-items: center; gap: 10px; margin-right: 22px; font-size: 20px; font-weight: 700; }
+  .logo b, .phonebar .logo b { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: var(--brand-logo); color: var(--brand-logo-ink); font-style: italic; font-weight: 800; font-size: 18px; }
+  .nav { display: flex; gap: 2px; }
+  .nav a { display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 11px; border-radius: 20px; font-size: 14px; font-weight: 500; color: var(--nav-ink); white-space: nowrap; }
+  .nav a svg { width: 17px; height: 17px; }
+  .nav a[aria-current] { background: var(--nav-active); color: var(--nav-active-ink); font-weight: 600; box-shadow: 0 1px 4px var(--nav-rim); }
+  .nav-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .round { display: grid; place-items: center; min-width: 40px; height: 40px; padding: 0 10px; border-radius: 20px; background: var(--nav-surface); border: 1px solid var(--nav-edge); box-shadow: 0 1px 4px var(--nav-rim); font-size: 13px; font-weight: 600; }
+  .round.plus { border-style: dashed; border-color: var(--primary); color: var(--primary); }
+  .round.avatar { background: var(--nav-active); color: var(--nav-active-ink); font-weight: 700; }
+  .phonebar, .tabbar { display: none; }
+
+  main { max-width: var(--content-width); margin: 0 auto; padding: 116px var(--page-pad) 72px; }
+  .phead { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-6); padding-bottom: var(--space-4); }
+  .phead h1 { font-size: var(--text-stat); font-weight: 700; }
+  .phead .meta { font-family: var(--font-mono); font-size: 13px; color: var(--muted-foreground); margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .actions { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+  .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--space-8); row-gap: var(--space-12); }
+  .c4 { grid-column: span 4; } .c5 { grid-column: span 5; } .c7 { grid-column: span 7; } .c8 { grid-column: span 8; } .c12 { grid-column: span 12; }
+  .crumb { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; font-size: var(--text-small); color: var(--muted-foreground); font-weight: 500; }
+  .crumb svg { width: 16px; height: 16px; }
+
+  /* ===== Dashboard ===== */
+  .dash-hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: var(--space-12); align-items: end; padding: var(--space-4) 0 var(--space-6); border-top: 2px solid var(--rule); }
+  .dash-hero .hero-num { font-size: 7.5rem; }
+  .dash-hero .hero-num + p { margin-top: 14px !important; }
+  .dash-hero .hero-num .unit { font-size: 2rem; margin-left: 10px; }
+  .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .kpi { padding: 4px 0 6px 20px; border-left: 1px solid var(--border); }
+  .kpi .v { font-size: var(--text-title); font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .kpi .v small { font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--muted-foreground); margin-left: 4px; letter-spacing: 0; }
+  .months { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 10px; align-items: end; height: 132px; padding-top: 8px; }
+  .months .m { display: grid; grid-template-rows: 1fr auto auto; height: 100%; align-items: end; justify-items: stretch; gap: 4px; }
+  .months .m i { display: block; width: min(100%, 28px); justify-self: center; background: var(--primary); min-height: 2px; }
+  .months .m.peak i { background: var(--receipt-mark); }
+  .months .m.now i { background: repeating-linear-gradient(135deg, var(--primary) 0 3px, transparent 3px 6px); border-top: 2px solid var(--primary); }
+  .months .m.empty i { height: 2px; width: 100%; background: var(--border); }
+  .months .m b { font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--muted-foreground); text-align: center; font-variant-numeric: tabular-nums; }
+  .months .m span { font-size: 12px; color: var(--muted-foreground); text-align: center; border-top: 1px solid var(--border); padding-top: 4px; }
+  .months .m.peak b, .months .m.peak span { color: var(--foreground); font-weight: 700; }
+  table.data { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  table.data th { text-align: left; font-size: var(--text-caption); font-weight: 500; color: var(--muted-foreground); padding: 0 12px 8px 0; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  table.data td { padding: 14px 12px 14px 0; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
+  table.data .r { text-align: right; }
+  table.data .big { font-size: var(--text-stat); font-weight: 700; }
+  table.data .bar-track { width: 100%; min-width: 120px; }
+  .goal-legend { display: flex; gap: 6px; align-items: center; margin-top: 10px; font-size: var(--text-caption); color: var(--muted-foreground); }
+  .goal-legend b { width: 2px; height: 12px; background: var(--muted-foreground); display: inline-block; }
+  .city-map { height: 168px; margin-bottom: var(--space-4); }
+  .city-map .pin { position: absolute; display: grid; justify-items: center; gap: 2px; transform: translate(-50%, -50%); font-size: 12px; font-weight: 600; }
+  .city-map .pin i { display: block; border-radius: 50%; background: color-mix(in srgb, var(--primary) 26%, transparent); border: 1.5px solid var(--primary); }
+  .share { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; }
+  .share .bar-track { height: 3px; }
+  .heat-wrap { overflow: hidden; }
+  .heat-months { display: grid; grid-template-columns: repeat(12, 1fr); font-family: var(--font-mono); font-size: 11px; color: var(--muted-foreground); margin-bottom: 6px; }
+  .heat-foot { display: flex; justify-content: space-between; margin-top: 10px; font-size: var(--text-caption); color: var(--muted-foreground); }
+  .heat-foot .scale { display: flex; gap: 3px; align-items: center; }
+  .heat-foot .scale i { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+  .runlist { list-style: none; margin: 0; padding: 0; }
+  .runlist li { display: grid; grid-template-columns: 92px 56px minmax(0, 1fr) 96px 80px 96px; gap: 16px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+  .runlist .d { font-family: var(--font-mono); font-size: 13px; color: var(--muted-foreground); }
+  .runlist .t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .runlist .t small { display: block; font-weight: 400; font-size: var(--text-caption); color: var(--muted-foreground); }
+  .runlist .n { text-align: right; font-weight: 700; }
+  .runlist .n small { font-family: var(--font-mono); font-weight: 500; font-size: 12px; color: var(--muted-foreground); margin-left: 3px; }
+  .thumb { width: 56px; height: 40px; background: var(--well); border-radius: 3px; padding: 4px; }
+  .thumb svg { width: 100%; height: 100%; }
+
+  /* ===== Activities ===== */
+  .filters { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-2); }
+  .filters .tabs { border-bottom: 0; }
+  .filters-right { display: flex; gap: var(--space-2); align-items: center; padding-bottom: 6px; }
+  .search { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border: 1px solid var(--control-border); border-radius: var(--radius-control); color: var(--muted-foreground); font-size: var(--text-small); width: 220px; }
+  .import-row { display: flex; align-items: center; gap: var(--space-4); padding: 10px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); font-size: var(--text-small); color: var(--muted-foreground); margin-bottom: var(--space-8); }
+  .import-row svg { width: 18px; height: 18px; }
+  .month-group { margin-bottom: var(--space-8); }
+  .month-head { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 0 10px; border-top: 2px solid var(--rule); }
+  .month-head h2 { font-family: var(--font-mono); font-size: var(--text-section); font-weight: 700; letter-spacing: 0; }
+  .month-head .sum { font-size: var(--text-small); color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+  .month-head .sum b { color: var(--foreground); }
+  .acts { list-style: none; margin: 0; padding: 0; }
+  .act-layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: var(--space-8); align-items: start; }
+  .act-preview { position: sticky; top: 100px; }
+  .act-preview .map { height: 220px; margin: 4px 0 var(--space-4); }
+  .act-preview h2 { font-size: var(--text-section); font-weight: 600; }
+  .trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .trio > div { padding: 10px 0 8px 14px; border-left: 1px solid var(--border); }
+  .trio > div:first-child { padding-left: 0; border-left: 0; }
+  .trio b { display: block; font-size: var(--text-stat); font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .trio b small { font-family: var(--font-mono); font-size: 12px; color: var(--muted-foreground); font-weight: 500; margin-left: 2px; }
+  .acts li[aria-current] { background: var(--well); box-shadow: inset 3px 0 0 var(--foreground); }
+  .acts li { display: grid; grid-template-columns: 76px 56px minmax(0, 1fr) 96px 72px 92px; gap: 16px; align-items: center; min-height: 64px; padding: 10px 0; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+  .acts li:hover { background: color-mix(in srgb, var(--foreground) 3%, transparent); }
+  .acts .d { font-family: var(--font-mono); font-size: 13px; }
+  .acts .d small { display: block; color: var(--muted-foreground); font-size: 12px; }
+  .acts .t { font-weight: 600; font-size: var(--text-body); min-width: 0; }
+  .acts .t small { display: block; font-weight: 400; font-size: var(--text-caption); color: var(--muted-foreground); }
+  .acts .n { text-align: right; font-size: var(--text-section); font-weight: 700; }
+  .acts .n small { font-family: var(--font-mono); font-size: 12px; font-weight: 500; color: var(--muted-foreground); margin-left: 3px; }
+  .acts .thumb { width: 56px; height: 40px; }
+  .acts .d { padding-left: 10px; }
+  .col-head span:first-child { padding-left: 10px; }
+  .col-head { display: grid; grid-template-columns: 76px 56px minmax(0, 1fr) 96px 72px 92px; gap: 16px; font-size: var(--text-caption); color: var(--muted-foreground); padding: 0 0 6px; }
+  .col-head span:nth-child(n+4) { text-align: right; }
+
+  /* ===== Detail ===== */
+  .detail { display: grid; grid-template-columns: 400px minmax(0, 1fr); gap: var(--space-8); align-items: start; }
+  .detail .sheet { --sheet-pad: 28px; }
+  .stub-title { font-size: var(--text-stat); font-weight: 700; }
+  .stub-hero { display: flex; align-items: baseline; gap: 10px; margin: var(--space-4) 0 var(--space-2); }
+  .stub-hero .unit { font-size: 1.5rem; }
+  .splits { list-style: none; margin: 0; padding: 0; font-variant-numeric: tabular-nums; }
+  .splits li { display: grid; grid-template-columns: 36px 84px 1fr; gap: 10px; align-items: center; padding: 5px 0; font-size: var(--text-small); }
+  .splits li span:first-child { font-family: var(--font-mono); color: var(--muted-foreground); }
+  .splits li b { font-weight: 700; }
+  .splits li i { display: block; height: 10px; background: var(--primary); opacity: 0.82; }
+  .splits li.best i { background: var(--receipt-mark); opacity: 1; }
+  .splits li.best b::after { content: ' 最快'; font-size: 11px; font-weight: 600; color: var(--muted-foreground); }
+  .map-main { height: 560px; }
+  .map-main .ctrl.tl { left: 14px; top: 14px; }
+  .map-main .ctrl.tr { right: 14px; top: 14px; }
+  .map-main .scale { position: absolute; left: 16px; bottom: 14px; font-family: var(--font-mono); font-size: 11px; color: var(--muted-foreground); display: grid; gap: 3px; }
+  .map-main .scale i { width: 64px; height: 6px; border: 1.5px solid var(--muted-foreground); border-top: 0; }
+  .map-legend { position: absolute; right: 16px; bottom: 14px; display: flex; gap: 14px; font-size: 12px; color: var(--muted-foreground); }
+  .map-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .map-legend .s { width: 9px; height: 9px; border-radius: 50%; background: var(--primary); }
+  .map-legend .e { width: 9px; height: 9px; background: var(--foreground); }
+  .pace-chart { margin-top: var(--space-8); }
+  .pace-chart svg { width: 100%; height: 150px; }
+  details.table summary { min-height: 44px; display: flex; align-items: center; font-size: var(--text-small); font-weight: 600; cursor: pointer; }
+
+  /* ===== Footprints ===== */
+  .fp { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: var(--space-8); align-items: start; }
+  .fp .map { height: 620px; }
+  .fp-sum { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 2px solid var(--rule); }
+  .fp-sum div { padding: 12px 0 14px 14px; border-left: 1px solid var(--border); }
+  .fp-sum div:first-child { padding-left: 0; border-left: 0; }
+  .fp-sum b { display: block; font-size: var(--text-stat); font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .fp-sum b small { font-family: var(--font-mono); font-size: 13px; color: var(--muted-foreground); margin-left: 3px; }
+  .city-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .city-row b { font-weight: 600; }
+  .city-row .km { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .city-row .sub { font-size: var(--text-caption); color: var(--muted-foreground); }
+  .city-row .sub.r { text-align: right; font-family: var(--font-mono); }
+  .city-row .bar-track { grid-column: 1 / -1; height: 3px; margin-top: 6px; }
+  .cov { display: grid; grid-template-columns: repeat(12, 1fr); gap: 5px; align-items: end; height: 86px; }
+  .cov i { display: block; background: var(--primary); }
+  .cov i.z { background: var(--border); height: 2px !important; }
+  .cov-l { display: grid; grid-template-columns: repeat(12, 1fr); gap: 5px; font-family: var(--font-mono); font-size: 11px; color: var(--muted-foreground); text-align: center; margin-top: 4px; }
+  .fp-foot { display: flex; gap: var(--space-8); flex-wrap: wrap; padding: 14px 0; border-top: 1px solid var(--border); margin-top: var(--space-8); font-size: var(--text-small); color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+  .fp-foot b { color: var(--foreground); margin-left: 6px; }
+
+  /* ===== Report ===== */
+  .report { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--space-12); align-items: start; }
+  .report .sheet { --sheet-pad: 40px; background: var(--paper); }
+  .rep-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-6); align-items: end; }
+  .rep-head h2 { font-size: var(--text-stat); font-weight: 700; }
+  .rep-hero { display: flex; align-items: baseline; gap: 14px; margin-top: var(--space-6); }
+  .rep-hero .hero-num { font-size: 8rem; }
+  .rep-hero .unit { font-size: 2.25rem; }
+  .rep-eq { font-size: var(--text-body); color: var(--muted-foreground); margin-top: 14px; }
+  .rep-eq b { color: var(--foreground); }
+  .rep .punch .blk { height: 12px; width: min(100%, 44px); }
+  .rep .punch .lbl { font-size: 12px; }
+  .rep-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-12); }
+  .rep-cols .ledger.leaders .v { font-size: var(--text-section); }
+  .chapters { list-style: none; margin: 0; padding: 0; }
+  .chapters li { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 4px 12px; align-items: baseline; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .chapters li:last-child { border-bottom: 0; }
+  .chapters .no { font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--primary); }
+  .chapters .ttl { font-size: var(--text-small); color: var(--muted-foreground); }
+  .chapters .val { font-size: var(--text-section); font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+  .chapters .desc { grid-column: 2 / -1; font-size: var(--text-small); }
+  .sharedesk { position: sticky; top: 100px; display: grid; gap: var(--space-4); }
+  .sharedesk .poster-frame { width: 100%; }
+  .sharedesk h2 { font-size: var(--text-card); font-weight: 600; }
+  .check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: var(--text-small); border-bottom: 1px solid var(--border); }
+  .check input { width: 18px; height: 18px; accent-color: var(--primary); }
+
+  /* ===== Settings ===== */
+  .set-tabs { margin-bottom: 0; }
+  .set-tabs + form .fgroup:first-of-type { border-top: 0; }
+  .fgroup { display: grid; grid-template-columns: 280px minmax(0, 560px); gap: var(--space-8); padding: var(--space-6) 0; border-top: 1px solid var(--border); }
+  .fgroup:first-of-type { border-top: 2px solid var(--rule); }
+  .fgroup h2 { font-size: var(--text-card); font-weight: 600; }
+  .fgroup .help { font-size: var(--text-small); color: var(--muted-foreground); margin-top: 4px; }
+  .fields { display: grid; gap: var(--space-4); }
+  .fields.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); min-height: 52px; border-bottom: 1px solid var(--border); }
+  .toggle-row:last-child { border-bottom: 0; }
+  .toggle-row b { font-weight: 600; font-size: var(--text-small); }
+  .toggle-row small { display: block; color: var(--muted-foreground); font-size: var(--text-caption); }
+  .savebar { position: sticky; bottom: 16px; margin-top: var(--space-8); display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: 10px 10px 10px 18px; background: var(--surface); border: 1px solid var(--control-border); border-radius: var(--radius-control); font-size: var(--text-small); }
+  .savebar b { font-weight: 600; }
+
+  /* ===== < 1360: production top bar collapses to icons only ===== */
+  @media (max-width: 1359px) {
+    .nav a span { display: none; }
+    .nav a { padding: 0 11px; }
+  }
+  @media (max-width: 1023px) {
+    .act-layout.act-layout { grid-template-columns: 1fr; }
+    .act-preview { display: none; }
+  }
+  @media (max-width: 1180px) {
+    .detail { grid-template-columns: 360px minmax(0, 1fr); }
+    .runlist li { grid-template-columns: 84px 56px minmax(0, 1fr) 88px 72px 88px; }
+    .act-layout { grid-template-columns: minmax(0, 1fr) 320px; }
+  }
+  /* ===== < 800: production phone shell (compact top bar + 4+1 tab bar) ===== */
+  @media (max-width: 799px) {
+    .topbar { display: none; }
+    .phonebar { display: flex; position: fixed; z-index: 30; top: 10px; left: 10px; right: 10px; height: 56px; align-items: center; justify-content: space-between; padding: 0 8px 0 12px; border-radius: 28px; background: var(--nav-surface); border: 1px solid var(--nav-edge); box-shadow: 0 6px 24px var(--nav-rim); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+    .phonebar .logo { margin: 0; font-size: 18px; }
+    .tabbar { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; z-index: 30; left: 10px; right: 10px; bottom: 10px; height: 64px; align-items: center; border-radius: 32px; background: var(--nav-surface); border: 1px solid var(--nav-edge); box-shadow: 0 6px 24px var(--nav-rim); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+    .tabbar a { display: grid; justify-items: center; gap: 2px; font-size: 11px; font-weight: 600; color: var(--nav-ink); min-height: 48px; align-content: center; }
+    .tabbar a[aria-current] { color: var(--primary); }
+    .tabbar .go { width: 56px; height: 48px; margin: 0 auto; border-radius: 16px; background: var(--primary); color: var(--primary-foreground); }
+    main { padding: 92px 24px 104px; }
+    .grid { column-gap: var(--space-6); row-gap: var(--space-8); }
+    .c4, .c5, .c7, .c8 { grid-column: span 12; }
+    .dash-hero { grid-template-columns: 1fr; gap: var(--space-6); }
+    .dash-hero .hero-num { font-size: 6rem; }
+    .kpis .kpi:first-child { border-left: 0; padding-left: 0; }
+    .kpi .v { font-size: var(--text-stat); }
+    .runlist li { grid-template-columns: 72px 48px minmax(0, 1fr) 80px 76px; }
+    .runlist li > :nth-child(5) { display: none; }
+    .detail { grid-template-columns: 1fr; }
+    .detail .map-main { height: 420px; order: -1; }
+    .fp { grid-template-columns: 1fr; }
+    .fp .map { height: 440px; }
+    .report { grid-template-columns: 1fr; }
+    .report .sheet { --sheet-pad: 28px; }
+    .rep-hero .hero-num { font-size: 6rem; }
+    .sharedesk { position: static; grid-template-columns: 240px minmax(0, 1fr); align-items: start; }
+    .sharedesk > :not(.poster-frame) { grid-column: 2; }
+    .sharedesk .poster-frame { grid-row: 1 / span 6; }
+    .fgroup { grid-template-columns: 1fr; gap: var(--space-4); }
+    .savebar { bottom: calc(64px + 10px + 12px); }
+    .acts li, .col-head { grid-template-columns: 72px 52px minmax(0, 1fr) 84px 72px 80px; gap: 12px; }
+    .search { width: 180px; }
+    .filters { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+<a class="sr-only" href="#main">跳到主要内容</a>
+
+<!-- Production top bar: kept as-is (logo, 8 entries in production order, + / theme / 自动 / avatar). -->
+<header class="topbar" aria-label="主导航">
+  <a class="logo" href="#"><b>R</b>RunNote</a>
+  <nav class="nav">
+    <a href="?page=dashboard" data-keep data-nav="dashboard" data-icon="home"><span>数据汇总</span></a>
+    <a href="?page=report" data-keep data-nav="report" data-icon="records"><span>个人记录</span></a>
+    <a href="?page=activities" data-keep data-nav="activities" data-nav-also="detail" data-icon="activities"><span>跑步记录</span></a>
+    <a href="#" data-icon="together"><span>一起跑步</span></a>
+    <a href="?page=footprints" data-keep data-nav="footprints" data-icon="footprints"><span>个人足迹</span></a>
+    <a href="#" data-icon="routes"><span>常跑路线</span></a>
+    <a href="#" data-icon="ai"><span>AI 助手</span></a>
+    <a href="#" data-icon="wellbeing"><span>身心健康</span></a>
+  </nav>
+  <div class="nav-right">
+    <a class="round plus" href="#" aria-label="记录跑步" data-icon="plus"></a>
+    <button class="round" type="button" data-theme-toggle aria-label="切换浅色/深色" data-icon="sun"></button>
+    <span class="round">自动</span>
+    <a class="round avatar" href="?page=settings" data-keep aria-label="设置">晨</a>
+  </div>
+</header>
+<header class="phonebar" aria-label="手机顶部栏">
+  <a class="logo" href="#"><b>R</b>RunNote</a>
+  <button class="btn btn-icon" type="button" data-theme-toggle aria-label="切换浅色/深色" data-icon="sun"></button>
+</header>
+<nav class="tabbar" aria-label="底部导航">
+  <a href="?page=dashboard" data-keep data-nav="dashboard" data-icon="today" data-size="22">今天</a>
+  <a href="?page=activities" data-keep data-nav="activities" data-nav-also="detail" data-icon="activities" data-size="22">记录</a>
+  <a href="#" class="go" aria-label="开跑" data-icon="play" data-size="22"></a>
+  <a href="?page=footprints" data-keep data-nav="footprints" data-nav-also="report" data-icon="explore" data-size="22">探索</a>
+  <a href="?page=settings" data-keep data-nav="settings" data-icon="me" data-size="22">我的</a>
+</nav>
+
+<main id="main">
+
+<!-- =========================================================== 1. 数据汇总 -->
+<section data-page="dashboard" aria-labelledby="h-dash">
+  <div class="phead">
+    <div><h1 id="h-dash">数据汇总</h1><p class="meta">2026 · 截至 11.26</p></div>
+    <div class="actions"><button class="select" type="button">2026 年<span data-icon="chevron"></span></button></div>
+  </div>
+
+  <div class="dash-hero">
+    <div>
+      <p class="label">年度累计里程</p>
+      <p class="hero-num">408.00<span class="unit">km</span></p>
+      <p class="muted" style="margin-top:8px">比 2025 年同期 <b class="up">+37.4 km</b> · 47 周中 41 周有跑步</p>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><p class="v">68<small>次</small></p><p class="label">跑步</p></div>
+      <div class="kpi"><p class="v">68<small>天</small></p><p class="label">活动天数</p></div>
+      <div class="kpi"><p class="v">5:40<small>/km</small></p><p class="label">平均配速</p></div>
+      <div class="kpi"><p class="v">38:32<small>h</small></p><p class="label">总用时</p></div>
+    </div>
+  </div>
+  <div class="months" role="img" aria-label="2026 年逐月里程，10 月最高 57.4 公里，11 月进行中 42.6 公里" id="dash-months"></div>
+
+  <div class="grid" style="margin-top:var(--space-12)">
+    <section class="c7 section" aria-labelledby="h-goal">
+      <div class="section-head"><h2 id="h-goal">跑步目标</h2><a class="link" href="?page=settings" data-keep>设置目标</a></div>
+      <table class="data">
+        <thead><tr><th>周期</th><th class="r">已完成</th><th class="r">目标</th><th style="width:34%">进度</th><th class="r">剩余</th><th class="r">同期</th></tr></thead>
+        <tbody>
+          <tr><td>2026 年</td><td class="r big">408.0</td><td class="r muted">600 km</td><td><div class="bar-track"><i style="width:68%"></i><b style="left:90%"></b></div></td><td class="r">192.0 km</td><td class="r up">+37.4 km</td></tr>
+          <tr><td>11 月</td><td class="r big">42.6</td><td class="r muted">60 km</td><td><div class="bar-track"><i style="width:71%"></i><b style="left:87%"></b></div></td><td class="r">17.4 km</td><td class="r" style="color:var(--error)">−3.2 km</td></tr>
+          <tr><td>本周</td><td class="r big">6.7</td><td class="r muted">20 km</td><td><div class="bar-track"><i style="width:34%"></i><b style="left:57%"></b></div></td><td class="r">13.3 km</td><td class="r muted">2 次</td></tr>
+        </tbody>
+      </table>
+      <p class="goal-legend"><b></b>竖线：按日期进度此刻应达到的位置</p>
+    </section>
+
+    <section class="c5 section" aria-labelledby="h-fp">
+      <div class="section-head"><h2 id="h-fp">足迹</h2><span class="meta">2 省 · 3 城 · 全部年份</span></div>
+      <div class="map city-map" role="img" aria-label="城市分布示意：青岬市、松溪市、海城">
+        <div id="dash-citymap"></div>
+        <span class="pin" style="left:68%;top:46%"><i style="width:34px;height:34px"></i>青岬市</span>
+        <span class="pin" style="left:46%;top:30%"><i style="width:22px;height:22px"></i>松溪市</span>
+        <span class="pin" style="left:22%;top:66%"><i style="width:18px;height:18px"></i>海城</span>
+      </div>
+      <div class="share"><b>青岬市</b><div class="bar-track"><i style="width:100%"></i></div><span class="num">182.4 km</span></div>
+      <div class="share" style="margin-top:10px"><b>松溪市</b><div class="bar-track"><i style="width:53%"></i></div><span class="num">96.2 km</span></div>
+      <div class="share" style="margin-top:10px"><b>海　城</b><div class="bar-track"><i style="width:35%"></i></div><span class="num">64.5 km</span></div>
+      <a class="link" href="?page=footprints" data-keep style="margin-top:6px">打开个人足迹 <span data-icon="arrow" data-size="14"></span></a>
+    </section>
+
+    <section class="c12 section" aria-labelledby="h-cal">
+      <div class="section-head"><h2 id="h-cal">活动日历</h2><span class="meta">68 次 · 68 天 · 最长连续 5 天</span></div>
+      <div class="heat-wrap">
+        <div class="heat-months"><span>1月</span><span>2月</span><span>3月</span><span>4月</span><span>5月</span><span>6月</span><span>7月</span><span>8月</span><span>9月</span><span>10月</span><span>11月</span><span>12月</span></div>
+        <div class="heat" id="dash-heat" role="img" aria-label="2026 年每日跑步热力日历"></div>
+      </div>
+      <div class="heat-foot"><span>每格一天，颜色越深当天跑量越多</span><span class="scale">少 <i style="background:var(--calendar-0)"></i><i style="background:var(--calendar-1)"></i><i style="background:var(--calendar-2)"></i><i style="background:var(--calendar-3)"></i><i style="background:var(--calendar-4)"></i> 多</span></div>
+    </section>
+
+    <section class="c8 section" aria-labelledby="h-recent">
+      <div class="section-head"><h2 id="h-recent">最近跑步</h2><a class="link" href="?page=activities" data-keep>全部 68 次 <span data-icon="arrow" data-size="14"></span></a></div>
+      <ul class="runlist" id="dash-runs"></ul>
+    </section>
+    <section class="c4 section" aria-labelledby="h-pb">
+      <div class="section-head"><h2 id="h-pb">个人最佳</h2><span class="meta">2026</span></div>
+      <ul class="ledger">
+        <li><span class="label">5 km</span><span><b class="v">25:42</b> <span class="caption mono">10.19</span></span></li>
+        <li><span class="label">10 km</span><span><b class="v">53:10</b> <span class="caption mono">09.07</span></span></li>
+        <li><span class="label">半程马拉松</span><span class="v muted">—</span></li>
+        <li><span class="label">最长单次</span><span><b class="v">21.42 km</b> <span class="caption mono">10.19</span></span></li>
+        <li><span class="label">最快配速</span><span><b class="v">4:25 /km</b> <span class="caption mono">10.03</span></span></li>
+      </ul>
+    </section>
+  </div>
+</section>
+
+<!-- =========================================================== 2. 跑步记录 -->
+<section data-page="activities" aria-labelledby="h-act" hidden>
+  <div class="phead">
+    <div><h1 id="h-act">跑步记录</h1><p class="meta">68 次 · 408.0 km · 2026</p></div>
+    <div class="actions">
+      <a class="btn btn-primary" href="#"><span data-icon="play" data-size="16"></span>记录跑步</a>
+      <button class="btn btn-secondary" type="button"><span data-icon="upload"></span>导入轨迹</button>
+      <button class="btn btn-secondary btn-icon" type="button" aria-label="更多：批量编辑、生成分享图" data-icon="more"></button>
+    </div>
+  </div>
+  <div class="filters">
+    <nav class="tabs" aria-label="视图"><a href="#" aria-current="page">列表</a><a href="#">时间线</a><a href="#">足迹墙</a></nav>
+    <div class="filters-right">
+      <span class="search"><span data-icon="search" data-size="16"></span>标题或城市</span>
+      <button class="select" type="button">2026 年<span data-icon="chevron"></span></button>
+    </div>
+  </div>
+  <div class="import-row"><span data-icon="upload"></span>GPX / TCX 拖到页面任意位置即可导入；Mi Fitness 汇总 JSON 在「导入轨迹」中选择。</div>
+  <div class="act-layout">
+    <div>
+      <div class="col-head" aria-hidden="true"><span>日期</span><span>路线</span><span>标题</span><span>距离</span><span>用时</span><span>配速</span></div>
+      <div id="act-groups"></div>
+    </div>
+    <aside class="act-preview section" aria-labelledby="h-prev">
+      <div class="section-head" style="margin-bottom:4px"><h2 id="h-prev">间歇训练</h2><a class="link" href="?page=detail" data-keep>完整详情 <span data-icon="arrow" data-size="14"></span></a></div>
+      <p class="caption mono">2026.11.25 周三 07:12 · 青岬市</p>
+      <div class="map" role="img" aria-label="所选记录路线预览"><div id="prev-map" style="position:absolute;inset:0"></div></div>
+      <div class="trio"><div><b>2.80<small>km</small></b><span class="caption">距离</span></div><div><b>16:44</b><span class="caption">用时</span></div><div><b>5:55<small>/km</small></b><span class="caption">配速</span></div></div>
+      <ul class="ledger" style="margin-top:4px">
+        <li><span class="label">平均心率</span><span class="v muted">—</span></li>
+        <li><span class="label">步数</span><span class="v muted">—</span></li>
+        <li><span class="label">完整度</span><span class="v">轨迹完整</span></li>
+      </ul>
+      <div class="actions" style="margin-top:var(--space-4)"><button class="btn btn-secondary" type="button">编辑</button><button class="btn btn-secondary" type="button">生成分享图</button><button class="btn btn-danger" type="button" style="margin-left:auto">删除</button></div>
+    </aside>
+  </div>
+</section>
+
+<!-- =========================================================== 3. 跑步详情 -->
+<section data-page="detail" aria-labelledby="h-detail" hidden>
+  <div class="phead" style="padding-bottom:var(--space-2)">
+    <a class="crumb" href="?page=activities" data-keep><span data-icon="left"></span>跑步记录</a>
+    <div class="actions">
+      <button class="btn btn-secondary" type="button"><span data-icon="share"></span>生成分享图</button>
+      <button class="btn btn-secondary" type="button"><span data-icon="edit"></span>编辑</button>
+      <button class="btn btn-secondary btn-icon" type="button" aria-label="更多：动态回放、导出、删除记录" data-icon="more"></button>
+    </div>
+  </div>
+  <div class="detail">
+    <article class="sheet" aria-labelledby="h-detail">
+      <div class="sheet-cap"><span>2026.11.25 周三</span><span>07:12 — 07:29</span></div>
+      <h1 id="h-detail" class="stub-title">间歇训练</h1>
+      <p class="label">青岬市 · 江北 · Asia/Shanghai</p>
+      <p class="stub-hero"><span class="figure-num" style="font-size:5.5rem">2.80</span><span class="unit">km</span></p>
+      <ul class="ledger leaders">
+        <li><span class="k label">用时</span><i class="dots"></i><b class="v">16:44</b></li>
+        <li><span class="k label">平均配速</span><i class="dots"></i><b class="v">5:55 /km</b></li>
+        <li><span class="k label">最快公里</span><i class="dots"></i><b class="v">5:31 /km</b></li>
+        <li><span class="k label">累计爬升</span><i class="dots"></i><b class="v">12 m</b></li>
+        <li><span class="k label">平均心率</span><i class="dots"></i><b class="v muted">—<span class="sr-only">未记录</span></b></li>
+        <li><span class="k label">跑鞋</span><i class="dots"></i><b class="v">轻云 3 代</b></li>
+        <li><span class="k label">可见性</span><i class="dots"></i><b class="v">公开展示</b></li>
+      </ul>
+      <div class="perf notched"></div>
+      <p class="kicker" style="margin-bottom:8px">每公里配速</p>
+      <ul class="splits">
+        <li><span>1</span><b>5:58</b><i style="width:78%"></i></li>
+        <li class="best"><span>2</span><b>5:31</b><i style="width:100%"></i></li>
+        <li><span>0.8</span><b>6:24</b><i style="width:62%"></i></li>
+      </ul>
+      <div class="perf notched"></div>
+      <p class="label">私人备注</p>
+      <a class="link" href="#">添加备注</a>
+    </article>
+
+    <div>
+      <div class="map map-main" role="region" aria-label="本次路线地图（本地背景，底图已关闭）">
+        <div id="detail-map" style="position:absolute;inset:0"></div>
+        <div class="ctrl tl"><button class="glass-btn" type="button"><span data-icon="layers"></span>底图：关</button><button class="glass-btn" type="button"><span data-icon="replay"></span>动态回放</button></div>
+        <div class="ctrl tr"><div class="glass-stack"><button type="button" aria-label="放大">+</button><button type="button" aria-label="缩小">−</button></div></div>
+        <div class="scale"><span>200 m</span><i></i></div>
+        <div class="map-legend"><span><i class="s"></i>起点</span><span><i class="e"></i>终点</span></div>
+      </div>
+      <section class="section pace-chart" aria-labelledby="h-pace">
+        <div class="section-head"><h2 id="h-pace">配速与海拔</h2><span class="meta">按距离 · 每 100 m</span></div>
+        <div id="detail-pace" role="img" aria-label="配速随距离变化：第 2 公里最快 5 分 31 秒"></div>
+        <details class="table"><summary>查看分段数据表</summary>
+          <table class="data"><thead><tr><th>公里</th><th class="r">配速</th><th class="r">用时</th><th class="r">爬升</th></tr></thead>
+          <tbody><tr><td>1</td><td class="r">5:58</td><td class="r">5:58</td><td class="r">4 m</td></tr><tr><td>2</td><td class="r">5:31</td><td class="r">11:29</td><td class="r">6 m</td></tr><tr><td>0.8</td><td class="r">6:24</td><td class="r">16:44</td><td class="r">2 m</td></tr></tbody></table>
+        </details>
+      </section>
+    </div>
+  </div>
+</section>
+
+<!-- =========================================================== 4. 个人足迹 -->
+<section data-page="footprints" aria-labelledby="h-fpp" hidden>
+  <div class="phead">
+    <div><h1 id="h-fpp">个人足迹</h1><p class="meta">全部年份 · 3 城 · 343.1 km</p></div>
+    <div class="actions"><button class="select" type="button">全部年份<span data-icon="chevron"></span></button></div>
+  </div>
+  <nav class="tabs" aria-label="足迹视图" style="margin-bottom:var(--space-6)"><a href="#" aria-current="page">轨迹</a><a href="#">热图</a><a href="#">城市探索</a></nav>
+  <div class="fp">
+    <div class="map" role="region" aria-label="全部轨迹叠加地图">
+      <div id="fp-map" style="position:absolute;inset:0"></div>
+      <div class="ctrl" style="left:14px;top:14px"><button class="glass-btn" type="button"><span data-icon="layers"></span>底图：关</button></div>
+      <div class="ctrl" style="right:14px;top:14px"><div class="glass-stack"><button type="button" aria-label="放大">+</button><button type="button" aria-label="缩小">−</button></div></div>
+      <div class="map-legend" style="left:16px;right:auto"><span>线越深 = 跑过次数越多</span></div>
+    </div>
+    <aside>
+      <div class="fp-sum">
+        <div><b>3<small>城</small></b><span class="caption">边界内城市</span></div>
+        <div><b>343.1<small>km</small></b><span class="caption">城市内里程</span></div>
+        <div><b>486<small>格</small></b><span class="caption">探索格网</span></div>
+      </div>
+      <section class="section" style="margin-top:var(--space-6)" aria-labelledby="h-cities">
+        <div class="section-head"><h2 id="h-cities">城市图鉴</h2><button class="select" type="button">按跑量<span data-icon="chevron"></span></button></div>
+        <div class="city-row"><b>青岬市</b><span class="km">182.4 km</span><span class="sub">上海市</span><span class="sub r">首跑 2024.05.12</span><div class="bar-track"><i style="width:100%"></i></div></div>
+        <div class="city-row"><b>松溪市</b><span class="km">96.2 km</span><span class="sub">江苏省</span><span class="sub r">首跑 2026.02.14</span><div class="bar-track"><i style="width:53%"></i></div></div>
+        <div class="city-row"><b>海城</b><span class="km">64.5 km</span><span class="sub">四川省</span><span class="sub r">首跑 2025.03.08</span><div class="bar-track"><i style="width:35%"></i></div></div>
+        <div class="city-row"><b>杉港市 <span class="tag">附近</span></b><span class="km">5 条</span><span class="sub">北京市</span><span class="sub r">附近 2025.04.01</span></div>
+      </section>
+      <section class="section" style="margin-top:var(--space-6)" aria-labelledby="h-cov">
+        <div class="section-head"><h2 id="h-cov">新探索格网</h2><span class="meta">逐月 · 全部年份</span></div>
+        <div class="cov" id="fp-cov" role="img" aria-label="各月首次探索格网数，7 月最多"></div>
+        <div class="cov-l"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>10</span><span>11</span><span>12</span></div>
+      </section>
+    </aside>
+  </div>
+  <div class="fp-foot"><span>未分配里程<b>6.5 km</b></span><span>无轨迹活动<b>0 条</b></span><span>未归入城市<b>0 条</b></span><span>附近有记录<b>1 座</b></span></div>
+</section>
+
+<!-- =========================================================== 5. 年度/月度回顾 -->
+<section data-page="report" aria-labelledby="h-rep" hidden>
+  <div class="phead">
+    <div><a class="crumb" href="#"><span data-icon="left"></span>个人记录</a><h1 id="h-rep">跑步回顾</h1></div>
+    <div class="actions">
+      <nav class="tabs" aria-label="周期" style="border:0;margin-right:var(--space-4)"><a href="#">月度</a><a href="#" aria-current="page">年度</a></nav>
+      <button class="btn btn-secondary btn-icon" type="button" aria-label="上一年" data-icon="left"></button>
+      <button class="select" type="button">2025 年<span data-icon="chevron"></span></button>
+      <button class="btn btn-secondary btn-icon" type="button" aria-label="下一年" data-icon="right"></button>
+      <button class="btn btn-primary" type="button"><span data-icon="share"></span>生成分享图</button>
+    </div>
+  </div>
+  <div class="report">
+    <article class="sheet rep" aria-labelledby="h-rep-sheet">
+      <div class="sheet-cap"><span>2025 年度跑步回顾</span><span>2025.01.01 — 2025.12.31 · 已封存</span></div>
+      <div class="rep-head">
+        <div><h2 id="h-rep-sheet">从 1 月 1 日出发，全年跑过 3 座城</h2></div>
+        <p class="caption mono">12 / 12 个月有跑步</p>
+      </div>
+      <div class="rep-hero"><span class="hero-num">1,042.68</span><span class="unit">km</span></div>
+      <p class="rep-eq">等效 <b>24.7</b> 场全马 · 单次均距 <b>8.84 km</b> · 比 2024 年多 <b class="up">212.3 km</b></p>
+      <div class="perf notched"></div>
+      <div class="section-head" style="margin-bottom:var(--space-6)"><h2>逐月节律</h2><span class="meta">每格 ≈ 12.6 km · 最高 10 月 126.4 km</span></div>
+      <div class="punch" id="rep-punch" role="img" aria-label="2025 年逐月里程打孔图，10 月最高"></div>
+      <details class="table" style="margin-top:var(--space-4)"><summary>查看逐月数据表</summary><table class="data" id="rep-table"></table></details>
+      <div class="perf notched"></div>
+      <div class="rep-cols">
+        <section aria-labelledby="h-sum">
+          <div class="section-head"><h2 id="h-sum">全年合计</h2></div>
+          <ul class="ledger leaders">
+            <li><span class="k label">跑步次数</span><i class="dots"></i><b class="v">118 次</b></li>
+            <li><span class="k label">活动天数</span><i class="dots"></i><b class="v">104 天</b></li>
+            <li><span class="k label">总用时</span><i class="dots"></i><b class="v">91 h 24 m</b></li>
+            <li><span class="k label">平均配速</span><i class="dots"></i><b class="v">5:16 /km</b></li>
+            <li><span class="k label">最长连续</span><i class="dots"></i><b class="v">19 周</b></li>
+            <li><span class="k label">探索城市</span><i class="dots"></i><b class="v">3 座</b></li>
+          </ul>
+        </section>
+        <section aria-labelledby="h-ch">
+          <div class="section-head"><h2 id="h-ch">年度章节</h2></div>
+          <ol class="chapters">
+            <li><span class="no">01</span><span class="ttl">年度第一跑 · 01.01</span><span class="val">6.24 km</span><span class="desc">青岬海湾迎新慢跑</span></li>
+            <li><span class="no">02</span><span class="ttl">最长路线 · 10.19</span><span class="val">21.42 km</span><span class="desc">桐溪秋日河滨半程拉练</span></li>
+            <li><span class="no">03</span><span class="ttl">最佳表现 · 10 km</span><span class="val">4:25 /km</span><span class="desc">较当年首次快了 38″/km</span></li>
+            <li><span class="no">04</span><span class="ttl">探索城市</span><span class="val">3 座</span><span class="desc">青岬市 · 松溪市 · 海城</span></li>
+            <li><span class="no">05</span><span class="ttl">最常跑路线</span><span class="val">29 次</span><span class="desc">松风湖环湖 6K 绿道</span></li>
+          </ol>
+        </section>
+      </div>
+    </article>
+
+    <aside class="sharedesk" aria-labelledby="h-desk">
+      <div class="poster-frame" id="rep-poster"></div>
+      <h2 id="h-desk">分享图</h2>
+      <div class="radio-row" role="radiogroup" aria-label="海报外观"><label aria-checked="true">浅色纸面</label><label aria-checked="false">深色暖炭</label></div>
+      <label class="check"><input type="checkbox">隐藏具体城市名</label>
+      <label class="check"><input type="checkbox">隐藏具体路线名</label>
+      <p class="caption">分享图只含汇总数字与节律，不含坐标、起终点、邮箱、备注或身心健康数据。</p>
+    </aside>
+  </div>
+</section>
+
+<!-- =========================================================== 6. 设置 / 表单 -->
+<section data-page="settings" aria-labelledby="h-set" hidden>
+  <div class="phead"><div><h1 id="h-set">设置</h1></div></div>
+  <nav class="tabs set-tabs" aria-label="设置分区"><a href="#">账户与资料</a><a href="#" aria-current="page">跑步偏好</a><a href="#">跑鞋</a><a href="#">数据与同步</a><a href="#">站点设置</a><a href="#">用户管理</a></nav>
+  <form onsubmit="return false">
+    <div class="fgroup">
+      <div><h2>跑量目标</h2><p class="help">留空表示不设目标。</p></div>
+      <div class="fields three">
+        <label class="field"><span>每周</span><span class="input-suffix"><input class="input num" value="20" inputmode="decimal"><i>km</i></span></label>
+        <label class="field"><span>每月</span><span class="input-suffix"><input class="input num" value="60" inputmode="decimal"><i>km</i></span></label>
+        <label class="field"><span>每年</span><span class="input-suffix"><input class="input num" value="600" inputmode="decimal"><i>km</i></span></label>
+      </div>
+    </div>
+    <div class="fgroup">
+      <div><h2>时区</h2><p class="help">决定活动归入哪一天。</p></div>
+      <div class="fields"><label class="field"><span>账户时区</span><button class="select" type="button" style="justify-content:space-between;width:100%;font-weight:500">Asia/Shanghai（UTC+8）<span data-icon="chevron"></span></button></label></div>
+    </div>
+    <div class="fgroup">
+      <div><h2>外观</h2></div>
+      <div class="fields"><div class="radio-row" role="radiogroup" aria-label="外观"><label aria-checked="true">跟随系统</label><label aria-checked="false">浅色</label><label aria-checked="false">深色</label></div></div>
+    </div>
+    <div class="fgroup">
+      <div><h2>公开展示</h2><p class="help">展示页始终只读；坐标与起终点仅在完整展示中出现。</p></div>
+      <div class="fields" style="gap:0">
+        <div class="toggle-row"><div><b>公开个人展示页</b><small>/p/runner</small></div><span class="switch on" role="switch" aria-checked="true" aria-label="公开个人展示页"></span></div>
+        <div class="toggle-row"><div><b>新记录默认公开</b><small>导入或记录完成后的初始可见性</small></div><span class="switch on" role="switch" aria-checked="true" aria-label="新记录默认公开"></span></div>
+        <div class="toggle-row"><div><b>分享图默认隐藏城市名</b></div><span class="switch" role="switch" aria-checked="false" aria-label="分享图默认隐藏城市名"></span></div>
+      </div>
+    </div>
+    <div class="savebar" role="status"><span><b>2 项未保存</b> · 每月、每年目标</span><span class="actions"><button class="btn" type="button">放弃</button><button class="btn btn-primary" type="submit">保存</button></span></div>
+  </form>
+</section>
+
+</main>
+
+<script>
+  // ---- Dashboard data (synthetic, consistent with docs fixtures) ----
+  const mkm = [28, 31, 42, 36, 45, 33, 25, 30, 38, 57.4, 42.6, null];
+  const mmax = 57.4;
+  document.getElementById('dash-months').innerHTML = mkm.map((v, i) => {
+    const cls = v === null ? 'm empty' : i === 9 ? 'm peak' : i === 10 ? 'm now' : 'm';
+    const h = v === null ? 2 : Math.round((v / mmax) * 86);
+    return `<div class="${cls}"><i style="height:${h}px"></i><b>${v === null ? '—' : v}</b><span>${i + 1}月${i === 10 ? '·进行中' : ''}</span></div>`;
+  }).join('');
+  document.getElementById('dash-heat').innerHTML = heatmap(53, 0.24, 333);
+  document.getElementById('dash-citymap').outerHTML = mapSVG('river', { markers: false });
+  const runs = [
+    ['11.25 周三', 'interval', '间歇训练', '青岬市 · 07:12', '2.80', '16:44', '5:55'],
+    ['11.23 周一', 'park', '公园慢跑', '青岬市 · 06:40', '3.90', '23:24', '6:00'],
+    ['11.21 周六', 'loop5k', '松风湖环湖', '松溪市 · 07:05', '6.12', '34:41', '5:40'],
+    ['11.18 周三', 'river', '河滨节奏跑', '青岬市 · 19:20', '8.03', '42:56', '5:21'],
+    ['11.15 周日', 'park', '恢复跑', '青岬市 · 06:50', '4.20', '26:15', '6:15'],
+  ];
+  document.getElementById('dash-runs').innerHTML = runs.map(r =>
+    `<li><span class="d">${r[0]}</span><span class="thumb">${thumbSVG(r[1])}</span><span class="t">${r[2]}<small>${r[3]}</small></span><span class="n">${r[4]}<small>km</small></span><span class="n" style="font-weight:600">${r[5]}</span><span class="n" style="font-weight:600">${r[6]}<small>/km</small></span></li>`).join('');
+
+  // ---- Activities ----
+  const groups = [
+    ['2026.11', '8 次', '42.6 km', '5:41', [
+      ['11.25', '周三', 'interval', '间歇训练', '青岬市 · 07:12 开始', '2.80', '16:44', '5:55', '公开'],
+      ['11.23', '周一', 'park', '公园慢跑', '青岬市 · 06:40 开始', '3.90', '23:24', '6:00', '公开'],
+      ['11.21', '周六', 'loop5k', '松风湖环湖', '松溪市 · 07:05 开始', '6.12', '34:41', '5:40', '公开'],
+      ['11.18', '周三', 'river', '河滨节奏跑', '青岬市 · 19:20 开始', '8.03', '42:56', '5:21', '私密'],
+      ['11.15', '周日', 'park', '恢复跑', '青岬市 · 06:50 开始', '4.20', '26:15', '6:15', '公开'],
+      ['11.11', '周三', 'loop5k', '晨跑', '青岬市 · 06:35 开始', '5.05', '28:40', '5:41', '公开'],
+      ['11.07', '周六', 'river', '河滨长距离', '青岬市 · 07:00 开始', '8.60', '49:01', '5:42', '公开'],
+      ['11.03', '周二', 'park', '公园慢跑', '青岬市 · 06:45 开始', '3.90', '23:10', '5:56', '公开'],
+    ]],
+    ['2026.10', '11 次', '57.4 km', '5:33', [
+      ['10.27', '周二', 'park', '公园慢跑', '青岬市 · 06:40 开始', '3.80', '22:58', '6:00', '公开'],
+      ['10.25', '周日', 'loop5k', '松风湖环湖', '松溪市 · 07:05 开始', '6.12', '34:41', '5:40', '公开'],
+      ['10.19', '周一', 'river', '桐溪秋日河滨半程拉练', '青岬市 · 06:30 开始', '21.42', '1:58:11', '5:31', '公开'],
+    ]],
+  ];
+  document.getElementById('act-groups').innerHTML = groups.map(g => `
+    <section class="month-group"><div class="month-head"><h2>${g[0]}</h2><span class="sum"><b>${g[2]}</b> · ${g[1]} · 均配速 ${g[3]} /km</span></div>
+    <ul class="acts">${g[4].map((a, k) => `<li${a[0] === '11.25' ? ' aria-current="true"' : ''}><span class="d">${a[0]}<small>${a[1]}</small></span><span class="thumb">${thumbSVG(a[2])}</span><a class="t" href="?page=detail" data-keep>${a[3]}<small>${a[4]}${a[8] === '私密' ? ' · 私密' : ''}</small></a><span class="n">${a[5]}<small>km</small></span><span class="n" style="font-weight:600;font-size:var(--text-body)">${a[6]}</span><span class="n" style="font-weight:600;font-size:var(--text-body)">${a[7]}<small>/km</small></span></li>`).join('')}</ul></section>`).join('');
+
+  document.getElementById('prev-map').innerHTML = mapSVG('interval');
+  // ---- Detail ----
+  document.getElementById('detail-map').innerHTML = mapSVG('interval');
+  (function () {
+    // pace (s/km) every 100 m and elevation (m), synthetic
+    const pace = [362, 360, 356, 358, 352, 360, 357, 361, 358, 355, 340, 332, 328, 330, 326, 331, 333, 329, 331, 334, 372, 380, 388, 384, 390, 386, 380, 385];
+    const ele = [8, 9, 9, 10, 11, 12, 12, 13, 13, 14, 14, 15, 16, 16, 17, 17, 18, 18, 18, 19, 19, 19, 20, 20, 20, 20, 20, 20];
+    const W = 800, H = 150, n = pace.length;
+    const x = i => 40 + (i / (n - 1)) * (W - 56);
+    const py = v => 16 + ((v - 320) / (395 - 320)) * (H - 46);
+    const ey = v => H - 30 - ((v - 8) / 12) * 34;
+    const line = pace.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${py(v).toFixed(1)}`).join(' ');
+    const area = `M${x(0)} ${H - 30} ` + ele.map((v, i) => `L${x(i).toFixed(1)} ${ey(v).toFixed(1)}`).join(' ') + ` L${x(n - 1)} ${H - 30} Z`;
+    document.getElementById('detail-pace').innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <path d="${area}" style="fill:var(--well);stroke:var(--border)" stroke-width="1"/>
+      <line x1="40" x2="${W - 16}" y1="${py(355)}" y2="${py(355)}" style="stroke:var(--muted-foreground)" stroke-dasharray="3 4" stroke-width="1"/>
+      <path d="${line}" fill="none" style="stroke:var(--primary)" stroke-width="2"/>
+      <g style="fill:var(--muted-foreground);font:11px var(--font-mono)"><text x="0" y="${py(330) + 4}">5:30</text><text x="0" y="${py(390) + 4}">6:30</text><text x="${W - 70}" y="${py(355) - 6}">均 5:55</text>
+      <text x="40" y="${H - 8}">0</text><text x="${x(10) - 4}" y="${H - 8}">1 km</text><text x="${x(20) - 4}" y="${H - 8}">2 km</text><text x="${W - 46}" y="${H - 8}">2.8 km</text></g></svg>`;
+  })();
+
+  // ---- Footprints ----
+  (function () {
+    let svg = mapSVG('river', { markers: false });
+    const extra = ['park', 'loop5k', 'interval'].map((r, i) =>
+      `<path d="${ROUTES[r]}" transform="translate(${[-6, 22, 6][i]} ${[4, -8, 10][i]})" fill="none" style="stroke:var(--route)" stroke-opacity="${[0.55, 0.4, 0.7][i]}" stroke-width="2.4" vector-effect="non-scaling-stroke"/>`).join('');
+    document.getElementById('fp-map').innerHTML = svg.replace('</svg>', extra + '</svg>');
+    const cov = [22, 46, 38, 22, 51, 19, 64, 0, 16, 49, 22, 0];
+    document.getElementById('fp-cov').innerHTML = cov.map((v, i) => `<i class="${v ? '' : 'z'}" style="height:${Math.round(v / 64 * 80)}px;${i === 6 ? 'background:var(--receipt-mark)' : ''}" title="${i + 1}月 ${v} 格"></i>`).join('');
+  })();
+
+  // ---- Report ----
+  const rmonths = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+  const rkm = [72.4, 61.8, 88.2, 95.6, 102.3, 76.5, 58.9, 69.4, 98.7, 126.4, 104.1, 88.38];
+  document.getElementById('rep-punch').innerHTML = punch(rmonths, rkm, 10);
+  document.getElementById('rep-table').innerHTML = '<thead><tr><th>月份</th><th class="r">里程</th></tr></thead><tbody>' + rmonths.map((m, i) => `<tr><td>${m}</td><td class="r">${rkm[i]} km</td></tr>`).join('') + '</tbody>';
+  document.getElementById('rep-poster').innerHTML = posterHTML();
+  syncPosterTheme('rep-poster');
+</script>
+</body>
+</html>

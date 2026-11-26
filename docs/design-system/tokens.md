@@ -1,6 +1,6 @@
 # Design Tokens
 
-唯一来源：[app.css](../../frontend/src/app.css)。材质几何在 [liquid-glass.css](../../frontend/src/lib/styles/liquid-glass.css) 与 [controls](../../frontend/src/lib/styles/liquid-glass-controls.css)，引擎参数在 [settings](../../frontend/src/lib/styles/liquid-glass-settings.ts)。不建立 `--ds-*` 平行色板。
+唯一来源：[app.css](../../frontend/src/app.css)。Editorial Receipt 的拟议增量（`--rule`、`--control-border`、`--receipt-ink`、`--receipt-mark`、`--radius-sheet`、`--text-figure`、`--text-rec-*` 等）见 [brand.md §3](brand.md#3-design-tokens)，确认实施前不属于现行值。材质几何在 [liquid-glass.css](../../frontend/src/lib/styles/liquid-glass.css) 与 [controls](../../frontend/src/lib/styles/liquid-glass-controls.css)，引擎参数在 [settings](../../frontend/src/lib/styles/liquid-glass-settings.ts)。不建立 `--ds-*` 平行色板。
 
 ## 主题与层叠
 
