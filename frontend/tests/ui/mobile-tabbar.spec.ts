@@ -156,6 +156,45 @@ test.describe('signed-in site owner', () => {
     }
   });
 
+  test('tabbing from the top of the page to the footer links keeps each focused link clear of the bar', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    for (const scheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.goto('/settings');
+      await ready(page);
+      await expect(page.getByRole('heading', { level: 1, name: '设置', exact: true })).toBeVisible();
+      // The development-only glass tuner floats above the bar's right edge; production builds have none.
+      await page.addStyleTag({ content: '.glass-tuner { display: none !important; }' });
+      // The browser scrolls each focused element into view by itself; nothing here scrolls the page.
+      for (const name of ['隐私政策', 'GitHub']) {
+        let reached = false;
+        for (let presses = 0; presses < 200 && !reached; presses++) {
+          await page.keyboard.press('Tab');
+          reached = await page.evaluate(
+            (label) => (document.activeElement as HTMLElement | null)?.closest('.app-footer a')?.textContent === label,
+            name,
+          );
+        }
+        expect(reached, `${scheme}: Tab reaches the footer link ${name}`).toBe(true);
+        const placement = await page.evaluate(() => {
+          const link = document.activeElement as HTMLElement;
+          const box = link.getBoundingClientRect();
+          const bar = document.querySelector('.mobile-tabbar')!.getBoundingClientRect();
+          const ring =
+            parseFloat(getComputedStyle(link).outlineOffset) + parseFloat(getComputedStyle(link).outlineWidth);
+          const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+          return { ringBottom: box.bottom + ring, barTop: bar.top, onTop: !!hit && link.contains(hit) };
+        });
+        expect(placement.ringBottom, `${scheme}: ${name} and its focus ring end above the bar`).toBeLessThanOrEqual(
+          placement.barTop,
+        );
+        expect(placement.onTop, `${scheme}: ${name} is not covered by the bar`).toBe(true);
+      }
+    }
+  });
+
   test('探索 reaches routes, records and run-together through its section switcher', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await tab(page, '探索').click();

@@ -32,6 +32,7 @@
 - 今天/记录/探索跟随当前浏览的视图；「我的」和「开跑」永远属于登录账户（普通账户在浏览站主展示时也进入自己的 `/workspace`）。
 - 当前区段的标签带 `aria-current`：正好在该页为 `page`，区段内子页（如跑步详情、设置子页）为 `true`。点当前页的标签回到页顶，不重新加载。
 - 「开跑」是进入沉浸式记录页的普通链接，不是有状态的标签，不带 `aria-current`。
+- 底栏显示时根元素带 `scroll-padding-bottom`（底栏高度 + 间距 + 安全区），键盘 Tab 与 `scrollIntoView` 把焦点停在底栏之上，与桌面顶栏的 `scroll-padding-top` 对应。
 - 底栏在实时记录页（`/activities/record`、`/workspace/activities/record`）不渲染；聚焦文本输入时隐藏，避免压在软键盘上；原生 dialog/popover 在顶层覆盖它。登录页、分享页等公开外壳没有底栏，公开外壳的顶部菜单保持原样。
 - 进度环不再出现在手机外壳中；跑量目标仍在「今天」的目标卡片与「目标与隐私」。
 
@@ -53,7 +54,7 @@
 | 修复溢出后的回归 | `mobile-tabbar`、`footprints`、`records`、`top-navigation`、`ui-shell`、`city-exploration` | 163 passed |
 | 样式与类型 | `pnpm lint:style`、`pnpm check` | 通过，0 错误 |
 | 新增单元 | `tests/unit/mobile-navigation.test.ts` | 路由映射（站主/普通账户/匿名/具名展示）、当前标签、记录页隐藏、探索分区、AI/身心健康可见规则 |
-| 新增浏览器 | `tests/ui/mobile-tabbar.spec.ts`（14 个用例） | 标签跳转与唯一当前项、开跑进入记录页且底栏消失、同页点击回顶部、320/390/768 无横向溢出且触控目标 ≥44px、页尾不被遮挡、探索分区、我的入口与退出登录、SaveBar 与开发工具位于底栏之上、聚焦输入隐藏底栏、安全区（CDP `Emulation.setSafeAreaInsetsOverride` 顶 47/底 34：底栏距底 42px、内容留白 106px、顶栏 61px，未双倍计算）、桌面无任何手机导航、390/768/1440 浅深色截图且无控制台错误、resize 后任何一帧不加宽页面 |
+| 新增浏览器 | `tests/ui/mobile-tabbar.spec.ts`（15 个用例） | 标签跳转与唯一当前项、开跑进入记录页且底栏消失、同页点击回顶部、320/390/768 无横向溢出且触控目标 ≥44px、页尾不被遮挡、390×844 浅/深色从页首自然 Tab 到页脚「隐私政策」「GitHub」时焦点链接及其焦点环完整位于底栏之上、探索分区、我的入口与退出登录、SaveBar 与开发工具位于底栏之上、聚焦输入隐藏底栏、安全区（CDP `Emulation.setSafeAreaInsetsOverride` 顶 47/底 34：底栏距底 42px、内容留白 106px、顶栏 61px，未双倍计算）、桌面无任何手机导航、390/768/1440 浅深色截图且无控制台错误、resize 后任何一帧不加宽页面 |
 
 视觉证据（合成数据，`docs/assets/2026-11-25-mobile-shell-phase4a/`）：
 

@@ -1167,6 +1167,11 @@
     .app-shell[data-tabbar] .content-column {
       padding-bottom: var(--bottom-chrome);
     }
+    /* Tab focus and scrollIntoView stop above the fixed tab bar instead of behind it (the desktop bar's scroll-padding-top
+       counterpart). --bottom-chrome lives on .app-shell, so the root repeats its sum, plus a gap for the focus ring. */
+    html:has(.app-shell[data-tabbar]) {
+      scroll-padding-bottom: calc(var(--mobile-tabbar-height) + var(--space-2) * 2 + var(--safe-bottom));
+    }
     .mobile-tabbar {
       position: fixed;
       z-index: var(--z-top-navigation);
