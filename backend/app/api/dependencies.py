@@ -38,8 +38,10 @@ def get_read_identity(request: Request, session: Annotated[Session, Depends(get_
 
 def require_write(request: Request, identity: Annotated[tuple, Depends(get_identity)]):
     from app.core.security import check_csrf
+    from app.modules.auth.model import MobileSession
 
-    check_csrf(request.headers, request.app.state.settings.site_origin, identity[0])
+    if not isinstance(identity[0], MobileSession):
+        check_csrf(request.headers, request.app.state.settings.site_origin, identity[0])
     return identity
 
 
@@ -54,6 +56,8 @@ def require_admin(request: Request, identity: Annotated[tuple, Depends(get_ident
 
 def require_admin_write(request: Request, identity: Annotated[tuple, Depends(require_admin)]):
     from app.core.security import check_csrf
+    from app.modules.auth.model import MobileSession
 
-    check_csrf(request.headers, request.app.state.settings.site_origin, identity[0])
+    if not isinstance(identity[0], MobileSession):
+        check_csrf(request.headers, request.app.state.settings.site_origin, identity[0])
     return identity

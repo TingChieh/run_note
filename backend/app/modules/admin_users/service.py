@@ -5,7 +5,7 @@ from app.core.errors import ApiError
 from app.core.security import hash_password
 from app.modules.activities.model import Activity
 from app.modules.admin_users.schema import AdminUser, AdminUserList
-from app.modules.auth.model import AuthSession
+from app.modules.auth.service import revoke_all_user_sessions
 from app.modules.users.model import User
 from app.modules.users.service import is_admin, is_enabled, view
 
@@ -101,11 +101,7 @@ def activity_owner(db, identifier):
 
 
 def revoke_sessions(db, user, now):
-    db.execute(
-        update(AuthSession)
-        .where(AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None))
-        .values(revoked_at=now)
-    )
+    revoke_all_user_sessions(db, user.id, now)
 
 
 def patch(db, identifier, payload, settings, now):
