@@ -64,6 +64,63 @@ export interface CapacitorLocationRecorderPlugin {
   ) => Promise<{ remove: () => Promise<void> | void }> | { remove: () => Promise<void> | void };
 }
 
+export type MobileSessionLifecycleState = 'active' | 'reauth_required' | 'signed_out';
+
+export interface CapacitorRunNoteTransportPlugin {
+  getSessionState?: () => Promise<{
+    state: MobileSessionLifecycleState;
+    serverUrl: string | null;
+    serverOriginHash?: string | null;
+    accountId: string | null;
+    user?: unknown;
+  }>;
+  getServerConfig?: () => Promise<{
+    serverUrl: string | null;
+    defaultServerUrl: string | null;
+    valid: boolean;
+    reason?: string | null;
+  }>;
+  checkCapabilities?: () => Promise<{
+    ok: boolean;
+    status: number;
+    capabilities?: unknown;
+    errorCode?: string | null;
+    errorMessage?: string | null;
+  }>;
+  login?: (options: {
+    email: string;
+    password: string;
+    deviceLabel?: string;
+    clientVersion?: string;
+  }) => Promise<{
+    ok: boolean;
+    status: number;
+    user?: unknown;
+    errorCode?: string | null;
+    errorMessage?: string | null;
+    retryAfterSeconds?: number | null;
+  }>;
+  logout?: (options?: { revokeAllDevices?: boolean }) => Promise<{
+    ok: boolean;
+    status: number;
+  }>;
+  request?: (options: {
+    method: string;
+    path: string;
+    headers?: Record<string, string>;
+    body?: string | null;
+    timeoutMs?: number;
+  }) => Promise<{
+    status: number;
+    ok: boolean;
+    headers?: Record<string, string>;
+    body?: string;
+    sessionState?: MobileSessionLifecycleState;
+    errorCode?: string | null;
+    errorMessage?: string | null;
+  }>;
+}
+
 export interface CapacitorWindowRuntime {
   isNativePlatform?: () => boolean;
   getPlatform?: () => string;
@@ -72,6 +129,7 @@ export interface CapacitorWindowRuntime {
     SystemAppearance?: CapacitorSystemAppearancePlugin;
     HealthData?: CapacitorHealthDataPlugin;
     LocationRecorder?: CapacitorLocationRecorderPlugin;
+    RunNoteTransport?: CapacitorRunNoteTransportPlugin;
   };
 }
 

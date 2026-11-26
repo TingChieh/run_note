@@ -22,6 +22,27 @@ class NavigationPolicyTest {
     }
 
     @Test
+    fun keepsLocalBundleOriginInWebViewAndRoutesRemoteServerToExternalBrowser() {
+        assertEquals(
+            NavigationPolicy.Decision.ALLOW_IN_WEBVIEW,
+            NavigationPolicy.classify("https://localhost/", NavigationPolicy.LOCAL_BUNDLE_ORIGIN),
+        )
+        assertEquals(
+            NavigationPolicy.Decision.ALLOW_IN_WEBVIEW,
+            NavigationPolicy.classify("https://localhost/login", NavigationPolicy.LOCAL_BUNDLE_ORIGIN),
+        )
+        // Remote RunNote server pages must never load in the local WebView (prevents bridge exposure).
+        assertEquals(
+            NavigationPolicy.Decision.OPEN_EXTERNAL_BROWSER,
+            NavigationPolicy.classify("https://run.example.test/dashboard", NavigationPolicy.LOCAL_BUNDLE_ORIGIN),
+        )
+        assertEquals(
+            NavigationPolicy.Decision.OPEN_EXTERNAL_BROWSER,
+            NavigationPolicy.classify("http://localhost:15297/dashboard", NavigationPolicy.LOCAL_BUNDLE_ORIGIN),
+        )
+    }
+
+    @Test
     fun routesExternalHttpAndHttpsToExternalBrowser() {
         assertEquals(
             NavigationPolicy.Decision.OPEN_EXTERNAL_BROWSER,

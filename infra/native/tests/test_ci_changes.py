@@ -14,8 +14,8 @@ spec = importlib.util.spec_from_file_location(
 changed_areas = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(changed_areas)
 
-ALL = {"backend": True, "frontend": True, "infra": True}
-NONE = {"backend": False, "frontend": False, "infra": False}
+ALL = {"backend": True, "frontend": True, "infra": True, "android": True}
+NONE = {"backend": False, "frontend": False, "infra": False, "android": False}
 
 
 class Classify(unittest.TestCase):
@@ -30,19 +30,25 @@ class Classify(unittest.TestCase):
     def test_frontend_only_skips_backend_and_infra(self):
         self.assertEqual(
             changed_areas.classify(["frontend/src/routes/+layout.svelte", "docs/x.md"]),
-            {"backend": False, "frontend": True, "infra": False},
+            {"backend": False, "frontend": True, "infra": False, "android": True},
+        )
+
+    def test_android_only_runs_android_area(self):
+        self.assertEqual(
+            changed_areas.classify(["android/native/app/src/main/java/com/tingchieh/runnote/MainActivity.kt"]),
+            {"backend": False, "frontend": False, "infra": False, "android": True},
         )
 
     def test_backend_only_skips_frontend_and_infra(self):
         self.assertEqual(
             changed_areas.classify(["backend/app/modules/ai_assistant/provider.py"]),
-            {"backend": True, "frontend": False, "infra": False},
+            {"backend": True, "frontend": False, "infra": False, "android": False},
         )
 
     def test_infra_only_skips_both_application_areas(self):
         self.assertEqual(
             changed_areas.classify(["infra/native/ops/backup.sh"]),
-            {"backend": False, "frontend": False, "infra": True},
+            {"backend": False, "frontend": False, "infra": True, "android": False},
         )
 
     def test_migrations_scripts_and_manifests_also_run_the_release_rehearsal(self):
@@ -58,7 +64,7 @@ class Classify(unittest.TestCase):
     def test_mixed_changes_union_their_areas(self):
         self.assertEqual(
             changed_areas.classify(["frontend/src/app.css", "backend/app/core/config.py"]),
-            {"backend": True, "frontend": True, "infra": False},
+            {"backend": True, "frontend": True, "infra": False, "android": True},
         )
 
     def test_the_ci_definition_itself_runs_everything(self):
