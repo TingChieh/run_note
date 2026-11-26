@@ -93,11 +93,11 @@ test('sports detail fits phones with usable map, navigation and existing privacy
   await ready(page);
   await capture(page, 'mobile');
   await capture(page, 'mobile-map', '.route-panel');
-  await page.getByRole('button', { name: '打开导航' }).focus();
-  await page.keyboard.press('Enter');
-  await expect(page.getByRole('button', { name: '关闭导航' })).toHaveAttribute('aria-expanded', 'true');
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('button', { name: '打开导航' })).toBeFocused();
+  // A detail page belongs to 记录: its tab is marked current (not the page itself) and stays keyboard reachable.
+  const records = page.getByRole('navigation', { name: '底部导航' }).getByRole('link', { name: '记录', exact: true });
+  await expect(records).toHaveAttribute('aria-current', 'true');
+  await records.focus();
+  expect(await records.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('solid');
   const canvas = page.locator('.maplibregl-canvas');
   await canvas.focus();
   await page.keyboard.press('ArrowRight');
@@ -294,11 +294,11 @@ test('sidebar goals save separate periods, survive reload, reject invalid input 
   );
   await widget.getByRole('button', { name: '重试跑量' }).click();
   await expect(widget).toContainText('0 km');
+  // Phones have no goal ring in the shell (the bottom tab bar replaced the menu); goals stay on 今天 and in 目标与隐私.
   await page.setViewportSize({ width: 390, height: 900 });
-  await page.getByRole('button', { name: '打开导航' }).click();
-  await widget.scrollIntoViewIfNeeded();
+  await expect(widget).toBeHidden();
+  await expect(page.getByTestId('mobile-tabbar')).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await capture(page, 'mobile-goal');
 });
 // The record and its route load separately; hold either one to see what the page does meanwhile.
 async function hold(page: Page, pattern: RegExp) {

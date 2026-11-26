@@ -8,6 +8,10 @@
   import { beforeNavigate } from '$app/navigation';
   import { navigating, page } from '$app/state';
   import AppNavigation from '#lib/components/AppNavigation.svelte';
+  import MobileTabBar from '#lib/components/MobileTabBar.svelte';
+  import ExploreTabs from '#lib/components/ExploreTabs.svelte';
+  import MobileAccountLinks from '#lib/components/MobileAccountLinks.svelte';
+  import { exploreSectionFor, isRecordingRoute } from '#lib/navigation.ts';
   import PageHeader from '#lib/components/PageHeader.svelte';
   import SettingsTabs from '#lib/components/SettingsTabs.svelte';
   import { provideSettingsHeader } from '#lib/settings-header.svelte.ts';
@@ -318,6 +322,8 @@
         page.status >= 400),
   );
   const privateView = $derived(!!page.data.user || isProtected(page.url.pathname));
+  const tabBar = $derived(appLayout && !isRecordingRoute(page.url.pathname));
+  const exploreSection = $derived(appLayout ? exploreSectionFor(page.url.pathname) : null);
   setContext(VIEW_CONTEXT, () => {
     const context = viewContext(page.url.pathname, page.data.user?.is_admin === true);
     // A missing personal showcase 404 keeps the shell, but must not advertise that user's links.
@@ -596,7 +602,13 @@
     />{/if}</svelte:head
 >
 <a href="#main" class="skip-link">跳转到主要内容</a>
-<div use:liquidGlass class:app-shell={appLayout} class:public-shell={!appLayout} class="sport-theme">
+<div
+  use:liquidGlass
+  class:app-shell={appLayout}
+  class:public-shell={!appLayout}
+  class="sport-theme"
+  data-tabbar={tabBar ? '' : undefined}
+>
   <header data-auth-ready={mounted}>
     {#if appLayout}
       <AppNavigation
@@ -730,6 +742,9 @@
               {#snippet footer()}<SettingsTabs current={settingsKind} />{/snippet}
             </PageHeader>
           </div>{/if}
+        {#if exploreSection}<div hidden={routeLoading} inert={routeLoading}>
+            <ExploreTabs current={exploreSection} />
+          </div>{/if}
         <!-- Preserve file inputs and drafts across successful focus/session checks. -->
         {#key page.url.pathname}<div
             class="page-reveal"
@@ -741,6 +756,9 @@
           >
             {@render children()}
           </div>{/key}
+        {#if settingsKind === 'account' && page.data.user && !checking}<div hidden={routeLoading} inert={routeLoading}>
+            <MobileAccountLinks user={page.data.user} {busy} {mounted} onlogout={logout} />
+          </div>{/if}
       {/if}
     </main>
     <footer class="app-footer">
@@ -762,5 +780,7 @@
       </div>
     </footer>
   </div>
+  <!-- Outside the sticky header: its scroll-away transform would otherwise carry this fixed bar with it. -->
+  {#if tabBar}<MobileTabBar pathname={page.url.pathname} user={page.data.user} />{/if}
   {#if GlassTuner}<GlassTuner />{/if}
 </div>

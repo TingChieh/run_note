@@ -15,6 +15,7 @@
   import AnchoredPanel from './AnchoredPanel.svelte';
   import GoalRing from './GoalRing.svelte';
   import { attachFloatingGlass } from '#lib/styles/menu-glass.ts';
+  import { canSeeAssistant, canSeeWellbeing } from '#lib/navigation.ts';
   let {
     pathname,
     user,
@@ -50,9 +51,7 @@
     avatarFailed = false;
   });
   const context = $derived(viewContext(pathname, user?.is_admin === true));
-  let open = $state(false);
   let mobile = $state(false);
-  let toggle: HTMLButtonElement;
   let bar = $state<HTMLElement | undefined>(),
     hidden = $state(false),
     raised = $state(false);
@@ -105,10 +104,7 @@
     if (!mobile || !bar) return;
     return attachFloatingGlass(bar);
   });
-  // Phone bar: scrolling down tucks it away, scrolling back up a little brings it straight back (no need to reach the top of the page). It stays while the menu is open.
-  $effect(() => {
-    if (open) hidden = false;
-  });
+  // Phone bar: scrolling down tucks it away, scrolling back up a little brings it straight back (no need to reach the top of the page).
   $effect(() => {
     if (!mobile || !bar) {
       hidden = false;
@@ -125,7 +121,7 @@
         delta = y - last;
       last = y;
       raised = y > 0;
-      if (open || y <= (bar?.offsetHeight ?? 0)) {
+      if (y <= (bar?.offsetHeight ?? 0)) {
         hidden = false;
         direction = 0;
         return;
@@ -202,8 +198,8 @@
         : []),
     ].filter(
       (item) =>
-        (item.href !== '/ai' || (!!user && view.manage)) &&
-        (item.href !== '/wellbeing' || (!!user && view.manage && user.wellbeing_allowed && user.wellbeing_enabled)),
+        (item.href !== '/ai' || canSeeAssistant(user, view.manage)) &&
+        (item.href !== '/wellbeing' || canSeeWellbeing(user, view.manage)),
     ),
   );
   const modeLabel = $derived(
@@ -232,25 +228,13 @@
         : navigation.findIndex((entry) => active(view.href(entry.href)));
       if (currentIndex !== index) onnav(index > currentIndex ? 1 : -1);
     }
-    open = false;
-    if (pathname === view.href(href) && plain) {
-      event.preventDefault();
-      if (mobile) toggle?.focus({ preventScroll: true });
-    }
+    if (pathname === view.href(href) && plain) event.preventDefault();
   }
   afterNavigate(() => {
-    open = false;
     accountMenu?.close();
   });
-  function close(event: KeyboardEvent) {
-    if (event.key === 'Escape' && open) {
-      open = false;
-      toggle?.focus();
-    }
-  }
 </script>
 
-<svelte:window onkeydown={close} />
 {#snippet avatarFace(alt: string)}{#if checking}…{:else if profile?.avatar_url && !avatarFailed}<img
       src={profile.avatar_url}
       {alt}
@@ -275,43 +259,16 @@
   >
   <div class="mobile-actions">
     <ThemeToggle compact />
-    {#if !user && !checking}<a
-        href="/admin"
-        class="button-secondary mobile-login-link"
-        onclick={() => {
-          open = false;
-        }}>登录</a
-      >{/if}
-    <button
-      bind:this={toggle}
-      type="button"
-      class="nav-toggle"
-      aria-expanded={open}
-      aria-controls="app-navigation"
-      aria-label={open ? '关闭导航' : '打开导航'}
-      onclick={() => {
-        open = !open;
-      }}
-    >
-      <svg
-        viewBox="0 0 24 24"
-        width="20"
-        height="20"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.7"
-        aria-hidden="true"><path d={open ? 'm6 6 12 12 M6 18 18 6' : 'M4 6h16 M4 12h16 M4 18h16'} /></svg
-      ><span>导航</span>
-    </button>
+    {#if !user && !checking}<a href="/admin" class="button-secondary mobile-login-link">登录</a>{/if}
   </div>
 </div>
+<!-- Below 800px the bottom MobileTabBar replaces this list (item 49 方案 B); the aside stays in the DOM, hidden and inert. -->
 <aside
   bind:this={sidebar}
   id="app-navigation"
   class="app-sidebar"
   data-floating={floating ? '' : undefined}
-  class:nav-open={open}
-  inert={mobile && !open}
+  inert={mobile}
 >
   <div class="sidebar-brand">
     <a href={view.href('/dashboard')} class="brand desktop-brand" aria-label={`${site.title} 数据汇总`}

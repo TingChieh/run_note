@@ -33,6 +33,7 @@ export default defineConfig({
     'recap.spec.ts',
     'annual-story.spec.ts',
     'top-navigation.spec.ts',
+    'mobile-tabbar.spec.ts',
     'scrollbars.spec.ts',
     'first-read-preload.spec.ts',
     'shoes.spec.ts',

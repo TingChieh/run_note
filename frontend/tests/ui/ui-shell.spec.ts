@@ -89,27 +89,27 @@ test('menu navigation slides pages in the order of the menu', async ({ page }) =
   await expect(page.getByRole('heading', { name: '设置', exact: true })).toBeVisible();
   expect(await page.evaluate(() => (window as typeof window & { pageAnimations: { name: string }[] }).pageAnimations.length)).toBe(animationCount);
 });
-test('mobile menu supports keyboard, Escape and navigation without overflow', async ({ page }) => {
+test('mobile tab bar supports keyboard and navigation without overflow', async ({ page }) => {
   await login(page);
+  const tabs = page.getByRole('navigation', { name: '底部导航' });
   for (const width of [320, 390, 768]) {
     await page.setViewportSize({ width, height: 844 });
     await noOverflow(page);
-    const toggle = page.getByRole('button', { name: '打开导航' });
-    await toggle.focus(); await page.keyboard.press('Enter');
-    await expect(page.getByRole('button', { name: '关闭导航' })).toHaveAttribute('aria-expanded', 'true');
-    await page.keyboard.press('Tab');
-    await expect(page.getByRole('navigation', { name: '主要导航' }).getByRole('link').first()).toBeFocused();
-    await page.keyboard.press('Escape');
-    await expect(toggle).toBeFocused();
-    await expect(page.getByRole('navigation', { name: '主要导航' })).toBeHidden();
+    await expect(tabs).toBeVisible();
+    await expect(page.getByRole('button', { name: '打开导航' })).toHaveCount(0);
+    await tabs.getByRole('link', { name: '今天', exact: true }).focus();
+    for (const name of ['记录', '开跑', '探索', '我的']) {
+      await page.keyboard.press('Tab');
+      await expect(tabs.getByRole('link', { name, exact: true })).toBeFocused();
+    }
+    expect(await tabs.getByRole('link', { name: '我的', exact: true }).evaluate(el => getComputedStyle(el).outlineStyle)).toBe('solid');
   }
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('button', { name: '打开导航' }).click();
-  await expect(page.locator('.app-sidebar')).toHaveCSS('opacity', '1');
-  await page.screenshot({ path: 'test-results/ui-mobile-menu.png', fullPage: true });
-  await page.getByRole('navigation').getByRole('link', { name: '跑步记录', exact: true }).click();
+  await page.screenshot({ path: 'test-results/ui-mobile-settings.png', fullPage: true });
+  await tabs.getByRole('link', { name: '记录', exact: true }).focus();
+  await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { name: '跑步记录', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '打开导航' })).toHaveAttribute('aria-expanded', 'false');
+  await expect(tabs.getByRole('link', { name: '记录', exact: true })).toHaveAttribute('aria-current', 'page');
   await noOverflow(page);
   await page.screenshot({ path: 'test-results/ui-mobile-activities.png', fullPage: true });
   await page.goto('/dashboard');
@@ -197,7 +197,15 @@ test('long saved nickname stays inside navigation at mobile and desktop widths',
     await expect(page.getByTestId('trend-empty')).toBeVisible();
     if (width < 768) await expect(page.locator('.calendar-scroll')).toBeHidden();
     else await expect(page.locator('.calendar-scroll')).toBeVisible();
-    if (width < 800) await page.getByRole('button', { name: '打开导航' }).click(); // 800px is the shell breakpoint (see top-navigation.spec.ts)
+    if (width < 800) {
+      // 800px is the shell breakpoint (see top-navigation.spec.ts): phones navigate with the tab bar, which shows no nickname.
+      const tabs = page.getByTestId('mobile-tabbar');
+      await expect(tabs).toBeVisible();
+      const fit = await tabs.evaluate(el => ({ width: el.clientWidth, scroll: el.scrollWidth }));
+      expect(fit.scroll, `Tab bar fits ${width}px`).toBeLessThanOrEqual(fit.width);
+      await noOverflow(page);
+      continue;
+    }
     const sidebar = page.locator('.app-sidebar');
     await expect(sidebar).toBeVisible();
     const dimensions = await sidebar.evaluate(el => ({ width: el.clientWidth, scroll: el.scrollWidth }));
@@ -369,38 +377,22 @@ test('signed-in top bar keeps one layout at every desktop size instead of compre
   }
 });
 
-test('mobile navigation pops open and closes without losing its instance or keyboard focus', async ({ page }) => {
+test('mobile tab bar and the hidden top-bar list keep their instances across tab navigation', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
   const sidebar = page.locator('.app-sidebar');
-  const original = await sidebar.elementHandle();
-  await sidebar.evaluate(el => {
-    el.addEventListener('transitionrun', event => {
-      if ((event as TransitionEvent).propertyName !== 'opacity' || event.target !== el) return;
-      const animation = el.getAnimations().find(item => item instanceof CSSTransition && item.transitionProperty === 'opacity');
-      if (!animation?.effect) return;
-      animation.pause(); animation.currentTime = Number(animation.effect.getComputedTiming().duration) / 2;
-      el.setAttribute('data-mid-opacity', getComputedStyle(el).opacity);
-      animation.play();
-    });
-  });
-  const toggle = page.getByRole('button', { name: '打开导航' });
-  await toggle.click();
-  await expect(sidebar).toBeVisible();
-  await expect.poll(() => sidebar.getAttribute('data-mid-opacity')).not.toBeNull();
-  const opacity = Number(await sidebar.getAttribute('data-mid-opacity'));
-  expect(opacity).toBeGreaterThan(0); expect(opacity).toBeLessThan(1);
-  await page.locator('.nav-account').getByRole('link', { name: '设置', exact: true }).press('Enter');
+  const tabs = page.getByTestId('mobile-tabbar');
+  const originalSidebar = await sidebar.elementHandle();
+  const originalTabs = await tabs.elementHandle();
   await expect(sidebar).toBeHidden();
-  await expect(toggle).toBeFocused();
-  await toggle.click(); await page.keyboard.press('Escape');
-  await expect(sidebar).toBeHidden(); await expect(toggle).toBeFocused();
-  expect(await original!.evaluate(el => el.isConnected)).toBe(true);
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await toggle.click();
-  await expect(sidebar).toBeVisible();
-  expect(await sidebar.evaluate(el => getComputedStyle(el).transitionDuration)).toBe('0s');
-  await page.keyboard.press('Escape'); await expect(sidebar).toBeHidden();
+  expect(await sidebar.evaluate(el => (el as HTMLElement).inert), 'the hidden list takes no focus').toBe(true);
+  for (const [name, heading] of [['今天', '数据汇总'], ['记录', '跑步记录'], ['探索', '个人足迹'], ['我的', '设置']] as const) {
+    await tabs.getByRole('link', { name, exact: true }).click();
+    await expect(page.getByRole('heading', { level: 1, name: heading, exact: true })).toBeVisible();
+    await expect(tabs.getByRole('link', { name, exact: true })).toHaveAttribute('aria-current', 'page');
+  }
+  expect(await originalSidebar!.evaluate(el => el.isConnected)).toBe(true);
+  expect(await originalTabs!.evaluate(el => el.isConnected)).toBe(true);
 });
 
 test('unknown, retired and unpublished routes share one styled 404 page inside the app shell', async ({ page }) => {
@@ -424,8 +416,10 @@ test('AI 助手 navigation entry is hidden from anonymous visitors on desktop an
   await expect(page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: '跑步记录', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'AI 助手', exact: true })).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('button', { name: '打开导航' }).click();
-  await expect(page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: '跑步记录', exact: true })).toBeVisible();
+  const tabs = page.getByRole('navigation', { name: '底部导航' });
+  await expect(tabs.getByRole('link', { name: '记录', exact: true })).toHaveAttribute('href', '/activities');
+  // Anonymous visitors browse the showcase: no 开跑 and no 我的.
+  await expect(tabs.getByRole('link')).toHaveText(['今天', '记录', '探索']);
   await expect(page.getByRole('link', { name: 'AI 助手', exact: true })).toHaveCount(0);
   await expect(nav.getByRole('link', { name: 'AI 助手', exact: true })).toHaveCount(0);
   await page.goto('/ai');
@@ -440,19 +434,20 @@ test('AI 助手 navigation entry is shown to logged-in users on desktop and mobi
   await expect(page.getByRole('navigation', { name: '功能入口' })).toHaveCount(0);
   await expect(page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: 'AI 助手', exact: true })).toHaveAttribute('href', '/ai');
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('button', { name: '打开导航' }).click();
-  await expect(page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: 'AI 助手', exact: true })).toBeVisible();
+  await page.getByRole('navigation', { name: '底部导航' }).getByRole('link', { name: '我的', exact: true }).click();
+  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page.getByTestId('mobile-account-links').getByRole('link', { name: 'AI 助手', exact: true })).toHaveAttribute('href', '/ai');
 });
 
 for (const width of [320, 358, 361, 375]) {
-  test(`narrow ${width}px: menu button keeps its glass surface and settings tabs show all sections in a 2-column grid`, async ({ page }) => {
+  test(`narrow ${width}px: phone bar button keeps its glass surface and settings tabs show all sections in a 2-column grid`, async ({ page }) => {
     await page.setViewportSize({ width, height: 851 });
     await login(page);
     await page.goto('/settings/site');
     const tabs = page.locator('.settings-tabs.settings-tabs-sections');
     await expect(tabs).toBeVisible();
-    const buttons = page.locator('.mobile-bar button');
-    for (let i = 0; i < 2; i++) await expect.poll(() => buttons.nth(i).locator('.rn-glass-layer').evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(0);
+    const button = page.locator('.mobile-bar .theme-toggle');
+    await expect.poll(() => button.locator('.rn-glass-layer').evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(0);
     const metrics = await tabs.evaluate(el => {
       const box = el.getBoundingClientRect();
       const links = [...el.querySelectorAll(':scope > a')].map(link => {
@@ -472,12 +467,11 @@ for (const width of [320, 358, 361, 375]) {
   });
 }
 
-test('narrow 361px with enlarged text: menu button is icon-only and the brand never overlaps the header buttons', async ({ page }) => {
+test('narrow 361px with enlarged text: the brand never overlaps the header buttons', async ({ page }) => {
   await page.setViewportSize({ width: 361, height: 851 });
   await login(page);
   await page.goto('/settings/site');
   await page.addStyleTag({ content: 'html { font-size: 25px !important; }' });
-  await expect(page.locator('.mobile-bar .nav-toggle > span:not(.rn-glass-surface)')).toBeHidden();
   const gap = await page.evaluate(() => document.querySelector('.mobile-actions')!.getBoundingClientRect().left - document.querySelector('.mobile-bar .brand-name')!.getBoundingClientRect().right);
   expect(gap).toBeGreaterThanOrEqual(0);
   await noOverflow(page);
@@ -488,15 +482,16 @@ test('touch taps leave no hover colour behind on glass buttons', async ({ browse
   const page = await context.newPage();
   await login(page);
   await page.goto('/settings/site');
-  const toggle = page.locator('.nav-toggle');
+  const toggle = page.locator('.mobile-bar .theme-toggle');
   const tint = () => toggle.locator('.rn-glass-tint').evaluate(el => getComputedStyle(el).backgroundColor);
   await expect.poll(() => toggle.locator('.rn-glass-tint').count()).toBe(1);
   expect(await page.evaluate(() => matchMedia('(hover: none)').matches)).toBe(true);
+  const theme = await page.locator('html').getAttribute('data-theme');
   const before = await tint();
   await toggle.tap();
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('html')).not.toHaveAttribute('data-theme', theme!);
   await toggle.tap();
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', theme!);
   await page.waitForTimeout(500);
   expect(await toggle.evaluate(el => el.matches(':hover'))).toBe(true);
   expect(await tint()).toBe(before);

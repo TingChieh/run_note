@@ -118,9 +118,10 @@ test('手机深色模式可从导航进入', async ({page}) => {
   await page.addInitScript(() => localStorage.setItem('runnote-theme','dark'));
   await page.goto('/dashboard');
   await expect(page.locator('header')).toHaveAttribute('data-auth-ready','true');
-  await page.getByRole('button',{name:'打开导航'}).click();
-  await page.getByRole('link',{name:'一起跑步'}).click();
+  await page.getByRole('navigation',{name:'底部导航'}).getByRole('link',{name:'探索',exact:true}).click();
+  await page.getByRole('navigation',{name:'探索分区'}).getByRole('link',{name:'一起跑步'}).click();
   await expect(page).toHaveURL(/\/together$/);
+  await expect(page.getByRole('navigation',{name:'底部导航'}).getByRole('link',{name:'探索',exact:true})).toHaveAttribute('aria-current','true');
   await expect(page.getByRole('heading',{name:'一起跑步'})).toBeVisible();
 });
 
@@ -177,13 +178,14 @@ test('已登录用户在无人加入时看到设置指引', async ({page}) => {
   await expect(page.locator('.together-stack').getByRole('link',{name:'去设置里加入'})).toHaveAttribute('href','/settings/preferences');
 });
 
-test('从桌面切到手机时设置页菜单保持关闭', async ({page}) => {
+test('从桌面切到手机时设置页改用底部导航', async ({page}) => {
   await loginRunner(page);
   await page.setViewportSize({width:1280,height:800});
   await page.goto('/settings');
   await page.setViewportSize({width:390,height:844});
   await expect(page.locator('#app-navigation')).toBeHidden();
-  await expect(page.getByRole('button',{name:'打开导航'})).toHaveAttribute('aria-expanded','false');
+  await expect(page.getByRole('button',{name:'打开导航'})).toHaveCount(0);
+  await expect(page.getByRole('navigation',{name:'底部导航'}).getByRole('link',{name:'我的',exact:true})).toHaveAttribute('aria-current','page');
 });
 
 

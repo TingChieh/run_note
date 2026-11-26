@@ -171,10 +171,10 @@ test('navigation edge capsules stay inside their paint surface while pressed', a
   await installActivities(page); await loginRunner(page); await page.goto('/dashboard');
   const nav = page.getByRole('navigation', { name: '主要导航' });
   const outline = nav.locator('.rn-moving-outline'), copy = nav.locator('.rn-moving-copy');
-  for (const width of [1440, 390]) {
+  // Phones no longer have a vertical menu (the bottom tab bar replaced it), so only the desktop bar carries the moving capsule.
+  for (const width of [1440]) {
     await page.setViewportSize({ width, height: 900 });
-    if (width < 800) await page.getByRole('button', { name: '打开导航' }).click();
-    await expect(nav).toHaveAttribute('data-axis', width < 800 ? 'y' : 'x');
+    await expect(nav).toHaveAttribute('data-axis', 'x');
     const links = nav.getByRole('link');
     for (const index of [0, await links.count() - 1, 0]) {
       const link = links.nth(index);
@@ -519,7 +519,7 @@ test('glass buttons sample their displacement map at device resolution on high-d
   const page = await context.newPage();
   await installActivities(page); await loginRunner(page);
   await page.goto('/activities');
-  const layer = page.locator('.mobile-bar .nav-toggle .rn-glass-layer');
+  const layer = page.locator('.mobile-bar .theme-toggle .rn-glass-layer');
   await expect.poll(() => layer.evaluate(el => el.style.backdropFilter)).toMatch(/url\("?#lg/);
   const ratio = await layer.evaluate(async el => {
     const id = el.style.backdropFilter.match(/#(lg\d+-v\d+)/)![1];

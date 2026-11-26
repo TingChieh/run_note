@@ -55,7 +55,7 @@
 </div>
 
 <style>
-  .glass-tuner { position: fixed; z-index: var(--z-dev-tools); right: var(--space-4); bottom: var(--space-4); }
+  .glass-tuner { position: fixed; z-index: var(--z-dev-tools); right: var(--space-4); bottom: calc(var(--space-4) + var(--bottom-chrome)); }
   .tuner-trigger { display: flex; align-items: center; gap: var(--space-2); min-height: 2.75rem; }
   .tuner-trigger svg { flex-shrink: 0; }
   .dev-label { font-size: var(--text-caption); font-weight: var(--weight-bold); letter-spacing: var(--tracking-caps); color: var(--muted-foreground); }
