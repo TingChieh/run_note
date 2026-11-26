@@ -123,11 +123,12 @@
   --top-navigation-offset: 14px;
   --top-navigation-height: 4rem;
   --z-top-navigation: 30;
-  /* viewport-fit=cover (app.html) lets the page draw under notches and the gesture bar; chrome pads itself with these. On ordinary screens they are 0. */
-  --safe-top: env(safe-area-inset-top, 0px);
-  --safe-right: env(safe-area-inset-right, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --safe-left: env(safe-area-inset-left, 0px);
+  /* viewport-fit=cover (app.html) lets the page draw under notches and the gesture bar; chrome pads itself with these.
+     Also honors Capacitor SystemBars' injected --safe-area-inset-* fallback via max() without doubling. On ordinary screens they are 0. */
+  --safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+  --safe-right: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+  --safe-left: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
   --mobile-tabbar-height: 4rem;
   /* What fixed chrome covers along the bottom edge. Sticky bottom bars (SaveBar) sit above it; the phone tab bar raises it, already including --safe-bottom. */
   --bottom-chrome: var(--safe-bottom);
@@ -1155,6 +1156,13 @@
   .public-shell {
     padding-inline: var(--safe-left) var(--safe-right);
   }
+  .app-shell .content-column,
+  .public-shell .content-column {
+    padding-bottom: var(--bottom-chrome);
+  }
+  html:has(.app-shell, .public-shell) {
+    scroll-padding-bottom: var(--safe-bottom);
+  }
   .mobile-tabbar,
   .settings-tabs.explore-tabs,
   .mobile-account {
@@ -1164,11 +1172,11 @@
     .app-shell[data-tabbar] {
       --bottom-chrome: calc(var(--mobile-tabbar-height) + var(--space-2) + var(--safe-bottom));
     }
-    .app-shell[data-tabbar] .content-column {
-      padding-bottom: var(--bottom-chrome);
+    /* Tab focus and scrollIntoView stop above the gesture bar (and above the fixed tab bar when shown, the desktop bar's
+       scroll-padding-top counterpart). --bottom-chrome lives on .app-shell, so the root repeats its sum, plus a gap for the focus ring. */
+    html:has(.app-shell, .public-shell) {
+      scroll-padding-bottom: calc(var(--space-2) + var(--safe-bottom));
     }
-    /* Tab focus and scrollIntoView stop above the fixed tab bar instead of behind it (the desktop bar's scroll-padding-top
-       counterpart). --bottom-chrome lives on .app-shell, so the root repeats its sum, plus a gap for the focus ring. */
     html:has(.app-shell[data-tabbar]) {
       scroll-padding-bottom: calc(var(--mobile-tabbar-height) + var(--space-2) * 2 + var(--safe-bottom));
     }
