@@ -169,11 +169,15 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation "androidx.health.connect:connect-client:1.1.0"
+    implementation "androidx.security:security-crypto:1.1.0"
     implementation "androidx.webkit:webkit:$androidxWebkitVersion"
+    implementation "com.squareup.okhttp3:okhttp:4.12.0"
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2"
     implementation project(':capacitor-android')
     implementation project(':capacitor-cordova-android-plugins')
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+    testImplementation 'org.json:json:20240303'
 }
 
 apply from: 'capacitor.build.gradle'

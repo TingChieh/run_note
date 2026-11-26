@@ -13,6 +13,8 @@ import java.util.Locale
  */
 object NavigationPolicy {
 
+    const val LOCAL_BUNDLE_ORIGIN: String = "https://localhost"
+
     enum class Decision {
         ALLOW_IN_WEBVIEW,
         OPEN_EXTERNAL_BROWSER,

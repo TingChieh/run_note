@@ -32,6 +32,7 @@ import type { CreatedShare, PublicActivity, Share } from '#lib/api/sharing.ts';
 import type { ShowcaseProfile } from '#lib/api/showcase.ts';
 import type { Calendar, Summary, Trends } from '#lib/api/statistics.ts';
 import type { FeedPage } from '#lib/api/together.ts';
+import type { ClientCapabilities } from '#lib/api/transport.ts';
 import type { VersionInfo } from '#lib/api/version.ts';
 
 type Narrowed<T, K extends keyof T> = Omit<T, K> & { [P in K]: unknown };
@@ -83,6 +84,7 @@ export const responses = {
   showcaseProfile: (v: ResponseData<'/api/v1/showcase/profile', 'get'>): ShowcaseProfile => v,
   togetherFeed: (v: ResponseData<'/api/v1/together/feed', 'get'>): FeedPage => v,
   version: (v: ResponseData<'/api/v1/admin/version', 'get'>): VersionInfo => v,
+  clientCapabilities: (v: ResponseData<'/api/v1/client/capabilities', 'get'>): ClientCapabilities => v,
 };
 
 export const requests = {

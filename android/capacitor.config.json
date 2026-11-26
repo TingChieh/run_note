@@ -2,6 +2,10 @@
   "appId": "com.tingchieh.runnote",
   "appName": "RunNote",
   "webDir": "public",
+  "server": {
+    "androidScheme": "https",
+    "hostname": "localhost"
+  },
   "android": {
     "path": "native",
     "minWebViewVersion": 116

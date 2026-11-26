@@ -323,7 +323,9 @@ def main(argv: list[str] | None = None) -> int:
         if not files:
             print("No changes against origin/main or in the working tree; use --full to check all.")
             return 0
-        areas = {area for area, on in changed_areas.classify(files).items() if on}
+        areas = {
+            area for area, on in changed_areas.classify(files).items() if on and area in AREAS
+        }
         reason = f"{len(files)} changed file(s)"
     if args.e2e:
         areas.add("frontend")

@@ -16,7 +16,7 @@ import re
 import subprocess
 import sys
 
-AREAS = ("backend", "frontend", "infra")
+AREAS = ("backend", "frontend", "infra", "android")
 
 # Documentation only: no code runs differently because of these.
 DOCS = re.compile(r"^(docs/|LICENSE$|.*\.md$)")
@@ -27,7 +27,7 @@ INFRA_FILES = {
     "frontend/pnpm-lock.yaml",
     "frontend/pnpm-workspace.yaml",
 }
-KNOWN_PREFIXES = ("backend/", "frontend/", "infra/", "scripts/", ".github/")
+KNOWN_PREFIXES = ("backend/", "frontend/", "android/", "infra/", "scripts/", ".github/")
 
 
 def classify(files: list[str]) -> dict[str, bool]:
@@ -45,6 +45,9 @@ def classify(files: list[str]) -> dict[str, bool]:
             result["backend"] = True
         if path.startswith("frontend/"):
             result["frontend"] = True
+            result["android"] = True
+        if path.startswith("android/"):
+            result["android"] = True
         # The release rehearsal packages and migrates both sides, so it also follows migrations,
         # the offline scripts and the dependency manifests.
         if path.startswith(("infra/", "backend/migrations/", "scripts/")) or path in INFRA_FILES:

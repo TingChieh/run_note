@@ -32,7 +32,7 @@ import kotlin.math.max
 class MainActivity : BridgeActivity(), RunNoteWebViewClient.HostCallbacks {
 
     private var backEvaluationInFlight = false
-    private lateinit var activeServerUrl: String
+    private val localBundleOrigin: String = NavigationPolicy.LOCAL_BUNDLE_ORIGIN
     private var lastFailedUrl: String? = null
     private var activeThemePreference = "system"
     private var connectionErrorOverlay: View? = null
@@ -68,20 +68,9 @@ class MainActivity : BridgeActivity(), RunNoteWebViewClient.HostCallbacks {
             return
         }
 
-        val serverCheck = ServerUrlPolicy.validate(
-            BuildConfig.RUNNOTE_SERVER_URL,
-            BuildConfig.DEBUG,
-        )
-        if (!serverCheck.valid) {
-            Logger.error("RunNoteConfig", "Invalid server URL configuration: " + serverCheck.reason, null)
-            showStandaloneConfigError()
-            return
-        }
-        val serverUrl = serverCheck.normalizedUrl!!
-        activeServerUrl = serverUrl
-
         config = CapConfig.Builder(this)
-            .setServerUrl(serverUrl)
+            .setAndroidScheme("https")
+            .setHostname("localhost")
             .setAllowMixedContent(false)
             .setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
             .setLoggingEnabled(BuildConfig.DEBUG)
@@ -90,13 +79,15 @@ class MainActivity : BridgeActivity(), RunNoteWebViewClient.HostCallbacks {
         registerPlugin(SystemAppearancePlugin::class.java)
         registerPlugin(HealthDataPlugin::class.java)
         registerPlugin(LocationRecorderPlugin::class.java)
+        registerPlugin(RunNoteTransportPlugin::class.java)
         super.load()
 
         val bridge = getBridge()
         if (bridge != null && bridge.webView != null) {
             val webView: WebView = bridge.webView
+            CookieManager.getInstance().removeAllCookies(null)
             installNativeOverlays()
-            bridge.setWebViewClient(RunNoteWebViewClient(bridge, this, serverUrl, this))
+            bridge.setWebViewClient(RunNoteWebViewClient(bridge, this, localBundleOrigin, this))
             webView.webChromeClient = RunNoteWebChromeClient(bridge)
             installBackFallback(webView)
         }
@@ -105,22 +96,6 @@ class MainActivity : BridgeActivity(), RunNoteWebViewClient.HostCallbacks {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         applySystemBarTheme(activeThemePreference)
-    }
-
-    override fun onPause() {
-        super.onPause()
-        flushCookies()
-    }
-
-    override fun onStop() {
-        super.onStop()
-        flushCookies()
-    }
-
-    private fun flushCookies() {
-        if (getBridge() != null) {
-            CookieManager.getInstance().flush()
-        }
     }
 
     fun getCurrentBarStyleSpec(): SystemBarStyleHelper.StyleSpec {
@@ -192,11 +167,11 @@ class MainActivity : BridgeActivity(), RunNoteWebViewClient.HostCallbacks {
         val failedUrl = lastFailedUrl
         val target = if (
             failedUrl != null &&
-            NavigationPolicy.classify(failedUrl, activeServerUrl) == NavigationPolicy.Decision.ALLOW_IN_WEBVIEW
+            NavigationPolicy.classify(failedUrl, localBundleOrigin) == NavigationPolicy.Decision.ALLOW_IN_WEBVIEW
         ) {
             failedUrl
         } else {
-            activeServerUrl
+            localBundleOrigin
         }
         webView.loadUrl(target)
     }
@@ -261,14 +236,6 @@ class MainActivity : BridgeActivity(), RunNoteWebViewClient.HostCallbacks {
         val active = cm.activeNetwork ?: return false
         val caps = cm.getNetworkCapabilities(active)
         return caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-    }
-
-    private fun showStandaloneConfigError() {
-        setContentView(R.layout.view_connection_error)
-        findViewById<View>(R.id.connection_error_overlay)?.visibility = View.VISIBLE
-        findViewById<TextView>(R.id.connection_error_title)?.setText(R.string.connection_error_config_title)
-        findViewById<TextView>(R.id.connection_error_body)?.setText(R.string.connection_error_config_body)
-        findViewById<Button>(R.id.connection_error_retry_button)?.visibility = View.GONE
     }
 
     private fun installBackFallback(webView: WebView) {
