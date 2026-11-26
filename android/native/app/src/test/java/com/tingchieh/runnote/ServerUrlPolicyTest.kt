@@ -12,8 +12,8 @@ class ServerUrlPolicyTest {
         assertEquals("com.tingchieh.runnote", ServerUrlPolicy.EXPECTED_APP_ID)
         assertEquals("com.tingchieh.runnote", BuildConfig.APPLICATION_ID)
         assertEquals("com.tingchieh.runnote", BuildConfig.RUNNOTE_APP_ID)
-        assertEquals("2.5.0", BuildConfig.VERSION_NAME)
-        assertEquals(20500, BuildConfig.VERSION_CODE)
+        assertEquals("2.5.1", BuildConfig.VERSION_NAME)
+        assertEquals(20501, BuildConfig.VERSION_CODE)
     }
 
     @Test

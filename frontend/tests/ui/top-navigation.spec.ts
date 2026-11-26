@@ -834,17 +834,33 @@ test.describe('avatar placeholder without an account menu (desktop)', () => {
   });
   const slot = (page: Page) => page.locator('.account-avatar-slot .account-avatar');
 
-  test('an anonymous visitor sees one non-interactive avatar and no account button', async ({ page }) => {
+  test('an anonymous visitor sees a visible login entry on desktop and mobile and can navigate to /admin', async ({
+    page,
+  }) => {
     await installActivities(page);
-    await page.goto('/dashboard');
+    await page.goto('/');
     await expect(page.locator('header[data-auth-ready="true"]')).toHaveCount(1);
-    await expect(slot(page)).toBeVisible();
-    await expect(page.locator('.nav-account .account-avatar')).toHaveCount(1);
     await expect(page.getByRole('button', { name: '账户菜单' })).toHaveCount(0);
-    await expect(page.locator('.account-avatar-slot button, .account-avatar-slot a')).toHaveCount(0);
-    const box = (await slot(page).boundingBox())!;
-    expect(box.width).toBeCloseTo(36, 0);
-    expect(box.height).toBeCloseTo(36, 0);
+    await expect(page.locator('.account-avatar-slot')).toHaveCount(0);
+    const desktopLogin = page.getByRole('link', { name: '登录', exact: true });
+    await expect(desktopLogin).toHaveCount(1);
+    await expect(desktopLogin).toBeVisible();
+    await expect(desktopLogin).toHaveAttribute('href', '/admin');
+    await desktopLogin.focus();
+    await expect(desktopLogin).toBeFocused();
+    await noOverflow(page);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const mobileLogin = page.getByRole('link', { name: '登录', exact: true });
+    await expect(mobileLogin).toHaveCount(1);
+    await expect(mobileLogin).toBeVisible();
+    await expect(mobileLogin).toHaveAttribute('href', '/admin');
+    await noOverflow(page);
+    await mobileLogin.click();
+    await expect(page).toHaveURL(/\/admin$/);
+    await expect(page.getByRole('heading', { name: '登录', level: 1, exact: true })).toBeVisible();
+    await expect(page.getByLabel('邮箱', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('密码', { exact: true })).toBeVisible();
   });
 
   test('the avatar keeps its place while the identity is being confirmed', async ({ page }) => {

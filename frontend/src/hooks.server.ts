@@ -21,42 +21,92 @@ export const handle: Handle = async ({ event, resolve }) => {
       const upstream = await backendRequest('/api/v1/site', event.request);
       const body = upstream.ok ? await upstream.json() : null;
       if (body?.data) event.locals.site = parseSite(body.data);
-    } catch { /* Settings are cosmetic: fall back to built-in defaults. */ }
+    } catch {
+      /* Settings are cosmetic: fall back to built-in defaults. */
+    }
   };
   const readUser = async (): Promise<Pick<App.Locals, 'user' | 'authError'>> => {
     try {
-      if (!event.cookies.get('run_session') && !event.cookies.get('__Host-run_session')) return { user: null, authError: null };
-      return { user: await readSession(async () => backendRequest('/api/v1/auth/session', event.request)), authError: null };
-    } catch (cause) { return { user: null, authError: cause instanceof Error ? cause.message : '认证服务暂不可用' }; }
+      if (!event.cookies.get('run_session') && !event.cookies.get('__Host-run_session'))
+        return { user: null, authError: null };
+      return {
+        user: await readSession(async () => backendRequest('/api/v1/auth/session', event.request)),
+        authError: null,
+      };
+    } catch (cause) {
+      return { user: null, authError: cause instanceof Error ? cause.message : '认证服务暂不可用' };
+    }
   };
   const [, session] = await Promise.all([readSite(), readUser()]);
   event.locals.user = session.user;
   event.locals.authError = session.authError;
-  if (/^\/(?:workspace\/)?wellbeing(?:\/|$)/.test(event.url.pathname) && event.locals.user && (!event.locals.user.wellbeing_allowed || !event.locals.user.wellbeing_enabled)) return new Response(null, { status: 303, headers: { Location: event.url.pathname.startsWith('/workspace/') ? '/workspace/dashboard' : '/dashboard', 'Cache-Control': 'no-store' } });
+  if (
+    /^\/(?:workspace\/)?wellbeing(?:\/|$)/.test(event.url.pathname) &&
+    event.locals.user &&
+    (!event.locals.user.wellbeing_allowed || !event.locals.user.wellbeing_enabled)
+  )
+    return new Response(null, {
+      status: 303,
+      headers: {
+        Location: event.url.pathname.startsWith('/workspace/') ? '/workspace/dashboard' : '/dashboard',
+        'Cache-Control': 'no-store',
+      },
+    });
   // The diary is the signed-in person's own workspace page: only the site owner uses the root address.
-  if (/^\/wellbeing\/?$/.test(event.url.pathname) && event.locals.user && !event.locals.user.is_admin) return new Response(null, { status: 303, headers: { Location: `/workspace/wellbeing${event.url.search}`, 'Cache-Control': 'no-store' } });
+  if (/^\/wellbeing\/?$/.test(event.url.pathname) && event.locals.user && !event.locals.user.is_admin)
+    return new Response(null, {
+      status: 303,
+      headers: { Location: `/workspace/wellbeing${event.url.search}`, 'Cache-Control': 'no-store' },
+    });
   const context = viewContext(event.url.pathname, event.locals.user?.is_admin === true);
-  const profilePath = context.kind === 'public' ? `/api/v1/showcase/users/${encodeURIComponent(context.username!)}/profile` : '/api/v1/showcase/profile';
-  if (context.kind === 'workspace' && event.locals.user) event.locals.showcase = { display_name: event.locals.user.display_name, timezone: event.locals.user.timezone, avatar_url: event.locals.user.avatar_url ?? null };
-  try { if (context.kind !== 'workspace') event.locals.showcase = await readShowcaseProfile(async () => backendRequest(profilePath, event.request)); }
-  catch (cause) { event.locals.showcaseError = cause instanceof Error ? cause.message : '展示资料暂不可用'; }
+  const profilePath =
+    context.kind === 'public'
+      ? `/api/v1/showcase/users/${encodeURIComponent(context.username!)}/profile`
+      : '/api/v1/showcase/profile';
+  if (context.kind === 'workspace' && event.locals.user)
+    event.locals.showcase = {
+      display_name: event.locals.user.display_name,
+      timezone: event.locals.user.timezone,
+      avatar_url: event.locals.user.avatar_url ?? null,
+    };
+  const isStandalonePublic = /^\/privacy(?:\/|$)/.test(event.url.pathname);
+  try {
+    if (context.kind !== 'workspace' && !isStandalonePublic)
+      event.locals.showcase = await readShowcaseProfile(async () => backendRequest(profilePath, event.request));
+  } catch (cause) {
+    event.locals.showcaseError = cause instanceof Error ? cause.message : '展示资料暂不可用';
+  }
   if (isProtected(event.url.pathname) && !event.locals.user) {
-    if (event.locals.authError) return new Response('认证服务暂不可用，请稍后重试。', { status: 503, headers: { 'Cache-Control': 'no-store', 'Content-Type': 'text/plain; charset=utf-8' } });
-    return new Response(null, { status: 303, headers: { Location: `/admin?next=${encodeURIComponent(event.url.pathname + event.url.search)}`, 'Cache-Control': 'no-store' } });
+    if (event.locals.authError)
+      return new Response('认证服务暂不可用，请稍后重试。', {
+        status: 503,
+        headers: { 'Cache-Control': 'no-store', 'Content-Type': 'text/plain; charset=utf-8' },
+      });
+    return new Response(null, {
+      status: 303,
+      headers: {
+        Location: `/admin?next=${encodeURIComponent(event.url.pathname + event.url.search)}`,
+        'Cache-Control': 'no-store',
+      },
+    });
   }
   const site = event.locals.site;
-  const escape = (value: string) => value.replace(/[&<>"']/g, char => `&#${char.charCodeAt(0)};`);
+  const escape = (value: string) => value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
   const preloads = await rootErrorImports();
   const response = await resolve(event, {
-    transformPageChunk: ({ html }) => addModulePreloads(html
-      .replace('%runnote.favicon%', escape(site.favicon_url ?? '/favicon.ico'))
-      .replace('%runnote.theme%', site.default_theme), preloads),
+    transformPageChunk: ({ html }) =>
+      addModulePreloads(
+        html
+          .replace('%runnote.favicon%', escape(site.favicon_url ?? '/favicon.ico'))
+          .replace('%runnote.theme%', site.default_theme),
+        preloads,
+      ),
   });
   response.headers.set('Cache-Control', 'no-store');
-  if (!event.locals.user) response.headers.set('Referrer-Policy','no-referrer');
+  if (!event.locals.user) response.headers.set('Referrer-Policy', 'no-referrer');
   // Public showcase pages can be indexed. Login, private areas, missing pages and summary links stay out.
   if (pageNoindex(event.url.pathname, response.status) || /^\/(shared|public|u)(\/|$)/.test(event.url.pathname)) {
-    response.headers.set('X-Robots-Tag','noindex, nofollow');
+    response.headers.set('X-Robots-Tag', 'noindex, nofollow');
   }
   response.headers.append('Vary', 'Cookie');
   return response;

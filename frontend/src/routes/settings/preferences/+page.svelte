@@ -409,6 +409,22 @@
             <a class="button-secondary button-compact" href={view.href('/wellbeing')}>前往身心健康 →</a>
           </div>
         {/if}
+        <div class="data-link-card" data-testid="settings-privacy-deletion-card">
+          <div>
+            <strong>隐私政策与账号删除</strong>
+            <p class="block-hint">查看数据处理说明，或按指引提交账号及关联数据删除请求。</p>
+          </div>
+          <div class="data-link-actions">
+            <a class="button-secondary button-compact" href="/privacy">隐私政策</a>
+            <a
+              class="button-secondary button-compact"
+              href="/privacy#data-deletion"
+              data-testid="settings-data-deletion-link"
+            >
+              账号与数据删除 →
+            </a>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -441,5 +457,10 @@
   }
   .goal-error-row {
     grid-column: 1 / -1;
+  }
+  .data-link-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
   }
 </style>
