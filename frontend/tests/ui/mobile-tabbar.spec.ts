@@ -317,6 +317,75 @@ test.describe('signed-in site owner', () => {
     expect(metrics.headerPadding, 'top bar clears the status bar').toBeCloseTo(14 + 47, 0);
   });
 
+  test('tabbar-hidden recording page keeps primary action and page content above safe-area-inset-bottom', async ({
+    page,
+  }) => {
+    const cdp = await page.context().newCDPSession(page);
+    const cases = [
+      { label: 'pkt110-logical', width: 347, height: 754, top: 39, bottom: 16 },
+      { label: 'phone-390', width: 390, height: 844, top: 47, bottom: 34 },
+      { label: 'tablet-768', width: 768, height: 1024, top: 24, bottom: 20 },
+    ] as const;
+
+    for (const vp of cases) {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: vp.top, bottom: vp.bottom } });
+      await page.goto('/activities/record');
+      await ready(page);
+      await expect(page.getByTestId('mobile-tabbar')).toHaveCount(0);
+      await expect(page.locator('.app-shell')).not.toHaveAttribute('data-tabbar');
+      await expect(page.getByTestId('recording-start-btn')).toBeVisible();
+      await noOverflow(page);
+
+      const initial = await page.evaluate(() => {
+        const startBtn = document.querySelector('[data-testid="recording-start-btn"]')!.getBoundingClientRect();
+        const contentPadding = parseFloat(getComputedStyle(document.querySelector('.content-column')!).paddingBottom);
+        const scrollPadBottom = parseFloat(getComputedStyle(document.documentElement).scrollPaddingBottom);
+        return {
+          startBottom: startBtn.bottom,
+          innerHeight: window.innerHeight,
+          contentPadding,
+          scrollPadBottom,
+        };
+      });
+      expect(initial.contentPadding, `${vp.label}: content clears bottom safe area once`).toBeCloseTo(vp.bottom, 0);
+      expect(
+        initial.scrollPadBottom,
+        `${vp.label}: root scroll-padding clears bottom safe area`,
+      ).toBeGreaterThanOrEqual(vp.bottom);
+      expect(
+        initial.startBottom,
+        `${vp.label}: 开始跑步 stays above the system gesture area at initial scroll`,
+      ).toBeLessThanOrEqual(initial.innerHeight - vp.bottom);
+
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() => {
+              window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' });
+              const footer = document.querySelector('.app-footer')!.getBoundingClientRect();
+              return window.innerHeight - footer.bottom;
+            }),
+          `${vp.label}: scrolled footer clears bottom safe area`,
+        )
+        .toBeGreaterThanOrEqual(vp.bottom - 1);
+    }
+
+    // Native WebView fallback: Capacitor SystemBars injects --safe-area-inset-bottom; it applies when env() is 0 and never doubles when both match.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 0, bottom: 0 } });
+    await page.evaluate(() => document.documentElement.style.setProperty('--safe-area-inset-bottom', '28px'));
+    expect(
+      await page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.content-column')!).paddingBottom)),
+      'Capacitor --safe-area-inset-bottom fallback pads content when env() is 0',
+    ).toBeCloseTo(28, 0);
+    await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 0, bottom: 28 } });
+    expect(
+      await page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.content-column')!).paddingBottom)),
+      'env() and --safe-area-inset-bottom do not double-count',
+    ).toBeCloseTo(28, 0);
+  });
+
   test('desktop keeps the top bar and shows none of the phone navigation', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     for (const path of ['/', '/footprints', '/settings']) {
@@ -382,4 +451,39 @@ test('anonymous visitors get the three browsing tabs on the showcase', async ({ 
     '一起跑步',
   ]);
   await noOverflow(page);
+});
+
+test('public-shell tabbar-hidden routes (/admin, /privacy) keep content above safe-area-inset-bottom', async ({
+  page,
+}) => {
+  const cdp = await page.context().newCDPSession(page);
+  for (const [width, height, bottom] of [
+    [390, 844, 34],
+    [768, 1024, 20],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 47, bottom } });
+    for (const path of ['/admin', '/privacy']) {
+      await page.goto(path);
+      await ready(page);
+      await expect(page.locator('.public-shell')).toHaveCount(1);
+      await expect(page.getByTestId('mobile-tabbar')).toHaveCount(0);
+      await noOverflow(page);
+      const contentPadding = await page.evaluate(() =>
+        parseFloat(getComputedStyle(document.querySelector('.content-column')!).paddingBottom),
+      );
+      expect(contentPadding, `${width}px ${path}: content clears bottom safe area`).toBeCloseTo(bottom, 0);
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() => {
+              window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' });
+              const footer = document.querySelector('.app-footer')!.getBoundingClientRect();
+              return window.innerHeight - footer.bottom;
+            }),
+          `${width}px ${path}: scrolled footer clears bottom safe area`,
+        )
+        .toBeGreaterThanOrEqual(bottom - 1);
+    }
+  }
 });
