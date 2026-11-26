@@ -96,9 +96,9 @@ android {
         applicationId "com.tingchieh.runnote"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // Formula: MAJOR * 10000 + MINOR * 100 + PATCH (2.5.0 -> 20500)
-        versionCode 20500
-        versionName "2.5.0"
+        // Formula: MAJOR * 10000 + MINOR * 100 + PATCH (2.6.0 -> 20600)
+        versionCode 20600
+        versionName "2.6.0"
         buildConfigField "String", "RUNNOTE_APP_ID", "\"com.tingchieh.runnote\""
         aaptOptions {
             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -169,11 +169,15 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation "androidx.health.connect:connect-client:1.1.0"
+    implementation "androidx.security:security-crypto:1.1.0"
     implementation "androidx.webkit:webkit:$androidxWebkitVersion"
+    implementation "com.squareup.okhttp3:okhttp:4.12.0"
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2"
     implementation project(':capacitor-android')
     implementation project(':capacitor-cordova-android-plugins')
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+    testImplementation 'org.json:json:20240303'
 }
 
 apply from: 'capacitor.build.gradle'

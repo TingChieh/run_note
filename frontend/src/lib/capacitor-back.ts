@@ -40,7 +40,7 @@ function queryOpenPopovers(doc: Document): HTMLElement[] {
 }
 
 /**
- * Dismisses the topmost open modal dialog, popover menu, or mobile navigation drawer.
+ * Dismisses the topmost open modal dialog, popover menu, or the public pages' mobile menu.
  * Returns true if an overlay consumed the back press.
  */
 export function dismissActiveOverlay(doc: Document = document, win: Window = window): boolean {
@@ -61,7 +61,7 @@ export function dismissActiveOverlay(doc: Document = document, win: Window = win
     return true;
   }
 
-  if (doc.querySelector('#app-navigation.nav-open, #public-mobile-menu')) {
+  if (doc.querySelector('#public-mobile-menu')) {
     const KeyEvent = (win as Window & { KeyboardEvent?: typeof KeyboardEvent }).KeyboardEvent;
     const escapeEvent =
       typeof KeyEvent === 'function'

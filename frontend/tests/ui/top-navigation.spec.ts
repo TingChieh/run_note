@@ -97,25 +97,25 @@ test.describe('goal ring', () => {
   });
 });
 
-test('on a phone the goal stays inline in the menu and the ring is hidden', async ({ page }) => {
+test('on a phone the bottom tab bar replaces the menu, so the shell has no ring or menu button', async ({ page }) => {
   await installActivities(page);
   await loginRunner(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/dashboard');
   await expect(page.locator('.goal-container')).toBeAttached();
   await expect(page.locator('.goal-container .anchored-trigger')).toBeHidden();
-  await page.getByRole('button', { name: '打开导航' }).click();
-  await expect(page.getByRole('region', { name: '跑量目标' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '打开导航' })).toHaveCount(0);
+  await expect(page.getByRole('navigation', { name: '底部导航' })).toBeVisible();
+  await expect(page.getByRole('region', { name: '跑量目标' })).toBeHidden();
 });
 
-test('the open phone menu exposes only one theme switch and one automatic control', async ({ page }) => {
+test('the phone bar exposes only one theme switch and one automatic control', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
   await installActivities(page);
   await loginRunner(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/dashboard');
   await expect(page.locator('header[data-auth-ready="true"]')).toHaveCount(1);
-  await page.getByRole('button', { name: '打开导航' }).click();
   const themeSwitch = page.getByRole('button', { name: /^切换到(浅|深)色模式$/ });
   const automatic = page.getByRole('button', { name: '跟随系统外观', exact: true });
   await expect(themeSwitch).toHaveCount(1);
@@ -203,15 +203,17 @@ test.describe('horizontal lens', () => {
     await expect(page.getByRole('navigation', { name: '主要导航' })).toHaveAttribute('data-idle', '');
   });
 
-  test('crossing the desktop breakpoint rebuilds the lens on the other axis', async ({ page }) => {
+  test('crossing the desktop breakpoint hands navigation to the tab bar and back to the lens', async ({ page }) => {
     const nav = page.getByRole('navigation', { name: '主要导航' });
-    // Hydration gate: a click before the page has hydrated does nothing, the menu stays closed (inert) and the navigation can never be found.
+    const tabs = page.getByRole('navigation', { name: '底部导航' });
     await expect(page.locator('header')).toHaveAttribute('data-auth-ready', 'true');
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole('button', { name: '打开导航' }).click();
-    await expect(nav).toHaveAttribute('data-axis', 'y');
+    await expect(nav).toBeHidden();
+    await expect(tabs).toBeVisible();
     await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(tabs).toBeHidden();
     await expect(nav).toHaveAttribute('data-axis', 'x');
+    await expect(nav.getByRole('link', { name: '数据汇总', exact: true })).toHaveAttribute('aria-current', 'page');
   });
 
   // The current link keeps its real colour whenever the lens has moved off it (hover elsewhere), so it must read on the bar in both themes.
@@ -543,7 +545,7 @@ test.describe('shell breakpoint', () => {
   });
   for (const width of [SHELL_BREAKPOINT - 1, SHELL_BREAKPOINT, SHELL_BREAKPOINT + 1, 1023, 1024]) {
     const top = width >= SHELL_BREAKPOINT;
-    test(`${width}px: ${top ? 'floating top bar, no mobile bar, lens on x' : 'mobile bar and closed menu, lens on y'}`, async ({
+    test(`${width}px: ${top ? 'floating top bar, no mobile bar, lens on x' : 'mobile bar and bottom tab bar, top-bar list hidden'}`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 900 });
@@ -556,52 +558,55 @@ test.describe('shell breakpoint', () => {
         expect(await bar(page).evaluate((el) => getComputedStyle(el).position)).toBe('fixed');
         await expect(nav).toHaveAttribute('data-axis', 'x');
         await expect(page.locator('.goal-container .anchored-trigger')).toBeVisible();
+        await expect(page.getByTestId('mobile-tabbar')).toBeHidden();
       } else {
         await expect(page.locator('.mobile-bar')).toBeVisible();
         await expect(bar(page)).toBeHidden();
-        await page.getByRole('button', { name: '打开导航' }).click();
-        await expect(bar(page)).toBeVisible();
-        expect(await bar(page).evaluate((el) => getComputedStyle(el).position)).not.toBe('fixed');
-        await expect(nav).toHaveAttribute('data-axis', 'y');
+        await expect(page.getByTestId('mobile-tabbar')).toBeVisible();
+        expect(await page.getByTestId('mobile-tabbar').evaluate((el) => getComputedStyle(el).position)).toBe('fixed');
         await expect(page.locator('.goal-container .anchored-trigger')).toBeHidden();
       }
       await noOverflow(page);
     });
   }
 
-  test('resizing across the breakpoint switches the bar and the lens axis together', async ({ page }) => {
+  test('resizing across the breakpoint switches the bars together', async ({ page }) => {
     const nav = page.getByRole('navigation', { name: '主要导航' });
+    const tabs = page.getByTestId('mobile-tabbar');
     await page.setViewportSize({ width: SHELL_BREAKPOINT, height: 900 });
     await page.goto('/dashboard');
     await expect(nav).toHaveAttribute('data-axis', 'x');
+    await expect(tabs).toBeHidden();
     await page.setViewportSize({ width: SHELL_BREAKPOINT - 1, height: 900 });
     await expect(page.locator('.mobile-bar')).toBeVisible();
-    await page.getByRole('button', { name: '打开导航' }).click();
-    await expect(nav).toHaveAttribute('data-axis', 'y');
+    await expect(tabs).toBeVisible();
+    await expect(nav).toBeHidden();
     await page.setViewportSize({ width: SHELL_BREAKPOINT, height: 900 });
     await expect(nav).toHaveAttribute('data-axis', 'x');
+    await expect(tabs).toBeHidden();
   });
 });
 
-// The phone bar and its menu use the same surface, border and foreground tokens as the desktop bar: no solid green block (Oppo Find X8s is ~361px wide).
-test.describe('phone bar and menu colours', () => {
+// The phone bar and the bottom tab bar use the same surface, border, foreground and current-item tokens as the desktop bar: no solid green block (Oppo Find X8s is ~361px wide).
+test.describe('phone bar and tab bar colours', () => {
   for (const scheme of ['light', 'dark'] as const) {
-    test(`361px ${scheme}: bar and menu sit on the card surface with legible text`, async ({ page }) => {
+    test(`361px ${scheme}: bar on the card surface, tabs legible`, async ({ page }) => {
       await page.emulateMedia({ colorScheme: scheme });
       await installActivities(page);
       await loginRunner(page);
       await page.setViewportSize({ width: 361, height: 800 });
       await page.goto('/dashboard');
       await expect(page.locator('.mobile-bar')).toBeVisible();
-      await page.locator('.app-sidebar .goal-container:not([hidden])').waitFor({ state: 'attached' }); // hydrated: an earlier click is not handled
-      await page.getByRole('button', { name: '打开导航' }).click();
-      await expect(bar(page)).toBeVisible();
-      await expect(page.getByRole('navigation', { name: '主要导航' })).toHaveAttribute('data-axis', 'y');
-      await page
-        .locator('.app-sidebar')
-        .evaluate((el) =>
-          Promise.all(el.getAnimations().map((animation) => animation.finished.catch(() => undefined))),
-        );
+      await page.locator('.app-sidebar .goal-container:not([hidden])').waitFor({ state: 'attached' });
+      await expect(page.getByTestId('mobile-tabbar')).toBeVisible();
+      await page.evaluate(() =>
+        Promise.all(
+          document
+            .getAnimations()
+            .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+            .map((animation) => animation.finished.catch(() => undefined)),
+        ),
+      );
       const probe = await page.evaluate(() => {
         const rgb = (value: string) => {
           const canvas = document.createElement('canvas');
@@ -621,7 +626,6 @@ test.describe('phone bar and menu colours', () => {
           return value;
         };
         const style = (selector: string) => getComputedStyle(document.querySelector(selector)!);
-        const link = document.querySelector('.app-sidebar nav > .nav-link:not([aria-current="page"])')!;
         const mark = style('.mobile-bar .brand-mark');
         return {
           surface: token('--surface'),
@@ -632,16 +636,18 @@ test.describe('phone bar and menu colours', () => {
           brandInk: token('--brand-foreground'),
           active: token('--sport-nav-active'),
           ink: token('--sport-nav-active-ink'),
+          primary: token('--primary'),
+          primaryInk: token('--primary-foreground'),
           barBackground: rgb(style('.mobile-bar').backgroundColor),
           barBorder: rgb(style('.mobile-bar').borderBottomColor),
           barText: rgb(style('.mobile-bar .brand-name').color),
           markBackground: rgb(mark.backgroundColor),
           markText: rgb(mark.color),
-          menuBackground: rgb(style('.app-sidebar').backgroundColor),
-          menuBorder: rgb(style('.app-sidebar').borderBottomColor),
-          menuLink: rgb(getComputedStyle(link).color),
-          currentLink: rgb(style('.app-sidebar nav > .nav-link[aria-current="page"]').color),
-          accountBorder: rgb(style('.app-sidebar .nav-account').borderTopColor),
+          tabLink: rgb(style('.mobile-tabbar .mobile-tab:not([aria-current])').color),
+          currentTab: rgb(style('.mobile-tabbar .mobile-tab[aria-current]').color),
+          currentPlate: rgb(style('.mobile-tabbar .mobile-tab[aria-current]').backgroundColor),
+          recordBackground: rgb(style('.mobile-tab-record').backgroundColor),
+          recordText: rgb(style('.mobile-tab-record').color),
         };
       });
       expect(probe.barBackground, 'bar background').toEqual(probe.surface);
@@ -649,11 +655,11 @@ test.describe('phone bar and menu colours', () => {
       expect(probe.barText, 'bar text').toEqual(probe.foreground);
       expect(probe.markBackground, 'logo square').toEqual(probe.brand);
       expect(probe.markText, 'logo letter').toEqual(probe.brandInk);
-      expect(probe.menuBackground, 'menu background').toEqual(probe.surface);
-      expect(probe.menuBorder, 'menu bottom border').toEqual(probe.border);
-      expect(probe.menuLink, 'menu link').toEqual(probe.muted);
-      expect(probe.currentLink, 'current menu link').toEqual(probe.ink);
-      expect(probe.accountBorder, 'account divider').toEqual(probe.border);
+      expect(probe.tabLink, 'tab label').toEqual(probe.foreground);
+      expect(probe.currentTab, 'current tab').toEqual(probe.ink);
+      expect(probe.currentPlate, 'current tab plate').toEqual(probe.active);
+      expect(probe.recordBackground, '开跑 fill').toEqual(probe.primary);
+      expect(probe.recordText, '开跑 label').toEqual(probe.primaryInk);
       const luminance = (c: number[]) => {
         const [r, g, b] = c.map((v) => {
           const s = v / 255;
@@ -666,8 +672,11 @@ test.describe('phone bar and menu colours', () => {
         return (hi + 0.05) / (lo + 0.05);
       };
       expect(contrast(probe.barText, probe.barBackground), 'bar text contrast').toBeGreaterThanOrEqual(4.5);
-      expect(contrast(probe.menuLink, probe.menuBackground), 'menu link contrast').toBeGreaterThanOrEqual(4.5);
-      expect(contrast(probe.currentLink, probe.active), 'current link on the active plate').toBeGreaterThanOrEqual(4.5);
+      expect(contrast(probe.tabLink, probe.surface), 'tab label contrast').toBeGreaterThanOrEqual(4.5);
+      expect(contrast(probe.currentTab, probe.currentPlate), 'current tab on the active plate').toBeGreaterThanOrEqual(
+        4.5,
+      );
+      expect(contrast(probe.recordText, probe.recordBackground), '开跑 label contrast').toBeGreaterThanOrEqual(4.5);
       expect(contrast(probe.markText, probe.markBackground), 'logo letter contrast').toBeGreaterThanOrEqual(4.5);
     });
   }
@@ -806,13 +815,16 @@ test.describe('account menu', () => {
     await expect(trigger).toBeFocused();
   });
 
-  test('on a phone the inline account block is used and there is no avatar menu', async ({ page }) => {
+  test('on a phone there is no avatar menu: 我的 leads to settings, which ends with sign-out', async ({ page }) => {
     await page.setViewportSize({ width: 361, height: 740 });
-    await page.getByRole('button', { name: '打开导航' }).click();
     await expect(page.locator('.account-menu-host')).toBeHidden();
     await expect(page.getByTestId('current-user')).toContainText('管理员模式');
+    await page.getByRole('navigation', { name: '底部导航' }).getByRole('link', { name: '我的', exact: true }).click();
+    await expect(page).toHaveURL(/\/settings$/);
     await expect(page.getByRole('button', { name: '退出登录', exact: true })).toHaveCount(1);
-    await expect(page.locator('.account-inline').getByRole('link', { name: '设置', exact: true })).toBeVisible();
+    await expect(
+      page.getByTestId('mobile-account-links').getByRole('button', { name: '退出登录', exact: true }),
+    ).toBeVisible();
   });
 });
 
@@ -822,17 +834,33 @@ test.describe('avatar placeholder without an account menu (desktop)', () => {
   });
   const slot = (page: Page) => page.locator('.account-avatar-slot .account-avatar');
 
-  test('an anonymous visitor sees one non-interactive avatar and no account button', async ({ page }) => {
+  test('an anonymous visitor sees a visible login entry on desktop and mobile and can navigate to /admin', async ({
+    page,
+  }) => {
     await installActivities(page);
-    await page.goto('/dashboard');
+    await page.goto('/');
     await expect(page.locator('header[data-auth-ready="true"]')).toHaveCount(1);
-    await expect(slot(page)).toBeVisible();
-    await expect(page.locator('.nav-account .account-avatar')).toHaveCount(1);
     await expect(page.getByRole('button', { name: '账户菜单' })).toHaveCount(0);
-    await expect(page.locator('.account-avatar-slot button, .account-avatar-slot a')).toHaveCount(0);
-    const box = (await slot(page).boundingBox())!;
-    expect(box.width).toBeCloseTo(36, 0);
-    expect(box.height).toBeCloseTo(36, 0);
+    await expect(page.locator('.account-avatar-slot')).toHaveCount(0);
+    const desktopLogin = page.getByRole('link', { name: '登录', exact: true });
+    await expect(desktopLogin).toHaveCount(1);
+    await expect(desktopLogin).toBeVisible();
+    await expect(desktopLogin).toHaveAttribute('href', '/admin');
+    await desktopLogin.focus();
+    await expect(desktopLogin).toBeFocused();
+    await noOverflow(page);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const mobileLogin = page.getByRole('link', { name: '登录', exact: true });
+    await expect(mobileLogin).toHaveCount(1);
+    await expect(mobileLogin).toBeVisible();
+    await expect(mobileLogin).toHaveAttribute('href', '/admin');
+    await noOverflow(page);
+    await mobileLogin.click();
+    await expect(page).toHaveURL(/\/admin$/);
+    await expect(page.getByRole('heading', { name: '登录', level: 1, exact: true })).toBeVisible();
+    await expect(page.getByLabel('邮箱', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('密码', { exact: true })).toBeVisible();
   });
 
   test('the avatar keeps its place while the identity is being confirmed', async ({ page }) => {
@@ -1039,21 +1067,24 @@ test.describe('phone bar hides while scrolling down and returns on a short scrol
     ).toBeLessThanOrEqual(-30);
   });
 
-  test('the menu can be opened from deep in the page and stays visible while open', async ({ page }) => {
+  test('the bottom tab bar stays in reach deep in the page while the top bar is tucked away', async ({ page }) => {
     await scrollBy(page, 900);
-    await scrollBy(page, -40);
-    await page.getByRole('button', { name: '打开导航' }).click();
-    await expect(bar(page)).toBeVisible();
-    await scrollBy(page, 120);
-    await expect(mobileBar(page)).toBeVisible();
-    await expect(page.getByRole('button', { name: '关闭导航' })).toBeVisible();
-    const menu = (await bar(page).boundingBox())!,
-      header = (await mobileBar(page).boundingBox())!;
-    expect(menu.y, 'the menu hangs a small gap below the bar').toBeCloseTo(header.y + header.height + 8, 0);
-    expect(menu.y + menu.height, 'and fits the viewport').toBeLessThanOrEqual(844);
-    await page.getByRole('navigation', { name: '主要导航' }).getByRole('link', { name: '个人记录' }).click();
+    await expect(mobileBar(page)).toBeHidden();
+    const tabs = page.getByRole('navigation', { name: '底部导航' });
+    await expect(tabs).toBeVisible();
+    const box = (await tabs.boundingBox())!;
+    expect(box.y + box.height, 'the tab bar sits inside the viewport, above its bottom edge').toBeLessThanOrEqual(
+      844 - 8 + 0.5,
+    );
+    await tabs.getByRole('link', { name: '探索', exact: true }).click();
+    await expect(page).toHaveURL(/\/footprints$/);
+    await page
+      .getByRole('navigation', { name: '探索分区' })
+      .getByRole('link', { name: '个人记录', exact: true })
+      .click();
     await expect(page).toHaveURL(/\/records/);
     await expect(mobileBar(page)).toBeVisible();
+    await expect(tabs.getByRole('link', { name: '探索', exact: true })).toHaveAttribute('aria-current', 'true');
     await noOverflow(page);
   });
 
@@ -1246,25 +1277,27 @@ test.describe('phone bar looks like the desktop bar', () => {
     await expect(page.locator('.mobile-bar')).not.toHaveAttribute('data-floating');
     expect(await filter(), 'back at the top it is released again').toBe('none');
   });
-  test('the menu is a rounded card with a full border', async ({ page }) => {
-    await page.getByRole('button', { name: '打开导航' }).click();
-    await expect(bar(page)).toBeVisible();
-    await page
-      .locator('.app-sidebar')
-      .evaluate((el) => Promise.all(el.getAnimations().map((animation) => animation.finished.catch(() => undefined))));
-    const card = await bar(page).evaluate((el) => {
+  test('the bottom tab bar is the same kind of pill: inset, full border and refracting glass over the page', async ({
+    page,
+    browserName,
+  }) => {
+    const tabs = page.getByTestId('mobile-tabbar');
+    const card = await tabs.evaluate((el) => {
       const cs = getComputedStyle(el);
+      const box = el.getBoundingClientRect();
       return {
         radius: parseFloat(cs.borderTopLeftRadius),
-        top: cs.borderTopWidth,
-        right: cs.borderRightWidth,
-        left: cs.borderLeftWidth,
-        bottom: cs.borderBottomWidth,
-        overflowX: cs.overflowX,
+        height: box.height,
+        left: box.left,
+        right: box.right,
+        borders: [cs.borderTopWidth, cs.borderRightWidth, cs.borderBottomWidth, cs.borderLeftWidth],
       };
     });
-    expect(card.overflowX, 'mobile menu never scrolls horizontally').toBe('hidden');
-    expect(card.radius).toBeGreaterThanOrEqual(16);
-    expect([card.top, card.right, card.bottom, card.left]).toEqual(['1px', '1px', '1px', '1px']);
+    expect(card.radius, 'pill radius').toBeGreaterThanOrEqual(card.height / 2 - 1);
+    expect(card.left, 'inset from the left edge').toBeGreaterThanOrEqual(10);
+    expect(card.right, 'inset from the right edge').toBeLessThanOrEqual(390 - 10);
+    expect(card.borders).toEqual(['1px', '1px', '1px', '1px']);
+    if (browserName === 'chromium')
+      await expect.poll(() => tabs.evaluate((el) => getComputedStyle(el).backdropFilter)).toContain('url(');
   });
 });

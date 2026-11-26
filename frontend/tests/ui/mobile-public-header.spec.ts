@@ -13,19 +13,21 @@ async function ready(page: Page) {
 }
 async function openPublicMenu(page: Page) {
   const menu = page.getByRole('navigation', { name: '公开页面导航' });
-  if (!await menu.isVisible()) await page.getByRole('button', { name: '打开导航' }).click();
+  if (!(await menu.isVisible())) await page.getByRole('button', { name: '打开导航' }).click();
   await expect(menu).toBeVisible();
   return menu;
 }
 async function singleLine(locator: Locator) {
   await expect(locator).toBeVisible();
-  expect(await locator.evaluate(el => {
-    const text = [...el.childNodes].find(node => node.nodeType === Node.TEXT_NODE && node.textContent?.trim());
-    if (!text) return false;
-    const range = document.createRange();
-    range.selectNodeContents(text);
-    return range.getClientRects().length === 1;
-  })).toBe(true);
+  expect(
+    await locator.evaluate((el) => {
+      const text = [...el.childNodes].find((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim());
+      if (!text) return false;
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      return range.getClientRects().length === 1;
+    }),
+  ).toBe(true);
 }
 const paths = ['/shared/synthetic-token', '/public/activities/11111111-1111-4111-8111-111111111111'];
 for (const width of [375, 390]) {
@@ -36,12 +38,24 @@ for (const width of [375, 390]) {
       await page.goto(path);
       await ready(page);
       const header = page.locator('.public-header');
-      const boxes = await Promise.all(['.brand-mark', '.brand-name', '.theme-toggle', '.nav-toggle'].map(selector => header.locator(selector).boundingBox()));
-      for (const box of boxes) { expect(box).not.toBeNull(); expect(box!.x).toBeGreaterThanOrEqual(0); expect(box!.x + box!.width).toBeLessThanOrEqual(width); }
-      for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
-        const a = boxes[i]!, b = boxes[j]!;
-        expect(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y).toBe(true);
+      const boxes = await Promise.all(
+        ['.brand-mark', '.brand-name', '.theme-toggle', '.nav-toggle'].map((selector) =>
+          header.locator(selector).boundingBox(),
+        ),
+      );
+      for (const box of boxes) {
+        expect(box).not.toBeNull();
+        expect(box!.x).toBeGreaterThanOrEqual(0);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(width);
       }
+      for (let i = 0; i < boxes.length; i++)
+        for (let j = i + 1; j < boxes.length; j++) {
+          const a = boxes[i]!,
+            b = boxes[j]!;
+          expect(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y).toBe(
+            true,
+          );
+        }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await expect(header.getByText('我的运动统计')).toBeHidden();
       await expect(page.locator('.public-mobile-actions, .public-mobile-only')).toHaveCount(0);
@@ -80,12 +94,25 @@ for (const width of [375, 390]) {
       await expect(page.locator('.public-mobile-actions')).toHaveCount(0);
       const loggedOut = await openPublicMenu(page);
       await expect(loggedOut.getByRole('link', { name: '跑步记录' })).toBeVisible();
+      await expect(loggedOut.getByRole('link', { name: '登录', exact: true })).toHaveAttribute('href', '/admin');
       await loggedOut.getByRole('link', { name: '一起跑步' }).click();
       await expect(page).toHaveURL(/\/together$/);
     }
+    await page.goto(paths[0]);
+    await ready(page);
+    await (await openPublicMenu(page)).getByRole('link', { name: '登录', exact: true }).click();
+    await expect(page).toHaveURL(/\/admin$/);
+    await expect(page.getByRole('heading', { name: '登录', level: 1, exact: true })).toBeVisible();
   });
 }
 test('桌面保留顶栏操作，其他位置不显示', async ({ page }) => {
+  for (const path of [...paths, '/privacy']) {
+    await page.goto(path);
+    await ready(page);
+    const header = page.locator('.public-header');
+    await expect(header.getByRole('link', { name: '登录', exact: true })).toBeVisible();
+    await expect(header.getByRole('link', { name: '登录', exact: true })).toHaveAttribute('href', '/admin');
+  }
   await login(page);
   for (const path of paths) {
     await page.goto(path);
@@ -93,6 +120,7 @@ test('桌面保留顶栏操作，其他位置不显示', async ({ page }) => {
     const header = page.locator('.public-header');
     await expect(header.getByRole('link', { name: '我的运动统计' })).toBeVisible();
     await expect(header.getByRole('button', { name: '退出登录' })).toBeVisible();
+    await expect(header.getByRole('link', { name: '登录', exact: true })).toHaveCount(0);
     await expect(page.locator('.public-mobile-actions')).toHaveCount(0);
     await expect(header.locator('.nav-toggle')).toBeHidden();
   }

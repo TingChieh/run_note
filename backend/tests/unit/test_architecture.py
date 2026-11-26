@@ -50,6 +50,9 @@ ANONYMOUS_ROUTES = {
     ("GET", "/api/v1/auth/csrf"),
     ("POST", "/api/v1/auth/login"),
     ("POST", "/api/v1/auth/register"),  # always 403 REGISTRATION_DISABLED
+    ("GET", "/api/v1/client/capabilities"),  # public version/feature negotiation for mobile app
+    ("POST", "/api/v1/mobile/auth/login"),  # bearer login, rate-limited, no cookie
+    ("POST", "/api/v1/mobile/auth/refresh"),  # refresh token rotation, rate-limited, no cookie
     ("GET", "/api/v1/shared/{token}"),
     ("GET", "/api/v1/site"),
     ("GET", "/api/v1/site/images/{kind}"),
@@ -57,9 +60,20 @@ ANONYMOUS_ROUTES = {
     ("GET", "/api/v1/together/feed"),
 }
 # Anonymous routes that answer with the caller's own account rather than public data.
-SELF_SERVICE = {"/api/v1/auth/csrf", "/api/v1/auth/login", "/api/v1/auth/register"}
-# Pre-session writes: protected by the Origin check and rate limits instead of a CSRF token.
-WRITES_WITHOUT_CSRF = {("POST", "/api/v1/auth/login"), ("POST", "/api/v1/auth/register")}
+SELF_SERVICE = {
+    "/api/v1/auth/csrf",
+    "/api/v1/auth/login",
+    "/api/v1/auth/register",
+    "/api/v1/mobile/auth/login",
+    "/api/v1/mobile/auth/refresh",
+}
+# Pre-session writes: protected by Origin/token checks and rate limits instead of a CSRF token.
+WRITES_WITHOUT_CSRF = {
+    ("POST", "/api/v1/auth/login"),
+    ("POST", "/api/v1/auth/register"),
+    ("POST", "/api/v1/mobile/auth/login"),
+    ("POST", "/api/v1/mobile/auth/refresh"),
+}
 # Request bodies that are not StrictInput subclasses.
 NON_STRICT_BODIES: set[str] = set()
 # Routes that answer with bytes (images, CSV) instead of a JSON envelope.
@@ -148,6 +162,10 @@ PRIVATE_FIELDS = {
     "raw",
     "raw_bytes",
     "token_hash",
+    "access_token",
+    "refresh_token",
+    "access_token_hash",
+    "refresh_token_hash",
     "csrf_token",
     "medication_name",
     "medications",

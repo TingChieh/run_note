@@ -79,6 +79,23 @@
 
 **<https://run.aisaka.cc>** 是站主的公开展示站点，访客无需登录即可浏览数据汇总、跑步记录与足迹。
 
+## Android 客户端（Companion）
+
+Web 端仍是 RunNote 的主要支持体验。仓库同时包含基于 Capacitor 8 的 Android Companion 工程（`android/`，最低要求 Android 10 / API 29、系统 WebView 116+），通过 `server.url` 复用现有 SvelteKit UI，不改动 Web SSR 架构、服务端指标权威或数据库 Schema。
+
+- **当前基线**：Phase 0–3 代码已合入 `main`（当前基线 `v2.5.0` / `801729e4`）。
+- **已合入代码的能力**：
+  - **容器与基础适配**：应用身份与品牌资源（`com.tingchieh.runnote`）、构建时 HTTPS 来源校验与导航白名单、系统状态栏明暗同步、返回键/手势导航、原生断网提示与 DocumentsUI 文件导入（GPX / TCX / 小米运动健康）。
+  - **只读健康数据、离线缓存与增量同步**：仅含 6 项只读权限（无写入与后台读取权限）的 Android Health Connect 桥接；基于 IndexedDB 的按账号隔离只读离线缓存（不含身心健康日记、敏感凭据、原始轨迹文件或离线底图瓦片）以及退出/切号清理；基于 `GET /api/v1/activities/sync` 的增量同步与断网重试。
+  - **原生运动记录**：跨平台记录界面（`/activities/record`、`/workspace/activities/record`）、基于 Android 位置前台服务（`foregroundServiceType="location"`，不声明 `ACCESS_BACKGROUND_LOCATION`）的锁屏/后台 GPS 采集与锁屏脱敏通知、暂停/继续分段、崩溃恢复、账号绑定本地上传队列，以及复用 `POST /api/v1/gpx-imports`（`Idempotency-Key`）的幂等上传与退避重试。
+- **当前分发与验证状态（尚未正式发布）**：目前仅支持本地 debug / 内部测试构建，**尚未发布正式安装包或上架应用商店**。除 Phase 0 技术验证的早期真机与公网 HTTPS 门禁已关闭外，以下发布前门禁仍**待完成**（均未记为通过）：
+  - 正式签名 Release APK 构建与签收；
+  - 覆盖 Phase 1–3 的完整真机验收（含 Phase 1 真机视觉检查、Phase 2 Health Connect 真机授权/拒绝/撤销/无数据验收、Phase 3 真机离线记录与恢复闭环）及主流国产 ROM 后台保活/杀进程实测；
+  - Google Play 后台定位 / 前台位置服务政策、Data Safety 声明与商店审查；
+  - 全量真实后端 Playwright E2E 回归验证。
+- **移动端专属 UI**：面向手机端的专属界面与导航方案已作为设计方向获批，**尚未开始实现或合入代码**。
+- **阶段记录**：[Phase 0 技术验证](docs/95-android-capacitor-phase0.md) · [Phase 1 只读 Companion](docs/97-android-capacitor-phase1.md) · [Phase 2 健康桥接与离线缓存](docs/98-android-capacitor-phase2.md) · [Phase 3 原生运动记录](docs/99-android-capacitor-phase3.md)
+
 ## 技术栈与架构
 
 ```text

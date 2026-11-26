@@ -1,6 +1,7 @@
 """The version has one source (backend/pyproject.toml); RELEASE says how a release was built."""
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,25 @@ def test_the_frontend_package_declares_the_backend_version():
     assert declared == service.app_version(), (
         "backend/pyproject.toml is the single source of the version; "
         "set frontend/package.json to the same value"
+    )
+
+
+def test_the_android_app_declares_the_backend_version():
+    gradle = (REPO / "android/native/app/build.gradle").read_text(encoding="utf-8")
+    names = re.findall(r'^\s*versionName\s+"([^"]+)"\s*$', gradle, re.MULTILINE)
+    codes = re.findall(r"^\s*versionCode\s+(\d+)\s*$", gradle, re.MULTILINE)
+    expected_name = service.app_version()
+    major, minor, patch = (int(part) for part in expected_name.split("."))
+    assert minor < 100 and patch < 100, f"version {expected_name!r} overflows Android versionCode"
+    expected_code = major * 10000 + minor * 100 + patch
+
+    assert names == [expected_name], (
+        "backend/pyproject.toml is the single source of the version; "
+        f"set android/native/app/build.gradle versionName to {expected_name!r}"
+    )
+    assert codes == [str(expected_code)], (
+        "android/native/app/build.gradle versionCode must match "
+        f"MAJOR*10000 + MINOR*100 + PATCH ({expected_code})"
     )
 
 

@@ -159,7 +159,8 @@ def test_disabling_clears_public_opt_in_and_revokes_sessions():
     )
     assert not result.is_active and not result.showcase_enabled
     assert person.activity_data_version == 3
-    db.execute.assert_called_once()
+    revoked_tables = {call.args[0].table.name for call in db.execute.call_args_list}
+    assert revoked_tables == {"auth_sessions", "mobile_sessions"}
 
 
 @pytest.mark.parametrize(
@@ -297,7 +298,8 @@ def test_password_reset_protects_owner_and_revokes_ordinary_sessions(monkeypatch
         person.created_at,
     )
     assert result == {"password_reset": True} and person.password_hash == "new-hash"
-    db.execute.assert_called_once()
+    revoked_tables = {call.args[0].table.name for call in db.execute.call_args_list}
+    assert revoked_tables == {"auth_sessions", "mobile_sessions"}
 
 
 def test_migration_false_defaults_and_defensive_downgrade(monkeypatch):

@@ -121,12 +121,12 @@ runes/禁用 store、`#lib` 导入、重型库按需加载、禁用 `map.setStyl
 
 ### UI 设计系统（强制流程）
 
-- 开始 UI 工作先读 [Design System](docs/design-system/README.md)，再查 [组件](docs/design-system/components.md)、[页面模式](docs/design-system/patterns.md) 和 [令牌](docs/design-system/tokens.md)。检查目标路由、调用方及最接近的已成熟页面，核对共享组件、排版、色彩、间距、圆角、阴影、导航、表单和响应式。优先复用 `PageHeader`、`FeedbackState`、`PageSkeleton`、`SaveBar` 等适用实现，以及已有语义类和原生控件。
+- **品牌语言与设计原则**：RunNote 的视觉设计以项目现有的 **Editorial Receipt Design** 为核心品牌语言。所有新增或修改的 UI 必须遵循 [Design System](docs/design-system/README.md)，优先复用已有 Design Tokens、排版规则及组件，不得自行引入新的视觉体系。强调**排版而非容器、数据而非装饰、品牌一致性而非流行设计趋势**；避免通用 AI Dashboard 风格、过度卡片化（如卡片套卡片、把指标拆成琐碎边框块）及无意义的装饰性胶囊标签。**具象票据元素**（如纸感、存根/账簿编排）主要用于记录、报告和分享场景；表单、导入、设置、管理等**操作型界面**始终以可用性为优先。
+- **改前核对与改后验证**：修改 UI 前必须先读 [Design System](docs/design-system/README.md)，再查 [组件](docs/design-system/components.md)、[页面模式](docs/design-system/patterns.md) 和 [令牌](docs/design-system/tokens.md)。检查目标路由、调用方及最接近的已成熟页面，核对共享组件、排版、色彩、间距、圆角、阴影、导航、表单和响应式；优先复用 `PageHeader`、`FeedbackState`、`PageSkeleton`、`SaveBar` 等适用实现，以及已有语义类和原生控件。修改后必须按第 9 节“UI 变更验收”进行视觉验证。延续现有品牌、主题、材质和响应式；未经确认，不得擅自改变产品整体设计方向、全局换肤或批量重写，避免重复样式与无目的的视觉创新。
 - **内容和数据优先。** 用标题、分组、对齐、留白和数据单位建立层级，信息密度以读得清、找得到、点得准为准。保留必要的图标文字、表单标签、无障碍名称、阅读顺序、键盘操作和可见焦点。限定在任务所需的功能范围内，避免新增一级导航、重复入口、无意义的卡片与装饰、不必要的弹窗、教程、功能推荐和无关设置。
 - **Do not narrate the interface** 是 UI 文案的首要规则。只有在省略会影响理解、操作或用户明确要求的内容，且标题、标签、数据或控件无法充分表达时，才新增可见文字。默认不加页面副标题、欢迎语、营销文案、泛化提示横幅、重复解释卡片数据或功能的说明和开发者视角文字。复用 `PageHeader` 时默认省略可选的 `description`，页面模式中的示例文案也按必要性判断。保留简短且可操作的空态、错误和恢复提示，以及必要的不可逆风险、权限、隐私、复杂设置、单位与统计口径、图表和无障碍说明。任务需要的业务摘要应传达实际数据结论，例如个人记录页的同期里程对比。长说明可用现有 `details` 模式。既有文案只在任务涉及该内容时调整，保留完整功能与反馈。
 - `src/app.css` 管理语义令牌，通过 `@theme inline` 映射 Tailwind 工具类（如 `bg-surface`、`text-muted-foreground`）；全站基础样式在 `@layer base`，共享类（如 `.button-secondary`、`.page-header`）在 `@layer components`，页面或组件独有的样式留在局部 `<style>`。沿用系统字体、指标等宽数字和现有排版阶梯、表面及布局规则。颜色与稳定间距使用语义令牌，确有缺项时扩展令牌；避免硬编码色值、平行样式体系和层叠覆盖补丁。
 - 液态玻璃、弹层与按压动效复用 `lib/styles/` 下的项目入口，包括 `liquid-glass.ts` 的 `liquidGlass`、`menu-glass.ts` 的 `attachMenuGlass` / `attachFloatingGlass`、`.rn-glass-menu` 样式和 `popover-motion.ts`。底层 `createGlass` 定义在 `lib/vendor/liquidglass/liquid-glass.js`，由项目封装调用。不要重新实现一套材质或动画。
-- 延续现有品牌、主题、材质和响应式；未经允许不得全局换肤或批量重写，避免重复样式与无目的的视觉创新。
 - 新增通用组件时同步更新规范文档和独立 showcase；没有实际重复需求不创建空壳组件。`pnpm showcase` 是独立开发入口，**不得加入生产路由或导航**。
 
 ## 6. 数据库、迁移与配置

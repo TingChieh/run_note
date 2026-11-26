@@ -343,10 +343,12 @@ for (const mode of ['tracks', 'heatmap'])
     await ready(page);
     await page.getByRole('button', { name: '回到全部足迹', exact: true }).click();
     const canvas = page.locator('.maplibregl-canvas');
-    // Element screenshots also capture fixed overlays; exclude the development-only tuner.
+    // Element screenshots also capture fixed overlays; exclude the development-only tuner and the phone tab bar,
+    // whose glass refracts whatever map is under it.
     // The glass map controls re-sample their backdrop and differ by 1-2/255 on a few edge pixels
     // between renders on software GL (SwiftShader); this test compares the map camera, so hide them.
-    const screenshotStyle = '.glass-tuner, .maplibregl-control-container { visibility: hidden !important; }';
+    const screenshotStyle =
+      '.glass-tuner, .mobile-tabbar, .maplibregl-control-container { visibility: hidden !important; }';
     async function mapScreenshot(name: string) {
       await canvas.scrollIntoViewIfNeeded();
       const box = (await canvas.boundingBox())!;
@@ -1244,7 +1246,11 @@ test('mobile touch tap on low-zoom city marker opens confirmation bar before zoo
   await expect(mapEl).toHaveAttribute('data-zoom-tier', 'country');
   const beijingLabel = page.locator('.map-label').filter({ hasText: '北京' });
   await expect(beijingLabel).toBeVisible();
+  // The bottom tab bar covers the lowest strip of a phone screen: bring the marker up to where a thumb would tap it.
+  await beijingLabel.evaluate((el) => el.scrollIntoView({ block: 'center' }));
   const labelBox = (await beijingLabel.boundingBox())!;
+  const tabBar = (await page.getByTestId('mobile-tabbar').boundingBox())!;
+  expect(labelBox.y + labelBox.height / 2 + 18, 'the bubble is above the tab bar').toBeLessThan(tabBar.y);
   // Label is placed 18px above the city bubble center; tap the bubble underneath.
   await page.touchscreen.tap(labelBox.x + labelBox.width / 2, labelBox.y + labelBox.height / 2 + 18);
   const tapBar = page.getByTestId('footprint-city-tap-bar');

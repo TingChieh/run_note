@@ -11,6 +11,7 @@ const descriptions: [RegExp, string][] = [
   [/\/admin\/users$/, '管理账号、登录权限和个人展示。'],
   [/\/settings$/, '管理账户资料、跑鞋、目标与隐私边界。'],
   [/^\/admin$/, '使用已启用账号登录，管理自己的运动记录。'],
+  [/^\/privacy$/, '了解 RunNote 如何收集、使用、保存与保护个人与运动数据，以及账号与数据删除申请方式。'],
   [/^\/(public\/activities|shared)(\/|$)/, '查看一条公开的运动摘要。页面不包含轨迹坐标。'],
 ];
 
@@ -26,7 +27,7 @@ export function pageNoindex(pathname: string, status: number): boolean {
   return status >= 400 || /^\/(admin|workspace|settings|wellbeing)(\/|$)/.test(pathname);
 }
 
-export const SITEMAP_PATHS = ['/', '/activities', '/footprints', '/ai'] as const;
+export const SITEMAP_PATHS = ['/', '/activities', '/footprints', '/ai', '/privacy'] as const;
 
 const ROBOTS_DISALLOW = ['/admin', '/workspace', '/settings', '/wellbeing', '/api', '/shared', '/public'] as const;
 

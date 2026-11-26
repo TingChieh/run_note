@@ -6,6 +6,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.api.dependencies import get_identity, get_session, require_auth_config, require_write
 from app.core.responses import ApiResponse
+from app.modules.auth.model import AuthSession
 from app.modules.auth.router import envelope
 from app.modules.auth.service import set_cookie
 from app.modules.site_settings.router import png_response, read_upload
@@ -76,7 +77,8 @@ def password(
 ):
     service.change_password(db, identity[1], payload, request.app.state.clock())
     db.commit()
-    set_cookie(response, request.app.state.settings)
+    if isinstance(identity[0], AuthSession):
+        set_cookie(response, request.app.state.settings)
     return envelope(request, PasswordChanged())
 
 

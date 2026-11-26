@@ -2685,6 +2685,30 @@
     justify-content: flex-end;
     gap: var(--space-3);
   }
+  @media (max-width: 799px) {
+    .recording-controls {
+      position: sticky;
+      bottom: calc(var(--space-2) + var(--bottom-chrome));
+      z-index: 2;
+      margin-inline: calc(-1 * var(--space-2));
+      margin-bottom: calc(-1 * var(--space-2));
+      padding: var(--space-2);
+      border-radius: calc(var(--radius-control) + var(--space-2));
+      background: color-mix(in srgb, var(--surface) 92%, transparent);
+      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(12px);
+    }
+    .recording-panel:has(input:focus) .recording-controls {
+      position: static;
+    }
+  }
+  @media (max-width: 799px) and (prefers-reduced-transparency: reduce), (max-width: 799px) and (forced-colors: active) {
+    .recording-controls {
+      background: var(--surface);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
   @media (min-width: 768px) {
     .recording-metrics-grid {
       grid-template-columns: repeat(4, minmax(0, 1fr));
