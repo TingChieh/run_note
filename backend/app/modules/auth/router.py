@@ -7,6 +7,7 @@ from app.api.dependencies import get_identity, get_session, require_auth_config,
 from app.core.responses import ApiResponse, ResponseMeta
 from app.core.security import check_csrf
 from app.modules.auth import service
+from app.modules.auth.model import AuthSession
 from app.modules.auth.rate_limit import client_ip, consume
 from app.modules.auth.schema import (
     AuthView,
@@ -108,5 +109,6 @@ def logout(
 ):
     identity[0].revoked_at = request.app.state.clock()
     db.commit()
-    service.set_cookie(response, request.app.state.settings)
+    if isinstance(identity[0], AuthSession):
+        service.set_cookie(response, request.app.state.settings)
     return envelope(request, LogoutView())

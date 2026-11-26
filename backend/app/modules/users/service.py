@@ -1,11 +1,11 @@
 from datetime import timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.core.errors import ApiError
 from app.core.security import hash_password, verify_password
-from app.modules.auth.model import AuthSession
+from app.modules.auth.service import revoke_all_user_sessions
 from app.modules.site_settings.images import image_version, normalize_image
 from app.modules.users.model import User, UserAvatar
 from app.modules.users.schema import UserView
@@ -88,11 +88,7 @@ def change_password(db, user, payload, now):
     if not verify_password(user.password_hash, payload.current_password):
         raise ApiError(401, "INVALID_CREDENTIALS", "邮箱或密码不正确")
     user.password_hash = hash_password(payload.new_password)
-    db.execute(
-        update(AuthSession)
-        .where(AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None))
-        .values(revoked_at=now)
-    )
+    revoke_all_user_sessions(db, user.id, now)
 
 
 def put_avatar(db, user_id, raw):

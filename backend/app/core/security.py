@@ -52,6 +52,22 @@ def session_valid(row, now: datetime) -> bool:
     )
 
 
+def mobile_access_valid(row, now: datetime) -> bool:
+    return bool(
+        row
+        and row.revoked_at is None
+        and row.rotated_at is None
+        and now < row.access_expires_at
+        and now < row.refresh_expires_at
+    )
+
+
+def mobile_refresh_valid(row, now: datetime) -> bool:
+    return bool(
+        row and row.revoked_at is None and row.rotated_at is None and now < row.refresh_expires_at
+    )
+
+
 def check_source(headers, site_origin: str) -> None:
     origin = headers.get("origin")
     if origin is not None:

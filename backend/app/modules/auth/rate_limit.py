@@ -15,6 +15,7 @@ LIMITS = {
     "login-ip": (60, 900),
     "register-ip": (10, 3600),
     "csrf-ip": (60, 3600),
+    "mobile-refresh-ip": (120, 900),
 }
 
 

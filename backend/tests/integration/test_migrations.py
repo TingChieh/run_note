@@ -121,6 +121,7 @@ def test_upgrade_paths_preserve_baseline_and_are_idempotent(variable):
                 "spatial_ref_sys",
                 "users",
                 "auth_sessions",
+                "mobile_sessions",
                 "auth_rate_buckets",
                 "activities",
                 "gpx_imports",

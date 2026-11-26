@@ -257,6 +257,13 @@ export interface CategoryBest {
   pace_gain_seconds_per_km: string | null;
 }
 
+export interface ClientCapabilitiesView {
+  server_version: string;
+  mobile_api_version: number;
+  min_mobile_app_version: string;
+  features: string[];
+}
+
 export interface ConsentUpdate {
   consented: boolean;
 }
@@ -779,6 +786,31 @@ export interface MifitnessPreview {
   segment_count: number;
   warnings: string[];
   suspected_activity_ids: string[];
+}
+
+export interface MobileAuthView {
+  token_type: 'Bearer';
+  access_token: string;
+  access_expires_at: string;
+  refresh_token: string;
+  refresh_expires_at: string;
+  user: UserView;
+}
+
+export interface MobileLoginInput {
+  email: string;
+  password: string;
+  device_label?: string;
+  client_version?: string;
+}
+
+export interface MobileLogoutInput {
+  revoke_all_devices?: boolean;
+}
+
+export interface MobileRefreshInput {
+  refresh_token: string;
+  client_version?: string | null;
 }
 
 export interface MonthPoint {
@@ -1777,6 +1809,9 @@ export interface ApiOperations {
   '/api/v1/auth/session': {
     get: { body: never; response: SessionView };
   };
+  '/api/v1/client/capabilities': {
+    get: { body: never; response: ClientCapabilitiesView };
+  };
   '/api/v1/footprints': {
     get: { body: never; response: FootprintCollection };
   };
@@ -1921,6 +1956,15 @@ export interface ApiOperations {
   };
   '/api/v1/mifitness-imports': {
     post: { body: never; response: ImportView | MifitnessPreview };
+  };
+  '/api/v1/mobile/auth/login': {
+    post: { body: MobileLoginInput; response: MobileAuthView };
+  };
+  '/api/v1/mobile/auth/logout': {
+    post: { body: MobileLogoutInput | null; response: LogoutView };
+  };
+  '/api/v1/mobile/auth/refresh': {
+    post: { body: MobileRefreshInput; response: MobileAuthView };
   };
   '/api/v1/public/activities/{identifier}': {
     get: { body: never; response: PublicActivity };
@@ -2206,6 +2250,9 @@ export const API_OPERATIONS = {
   '/api/v1/auth/session': {
     get: [],
   },
+  '/api/v1/client/capabilities': {
+    get: [],
+  },
   '/api/v1/footprints': {
     get: ['date_from', 'date_to', 'mode'],
   },
@@ -2350,6 +2397,15 @@ export const API_OPERATIONS = {
   },
   '/api/v1/mifitness-imports': {
     post: ['preview'],
+  },
+  '/api/v1/mobile/auth/login': {
+    post: [],
+  },
+  '/api/v1/mobile/auth/logout': {
+    post: [],
+  },
+  '/api/v1/mobile/auth/refresh': {
+    post: [],
   },
   '/api/v1/public/activities/{identifier}': {
     get: [],

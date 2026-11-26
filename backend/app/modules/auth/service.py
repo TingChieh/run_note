@@ -7,12 +7,13 @@ from app.core.errors import ApiError
 from app.core.security import (
     PASSWORD_HASHER,
     hash_password,
+    mobile_access_valid,
     new_token,
     session_valid,
     token_hash,
     verify_password,
 )
-from app.modules.auth.model import AuthSession
+from app.modules.auth.model import AuthSession, MobileSession
 from app.modules.users.model import User
 
 
@@ -34,6 +35,32 @@ def set_cookie(response, settings, token=None, anonymous=False):
         response.set_cookie(value=token, max_age=600 if anonymous else 604800, **options)
 
 
+def has_session_cookie(request) -> bool:
+    cookies = getattr(request, "cookies", None)
+    if not cookies:
+        return False
+    return bool(cookies.get(cookie_name(request.app.state.settings)))
+
+
+def extract_bearer_token(request) -> tuple[bool, str | None]:
+    headers = getattr(request, "headers", None)
+    raw = headers.get("authorization") if headers else None
+    if not raw:
+        return False, None
+    stripped = raw.strip()
+    if not stripped:
+        return False, None
+    parts = stripped.split(None, 1)
+    if parts[0].lower() != "bearer":
+        return False, None
+    if len(parts) != 2:
+        return True, None
+    token = parts[1].strip()
+    if not token or any(ch.isspace() for ch in token) or len(token) > 128:
+        return True, None
+    return True, token
+
+
 def find_session(db, request, now):
     token = request.cookies.get(cookie_name(request.app.state.settings))
     if not token or len(token) > 128:
@@ -42,7 +69,49 @@ def find_session(db, request, now):
     return row if session_valid(row, now) else None
 
 
+def find_mobile_session(db, token: str, now):
+    row = db.scalar(
+        select(MobileSession).where(MobileSession.access_token_hash == token_hash(token))
+    )
+    return row if mobile_access_valid(row, now) else None
+
+
+def revoke_all_user_sessions(db, user_id, now) -> None:
+    db.execute(
+        update(AuthSession)
+        .where(AuthSession.user_id == user_id, AuthSession.revoked_at.is_(None))
+        .values(revoked_at=now)
+    )
+    db.execute(
+        update(MobileSession)
+        .where(MobileSession.user_id == user_id, MobileSession.revoked_at.is_(None))
+        .values(revoked_at=now)
+    )
+
+
 def require_identity(db, request, now, shared=False):
+    has_bearer, bearer_token = extract_bearer_token(request)
+    has_cookie = has_session_cookie(request)
+    if has_bearer and has_cookie:
+        raise ApiError(400, "AUTH_CONFLICT", "不能同时使用 Cookie 与 Bearer 认证")
+    if has_bearer:
+        if bearer_token is None:
+            raise ApiError(401, "AUTH_REQUIRED", "请先登录")
+        row = find_mobile_session(db, bearer_token, now)
+        if row is None:
+            raise ApiError(401, "AUTH_REQUIRED", "请先登录")
+        query = select(User).where(User.id == row.user_id)
+        user = db.scalar(query.with_for_update(read=shared))
+        if user is None:
+            raise ApiError(401, "AUTH_REQUIRED", "请先登录")
+        db.refresh(row)
+        if not mobile_access_valid(row, now) or not (
+            user.email_normalized == request.app.state.settings.site_owner_email or user.is_active
+        ):
+            raise ApiError(401, "AUTH_REQUIRED", "请先登录")
+        if now >= row.last_used_at + timedelta(minutes=5):
+            row.last_used_at = now
+        return row, user
     row = find_session(db, request, now)
     if row is None or row.user_id is None:
         raise ApiError(401, "AUTH_REQUIRED", "请先登录")
