@@ -58,7 +58,7 @@ def find_aapt2() -> str:
 
 
 def parse_permissions(output: str) -> set[str]:
-    return set(re.findall(r"uses-permission:\s*name='([^']+)'", output))
+    return set(re.findall(r"uses-permission(?:-sdk-\d+)?:\s*name='([^']+)'", output))
 
 
 def audit(apk: Path) -> int:
@@ -73,6 +73,15 @@ def audit(apk: Path) -> int:
         text=True,
     )
     declared = parse_permissions(done.stdout)
+    if not declared:
+        print("FAIL: aapt2 output contained no declared permissions (fail closed)", file=sys.stderr)
+        return 1
+    if "android.permission.INTERNET" not in declared:
+        print(
+            "FAIL: required baseline permission android.permission.INTERNET missing",
+            file=sys.stderr,
+        )
+        return 1
     forbidden = sorted(
         p for p in declared if p in FORBIDDEN_EXACT or p.startswith(FORBIDDEN_PREFIXES)
     )

@@ -4,8 +4,12 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import java.io.IOException
+import java.security.GeneralSecurityException
 import java.security.MessageDigest
 import java.util.Locale
+
+class TransportVaultUnavailableException : RuntimeException("Secure transport vault unavailable")
 
 enum class SessionLifecycleState(val wireValue: String) {
     ACTIVE("active"),
@@ -71,16 +75,21 @@ internal fun sha256Hex(value: String): String {
 
 /**
  * Hardware-backed Android Keystore credential vault using EncryptedSharedPreferences (AES-256-GCM).
- * Tokens never leave native code and are never exposed to WebView JS, cookies, or logs.
+ * Tokens never leave native code, never fall back to cleartext storage, and never crash cold start
+ * if Keystore/Tink initialization fails (failing closed to SIGNED_OUT).
  */
-class EncryptedPrefsTransportVault(context: Context) : TransportVault {
+class EncryptedPrefsTransportVault(private val context: Context) : TransportVault {
 
-    private val prefs: SharedPreferences by lazy {
-        val masterKey = MasterKey.Builder(context.applicationContext)
+    private var initialized = false
+    private var prefs: SharedPreferences? = null
+
+    private fun openEncryptedPrefs(): SharedPreferences {
+        val appContext = context.applicationContext
+        val masterKey = MasterKey.Builder(appContext)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
-        EncryptedSharedPreferences.create(
-            context.applicationContext,
+        return EncryptedSharedPreferences.create(
+            appContext,
             PREFS_NAME,
             masterKey,
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
@@ -89,21 +98,52 @@ class EncryptedPrefsTransportVault(context: Context) : TransportVault {
     }
 
     @Synchronized
+    private fun getPrefsOrNull(): SharedPreferences? {
+        if (initialized) return prefs
+        initialized = true
+        prefs = try {
+            openEncryptedPrefs()
+        } catch (_: GeneralSecurityException) {
+            recoverCorruptedPrefs()
+        } catch (_: IOException) {
+            recoverCorruptedPrefs()
+        } catch (_: RuntimeException) {
+            recoverCorruptedPrefs()
+        }
+        return prefs
+    }
+
+    private fun recoverCorruptedPrefs(): SharedPreferences? {
+        return try {
+            context.applicationContext.deleteSharedPreferences(PREFS_NAME)
+            openEncryptedPrefs()
+        } catch (_: Exception) {
+            // Fail closed: never fall back to cleartext SharedPreferences.
+            null
+        }
+    }
+
+    @Synchronized
     override fun read(): TransportSessionSnapshot {
-        val serverUrl = prefs.getString(KEY_SERVER_URL, null)?.takeIf { it.isNotBlank() }
-        val storedHash = prefs.getString(KEY_SERVER_ORIGIN_HASH, null)?.takeIf { it.isNotBlank() }
-        val state = SessionLifecycleState.fromWireValue(prefs.getString(KEY_SESSION_STATE, null))
-        return TransportSessionSnapshot(
-            state = state,
-            serverUrl = serverUrl,
-            serverOriginHash = storedHash ?: serverUrl?.let { sha256Hex(it) },
-            accountId = prefs.getString(KEY_ACCOUNT_ID, null)?.takeIf { it.isNotBlank() },
-            accessToken = prefs.getString(KEY_ACCESS_TOKEN, null)?.takeIf { it.isNotBlank() },
-            accessExpiresAtIso = prefs.getString(KEY_ACCESS_EXPIRES_AT, null)?.takeIf { it.isNotBlank() },
-            refreshToken = prefs.getString(KEY_REFRESH_TOKEN, null)?.takeIf { it.isNotBlank() },
-            refreshExpiresAtIso = prefs.getString(KEY_REFRESH_EXPIRES_AT, null)?.takeIf { it.isNotBlank() },
-            userJson = prefs.getString(KEY_USER_JSON, null)?.takeIf { it.isNotBlank() },
-        )
+        val store = getPrefsOrNull() ?: return TransportSessionSnapshot.empty()
+        return try {
+            val serverUrl = store.getString(KEY_SERVER_URL, null)?.takeIf { it.isNotBlank() }
+            val storedHash = store.getString(KEY_SERVER_ORIGIN_HASH, null)?.takeIf { it.isNotBlank() }
+            val state = SessionLifecycleState.fromWireValue(store.getString(KEY_SESSION_STATE, null))
+            TransportSessionSnapshot(
+                state = state,
+                serverUrl = serverUrl,
+                serverOriginHash = storedHash ?: serverUrl?.let { sha256Hex(it) },
+                accountId = store.getString(KEY_ACCOUNT_ID, null)?.takeIf { it.isNotBlank() },
+                accessToken = store.getString(KEY_ACCESS_TOKEN, null)?.takeIf { it.isNotBlank() },
+                accessExpiresAtIso = store.getString(KEY_ACCESS_EXPIRES_AT, null)?.takeIf { it.isNotBlank() },
+                refreshToken = store.getString(KEY_REFRESH_TOKEN, null)?.takeIf { it.isNotBlank() },
+                refreshExpiresAtIso = store.getString(KEY_REFRESH_EXPIRES_AT, null)?.takeIf { it.isNotBlank() },
+                userJson = store.getString(KEY_USER_JSON, null)?.takeIf { it.isNotBlank() },
+            )
+        } catch (_: Exception) {
+            TransportSessionSnapshot.empty()
+        }
     }
 
     @Synchronized
@@ -116,55 +156,75 @@ class EncryptedPrefsTransportVault(context: Context) : TransportVault {
         refreshExpiresAtIso: String,
         userJson: String,
     ) {
-        prefs.edit()
-            .putString(KEY_SESSION_STATE, SessionLifecycleState.ACTIVE.wireValue)
-            .putString(KEY_SERVER_URL, serverUrl)
-            .putString(KEY_SERVER_ORIGIN_HASH, sha256Hex(serverUrl))
-            .putString(KEY_ACCOUNT_ID, accountId)
-            .putString(KEY_ACCESS_TOKEN, accessToken)
-            .putString(KEY_ACCESS_EXPIRES_AT, accessExpiresAtIso)
-            .putString(KEY_REFRESH_TOKEN, refreshToken)
-            .putString(KEY_REFRESH_EXPIRES_AT, refreshExpiresAtIso)
-            .putString(KEY_USER_JSON, userJson)
-            .commit()
+        val store = getPrefsOrNull() ?: throw TransportVaultUnavailableException()
+        try {
+            val committed = store.edit()
+                .putString(KEY_SESSION_STATE, SessionLifecycleState.ACTIVE.wireValue)
+                .putString(KEY_SERVER_URL, serverUrl)
+                .putString(KEY_SERVER_ORIGIN_HASH, sha256Hex(serverUrl))
+                .putString(KEY_ACCOUNT_ID, accountId)
+                .putString(KEY_ACCESS_TOKEN, accessToken)
+                .putString(KEY_ACCESS_EXPIRES_AT, accessExpiresAtIso)
+                .putString(KEY_REFRESH_TOKEN, refreshToken)
+                .putString(KEY_REFRESH_EXPIRES_AT, refreshExpiresAtIso)
+                .putString(KEY_USER_JSON, userJson)
+                .commit()
+            if (!committed) {
+                throw TransportVaultUnavailableException()
+            }
+        } catch (ex: TransportVaultUnavailableException) {
+            throw ex
+        } catch (_: Exception) {
+            throw TransportVaultUnavailableException()
+        }
     }
 
     @Synchronized
     override fun markReauthRequired(preserveServerUrl: String?, preserveAccountId: String?) {
-        val editor = prefs.edit()
-            .putString(KEY_SESSION_STATE, SessionLifecycleState.REAUTH_REQUIRED.wireValue)
-            .remove(KEY_ACCESS_TOKEN)
-            .remove(KEY_ACCESS_EXPIRES_AT)
-            .remove(KEY_REFRESH_TOKEN)
-            .remove(KEY_REFRESH_EXPIRES_AT)
-        if (!preserveServerUrl.isNullOrBlank()) {
-            editor.putString(KEY_SERVER_URL, preserveServerUrl)
-            editor.putString(KEY_SERVER_ORIGIN_HASH, sha256Hex(preserveServerUrl))
+        val store = getPrefsOrNull() ?: return
+        try {
+            val editor = store.edit()
+                .putString(KEY_SESSION_STATE, SessionLifecycleState.REAUTH_REQUIRED.wireValue)
+                .remove(KEY_ACCESS_TOKEN)
+                .remove(KEY_ACCESS_EXPIRES_AT)
+                .remove(KEY_REFRESH_TOKEN)
+                .remove(KEY_REFRESH_EXPIRES_AT)
+            if (!preserveServerUrl.isNullOrBlank()) {
+                editor.putString(KEY_SERVER_URL, preserveServerUrl)
+                editor.putString(KEY_SERVER_ORIGIN_HASH, sha256Hex(preserveServerUrl))
+            }
+            if (!preserveAccountId.isNullOrBlank()) {
+                editor.putString(KEY_ACCOUNT_ID, preserveAccountId)
+            }
+            editor.commit()
+        } catch (_: Exception) {
+            // Best-effort cleanup when Keystore is unavailable; never crash.
         }
-        if (!preserveAccountId.isNullOrBlank()) {
-            editor.putString(KEY_ACCOUNT_ID, preserveAccountId)
-        }
-        editor.commit()
     }
 
     @Synchronized
     override fun clearSession(preserveServerUrl: String?) {
-        val editor = prefs.edit()
-            .putString(KEY_SESSION_STATE, SessionLifecycleState.SIGNED_OUT.wireValue)
-            .remove(KEY_ACCOUNT_ID)
-            .remove(KEY_ACCESS_TOKEN)
-            .remove(KEY_ACCESS_EXPIRES_AT)
-            .remove(KEY_REFRESH_TOKEN)
-            .remove(KEY_REFRESH_EXPIRES_AT)
-            .remove(KEY_USER_JSON)
-        if (!preserveServerUrl.isNullOrBlank()) {
-            editor.putString(KEY_SERVER_URL, preserveServerUrl)
-            editor.putString(KEY_SERVER_ORIGIN_HASH, sha256Hex(preserveServerUrl))
-        } else {
-            editor.remove(KEY_SERVER_URL)
-            editor.remove(KEY_SERVER_ORIGIN_HASH)
+        val store = getPrefsOrNull() ?: return
+        try {
+            val editor = store.edit()
+                .putString(KEY_SESSION_STATE, SessionLifecycleState.SIGNED_OUT.wireValue)
+                .remove(KEY_ACCOUNT_ID)
+                .remove(KEY_ACCESS_TOKEN)
+                .remove(KEY_ACCESS_EXPIRES_AT)
+                .remove(KEY_REFRESH_TOKEN)
+                .remove(KEY_REFRESH_EXPIRES_AT)
+                .remove(KEY_USER_JSON)
+            if (!preserveServerUrl.isNullOrBlank()) {
+                editor.putString(KEY_SERVER_URL, preserveServerUrl)
+                editor.putString(KEY_SERVER_ORIGIN_HASH, sha256Hex(preserveServerUrl))
+            } else {
+                editor.remove(KEY_SERVER_URL)
+                editor.remove(KEY_SERVER_ORIGIN_HASH)
+            }
+            editor.commit()
+        } catch (_: Exception) {
+            // Best-effort cleanup when Keystore is unavailable; never crash.
         }
-        editor.commit()
     }
 
     private companion object {

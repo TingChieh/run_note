@@ -3,6 +3,7 @@ package com.tingchieh.runnote
 import okhttp3.ConnectionSpec
 import okhttp3.CookieJar
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -62,8 +63,10 @@ data class TransportHttpResponse(
  * - Strict system TLS (TLS 1.2/1.3) with zero certificate bypass.
  * - Automatic redirect following disabled so Authorization headers never cross redirect hops.
  * - CookieJar disabled so WebView and native transport never mix cookies with Bearer auth.
- * - Single-flight refresh rotation serialized with logout via monotonic session epochs so an
- *   in-flight refresh or login can never resurrect a logged-out session.
+ * - Single-flight refresh rotation coordinated with login and logout via explicit epochs so:
+ *   (a) a failed login never disrupts an in-flight refresh of the active session,
+ *   (b) a refresh superseded by a new login revokes its own token instead of polluting logout,
+ *   (c) an in-flight refresh can never resurrect a logged-out session.
  * - Access and refresh tokens remain inside [TransportVault] and are never returned to WebView JS.
  */
 class RunNoteTransportCore(
@@ -77,9 +80,17 @@ class RunNoteTransportCore(
     private val client: OkHttpClient = clientOverride ?: buildHardenedClient(allowDebugLoopbackHttp)
     private val refreshLock = Any()
     private val vaultMutationLock = Any()
+
+    // Monotonic epoch incremented ONLY when a logout starts or a new login commits to the vault.
     private val sessionEpoch = AtomicLong(0L)
-    private var supersededRefreshAccessToken: String? = null
-    private var supersededRefreshServerUrl: String? = null
+    // Monotonic counter incremented ONLY when logout() starts (guarded by vaultMutationLock for reads/writes with sessionEpoch).
+    private val logoutCount = AtomicLong(0L)
+    private var latestLogoutEpoch: Long = -1L
+
+    // Logout-only handoff for an in-flight refresh interrupted by logout() at exact epoch.
+    private var supersededLogoutAccessToken: String? = null
+    private var supersededLogoutServerUrl: String? = null
+    private var supersededLogoutEpoch: Long = -1L
 
     fun getServerConfig(): ServerConfigView {
         val stored = vault.read().serverUrl
@@ -172,7 +183,9 @@ class RunNoteTransportCore(
                 errorMessage = "未配置有效的 RunNote 服务器地址",
             )
 
-        val loginEpoch = sessionEpoch.incrementAndGet()
+        // Do NOT bump sessionEpoch before the login request succeeds; a failed login must not
+        // disrupt an active session's in-flight token refresh.
+        val startLogoutCount = synchronized(vaultMutationLock) { logoutCount.get() }
         val payload = JSONObject()
             .put("email", email)
             .put("password", password)
@@ -220,36 +233,53 @@ class RunNoteTransportCore(
                         errorMessage = "认证服务返回了无效响应",
                     )
                 }
-                val saved = synchronized(vaultMutationLock) {
-                    if (sessionEpoch.get() != loginEpoch) {
-                        false
+                val commitOutcome = synchronized(vaultMutationLock) {
+                    if (logoutCount.get() != startLogoutCount) {
+                        LoginCommitOutcome.SUPERSEDED_BY_LOGOUT
                     } else {
-                        vault.saveActiveSession(
-                            serverUrl = server,
-                            accountId = accountId,
-                            accessToken = accessToken,
-                            accessExpiresAtIso = accessExpiresAt,
-                            refreshToken = refreshToken,
-                            refreshExpiresAtIso = refreshExpiresAt,
-                            userJson = userObj.toString(),
-                        )
-                        true
+                        try {
+                            vault.saveActiveSession(
+                                serverUrl = server,
+                                accountId = accountId,
+                                accessToken = accessToken,
+                                accessExpiresAtIso = accessExpiresAt,
+                                refreshToken = refreshToken,
+                                refreshExpiresAtIso = refreshExpiresAt,
+                                userJson = userObj.toString(),
+                            )
+                            sessionEpoch.incrementAndGet()
+                            clearSupersededLogoutHandoffLocked()
+                            LoginCommitOutcome.SAVED
+                        } catch (_: TransportVaultUnavailableException) {
+                            LoginCommitOutcome.VAULT_UNAVAILABLE
+                        }
                     }
                 }
-                if (!saved) {
-                    sendServerLogout(server, accessToken, revokeAllDevices = false)
-                    return LoginOutcome(
-                        ok = false,
-                        status = 409,
-                        errorCode = "SESSION_SUPERSEDED",
-                        errorMessage = "登录已被取消，请重试",
+                when (commitOutcome) {
+                    LoginCommitOutcome.SUPERSEDED_BY_LOGOUT -> {
+                        sendServerLogout(server, accessToken, revokeAllDevices = false)
+                        LoginOutcome(
+                            ok = false,
+                            status = 409,
+                            errorCode = "SESSION_SUPERSEDED",
+                            errorMessage = "登录已被取消，请重试",
+                        )
+                    }
+                    LoginCommitOutcome.VAULT_UNAVAILABLE -> {
+                        sendServerLogout(server, accessToken, revokeAllDevices = false)
+                        LoginOutcome(
+                            ok = false,
+                            status = 503,
+                            errorCode = "VAULT_UNAVAILABLE",
+                            errorMessage = "系统安全密钥库不可用，无法保存登录状态",
+                        )
+                    }
+                    LoginCommitOutcome.SAVED -> LoginOutcome(
+                        ok = true,
+                        status = response.code,
+                        userJson = userObj.toString(),
                     )
                 }
-                LoginOutcome(
-                    ok = true,
-                    status = response.code,
-                    userJson = userObj.toString(),
-                )
             }
         } catch (_: IOException) {
             LoginOutcome(
@@ -261,27 +291,43 @@ class RunNoteTransportCore(
         }
     }
 
+    private enum class LoginCommitOutcome {
+        SAVED,
+        SUPERSEDED_BY_LOGOUT,
+        VAULT_UNAVAILABLE,
+    }
+
     fun logout(revokeAllDevices: Boolean = false): Pair<Boolean, Int> {
-        // Bump epoch BEFORE waiting on refreshLock so any in-flight refresh discards its vault write.
-        sessionEpoch.incrementAndGet()
+        // Atomically mark a logout transition BEFORE waiting on refreshLock so any in-flight
+        // refresh knows a logout interrupted it and hands off its fresh token cleanly.
+        val myLogoutEpoch = synchronized(vaultMutationLock) {
+            logoutCount.incrementAndGet()
+            val epoch = sessionEpoch.incrementAndGet()
+            latestLogoutEpoch = epoch
+            epoch
+        }
         synchronized(refreshLock) {
             val snap: TransportSessionSnapshot
             val server: String?
-            val supersededAccess: String?
+            val handedOffAccess: String?
             synchronized(vaultMutationLock) {
                 snap = vault.read()
                 server = snap.serverUrl?.let {
                     ServerUrlPolicy.validate(it, allowDebugLoopbackHttp).normalizedUrl
                 } ?: requireValidatedServerUrl()
-                supersededAccess = if (supersededRefreshServerUrl == server) {
-                    supersededRefreshAccessToken
+                handedOffAccess = if (
+                    supersededLogoutEpoch == myLogoutEpoch &&
+                    supersededLogoutServerUrl == server
+                ) {
+                    supersededLogoutAccessToken
                 } else {
                     null
                 }
-                supersededRefreshAccessToken = null
-                supersededRefreshServerUrl = null
-                // Clear local credentials immediately so logout succeeds even when offline.
-                vault.clearSession(preserveServerUrl = server)
+                clearSupersededLogoutHandoffLocked()
+                // Only clear vault if a newer login hasn't already superseded this logout.
+                if (sessionEpoch.get() == myLogoutEpoch) {
+                    vault.clearSession(preserveServerUrl = server)
+                }
             }
 
             if (server == null) {
@@ -289,8 +335,8 @@ class RunNoteTransportCore(
             }
 
             val refreshToken = snap.refreshToken
-            var accessToken = supersededAccess ?: snap.accessToken
-            var refreshedDuringLogout = supersededAccess != null
+            var accessToken = handedOffAccess ?: snap.accessToken
+            var refreshedDuringLogout = handedOffAccess != null
 
             // If the stored access token is already expired (>30m idle), rotate once via refresh
             // (without writing back to the vault) so server-side logout actually revokes the family.
@@ -336,13 +382,13 @@ class RunNoteTransportCore(
 
         val isPublic = path == CAPABILITIES_PATH || path.startsWith("$CAPABILITIES_PATH?")
         var usedAccessToken: String? = null
-        val startEpoch = sessionEpoch.get()
+        val startEpoch = synchronized(vaultMutationLock) { sessionEpoch.get() }
 
         if (!isPublic) {
             var snap = vault.read()
             if (snap.state == SessionLifecycleState.ACTIVE && needsProactiveRefresh(snap)) {
                 val outcome = refreshSingleFlight(server, expectedAccessToken = snap.accessToken, expectedEpoch = startEpoch)
-                if (outcome == RefreshOutcome.REAUTH_REQUIRED || outcome == RefreshOutcome.SIGNED_OUT) {
+                if (outcome == RefreshOutcome.REAUTH_REQUIRED || outcome == RefreshOutcome.SUPERSEDED) {
                     return errorResponse(401, "AUTH_REQUIRED", "登录已过期，请重新登录", vault.read().state)
                 }
                 snap = vault.read()
@@ -355,15 +401,33 @@ class RunNoteTransportCore(
         val first = performSingleCall(server, normalizedMethod, path, headers, body, usedAccessToken, timeoutMs)
             ?: return errorResponse(503, "NETWORK_ERROR", "无法连接 RunNote 服务，请检查网络后重试", vault.read().state)
 
-        if (!isPublic && first.status == 401 && usedAccessToken != null) {
+        // Do not rotate tokens on non-session 401 errors such as wrong current password (INVALID_CREDENTIALS).
+        val firstErrorCode = if (first.status == 401) extractErrorCode(first.body) else null
+        if (!isPublic && first.status == 401 && usedAccessToken != null && firstErrorCode != ERROR_INVALID_CREDENTIALS) {
             return when (refreshSingleFlight(server, expectedAccessToken = usedAccessToken, expectedEpoch = startEpoch)) {
                 RefreshOutcome.REFRESHED -> {
                     val freshToken = vault.read().accessToken
                     val retry = performSingleCall(server, normalizedMethod, path, headers, body, freshToken, timeoutMs)
                         ?: return errorResponse(503, "NETWORK_ERROR", "无法连接 RunNote 服务，请检查网络后重试", vault.read().state)
-                    retry
+                    val retryErrorCode = if (retry.status == 401) extractErrorCode(retry.body) else null
+                    if (retry.status == 401 && retryErrorCode != ERROR_INVALID_CREDENTIALS) {
+                        // Freshly rotated access token was still rejected (e.g. concurrent revocation):
+                        // transition vault to REAUTH_REQUIRED so JS and native state stay consistent.
+                        val nextState = synchronized(vaultMutationLock) {
+                            val currentSnap = vault.read()
+                            if (sessionEpoch.get() == startEpoch && currentSnap.state == SessionLifecycleState.ACTIVE) {
+                                vault.markReauthRequired(currentSnap.serverUrl ?: server, currentSnap.accountId)
+                                SessionLifecycleState.REAUTH_REQUIRED
+                            } else {
+                                currentSnap.state
+                            }
+                        }
+                        retry.copy(sessionState = nextState)
+                    } else {
+                        retry
+                    }
                 }
-                RefreshOutcome.REAUTH_REQUIRED, RefreshOutcome.SIGNED_OUT -> {
+                RefreshOutcome.REAUTH_REQUIRED, RefreshOutcome.SUPERSEDED -> {
                     errorResponse(401, "AUTH_REQUIRED", "登录已过期，请重新登录", vault.read().state)
                 }
                 RefreshOutcome.TRANSIENT_FAILURE -> {
@@ -378,8 +442,14 @@ class RunNoteTransportCore(
     private enum class RefreshOutcome {
         REFRESHED,
         REAUTH_REQUIRED,
-        SIGNED_OUT,
+        SUPERSEDED,
         TRANSIENT_FAILURE,
+    }
+
+    private fun clearSupersededLogoutHandoffLocked() {
+        supersededLogoutAccessToken = null
+        supersededLogoutServerUrl = null
+        supersededLogoutEpoch = -1L
     }
 
     private fun refreshSingleFlight(
@@ -388,13 +458,16 @@ class RunNoteTransportCore(
         expectedEpoch: Long,
     ): RefreshOutcome {
         synchronized(refreshLock) {
-            if (sessionEpoch.get() != expectedEpoch) {
-                return RefreshOutcome.SIGNED_OUT
+            val startLogoutCount = synchronized(vaultMutationLock) {
+                if (sessionEpoch.get() != expectedEpoch) {
+                    return RefreshOutcome.SUPERSEDED
+                }
+                logoutCount.get()
             }
             val current = vault.read()
             if (current.state != SessionLifecycleState.ACTIVE) {
                 return if (current.state == SessionLifecycleState.SIGNED_OUT) {
-                    RefreshOutcome.SIGNED_OUT
+                    RefreshOutcome.SUPERSEDED
                 } else {
                     RefreshOutcome.REAUTH_REQUIRED
                 }
@@ -431,7 +504,7 @@ class RunNoteTransportCore(
                     if (resp.code == 401 || resp.code == 403) {
                         synchronized(vaultMutationLock) {
                             if (sessionEpoch.get() != expectedEpoch) {
-                                return RefreshOutcome.SIGNED_OUT
+                                return RefreshOutcome.SUPERSEDED
                             }
                             vault.markReauthRequired(current.serverUrl ?: server, current.accountId)
                         }
@@ -453,25 +526,42 @@ class RunNoteTransportCore(
                     ) {
                         return RefreshOutcome.TRANSIENT_FAILURE
                     }
-                    synchronized(vaultMutationLock) {
-                        if (sessionEpoch.get() != expectedEpoch) {
-                            // Logout ran while this refresh was in flight: do not restore the
-                            // session; hand off the fresh access token so logout revokes it.
-                            supersededRefreshAccessToken = nextAccess
-                            supersededRefreshServerUrl = server
-                            return RefreshOutcome.SIGNED_OUT
+                    var revokeSupersededAccessNow = false
+                    val outcome = synchronized(vaultMutationLock) {
+                        val currentEpoch = sessionEpoch.get()
+                        if (currentEpoch == expectedEpoch) {
+                            try {
+                                vault.saveActiveSession(
+                                    serverUrl = server,
+                                    accountId = nextAccountId,
+                                    accessToken = nextAccess,
+                                    accessExpiresAtIso = nextAccessExp,
+                                    refreshToken = nextRefresh,
+                                    refreshExpiresAtIso = nextRefreshExp,
+                                    userJson = userObj?.toString() ?: current.userJson.orEmpty(),
+                                )
+                                RefreshOutcome.REFRESHED
+                            } catch (_: TransportVaultUnavailableException) {
+                                revokeSupersededAccessNow = true
+                                RefreshOutcome.TRANSIENT_FAILURE
+                            }
+                        } else if (logoutCount.get() != startLogoutCount && currentEpoch == latestLogoutEpoch) {
+                            // Interrupted by logout(): hand off fresh token for logout() to revoke.
+                            supersededLogoutAccessToken = nextAccess
+                            supersededLogoutServerUrl = server
+                            supersededLogoutEpoch = currentEpoch
+                            RefreshOutcome.SUPERSEDED
+                        } else {
+                            // Interrupted by a newer login(): revoke this old session's token
+                            // immediately without touching the vault or logout handoff state.
+                            revokeSupersededAccessNow = true
+                            RefreshOutcome.SUPERSEDED
                         }
-                        vault.saveActiveSession(
-                            serverUrl = server,
-                            accountId = nextAccountId,
-                            accessToken = nextAccess,
-                            accessExpiresAtIso = nextAccessExp,
-                            refreshToken = nextRefresh,
-                            refreshExpiresAtIso = nextRefreshExp,
-                            userJson = userObj?.toString() ?: current.userJson.orEmpty(),
-                        )
                     }
-                    RefreshOutcome.REFRESHED
+                    if (revokeSupersededAccessNow) {
+                        sendServerLogout(server, nextAccess, revokeAllDevices = false)
+                    }
+                    outcome
                 }
             } catch (_: IOException) {
                 RefreshOutcome.TRANSIENT_FAILURE
@@ -526,23 +616,37 @@ class RunNoteTransportCore(
         accessToken: String?,
         timeoutMs: Long,
     ): TransportHttpResponse? {
-        val builder = Request.Builder().url(server + path)
-        for ((k, v) in callerHeaders) {
-            val lower = k.trim().lowercase(Locale.ROOT)
-            if (lower.isEmpty() || lower in BLOCKED_CALLER_HEADERS) continue
-            builder.header(k.trim(), v)
+        val builder = try {
+            Request.Builder().url(server + path)
+        } catch (_: IllegalArgumentException) {
+            return errorResponse(400, "INVALID_API_PATH", "仅允许请求本站 /api/ 路径", vault.read().state)
         }
-        if (callerHeaders.keys.none { it.equals("Accept", ignoreCase = true) }) {
+        var callerContentType: String? = null
+        for ((k, v) in callerHeaders) {
+            val trimmedKey = k.trim()
+            val lower = trimmedKey.lowercase(Locale.ROOT)
+            if (lower.isEmpty() || lower in BLOCKED_CALLER_HEADERS) continue
+            try {
+                builder.header(trimmedKey, v)
+            } catch (_: IllegalArgumentException) {
+                return errorResponse(400, "INVALID_HEADER", "请求头格式不合法", vault.read().state)
+            }
+            if (lower == "content-type") {
+                callerContentType = v
+            }
+        }
+        if (callerHeaders.keys.none { it.trim().equals("Accept", ignoreCase = true) }) {
             builder.header("Accept", "application/json")
         }
         if (!accessToken.isNullOrBlank()) {
             builder.header("Authorization", "Bearer $accessToken")
         }
 
+        val mediaType = callerContentType?.toMediaTypeOrNull() ?: JSON_MEDIA_TYPE
         val requestBody = when (method) {
             "GET", "HEAD" -> null
-            "DELETE" -> body?.toRequestBody(JSON_MEDIA_TYPE)
-            else -> (body ?: "").toRequestBody(JSON_MEDIA_TYPE)
+            "DELETE" -> body?.toRequestBody(mediaType)
+            else -> (body ?: "").toRequestBody(mediaType)
         }
         builder.method(method, requestBody)
 
@@ -628,6 +732,7 @@ class RunNoteTransportCore(
         const val LOGOUT_PATH = "/api/v1/mobile/auth/logout"
         const val DEFAULT_TIMEOUT_MS = 12_000L
         private const val PROACTIVE_REFRESH_SKEW_SECONDS = 60L
+        private const val ERROR_INVALID_CREDENTIALS = "INVALID_CREDENTIALS"
 
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
         private val ALLOWED_METHODS = setOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD")
@@ -671,5 +776,11 @@ class RunNoteTransportCore(
                 null
             }
         }
+
+        private fun extractErrorCode(rawBody: String): String? =
+            parseJsonObjectOrNull(rawBody)
+                ?.optJSONObject("error")
+                ?.optString("code")
+                ?.takeIf { it.isNotBlank() }
     }
 }

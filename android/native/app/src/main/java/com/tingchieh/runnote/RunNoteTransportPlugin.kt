@@ -7,6 +7,7 @@ import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 
 /**
  * Native Capacitor transport bridge for RunNote's local-bundled mobile shell.
@@ -17,7 +18,7 @@ import java.util.concurrent.Executors
 class RunNoteTransportPlugin : Plugin() {
 
     private val executor: ExecutorService = Executors.newCachedThreadPool()
-    private lateinit var core: RunNoteTransportCore
+    private var core: RunNoteTransportCore? = null
 
     override fun load() {
         super.load()
@@ -35,10 +36,38 @@ class RunNoteTransportPlugin : Plugin() {
         super.handleOnDestroy()
     }
 
+    private fun runAsync(call: PluginCall, block: (RunNoteTransportCore) -> Unit) {
+        val activeCore = core
+        if (activeCore == null) {
+            safeReject(call, "TRANSPORT_UNAVAILABLE", "本地安全传输服务未就绪")
+            return
+        }
+        try {
+            executor.execute {
+                try {
+                    block(activeCore)
+                } catch (_: Exception) {
+                    // Never propagate uncaught exceptions on worker threads or leak stack/tokens to JS.
+                    safeReject(call, "TRANSPORT_INTERNAL_ERROR", "本地安全传输服务暂时不可用")
+                }
+            }
+        } catch (_: RejectedExecutionException) {
+            safeReject(call, "TRANSPORT_SHUTDOWN", "应用正在关闭，请稍后重试")
+        }
+    }
+
+    private fun safeReject(call: PluginCall, code: String, message: String) {
+        try {
+            call.reject(message, code)
+        } catch (_: Exception) {
+            // Bridge may already be torn down during Activity destruction.
+        }
+    }
+
     @PluginMethod
     fun getServerConfig(call: PluginCall) {
-        executor.execute {
-            val cfg = core.getServerConfig()
+        runAsync(call) { activeCore ->
+            val cfg = activeCore.getServerConfig()
             val out = JSObject()
                 .put("serverUrl", cfg.serverUrl)
                 .put("defaultServerUrl", cfg.defaultServerUrl)
@@ -50,8 +79,8 @@ class RunNoteTransportPlugin : Plugin() {
 
     @PluginMethod
     fun getSessionState(call: PluginCall) {
-        executor.execute {
-            val state = core.getPublicSessionState()
+        runAsync(call) { activeCore ->
+            val state = activeCore.getPublicSessionState()
             val out = JSObject()
                 .put("state", state.state.wireValue)
                 .put("serverUrl", state.serverUrl)
@@ -73,8 +102,8 @@ class RunNoteTransportPlugin : Plugin() {
 
     @PluginMethod
     fun checkCapabilities(call: PluginCall) {
-        executor.execute {
-            val res = core.checkCapabilities()
+        runAsync(call) { activeCore ->
+            val res = activeCore.checkCapabilities()
             val out = JSObject()
                 .put("ok", res.ok)
                 .put("status", res.status)
@@ -97,8 +126,8 @@ class RunNoteTransportPlugin : Plugin() {
         val password = call.getString("password") ?: ""
         val deviceLabel = call.getString("deviceLabel") ?: "RunNote Android"
         val clientVersion = call.getString("clientVersion") ?: BuildConfig.VERSION_NAME
-        executor.execute {
-            val outcome = core.login(
+        runAsync(call) { activeCore ->
+            val outcome = activeCore.login(
                 email = email,
                 password = password,
                 deviceLabel = deviceLabel,
@@ -124,8 +153,8 @@ class RunNoteTransportPlugin : Plugin() {
     @PluginMethod
     fun logout(call: PluginCall) {
         val revokeAll = call.getBoolean("revokeAllDevices", false) ?: false
-        executor.execute {
-            val (ok, status) = core.logout(revokeAllDevices = revokeAll)
+        runAsync(call) { activeCore ->
+            val (ok, status) = activeCore.logout(revokeAllDevices = revokeAll)
             call.resolve(JSObject().put("ok", ok).put("status", status))
         }
     }
@@ -148,8 +177,8 @@ class RunNoteTransportPlugin : Plugin() {
                 }
             }
         }
-        executor.execute {
-            val response = core.executeApiRequest(
+        runAsync(call) { activeCore ->
+            val response = activeCore.executeApiRequest(
                 method = method,
                 path = path,
                 headers = headers,

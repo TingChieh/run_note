@@ -25,6 +25,6 @@
     min-height: 100dvh;
     background: var(--background);
     color: var(--foreground);
-    padding: max(1rem, env(safe-area-inset-top)) 1rem max(1.5rem, env(safe-area-inset-bottom));
+    padding: max(1rem, var(--safe-top)) 1rem max(1.5rem, var(--safe-bottom));
   }
 </style>

@@ -370,6 +370,326 @@ class RunNoteTransportCoreTest {
     }
 
     @Test
+    fun concurrentRefreshAndSuccessfulLoginRevokesOldRefreshAndLogsOutNewSession() {
+        vault.saveActiveSession(
+            serverUrl = serverOrigin(),
+            accountId = "user-a",
+            accessToken = "sessionA-expired",
+            accessExpiresAtIso = fixedNow.minusSeconds(60).toString(),
+            refreshToken = "sessionA-refresh",
+            refreshExpiresAtIso = fixedNow.plusSeconds(86400 * 90L).toString(),
+            userJson = sampleUserJson("user-a").toString(),
+        )
+
+        val refreshInFlight = CountDownLatch(1)
+        val releaseRefresh = CountDownLatch(1)
+        val logoutHeaders = java.util.Collections.synchronizedList(mutableListOf<String?>())
+
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                return when (request.path) {
+                    RunNoteTransportCore.REFRESH_PATH -> {
+                        refreshInFlight.countDown()
+                        releaseRefresh.await(5, TimeUnit.SECONDS)
+                        val body = JSONObject()
+                            .put(
+                                "data",
+                                JSONObject()
+                                    .put("token_type", "Bearer")
+                                    .put("access_token", "sessionA-rotated")
+                                    .put("access_expires_at", fixedNow.plusSeconds(1800).toString())
+                                    .put("refresh_token", "sessionA-rotated-refresh")
+                                    .put("refresh_expires_at", fixedNow.plusSeconds(86400 * 90L).toString())
+                                    .put("user", sampleUserJson("user-a")),
+                            )
+                            .toString()
+                        MockResponse().setResponseCode(200).setBody(body)
+                    }
+                    RunNoteTransportCore.LOGIN_PATH -> {
+                        val body = JSONObject()
+                            .put(
+                                "data",
+                                JSONObject()
+                                    .put("token_type", "Bearer")
+                                    .put("access_token", "sessionB-access")
+                                    .put("access_expires_at", fixedNow.plusSeconds(1800).toString())
+                                    .put("refresh_token", "sessionB-refresh")
+                                    .put("refresh_expires_at", fixedNow.plusSeconds(86400 * 90L).toString())
+                                    .put("user", sampleUserJson("user-b")),
+                            )
+                            .toString()
+                        MockResponse().setResponseCode(200).setBody(body)
+                    }
+                    RunNoteTransportCore.LOGOUT_PATH -> {
+                        logoutHeaders.add(request.getHeader("Authorization"))
+                        MockResponse().setResponseCode(200).setBody("""{"data":{"logged_out":true}}""")
+                    }
+                    else -> MockResponse().setResponseCode(200).setBody("""{"data":{}}""")
+                }
+            }
+        }
+
+        val core = buildCore()
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val apiFuture = pool.submit(Callable { core.executeApiRequest("GET", "/api/v1/me") })
+            assertTrue(refreshInFlight.await(5, TimeUnit.SECONDS))
+
+            // Session B logs in while Session A's refresh is still in flight.
+            val loginOutcome = core.login("userb@example.test", "Synthetic-password-2026")
+            assertTrue(loginOutcome.ok)
+            assertEquals("sessionB-access", vault.read().accessToken)
+            assertEquals("user-b", vault.read().accountId)
+
+            releaseRefresh.countDown()
+            val apiRes = apiFuture.get(5, TimeUnit.SECONDS)
+            assertEquals(401, apiRes.status)
+
+            // Session A's superseded rotated token was explicitly revoked; Session B remains active.
+            assertEquals(listOf("Bearer sessionA-rotated"), logoutHeaders)
+            assertEquals(SessionLifecycleState.ACTIVE, vault.read().state)
+            assertEquals("sessionB-access", vault.read().accessToken)
+            assertEquals("user-b", vault.read().accountId)
+
+            // Subsequent logout must revoke Session B's active token, NOT Session A's token.
+            val (logoutOk, logoutStatus) = core.logout(revokeAllDevices = false)
+            assertTrue(logoutOk)
+            assertEquals(200, logoutStatus)
+            assertEquals(listOf("Bearer sessionA-rotated", "Bearer sessionB-access"), logoutHeaders)
+            assertEquals(SessionLifecycleState.SIGNED_OUT, vault.read().state)
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    @Test
+    fun concurrentRefreshAndFailedLoginPreservesActiveSessionRotatedTokens() {
+        vault.saveActiveSession(
+            serverUrl = serverOrigin(),
+            accountId = "user-a",
+            accessToken = "sessionA-expired",
+            accessExpiresAtIso = fixedNow.minusSeconds(60).toString(),
+            refreshToken = "sessionA-refresh",
+            refreshExpiresAtIso = fixedNow.plusSeconds(86400 * 90L).toString(),
+            userJson = sampleUserJson("user-a").toString(),
+        )
+
+        val refreshInFlight = CountDownLatch(1)
+        val releaseRefresh = CountDownLatch(1)
+
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                return when (request.path) {
+                    RunNoteTransportCore.REFRESH_PATH -> {
+                        refreshInFlight.countDown()
+                        releaseRefresh.await(5, TimeUnit.SECONDS)
+                        val body = JSONObject()
+                            .put(
+                                "data",
+                                JSONObject()
+                                    .put("token_type", "Bearer")
+                                    .put("access_token", "sessionA-rotated")
+                                    .put("access_expires_at", fixedNow.plusSeconds(1800).toString())
+                                    .put("refresh_token", "sessionA-rotated-refresh")
+                                    .put("refresh_expires_at", fixedNow.plusSeconds(86400 * 90L).toString())
+                                    .put("user", sampleUserJson("user-a")),
+                            )
+                            .toString()
+                        MockResponse().setResponseCode(200).setBody(body)
+                    }
+                    RunNoteTransportCore.LOGIN_PATH -> {
+                        MockResponse()
+                            .setResponseCode(401)
+                            .setBody("""{"data":null,"error":{"code":"INVALID_CREDENTIALS","message":"邮箱或密码不正确"}}""")
+                    }
+                    "/api/v1/me" -> {
+                        if (request.getHeader("Authorization") == "Bearer sessionA-rotated") {
+                            MockResponse().setResponseCode(200).setBody("""{"data":{"ok":true}}""")
+                        } else {
+                            MockResponse().setResponseCode(401).setBody("""{"data":null,"error":{"code":"AUTH_REQUIRED"}}""")
+                        }
+                    }
+                    else -> MockResponse().setResponseCode(404)
+                }
+            }
+        }
+
+        val core = buildCore()
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val apiFuture = pool.submit(Callable { core.executeApiRequest("GET", "/api/v1/me") })
+            assertTrue(refreshInFlight.await(5, TimeUnit.SECONDS))
+
+            // Failed login must NOT invalidate the in-flight refresh of the active session.
+            val failedLogin = core.login("usera@example.test", "wrong-password-123456")
+            assertFalse(failedLogin.ok)
+            assertEquals(401, failedLogin.status)
+
+            releaseRefresh.countDown()
+            val apiRes = apiFuture.get(5, TimeUnit.SECONDS)
+            assertEquals(200, apiRes.status)
+            assertEquals(SessionLifecycleState.ACTIVE, vault.read().state)
+            assertEquals("sessionA-rotated", vault.read().accessToken)
+            assertEquals("sessionA-rotated-refresh", vault.read().refreshToken)
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    @Test
+    fun invalidCallerHeadersReturn400AndCustomContentTypeIsPreserved() {
+        vault.saveActiveSession(
+            serverUrl = serverOrigin(),
+            accountId = "user-1",
+            accessToken = "valid-access",
+            accessExpiresAtIso = fixedNow.plusSeconds(1800).toString(),
+            refreshToken = "valid-refresh",
+            refreshExpiresAtIso = fixedNow.plusSeconds(86400 * 90L).toString(),
+            userJson = sampleUserJson("user-1").toString(),
+        )
+        val core = buildCore()
+
+        // Malformed header name/value returns 400 INVALID_HEADER instead of throwing IllegalArgumentException.
+        val badName = core.executeApiRequest("GET", "/api/v1/me", headers = mapOf("Bad\r\nHeader" to "v"))
+        assertEquals(400, badName.status)
+        assertEquals("INVALID_HEADER", badName.errorCode)
+
+        val badValue = core.executeApiRequest("GET", "/api/v1/me", headers = mapOf("X-Test" to "中文\u0000"))
+        assertEquals(400, badValue.status)
+        assertEquals("INVALID_HEADER", badValue.errorCode)
+        assertEquals(0, server.requestCount)
+
+        // Valid custom Content-Type is respected on request body.
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"data":{"ok":true}}"""))
+        val customCt = core.executeApiRequest(
+            method = "POST",
+            path = "/api/v1/gpx-imports",
+            headers = mapOf("Content-Type" to "application/gpx+xml"),
+            body = "<gpx/>",
+        )
+        assertEquals(200, customCt.status)
+        val recorded = server.takeRequest()
+        assertTrue(recorded.getHeader("Content-Type").orEmpty().startsWith("application/gpx+xml"))
+    }
+
+    @Test
+    fun nonSession401InvalidCredentialsDoesNotRotateAndPostRefresh401MarksReauthRequired() {
+        vault.saveActiveSession(
+            serverUrl = serverOrigin(),
+            accountId = "user-1",
+            accessToken = "access-1",
+            accessExpiresAtIso = fixedNow.plusSeconds(1800).toString(),
+            refreshToken = "refresh-1",
+            refreshExpiresAtIso = fixedNow.plusSeconds(86400 * 90L).toString(),
+            userJson = sampleUserJson("user-1").toString(),
+        )
+        // 1) 401 INVALID_CREDENTIALS (e.g. wrong current password) must NOT rotate tokens or invalidate session.
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(401)
+                .setBody("""{"data":null,"error":{"code":"INVALID_CREDENTIALS","message":"邮箱或密码不正确"}}"""),
+        )
+        val core = buildCore()
+        val wrongPw = core.executeApiRequest("PATCH", "/api/v1/me/password", body = "{}")
+        assertEquals(401, wrongPw.status)
+        assertEquals(SessionLifecycleState.ACTIVE, wrongPw.sessionState)
+        assertEquals(1, server.requestCount)
+        assertEquals("access-1", vault.read().accessToken)
+
+        // 2) If refresh succeeds (200) but the post-refresh retry still returns 401 AUTH_REQUIRED,
+        // transition vault consistently to REAUTH_REQUIRED.
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(401)
+                .setBody("""{"data":null,"error":{"code":"AUTH_REQUIRED","message":"请先登录"}}"""),
+        )
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody(
+                    JSONObject()
+                        .put(
+                            "data",
+                            JSONObject()
+                                .put("token_type", "Bearer")
+                                .put("access_token", "access-2")
+                                .put("access_expires_at", fixedNow.plusSeconds(1800).toString())
+                                .put("refresh_token", "refresh-2")
+                                .put("refresh_expires_at", fixedNow.plusSeconds(86400 * 90L).toString())
+                                .put("user", sampleUserJson("user-1")),
+                        )
+                        .toString(),
+                ),
+        )
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(401)
+                .setBody("""{"data":null,"error":{"code":"AUTH_REQUIRED","message":"请先登录"}}"""),
+        )
+        val retry401 = core.executeApiRequest("GET", "/api/v1/me")
+        assertEquals(401, retry401.status)
+        assertEquals(SessionLifecycleState.REAUTH_REQUIRED, retry401.sessionState)
+        assertEquals(SessionLifecycleState.REAUTH_REQUIRED, vault.read().state)
+        assertNull(vault.read().accessToken)
+    }
+
+    @Test
+    fun vaultUnavailableDuringLoginReturns503AndRevokesIssuedToken() {
+        val failingVault = object : TransportVault {
+            override fun read(): TransportSessionSnapshot = TransportSessionSnapshot.empty()
+            override fun saveActiveSession(
+                serverUrl: String,
+                accountId: String,
+                accessToken: String,
+                accessExpiresAtIso: String,
+                refreshToken: String,
+                refreshExpiresAtIso: String,
+                userJson: String,
+            ) {
+                throw TransportVaultUnavailableException()
+            }
+            override fun markReauthRequired(preserveServerUrl: String?, preserveAccountId: String?) = Unit
+            override fun clearSession(preserveServerUrl: String?) = Unit
+        }
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody(
+                    JSONObject()
+                        .put(
+                            "data",
+                            JSONObject()
+                                .put("token_type", "Bearer")
+                                .put("access_token", "orphan-access")
+                                .put("access_expires_at", fixedNow.plusSeconds(1800).toString())
+                                .put("refresh_token", "orphan-refresh")
+                                .put("refresh_expires_at", fixedNow.plusSeconds(86400 * 90L).toString())
+                                .put("user", sampleUserJson("user-1")),
+                        )
+                        .toString(),
+                ),
+        )
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"data":{"logged_out":true}}"""))
+
+        val core = RunNoteTransportCore(
+            vault = failingVault,
+            defaultServerUrl = serverOrigin(),
+            allowDebugLoopbackHttp = true,
+            appVersion = "2.6.0",
+            clock = fixedClock,
+        )
+        val outcome = core.login("runner@example.test", "Synthetic-password-2026")
+        assertFalse(outcome.ok)
+        assertEquals(503, outcome.status)
+        assertEquals("VAULT_UNAVAILABLE", outcome.errorCode)
+
+        assertEquals(RunNoteTransportCore.LOGIN_PATH, server.takeRequest().path)
+        val logoutReq = server.takeRequest()
+        assertEquals(RunNoteTransportCore.LOGOUT_PATH, logoutReq.path)
+        assertEquals("Bearer orphan-access", logoutReq.getHeader("Authorization"))
+    }
+
+    @Test
     fun enforcesServerUrlPolicyAndApiPathAllowlist() {
         val releaseCore = buildCore(defaultUrl = "http://127.0.0.1:${server.port}", allowDebugLoopbackHttp = false)
         assertFalse(releaseCore.getServerConfig().valid)

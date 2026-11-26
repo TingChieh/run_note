@@ -192,8 +192,8 @@ export async function transportFetch(
     throw new TransportError('无法连接 RunNote 服务，请检查网络后重试', 503, 'NETWORK_ERROR');
   }
 
-  if (nativeResult.sessionState === 'reauth_required' || nativeResult.status === 401) {
-    notifySessionInvalidated(nativeResult.sessionState ?? 'reauth_required');
+  if (nativeResult.sessionState === 'reauth_required' || nativeResult.sessionState === 'signed_out') {
+    notifySessionInvalidated(nativeResult.sessionState);
   }
 
   const responseHeaders = new Headers();

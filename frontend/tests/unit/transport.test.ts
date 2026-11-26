@@ -114,19 +114,31 @@ describe('mobile transport abstraction', () => {
     }
   });
 
-  it('notifies listeners when native transport reports 401 / reauth_required', async () => {
-    const requestMock = vi.fn(async () => ({
-      status: 401,
-      ok: false,
-      body: JSON.stringify({ data: null, error: { code: 'AUTH_REQUIRED', message: '请先登录' } }),
-      sessionState: 'reauth_required' as const,
-    }));
+  it('notifies listeners only on reauth_required or signed_out, never on active 401', async () => {
+    const requestMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        status: 401,
+        ok: false,
+        body: JSON.stringify({ data: null, error: { code: 'INVALID_CREDENTIALS', message: '密码错误' } }),
+        sessionState: 'active' as const,
+      })
+      .mockResolvedValueOnce({
+        status: 401,
+        ok: false,
+        body: JSON.stringify({ data: null, error: { code: 'AUTH_REQUIRED', message: '请先登录' } }),
+        sessionState: 'reauth_required' as const,
+      });
     const win = nativeWindow({ request: requestMock });
     const seen: string[] = [];
     const stop = onMobileSessionInvalidated((state) => seen.push(state));
     try {
-      const response = await transportFetch('/api/v1/me', {}, fetch, win);
-      expect(response.status).toBe(401);
+      const nonSession401 = await transportFetch('/api/v1/me/password', { method: 'PATCH', body: '{}' }, fetch, win);
+      expect(nonSession401.status).toBe(401);
+      expect(seen).toEqual([]);
+
+      const sessionExpired = await transportFetch('/api/v1/me', {}, fetch, win);
+      expect(sessionExpired.status).toBe(401);
       expect(seen).toEqual(['reauth_required']);
     } finally {
       stop();
