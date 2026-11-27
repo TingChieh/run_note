@@ -45,6 +45,8 @@
 
 `pnpm` 在本机不经 TTY 会要求重装依赖，因此按仓库习惯直接调用 `node_modules/.bin`；`scripts/verify.py` 依赖 `pnpm`，未整体运行。后端未改动，后端测试与集成测试未运行。
 
+**CI 字体差异**：PR 首次 CI 的 `frontend-ui` 有 5 个用例在 320px 报横向溢出，本机（Noto 字体）没有复现。CI 的拉丁文字用 DejaVu Sans / DejaVu Sans Mono，数字更宽。把这两个字体以 `@font-face` 注入本机页面后复现：第三个辅助数字的单位 `/km` 超出 2px。现在 <480px 时三个辅助数字降为 `--text-section`，并允许单位换行；同样注入后 320–1440px 都不再溢出。
+
 **UI 断言重定向（有意的版面变化）**
 
 - `dashboard.spec.ts`“explorer map and trend chart start only when a reader scrolls near them”：趋势图按负责人要求上移为主区块，在 1440×1000 首屏附近会正常立即加载；改为在 1440×500 视口下验证两者仍延迟加载（断言不变）。

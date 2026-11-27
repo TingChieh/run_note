@@ -771,7 +771,7 @@
     font-weight: var(--weight-bold);
     letter-spacing: var(--tracking-tight);
     font-variant-numeric: tabular-nums;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
   /* Units sit on the number's baseline, lighter and untracked, so they read as a label of the figure. */
   dd .figure-unit {
@@ -906,6 +906,13 @@
   @media (max-width: 639px) {
     .dashboard-page :global(.page-actions) {
       width: auto;
+    }
+  }
+  /* Narrow phones: three supporting figures share ~90px each, so they step down a size and may wrap the unit
+     under the number instead of pushing past the screen edge (font metrics vary between systems). */
+  @media (max-width: 479px) {
+    .annual-metrics > div:not(.annual-primary) dd {
+      font-size: var(--text-section);
     }
   }
   @media (max-width: 767px) {
