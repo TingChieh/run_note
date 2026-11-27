@@ -1,7 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { loginRunner, installActivities } from '../fixtures/activities';
 import { installBasemaps } from '../fixtures/basemaps';
-import { blockGlassModules, expectEnhancedLook, expectUnenhancedFallback, reduceTransparency } from '../fixtures/segmented';
 
 const id = '11111111-1111-4111-8111-111111111111';
 const shape = [[[121.47, 31.23], [121.474, 31.23], [121.474, 31.233], [121.47, 31.233], [121.47, 31.23]]];
@@ -111,72 +110,36 @@ test('keeps polling after a transient error until the building banner clears', a
   await expect(page.getByTestId('route-building')).toHaveCount(0);
 });
 
-test('sort buttons use the shared glass segmented control with a selected item', async ({ page }) => {
+test('sort buttons use Editorial Receipt underline tabs with a selected item', async ({ page }) => {
   await fixture(page); await loginRunner(page);
   await page.goto('/routes');
+  await expect(page.locator('.editorial-page.routes-shell')).toBeVisible();
   const group = page.getByRole('group', { name: '排序方式' });
-  await expect(group).toHaveClass(/settings-tabs/);
+  await expect(group).toHaveClass(/underline-tabs/);
+  await expect(group).not.toHaveClass(/settings-tabs/);
   await expect(group).not.toHaveClass(/compact-switch/);
-  // The switch lives in the yellow page header footer, like the settings tabs.
-  await expect(page.locator('.page-header .page-header-footer').getByRole('group', { name: '排序方式' })).toHaveCount(1);
   await expect(page.getByTestId('route-card').first()).toBeVisible();
   const selected = group.getByRole('button', { name: '跑得最多' }), other = group.getByRole('button', { name: '最近跑过' });
   await expect(selected).toHaveAttribute('aria-pressed', 'true');
   await expect(other).toHaveAttribute('aria-pressed', 'false');
-  // The shared enhancer adds the glass lens inside the container; the page no longer styles the buttons itself.
-  await expect(group).toHaveClass(/rn-liquid-navigation/);
-  await expect(group.locator('.rn-moving-copy')).toHaveCount(1);
+  await expect(group.locator('.rn-moving-copy')).toHaveCount(0);
 });
 
-for (const scheme of ['light', 'dark'] as const) {
-  test(`the selected sort button is visibly marked by the glass indicator (${scheme})`, async ({ page }) => {
-    await page.emulateMedia({ colorScheme: scheme });
-    await fixture(page); await loginRunner(page);
-    await page.goto('/routes');
-    const group = page.getByRole('group', { name: '排序方式' });
-    await expect(page.getByTestId('route-card').first()).toBeVisible();
-    const selected = group.getByRole('button', { name: '跑得最多' }), other = group.getByRole('button', { name: '最近跑过' });
-    await expect(selected).toHaveAttribute('aria-pressed', 'true');
-    const outline = group.locator('.rn-moving-outline');
-    await expect(outline).toHaveCount(1);
-    const overlap = async () => {
-      const [o, s, u] = await Promise.all([outline.boundingBox(), selected.boundingBox(), other.boundingBox()]);
-      const area = (a: NonNullable<typeof o>, b: NonNullable<typeof o>) =>
-        Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
-      return { onSelected: area(o!, s!) / (s!.width * s!.height), onOther: area(o!, u!) / (u!.width * u!.height) };
-    };
-    // The spring animates to the selected item; wait until it covers the pressed button and not the other one.
-    await expect.poll(async () => (await overlap()).onSelected).toBeGreaterThan(.8);
-    expect((await overlap()).onOther).toBeLessThan(.2);
-    const box = await outline.boundingBox();
-    expect(box!.width).toBeGreaterThan(20);
-    expect(box!.height).toBeGreaterThan(20);
-  });
-}
+for (const [width, height] of [[1440, 900], [768, 1024], [390, 844], [320, 640]] as const) {
+  for (const scheme of ['light', 'dark'] as const) {
+    test(`/routes and /routes/[id] render cleanly without overflow at ${width}x${height} (${scheme})`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
+      await page.setViewportSize({ width, height });
+      await fixture(page); await loginRunner(page);
+      await page.goto('/routes');
+      await expect(page.locator('.editorial-page.routes-shell')).toBeVisible();
+      await expect(page.getByTestId('route-card').first()).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
-for (const scheme of ['light', 'dark'] as const) {
-  for (const path of ['/routes', '/settings']) {
-    const find = (page: import('@playwright/test').Page) => path === '/routes' ? page.getByRole('group', { name: '排序方式' }) : page.locator('.settings-tabs').first();
-    test(`${path}: enhanced tabs are plain buttons with a distinct lens (${scheme})`, async ({ page }) => {
-      await page.emulateMedia({ colorScheme: scheme });
-      await fixture(page); await loginRunner(page);
-      await page.goto(path);
-      await expectEnhancedLook(find(page));
-    });
-    test(`${path}: reduced transparency keeps the selected tab filled (${scheme})`, async ({ page }) => {
-      await page.emulateMedia({ colorScheme: scheme });
-      await fixture(page); await loginRunner(page);
-      await page.goto(path);
-      await expect(find(page)).toHaveClass(/rn-liquid-navigation/);
-      await reduceTransparency(page);
-      await expectUnenhancedFallback(find(page));
-    });
-    test(`${path}: without the glass modules the selected tab keeps its fill (${scheme})`, async ({ page }) => {
-      await page.emulateMedia({ colorScheme: scheme });
-      await blockGlassModules(page);
-      await fixture(page); await loginRunner(page);
-      await page.goto(path);
-      await expectUnenhancedFallback(find(page));
+      await page.goto(`/routes/${id}`);
+      await expect(page.locator('.editorial-page.route-detail-shell')).toBeVisible();
+      await expect(page.getByTestId('route-detail-ready')).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     });
   }
 }

@@ -263,44 +263,51 @@
       />{:else}{Array.from(runner.display_name)[0]}{/if}</span
   >
 {/snippet}
-<div class="together-stack">
-  <PageHeader title="一起跑步" description="汇聚每一段脚步，一起探索跑过的地方。" />
+<div class="editorial-page together-stack">
+  <PageHeader title="一起跑步" />
   {#if loading && !data}<div class="page-loading">
       <PageSkeleton title="正在读取一起跑步…" />
     </div>{:else if error}<FeedbackState kind="error" title={error}
-      ><button class="button-secondary" onclick={load}>重试</button></FeedbackState
+      ><button type="button" class="button-secondary" onclick={load}>重试</button></FeedbackState
     >{:else if data}
-    {#if !data.participants.length}<section class="aux-panel section">
+    {#if !data.participants.length}<section class="section-hairline section">
         {#if page.data.user}<p>还没有人加入一起跑步</p>
-          <p>在设置里打开『一起跑步』就能加入</p>
-          <a href={page.data.user.is_admin ? '/settings/preferences' : '/workspace/settings/preferences'}
-            >去设置里加入</a
-          >{:else}<p>还没有人加入</p>{/if}
+          <p class="hint">在设置里打开『一起跑步』就能加入</p>
+          <p>
+            <a
+              class="button-secondary"
+              href={page.data.user.is_admin ? '/settings/preferences' : '/workspace/settings/preferences'}>去设置里加入</a
+            >
+          </p>{:else}<p>还没有人加入</p>{/if}
       </section>{:else}
-      <section class="aux-panel section content-reveal">
-        <h2>
-          {periodCopy(period)}我们一起跑了 {#key data.distance_m}<strong class="overview-distance content-reveal"
-              >{km(data.distance_m)}</strong
-            >{/key} 公里
+      <section class="section-rule section together-milestone content-reveal">
+        <h2 class="milestone-heading">
+          <span class="milestone-label">{periodCopy(period)}我们一起跑了</span>{' '}
+          <span class="milestone-figure"
+            >{#key data.distance_m}<strong class="overview-distance content-reveal">{km(data.distance_m)}</strong
+              >{/key}{' '}<span class="figure-unit">公里</span></span
+          >
         </h2>
         <p class="overview-detail">{data.participants.length} 人 · {data.count} 次</p>
       </section>
-      <section class="aux-panel section">
-        <h2>里程排行榜</h2>
-        <div class="mode-switch compact-switch" role="group" aria-label="排行榜时间">
-          <button type="button" aria-pressed={period === 'week'} onclick={() => selectPeriod('week')}>本周</button
-          ><button type="button" aria-pressed={period === 'month'} onclick={() => selectPeriod('month')}>本月</button
-          ><button type="button" aria-pressed={period === 'year'} onclick={() => selectPeriod('year')}>今年</button>
+      <section class="section-hairline section">
+        <div class="section-head">
+          <h2>里程排行榜</h2>
+          <div class="underline-tabs period-tabs" role="group" aria-label="排行榜时间">
+            <button type="button" aria-pressed={period === 'week'} onclick={() => selectPeriod('week')}>本周</button
+            ><button type="button" aria-pressed={period === 'month'} onclick={() => selectPeriod('month')}>本月</button
+            ><button type="button" aria-pressed={period === 'year'} onclick={() => selectPeriod('year')}>今年</button>
+          </div>
         </div>
-        {#if ranking.length}<ol>
+        {#if ranking.length}<ol class="rank-list hairline-rows">
             {#each ranking as runner, i (runner.user_id)}<li class="rank-row">
                 {@render avatar(runner)}
                 <div class="rank-content">
                   <div class="row">
                     <span
-                      >{i + 1}.
+                      ><span class="rank-num">{i + 1}.</span>
                       <a href={`/p/${encodeURIComponent(runner.username)}/dashboard`}>{runner.display_name}</a></span
-                    ><strong>{km(amount(runner))} km</strong>
+                    ><strong class="rank-km">{km(amount(runner))} km</strong>
                   </div>
                   <progress
                     style:--runner-color={colors[runner.username]}
@@ -310,12 +317,14 @@
                   ></progress>
                 </div>
               </li>{/each}
-          </ol>{:else}<p>暂无排行。</p>{/if}
+          </ol>{:else}<p class="hint">暂无排行。</p>{/if}
       </section>
-      <section id="together-feed" class="aux-panel section">
-        <h2>一起跑过的地方 · 最近动态</h2>
+      <section id="together-feed" class="section-rule section">
+        <div class="section-head">
+          <h2>一起跑过的地方 · 最近动态</h2>
+        </div>
         <p class="hint">地图展示所选时段最近最多 500 段经过简化的路线；动态不受时段或跑者筛选影响。</p>
-        {#if data.tracks_truncated}<p class="hint">仅显示最近 500 条轨迹</p>{/if}
+        {#if data.tracks_truncated}<p class="status-strip">仅显示最近 500 条轨迹</p>{/if}
         <div class="feed-layout">
           <div class="feed-list">
             {#if data.recent.length}<ActivityTimeline
@@ -328,19 +337,20 @@
                 onopen={openRecord}
               />
               {#if data.next_cursor}<div class="feed-actions">
-                  {#if feedError}<p class="hint" role="alert">{feedError}</p>{/if}<button
+                  {#if feedError}<p class="status-strip" data-tone="error" role="alert">{feedError}</p>{/if}<button
                     type="button"
                     class="button-secondary"
                     disabled={feedLoading || loading}
                     onclick={loadMore}>{feedLoading ? '加载中…' : feedError ? '重试' : '加载更多'}</button
                   >
                 </div>{/if}
-            {:else}<p>暂无动态。</p>{/if}
+            {:else}<p class="hint">暂无动态。</p>{/if}
           </div>
           <div class="feed-map" id="together-map">
             {#if mapFootprints}
               <FootprintMap
                 data={mapFootprints}
+                appearance="sheet"
                 animateDataChanges
                 compact
                 mapLabel="一起跑步足迹地图"
@@ -380,6 +390,7 @@
               </FootprintMap>
               <div class="legend" role="region" aria-label="选择参与者">
                 <button
+                  type="button"
                   class="button-secondary"
                   aria-pressed={!selected}
                   onclick={() => {
@@ -387,6 +398,7 @@
                     currentId = null;
                   }}>全部</button
                 >{#each data.participants as runner}<button
+                    type="button"
                     class="button-secondary"
                     aria-pressed={selected === runner.username}
                     onclick={() => {
@@ -399,7 +411,7 @@
                   >{/each}
               </div>
               {#if selected && !footprints?.features.some((f) => f.properties?.username === selected)}<p
-                  class="hint"
+                  class="status-strip"
                   role="status"
                 >
                   该跑者在此时段暂无路线，地图仍显示全部足迹。
@@ -422,7 +434,12 @@
 </div>
 
 <style>
-  .together-stack,
+  .together-stack {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-8);
+    min-width: 0;
+  }
   .section {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -433,14 +450,57 @@
     font-size: var(--text-section);
     font-weight: var(--weight-semibold);
   }
+  .milestone-heading {
+    display: grid;
+    gap: var(--space-2);
+    font-weight: var(--weight-regular);
+  }
+  .milestone-label {
+    color: var(--muted-foreground);
+    font-size: var(--text-small);
+    font-weight: var(--weight-medium);
+  }
+  .milestone-figure {
+    display: inline-flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
   .overview-distance {
-    color: var(--primary);
-    font-size: var(--text-stat);
+    color: var(--foreground);
+    font-size: var(--text-figure);
     font-weight: var(--weight-bold);
+    line-height: var(--line-height-solid);
+    letter-spacing: var(--tracking-tight);
     font-variant-numeric: tabular-nums;
+  }
+  .milestone-figure .figure-unit {
+    font-size: var(--text-section);
   }
   .overview-detail {
     color: var(--muted-foreground);
+    font-family: var(--font-mono);
+    font-size: var(--text-small);
+    font-variant-numeric: tabular-nums;
+  }
+  .period-tabs {
+    width: max-content;
+  }
+  .rank-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .rank-num {
+    font-family: var(--font-mono);
+    color: var(--muted-foreground);
+    margin-right: var(--space-1);
+  }
+  .rank-km {
+    font-family: var(--font-mono);
+    font-size: var(--text-small);
+    font-weight: var(--weight-bold);
+    font-variant-numeric: tabular-nums;
   }
   .row {
     display: flex;
@@ -451,42 +511,45 @@
     border-bottom: 1px solid var(--border);
   }
   .row a {
-    color: var(--primary);
+    color: var(--foreground);
+    font-weight: var(--weight-semibold);
     overflow-wrap: anywhere;
   }
-  .mode-switch.compact-switch {
-    justify-self: start;
-    display: inline-flex;
-    gap: var(--space-1);
-    padding: var(--space-1);
-    border-radius: var(--radius-pill);
-    background: var(--segment-track);
-  }
-  .mode-switch.compact-switch button {
-    min-height: 2.75rem;
-    padding: 0 var(--space-4);
-    border-radius: var(--radius-pill);
-    color: var(--muted-foreground);
-    font-weight: var(--weight-semibold);
-  }
-  .mode-switch.compact-switch button[aria-pressed='true'] {
-    color: var(--segment-lens-ink);
-    background: var(--segment-lens);
+  @media (hover: hover) {
+    .row a:hover {
+      color: var(--primary);
+      text-decoration: underline;
+      text-underline-offset: 0.2em;
+    }
   }
   .feed-layout {
     display: grid;
-    grid-template-columns: minmax(18rem, 1fr) minmax(0, 1.7fr);
-    gap: var(--space-4);
+    grid-template-columns: minmax(20rem, 1fr) minmax(0, 1.55fr);
+    gap: var(--space-6);
     align-items: start;
   }
   .feed-list {
     min-width: 0;
   }
+  .feed-list :global(.month-pill) {
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--foreground);
+    font-family: var(--font-mono);
+    font-weight: var(--weight-bold);
+  }
+  .feed-list :global(.activity-card) {
+    border-radius: var(--radius-sheet);
+    background: var(--paper);
+  }
   .feed-map {
     min-width: 0;
     position: sticky;
-    top: var(--space-4);
+    top: calc(var(--top-navigation-height) + var(--top-navigation-offset) + var(--space-4));
     margin-top: calc(1.75rem + var(--space-3));
+    display: grid;
+    gap: var(--space-3);
   }
   @media (max-width: 959px) {
     .feed-layout {
@@ -536,6 +599,7 @@
     align-items: center;
     justify-content: center;
     gap: var(--space-3);
+    margin-top: var(--space-4);
     min-width: 0;
   }
   .rank-content progress::-webkit-progress-value {
@@ -571,16 +635,18 @@
     width: 1.75rem;
     height: 1.75rem;
     font-size: var(--text-small);
-    margin-right: var(--space-2);
+    margin-right: var(--space-1);
   }
   .rank-row {
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    padding: var(--space-2) 0;
+    padding: var(--space-3) 0;
   }
   .rank-content {
     flex: 1;
+    display: grid;
+    gap: var(--space-2);
     min-width: 0;
   }
   .rank-content .row {
@@ -590,27 +656,24 @@
   .rank-content progress {
     appearance: none;
     width: 100%;
-    height: 0.625rem;
+    height: 0.25rem;
     border: 0;
-    border-radius: var(--radius-pill);
+    border-radius: 0;
     overflow: hidden;
-    background: color-mix(in srgb, var(--foreground) 12%, transparent);
+    background: var(--recap-well);
     color: var(--runner-color, var(--primary));
   }
   .rank-content progress::-webkit-progress-bar {
-    border-radius: var(--radius-pill);
-    background: color-mix(in srgb, var(--foreground) 12%, transparent);
-    box-shadow: inset 0 1px 2px color-mix(in srgb, var(--foreground) 12%, transparent);
+    border-radius: 0;
+    background: var(--recap-well);
   }
   .rank-content progress::-webkit-progress-value {
-    border-radius: var(--radius-pill);
+    border-radius: 0;
     background: var(--runner-color, var(--primary));
-    box-shadow: inset 0 1px color-mix(in srgb, var(--surface) 35%, transparent);
   }
   .rank-content progress::-moz-progress-bar {
-    border-radius: var(--radius-pill);
+    border-radius: 0;
     background: var(--runner-color, var(--primary));
-    box-shadow: inset 0 1px color-mix(in srgb, var(--surface) 35%, transparent);
   }
   .runner-avatar img {
     width: 100%;
@@ -643,14 +706,15 @@
     }
   }
   .legend button[aria-pressed='true'] {
-    outline: 2px solid var(--primary);
-    outline-offset: 2px;
+    border-color: var(--rule);
+    background: var(--recap-well);
+    color: var(--foreground);
   }
   .dot {
     display: inline-block;
-    width: 0.75rem;
-    height: 0.75rem;
+    width: 0.625rem;
+    height: 0.625rem;
     border-radius: 50%;
-    margin-right: var(--space-2);
+    flex: none;
   }
 </style>

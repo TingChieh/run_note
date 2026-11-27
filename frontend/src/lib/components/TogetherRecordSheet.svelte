@@ -9,7 +9,7 @@
   function close() { if (dialog?.open) dialog.close(); onclose(); }
   onMount(() => { if (!dialog.open) dialog.showModal(); });
 </script>
-<dialog bind:this={dialog} class="record-sheet" aria-label={`${activity.title || '未命名活动'} 的路线与详情`} data-testid="together-record-sheet"
+<dialog bind:this={dialog} class="record-sheet" data-glass-overlay aria-label={`${activity.title || '未命名活动'} 的路线与详情`} data-testid="together-record-sheet"
   oncancel={(event) => { event.preventDefault(); close(); }}
   onclick={(event) => { if (event.target === dialog) close(); }}>
   <div class="sheet-bar"><span class="sheet-grip" aria-hidden="true"></span><button type="button" class="button-secondary" onclick={close}>关闭</button></div>

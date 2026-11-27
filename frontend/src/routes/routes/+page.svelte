@@ -92,47 +92,53 @@
 </script>
 
 <svelte:head><title>{pageTitle('常跑路线', page.data.site)}</title></svelte:head>
-<PageHeader title="常跑路线" description="形状重合的跑步会自动归为同一条路线。">
-  {#snippet footer()}
-    <div class="settings-tabs" role="group" aria-label="排序方式">
+<div class="editorial-page routes-shell">
+  <PageHeader title="常跑路线" meta={data && data.total > 0 ? `共 ${data.total} 条常跑路线` : undefined} />
+  <div class="routes-tabs-bar">
+    <div class="underline-tabs" role="group" aria-label="排序方式">
       {#each SORTS as item}<button type="button" aria-pressed={sort === item.value} onclick={() => choose(item.value)}
           >{item.label}</button
         >{/each}
     </div>
-  {/snippet}
-</PageHeader>
-<div class="routes-page">
-  {#if loading}<div class="page-loading"><PageSkeleton title="正在读取常跑路线…" /></div>{/if}
-  {#if message}<FeedbackState kind="error" title={message}
-      ><button class="button-secondary" onclick={() => load()}>重新读取</button></FeedbackState
-    >{/if}
-  {#if data}
-    {#if data.building}<div data-testid="route-building">
-        <FeedbackState kind="loading" title="正在整理路线…"
-          ><p>新导入的记录会在后台自动归类，页面会自动更新。</p></FeedbackState
-        >
-      </div>{/if}
-    {#if data.items.length === 0 && !data.building}
-      <FeedbackState title="还没有跑过两次以上的路线"><p>同一条路线跑过两次以上后会出现在这里。</p></FeedbackState>
-    {:else}
-      <p class="total" aria-live="polite">共 <strong>{data.total}</strong> 条常跑路线</p>
-      <div class="grid" data-testid="route-list">
-        {#each data.items as group (group.id)}<RouteGroupCard {group} href={view.href(`/routes/${group.id}`)} />{/each}
-      </div>
+  </div>
+  <div class="routes-page">
+    {#if loading}<div class="page-loading"><PageSkeleton title="正在读取常跑路线…" /></div>{/if}
+    {#if message}<FeedbackState kind="error" title={message}
+        ><button type="button" class="button-secondary" onclick={() => load()}>重新读取</button></FeedbackState
+      >{/if}
+    {#if data}
+      {#if data.building}<div data-testid="route-building">
+          <FeedbackState kind="loading" title="正在整理路线…"
+            ><p>新导入的记录会在后台自动归类，页面会自动更新。</p></FeedbackState
+          >
+        </div>{/if}
+      {#if data.items.length === 0 && !data.building}
+        <FeedbackState title="还没有跑过两次以上的路线"><p>同一条路线跑过两次以上后会出现在这里。</p></FeedbackState>
+      {:else}
+        <div class="grid" data-testid="route-list">
+          {#each data.items as group (group.id)}<RouteGroupCard {group} href={view.href(`/routes/${group.id}`)} />{/each}
+        </div>
+      {/if}
     {/if}
-  {/if}
+  </div>
 </div>
 
 <style>
+  .routes-shell {
+    min-width: 0;
+  }
+  .routes-tabs-bar {
+    margin-top: var(--space-4);
+    border-bottom: 1px solid var(--border);
+  }
+  .routes-tabs-bar :global(.underline-tabs > button) {
+    margin-bottom: -1px;
+  }
   .routes-page {
     display: grid;
     gap: var(--space-4);
     margin-top: var(--space-6);
     min-width: 0;
-  }
-  .total {
-    color: var(--muted-foreground);
-    font-size: var(--text-small);
   }
   .grid {
     display: grid;
