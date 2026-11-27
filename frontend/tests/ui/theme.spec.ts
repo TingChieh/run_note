@@ -101,6 +101,8 @@ test('manual theme switches override the system, persist, and can return to auto
   await expect(toggle).toHaveText('日间模式');
   for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 900 });
+    // Phones have no top bar: the switch lives in the 我的 panel of the account page.
+    await page.goto(width < 800 ? '/settings' : '/dashboard');
     await expect(page.getByRole('button', { name: '切换到深色模式', exact: true })).toBeVisible();
     await fits(page);
   }

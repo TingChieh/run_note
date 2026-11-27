@@ -519,9 +519,6 @@
   .nav-toggle:active {
     transform: scale(0.97);
   }
-  .mobile-bar {
-    display: none;
-  }
   .content-column {
     min-width: 0;
     display: flex;
@@ -681,6 +678,21 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-4);
+  }
+  /* Phones, signed out: no top bar and no 我的 tab, so appearance and sign-in live at the end of every page. */
+  .app-footer-controls {
+    display: none;
+  }
+  @media (max-width: 799px) {
+    .app-footer-controls {
+      display: flex;
+      flex-basis: 100%;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-3);
+      padding-bottom: var(--space-3);
+      border-bottom: 1px solid var(--border);
+    }
   }
   .app-footer-link {
     display: inline-flex;
@@ -994,52 +1006,11 @@
     }
   }
   @media (max-width: 799px) {
-    .mobile-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--space-4);
-      padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-pill);
-      background: var(--surface);
-      transition:
-        background-color var(--transition-control),
-        border-color var(--transition-control),
-        box-shadow var(--transition-control);
-      /* Keeps the bar's buttons above the absolute-positioned sidebar dropdown */
-      position: relative;
-      z-index: 1;
-    }
-    /* The whole header (bar + dropdown menu) sticks to the top and slides away while scrolling down; the menu hangs below the bar as an overlay instead of pushing the page down. */
-    /* The hidden position is 2.5rem beyond the header so the floating bar's shadow (offset .5rem, blur 1.5rem) is off screen before visibility cuts. */
-    /* Only transform animates: an opacity (or filter) on this header would make it a backdrop root and the glass on the bar would stop seeing the page behind it mid-animation. */
-    /* Like the desktop bar the phone bar floats --top-navigation-offset from the edges; the header's own gutters let taps through to the page. */
+    /* Phones have no top bar: the bottom tab bar navigates and the page header is the first thing on screen.
+       The header keeps only the hidden desktop list, so it takes no space and nothing sits over the content. */
     .app-shell > header {
-      position: sticky;
-      top: 0;
-      z-index: var(--z-top-navigation);
-      padding: calc(var(--top-navigation-offset) + var(--safe-top)) var(--space-3) 0;
-      pointer-events: none;
-      transition:
-        transform 340ms cubic-bezier(0.22, 0.61, 0.36, 1),
-        visibility 0s;
-    }
-    .app-shell > header > * {
-      pointer-events: auto;
-    }
-    .app-shell > header:has(.mobile-bar[data-hidden]) {
-      transform: translateY(calc(-100% - 2.5rem));
-      visibility: hidden;
-      transition:
-        transform 420ms cubic-bezier(0.4, 0, 0.2, 1),
-        visibility 0s linear 420ms;
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .app-shell > header,
-      .app-shell > header:has(.mobile-bar[data-hidden]) {
-        transition: none;
-      }
+      position: static;
+      padding: 0;
     }
     /* The bottom tab bar (MobileTabBar) is the phone navigation; the desktop list stays in the DOM but hidden. */
     .app-sidebar {
@@ -1047,7 +1018,7 @@
     }
     .app-shell .content-column {
       margin-left: 0;
-      min-height: calc(100dvh - 5rem);
+      min-height: 100dvh;
     }
     .app-shell .navigation-progress {
       left: 0;
@@ -1135,18 +1106,6 @@
       min-width: 0;
       max-width: 100%;
     }
-  }
-  .mobile-bar .brand {
-    min-width: 0;
-  }
-  .mobile-bar .brand-mark {
-    flex: none;
-  }
-  .mobile-bar .brand-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   @media (max-width: 479px) {
     .public-header .nav-toggle {
@@ -1356,6 +1315,16 @@
     .mobile-account-list svg {
       flex: none;
       color: var(--muted-foreground);
+    }
+    .mobile-account-appearance {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-3);
+      min-height: 3rem;
+      border-top: 1px solid var(--border);
+      color: var(--foreground);
+      font-weight: var(--weight-medium);
     }
     .mobile-account-logout {
       width: 100%;
@@ -1673,54 +1642,14 @@
   .sport-theme .share-card {
     border-radius: var(--radius-card);
   }
-  .sport-theme .mobile-bar {
-    color: var(--foreground);
-  }
-  .sport-theme .mobile-bar .brand {
-    color: var(--foreground);
-  }
-  .sport-theme .mobile-bar .brand-mark {
-    color: var(--brand-foreground);
-    background: var(--sport-brand);
-  }
-  .sport-theme .mobile-bar :focus-visible {
-    outline-color: var(--ring);
-  }
-  /* Phone bar: the same floating look as the desktop bar; it turns into clear glass once the page has scrolled under it (data-floating). */
+  /* Phones: the page starts right below the top safe area (no top bar above it). */
   @media (max-width: 799px) {
-    .sport-theme.app-shell .mobile-bar:not([data-floating]) {
-      -webkit-backdrop-filter: none !important;
-      backdrop-filter: none !important;
-    }
-    .sport-theme.app-shell .mobile-bar[data-floating] {
-      border-color: var(--glass-edge);
-      background: color-mix(
-        in srgb,
-        var(--glass-fill-base, var(--surface)) calc(var(--glass-opacity, 0.12) * 100% * 0.75),
-        transparent
-      );
-      box-shadow:
-        inset 0 1px var(--glass-sheen),
-        0 0.5rem 1.5rem var(--glass-shadow);
-    }
-    .sport-theme.app-shell .mobile-bar[data-floating].rn-frosted-glass {
-      -webkit-backdrop-filter: blur(14px) saturate(1.5);
-      backdrop-filter: blur(14px) saturate(1.5);
-      background: color-mix(in srgb, var(--surface) calc((0.5 + var(--glass-opacity, 0.12) * 0.8) * 100%), transparent);
-    }
-    @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
-      .sport-theme.app-shell .mobile-bar[data-floating],
-      .sport-theme.app-shell .mobile-bar[data-floating].rn-frosted-glass {
-        background: var(--surface);
-        border-color: var(--border);
-        box-shadow: none;
-        -webkit-backdrop-filter: none;
-        backdrop-filter: none;
-      }
+    .sport-theme.app-shell .page-content {
+      padding-top: calc(var(--safe-top) + var(--space-4));
     }
   }
 
-  /* Desktop top navigation: the same <aside> becomes a floating glass bar. Below 800px the mobile bar and menu take over, in the same surface/border/foreground colours. 800px is the shell breakpoint: keep it in sync with the other @media (min-width: 800px) blocks here, liquid-glass-controls.css, enhanceNavigation in liquid-glass-indicator.ts and the matchMedia in AppNavigation.svelte. */
+  /* Desktop top navigation: the same <aside> becomes a floating glass bar. Below 800px there is no top bar (the bottom tab bar navigates). 800px is the shell breakpoint: keep it in sync with the other @media (min-width: 800px) blocks here, liquid-glass-controls.css, enhanceNavigation in liquid-glass-indicator.ts and the matchMedia in AppNavigation.svelte. */
   @media (min-width: 800px) {
     .sport-theme.app-shell .app-sidebar {
       inset: calc(var(--top-navigation-offset) + var(--safe-top)) calc(var(--top-navigation-offset) + var(--safe-right))

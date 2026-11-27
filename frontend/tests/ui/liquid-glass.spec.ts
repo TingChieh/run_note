@@ -518,8 +518,10 @@ test('glass buttons sample their displacement map at device resolution on high-d
   const context = await browser.newContext({ viewport: { width: 390, height: 851 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
   const page = await context.newPage();
   await installActivities(page); await loginRunner(page);
-  await page.goto('/activities');
-  const layer = page.locator('.mobile-bar .theme-toggle .rn-glass-layer');
+  // Phones have no top bar; the 我的 panel's theme button is the glass control on the account page.
+  await page.goto('/settings');
+  await page.getByTestId('mobile-account-links').locator('.theme-toggle').scrollIntoViewIfNeeded();
+  const layer = page.getByTestId('mobile-account-links').locator('.theme-toggle .rn-glass-layer');
   await expect.poll(() => layer.evaluate(el => el.style.backdropFilter)).toMatch(/url\("?#lg/);
   const ratio = await layer.evaluate(async el => {
     const id = el.style.backdropFilter.match(/#(lg\d+-v\d+)/)![1];

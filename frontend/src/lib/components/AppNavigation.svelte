@@ -52,9 +52,6 @@
   });
   const context = $derived(viewContext(pathname, user?.is_admin === true));
   let mobile = $state(false);
-  let bar = $state<HTMLElement | undefined>(),
-    hidden = $state(false),
-    raised = $state(false);
   let accountMenu = $state<ReturnType<typeof AnchoredPanel>>();
   let sidebar = $state<HTMLElement | undefined>(),
     floating = $state(false);
@@ -95,58 +92,10 @@
       window.removeEventListener('resize', onResize);
     };
   });
-  // Both bars keep their glass attached (CSS turns backdrop-filter off until data-floating): building the wide lens map and filter on the first scrolled frame, and tearing them down at the top, stalled the start of every scroll.
+  // The bar keeps its glass attached (CSS turns backdrop-filter off until data-floating): building the wide lens map and filter on the first scrolled frame, and tearing them down at the top, stalled the start of every scroll.
   $effect(() => {
     if (mobile || !sidebar) return;
     return attachFloatingGlass(sidebar);
-  });
-  $effect(() => {
-    if (!mobile || !bar) return;
-    return attachFloatingGlass(bar);
-  });
-  // Phone bar: scrolling down tucks it away, scrolling back up a little brings it straight back (no need to reach the top of the page).
-  $effect(() => {
-    if (!mobile || !bar) {
-      hidden = false;
-      raised = false;
-      return;
-    }
-    let last = Math.max(0, window.scrollY),
-      direction = 0,
-      travelled = 0,
-      frame = 0;
-    const update = () => {
-      frame = 0;
-      const y = Math.max(0, window.scrollY),
-        delta = y - last;
-      last = y;
-      raised = y > 0;
-      if (y <= (bar?.offsetHeight ?? 0)) {
-        hidden = false;
-        direction = 0;
-        return;
-      }
-      if (delta === 0) return;
-      const next = delta > 0 ? 1 : -1;
-      if (next !== direction) {
-        direction = next;
-        travelled = 0;
-      }
-      travelled += Math.abs(delta);
-      if (direction > 0 && travelled >= 12) hidden = true;
-      else if (direction < 0 && travelled >= 4) hidden = false;
-    };
-    const schedule = () => {
-      if (!frame) frame = requestAnimationFrame(update);
-    };
-    window.addEventListener('scroll', schedule, { passive: true });
-    update();
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener('scroll', schedule);
-      hidden = false;
-      raised = false;
-    };
   });
   let goal = $state<{ progress: number | null; period: 'week' | 'month' | 'year'; loading: boolean }>({
     progress: null,
@@ -242,27 +191,7 @@
         avatarFailed = true;
       }}
     />{:else}{Array.from(profile?.display_name || '跑者')[0]}{/if}{/snippet}
-<div bind:this={bar} class="mobile-bar" data-hidden={hidden ? '' : undefined} data-floating={raised ? '' : undefined}>
-  <a href={view.href('/dashboard')} class="brand" aria-label={`${site.title} 数据汇总`}
-    >{#if site.logo_url && !logoFailed}<img
-        class="brand-mark brand-logo"
-        src={site.logo_url}
-        alt=""
-        width="32"
-        height="32"
-        onerror={() => {
-          logoFailed = true;
-        }}
-      />{:else}<span class="brand-mark" aria-hidden="true">{brandInitial(site.title)}</span>{/if}<span
-      class="brand-name">{site.title}</span
-    ></a
-  >
-  <div class="mobile-actions">
-    <ThemeToggle compact />
-    {#if !user && !checking}<a href="/admin" class="button-secondary mobile-login-link">登录</a>{/if}
-  </div>
-</div>
-<!-- Below 800px the bottom MobileTabBar replaces this list (item 49 方案 B); the aside stays in the DOM, hidden and inert. -->
+<!-- Below 800px there is no top bar: the bottom MobileTabBar is the navigation (item 49 方案 B) and the page header is the first thing on screen; theme and sign-in sit in the footer (routes/+layout.svelte). The aside stays in the DOM, hidden and inert. -->
 <aside
   bind:this={sidebar}
   id="app-navigation"
@@ -412,12 +341,6 @@
       padding-inline: 0.65rem;
     }
   }
-  .mobile-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-  .mobile-login-link,
   .account-login {
     flex-shrink: 0;
     white-space: nowrap;

@@ -440,14 +440,17 @@ test('AI 助手 navigation entry is shown to logged-in users on desktop and mobi
 });
 
 for (const width of [320, 358, 361, 375]) {
-  test(`narrow ${width}px: phone bar button keeps its glass surface and settings tabs show all sections in a 2-column grid`, async ({ page }) => {
+  test(`narrow ${width}px: the 我的 appearance button keeps its glass surface and settings tabs show all sections in a 2-column grid`, async ({ page }) => {
     await page.setViewportSize({ width, height: 851 });
     await login(page);
+    // Phones have no top bar; the theme control lives in the 我的 panel on the account page.
+    await page.goto('/settings');
+    const button = page.getByTestId('mobile-account-links').locator('.theme-toggle');
+    await button.scrollIntoViewIfNeeded();
+    await expect.poll(() => button.locator('.rn-glass-layer').evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(0);
     await page.goto('/settings/site');
     const tabs = page.locator('.settings-tabs.settings-tabs-sections');
     await expect(tabs).toBeVisible();
-    const button = page.locator('.mobile-bar .theme-toggle');
-    await expect.poll(() => button.locator('.rn-glass-layer').evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(0);
     const metrics = await tabs.evaluate(el => {
       const box = el.getBoundingClientRect();
       const links = [...el.querySelectorAll(':scope > a')].map(link => {
@@ -467,13 +470,19 @@ for (const width of [320, 358, 361, 375]) {
   });
 }
 
-test('narrow 361px with enlarged text: the brand never overlaps the header buttons', async ({ page }) => {
+test('narrow 361px with enlarged text: the 我的 appearance row keeps its label clear of the theme buttons', async ({ page }) => {
   await page.setViewportSize({ width: 361, height: 851 });
   await login(page);
-  await page.goto('/settings/site');
+  await page.goto('/settings');
   await page.addStyleTag({ content: 'html { font-size: 25px !important; }' });
-  const gap = await page.evaluate(() => document.querySelector('.mobile-actions')!.getBoundingClientRect().left - document.querySelector('.mobile-bar .brand-name')!.getBoundingClientRect().right);
-  expect(gap).toBeGreaterThanOrEqual(0);
+  const row = page.locator('.mobile-account-appearance');
+  await row.scrollIntoViewIfNeeded();
+  const fit = await row.evaluate((el) => {
+    const label = el.querySelector(':scope > span')!.getBoundingClientRect(), controls = el.querySelector('.theme-controls')!.getBoundingClientRect();
+    return { gap: controls.left - label.right, right: controls.right, width: innerWidth };
+  });
+  expect(fit.gap).toBeGreaterThanOrEqual(0);
+  expect(fit.right).toBeLessThanOrEqual(fit.width);
   await noOverflow(page);
 });
 
@@ -481,8 +490,9 @@ test('touch taps leave no hover colour behind on glass buttons', async ({ browse
   const context = await browser.newContext({ viewport: { width: 390, height: 851 }, isMobile: true, hasTouch: true });
   const page = await context.newPage();
   await login(page);
-  await page.goto('/settings/site');
-  const toggle = page.locator('.mobile-bar .theme-toggle');
+  await page.goto('/settings');
+  const toggle = page.getByTestId('mobile-account-links').locator('.theme-toggle');
+  await toggle.scrollIntoViewIfNeeded();
   const tint = () => toggle.locator('.rn-glass-tint').evaluate(el => getComputedStyle(el).backgroundColor);
   await expect.poll(() => toggle.locator('.rn-glass-tint').count()).toBe(1);
   expect(await page.evaluate(() => matchMedia('(hover: none)').matches)).toBe(true);
