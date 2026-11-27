@@ -394,3 +394,52 @@ test('活动列表路线缩略图保留默认主题颜色', async ({ page }) => 
   const darkPrimary = await path.evaluate(el => getComputedStyle(el.closest('.route-thumbnail')!).color);
   await expect(path).toHaveCSS('stroke', darkPrimary);
 });
+
+test('editorial ledger header, whole-page GPX drop, missing-value sr-only and zero overflow across themes', async ({ page }) => {
+  const state = await installActivities(page);
+  state.records = [
+    ...Array.from({ length: 8 }, (_, i) => ({
+      ...sampleActivity,
+      id: `${String(i + 1).padStart(8, '0')}-3333-4333-8333-333333333333`,
+      title: `十一月记录 ${i + 1}`,
+      activity_date: `2026-11-${String(25 - i * 2).padStart(2, '0')}`,
+    })),
+    { ...incompleteActivity, activity_date: '2026-10-20' },
+  ];
+  await loginRunner(page);
+  await page.goto('/activities');
+  await expect(page.locator('.editorial-page.activities-page')).toBeVisible();
+  await expect(page.locator('.page-header .page-description')).toHaveCount(0);
+  await expect(page.getByTestId('page-meta')).toHaveText('9 次');
+  await expect(page.locator('.activity-card .chip')).toHaveCount(0);
+  // 1440x900 above-the-fold density: ~8 records visible without opening import.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.locator('.activity-card').first()).toBeVisible();
+  const visibleInFold = await page.evaluate(() =>
+    [...document.querySelectorAll('.activity-card')].filter(el => el.getBoundingClientRect().bottom <= window.innerHeight).length
+  );
+  expect(visibleInFold).toBeGreaterThanOrEqual(7);
+  // Missing duration/pace on incomplete record keeps '—' with screen-reader explanation.
+  const incompleteRow = page.locator('.activity-card').filter({ has: page.getByRole('heading', { name: incompleteActivity.title }) });
+  await expect(incompleteRow.locator('.sr-only', { hasText: '（缺失）' }).first()).toBeAttached();
+  // Dropping a GPX file anywhere on the page opens the import area and populates the file input.
+  await expect(page.getByRole('button', { name: '导入轨迹', exact: true })).toHaveAttribute('aria-expanded', 'false');
+  await page.evaluate(() => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(['<gpx version="1.1" creator="synthetic"></gpx>'], 'page-drop.gpx', { type: 'application/gpx+xml' }));
+    const target = document.querySelector('.activities-page')!;
+    target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+  });
+  await expect(page.getByRole('button', { name: '导入轨迹', exact: true })).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByText('page-drop.gpx')).toBeVisible();
+  // Check light and dark across 1440, 768, 390, 320 without horizontal overflow.
+  await page.getByRole('button', { name: '导入轨迹', exact: true }).click();
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    for (const [width, height] of [[1440, 900], [768, 1024], [390, 844], [320, 640]] as const) {
+      await page.setViewportSize({ width, height });
+      await noOverflow(page);
+    }
+  }
+});

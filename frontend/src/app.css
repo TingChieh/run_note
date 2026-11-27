@@ -2786,6 +2786,19 @@
     padding-block: clamp(1rem, 1.6vw, 1.375rem);
     border-radius: var(--radius-header);
   }
+  .editorial-page .page-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    flex-shrink: 1;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .editorial-page .file-pick {
+    border-color: var(--control-border);
+    background: var(--surface);
+  }
   /* Primary sections (the year's milestone, trend, geography) open with a 2px ink rule; secondary groups
      (goals, records, calendar, browsing) with a 1px hairline, so the page does not give every block equal weight. */
   .section-rule {
@@ -2974,6 +2987,10 @@
     .editorial-page .button-secondary:not(:disabled):hover {
       background: var(--muted);
       color: var(--foreground);
+    }
+    .sport-theme .editorial-page .page-header .button-secondary:not(:disabled):hover {
+      background: color-mix(in srgb, var(--header-ink) 8%, transparent);
+      color: var(--header-ink);
     }
     .editorial-page .button-text:not(:disabled):hover {
       text-decoration: underline;

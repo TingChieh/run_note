@@ -69,6 +69,8 @@
   let fileInput = $state<HTMLInputElement>(null!),
     picked = $state<File | null>(null),
     dragging = $state(false),
+    pageDragging = $state(false),
+    dragDepth = 0,
     title = $state(''),
     timezone = $state(''),
     activityDate = $state('');
@@ -107,6 +109,19 @@
   const controlsBusy = $derived(busy || managing || mifitnessBusy);
   const allSelected = $derived(!!records?.items.length && selected.length === records.items.length);
   const currentActivity = $derived(records?.items.find((item) => item.id === currentId) ?? null);
+  const totalPages = $derived(records ? Math.max(1, Math.ceil(records.total / 20)) : 1);
+  const currentPage = $derived(records ? Math.floor(records.offset / 20) + 1 : 1);
+  const headerMeta = $derived.by(() => {
+    if (loading) return '正在读取…';
+    if (!records) return listMessage ? '读取失败' : '—';
+    return [
+      `${records.total} 次`,
+      totalPages > 1 ? `第 ${currentPage} / ${totalPages} 页` : '',
+      showingCachedList ? '离线缓存' : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+  });
   function syncCurrent(list: ActivityList) {
     const url = new URL(window.location.href);
     const wanted = url.searchParams.get('id') ?? currentId;
@@ -195,9 +210,40 @@
   }
   function dropFile(event: DragEvent) {
     event.preventDefault();
+    event.stopPropagation();
     dragging = false;
+    pageDragging = false;
+    dragDepth = 0;
     const files = event.dataTransfer?.files;
     if (controlsBusy || !mounted || !files?.length) return;
+    fileInput.files = files;
+    pickChanged();
+  }
+  const hasDraggedFiles = (event: DragEvent) =>
+    Array.from(event.dataTransfer?.types ?? []).includes('Files');
+  function pageDragEnter(event: DragEvent) {
+    if (!view.manage || controlsBusy || !mounted || !hasDraggedFiles(event)) return;
+    dragDepth += 1;
+    pageDragging = true;
+  }
+  function pageDragOver(event: DragEvent) {
+    if (!view.manage || controlsBusy || !mounted || !hasDraggedFiles(event)) return;
+    event.preventDefault();
+    pageDragging = true;
+  }
+  function pageDragLeave(event: DragEvent) {
+    if (!pageDragging || !hasDraggedFiles(event)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) pageDragging = false;
+  }
+  function pageDrop(event: DragEvent) {
+    if (!view.manage || controlsBusy || !mounted || !hasDraggedFiles(event)) return;
+    event.preventDefault();
+    pageDragging = false;
+    dragDepth = 0;
+    const files = event.dataTransfer?.files;
+    if (!files?.length) return;
+    importOpen = true;
     fileInput.files = files;
     pickChanged();
   }
@@ -460,17 +506,19 @@
 </script>
 
 <svelte:head><title>{pageTitle('跑步记录', page.data.site)}</title></svelte:head>
-<PageHeader title="跑步记录" description="每一次跑步，都值得留下。导入 GPX 或 TCX，回顾你的轨迹与运动表现。"
-  >{#snippet actions()}<RoutePosterDialog />{/snippet}</PageHeader
+<!-- Editorial Receipt archive page (brand.md §2, §6.7; web-audit W-08): rules, hairlines and tabular rows carry the list. -->
+<div
+  class="editorial-page activities-page"
+  role="presentation"
+  ondragenter={pageDragEnter}
+  ondragover={pageDragOver}
+  ondragleave={pageDragLeave}
+  ondrop={pageDrop}
 >
-<section class="mt-8" aria-labelledby="records-title">
-  <div class="flex flex-wrap items-baseline justify-between gap-3">
-    <h2 bind:this={recordsHeading} tabindex="-1" id="records-title" class="text-xl font-semibold">
-      我的活动{records ? `（${records.total}）` : ''}
-    </h2>
-    <div class="records-heading-actions">
+  <PageHeader title="跑步记录" meta={headerMeta}>
+    {#snippet actions()}
       {#if view.manage}<a
-          class="button-secondary"
+          class="button-primary"
           href={view.href('/activities/record')}
           data-testid="activities-record-link">记录跑步</a
         ><button
@@ -494,13 +542,34 @@
             aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg
           ></button
         ><button
+          type="button"
           class="button-secondary"
           aria-pressed={editMode}
           disabled={controlsBusy || loading || !records?.items.length}
           onclick={toggleEditMode}>{editMode ? '完成' : '编辑'}</button
-        >{/if}
+        >{/if}<RoutePosterDialog />
+    {/snippet}
+  </PageHeader>
+  <section class="records-section" aria-labelledby="records-title">
+    <div class="records-strip" data-dragging={pageDragging ? 'true' : 'false'}>
+      <h2 bind:this={recordsHeading} tabindex="-1" id="records-title" class="records-heading">
+        我的活动{records ? `（${records.total}）` : ''}
+      </h2>
+      {#if view.manage}<p class="import-drop-hint">
+          <svg
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            ><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" /></svg
+          ><span>GPX / TCX 拖到页面任意位置即可导入；Mi Fitness 汇总 JSON 在「导入轨迹」中选择。</span>
+        </p>{/if}
     </div>
-  </div>
   {#if view.manage}<div id="import-region" class="import-fold" class:open={importOpen} inert={!importOpen}>
       <div class="import-fold-inner">
         <section class="import-card" aria-labelledby="import-title">
@@ -566,7 +635,7 @@
               </label>
               <button
                 disabled={controlsBusy || !mounted}
-                class="rounded bg-primary px-5 py-3 font-semibold text-primary-foreground disabled:opacity-50"
+                class="button-primary"
                 >{busy
                   ? batchRunning
                     ? '正在批量导入…'
@@ -586,7 +655,7 @@
                     timeHint = '';
                   }}
                   disabled={controlsBusy || !mounted || multi}
-                  class="rounded border border-border bg-background p-2"
+                  class="import-select"
                   ><option value="gpx">GPX</option><option value="tcx">TCX</option></select
                 ></label
               >
@@ -596,7 +665,7 @@
                   bind:value={timeMode}
                   disabled={controlsBusy || !mounted}
                   aria-describedby="import-time-help"
-                  class="rounded border border-border bg-background p-2"
+                  class="import-select"
                   ><option value="local">按当地时间解释（默认，修正误标 UTC）</option><option value="absolute"
                     >遵守文件时区（时间带正确偏移时选）</option
                   ></select
@@ -620,7 +689,7 @@
                     name="title"
                     maxlength="120"
                     disabled={controlsBusy || !mounted || multi}
-                    class="mt-1 block w-full rounded border border-border p-2"
+                    class="import-input"
                     placeholder="例如：周末晨跑"
                   /></label
                 >
@@ -629,7 +698,7 @@
                     bind:value={timezone}
                     name="timezone"
                     disabled={controlsBusy || !mounted}
-                    class="mt-1 block w-full rounded border border-border p-2"
+                    class="import-input"
                     placeholder="例如：Asia/Shanghai"
                   /></label
                 >
@@ -640,7 +709,7 @@
                     type="date"
                     disabled={controlsBusy || !mounted || multi}
                     aria-describedby="import-date-help"
-                    class="mt-1 block w-full rounded border border-border p-2"
+                    class="import-input"
                   /></label
                 >
                 {#if multi}<p class="import-help sm:col-span-2">
@@ -688,7 +757,7 @@
                 ></FeedbackState
               >
             </div>{/if}
-          {#if warnings.length}<div class="import-warnings">
+          {#if warnings.length}<div class="import-warnings status-strip">
               <p class="font-medium">导入完成，部分数据需要留意</p>
               <ul class="mt-2 list-inside list-disc text-sm">
                 {#each warnings as warning}<li>{warningLabel(warning)}</li>{/each}
@@ -728,33 +797,36 @@
           >
         </div>
       {:else}
-        <div class="records-layout" class:two-pane={wide && currentActivity}>
+        {#if editMode}<div class="selection-toolbar" aria-label="批量管理记录">
+            <label
+              ><input
+                type="checkbox"
+                aria-label="全选本页"
+                checked={allSelected}
+                indeterminate={selected.length > 0 && !allSelected}
+                disabled={controlsBusy}
+                onchange={(event) =>
+                  (selected = event.currentTarget.checked ? records!.items.map((item) => item.id) : [])}
+              />全选本页</label
+            >
+            <span class="selected-count" aria-live="polite">已选 {selected.length} 条</span>
+            <button
+              type="button"
+              class="button-secondary"
+              disabled={!selected.length || controlsBusy}
+              onclick={() => (selected = [])}>清除选择</button
+            >
+            <button
+              type="button"
+              class="button-secondary delete-button"
+              disabled={!selected.length || controlsBusy}
+              onclick={() => confirmDelete(selected)}>删除所选</button
+            >
+          </div>{/if}
+        <div class="records-layout" class:two-pane={wide && currentActivity} class:is-editing={editMode}>
           <div class="records-list" role="presentation" onkeydown={moveCurrent}>
-            {#if editMode}<div class="selection-toolbar" aria-label="批量管理记录">
-                <label
-                  ><input
-                    type="checkbox"
-                    aria-label="全选本页"
-                    checked={allSelected}
-                    indeterminate={selected.length > 0 && !allSelected}
-                    disabled={controlsBusy}
-                    onchange={(event) =>
-                      (selected = event.currentTarget.checked ? records!.items.map((item) => item.id) : [])}
-                  />全选本页</label
-                >
-                <span class="selected-count" aria-live="polite">已选 {selected.length} 条</span>
-                <button
-                  class="button-secondary"
-                  disabled={!selected.length || controlsBusy}
-                  onclick={() => (selected = [])}>清除选择</button
-                >
-                <button
-                  class="delete-button"
-                  disabled={!selected.length || controlsBusy}
-                  onclick={() => confirmDelete(selected)}>删除所选</button
-                >
-              </div>{/if}
             <ActivityTimeline
+              appearance="ledger"
               items={records.items}
               offset={records.offset}
               total={records.total}
@@ -770,6 +842,7 @@
           </div>
           {#if wide && currentActivity}<aside class="records-preview" aria-label="记录预览">
               <ActivityPreview
+                appearance="ledger"
                 activity={currentActivity}
                 manage={view.manage}
                 busy={controlsBusy}
@@ -781,28 +854,31 @@
       {/if}
       {#if records.total > 0}<div class="pagination">
           <button
+            type="button"
             disabled={records.offset === 0 || controlsBusy}
             onclick={() => {
               void load(Math.max(0, records!.offset - 20));
             }}
-            class="rounded border border-border px-3 py-2 disabled:opacity-40">上一页</button
-          ><span class="text-sm text-muted-foreground"
+            class="button-secondary">上一页</button
+          ><span class="pagination-status"
             >第 {Math.floor(records.offset / 20) + 1} 页 / {Math.ceil(records.total / 20)} 页</span
           ><button
+            type="button"
             disabled={records.offset + records.items.length >= records.total || controlsBusy}
             onclick={() => {
               void load(records!.offset + 20);
             }}
-            class="rounded border border-border px-3 py-2 disabled:opacity-40">下一页</button
+            class="button-secondary">下一页</button
           >
         </div>{/if}
     </div>
   {:else if listMessage}<div class="mt-4">
       <FeedbackState kind="error" title={listMessage}
-        ><button onclick={() => void load(lastOffset)} class="button-secondary">重新读取活动</button></FeedbackState
+        ><button type="button" onclick={() => void load(lastOffset)} class="button-secondary">重新读取活动</button></FeedbackState
       >
     </div>{/if}
-</section>
+  </section>
+</div>
 {#if view.manage}
   <dialog
     bind:this={editDialog}
@@ -845,29 +921,62 @@
 {/if}
 
 <style>
-  .records-heading-actions {
+  .records-section {
+    margin-top: var(--space-4);
+    min-width: 0;
+  }
+  .records-strip {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.75rem;
+    justify-content: space-between;
+    gap: var(--space-1) var(--space-4);
+    padding: var(--space-2) 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    transition:
+      border-color var(--transition-control),
+      background-color var(--transition-control);
+  }
+  .records-strip[data-dragging='true'] {
+    padding-inline: var(--space-3);
+    border-color: var(--primary);
+    background: var(--primary-soft);
+  }
+  .records-heading {
+    font-size: var(--text-section);
+    font-weight: var(--weight-semibold);
+    line-height: var(--line-height-title);
+    font-variant-numeric: tabular-nums;
+  }
+  .import-drop-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--muted-foreground);
+    font-size: var(--text-small);
+    line-height: var(--line-height-heading);
+  }
+  .import-drop-hint svg {
+    flex: none;
+    color: var(--primary);
   }
   .selection-toolbar {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.75rem;
-    padding: 1rem;
-    margin-top: 1rem;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-card);
+    gap: var(--space-2) var(--space-3);
+    padding: var(--space-2) 0;
+    margin-top: var(--space-3);
+    border-bottom: 1px solid var(--border);
   }
   .selection-toolbar label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     min-height: 2.75rem;
     font-size: var(--text-small);
+    cursor: pointer;
   }
   .selection-toolbar input {
     width: 1.125rem;
@@ -878,21 +987,22 @@
     flex: 1;
     color: var(--muted-foreground);
     white-space: nowrap;
+    font-family: var(--font-mono);
     font-size: var(--text-small);
+    font-variant-numeric: tabular-nums;
   }
-  .delete-button,
+  .delete-button {
+    color: var(--error);
+  }
   .delete-confirm {
+    min-height: 2.75rem;
     padding: 0.625rem 0.875rem;
     border-radius: 0.75rem;
     font-size: var(--text-small);
     font-weight: var(--weight-semibold);
-    color: var(--error);
-    border: 1px solid var(--border);
-  }
-  .delete-confirm {
     background: var(--error);
     color: white;
-    border-color: var(--error);
+    border: 1px solid var(--error);
   }
   button:disabled {
     opacity: 0.45;
@@ -910,7 +1020,7 @@
     color: var(--foreground);
   }
   dialog::backdrop {
-    background: rgb(0 0 0 / 0.5);
+    background: var(--surface-backdrop);
   }
   .dialog-hint {
     margin-top: 1rem;
@@ -926,11 +1036,9 @@
     margin-top: 1.5rem;
   }
   .import-card {
-    margin-top: var(--space-6);
-    padding: var(--space-4) var(--space-6);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-card);
+    margin-top: var(--space-3);
+    padding: var(--space-3) 0;
+    border-top: 2px solid var(--rule);
   }
   .import-head {
     display: flex;
@@ -975,6 +1083,22 @@
     align-items: center;
     gap: var(--space-2);
   }
+  .import-select,
+  .import-input {
+    min-height: 2.75rem;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--control-border);
+    border-radius: var(--radius-control);
+    background: var(--surface);
+    color: var(--foreground);
+    font-size: var(--text-small);
+  }
+  .import-input {
+    display: block;
+    width: 100%;
+    margin-top: var(--space-1);
+    font-size: var(--text-body);
+  }
   .import-options {
     margin-top: var(--space-3);
   }
@@ -987,11 +1111,6 @@
   }
   .import-warnings {
     margin-top: var(--space-4);
-    padding: var(--space-4);
-    background: var(--warning-soft);
-    color: var(--warning);
-    border: 1px solid var(--warning-border);
-    border-radius: var(--radius-control);
   }
   .import-toggle {
     gap: var(--space-2);
@@ -1029,29 +1148,37 @@
     margin: -0.25rem;
     padding: 0.25rem;
   }
+  .import-fold.open .import-fold-inner {
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--border);
+  }
   @media (prefers-reduced-motion: reduce) {
     .import-fold,
     .import-fold.open,
-    .import-chevron {
+    .import-chevron,
+    .records-strip {
       transition: none;
     }
   }
   .records-layout {
-    margin-top: var(--space-4);
+    margin-top: var(--space-3);
     min-width: 0;
   }
   .records-layout.two-pane {
     display: grid;
-    grid-template-columns: minmax(0, 26rem) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) 23.75rem;
     align-items: start;
-    gap: var(--space-6);
+    gap: var(--space-8);
   }
   .records-list {
     min-width: 0;
   }
-  /* The preview card starts level with the first record: below the month heading (1.75rem + --space-3, see ActivityTimeline). */
+  /* The preview starts level with the first record: below the 1.75rem column header + 3rem month header (see activity-timeline.css). */
   .two-pane .records-preview {
-    margin-top: calc(1.75rem + var(--space-3));
+    margin-top: 4.75rem;
+  }
+  .two-pane.is-editing .records-preview {
+    margin-top: 3rem;
   }
   .records-preview {
     position: sticky;
@@ -1065,11 +1192,22 @@
     justify-content: center;
     gap: var(--space-3);
     margin-top: var(--space-6);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--border);
+  }
+  .pagination-status {
+    font-family: var(--font-mono);
+    font-size: var(--text-small);
+    color: var(--muted-foreground);
+    font-variant-numeric: tabular-nums;
+  }
+  @media (max-width: 1279px) {
+    .records-layout.two-pane {
+      grid-template-columns: minmax(0, 1fr) 20.5rem;
+      gap: var(--space-6);
+    }
   }
   @media (max-width: 639px) {
-    .import-card {
-      padding: var(--space-3) var(--space-4);
-    }
     .upload-primary {
       grid-template-columns: 1fr;
     }

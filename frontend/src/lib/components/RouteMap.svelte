@@ -260,6 +260,7 @@
 <div
   class="relative mt-4 overflow-hidden rounded-xl border border-border"
   data-glass-stable
+  data-glass-overlay
   class:spacious
   class:embedded
 >

@@ -11,3 +11,121 @@
 .activity-timeline .timeline-gutter b { font-size: var(--text-section); font-variant-numeric: tabular-nums; }
 .activity-timeline .timeline-gutter span { color: var(--muted-foreground); font-size: var(--text-caption); }
 .aux-panel .activity-timeline { --timeline-ground: var(--surface); }
+
+/* Editorial Receipt ledger appearance (brand.md §4, §6.7; web-audit W-08). Opt-in so /together stays unchanged. */
+.activity-timeline.ledger { gap: 0; }
+.activity-timeline.ledger .timeline-month + .timeline-month { margin-top: var(--space-8); }
+.activity-timeline.ledger .timeline-columns {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 4.5rem 3.5rem minmax(0, 1fr) 5.5rem 4.25rem 5.5rem;
+  align-items: center;
+  gap: var(--space-3);
+  height: 1.75rem;
+  padding-right: var(--space-2);
+  color: var(--muted-foreground);
+  font-size: var(--text-caption);
+  line-height: var(--line-height-solid);
+}
+.activity-timeline.ledger .timeline-columns > span:first-child { padding-left: .625rem; }
+.activity-timeline.ledger .timeline-columns > span:nth-child(n+4) { text-align: right; }
+.activity-timeline.ledger .timeline-header {
+  box-sizing: border-box;
+  height: 3rem;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: var(--space-1) var(--space-4);
+  margin-bottom: 0;
+  padding: 0;
+  border-top: 2px solid var(--rule);
+  border-bottom: 1px solid var(--border);
+}
+.activity-timeline.ledger .timeline-month-pill {
+  height: auto;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--text-section);
+  font-weight: var(--weight-bold);
+  line-height: var(--line-height-title);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.activity-timeline.ledger .timeline-month-total {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.activity-timeline.ledger .timeline-list { gap: 0; }
+.activity-timeline.ledger .timeline-list::before { content: none; }
+.activity-timeline.ledger .timeline-list > li {
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  align-items: stretch;
+  gap: var(--space-3);
+  min-height: 3.75rem;
+  border-bottom: 1px solid var(--border);
+  transition: background-color var(--transition-control);
+}
+@media (hover: hover) {
+  .activity-timeline.ledger .timeline-list > li:hover {
+    background: color-mix(in srgb, var(--foreground) 3%, transparent);
+  }
+}
+.activity-timeline.ledger .timeline-list > li.is-current {
+  background: var(--recap-well);
+  box-shadow: inset 3px 0 0 var(--rule);
+}
+.activity-timeline.ledger .timeline-list > li.is-selected {
+  background: color-mix(in srgb, var(--primary) 7%, transparent);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+.activity-timeline.ledger .timeline-gutter {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: .125rem;
+  padding: var(--space-2) 0 var(--space-2) .625rem;
+  background: transparent;
+  font-family: var(--font-mono);
+  line-height: var(--line-height-tight);
+}
+.activity-timeline.ledger .timeline-gutter b {
+  font-size: var(--text-small);
+  font-weight: var(--weight-medium);
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+}
+.activity-timeline.ledger .timeline-gutter span {
+  font-size: var(--text-caption);
+  color: var(--muted-foreground);
+}
+@media (max-width: 1023px) {
+  .activity-timeline.ledger .timeline-header {
+    height: auto;
+    min-height: 2.75rem;
+    flex-wrap: wrap;
+    padding: var(--space-2) 0;
+  }
+}
+@media (max-width: 639px) {
+  .activity-timeline.ledger .timeline-columns { display: none; }
+  .activity-timeline.ledger .timeline-list > li {
+    grid-template-columns: 3.25rem minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+  .activity-timeline.ledger .timeline-gutter {
+    padding-left: .25rem;
+  }
+  .activity-timeline.ledger .timeline-gutter b {
+    font-size: var(--text-caption);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .activity-timeline.ledger .timeline-list > li { transition: none; }
+}

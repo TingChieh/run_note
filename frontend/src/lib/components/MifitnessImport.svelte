@@ -13,7 +13,7 @@
   let summaryInput:HTMLInputElement,tracksInput:HTMLInputElement,disposed=false,requestToken=0;
   let summaryName=$state(''),trackNames=$state<string[]>([]),dragging=$state<''|'summary'|'tracks'>('');
   function picked(){cancelNotice='';summaryName=summaryInput?.files?.[0]?.name??'';trackNames=Array.from(tracksInput?.files??[],file=>file.name);reset();}
-  function drop(event:DragEvent,input:HTMLInputElement,kind:'summary'|'tracks'){event.preventDefault();dragging='';const files=event.dataTransfer?.files;if(busy||disabled||!mounted||!files?.length)return;input.files=kind==='summary'?(()=>{const t=new DataTransfer();t.items.add(files[0]);return t.files;})():files;picked();}
+  function drop(event:DragEvent,input:HTMLInputElement,kind:'summary'|'tracks'){event.preventDefault();event.stopPropagation();dragging='';const files=event.dataTransfer?.files;if(busy||disabled||!mounted||!files?.length)return;input.files=kind==='summary'?(()=>{const t=new DataTransfer();t.items.add(files[0]);return t.files;})():files;picked();}
   const tracksLabel=$derived(trackNames.length>1?`${trackNames.length} 个 GPX 文件`:trackNames[0]??'');
   const ready=$derived(entries.some(entry=>entry.status==='ready'));
   const failed=$derived(entries.some(entry=>entry.status==='failed'));
@@ -116,6 +116,7 @@
 </section>
 <style>
   .mifitness-import{margin-top:var(--space-4);padding:var(--space-4) var(--space-6);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);min-width:0;}
+  :global(.editorial-page) .mifitness-import{margin-top:var(--space-3);padding:var(--space-3) 0 0;background:transparent;border:0;border-top:1px solid var(--border);border-radius:0;}
   .head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:var(--space-1) var(--space-4);margin-bottom:var(--space-3);}
   h2{font-size: var(--text-section);font-weight: var(--weight-semibold);}h3{font-weight: var(--weight-semibold);overflow-wrap:anywhere;}
   .intro{font-size: var(--text-small);color:var(--muted-foreground);line-height: var(--line-height-body);}
@@ -129,6 +130,7 @@
   dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,7rem),1fr));gap:var(--space-3);margin-top:var(--space-3);}dt{font-size: var(--text-caption);color:var(--muted-foreground);}dd{font-weight: var(--weight-bold);}
   .state{font-size: var(--text-small);color:var(--muted-foreground);margin-top:var(--space-2);}
   .warnings{margin-top:var(--space-3);padding:var(--space-3);color:var(--warning);background:var(--warning-soft);border-radius:var(--radius-control);font-size: var(--text-small);}
+  :global(.editorial-page) .warnings{border-left:3px solid var(--warning);border-radius:0;color:var(--foreground);}
   .error{color:var(--error);overflow-wrap:anywhere;}
-  @media(max-width:639px){.mifitness-import{padding:var(--space-3) var(--space-4);}}
+  @media(max-width:639px){.mifitness-import{padding:var(--space-3) var(--space-4);}:global(.editorial-page) .mifitness-import{padding:var(--space-4) 0 0;}}
 </style>
