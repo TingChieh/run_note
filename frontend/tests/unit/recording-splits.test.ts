@@ -64,6 +64,21 @@ describe('recording-splits', () => {
     expect(splits[1].paceSecondsPerKm!).toBeLessThan(305);
   });
 
+  it('excludes a faster partial final segment from the fastest-kilometre award while keeping its pace bar', () => {
+    const pts = straightTrack([
+      { km: 1, paceSecPerKm: 340 },
+      { km: 1, paceSecPerKm: 300 },
+      { km: 0.2, paceSecPerKm: 240 },
+    ]);
+    const splits = extractRecordedSplits(pts);
+    expect(splits).toHaveLength(3);
+    expect(splits.map((s) => s.label)).toEqual(['1', '2', '0.2']);
+    expect(splits[0].fastest).toBe(false);
+    expect(splits[1].fastest).toBe(true);
+    expect(splits[2].fastest).toBe(false);
+    expect(splits[2].barRatio).toBeGreaterThan(0.9);
+  });
+
   it('does not bridge distance or moving time across pause segments', () => {
     const pts = straightTrack([
       { km: 1, paceSecPerKm: 320, segmentIndex: 0 },

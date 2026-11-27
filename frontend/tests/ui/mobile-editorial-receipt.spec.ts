@@ -233,6 +233,7 @@ test('mobile recording flow: pre-run -> single Pause + screen lock -> paused con
       rec.pushPoints(pts, 2670, 900_000);
     });
     await expect(page.getByTestId('recording-distance')).toContainText('2.67 km');
+    await expect(page.locator('.rec-telemetry')).toContainText('第 3 公里 · 上一公里');
     await expectNoOverflow(page);
 
     const pauseBtn = page.getByTestId('recording-pause-btn');

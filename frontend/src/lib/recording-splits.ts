@@ -108,13 +108,14 @@ export function extractRecordedSplits(points: RecordedTrackPoint[]): KmSplit[] {
   });
 
   const valid = rows.filter((r) => r.paceSecondsPerKm !== null);
+  const fullValid = valid.filter((r) => r.distanceM === 1000);
   if (valid.length >= 2) {
     const speeds = valid.map((r) => 1 / r.paceSecondsPerKm!);
     const maxSpeed = Math.max(...speeds);
     const minSpeed = Math.min(...speeds);
     const spread = maxSpeed - minSpeed;
-    const minPace = Math.min(...valid.map((r) => r.paceSecondsPerKm!));
-    const maxPace = Math.max(...valid.map((r) => r.paceSecondsPerKm!));
+    const minFullPace = fullValid.length >= 2 ? Math.min(...fullValid.map((r) => r.paceSecondsPerKm!)) : null;
+    const maxFullPace = fullValid.length >= 2 ? Math.max(...fullValid.map((r) => r.paceSecondsPerKm!)) : null;
     let fastestMarked = false;
     for (const row of rows) {
       if (row.paceSecondsPerKm === null) {
@@ -123,7 +124,14 @@ export function extractRecordedSplits(points: RecordedTrackPoint[]): KmSplit[] {
       }
       const speed = 1 / row.paceSecondsPerKm;
       row.barRatio = spread > 1e-7 ? 0.42 + ((speed - minSpeed) / spread) * 0.58 : 0.78;
-      if (!fastestMarked && maxPace - minPace >= 0.5 && row.paceSecondsPerKm === minPace) {
+      if (
+        !fastestMarked &&
+        row.distanceM === 1000 &&
+        minFullPace !== null &&
+        maxFullPace !== null &&
+        maxFullPace - minFullPace >= 0.5 &&
+        row.paceSecondsPerKm === minFullPace
+      ) {
         row.fastest = true;
         fastestMarked = true;
       }

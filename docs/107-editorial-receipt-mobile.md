@@ -11,7 +11,7 @@
 | 3. `recording` / `paused`（记录中 / 已暂停） | `/activities/record` · `RecordingWorkspace.svelte`、`recording-splits.ts` | 切换至全屏户外高对比表面（`--rec-bg` / `--rec-ink`，`[data-recording-immersive]` 自动隐藏页脚）；大字号等宽主距离（`--text-rec-hero` / 320px 下 `--text-rec-hero-narrow`）、2px 分割线双列用时与平均配速（`--text-rec-sub` + 小号 `/km` 单位防止 320px 拥挤）、基于真实轨迹点计算的实时分段与点数提示；`<800px` 记录态仅暴露单个 `76px` 高对比「暂停」按钮与右上角 `52px` 防误触锁屏按钮（锁定时禁用暂停并提示解锁；桌面端 `≥800px` 保留直接「结束并保存」以完全兼容并发竞态契约）；暂停态展示「继续跑步」、支持 1.5 秒长按与点击/键盘弹窗确认双路径（WCAG 2.5.1，`recording-finish-dialog`）的「结束并保存」，以及右上角「放弃本次」危险确认。 |
 | 4. `done`（跑步完成回执） | `/activities/record` · `RecordingWorkspace.svelte`、`recording-splits.ts` | 结束保存后在 `--desk` 桌面底色（`[data-recording-done]`）上呈现带底部锯齿撕边（`.receipt-sheet.receipt-serrated`）的票据小票：品牌字标 + 时区本地日期与起止时间黄色票头、距离主数字、点线引导指标行、打孔虚线分隔的真实每公里配速预览条（由 `extractRecordedSplits` 严格按同 `segmentIndex` 轨迹点计算，不跨暂停段虚构）、以及如实反映同步状态（离线暂存 / 上传中 / 失败重试 / 已同步服务端权威指标）的 `.status-strip`；操作按钮置于纸面之外，并同步保留下方 `recording-upload-queue` 实时队列状态。 |
 | 5. `detail`（活动详情） | `/activities/[id]`（`/workspace/activities/[id]`、`/p/[username]/activities/[id]`）· `activities/[id]/+page.svelte` | `<800px` 采用地图优先顺排（`.route-panel` 置顶全宽约 296–340px，随后为 `.stub` 票据存根与 `.detail-pace` 配速曲线）；`<640px` 将存根前 3 项核心指标（设备用时 / 平均配速 / 平均心率）编排为 3 列发丝线摘要行并完整保留全部 8 条 `.leader-row` DOM；`≥800px` 与桌面端 `1440px` 左右双栏布局保持原样。 |
-| 6. `share`（分享海报） | `StoryShareDialog.svelte`、`RecapShare.svelte`、`ActivityPosterDialog.svelte` | 为年度故事与周期总结分享弹窗接入 `.editorial-page` 扁平内容控件边界，避免 `liquidGlass()` 将内部分段按钮覆写为白底透明玻璃态；`StoryShareDialog` 在 `<768px` 收敛为紧凑顶栏（单行标题 + ≥44px `关闭`）、`--desk` 预览台、连体二段式外观切换（高对比激活态）、1px 发丝线隐私开关行、3px 左侧竖线隐私声明条及底部导出按钮（首屏可见并预留 `--safe-bottom`）；`RecapShare` 与 `ActivityPosterDialog` 统一使用 `--desk`、`--control-border`、`--radius-field` 与 ≥44px 触控目标，完整保留 `expectPosterDialogFits` 几何不变量。 |
+| 6. `share`（分享海报） | `StoryShareDialog.svelte`、`RecapShare.svelte`、`ActivityPosterDialog.svelte` | 为年度故事分享弹窗接入 `.editorial-page` 扁平内容控件边界，避免 `liquidGlass()` 将内部分段按钮覆写为白底透明玻璃态；`StoryShareDialog` 在 `<768px` 收敛为紧凑顶栏（单行标题 + ≥44px `关闭`）、`--desk` 预览台、连体二段式外观切换（高对比激活态）、1px 发丝线隐私开关行、3px 左侧竖线隐私声明条及底部导出按钮（首屏可见并预留 `--safe-bottom`）；`RecapShare` 与 `ActivityPosterDialog` 保留 `data-glass-overlay` 模态玻璃边界与 `#163` 桌面分享台，并统一使用 `--desk`、`--control-border`、`--radius-field`、安全区底部留白与 ≥44px 触控目标，完整保留 `expectPosterDialogFits` 几何不变量。 |
 
 ## 改动范围
 
@@ -36,12 +36,12 @@
 | --- | --- |
 | `pnpm check`（`svelte-kit sync && svelte-check`） | 0 errors / 0 warnings |
 | `pnpm lint:style`（Stylelint） | 通过（0 errors） |
-| `pnpm test`（Vitest，含 `recording-splits.test.ts` 与 `architecture.test.ts`） | 81 files / 532 tests passed |
+| `pnpm test`（Vitest，含 `recording-splits.test.ts` 与 `architecture.test.ts`） | 81 files / 533 tests passed |
 | `pnpm build`（adapter-node） | 成功（仅既有大体积 chunk 提示） |
-| `playwright test --config playwright.ui.config.ts mobile-editorial-receipt.spec.ts` | 3 passed / 0 failed（6 屏 390/320 明暗、锁屏防误触、暂停确认弹窗、离线→重连完成小票、0 溢出） |
+| `playwright test --config playwright.ui.config.ts mobile-editorial-receipt.spec.ts` | 3 passed / 0 failed（6 屏 390/320 明暗、原生实时上一公里配速、锁屏防误触、暂停确认弹窗、离线→重连完成小票、0 溢出） |
 | `playwright test --config playwright.ui.config.ts companion-phase3.spec.ts` | 42 passed / 0 failed（含权限、离线幂等、崩溃恢复、跨标签页并发与账号隔离） |
 | `playwright test --config playwright.activity-poster.config.ts` | 11 passed / 0 failed（含 390×800 / 844×390 / 1024×700 / 1280×720 / 1440×800 明暗几何拟合） |
-| `playwright test --config playwright.ui.config.ts` 其余受影响套件（`annual-story` 7、`dashboard` 7、`liquid-glass` 18、`milestones` 14、`mobile-tabbar` 17、`recap` 16、`sport-detail` 10、`top-navigation` 64、`ui-shell` 22） | 175 passed / 0 failed（连同上表共 231 项 UI 测试全绿） |
+| `playwright test --config playwright.ui.config.ts` 其余受影响套件（`annual-story`、`dashboard`、`liquid-glass`、`milestones`、`mobile-tabbar`、`recap`、`settings-hub`、`sport-detail`、`top-navigation`、`ui-shell`） | 187 passed / 1 skipped / 0 failed（`settings-hub` 1 项按环境变量门控的截图采集用例跳过；连同上表共 243 项 UI 测试通过、0 失败） |
 
 ## 视觉验收矩阵（合成数据，390×844 & 320×640 浅/深色 + 768/1440 响应式回归）
 

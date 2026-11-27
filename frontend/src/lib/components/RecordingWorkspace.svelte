@@ -136,6 +136,7 @@
   let lastAccuracyM = $state<number | null>(null);
   let interruptedReason = $state<string | null>(null);
   let webPoints = $state<RecordedTrackPoint[]>([]);
+  let nativeLivePoints = $state<RecordedTrackPoint[]>([]);
   let pendingHandoffSession = $state<RecorderSessionSnapshot | null>(null);
 
   let clockNowMs = $state(Date.now());
@@ -190,6 +191,10 @@
   let recoveryRequestToken = 0;
   let activeRecoveryTimeoutId: number | null = null;
   let unsubscribeNative: (() => void) | null = null;
+  let nativeLivePointsSessionId = '';
+  let nativeLivePointsFetchedKm = 0;
+  let nativeLivePointsInFlightKm = 0;
+  let nativeLivePointsRequestToken = 0;
 
   const displayedDurationMs = $derived.by(() => {
     if (status === 'recording' && lastSegmentStartMs !== null && clockNowMs > lastSegmentStartMs) {
@@ -270,7 +275,7 @@
   );
   const distanceFigure = $derived(splitFigure(formatPreviewDistanceKm(previewDistanceM)));
   const paceFigure = $derived(splitFigure(formatPreviewPace(displayedDurationMs, previewDistanceM)));
-  const liveSplit = $derived(summarizeLiveSplit(previewDistanceM, webPoints));
+  const liveSplit = $derived(summarizeLiveSplit(previewDistanceM, capabilities.native ? nativeLivePoints : webPoints));
   const finishedQueueItem = $derived(
     lastFinishedRun ? (uploadItems.find((item) => item.idempotencyKey === lastFinishedRun!.idempotencyKey) ?? null) : null,
   );
@@ -435,6 +440,48 @@
     lastPointTimeMs = s.lastPointTimeMs;
     lastAccuracyM = s.lastAccuracyM;
     interruptedReason = s.interruptedReason;
+    if (s.status === 'recording' || s.status === 'paused') {
+      syncNativeLiveSplitPoints(s.sessionId, s.previewDistanceM);
+    }
+  }
+
+  function syncNativeLiveSplitPoints(targetSessionId: string, distanceM: number) {
+    if (!capabilities.native || !accountId || stoppingInFlight || handoffBusy || pageClaimRevoked) return;
+    if (nativeLivePointsSessionId !== targetSessionId) {
+      nativeLivePointsSessionId = targetSessionId;
+      nativeLivePointsFetchedKm = 0;
+      nativeLivePointsInFlightKm = 0;
+      nativeLivePoints = [];
+      nativeLivePointsRequestToken++;
+    }
+    const completedFullKms = Math.floor(distanceM / 1000);
+    if (completedFullKms <= Math.max(nativeLivePointsFetchedKm, nativeLivePointsInFlightKm)) return;
+    const expectedAccountId = accountId;
+    const token = ++nativeLivePointsRequestToken;
+    nativeLivePointsInFlightKm = completedFullKms;
+    void getNativeRecorderPoints(0, expectedAccountId)
+      .then((pts) => {
+        if (
+          disposed ||
+          token !== nativeLivePointsRequestToken ||
+          pageClaimRevoked ||
+          accountId !== expectedAccountId ||
+          sessionId !== targetSessionId ||
+          (status !== 'recording' && status !== 'paused')
+        ) {
+          return;
+        }
+        nativeLivePoints = pts;
+        nativeLivePointsFetchedKm = completedFullKms;
+      })
+      .catch(() => {
+        // Live split hint is best-effort; authoritative track points are read on stop/handoff.
+      })
+      .finally(() => {
+        if (token === nativeLivePointsRequestToken) {
+          nativeLivePointsInFlightKm = 0;
+        }
+      });
   }
 
   /**
@@ -530,6 +577,11 @@
     lastAccuracyM = null;
     interruptedReason = null;
     webPoints = [];
+    nativeLivePoints = [];
+    nativeLivePointsSessionId = '';
+    nativeLivePointsFetchedKm = 0;
+    nativeLivePointsInFlightKm = 0;
+    nativeLivePointsRequestToken++;
     webLastFixMs = null;
   }
 
