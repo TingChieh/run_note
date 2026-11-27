@@ -75,7 +75,7 @@ for (const width of [375, 390, 1440]) {
       await page.keyboard.press('Escape');
 
       const card = page.getByRole('region', { name: '站点管理', exact: true });
-      await expect(card).toHaveClass(/aux-panel/);
+      await expect(card).toHaveClass(/section-rule/);
       await expect(card.getByRole('navigation', { name: '管理入口' }).getByRole('link')).toHaveCount(entries.length);
       for (const entry of entries) {
         const link = card.getByRole('link', { name: entry.name, exact: true });

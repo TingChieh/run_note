@@ -106,7 +106,7 @@ test('in-app settings privacy area and health panel link to /privacy#data-deleti
   expect(pageErrors).toEqual([]);
 });
 
-test('/privacy is responsive at 390x844 and 1440x900 in light and dark themes with zero console errors', async ({
+test('/privacy is responsive at 1440x900, 768x1024, 390x844, and 320x640 in light and dark themes with zero console errors', async ({
   page,
 }) => {
   const consoleErrors: string[] = [];
@@ -117,8 +117,10 @@ test('/privacy is responsive at 390x844 and 1440x900 in light and dark themes wi
   page.on('pageerror', (err) => pageErrors.push(err.message));
 
   for (const viewport of [
-    { width: 390, height: 844 },
     { width: 1440, height: 900 },
+    { width: 768, height: 1024 },
+    { width: 390, height: 844 },
+    { width: 320, height: 640 },
   ]) {
     for (const theme of ['light', 'dark'] as const) {
       await page.setViewportSize(viewport);
