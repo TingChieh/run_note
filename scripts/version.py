@@ -49,7 +49,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 SEMVER_RE = re.compile(
-    r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(alpha|beta|rc)\.([1-9]\d*))?$"
+    r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(alpha|beta|rc)\.([1-9][0-9]*))?$",
+    re.ASCII,
 )
 MAX_MAJOR = 209
 MAX_MINOR = 99
@@ -61,11 +62,16 @@ STAGE_OFFSET = {"alpha": 100, "beta": 200, "rc": 300}
 STAGE_ORDER = {"alpha": 1, "beta": 2, "rc": 3, None: 4}
 
 CHANGELOG_HEADING_RE = re.compile(r"^## \[([^\]]+)\](?:\s*-\s*(.+))?\s*$")
-STRICT_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+STRICT_DATE_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", re.ASCII)
+CERT_SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$", re.ASCII)
+APKSIGNER_SHA256_RE = re.compile(
+    r"^Signer #1 certificate SHA-256 digest:\s*([0-9A-Fa-f:\-\s]+)\s*$",
+    re.MULTILINE | re.ASCII,
+)
 MIN_MOBILE_RE = re.compile(r'^MIN_MOBILE_APP_VERSION\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
 PYPROJECT_VERSION_RE = re.compile(r'^(\s*version\s*=\s*")([^"]+)("\s*)$', re.MULTILINE)
 GRADLE_VERSION_NAME_RE = re.compile(r'^(\s*versionName\s+")([^"]+)("\s*)$', re.MULTILINE)
-GRADLE_VERSION_CODE_RE = re.compile(r"^(\s*versionCode\s+)(\d+)(\s*)$", re.MULTILINE)
+GRADLE_VERSION_CODE_RE = re.compile(r"^(\s*versionCode\s+)([0-9]+)(\s*)$", re.MULTILINE | re.ASCII)
 
 
 @dataclass(frozen=True, order=False)
@@ -579,6 +585,50 @@ def _cmd_validate_tag(args: argparse.Namespace) -> int:
     return 0
 
 
+def normalize_cert_sha256(raw: str) -> str:
+    """Normalize a certificate SHA-256 fingerprint (colon/space/hex) to 64 lowercase ASCII hex."""
+    cleaned = re.sub(r"[:\-\s]+", "", raw.strip()).lower()
+    if not CERT_SHA256_HEX_RE.fullmatch(cleaned):
+        raise ValueError(
+            "signing certificate SHA-256 must be 64 ASCII hex characters "
+            "(optional colons/spaces, e.g. from keytool -list -v or apksigner --print-certs)"
+        )
+    return cleaned
+
+
+def extract_apksigner_sha256(apksigner_output: str) -> str:
+    """Extract and normalize Signer #1 SHA-256 digest from `apksigner verify --print-certs`."""
+    matches = APKSIGNER_SHA256_RE.findall(apksigner_output)
+    if len(matches) != 1:
+        raise ValueError(
+            "expected exactly 1 'Signer #1 certificate SHA-256 digest' line in apksigner output, "
+            f"found {len(matches)}"
+        )
+    return normalize_cert_sha256(matches[0])
+
+
+def verify_cert_pin(apksigner_output: str, expected_pin: str) -> str:
+    """Verify the APK's signing certificate SHA-256 matches the pinned fingerprint."""
+    expected = normalize_cert_sha256(expected_pin)
+    actual = extract_apksigner_sha256(apksigner_output)
+    if actual != expected:
+        raise ValueError(
+            f"signing certificate SHA-256 mismatch: built APK signed with {actual}, "
+            f"expected pinned {expected}"
+        )
+    return actual
+
+
+def _cmd_verify_cert_pin(args: argparse.Namespace) -> int:
+    if args.input_file is not None:
+        raw_output = args.input_file.read_text(encoding="utf-8")
+    else:
+        raw_output = sys.stdin.read()
+    digest = verify_cert_pin(raw_output, args.expected)
+    print(f"OK: signing certificate SHA-256 matches pin ({digest})")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="RunNote unified version and release validator")
     parser.add_argument("--repo", type=Path, default=ROOT, help="Repository root (default: repo)")
@@ -613,6 +663,19 @@ def main(argv: list[str] | None = None) -> int:
         "--github-output", type=Path, default=None, help="Append GitHub outputs here"
     )
     p_tag.set_defaults(func=_cmd_validate_tag)
+
+    p_cert = sub.add_parser(
+        "verify-cert-pin",
+        help="Verify apksigner --print-certs output matches a pinned SHA-256 fingerprint",
+    )
+    p_cert.add_argument("--expected", required=True, help="Expected SHA-256 certificate digest")
+    p_cert.add_argument(
+        "--input-file",
+        type=Path,
+        default=None,
+        help="File containing apksigner verify --print-certs output (default: stdin)",
+    )
+    p_cert.set_defaults(func=_cmd_verify_cert_pin)
 
     args = parser.parse_args(argv)
     try:

@@ -105,6 +105,8 @@ def test_a_version_accepts_semver_and_prereleases(tmp_path, valid_version):
         "2.010.0",
         "2.6.010",
         "2.06.1",
+        "2.1\u0660.0",
+        "2.7.0-rc.1\u0661",
         "1.0.0-alpha.0",
         "1.0.0-alpha.01",
         "1.0.0-dev.1",

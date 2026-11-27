@@ -23,7 +23,8 @@ concurrency:
 permissions:
   contents: read
 
-# Third-party actions are pinned to commit SHAs matching .github/workflows/ci.yml.
+# Third-party actions are pinned to 40-char commit SHAs resolved via the GitHub API
+# (shared actions match .github/workflows/ci.yml).
 jobs:
   validate:
     name: validate (SemVer, manifests, changelog, immutability)
@@ -38,6 +39,16 @@ jobs:
       apk_name: ${{ steps.check.outputs.apk_name }}
       sha256_name: ${{ steps.check.outputs.sha256_name }}
     steps:
+      - name: Restrict workflow_dispatch dry-run to main
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+        run: |
+          if [ "$DISPATCH_REF" != "refs/heads/main" ]; then
+            echo "::error::workflow_dispatch dry-run is restricted to refs/heads/main (got $DISPATCH_REF) so production signing secrets are never exercised from unmerged branches."
+            exit 1
+          fi
+          echo "OK: workflow_dispatch dry-run running on refs/heads/main"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
@@ -237,6 +248,8 @@ jobs:
       - gate-frontend
       - gate-infra-and-server-bundle
       - gate-android-unit
+    # Defense-in-depth: production signing secrets are only reachable on tag pushes or main dry-runs.
+    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -337,10 +350,12 @@ jobs:
           fi
           ./gradlew --no-daemon assembleRelease
           test -f app/build/outputs/apk/release/app-release.apk
-      - name: Verify APK version metadata, permissions, signature, and SHA-256
+      - name: Verify APK version metadata, permissions, signature, cert pin, and SHA-256
         env:
+          SIGNING_MODE: ${{ steps.signing.outputs.mode }}
           EXPECTED_VERSION: ${{ needs.validate.outputs.version }}
           EXPECTED_VERSION_CODE: ${{ needs.validate.outputs.version_code }}
+          EXPECTED_CERT_SHA256: ${{ vars.ANDROID_SIGNING_CERT_SHA256 || secrets.ANDROID_SIGNING_CERT_SHA256 }}
           APK_NAME: ${{ needs.validate.outputs.apk_name }}
           SHA256_NAME: ${{ needs.validate.outputs.sha256_name }}
         run: |
@@ -369,7 +384,18 @@ jobs:
           esac
 
           python3 android/scripts/audit-apk-permissions.py "$raw_apk"
-          "$apksigner" verify --verbose --print-certs "$raw_apk"
+          "$apksigner" verify --verbose --print-certs "$raw_apk" > "$RUNNER_TEMP/apksigner.txt"
+          cat "$RUNNER_TEMP/apksigner.txt"
+
+          if [ "$SIGNING_MODE" = "production-secrets" ]; then
+            if [ -n "$EXPECTED_CERT_SHA256" ]; then
+              python3 scripts/version.py verify-cert-pin \
+                --expected "$EXPECTED_CERT_SHA256" \
+                --input-file "$RUNNER_TEMP/apksigner.txt"
+            else
+              echo "::warning::ANDROID_SIGNING_CERT_SHA256 is not configured; apksigner verified APK integrity, but signing certificate identity is not pinned. Set repository variable ANDROID_SIGNING_CERT_SHA256 to prevent accidental keystore rotation (see docs/102-release-pipeline.md)."
+            fi
+          fi
 
           stage="$RUNNER_TEMP/release-assets"
           mkdir -p "$stage"

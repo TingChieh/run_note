@@ -92,6 +92,8 @@ class SemVerAndVersionCodeTests(unittest.TestCase):
             "2.010.0",
             "2.6.010",
             "2.06.1",
+            "2.1\u0660.0",
+            "2.7.0-rc.1\u0661",
             "2.7.0-alpha.0",
             "2.7.0-alpha.01",
             "2.7.0-dev.1",
@@ -331,6 +333,14 @@ class TagAndChangelogValidationTests(unittest.TestCase):
             changelog.write_text("## [2.7.0] - 2026-02-30\n- Bad date\n", encoding="utf-8")
             with self.assertRaises(ValueError):
                 ver.validate_release_tag("v2.7.0", repo=root, changelog=changelog)
+            # Non-ASCII digits in tag or changelog date refused
+            changelog.write_text("## [2.7.0] - 2026-11-2\u0667\n- Bad date\n", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                ver.validate_release_tag("v2.7.0", repo=root, changelog=changelog)
+            with self.assertRaises(ValueError):
+                ver.parse_tag("v2.1\u0660.0")
+            with self.assertRaises(ValueError):
+                ver.parse_tag("v2.7.0-rc.1\u0661")
 
     def test_real_changelog_structure_and_guardrails(self):
         text = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -346,6 +356,69 @@ class TagAndChangelogValidationTests(unittest.TestCase):
         # 2.6.0 is an untagged baseline, so validate-tag must refuse it as a formal entry.
         with self.assertRaises(ValueError):
             ver.extract_changelog_entry(REPO / "CHANGELOG.md", "2.6.0")
+
+
+class CertPinVerificationTests(unittest.TestCase):
+    SAMPLE_DIGEST = "328a9f7990ab55fa9563ae976736b97dc5c91d3591f91c93d9be4404691239ad"
+    SAMPLE_COLON = (
+        "32:8A:9F:79:90:AB:55:FA:95:63:AE:97:67:36:B9:7D:"
+        "C5:C9:1D:35:91:F9:1C:93:D9:BE:44:04:69:12:39:AD"
+    )
+    SAMPLE_APKSIGNER = textwrap.dedent(
+        f"""\
+        Verifies
+        Verified using v1 scheme (JAR signing): false
+        Verified using v2 scheme (APK Signature Scheme v2): true
+        Verified using v3 scheme (APK Signature Scheme v3): true
+        Signer #1 certificate DN: CN=RunNote, O=RunNote, C=CN
+        Signer #1 certificate SHA-256 digest: {SAMPLE_DIGEST}
+        Signer #1 certificate SHA-1 digest: 0123456789abcdef0123456789abcdef01234567
+        """
+    )
+
+    def test_verify_cert_pin_accepts_colon_and_hex_formats(self):
+        self.assertEqual(
+            ver.verify_cert_pin(self.SAMPLE_APKSIGNER, self.SAMPLE_DIGEST),
+            self.SAMPLE_DIGEST,
+        )
+        self.assertEqual(
+            ver.verify_cert_pin(self.SAMPLE_APKSIGNER, self.SAMPLE_COLON),
+            self.SAMPLE_DIGEST,
+        )
+
+    def test_verify_cert_pin_rejects_mismatch_malformed_and_missing(self):
+        wrong = "0" * 64
+        with self.assertRaises(ValueError):
+            ver.verify_cert_pin(self.SAMPLE_APKSIGNER, wrong)
+        with self.assertRaises(ValueError):
+            ver.verify_cert_pin(self.SAMPLE_APKSIGNER, "not-a-sha256")
+        with self.assertRaises(ValueError):
+            ver.verify_cert_pin("Verifies\nNo digest line\n", self.SAMPLE_DIGEST)
+
+    def test_cli_verify_cert_pin_exit_codes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "apksigner.txt"
+            out_file.write_text(self.SAMPLE_APKSIGNER, encoding="utf-8")
+            rc_ok = ver.main(
+                [
+                    "verify-cert-pin",
+                    "--expected",
+                    self.SAMPLE_COLON,
+                    "--input-file",
+                    str(out_file),
+                ]
+            )
+            self.assertEqual(rc_ok, 0)
+            rc_bad = ver.main(
+                [
+                    "verify-cert-pin",
+                    "--expected",
+                    "f" * 64,
+                    "--input-file",
+                    str(out_file),
+                ]
+            )
+            self.assertEqual(rc_bad, 1)
 
 
 class WorkflowAndIgnorePolicyTests(unittest.TestCase):
@@ -366,6 +439,7 @@ class WorkflowAndIgnorePolicyTests(unittest.TestCase):
             self.assertEqual(on_block["push"], {"tags": ["v*"]})
             self.assertEqual(parsed["permissions"], {"contents": "read"})
             jobs = parsed["jobs"]
+            self.assertIn("refs/heads/main", jobs["android-release"]["if"])
             self.assertEqual(jobs["publish-release"]["permissions"], {"contents": "write"})
             self.assertIn("refs/tags/v", jobs["publish-release"]["if"])
             self.assertIn("android-release", jobs["publish-release"]["needs"])
@@ -380,11 +454,16 @@ class WorkflowAndIgnorePolicyTests(unittest.TestCase):
                 f"workflow action is not pinned to a 40-char SHA: {action}",
             )
 
-        # Must prevent overwriting existing releases and publish atomically via draft.
+        # Must prevent overwriting existing releases, restrict dispatch to main, verify cert pin,
+        # and publish atomically via draft.
+        self.assertIn("refs/heads/main", text)
+        self.assertIn("ANDROID_SIGNING_CERT_SHA256", text)
+        self.assertIn("verify-cert-pin", text)
         self.assertIn("gh release view", text)
         self.assertIn("--draft", text)
         self.assertIn("--draft=false", text)
         self.assertIn("apksigner", text)
+        self.assertNotIn('apksigner" verify --verbose --print-certs "$raw_apk" | tee', text)
         self.assertIn("audit-apk-permissions.py", text)
         self.assertIn("sha256sum -c", text)
 

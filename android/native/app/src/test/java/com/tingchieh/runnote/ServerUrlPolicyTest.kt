@@ -22,7 +22,7 @@ class ServerUrlPolicyTest {
     }
 
     private fun expectedVersionCode(version: String): Int {
-        val pattern = Regex("""^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(alpha|beta|rc)\.([1-9]\d*))?$""")
+        val pattern = Regex("""^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(alpha|beta|rc)\.([1-9][0-9]*))?$""")
         val match = pattern.matchEntire(version)
         assertNotNull("VERSION must be valid SemVer: $version", match)
         val major = match!!.groupValues[1].toInt()
