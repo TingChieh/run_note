@@ -467,10 +467,9 @@
                   <span class="section-meta mono">
                     {#if distribution.max > 0 && distribution.derived.peakLabelCompact}
                       {punchUnitText} · 最高 {distribution.derived.peakLabelCompact}
-                      {km(distribution.max, 1)} km{#if hasInProgressPunch}
-                        · 斜线为进行中{/if}
+                      {km(distribution.max, 1)} km{#if hasInProgressPunch}{' · 斜线为进行中'}{/if}
                     {:else}
-                      本期暂无有效里程
+                      本期暂无有效里程{#if hasInProgressPunch}{' · 斜线为进行中'}{/if}
                     {/if}
                   </span>
                 </div>
@@ -890,6 +889,17 @@
   .punch-col.is-empty .punch-blk {
     background: transparent;
     box-shadow: inset 0 0 0 1.5px var(--border);
+    opacity: 1;
+  }
+  /* Zero-distance in-progress bucket keeps a single short block with visible hatch + primary cap so visual matches legend & aria-label. */
+  .punch-col.is-partial.is-empty .punch-blk {
+    background: repeating-linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--primary) 36%, transparent) 0 2px,
+      transparent 2px 6px
+    );
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--primary) 75%, transparent);
+    border-top: 2px solid var(--primary);
     opacity: 1;
   }
   .punch-col.is-future .punch-blk {
