@@ -494,9 +494,9 @@ test('mobile home current-week punch card stays independent of browsed historica
   await setTheme(page, 'light');
   await page.goto('/');
 
-  const dec29 = page.locator('.week-strip li[data-date="2025-12-29"]');
-  const jan01 = page.locator('.week-strip li[data-date="2026-01-01"]');
-  const jan02 = page.locator('.week-strip li[data-date="2026-01-02"]');
+  const dec29 = page.locator('.week-strip li[data-week-date="2025-12-29"]');
+  const jan01 = page.locator('.week-strip li[data-week-date="2026-01-01"]');
+  const jan02 = page.locator('.week-strip li[data-week-date="2026-01-02"]');
   await expect(dec29).toHaveAttribute('data-punch-state', 'measured');
   await expect(dec29).toHaveAttribute('data-blocks', '3');
   await expect(jan01).toHaveAttribute('data-punch-state', 'measured');
