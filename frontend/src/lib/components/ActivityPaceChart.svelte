@@ -10,6 +10,7 @@
     replay,
     loading = false,
     error = '',
+    routeUnavailable = false,
     hasRoute = false,
     avgPaceSecondsPerKm = null,
     onretry,
@@ -17,6 +18,7 @@
     replay: ReplayData | null;
     loading?: boolean;
     error?: string;
+    routeUnavailable?: boolean;
     hasRoute?: boolean;
     avgPaceSecondsPerKm?: number | null;
     onretry?: () => void;
@@ -33,9 +35,10 @@
   const fastest = $derived(splits.find((s) => s.fastest) ?? null);
   const sectionMeta = $derived.by(() => {
     if (!hasRoute) return '无轨迹';
-    if (loading) return '正在读取…';
     if (error) return '读取失败';
-    if (replay?.mode === 'simulated') return '模拟轨迹';
+    if (routeUnavailable) return '等待路线';
+    if (loading || !replay) return '正在读取…';
+    if (replay.mode === 'simulated') return '模拟轨迹';
     if (avgPaceSecondsPerKm !== null) return `均值 ${formatPace(avgPaceSecondsPerKm)} · 按轨迹采样`;
     return samples.length ? '按轨迹采样' : '';
   });
@@ -208,7 +211,9 @@
         {#if onretry}<button type="button" class="button-secondary mt-3" onclick={onretry}>重新读取</button>{/if}
       </FeedbackState>
     </div>
-  {:else if loading && !replay}
+  {:else if routeUnavailable}
+    <p class="pace-empty">路线暂未就绪，重新读取路线后将自动加载配速曲线。</p>
+  {:else if loading || !replay}
     <div class="pace-feedback">
       <FeedbackState kind="loading" title="正在读取配速曲线…" />
     </div>
@@ -224,6 +229,9 @@
     {#if splits.length > 0}
       <details class="splits-table" data-testid="activity-splits-details">
         <summary>查看分段数据表</summary>
+        <p class="splits-note">
+          每公里分段由前端按回放轨迹的距离与移动时间采样推导，可能与服务端统计的总平均配速略有差异。
+        </p>
         <div class="table-scroll" role="region" aria-label="每公里分段数据表">
           <table>
             <caption class="sr-only">本次跑步每公里配速与累计用时（按轨迹采样）</caption>
@@ -290,6 +298,12 @@
     font-size: var(--text-small);
     font-weight: var(--weight-semibold);
     color: var(--foreground);
+  }
+  .splits-note {
+    margin-top: var(--space-1);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
+    line-height: var(--line-height-body);
   }
   .table-scroll {
     margin-top: var(--space-2);

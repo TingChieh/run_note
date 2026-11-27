@@ -98,6 +98,12 @@
   );
   const avgPaceNum = $derived(activity ? parseMetric(activity.avg_pace_seconds_per_km) : null);
   const splits = $derived(extractSplits(replayData));
+  const paceRouteUnavailable = $derived(!!routeError && !replayData && !replayLoading && !replayError);
+  const paceLoading = $derived(
+    routeLoading ||
+      replayLoading ||
+      (!!activity?.has_route && !replayData && !replayError && !routeError && !showingCachedDetail),
+  );
   const leaderMetrics = $derived.by(() => {
     if (!activity) return [];
     const pace = splitFigure(formatPace(activity.avg_pace_seconds_per_km));
@@ -158,7 +164,8 @@
     replay = $state<ReturnType<typeof ActivityReplayDialog>>(),
     actions = $state<ReturnType<typeof ActivityActions>>(),
     moreMenu = $state<ReturnType<typeof AnchoredPanel>>(),
-    editButton = $state<HTMLButtonElement | null>(null);
+    editButton = $state<HTMLButtonElement | null>(null),
+    addNoteButton = $state<HTMLButtonElement | null>(null);
   let mounted = $state(false),
     activityToken = 0,
     routeToken = 0,
@@ -246,8 +253,10 @@
       if (!disposed && token === routeToken) {
         route = result;
         mapRoute = result;
-        // Fetch replay samples once the route itself is ready so nothing competes with initial map framing.
-        ensureReplay(id);
+        // Fetch replay samples after the route paints so nothing competes with initial map framing.
+        afterNextPaint(() => {
+          if (!disposed && token === routeToken) ensureReplay(id);
+        });
       }
     } catch (cause) {
       if (!disposed && token === routeToken && !expired(cause)) {
@@ -534,10 +543,11 @@
                 <p class="stub-notes-body">{activity.notes}</p>
               {:else}
                 <button
+                  bind:this={addNoteButton}
                   type="button"
                   class="button-text stub-note-link"
                   disabled={manageBusy || editing}
-                  onclick={() => actions?.openEdit('notes', editButton)}
+                  onclick={() => actions?.openEdit('notes', addNoteButton, editButton)}
                 >
                   添加备注
                 </button>
@@ -605,8 +615,9 @@
 
           <ActivityPaceChart
             replay={replayData}
-            loading={replayLoading}
+            loading={paceLoading}
             error={replayError}
+            routeUnavailable={paceRouteUnavailable}
             hasRoute={activity.has_route}
             avgPaceSecondsPerKm={avgPaceNum}
             onretry={() => void loadReplay(activity!.id, true)}

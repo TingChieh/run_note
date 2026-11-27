@@ -29,6 +29,7 @@
   let deleteError = $state('');
   let dialog: HTMLDialogElement;
   let editReturnFocus: HTMLElement | null = null;
+  let editFallbackFocus: HTMLElement | null = null;
   let deleteReturnFocus: HTMLElement | null = null;
   let disposed = false;
   let currentActivityId = '';
@@ -59,10 +60,15 @@
     if (cause instanceof ActivityError && cause.status === 401) window.location.replace('/admin?reason=expired');
     return cause instanceof Error ? cause.message : '操作失败，请重试';
   }
-  export function openEdit(field: 'title' | 'notes' = 'title', from: HTMLElement | null = null) {
+  export function openEdit(
+    field: 'title' | 'notes' = 'title',
+    from: HTMLElement | null = null,
+    fallback: HTMLElement | null = null,
+  ) {
     if (busy) return;
     focusField = field;
     editReturnFocus = from;
+    editFallbackFocus = fallback;
     editing = true;
   }
   export function openDelete(from: HTMLElement | null = null) {
@@ -71,18 +77,22 @@
     deleteError = '';
     dialog.showModal();
   }
+  function restoreEditFocus() {
+    if (editReturnFocus?.isConnected) editReturnFocus.focus();
+    else if (editFallbackFocus?.isConnected) editFallbackFocus.focus();
+  }
   async function cancel() {
     if (busy) return;
     editing = false;
     await tick();
-    editReturnFocus?.focus();
+    restoreEditFocus();
   }
   async function updated(value: Activity) {
     window.dispatchEvent(new CustomEvent('runnote-activities-changed'));
     onupdated(value);
     editing = false;
     await tick();
-    editReturnFocus?.focus();
+    restoreEditFocus();
   }
   async function remove() {
     if (busy) return;

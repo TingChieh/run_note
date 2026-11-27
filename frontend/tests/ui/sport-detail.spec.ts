@@ -1,5 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
-import { installActivities, loginRunner, sampleActivity, incompleteActivity } from '../fixtures/activities';
+import {
+  installActivities,
+  loginRunner,
+  sampleActivity,
+  incompleteActivity,
+  syntheticReplay,
+} from '../fixtures/activities';
 import { openGoalPanel } from '../fixtures/top-navigation';
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/v1/showcase/statistics/summary?**', (route) =>
@@ -408,6 +414,13 @@ test('editorial receipt detail layout, more-menu delete, share dialog, chart and
   await expect(posterDialog).toBeHidden();
   await expect(share).toBeFocused();
 
+  // P3: clicking 添加备注 opens the editor on notes and Escape/cancel returns focus to 添加备注.
+  const addNote = page.getByRole('button', { name: '添加备注', exact: true });
+  await addNote.click();
+  await expect(page.getByRole('textbox', { name: '备注' })).toBeFocused();
+  await page.getByRole('button', { name: '取消编辑', exact: true }).click();
+  await expect(addNote).toBeFocused();
+
   // Visual matrix geometry check across 1440 / 768 / 390 / 320 in both light and dark themes.
   for (const [width, height] of [
     [1440, 900],
@@ -434,4 +447,47 @@ test('editorial receipt detail layout, more-menu delete, share dialog, chart and
     }
   }
   expect(errors).toEqual([]);
+});
+
+test('pace chart stays in loading state while route or replay is pending and only shows missing-track copy when replay lacks usable samples', async ({
+  page,
+}) => {
+  const replayPattern = new RegExp(`/api/v1/(showcase/)?activities/${sampleActivity.id}/replay$`);
+  const missingCopy = '此记录缺少可靠时间轨迹，暂无法绘制配速曲线。';
+  await installActivities(page);
+  await loginRunner(page);
+
+  const releaseRoute = await hold(page, routePattern);
+  const releaseReplay = await hold(page, replayPattern);
+  await page.goto(`/activities/${sampleActivity.id}`);
+  await expect(page.getByRole('heading', { name: sampleActivity.title, level: 1 })).toBeVisible();
+
+  const paceSection = page.getByTestId('activity-pace-section');
+  // While /route is still delayed, show loading state and never flash the final missing-track message.
+  await expect(paceSection.getByText('正在读取配速曲线…')).toBeVisible();
+  await expect(paceSection.getByText(missingCopy)).toHaveCount(0);
+
+  // After /route resolves but while /replay is still pending, keep the loading state without flashing empty copy.
+  releaseRoute();
+  await ready(page);
+  await expect(paceSection.getByText('正在读取配速曲线…')).toBeVisible();
+  await expect(paceSection.getByText(missingCopy)).toHaveCount(0);
+
+  // Once /replay resolves with real samples, show the chart and the splits basis note inside <details>.
+  releaseReplay();
+  await expect(page.getByTestId('activity-pace-chart')).toBeVisible();
+  await expect(paceSection.getByText('正在读取配速曲线…')).toHaveCount(0);
+  const splitsDetails = page.getByTestId('activity-splits-details');
+  await splitsDetails.locator('summary').click();
+  await expect(splitsDetails).toContainText('每公里分段由前端按回放轨迹的距离与移动时间采样推导');
+  await expect(splitsDetails).toContainText('可能与服务端统计的总平均配速略有差异');
+
+  // When /replay genuinely returns without usable pace samples (simulated track), show the final empty state.
+  await page.route(replayPattern, (route) =>
+    route.fulfill({ json: { data: syntheticReplay('simulated'), error: null } }),
+  );
+  await page.reload();
+  await ready(page);
+  await expect(paceSection.getByText(missingCopy)).toBeVisible();
+  await expect(paceSection.getByText('正在读取配速曲线…')).toHaveCount(0);
 });

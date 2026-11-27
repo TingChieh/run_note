@@ -10,9 +10,10 @@
   - 左侧 `.receipt-sheet.stub`：单张票据纸面（`--paper`）与唯一黄色票头（浅色 `--receipt` / `--receipt-ink`，深色 `--receipt-ink` / `--primary`，展示 `YYYY-MM-DD 周几` 与活动时区起止时间）；`h1` 标题 + 时区/分类/标签纯文字副行（去除叙述式文案与胶囊标签）；`64–88px`（`--text-figure`）主数字距离 + 等宽小写单位；点线引导指标列表（`.leader-row`，缺失值以 `—` + `sr-only` 呈现）；带侧缺口的打孔虚线（`.receipt-perforation`）分隔「每公里配速」印刷条（最快公里以 `--receipt-mark` 与加粗文本 + 「最快」标签双重标记）与私人备注区（「添加备注」直接打开编辑器并聚焦备注框）。
   - 右侧 `.detail-main`：`RouteMap` 新增可选 `appearance="sheet"`（4px 细框、桌面端约 `35rem` / `560px` 高度，默认 `'default'` 不影响其他调用方）与可选 `controls` snippet 将「动态回放」浮层按钮与底图切换器并列置于地图左上角玻璃浮层区（`data-glass-overlay`），同时保留无障碍 `<h2 id="route-title" class="sr-only">路线</h2>`。
 - **地图下方配速曲线与分段数据表（`ActivityPaceChart`）**：
-  - 基于服务端 `/api/v1/activities/{id}/replay` 返回的真实 `distance_m`、`moving_s`、`pace_s_per_km` 渲染配速折线（2px `--primary` + 均值 1px 虚线参考线）与 `<details>` 每公里分段数据表，并与 `ActivityReplayDialog` 共享同一次回放请求避免重复拉取。
+  - 基于服务端 `/api/v1/activities/{id}/replay` 返回的真实 `distance_m`、`moving_s`、`pace_s_per_km` 渲染配速折线（2px `--primary` + 均值 1px 虚线参考线）与 `<details>` 每公里分段数据表，并与 `ActivityReplayDialog` 共享同一次回放请求避免重复拉取；分段数据表内注明「每公里分段由前端按回放轨迹的距离与移动时间采样推导，可能与服务端统计的总平均配速略有差异」（P2-3）。
+  - **加载与空态边界（P2-1）**：在 `/route` 尚在加载或 `/replay` 尚未请求/返回期间，配速曲线区持续显示加载态（`正在读取配速曲线…`），绝不误报「此记录缺少可靠时间轨迹，暂无法绘制配速曲线。」；当 `/route` 读取失败时仅由路线区呈现唯一 `role="alert"`，配速区提示等待路线就绪；仅在 `/replay` 实际返回且缺少可用配速采样（如模拟轨迹）时才显示最终空态。
   - **关于海拔序列**：现有后端 `/activities/{id}`、`/route`、`/replay` 接口未返回逐点海拔数组，遵循 `brand.md §1`「真实数据，不虚构图形」与本任务「不改后端/API/数据计算」约束，当前图表仅渲染真实配速曲线并在标题如实标注为「配速曲线」。
-- **次级分区去卡片化**：跑鞋（`ActivityShoe`）、设备指标（`DeviceMetrics`）、数据质量 `<details>`、本次足迹卡片（`ActivityWallPreview`）、跑步日记（`ActivityDiary`）、旧版分享链接（`SharePanel`）改为 `1px` 发丝线（`.section-hairline`）分组；编辑面板与删除/分享/回放原生弹窗保持 `data-glass-overlay` 与焦点管理。
+- **次级分区与焦点管理（含 P3）**：跑鞋（`ActivityShoe`）、设备指标（`DeviceMetrics`）、数据质量 `<details>`、本次足迹卡片（`ActivityWallPreview`）、跑步日记（`ActivityDiary`）、旧版分享链接（`SharePanel`）改为 `1px` 发丝线（`.section-hairline`）分组；编辑面板与删除/分享/回放原生弹窗保持 `data-glass-overlay` 与焦点管理（点击「添加备注」进入编辑后取消时，焦点回退至「添加备注」按钮；保存备注导致原按钮卸载时回退至「编辑记录」）。
 - **公开摘要页（`PublicActivityPage`）**：延续 `PageHeader`（保留 `--header-tint` 页头底色 + `meta` 作者与日期）与 `MetricSummary appearance="receipt"`，不公开轨迹坐标。
 
 ## 改动范围
@@ -31,7 +32,7 @@
 
 不新增或修改任何 API 路径、查询参数或权限校验。私人备注、编辑/删除、跑鞋、跑步日记、旧版分享链接与分享图/视频导出仍严格受 `view.manage` / `viewsOwnRecords` 控制；公开摘要页继续使用字段白名单且不暴露坐标。所有测试与截图均基于合成数据，不含真实轨迹或用户信息。
 
-## 验证记录（2026-11-27，本机 Linux，Node 24，Chrome，Playwright 1.65）
+## 验证记录（2026-11-27，评审返修第 1 轮后，本机 Linux，Node 24，Chrome，Playwright 1.65）
 
 | 命令（`frontend/`） | 结果 |
 | --- | --- |
@@ -39,13 +40,9 @@
 | `pnpm lint:style`（Stylelint） | 通过 |
 | `pnpm test`（Vitest） | 80 files / 528 tests passed |
 | `pnpm build`（adapter-node） | 成功（仅既有大体积 chunk 警告） |
-| `node tests/fixtures/check-showcase-isolation.mjs` | PASS（1057 files，无 showcase 产物，5 路径均为 404） |
-| `playwright test --config playwright.activity-management.config.ts` | 36 passed / 0 failed（覆盖 `activities.spec.ts` + `activity-management.spec.ts`） |
-| `playwright test --config playwright.activity-poster.config.ts` | 11 passed / 0 failed |
-| `playwright test --config playwright.together.config.ts` | 21 passed / 0 failed（确认 `/together` 未受影响） |
-| `playwright test --config playwright.design-system.config.ts --grep-invert "visual baseline"` | 7 passed / 0 failed |
-| `playwright test --config playwright.ui.config.ts tests/ui/sport-detail.spec.ts tests/ui/dashboard.spec.ts tests/ui/liquid-glass.spec.ts tests/ui/ui-shell.spec.ts tests/ui/mobile-tabbar.spec.ts tests/ui/admin-users.spec.ts tests/ui/companion-phase3.spec.ts tests/ui/seo-routes.spec.ts tests/ui/theme.spec.ts` | 133 passed / 0 failed |
-| `playwright test --config playwright.ui.config.ts tests/ui/sport-detail.spec.ts tests/ui/activity-replay.spec.ts tests/ui/footprint-card-deck.spec.ts tests/ui/shoes.spec.ts tests/ui/running-diary.spec.ts tests/ui/privacy.spec.ts tests/ui/p2.spec.ts tests/ui/map-framing.spec.ts tests/ui/basemaps.spec.ts tests/ui/admin-readonly-activities.spec.ts` | 104 passed / 0 failed（最后一次微调前的全量关联集；微调仅涉及 `data-tone="danger"`、`sr-only` 路线标题与图表 `$effect` 依赖追踪，随后由上行 `sport-detail` 与 `activity-management` 复核） |
+| `playwright test --config playwright.activity-management.config.ts` | 36 passed / 0 failed（覆盖 `activities.spec.ts` 含路线失败单 `alert` 重试 + `activity-management.spec.ts`） |
+| `playwright test --config playwright.ui.config.ts tests/ui/sport-detail.spec.ts tests/ui/activity-replay.spec.ts tests/ui/footprint-card-deck.spec.ts tests/ui/privacy.spec.ts tests/ui/admin-readonly-activities.spec.ts` | 61 passed / 0 failed（新增延迟 `/route` 与 `/replay` 期间不误报空态、模拟轨迹真实空态、分段推导口径说明与「添加备注」取消焦点回退用例） |
+| 前置基线提交（`49a45f5`）全量附加检查 | `check-showcase-isolation.mjs` PASS；`activity-poster` 11/11、`together` 21/21、`design-system` 7/7、`ui` 专项 133/133、PR CI #45998520910（`frontend`/`frontend-ui`/`android`）全绿 |
 
 ### 视觉验收矩阵（合成数据，4 视口 × 浅/深色）
 
@@ -69,4 +66,7 @@
 - **真实后端 E2E（`playwright.config.ts`，含 `tests/e2e/activity-management.spec.ts`）与后端集成测试**：未在本机运行（本机未配置独立 `_test` 库，且本次未改动后端/数据库/API）；已在 `tests/e2e/activity-management.spec.ts` 同步更新删除按钮的「更多」菜单入口路径，完整 `frontend-ui` 结果以 PR CI 为准。
 - **`design-system.spec.ts` 像素快照对比**：基线仅包含 macOS（`*-darwin.png`），未在 Linux 上执行像素级 diff（本次未改动设计系统 showcase 页面或基础组件默认外观）。
 - **真机 Safari / WebKit**：本机 Linux 无 WebKit 系统库，未做真实 Safari 目视核对；所有浏览器视觉验收均基于 Chromium 合成 API 环境。
+- **P2-2 接受的后续优化：`/replay` 体积与匿名访问预拉取**：
+  - **现状与取舍原因**：当前在不改动后端/API 的约束下，`/replay` 是唯一包含 `moving_s` 与 `pace_s_per_km` 的接口；按 W-07 规范，「每公里配速」印刷条位于首屏左侧票据存根内（1440 / 768 / 390 首屏均可见），地图下方「配速曲线」在 1440×900 亦位于首屏内。若仅以地图下方图表进入视口（`IntersectionObserver`）作为拉取条件，桌面端仍会首屏触发，而移动端/平板端会在用户滚动至地图下方时突然撑开上方的票据存根并引发明显布局偏移（CLS）。因此本 PR 采取保守折中：在 `/route` 返回并通过 `afterNextPaint` 完成首帧地图渲染后再顺序拉取 `/replay`，并与 `ActivityReplayDialog` 共享同一次结果避免重复请求。
+  - **何时回访**：后续允许改动后端 API 时，应新增轻量的分段与降采样配速摘要接口（或按需返回缓存摘要），让详情页（尤其匿名访问大点数长距离轨迹）仅拉取数 KB 摘要，仅在用户主动打开「动态回放」时再下载完整 `/replay` 轨迹点。
 - **海拔曲线**：因现有后端接口不返回逐点海拔数据，详情图当前仅展示真实配速曲线，未虚构海拔序列；后续若后端补充海拔字段可按 `brand.md §5` 叠加 `--recap-well` 面积层。
