@@ -1,6 +1,6 @@
 {
   "name": "runnote-android",
-  "version": "2.5.0",
+  "version": "2.7.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.28.13",

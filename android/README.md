@@ -3,7 +3,7 @@
 RunNote 的 Android Capacitor 容器工程（#132、#133、#134），直接复用同一套 RunNote Web UI，不改 Web SSR 架构、不引入独立页面 fork。
 
 - **应用标识**：`com.tingchieh.runnote`（应用名 `RunNote`）
-- **版本**：与 `backend/pyproject.toml` / `frontend/package.json` 同步为 `2.5.0`（`versionCode = 20500`，规则 `MAJOR * 10000 + MINOR * 100 + PATCH`）
+- **版本**：统一由仓库根目录 `VERSION` 驱动并通过 `python3 scripts/version.py sync` 同步至 Web、Backend 与 Android（`versionCode` 采用单调递增规则 `MAJOR * 10_000_000 + MINOR * 100_000 + PATCH * 1_000 + STAGE_CODE`，支持 `alpha`/`beta`/`rc` 预发布到正式版平滑升级；详见 `docs/102-release-pipeline.md`）
 - **最低系统要求**：Android 10（API 29）、Android System WebView / Chrome **116+**
 - **工具链**：Capacitor 8.6.2、`@capacitor/app` 8.1.2、`androidx.health.connect:connect-client` 1.1.0、Kotlin 2.1.21、JDK 21、Gradle 8.14.3、AGP 8.13.0、Android SDK 36、Build Tools 35.0.0
 

@@ -22,7 +22,7 @@ class Classify(unittest.TestCase):
     def test_documentation_only_runs_no_area(self):
         for files in (
             ["docs/66-production-deployment.md"],
-            ["README.md", "README.en.md", "AGENTS.md", "LICENSE"],
+            ["README.md", "README.en.md", "AGENTS.md", "CHANGELOG.md", "LICENSE"],
             ["docs/assets/screenshot.png"],
         ):
             self.assertEqual(changed_areas.classify(files), NONE, files)
@@ -72,7 +72,7 @@ class Classify(unittest.TestCase):
             self.assertEqual(changed_areas.classify([path]), ALL, path)
 
     def test_unknown_paths_run_everything(self):
-        for path in (".gitignore", "pyproject.toml", "backend.command", "Makefile"):
+        for path in (".gitignore", "VERSION", "pyproject.toml", "backend.command", "Makefile"):
             self.assertEqual(changed_areas.classify([path, "docs/a.md"]), ALL, path)
 
     def test_no_file_list_runs_everything(self):

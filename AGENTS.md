@@ -59,7 +59,7 @@ docs/              设计与验收记录（中文）；docs/design-system/ 为 U
 | 事实 | 源头 | 派生物 / 守护 |
 | --- | --- | --- |
 | API 请求与响应结构 | 后端 Pydantic schema 与路由 | `frontend/src/lib/api/generated/api.ts`（`cd backend && .venv/bin/python -m app.contract.typescript`）；`tests/unit/test_api_contract.py` 防过期，`frontend/tests/contract/api-types.ts` 与 `tests/unit/api-contract.test.ts` 防前端漂移 |
-| 应用版本号 | `backend/pyproject.toml` 的 `[project] version`（`MAJOR.MINOR.PATCH`） | `frontend/package.json` 的 `version` 必须相同；`GET /api/v1/admin/version`（仅站主）连同发布包的 `RELEASE` 构建信息在“设置 → 站点设置”展示；`tests/unit/test_version.py` 守护 |
+| 应用版本号 | 根目录 `VERSION`（SemVer：`MAJOR.MINOR.PATCH` 或 `-(alpha\|beta\|rc).N`，由 `scripts/version.py` 同步） | `backend/pyproject.toml`、`frontend/package.json`、`android/package.json`、`android/native/app/build.gradle`（`versionName` 与单调 `versionCode`）；`GET /api/v1/admin/version`（仅站主）与 `GET /api/v1/client/capabilities` 读取后端版本；`scripts/version.py check`、`backend/tests/unit/test_version.py`、`infra/native/tests/test_release_tooling.py`、`ServerUrlPolicyTest.kt` 守护 |
 | 距离、用时、配速 | `gpx/metrics.py` 与 `gpx/queries.py`（PostGIS） | 前端只格式化 |
 | CI 按路径跳过的规则 | `.github/scripts/changed_areas.py` | `scripts/verify.py` 直接复用 |
 | 检查命令 | `.github/workflows/ci.yml` | `scripts/verify.py`（`infra/native/tests/test_verify_script.py` 保持一致） |
@@ -265,6 +265,13 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
 - 小改动（纯文档、文案、样式微调，不涉及后端、迁移、依赖、鉴权、公共接口或部署脚本）：本地跑过相关检查（前端至少 `pnpm check` 与对应的 Playwright 配置）后，经用户明确要求，可以不等 PR 上的 CI 就合并；其余改动一律等 PR 的 CI 全绿再合并。
 - **开 PR 后的固定流程（用户长期授权，2026-11-20）**：开 PR 后持续盯 CI；全部任务通过（跳过的任务视为通过）就直接 squash 合并，标题沿用 PR 标题并带 `(#PR号)`，有版本号变化时在标题里注明 `(vX.Y.Z)`。CI 失败时先查原因、修复并推送后继续盯，不合并失败的提交。新增功能或修复要上线的 PR，合并前按语义化版本更新版本号（见第 3 节“应用版本号”）。此授权只覆盖合并，部署与生产操作仍须用户单独授权。
 - 无论哪种，部署前都要等 `main` 上该提交的 CI 全绿（`ship.py` 强制检查），这一关不放松。
+
+### 版本管理与正式发布（详见 `docs/102-release-pipeline.md`）
+
+- **唯一版本源与同步**：根目录 `VERSION` 是 Web / Backend / Android 的唯一版本源（支持 `MAJOR.MINOR.PATCH` 与 `-(alpha|beta|rc).N`）。日常小更新使用 **patch**（`2.6.1`–`2.6.10` 等，上限 `99`）；向后兼容功能更新使用 **minor**（支持 `2.10.0`、`2.11.0` … 直至 `2.99.0`，**禁止把 `2.10.0` 写成 `2.1.0`，禁止补零如 `2.010.0`**）；**major** 仅用于真正的大版本/破坏性变更。修改版本一律通过 `python3 scripts/version.py set|bump|sync` 同步全部清单并运行 `python3 scripts/version.py check`，不要只手改单个文件；Android `versionCode` 由单调递增公式自动计算（`MAJOR*10_000_000 + MINOR*100_000 + PATCH*1_000 + STAGE_CODE`），保证 `2.6.10`、`2.7.0`、`2.10.0`、`2.99.0` 及预发布到正式版全部严格单调递增。
+- **日常开发绝不自动发布正式版本**：PR 合入与 `main` push 只触发 `.github/workflows/ci.yml`，绝不自动创建 Git tag 或 GitHub Release。正式发布仅在维护者显式授权并推送 `v*` 标签时由 `.github/workflows/release.yml` 执行。
+- **发布前强制核对**：建 `v*` 标签前须确认：① `python3 scripts/version.py validate-tag vX.Y.Z` 通过（版本一致且 `CHANGELOG.md` 已有精确日期节 `## [X.Y.Z] - YYYY-MM-DD`，含 Added / Changed / Fixed / Breaking / Upgrade notes）；② `main` 上 CI 全绿；③ 数据库迁移（单 head、升级需 `--migrate`）、API/客户端兼容（`MIN_MOBILE_APP_VERSION` 与生成契约）及配置示例（`.env.example` / `infra/native/env/*.env.example`）均已核对；④ GitHub Secrets 中 Android 签名与发布配置就绪（密钥材料绝不提交仓库）。
+- **不可覆盖原则**：绝不删除重推或覆盖已发布的 `v*` 标签、GitHub Release 或产物；任何发布后问题一律通过新的补丁版本（如 `vX.Y.(Z+1)`）修复。
 
 ### 完成标准与回归测试
 

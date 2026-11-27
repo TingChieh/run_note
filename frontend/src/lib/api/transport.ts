@@ -42,7 +42,8 @@ export class TransportError extends Error {
 type SessionInvalidationListener = (state: MobileSessionLifecycleState) => void;
 const invalidationListeners = new Set<SessionInvalidationListener>();
 
-const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
+const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(alpha|beta|rc)\.([1-9]\d*))?$/;
+const SEMVER_STAGE_ORDER: Record<string, number> = { alpha: 1, beta: 2, rc: 3 };
 const SAFE_API_PATH = /^\/api\/[^\s\u0000-\u001f\u007f]*$/;
 const STRIPPED_NATIVE_HEADERS = new Set(['authorization', 'cookie', 'x-csrf-token']);
 
@@ -99,6 +100,12 @@ export function compareSemver(left: string, right: string): number {
     const diff = Number(a[i]) - Number(b[i]);
     if (diff !== 0) return diff < 0 ? -1 : 1;
   }
+  const aStage = a[4] ? SEMVER_STAGE_ORDER[a[4]] : 4;
+  const bStage = b[4] ? SEMVER_STAGE_ORDER[b[4]] : 4;
+  if (aStage !== bStage) return aStage < bStage ? -1 : 1;
+  const aNum = a[5] ? Number(a[5]) : 0;
+  const bNum = b[5] ? Number(b[5]) : 0;
+  if (aNum !== bNum) return aNum < bNum ? -1 : 1;
   return 0;
 }
 

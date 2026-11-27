@@ -3,9 +3,17 @@
 public/
 local.properties
 keystore.properties
+signing.properties
 *.iml
 *.apk
 *.aab
 *.jks
 *.keystore
+*.bks
 *.p12
+*.pfx
+*.pem
+*.key
+*.jks.b64
+*.keystore.b64
+*.p12.b64
