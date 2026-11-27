@@ -4,6 +4,7 @@
   const fetch = view.fetch;
   const readRange = view.bind(scoped_readRange, 1);
   const readStreaks = view.bind(scoped_readStreaks, 0);
+  const readCalendar = view.bind(scoped_readCalendar, 2);
   const readGoals = view.bind(scoped_readGoals, 0);
   const saveGoal = view.bind(scoped_saveGoal, 2);
 
@@ -12,17 +13,16 @@
   import { ActivityError } from '#lib/api/activities.ts';
   import { comparisonWindow, goalTotals, periodElapsed, readRange as scoped_readRange, readStreaks as scoped_readStreaks, type Streaks } from '#lib/api/milestones.ts';
   import { validGoal, readGoals as scoped_readGoals, saveGoal as scoped_saveGoal, type GoalPeriod } from '#lib/api/running-goal.ts';
-  import type { Summary } from '#lib/api/statistics.ts';
+  import { readCalendar as scoped_readCalendar, type Summary } from '#lib/api/statistics.ts';
+  import { activeStreakYears, buildWeekPunch } from '#lib/week-punch.ts';
   import { goalInputPop } from '#lib/styles/goal-input-transition.ts';
   import FeedbackState from './FeedbackState.svelte';
   let {
     user,
     readonly = false,
-    calendarDays = null,
   }: {
     user: ShowcaseProfile;
     readonly?: boolean;
-    calendarDays?: { date: string; distance_m: string | number | null }[] | null;
   } = $props();
   type Card = { period: GoalPeriod; title: string; current: Summary | null; previous: Summary | null; target: number | null; input: string; editing: boolean; loading: boolean; error: string; feedback: string; token: number; saving?: boolean };
   let cards = $state<Card[]>([
@@ -31,42 +31,14 @@
     {period:'week',title:'周目标',current:null,previous:null,target:null,input:'',editing:false,loading:true,error:'',feedback:'',token:0}
   ]);
   let streaks = $state<Streaks | null>(null), streakLoading = $state(true), streakError = $state('');
+  let weekDistances = $state<Map<string, number>>(new Map());
   let active = false;
   let goalLoading = $state(true), goalError = $state('');
   let goalToken = 0;
+  let weekDistanceToken = 0;
   const comparisons = {year:'去年同期',month:'上月同期',week:'上周同期'};
   const number = (value: number) => value.toLocaleString('zh-CN',{maximumFractionDigits:1});
-  const weekPunch = $derived.by(() => {
-    const current = streaks;
-    if (!current) return [];
-    const byDate = new Map<string, number>();
-    if (calendarDays) {
-      for (const item of calendarDays) {
-        const dist = Number(item.distance_m ?? 0);
-        if (Number.isFinite(dist) && dist > 0) byDate.set(item.date, dist);
-      }
-    }
-    const distances = current.week.map((day) => byDate.get(day.date) ?? 0);
-    const maxDist = Math.max(0, ...distances);
-    return current.week.map((day, idx) => {
-      const dist = distances[idx];
-      const isToday = day.date === current.today;
-      const isFuture = day.date > current.today;
-      const blocks = day.active
-        ? maxDist > 0 && dist > 0
-          ? Math.max(1, Math.min(5, Math.round((dist / maxDist) * 5)))
-          : 2
-        : 0;
-      return {
-        date: day.date,
-        active: day.active,
-        isToday,
-        isFuture,
-        blocks,
-        weekday: ['一', '二', '三', '四', '五', '六', '日'][idx],
-      };
-    });
-  });
+  const weekPunch = $derived(buildWeekPunch(streaks, weekDistances));
   function failed(cause: unknown) {
     if (cause instanceof ActivityError && cause.status === 401) {
       active = false; streaks = null; cards.forEach(card => {card.current = null; card.previous = null;});
@@ -117,9 +89,41 @@
     if(results[1].status==='fulfilled') card.previous=results[1].value; else card.error=failed(results[1].reason);
     card.loading=false;
   }
+  async function loadWeekDistances(data: Streaks) {
+    const token = ++weekDistanceToken;
+    const years = activeStreakYears(data);
+    if (!years.length) {
+      weekDistances = new Map();
+      return;
+    }
+    const weekDates = new Set(data.week.map((d) => d.date));
+    const results = await Promise.allSettled(years.map((y) => readCalendar(y, 'distance')));
+    if (!active || token !== weekDistanceToken) return;
+    for (const result of results) {
+      if (result.status === 'rejected' && result.reason instanceof ActivityError && result.reason.status === 401) {
+        failed(result.reason);
+        return;
+      }
+    }
+    const next = new Map<string, number>();
+    for (const result of results) {
+      if (result.status !== 'fulfilled') continue;
+      for (const item of result.value.days) {
+        if (!weekDates.has(item.date)) continue;
+        const dist = Number(item.distance_m ?? 0);
+        if (Number.isFinite(dist) && dist > 0) next.set(item.date, dist);
+      }
+    }
+    weekDistances = next;
+  }
   async function loadStreaks() {
     streakLoading=true;streakError='';
-    try {const data=await readStreaks();if(active)streaks=data;}
+    try {
+      const data=await readStreaks();
+      if(!active) return;
+      streaks=data;
+      void loadWeekDistances(data);
+    }
     catch(cause){if(active)streakError=failed(cause);}
     finally{if(active)streakLoading=false;}
   }
@@ -127,7 +131,7 @@
     active=true;void readTargets();cards.forEach(card=>{void load(card);});void loadStreaks();
     const focused=()=>{if(!cards.some(card=>card.saving))void readTargets();};
     window.addEventListener('focus',focused);window.addEventListener('runnote-goals-changed',readTargets);
-    return()=>{active=false;++goalToken;window.removeEventListener('focus',focused);window.removeEventListener('runnote-goals-changed',readTargets);};
+    return()=>{active=false;++goalToken;++weekDistanceToken;window.removeEventListener('focus',focused);window.removeEventListener('runnote-goals-changed',readTargets);};
   });
 </script>
 
@@ -174,7 +178,7 @@
     <div class="goal-heading"><h3>连续记录</h3></div>
     {#if streakLoading}<FeedbackState kind="loading" title="正在读取连续记录…" />{:else if streakError}<FeedbackState kind="error" title={streakError}><button class="button-secondary" onclick={()=>void loadStreaks()}>重试连续记录</button></FeedbackState>{:else if streaks}
       <p class="goal-value"><strong>{streaks.current_days}</strong><span>天 · {streaks.current_weeks} 周</span></p>
-      <ol class="week-strip" aria-label="本周活动记录">{#each weekPunch as day (day.date)}<li class:is-today={day.isToday} class:is-rest={!day.active && !day.isToday && !day.isFuture} class:is-future={day.isFuture} class:is-active={day.active}><span class="week-weekday">{day.isToday ? '今天' : day.weekday}</span><span class="week-day" class:active={day.active} class:today={day.isToday} aria-label={`${day.date}，${day.active?'有活动':'无活动'}${day.isToday?'，今天':''}`}>{Number(day.date.slice(-2))}</span><span class="week-punch" aria-hidden="true">{#if day.blocks > 0}{#each Array(day.blocks) as _}<i class="punch-blk"></i>{/each}{:else}<i class="punch-blk punch-slot"></i>{/if}</span></li>{/each}</ol>
+      <ol class="week-strip" aria-label="本周活动记录">{#each weekPunch as day (day.date)}<li class:is-today={day.isToday} class:is-rest={day.state === 'rest'} class:is-future={day.isFuture} class:is-active={day.active} data-date={day.date} data-punch-state={day.state} data-blocks={day.blocks}><span class="week-weekday">{day.isToday ? '今天' : day.weekday}</span><span class="week-day" class:active={day.active} class:today={day.isToday} aria-label={`${day.date}，${day.active?'有活动':'无活动'}${day.isToday?'，今天':''}`}>{Number(day.date.slice(-2))}</span><span class="week-punch" aria-hidden="true">{#if day.state === 'measured'}{#each Array(day.blocks) as _}<i class="punch-blk"></i>{/each}{:else if day.state === 'active'}<i class="punch-blk punch-active-dot"></i>{:else}<i class="punch-blk punch-slot"></i>{/if}</span></li>{/each}</ol>
       <p class="goal-facts streak-best">最长 {streaks.longest_days} 天 / {streaks.longest_weeks} 周</p>
     {/if}
   </section>
@@ -258,6 +262,7 @@
     .week-strip li.is-today .week-weekday{color:var(--foreground);font-weight:var(--weight-bold);}
     .week-punch{order:1;display:flex;flex-direction:column-reverse;align-items:center;gap:0.1875rem;width:100%;}
     .punch-blk{display:block;width:min(100%,1.625rem);height:0.5625rem;border-radius:2px;background:var(--primary);opacity:0.85;}
+    .punch-blk.punch-active-dot{width:0.625rem;height:0.625rem;border-radius:999px;}
     .week-strip li.is-today .punch-blk{background:var(--receipt-mark);opacity:1;}
     .week-strip li.is-today .punch-blk.punch-slot{background:transparent;outline:2px solid var(--receipt-mark);outline-offset:-2px;}
     .week-strip li.is-rest .punch-blk.punch-slot{background:transparent;outline:1.5px dashed var(--border);outline-offset:-1.5px;opacity:1;}

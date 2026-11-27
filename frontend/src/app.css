@@ -2875,8 +2875,12 @@
     background: var(--rec-bg);
     color: var(--rec-ink);
   }
-  .app-shell:has([data-recording-immersive]) .app-footer {
+  .app-shell:has([data-recording-immersive]) .app-footer,
+  .app-shell:has([data-recording-immersive]) .glass-tuner {
     display: none;
+  }
+  .app-shell:has([data-recording-immersive]) .page-content {
+    padding-block: max(var(--space-2), var(--safe-top)) var(--space-2);
   }
   .app-shell:has([data-recording-done]) {
     background: var(--desk);

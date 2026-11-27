@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { RecordedTrackPoint } from '#lib/gpx-serializer.ts';
-import { extractRecordedSplits, summarizeLiveSplit } from '#lib/recording-splits.ts';
+import { haversineMeters, type RecordedTrackPoint } from '#lib/gpx-serializer.ts';
+import { extractRecordedSplits, formatPartialSplitLabel, summarizeLiveSplit } from '#lib/recording-splits.ts';
 
 function straightTrack(
   kmSegments: { km: number; paceSecPerKm: number; segmentIndex?: number; gapSecBefore?: number }[],
@@ -109,5 +109,97 @@ describe('recording-splits', () => {
     expect(live.lastFullKmPaceSecondsPerKm).not.toBeNull();
     expect(live.lastFullKmPaceSecondsPerKm!).toBeGreaterThan(310);
     expect(live.lastFullKmPaceSecondsPerKm!).toBeLessThan(320);
+  });
+
+  it('keeps same-segment stationary time at the distance where it occurred instead of smearing it past 1 km', () => {
+    const startLat = 31.23;
+    const lon = 121.47;
+    const metersPerDeg = haversineMeters(startLat, lon, startLat + 1, lon);
+    const latAt = (meters: number) => startLat + meters / metersPerDeg;
+    const t0 = Date.parse('2026-11-26T07:15:00Z');
+    // 0 -> 900 m in 270 s, stand still 300 s at 900 m, then 900 -> 1010 m (+110 m) in 33 s (0.3 s/m).
+    // First 1,000 m crosses at 270 + 300 + 33 * (100 / 110) = 600 s (NOT 572.727 s).
+    const pts: RecordedTrackPoint[] = [
+      { lat: latAt(0), lon, recordedAtMs: t0, segmentIndex: 0 },
+      { lat: latAt(900), lon, recordedAtMs: t0 + 270_000, segmentIndex: 0 },
+      { lat: latAt(900), lon, recordedAtMs: t0 + 570_000, segmentIndex: 0 },
+      { lat: latAt(1010), lon, recordedAtMs: t0 + 603_000, segmentIndex: 0 },
+    ];
+    const splits = extractRecordedSplits(pts);
+    expect(splits).toHaveLength(1);
+    expect(splits[0].distanceM).toBe(1000);
+    expect(splits[0].splitSeconds).toBeCloseTo(600, 1);
+    expect(splits[0].paceSecondsPerKm!).toBeCloseTo(600, 1);
+
+    const live = summarizeLiveSplit(1010, pts);
+    expect(live.completedFullKms).toBe(1);
+    expect(live.lastFullKmPaceSecondsPerKm!).toBeCloseTo(600, 1);
+  });
+
+  it('excludes explicit pause duration across segmentIndex changes while preserving arrival times', () => {
+    const startLat = 31.23;
+    const lon = 121.47;
+    const metersPerDeg = haversineMeters(startLat, lon, startLat + 1, lon);
+    const latAt = (meters: number) => startLat + meters / metersPerDeg;
+    const t0 = Date.parse('2026-11-26T07:15:00Z');
+    // Segment 0: 0 -> 900 m in 270 s; explicit pause 600 s; Segment 1: 900 -> 1010 m in 33 s.
+    // First 1,000 m should exclude the 600 s explicit pause: 270 + 30 = 300 s.
+    const pts: RecordedTrackPoint[] = [
+      { lat: latAt(0), lon, recordedAtMs: t0, segmentIndex: 0 },
+      { lat: latAt(900), lon, recordedAtMs: t0 + 270_000, segmentIndex: 0 },
+      { lat: latAt(900), lon, recordedAtMs: t0 + 870_000, segmentIndex: 1 },
+      { lat: latAt(1010), lon, recordedAtMs: t0 + 903_000, segmentIndex: 1 },
+    ];
+    const splits = extractRecordedSplits(pts);
+    expect(splits).toHaveLength(1);
+    expect(splits[0].splitSeconds).toBeCloseTo(300, 1);
+    expect(summarizeLiveSplit(1010, pts).lastFullKmPaceSecondsPerKm!).toBeCloseTo(300, 1);
+  });
+
+  it('handles 7-decimal rounded native points shy of 1 km and resolves once the next point crosses 1 km', () => {
+    const startLat = 31.23;
+    const lon = 121.47;
+    const metersPerDeg = haversineMeters(startLat, lon, startLat + 1, lon);
+    const round7 = (v: number) => Math.round(v * 1e7) / 1e7;
+    const t0 = Date.parse('2026-11-26T07:15:00Z');
+    const p0: RecordedTrackPoint = { lat: startLat, lon, recordedAtMs: t0, segmentIndex: 0 };
+    const shyLat = round7(startLat + 999.9 / metersPerDeg);
+    const p1: RecordedTrackPoint = { lat: shyLat, lon, recordedAtMs: t0 + 300_000, segmentIndex: 0 };
+    expect(haversineMeters(p0.lat, p0.lon, p1.lat, p1.lon)).toBeLessThan(1000);
+    // Native raw distance reported 1000.001 m, but rounded points fall shy of 1000 m.
+    expect(summarizeLiveSplit(1000.001, [p0, p1]).lastFullKmPaceSecondsPerKm).toBeNull();
+    // Next point within the same km pushes rounded points past 1000 m.
+    const p2: RecordedTrackPoint = {
+      lat: round7(startLat + 1012 / metersPerDeg),
+      lon,
+      recordedAtMs: t0 + 303_600,
+      segmentIndex: 0,
+    };
+    const resolved = summarizeLiveSplit(1012, [p0, p1, p2]);
+    expect(resolved.completedFullKms).toBe(1);
+    expect(resolved.lastFullKmPaceSecondsPerKm!).toBeCloseTo(300, 1);
+  });
+
+  it('never labels a 950-999 m partial final segment as a full kilometre index', () => {
+    expect(formatPartialSplitLabel(100)).toBe('0.1');
+    expect(formatPartialSplitLabel(940)).toBe('0.9');
+    expect(formatPartialSplitLabel(950)).toBe('0.95');
+    expect(formatPartialSplitLabel(964)).toBe('0.96');
+    expect(formatPartialSplitLabel(999)).toBe('0.99');
+    expect(formatPartialSplitLabel(999.9)).toBe('0.99');
+
+    const pts = straightTrack([
+      { km: 1, paceSecPerKm: 330 },
+      { km: 1, paceSecPerKm: 310 },
+      { km: 0.96, paceSecPerKm: 280 },
+    ]);
+    const splits = extractRecordedSplits(pts);
+    expect(splits).toHaveLength(3);
+    expect(splits[0].label).toBe('1');
+    expect(splits[1].label).toBe('2');
+    expect(splits[2].label).toBe('0.96');
+    expect(splits[2].label).not.toBe('3');
+    expect(splits[1].fastest).toBe(true);
+    expect(splits[2].fastest).toBe(false);
   });
 });

@@ -301,24 +301,26 @@
         <p class="status-strip share-error" data-tone="error" role="alert">{shareError}</p>
       {/if}
 
-      <div class="dialog-actions" class:two-col={!nativeApp && shareable}>
-        {#if !nativeApp}
-          <button type="button" class="button-primary" disabled={!url || !file || busy || Boolean(error)} onclick={save}>
-            保存 PNG
-          </button>
-        {/if}
-        {#if shareable}
-          <button
-            type="button"
-            class="button-secondary"
-            disabled={!file || !shareable || busy || sharing || Boolean(error)}
-            onclick={share}
-          >
-            {sharing ? '正在调起分享…' : '系统分享'}
-          </button>
-        {/if}
+      <div class="dialog-footer">
+        <div class="dialog-actions" class:two-col={!nativeApp && shareable}>
+          {#if !nativeApp}
+            <button type="button" class="button-primary" disabled={!url || !file || busy || Boolean(error)} onclick={save}>
+              保存 PNG
+            </button>
+          {/if}
+          {#if shareable}
+            <button
+              type="button"
+              class="button-secondary"
+              disabled={!file || !shareable || busy || sharing || Boolean(error)}
+              onclick={share}
+            >
+              {sharing ? '正在调起分享…' : '系统分享'}
+            </button>
+          {/if}
+        </div>
+        {#if nativeApp && !shareable}<p class="status-strip privacy-notice" role="status">当前客户端暂不支持直接保存图片文件，请在浏览器中打开保存 PNG。</p>{/if}
       </div>
-      {#if nativeApp && !shareable}<p class="status-strip privacy-notice" role="status">当前客户端暂不支持直接保存图片文件，请在浏览器中打开保存 PNG。</p>{/if}
     </div>
   </div>
 </dialog>
@@ -397,6 +399,10 @@
     color: var(--foreground);
     box-shadow: var(--shadow-popover);
     overflow: hidden;
+  }
+  .story-dialog[open] {
+    display: flex;
+    flex-direction: column;
   }
   .story-dialog::backdrop {
     background: var(--surface-backdrop);
@@ -519,8 +525,12 @@
     font-size: var(--text-small);
     color: var(--error);
   }
-  .dialog-actions {
+  .dialog-footer {
     margin-top: auto;
+    display: grid;
+    gap: var(--space-2);
+  }
+  .dialog-actions {
     display: grid;
     gap: var(--space-2);
   }
@@ -549,24 +559,40 @@
       border-radius: var(--radius-header);
     }
     .dialog-head {
-      padding: var(--space-3) var(--space-4);
+      flex: none;
+      padding: var(--space-2) var(--space-4);
     }
     .dialog-body {
-      grid-template-columns: 1fr;
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: none;
       gap: var(--space-3);
-      padding: var(--space-3) var(--space-4);
-      padding-bottom: calc(var(--space-4) + var(--safe-bottom));
-      max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 4.75rem);
+      padding: var(--space-3) var(--space-4) 0;
     }
     .dialog-stage {
-      min-height: 11.5rem;
-      padding: var(--space-3);
+      flex: none;
+      min-height: 0;
+      padding: var(--space-2);
     }
     .poster-preview-img {
-      width: min(100%, 10.5rem);
+      height: clamp(8.5rem, 26dvh, 16rem);
+      width: auto;
+      max-width: 100%;
     }
     .dialog-controls {
+      flex: 1 0 auto;
       gap: var(--space-3);
+    }
+    .dialog-footer {
+      position: sticky;
+      bottom: 0;
+      z-index: 2;
+      margin-inline: calc(-1 * var(--space-4));
+      padding: var(--space-2) var(--space-4) calc(var(--space-2) + var(--safe-bottom));
+      border-top: 1px solid var(--border);
+      background: var(--surface);
     }
   }
 </style>

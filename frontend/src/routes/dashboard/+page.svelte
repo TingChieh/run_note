@@ -448,7 +448,7 @@
             累计 <strong>0 km</strong><span>·</span>0 次活动<span>·</span>0 个活动日
           </p>{/if}
       </div>
-      {#if page.data.showcase}<GoalOverview user={page.data.showcase} readonly={!view.manage} calendarDays={calendar?.days ?? null} />{/if}
+      {#if page.data.showcase}<GoalOverview user={page.data.showcase} readonly={!view.manage} />{/if}
     </div>
     <!-- Trend and geography share the second row on wide screens. -->
     <div class="analysis-row">

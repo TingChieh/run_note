@@ -14,6 +14,30 @@ async function expectNoOverflow(page: Page) {
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 }
 
+async function expectInInitialViewportAndUnoccluded(page: Page, locator: ReturnType<Page['locator']>) {
+  await expect(locator).toBeVisible();
+  const check = await locator.evaluate((el) => {
+    const rect = el.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const hit = document.elementFromPoint(cx, cy);
+    return {
+      top: rect.top,
+      bottom: rect.bottom,
+      left: rect.left,
+      right: rect.right,
+      vw: window.innerWidth,
+      vh: window.innerHeight,
+      unoccluded: Boolean(hit && (el === hit || el.contains(hit))),
+    };
+  });
+  expect(check.top).toBeGreaterThanOrEqual(0);
+  expect(check.bottom).toBeLessThanOrEqual(check.vh + 1);
+  expect(check.left).toBeGreaterThanOrEqual(0);
+  expect(check.right).toBeLessThanOrEqual(check.vw + 1);
+  expect(check.unoccluded).toBe(true);
+}
+
 async function installMockNativeRecorder(page: Page) {
   await page.addInitScript(() => {
     type Point = {
@@ -222,12 +246,40 @@ test('mobile recording flow: pre-run -> single Pause + screen lock -> paused con
       const rec = (window as unknown as Record<string, { pushPoints: (pts: unknown[], d: number, ms: number) => void }>)
         .__editorialMockRecorder;
       const base = Date.now() - 18 * 60_000;
-      const pts = Array.from({ length: 25 }, (_, i) => ({
-        lat: 31.23 + i * 0.001,
+      // First cross 1000.001 m raw while 7-decimal rounded points fall slightly shy (~999.7 m) of 1 km.
+      const shyPts = [
+        { lat: 31.23, lon: 121.47, elevationM: 12, accuracyM: 6, recordedAtMs: base, segmentIndex: 0 },
+        { lat: 31.23899, lon: 121.47, elevationM: 12, accuracyM: 6, recordedAtMs: base + 300_000, segmentIndex: 0 },
+      ];
+      rec.pushPoints(shyPts, 1000.001, 300_000);
+    });
+    await expect(page.getByTestId('recording-distance')).toContainText('1.00 km');
+    await expect(page.locator('.rec-telemetry')).toContainText('第 2 公里');
+    await expect(page.locator('.rec-telemetry')).not.toContainText('上一公里');
+
+    // A subsequent point in the SAME kilometre pushes rounded points past 1 km and resolves km 1 pace.
+    await page.evaluate(() => {
+      const rec = (window as unknown as Record<string, { pushPoints: (pts: unknown[], d: number, ms: number) => void }>)
+        .__editorialMockRecorder;
+      const base = Date.now() - 18 * 60_000;
+      rec.pushPoints(
+        [{ lat: 31.2392, lon: 121.47, elevationM: 12, accuracyM: 6, recordedAtMs: base + 307_000, segmentIndex: 0 }],
+        1023,
+        307_000,
+      );
+    });
+    await expect(page.locator('.rec-telemetry')).toContainText('第 2 公里 · 上一公里');
+
+    await page.evaluate(() => {
+      const rec = (window as unknown as Record<string, { pushPoints: (pts: unknown[], d: number, ms: number) => void }>)
+        .__editorialMockRecorder;
+      const base = Date.now() - 18 * 60_000;
+      const pts = Array.from({ length: 16 }, (_, i) => ({
+        lat: 31.24 + i * 0.001,
         lon: 121.47,
         elevationM: 12,
         accuracyM: 6,
-        recordedAtMs: base + i * 36_000,
+        recordedAtMs: base + 335_000 + i * 35_000,
         segmentIndex: 0,
       }));
       rec.pushPoints(pts, 2670, 900_000);
@@ -239,6 +291,7 @@ test('mobile recording flow: pre-run -> single Pause + screen lock -> paused con
     const pauseBtn = page.getByTestId('recording-pause-btn');
     const pauseBox = await pauseBtn.boundingBox();
     expect(pauseBox!.height).toBeGreaterThanOrEqual(64);
+    await expectInInitialViewportAndUnoccluded(page, pauseBtn);
 
     // Screen lock disables Pause until unlocked
     const lockBtn = page.getByTestId('recording-lock-btn');
@@ -252,11 +305,12 @@ test('mobile recording flow: pre-run -> single Pause + screen lock -> paused con
     await expect(lockBtn).toHaveAttribute('aria-pressed', 'false');
     await expect(pauseBtn).toBeEnabled();
 
-    // Paused state -> single tap opens WCAG 2.5.1 confirmation dialog
+    // Paused state -> both Resume and Hold-to-Finish actions must be visible & unobstructed in initial viewport
     await pauseBtn.click();
     await expect(page.getByTestId('recording-status-badge')).toHaveText('已暂停');
-    await expect(page.getByTestId('recording-resume-btn')).toBeVisible();
     await expect(page.getByTestId('recording-discard-btn')).toBeVisible();
+    await expectInInitialViewportAndUnoccluded(page, page.getByTestId('recording-resume-btn'));
+    await expectInInitialViewportAndUnoccluded(page, page.getByTestId('recording-stop-btn'));
     await expectNoOverflow(page);
 
     // Go offline before finishing so Done receipt shows honest pending queue state first
@@ -266,6 +320,27 @@ test('mobile recording flow: pre-run -> single Pause + screen lock -> paused con
     await page.getByTestId('recording-stop-btn').click();
     const finishDialog = page.getByTestId('recording-finish-dialog');
     await expect(finishDialog).toBeVisible();
+    // Confirm dialog must be centered inside viewport (not stuck at top-left)
+    const dialogPos = await finishDialog.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return {
+        x: r.left,
+        y: r.top,
+        bottom: r.bottom,
+        right: r.right,
+        vw: window.innerWidth,
+        vh: window.innerHeight,
+        centerDx: Math.abs(r.left + r.width / 2 - window.innerWidth / 2),
+        centerDy: Math.abs(r.top + r.height / 2 - window.innerHeight / 2),
+      };
+    });
+    expect(dialogPos.x).toBeGreaterThan(0);
+    expect(dialogPos.y).toBeGreaterThan(20);
+    expect(dialogPos.right).toBeLessThanOrEqual(dialogPos.vw);
+    expect(dialogPos.bottom).toBeLessThanOrEqual(dialogPos.vh);
+    expect(dialogPos.centerDx).toBeLessThanOrEqual(16);
+    expect(dialogPos.centerDy).toBeLessThanOrEqual(32);
+
     await page.keyboard.press('Escape');
     await expect(finishDialog).not.toBeVisible();
 
@@ -273,9 +348,11 @@ test('mobile recording flow: pre-run -> single Pause + screen lock -> paused con
     await expect(finishDialog).toBeVisible();
     await page.getByTestId('recording-finish-confirm-btn').click();
 
-    // Screen 4: Done serrated receipt (offline pending -> reconnect -> uploaded authoritative)
+    // Screen 4: Done serrated receipt opens scrolled to top so header and receipt cap are visible
     const doneSheet = page.getByTestId('recording-done-sheet');
     await expect(doneSheet).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+    await expectInInitialViewportAndUnoccluded(page, page.getByRole('heading', { name: '跑步完成', level: 1 }));
     await expect(doneSheet).toContainText('本地预览');
     await expect(doneSheet).toContainText('本机上传队列');
     await expect(page.getByTestId('upload-queue-item').first()).toHaveAttribute('data-status', 'pending');
@@ -338,10 +415,102 @@ test('mobile activity detail and story share dialog stay flat Editorial Receipt 
     expect(activeColors.bg).not.toBe(activeColors.fg);
     await darkBtn.click();
     await expect(darkBtn).toHaveAttribute('aria-pressed', 'true');
-    await expect(dialog.getByRole('button', { name: '保存 PNG' })).toBeEnabled();
+    const savePngBtn = dialog.getByRole('button', { name: '保存 PNG' });
+    await expect(savePngBtn).toBeEnabled();
+    await expectInInitialViewportAndUnoccluded(page, savePngBtn);
 
     await page.keyboard.press('Escape');
     await expect(dialog).not.toBeVisible();
     await expect(trigger).toBeFocused();
   }
+});
+
+test('mobile home current-week punch card stays independent of browsed historical year and handles cross-year and missing-distance days', async ({
+  page,
+}) => {
+  await page.route('**/api/v1/showcase/statistics/streaks', (route) =>
+    route.fulfill({
+      json: {
+        data: {
+          today: '2026-01-03',
+          current_days: 3,
+          longest_days: 7,
+          current_weeks: 2,
+          longest_weeks: 4,
+          week: [
+            { date: '2025-12-29', active: true },
+            { date: '2025-12-30', active: false },
+            { date: '2025-12-31', active: false },
+            { date: '2026-01-01', active: true },
+            { date: '2026-01-02', active: true },
+            { date: '2026-01-03', active: false },
+            { date: '2026-01-04', active: false },
+          ],
+        },
+        error: null,
+      },
+    }),
+  );
+  await page.route('**/api/v1/showcase/statistics/calendar**', (route) => {
+    const url = new URL(route.request().url());
+    const year = Number(url.searchParams.get('year'));
+    const overrides = new Map<
+      string,
+      { activity_count: number; distance_m: number; duration_sum_seconds: number | null; known_duration_count: number; missing_duration_count: number }
+    >(
+      year === 2025
+        ? [['2025-12-29', { activity_count: 1, distance_m: 6000, duration_sum_seconds: 1800, known_duration_count: 1, missing_duration_count: 0 }]]
+        : year === 2026
+          ? [
+              ['2026-01-01', { activity_count: 1, distance_m: 10000, duration_sum_seconds: 3000, known_duration_count: 1, missing_duration_count: 0 }],
+              // 2026-01-02 active in streaks, but distance_m is 0/missing -> must render active dot (0 blocks), not 2 blocks
+              ['2026-01-02', { activity_count: 1, distance_m: 0, duration_sum_seconds: null, known_duration_count: 0, missing_duration_count: 1 }],
+            ]
+          : [],
+    );
+    const days = [];
+    let totalCount = 0;
+    let totalDistance = 0;
+    for (let d = new Date(`${year}-01-01T00:00:00Z`); d.getUTCFullYear() === year; d = new Date(d.getTime() + 86400000)) {
+      const iso = d.toISOString().slice(0, 10);
+      const ov = overrides.get(iso);
+      const row = ov
+        ? { date: iso, ...ov }
+        : { date: iso, activity_count: 0, distance_m: 0, duration_sum_seconds: null, known_duration_count: 0, missing_duration_count: 0 };
+      totalCount += row.activity_count;
+      totalDistance += row.distance_m;
+      days.push(row);
+    }
+    return route.fulfill({
+      json: {
+        data: { year, metric: url.searchParams.get('metric') ?? 'distance', days, activity_count: totalCount, distance_m: totalDistance, date_assignment: 'activity_local_date' },
+        error: null,
+      },
+    });
+  });
+
+  await loginRunner(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setTheme(page, 'light');
+  await page.goto('/');
+
+  const dec29 = page.locator('.week-strip li[data-date="2025-12-29"]');
+  const jan01 = page.locator('.week-strip li[data-date="2026-01-01"]');
+  const jan02 = page.locator('.week-strip li[data-date="2026-01-02"]');
+  await expect(dec29).toHaveAttribute('data-punch-state', 'measured');
+  await expect(dec29).toHaveAttribute('data-blocks', '3');
+  await expect(jan01).toHaveAttribute('data-punch-state', 'measured');
+  await expect(jan01).toHaveAttribute('data-blocks', '5');
+  await expect(jan02).toHaveAttribute('data-punch-state', 'active');
+  await expect(jan02).toHaveAttribute('data-blocks', '0');
+
+  // Switch browsed year to 2024: current-week punch card must remain intact and never degrade to 2 blocks
+  await page.getByLabel('年份', { exact: true }).fill('2024');
+  await expect(page.getByTestId('annual-distance')).toBeVisible();
+  await expect(dec29).toHaveAttribute('data-punch-state', 'measured');
+  await expect(dec29).toHaveAttribute('data-blocks', '3');
+  await expect(jan01).toHaveAttribute('data-punch-state', 'measured');
+  await expect(jan01).toHaveAttribute('data-blocks', '5');
+  await expect(jan02).toHaveAttribute('data-punch-state', 'active');
+  await expect(jan02).toHaveAttribute('data-blocks', '0');
 });

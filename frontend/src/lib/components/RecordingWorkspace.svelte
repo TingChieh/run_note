@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getContext, onMount } from 'svelte';
+  import { getContext, onMount, tick } from 'svelte';
   import { beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
   import { readSession } from '#lib/api/auth.ts';
@@ -193,7 +193,8 @@
   let unsubscribeNative: (() => void) | null = null;
   let nativeLivePointsSessionId = '';
   let nativeLivePointsFetchedKm = 0;
-  let nativeLivePointsInFlightKm = 0;
+  let nativeLivePointsLastTriedPointCount = 0;
+  let nativeLivePointsInFlight = false;
   let nativeLivePointsRequestToken = 0;
 
   const displayedDurationMs = $derived.by(() => {
@@ -383,6 +384,9 @@
     lastFinishedRun = null;
     statusNotice = '';
     errorMessage = '';
+    void tick().then(() => {
+      if (!disposed) window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    });
   }
 
   function scrollToUploadQueue() {
@@ -441,24 +445,30 @@
     lastAccuracyM = s.lastAccuracyM;
     interruptedReason = s.interruptedReason;
     if (s.status === 'recording' || s.status === 'paused') {
-      syncNativeLiveSplitPoints(s.sessionId, s.previewDistanceM);
+      syncNativeLiveSplitPoints(s.sessionId, s.previewDistanceM, s.pointCount);
     }
   }
 
-  function syncNativeLiveSplitPoints(targetSessionId: string, distanceM: number) {
+  function syncNativeLiveSplitPoints(targetSessionId: string, distanceM: number, currentPointCount: number) {
     if (!capabilities.native || !accountId || stoppingInFlight || handoffBusy || pageClaimRevoked) return;
     if (nativeLivePointsSessionId !== targetSessionId) {
       nativeLivePointsSessionId = targetSessionId;
       nativeLivePointsFetchedKm = 0;
-      nativeLivePointsInFlightKm = 0;
+      nativeLivePointsLastTriedPointCount = 0;
+      nativeLivePointsInFlight = false;
       nativeLivePoints = [];
       nativeLivePointsRequestToken++;
     }
     const completedFullKms = Math.floor(distanceM / 1000);
-    if (completedFullKms <= Math.max(nativeLivePointsFetchedKm, nativeLivePointsInFlightKm)) return;
+    // Re-fetch whenever a new full km is crossed OR a previous fetch for this km returned rounded
+    // native points that still fell shy of the exact km boundary and new points have since arrived.
+    if (completedFullKms <= nativeLivePointsFetchedKm) return;
+    if (nativeLivePointsInFlight) return;
+    if (currentPointCount <= nativeLivePointsLastTriedPointCount) return;
+
     const expectedAccountId = accountId;
     const token = ++nativeLivePointsRequestToken;
-    nativeLivePointsInFlightKm = completedFullKms;
+    nativeLivePointsInFlight = true;
     void getNativeRecorderPoints(0, expectedAccountId)
       .then((pts) => {
         if (
@@ -472,14 +482,28 @@
           return;
         }
         nativeLivePoints = pts;
-        nativeLivePointsFetchedKm = completedFullKms;
+        nativeLivePointsLastTriedPointCount = Math.max(nativeLivePointsLastTriedPointCount, currentPointCount, pts.length);
+        const computedSplits = extractRecordedSplits(pts);
+        const resolvedFullKms = computedSplits.filter((row) => row.distanceM === 1000).length;
+        if (resolvedFullKms >= completedFullKms) {
+          nativeLivePointsFetchedKm = resolvedFullKms;
+        }
       })
       .catch(() => {
         // Live split hint is best-effort; authoritative track points are read on stop/handoff.
       })
       .finally(() => {
         if (token === nativeLivePointsRequestToken) {
-          nativeLivePointsInFlightKm = 0;
+          nativeLivePointsInFlight = false;
+          if (
+            !disposed &&
+            sessionId === targetSessionId &&
+            (status === 'recording' || status === 'paused') &&
+            Math.floor(previewDistanceM / 1000) > nativeLivePointsFetchedKm &&
+            pointCount > nativeLivePointsLastTriedPointCount
+          ) {
+            syncNativeLiveSplitPoints(sessionId, previewDistanceM, pointCount);
+          }
         }
       });
   }
@@ -580,7 +604,8 @@
     nativeLivePoints = [];
     nativeLivePointsSessionId = '';
     nativeLivePointsFetchedKm = 0;
-    nativeLivePointsInFlightKm = 0;
+    nativeLivePointsLastTriedPointCount = 0;
+    nativeLivePointsInFlight = false;
     nativeLivePointsRequestToken++;
     webLastFixMs = null;
   }
@@ -1953,6 +1978,9 @@
         segmentCount: finalSegmentCount,
         splits: finalSplits,
       };
+      void tick().then(() => {
+        if (!disposed) window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+      });
       await refreshUploadQueue();
       if (offline) {
         statusNotice = '轨迹已安全保存到本地上传队列，恢复网络后将自动上传一次。';
@@ -3626,7 +3654,7 @@
   }
   .done-split-row {
     display: grid;
-    grid-template-columns: 2rem minmax(0, 1fr) auto;
+    grid-template-columns: 2.5rem minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--space-2);
   }
@@ -3755,11 +3783,14 @@
   .recording-dialog {
     max-width: min(26rem, calc(100vw - 2rem));
     width: 100%;
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 2rem);
+    margin: auto;
     padding: var(--space-5);
     border: 1px solid var(--border);
     border-radius: var(--radius-header);
     background: var(--surface);
     color: var(--foreground);
+    overflow-y: auto;
   }
   .recording-dialog::backdrop {
     background: var(--surface-backdrop);
@@ -3774,6 +3805,18 @@
   }
 
   @media (max-width: 799px) {
+    .rec-screen {
+      min-height: calc(100dvh - max(var(--space-2), var(--safe-top)) - var(--space-2));
+    }
+    .rec-bottom {
+      position: sticky;
+      bottom: 0;
+      z-index: 3;
+      background: var(--rec-bg);
+    }
+    .rec-screen:has(input:focus) .rec-bottom {
+      position: static;
+    }
     .prerun-controls {
       position: sticky;
       bottom: calc(var(--space-2) + var(--bottom-chrome));
@@ -3785,6 +3828,44 @@
     }
     .prerun-panel:has(input:focus) .prerun-controls {
       position: static;
+    }
+  }
+  @media (max-height: 700px) {
+    .rec-screen {
+      gap: var(--space-3);
+    }
+    .rec-top {
+      min-height: 2.75rem;
+    }
+    .rec-main {
+      gap: var(--space-3);
+    }
+    .rec-hero-num {
+      font-size: var(--text-rec-hero-narrow);
+    }
+    .rec-pair {
+      padding-block: var(--space-2);
+    }
+    .rec-notices {
+      gap: var(--space-2);
+    }
+    .rec-notices .status-strip {
+      padding: var(--space-2) var(--space-3);
+      font-size: var(--text-caption);
+      line-height: var(--line-height-heading);
+    }
+    .rec-paused-title {
+      gap: var(--space-1);
+    }
+    .rec-paused-title .text-field {
+      min-height: 2.75rem;
+    }
+    .rec-bottom {
+      gap: var(--space-2);
+    }
+    .rec-resume-btn,
+    .rec-hold-stop-btn {
+      min-height: 3rem;
     }
   }
   @media (max-width: 359px) {

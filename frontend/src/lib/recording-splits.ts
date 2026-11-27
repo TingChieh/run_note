@@ -10,23 +10,32 @@ export interface LiveSplitSummary {
   lastFullKmPaceSecondsPerKm: number | null;
 }
 
+interface DistanceStep {
+  startDist: number;
+  endDist: number;
+  startTime: number;
+  endTime: number;
+}
+
 interface DistanceTimeSeries {
-  distances: number[];
-  movingS: number[];
+  steps: DistanceStep[];
   totalDistanceM: number;
+  totalMovingS: number;
 }
 
 /**
- * Builds cumulative distance and moving-time arrays from recorded track points, keeping pause
- * boundaries (`segmentIndex` changes) strictly non-bridged in both distance and moving time.
+ * Builds monotonic distance steps from recorded track points:
+ * - Pause boundaries (`segmentIndex` changes) add neither distance nor time.
+ * - Stationary points within the same segment advance `cumMovingS` before the next moving step,
+ *   so stationary dwell time stays at the distance where it occurred rather than being smeared
+ *   across the subsequent moving segment.
  */
 function buildRecordedSeries(points: RecordedTrackPoint[]): DistanceTimeSeries {
-  if (points.length < 2) return { distances: [], movingS: [], totalDistanceM: 0 };
+  if (points.length < 2) return { steps: [], totalDistanceM: 0, totalMovingS: 0 };
   const ordered = [...points].sort((a, b) =>
     a.segmentIndex !== b.segmentIndex ? a.segmentIndex - b.segmentIndex : a.recordedAtMs - b.recordedAtMs,
   );
-  const distances: number[] = [0];
-  const movingS: number[] = [0];
+  const steps: DistanceStep[] = [];
   let cumDist = 0;
   let cumMovingS = 0;
 
@@ -37,30 +46,49 @@ function buildRecordedSeries(points: RecordedTrackPoint[]): DistanceTimeSeries {
     const deltaDist = haversineMeters(prev.lat, prev.lon, curr.lat, curr.lon);
     const deltaS = Math.max(0, (curr.recordedAtMs - prev.recordedAtMs) / 1000);
     if (deltaDist <= 0 && deltaS <= 0) continue;
+    const prevDist = cumDist;
+    const prevMovingS = cumMovingS;
     cumDist += deltaDist;
     cumMovingS += deltaS;
-    if (cumDist > distances[distances.length - 1]) {
-      distances.push(cumDist);
-      movingS.push(cumMovingS);
+    if (deltaDist > 0) {
+      steps.push({
+        startDist: prevDist,
+        endDist: cumDist,
+        startTime: prevMovingS,
+        endTime: cumMovingS,
+      });
     }
   }
-  return { distances, movingS, totalDistanceM: cumDist };
+  return { steps, totalDistanceM: cumDist, totalMovingS: cumMovingS };
 }
 
 function interpolateMovingTime(series: DistanceTimeSeries, targetM: number): number {
-  const { distances, movingS, totalDistanceM } = series;
-  if (targetM <= distances[0]) return movingS[0];
-  if (targetM >= totalDistanceM) return movingS[movingS.length - 1];
+  const { steps, totalDistanceM, totalMovingS } = series;
+  if (steps.length === 0 || targetM <= 0) return 0;
+  if (targetM >= totalDistanceM) return totalMovingS;
   let low = 0;
-  let high = distances.length - 1;
-  while (low + 1 < high) {
+  let high = steps.length - 1;
+  // Find the first step whose `endDist >= targetM` so exact boundary crossings report arrival time.
+  while (low < high) {
     const mid = (low + high) >> 1;
-    if (distances[mid] <= targetM) low = mid;
+    if (steps[mid].endDist < targetM) low = mid + 1;
     else high = mid;
   }
-  const span = distances[high] - distances[low];
-  const ratio = span > 0 ? (targetM - distances[low]) / span : 0;
-  return movingS[low] + (movingS[high] - movingS[low]) * ratio;
+  const step = steps[low];
+  if (targetM <= step.startDist) return step.startTime;
+  const span = step.endDist - step.startDist;
+  const ratio = span > 0 ? (targetM - step.startDist) / span : 0;
+  return step.startTime + (step.endTime - step.startTime) * ratio;
+}
+
+/**
+ * Formats a partial final split distance (`100 m <= remainder < 1000 m`) so it never rounds up
+ * to look like a completed full kilometre index (`950–999 m` renders as `0.95`–`0.99`).
+ */
+export function formatPartialSplitLabel(remainderM: number): string {
+  const roundedTenths = Math.round(remainderM / 100) / 10;
+  if (roundedTenths < 1) return roundedTenths.toFixed(1);
+  return Math.min(0.99, Math.floor(remainderM / 10) / 100).toFixed(2);
 }
 
 /**
@@ -69,7 +97,7 @@ function interpolateMovingTime(series: DistanceTimeSeries, targetM: number): num
  */
 export function extractRecordedSplits(points: RecordedTrackPoint[]): KmSplit[] {
   const series = buildRecordedSeries(points);
-  if (series.distances.length < 2 || series.totalDistanceM < 100) return [];
+  if (series.steps.length === 0 || series.totalDistanceM < 100) return [];
 
   const fullKms = Math.floor(series.totalDistanceM / 1000);
   const remainder = series.totalDistanceM - fullKms * 1000;
@@ -78,11 +106,10 @@ export function extractRecordedSplits(points: RecordedTrackPoint[]): KmSplit[] {
     boundaries.push({ distanceM: 1000, cumulativeM: km * 1000, label: String(km) });
   }
   if (remainder >= 100) {
-    const partialKm = Math.round(remainder / 100) / 10;
     boundaries.push({
       distanceM: remainder,
       cumulativeM: series.totalDistanceM,
-      label: partialKm >= 1 ? String(fullKms + 1) : partialKm.toFixed(1),
+      label: formatPartialSplitLabel(remainder),
     });
   }
   if (!boundaries.length) return [];

@@ -36,9 +36,9 @@
 | --- | --- |
 | `pnpm check`（`svelte-kit sync && svelte-check`） | 0 errors / 0 warnings |
 | `pnpm lint:style`（Stylelint） | 通过（0 errors） |
-| `pnpm test`（Vitest，含 `recording-splits.test.ts` 与 `architecture.test.ts`） | 81 files / 533 tests passed |
+| `pnpm test`（Vitest，含 `recording-splits.test.ts`、`week-punch.test.ts` 与 `architecture.test.ts`） | 82 files / 540 tests passed |
 | `pnpm build`（adapter-node） | 成功（仅既有大体积 chunk 提示） |
-| `playwright test --config playwright.ui.config.ts mobile-editorial-receipt.spec.ts` | 3 passed / 0 failed（6 屏 390/320 明暗、原生实时上一公里配速、锁屏防误触、暂停确认弹窗、离线→重连完成小票、0 溢出） |
+| `playwright test --config playwright.ui.config.ts mobile-editorial-receipt.spec.ts` | 4 passed / 0 failed（6 屏 390/320 明暗、原生 7 位小数舍入补齐上一公里配速、暂停双操作与 `StoryShareDialog`「保存 PNG」首屏可见无遮挡、结束确认弹窗居中、保存后小票归顶、跨年/历史年份切换与缺距活跃态周打卡、0 溢出） |
 | `playwright test --config playwright.ui.config.ts companion-phase3.spec.ts` | 42 passed / 0 failed（含权限、离线幂等、崩溃恢复、跨标签页并发与账号隔离） |
 | `playwright test --config playwright.activity-poster.config.ts` | 11 passed / 0 failed（含 390×800 / 844×390 / 1024×700 / 1280×720 / 1440×800 明暗几何拟合） |
 | `playwright test --config playwright.ui.config.ts` 其余受影响套件（`annual-story`、`dashboard`、`liquid-glass`、`milestones`、`mobile-tabbar`、`recap`、`settings-hub`、`sport-detail`、`top-navigation`、`ui-shell`） | 187 passed / 1 skipped / 0 failed（`settings-hub` 1 项按环境变量门控的截图采集用例跳过；连同上表共 243 项 UI 测试通过、0 失败） |
