@@ -208,12 +208,15 @@
           : '文件结束时间晚于当前时刻，默认按当地时间解释。如时间本来就带正确偏移，请改选“遵守文件时区”。';
     });
   }
+  function clearPageDrag() {
+    pageDragging = false;
+    dragDepth = 0;
+  }
   function dropFile(event: DragEvent) {
     event.preventDefault();
     event.stopPropagation();
     dragging = false;
-    pageDragging = false;
-    dragDepth = 0;
+    clearPageDrag();
     const files = event.dataTransfer?.files;
     if (controlsBusy || !mounted || !files?.length) return;
     fileInput.files = files;
@@ -239,8 +242,7 @@
   function pageDrop(event: DragEvent) {
     if (!view.manage || controlsBusy || !mounted || !hasDraggedFiles(event)) return;
     event.preventDefault();
-    pageDragging = false;
-    dragDepth = 0;
+    clearPageDrag();
     const files = event.dataTransfer?.files;
     if (!files?.length) return;
     importOpen = true;
@@ -513,6 +515,7 @@
   ondragenter={pageDragEnter}
   ondragover={pageDragOver}
   ondragleave={pageDragLeave}
+  ondragend={clearPageDrag}
   ondrop={pageDrop}
 >
   <PageHeader title="跑步记录" meta={headerMeta}>
@@ -766,6 +769,7 @@
         </section>
         <MifitnessImport
           disabled={busy || managing}
+          ondrophandled={clearPageDrag}
           onbusy={(value) => {
             mifitnessBusy = value;
           }}
@@ -921,6 +925,19 @@
 {/if}
 
 <style>
+  .activities-page :global(.page-actions) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    flex-shrink: 1;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .activities-page :global(.file-pick:not([data-dragging='true']):not([data-filled='true']):not(:hover)) {
+    border-color: var(--control-border);
+    background: var(--surface);
+  }
   .records-section {
     margin-top: var(--space-4);
     min-width: 0;

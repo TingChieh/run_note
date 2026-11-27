@@ -15,6 +15,7 @@
   const achievement = $derived(activityAchievement(activity.distance_m));
   const incomplete = $derived(activity.temporal_quality !== 'complete');
   const ledger = $derived(appearance === 'ledger');
+  const editing = $derived(selectable || !!onedit || !!ondelete);
   const splitFigure = (value: string) => {
     const match = /^(.*\d)\s+(\S+)$/.exec(value);
     return match ? { number: match[1], unit: match[2] } : { number: value, unit: '' };
@@ -24,30 +25,33 @@
   const pace = $derived(splitFigure(formatPace(activity.avg_pace_seconds_per_km)));
   const startClock = $derived(activity.started_at ? formatStartTime(activity.started_at, activity.timezone).slice(0, 5) : '');
 </script>
-<article class="activity-card" class:ledger class:selected class:current>
+<article class="activity-card" class:ledger class:editing class:selected class:current>
   {#if selectable}<label class="card-selection"><input type="checkbox" aria-label={`选择 ${activity.title}`} checked={selected} {disabled} onchange={event => onselect?.(event.currentTarget.checked)} /></label>{/if}
   <a href={href ?? view.href(`/activities/${activity.id}`)} class="card-link" data-activity-id={activity.id} aria-current={current ? 'true' : undefined} onclick={onopen}>
-    <RouteThumbnail {activity} initialRoute={route} managedRoute={route !== undefined} color={runner?.color} compact />
     {#if ledger}
-      <div class="card-main">
-        <h3>{activity.title || '未命名活动'}</h3>
-        {#if runner}<p class="card-runner" style:color={runner.color}><span class="runner-icon">{#if runner.avatar}<img src={runner.avatar} alt="" />{:else}{Array.from(runner.name)[0]}{/if}</span>{runner.name}{#if runner.city} · {runner.city}{/if}</p>{/if}
-        {#if startClock && startClock !== '—' || achievement || activity.category || activity.tags?.length || incomplete}
-          <p class="card-meta">
-            {#if startClock && startClock !== '—'}<span class="meta-time">{startClock} 开始</span>{/if}
-            {#if achievement}<span class="meta-accent">{achievement}</span>{/if}
-            {#if activity.category}<span class="meta-accent">{activity.category}</span>{/if}
-            {#each activity.tags ?? [] as tag}<span class="meta-item">#{tag}</span>{/each}
-            {#if incomplete}<span class="meta-warn">{qualityLabel(activity.temporal_quality)}</span>{/if}
-          </p>
-        {/if}
-      </div>
-      <div class="card-figures-row">
-        <span class="col-fig col-dist"><span class="sr-only">距离 </span><b>{distance.number}</b>{#if distance.unit}{' '}<span class="figure-unit">{distance.unit}</span>{/if}{#if distance.number === '—'}<span class="sr-only">（缺失）</span>{/if}</span>
-        <span class="col-fig col-dur"><span class="sr-only"> 用时 </span><span class:muted={durationText === '—'}>{durationText}</span>{#if durationText === '—'}<span class="sr-only">（缺失）</span>{/if}</span>
-        <span class="col-fig col-pace"><span class="sr-only"> 配速 </span><span class:muted={pace.number === '—'}>{pace.number}</span>{#if pace.unit}{' '}<span class="figure-unit">{pace.unit}</span>{/if}{#if pace.number === '—'}<span class="sr-only">（缺失）</span>{/if}</span>
+      <div class="card-link-inner">
+        <RouteThumbnail {activity} initialRoute={route} managedRoute={route !== undefined} color={runner?.color} compact />
+        <div class="card-main">
+          <h3>{activity.title || '未命名活动'}</h3>
+          {#if runner}<p class="card-runner" style:color={runner.color}><span class="runner-icon">{#if runner.avatar}<img src={runner.avatar} alt="" />{:else}{Array.from(runner.name)[0]}{/if}</span>{runner.name}{#if runner.city} · {runner.city}{/if}</p>{/if}
+          {#if startClock && startClock !== '—' || achievement || activity.category || activity.tags?.length || incomplete}
+            <p class="card-meta">
+              {#if startClock && startClock !== '—'}<span class="meta-time">{startClock} 开始</span>{/if}
+              {#if achievement}<span class="meta-accent">{achievement}</span>{/if}
+              {#if activity.category}<span class="meta-accent">{activity.category}</span>{/if}
+              {#each activity.tags ?? [] as tag}<span class="meta-item">#{tag}</span>{/each}
+              {#if incomplete}<span class="meta-warn">{qualityLabel(activity.temporal_quality)}</span>{/if}
+            </p>
+          {/if}
+        </div>
+        <div class="card-figures-row">
+          <span class="col-fig col-dist"><span class="sr-only">距离 </span><b>{distance.number}</b>{#if distance.unit}{' '}<span class="figure-unit">{distance.unit}</span>{/if}{#if distance.number === '—'}<span class="sr-only">（缺失）</span>{/if}</span>
+          <span class="col-fig col-dur"><span class="sr-only"> 用时 </span><span class:muted={durationText === '—'}>{durationText}</span>{#if durationText === '—'}<span class="sr-only">（缺失）</span>{/if}</span>
+          <span class="col-fig col-pace"><span class="sr-only"> 配速 </span><span class:muted={pace.number === '—'}>{pace.number}</span>{#if pace.unit}{' '}<span class="figure-unit">{pace.unit}</span>{/if}{#if pace.number === '—'}<span class="sr-only">（缺失）</span>{/if}</span>
+        </div>
       </div>
     {:else}
+      <RouteThumbnail {activity} initialRoute={route} managedRoute={route !== undefined} color={runner?.color} compact />
       <div class="card-main">
         <h3>{activity.title || '未命名活动'}</h3>
         {#if runner}<p class="card-runner" style:color={runner.color}><span class="runner-icon">{#if runner.avatar}<img src={runner.avatar} alt="" />{:else}{Array.from(runner.name)[0]}{/if}</span>{runner.name}{#if runner.city} · {runner.city}{/if}</p>{/if}
@@ -98,15 +102,19 @@
   .card-actions button:disabled { opacity: .5; cursor: not-allowed; }
   @media (max-width: 639px) { .card-link { gap: var(--space-2); padding: var(--space-2) var(--space-2); } .card-link :global(.route-thumbnail) { width: 3.25rem; height: 2.5rem; } }
 
-  /* Editorial Receipt ledger row (brand.md §4, §6.7). */
+  /* Editorial Receipt ledger row (brand.md §4, §6.7).
+     Measure .card-link's remaining width (after checkbox/edit actions) so 1024px and 320px edit mode never squish title/metrics to zero width. */
   .activity-card.ledger {
-    container-type: inline-size;
+    container: card / inline-size;
     background: transparent;
     border: 0;
     border-radius: 0;
     box-shadow: none;
     padding-right: 0;
     transition: none;
+  }
+  .activity-card.ledger.editing {
+    flex-wrap: wrap;
   }
   .activity-card.ledger:hover,
   .activity-card.ledger.selected,
@@ -120,6 +128,13 @@
     padding-left: 0;
   }
   .activity-card.ledger .card-link {
+    display: block;
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0;
+    container: link / inline-size;
+  }
+  .card-link-inner {
     display: grid;
     grid-template-columns: 3.5rem minmax(0, 1fr) 5.5rem 4.25rem 5.5rem;
     align-items: center;
@@ -127,8 +142,9 @@
     min-height: 3.75rem;
     padding: var(--space-2) var(--space-2) var(--space-2) 0;
   }
-  .activity-card.ledger .card-link :global(.route-thumbnail) {
+  .card-link-inner :global(.route-thumbnail) {
     width: 3.5rem;
+    max-width: 100%;
     height: 2.5rem;
     border-radius: var(--radius-sheet);
     background: var(--recap-well);
@@ -218,24 +234,34 @@
       color: var(--error);
     }
   }
-  @container (max-width: 31rem) {
-    .activity-card.ledger .card-link {
+  @container card (max-width: 26rem) {
+    .activity-card.ledger.editing .card-selection {
+      min-width: 2.25rem;
+    }
+    .activity-card.ledger.editing .card-actions {
+      flex: 0 0 100%;
+      justify-content: flex-end;
+      padding: 0 var(--space-1) var(--space-2) 2.25rem;
+    }
+  }
+  @container link (max-width: 31rem) {
+    .card-link-inner {
       grid-template-columns: 3rem minmax(0, 1fr);
       grid-template-rows: auto auto;
       align-items: center;
       gap: .25rem var(--space-2);
       padding: var(--space-2) var(--space-1) var(--space-2) 0;
     }
-    .activity-card.ledger .card-link :global(.route-thumbnail) {
+    .card-link-inner :global(.route-thumbnail) {
       grid-row: 1 / span 2;
       width: 3rem;
       height: 2.25rem;
     }
-    .activity-card.ledger .card-main {
+    .card-link-inner .card-main {
       grid-column: 2;
       grid-row: 1;
     }
-    .activity-card.ledger .card-figures-row {
+    .card-link-inner .card-figures-row {
       display: flex;
       flex-wrap: wrap;
       align-items: baseline;
@@ -243,17 +269,26 @@
       grid-column: 2;
       grid-row: 2;
     }
-    .activity-card.ledger .col-fig {
+    .card-link-inner .col-fig {
       text-align: left;
     }
-    .activity-card.ledger .col-dist b {
+    .card-link-inner .col-dist b {
       font-size: var(--text-body);
     }
-    .activity-card.ledger .col-dur,
-    .activity-card.ledger .col-pace {
+    .card-link-inner .col-dur,
+    .card-link-inner .col-pace {
       font-size: var(--text-small);
       color: var(--muted-foreground);
       font-weight: var(--weight-medium);
+    }
+  }
+  @container link (max-width: 14rem) {
+    .card-link-inner {
+      grid-template-columns: 2.5rem minmax(0, 1fr);
+    }
+    .card-link-inner :global(.route-thumbnail) {
+      width: 2.5rem;
+      height: 2rem;
     }
   }
 </style>

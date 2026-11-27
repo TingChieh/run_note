@@ -7,13 +7,13 @@
   import {ActivityError,formatDate,formatDistance,formatDuration,formatStartTime} from '#lib/api/activities.ts';
   import {matchTrackFiles,readPreparedFile,previewMifitness,saveMifitness,mifitnessWarningLabel,type PreparedRecord,type MifitnessPreview} from '#lib/api/mifitness.ts';
   import DeviceMetrics from './DeviceMetrics.svelte';
-  let {disabled=false,onimported,onauthrequired,onbusy}: {disabled?:boolean;onimported?:()=>void;onauthrequired?:(cause:ActivityError)=>void;onbusy?:(busy:boolean)=>void}=$props();
+  let {disabled=false,onimported,onauthrequired,onbusy,ondrophandled}: {disabled?:boolean;onimported?:()=>void;onauthrequired?:(cause:ActivityError)=>void;onbusy?:(busy:boolean)=>void;ondrophandled?:()=>void}=$props();
   type Entry = {item:PreparedRecord;preview?:MifitnessPreview;status:'pending'|'ready'|'success'|'duplicate'|'failed'|'similar';message:string;existingId?:string;retrySave?:boolean;confirmed?:boolean;enrich?:boolean};
   let entries=$state<Entry[]>([]),timezone=$state(''),message=$state(''),cancelNotice=$state(''),busy=$state(false),mounted=$state(false);
   let summaryInput:HTMLInputElement,tracksInput:HTMLInputElement,disposed=false,requestToken=0;
   let summaryName=$state(''),trackNames=$state<string[]>([]),dragging=$state<''|'summary'|'tracks'>('');
   function picked(){cancelNotice='';summaryName=summaryInput?.files?.[0]?.name??'';trackNames=Array.from(tracksInput?.files??[],file=>file.name);reset();}
-  function drop(event:DragEvent,input:HTMLInputElement,kind:'summary'|'tracks'){event.preventDefault();event.stopPropagation();dragging='';const files=event.dataTransfer?.files;if(busy||disabled||!mounted||!files?.length)return;input.files=kind==='summary'?(()=>{const t=new DataTransfer();t.items.add(files[0]);return t.files;})():files;picked();}
+  function drop(event:DragEvent,input:HTMLInputElement,kind:'summary'|'tracks'){event.preventDefault();event.stopPropagation();dragging='';ondrophandled?.();const files=event.dataTransfer?.files;if(busy||disabled||!mounted||!files?.length)return;input.files=kind==='summary'?(()=>{const t=new DataTransfer();t.items.add(files[0]);return t.files;})():files;picked();}
   const tracksLabel=$derived(trackNames.length>1?`${trackNames.length} 个 GPX 文件`:trackNames[0]??'');
   const ready=$derived(entries.some(entry=>entry.status==='ready'));
   const failed=$derived(entries.some(entry=>entry.status==='failed'));
