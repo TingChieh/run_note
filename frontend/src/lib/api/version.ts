@@ -16,7 +16,7 @@ const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
 const matches = (pattern: RegExp, value: unknown): value is string => typeof value === 'string' && pattern.test(value);
 // Same shapes as backend/app/modules/version/service.py; the backend never sends anything else.
-const SEMVER = /^\d+\.\d+\.\d+$/,
+const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(alpha|beta|rc)\.([1-9]\d*))?$/,
   RELEASE_ID = /^\d{14}-[0-9a-f]{12}(-dirty)?$/,
   GIT_SHA = /^[0-9a-f]{12}(-dirty)?$/,
   BUILT_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;

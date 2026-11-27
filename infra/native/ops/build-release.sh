@@ -54,8 +54,13 @@ rm -rf "$root/infra/native/tests"
 # macOS metadata must never ship: AppleDouble companions (`._*`) are mostly NUL bytes and Alembic
 # would try to import `._0001_x.py`; the find above removes them (and .DS_Store) from the staged tree.
 
+if [ ! -f "$repo/VERSION" ]; then die "missing root VERSION file"; fi
+app_version="$(tr -d '[:space:]' < "$repo/VERSION")"
+if [ -z "$app_version" ]; then die "root VERSION file is empty"; fi
+
 cat > "$root/RELEASE" <<META
 id=$id
+version=$app_version
 git_sha=$sha
 built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 node=$(node --version)

@@ -15,7 +15,7 @@ from app.modules.version.schema import VersionBuild, VersionInfo
 BACKEND = Path(__file__).resolve().parents[3]
 RELEASE_FILE = BACKEND.parent / "RELEASE"
 
-VERSION = re.compile(r"\d+\.\d+\.\d+")
+VERSION = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(alpha|beta|rc)\.([1-9]\d*))?")
 RELEASE_ID = re.compile(r"\d{14}-[0-9a-f]{12}(-dirty)?")
 GIT_SHA = re.compile(r"[0-9a-f]{12}(-dirty)?")
 BUILT_AT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
@@ -24,7 +24,9 @@ BUILT_AT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 def app_version(pyproject: Path = BACKEND / "pyproject.toml") -> str:
     version = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["version"]
     if not VERSION.fullmatch(version):
-        raise RuntimeError(f"{pyproject}: version {version!r} is not MAJOR.MINOR.PATCH")
+        raise RuntimeError(
+            f"{pyproject}: version {version!r} is not MAJOR.MINOR.PATCH[-(alpha|beta|rc).N]"
+        )
     return version
 
 

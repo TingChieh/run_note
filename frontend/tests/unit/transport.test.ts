@@ -199,6 +199,20 @@ describe('mobile transport abstraction', () => {
     expect(compareSemver('2.6.0', '2.6.0')).toBe(0);
     expect(compareSemver('2.5.9', '2.6.0')).toBe(-1);
     expect(compareSemver('2.7.0', '2.6.0')).toBe(1);
+    expect(compareSemver('2.7.0-alpha.1', '2.7.0-alpha.2')).toBe(-1);
+    expect(compareSemver('2.7.0-alpha.2', '2.7.0-beta.1')).toBe(-1);
+    expect(compareSemver('2.7.0-beta.1', '2.7.0-rc.1')).toBe(-1);
+    expect(compareSemver('2.7.0-rc.1', '2.7.0')).toBe(-1);
+    expect(compareSemver('2.7.0-rc.1', '2.6.0')).toBe(1);
+    expect(compareSemver('2.6.0-rc.1', '2.6.0')).toBe(-1);
+    expect(
+      parseClientCapabilities({
+        server_version: '2.7.0-rc.1',
+        mobile_api_version: 1,
+        min_mobile_app_version: '2.6.0',
+        features: ['mobile_auth_v1'],
+      }).server_version,
+    ).toBe('2.7.0-rc.1');
 
     expect(() => parseClientCapabilities({ server_version: 'bad', mobile_api_version: 1 })).toThrow(TransportError);
     expect(() =>

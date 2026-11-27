@@ -9,6 +9,8 @@ describe('version contract', () => {
     expect(parseVersion({ version: '1.0.0', build, extra: 'drop' })).toEqual({ version: '1.0.0', build });
     expect(parseVersion({ version: '1.0.0', build: { ...build, extra: 'drop' } })).toEqual({ version: '1.0.0', build });
     expect(parseVersion({ version: '1.0.0', build: null })).toEqual({ version: '1.0.0', build: null });
+    expect(parseVersion({ version: '2.7.0-rc.1', build: null })).toEqual({ version: '2.7.0-rc.1', build: null });
+    expect(parseVersion({ version: '2.7.0-alpha.2', build })).toEqual({ version: '2.7.0-alpha.2', build });
     expect(parseVersion({ version: '1.0.0', build: { ...build, git_sha: '2d1d6c553e57-dirty' } }).build?.git_sha).toBe(
       '2d1d6c553e57-dirty',
     );
@@ -21,6 +23,9 @@ describe('version contract', () => {
       { version: 1, build: null },
       { version: '1.0', build: null },
       { version: 'v1.0.0', build: null },
+      { version: '01.0.0', build: null },
+      { version: '2.7.0-alpha.0', build: null },
+      { version: '2.7.0-dev.1', build: null },
       { version: '1.0.0' },
       { version: '1.0.0', build: 'x' },
       { version: '1.0.0', build: [] },

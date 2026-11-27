@@ -1,0 +1,473 @@
+name: Release
+
+on:
+  # Formal releases are triggered ONLY by maintainer-created SemVer tags (vMAJOR.MINOR.PATCH or
+  # vMAJOR.MINOR.PATCH-(alpha|beta|rc).N). Normal branch pushes and PR merges never trigger this
+  # workflow or create formal releases.
+  push:
+    tags:
+      - 'v*'
+  # Optional dry-run entry point for maintainers to exercise validation and build gates before
+  # pushing a tag. `publish-release` is strictly gated on refs/tags/v* and NEVER runs on dispatch.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Dry-run target tag to validate (e.g. v2.7.0); never publishes a GitHub Release'
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+# Third-party actions are pinned to commit SHAs matching .github/workflows/ci.yml.
+jobs:
+  validate:
+    name: validate (SemVer, manifests, changelog, immutability)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.check.outputs.tag }}
+      version: ${{ steps.check.outputs.version }}
+      version_code: ${{ steps.check.outputs.version_code }}
+      prerelease: ${{ steps.check.outputs.prerelease }}
+      release_date: ${{ steps.check.outputs.release_date }}
+      apk_name: ${{ steps.check.outputs.apk_name }}
+      sha256_name: ${{ steps.check.outputs.sha256_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.14'
+      - id: check
+        name: Validate tag SemVer, unified VERSION agreement, and CHANGELOG entry
+        env:
+          TARGET_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+        run: |
+          python3 scripts/version.py validate-tag "$TARGET_TAG" \
+            --changelog CHANGELOG.md \
+            --notes-out "$RUNNER_TEMP/release-notes.md" \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Refuse to overwrite an existing GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_TAG: ${{ steps.check.outputs.tag }}
+        run: |
+          if gh release view "$TARGET_TAG" >/dev/null 2>&1; then
+            echo "::error::GitHub Release $TARGET_TAG already exists. Never overwrite published releases; cut a new patch version instead."
+            exit 1
+          fi
+          echo "OK: no existing GitHub Release for $TARGET_TAG"
+      - name: Verify tagged commit is merged on main
+        if: github.event_name == 'push'
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor HEAD refs/remotes/origin/main; then
+            echo "::error::Tagged commit $(git rev-parse --short HEAD) is not reachable from origin/main. Merge to main before tagging a formal release."
+            exit 1
+          fi
+          echo "OK: tagged commit is on origin/main"
+      - name: Keep validated release notes for publish job
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/release-notes.md
+          retention-days: 1
+
+  gate-backend:
+    name: gate-backend (API contract, migrations, lint, full pytest)
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      APP_ENV: test
+      DATABASE_URL: postgresql+psycopg://run_note@127.0.0.1:15432/run_note_ci
+      TEST_DATABASE_URL: postgresql+psycopg://run_note@127.0.0.1:15432/run_note_test
+      TEST_DATABASE_ALLOWED_TARGETS: 127.0.0.1:15432/run_note_test
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.14'
+      - name: Install PostgreSQL 18 + PostGIS from PGDG
+        run: |
+          printf 'Acquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAcquire::Retries "3";\nAcquire::ForceIPv4 "true";\n' | sudo tee /etc/apt/apt.conf.d/99ci-network >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-18 postgresql-18-postgis-3
+      - name: Start isolated test cluster
+        run: |
+          pg_bin=/usr/lib/postgresql/18/bin
+          "$pg_bin/initdb" -D "$RUNNER_TEMP/run-note-pg" -U run_note -A trust --no-locale -E UTF8
+          "$pg_bin/pg_ctl" -D "$RUNNER_TEMP/run-note-pg" -l "$RUNNER_TEMP/run-note-pg.log" -o "-h 127.0.0.1 -p 15432 -k $RUNNER_TEMP -c jit=off" -w start
+          "$pg_bin/createdb" -h 127.0.0.1 -p 15432 -U run_note run_note_ci
+          "$pg_bin/createdb" -h 127.0.0.1 -p 15432 -U run_note run_note_test
+      - run: python -m venv .venv
+      - run: .venv/bin/python -m pip install --require-hashes -r requirements.lock
+      - name: Verify single Alembic head and migrate isolated test DB
+        run: |
+          .venv/bin/python ../infra/native/ops/schema_compat.py head migrations
+          DATABASE_URL="$TEST_DATABASE_URL" .venv/bin/alembic upgrade head
+      - name: Verify OpenAPI to TypeScript contract is current
+        run: .venv/bin/python -m app.contract.typescript --check
+      - run: .venv/bin/ruff check app migrations tests
+      - run: .venv/bin/ruff format --check app migrations tests
+      - run: .venv/bin/pytest -q --junitxml="$RUNNER_TEMP/junit.xml"
+      - name: Annotate failures (diagnostics only)
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/junit.xml" ]; then
+            python ../.github/scripts/annotate_failures.py junit "$RUNNER_TEMP/junit.xml"
+          fi
+      - name: Stop isolated test cluster
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/run-note-pg/postmaster.pid" ]; then
+            /usr/lib/postgresql/18/bin/pg_ctl -D "$RUNNER_TEMP/run-note-pg" -m fast -w stop
+          fi
+
+  gate-frontend:
+    name: gate-frontend (unit, typecheck, stylelint, web & mobile builds)
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 11.28.13
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm check
+      - run: pnpm lint:style
+      - run: pnpm build
+      - run: pnpm build:mobile
+
+  gate-infra-and-server-bundle:
+    name: gate-infra (config/schema compat, ops tests, native tarball check)
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 11.28.13
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.14'
+      - name: Check shell scripts with shellcheck
+        run: shellcheck -x --source-path=SCRIPTDIR infra/native/ops/*.sh infra/native/tests/*.sh
+      - name: Install backend virtualenv for ops/config tests
+        run: |
+          python -m venv backend/.venv
+          backend/.venv/bin/python -m pip install --require-hashes -r backend/requirements.lock
+      - name: Run ops, config, schema, and release tooling unit tests
+        run: backend/.venv/bin/python -m unittest discover -s infra/native/tests -v
+      - name: Build and verify self-contained non-Docker server release tarball
+        env:
+          EXPECTED_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          pnpm --dir frontend install --frozen-lockfile
+          infra/native/ops/build-release.sh --out "$RUNNER_TEMP/server-release" | tee "$RUNNER_TEMP/server-release.path"
+          tarball="$(tail -1 "$RUNNER_TEMP/server-release.path")"
+          infra/native/ops/verify-release.sh "$tarball"
+          top="$(tar -tzf "$tarball" | sed -n '1{s#/.*##;p;}')"
+          recorded="$(tar -xzOf "$tarball" "$top/RELEASE" | sed -n 's/^version=//p' | head -1)"
+          if [ "$recorded" != "$EXPECTED_VERSION" ]; then
+            echo "::error::Server RELEASE version ($recorded) does not match $EXPECTED_VERSION"
+            exit 1
+          fi
+          echo "OK: native server tarball verified for version $recorded"
+
+  gate-android-unit:
+    name: gate-android-unit (mobile bundle, Gradle unit tests, debug APK audit)
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 11.28.13
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - name: Build mobile static bundle and sync Capacitor assets
+        run: |
+          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend build:mobile
+          test -f android/public/index.html
+          pnpm --dir android install --frozen-lockfile
+          pnpm --dir android sync
+          test -f android/native/app/src/main/assets/public/index.html
+      - name: Run Android unit tests and build debug APK
+        working-directory: android/native
+        run: ./gradlew --no-daemon testDebugUnitTest assembleDebug
+      - name: Audit debug APK permissions
+        run: python3 android/scripts/audit-apk-permissions.py android/native/app/build/outputs/apk/debug/app-debug.apk
+
+  android-release:
+    name: android-release (signed APK, verify signature/badge/permissions, SHA-256)
+    needs:
+      - validate
+      - gate-backend
+      - gate-frontend
+      - gate-infra-and-server-bundle
+      - gate-android-unit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 11.28.13
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - name: Prepare Android release signing keystore (never printed or persisted)
+        id: signing
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_RELEASE_SERVER_URL: ${{ secrets.ANDROID_RELEASE_SERVER_URL }}
+        run: |
+          keystore_path="$RUNNER_TEMP/runnote-release.jks"
+          missing=()
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then missing+=("ANDROID_KEYSTORE_BASE64"); fi
+          if [ -z "$ANDROID_KEYSTORE_PASSWORD" ]; then missing+=("ANDROID_KEYSTORE_PASSWORD"); fi
+          if [ -z "$ANDROID_KEY_ALIAS" ]; then missing+=("ANDROID_KEY_ALIAS"); fi
+          if [ -z "$ANDROID_KEY_PASSWORD" ]; then missing+=("ANDROID_KEY_PASSWORD"); fi
+          if [ -z "$ANDROID_RELEASE_SERVER_URL" ]; then missing+=("ANDROID_RELEASE_SERVER_URL"); fi
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            if [ "$EVENT_NAME" = "push" ]; then
+              echo "::error::Missing required GitHub Secrets for signed release APK: ${missing[*]}. See docs/102-release-pipeline.md."
+              exit 1
+            fi
+            echo "::warning::Dry-run without production secrets (${missing[*]}): generating a throwaway local test keystore for verification only."
+            throwaway_pass="dry-run-ephemeral-pass"
+            keytool -genkeypair -noprompt \
+              -keystore "$keystore_path" \
+              -storetype PKCS12 \
+              -storepass "$throwaway_pass" \
+              -alias runnote-dry-run \
+              -keypass "$throwaway_pass" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 1 \
+              -dname "CN=RunNote Dry Run, O=RunNote, C=CN" >/dev/null 2>&1
+            chmod 600 "$keystore_path"
+            {
+              echo "mode=dry-run-throwaway"
+              echo "keystore_path=$keystore_path"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Strip whitespace/newlines so both single-line and wrapped base64 secrets decode cleanly.
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 --decode > "$keystore_path"
+          chmod 600 "$keystore_path"
+          if [ ! -s "$keystore_path" ]; then
+            echo "::error::Decoded Android release keystore is empty"
+            exit 1
+          fi
+          {
+            echo "mode=production-secrets"
+            echo "keystore_path=$keystore_path"
+          } >> "$GITHUB_OUTPUT"
+          echo "OK: production release keystore prepared in runner temp"
+      - name: Build mobile static bundle and sync Capacitor assets
+        run: |
+          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend build:mobile
+          test -f android/public/index.html
+          pnpm --dir android install --frozen-lockfile
+          pnpm --dir android sync
+          test -f android/native/app/src/main/assets/public/index.html
+      - name: Assemble signed release APK
+        working-directory: android/native
+        env:
+          SIGNING_MODE: ${{ steps.signing.outputs.mode }}
+          RUNNOTE_KEYSTORE_PATH: ${{ steps.signing.outputs.keystore_path }}
+          PROD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          PROD_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          PROD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          PROD_SERVER_URL: ${{ secrets.ANDROID_RELEASE_SERVER_URL }}
+        run: |
+          if [ "$SIGNING_MODE" = "production-secrets" ]; then
+            export RUNNOTE_KEYSTORE_PASSWORD="$PROD_KEYSTORE_PASSWORD"
+            export RUNNOTE_KEY_ALIAS="$PROD_KEY_ALIAS"
+            export RUNNOTE_KEY_PASSWORD="$PROD_KEY_PASSWORD"
+            export RUNNOTE_SERVER_URL="$PROD_SERVER_URL"
+          else
+            export RUNNOTE_KEYSTORE_PASSWORD="dry-run-ephemeral-pass"
+            export RUNNOTE_KEY_ALIAS="runnote-dry-run"
+            export RUNNOTE_KEY_PASSWORD="dry-run-ephemeral-pass"
+            export RUNNOTE_SERVER_URL="https://dry-run.runnote.invalid"
+          fi
+          ./gradlew --no-daemon assembleRelease
+          test -f app/build/outputs/apk/release/app-release.apk
+      - name: Verify APK version metadata, permissions, signature, and SHA-256
+        env:
+          EXPECTED_VERSION: ${{ needs.validate.outputs.version }}
+          EXPECTED_VERSION_CODE: ${{ needs.validate.outputs.version_code }}
+          APK_NAME: ${{ needs.validate.outputs.apk_name }}
+          SHA256_NAME: ${{ needs.validate.outputs.sha256_name }}
+        run: |
+          raw_apk="android/native/app/build/outputs/apk/release/app-release.apk"
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$sdk_root" ]; then
+            echo "::error::ANDROID_HOME / ANDROID_SDK_ROOT is not set on runner"
+            exit 1
+          fi
+          build_tools="$(find "$sdk_root/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          if [ -z "$build_tools" ]; then
+            echo "::error::No Android build-tools found under $sdk_root/build-tools"
+            exit 1
+          fi
+          aapt2="$build_tools/aapt2"
+          apksigner="$build_tools/apksigner"
+
+          badging="$("$aapt2" dump badging "$raw_apk" | head -n 1)"
+          echo "APK badging: $badging"
+          case "$badging" in
+            *"name='com.tingchieh.runnote'"*"versionCode='$EXPECTED_VERSION_CODE'"*"versionName='$EXPECTED_VERSION'"*) ;;
+            *)
+              echo "::error::Built APK metadata does not match expected appId/versionCode=$EXPECTED_VERSION_CODE/versionName=$EXPECTED_VERSION"
+              exit 1
+              ;;
+          esac
+
+          python3 android/scripts/audit-apk-permissions.py "$raw_apk"
+          "$apksigner" verify --verbose --print-certs "$raw_apk"
+
+          stage="$RUNNER_TEMP/release-assets"
+          mkdir -p "$stage"
+          cp "$raw_apk" "$stage/$APK_NAME"
+          (
+            cd "$stage"
+            sha256sum "$APK_NAME" > "$SHA256_NAME"
+            sha256sum -c "$SHA256_NAME"
+            cat "$SHA256_NAME"
+          )
+      - name: Remove temporary keystore file
+        if: always()
+        run: rm -f "$RUNNER_TEMP/runnote-release.jks"
+      - name: Upload verified APK and checksum for publish job
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-apk
+          path: |
+            ${{ runner.temp }}/release-assets/${{ needs.validate.outputs.apk_name }}
+            ${{ runner.temp }}/release-assets/${{ needs.validate.outputs.sha256_name }}
+          retention-days: 1
+
+  publish-release:
+    name: publish-release (atomic draft-to-published GitHub Release)
+    needs:
+      - validate
+      - gate-backend
+      - gate-frontend
+      - gate-infra-and-server-bundle
+      - gate-android-unit
+      - android-release
+    # Strictly tag-triggered only: dry-runs, branch pushes, and PRs can never publish.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download validated release notes
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/publish
+      - name: Download verified APK and SHA-256 checksum
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-apk
+          path: ${{ runner.temp }}/publish
+      - name: Publish GitHub Release atomically without overwriting existing releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.validate.outputs.tag }}
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+          APK_NAME: ${{ needs.validate.outputs.apk_name }}
+          SHA256_NAME: ${{ needs.validate.outputs.sha256_name }}
+        run: |
+          cd "$RUNNER_TEMP/publish"
+          test -s release-notes.md
+          test -s "$APK_NAME"
+          test -s "$SHA256_NAME"
+          sha256sum -c "$SHA256_NAME"
+
+          # Re-check with contents:write (also sees drafts) so an existing release is never overwritten.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::Release $TAG already exists (draft or published). Refusing to overwrite."
+            exit 1
+          fi
+
+          # Create as draft first so an upload failure never exposes a partial formal release.
+          create_flags=(
+            --draft
+            --verify-tag
+            --title "RunNote $TAG"
+            --notes-file release-notes.md
+          )
+          if [ "$PRERELEASE" = "true" ]; then
+            create_flags+=(--prerelease)
+          fi
+
+          gh release create "$TAG" "${create_flags[@]}" "$APK_NAME" "$SHA256_NAME"
+
+          # Verify both assets landed intact before flipping draft -> published.
+          assets_json="$(gh release view "$TAG" --json assets)"
+          python3 - "$APK_NAME" "$SHA256_NAME" "$assets_json" <<'PY'
+          import json, sys
+          expected = {sys.argv[1], sys.argv[2]}
+          data = json.loads(sys.argv[3])
+          present = {a["name"]: a.get("size", 0) for a in data.get("assets", [])}
+          missing = [name for name in sorted(expected) if present.get(name, 0) <= 0]
+          if missing:
+              raise SystemExit(f"release assets incomplete before publish: missing/empty {missing}")
+          print("Verified uploaded release assets:", present)
+          PY
+
+          if [ "$PRERELEASE" = "true" ]; then
+            gh release edit "$TAG" --draft=false --prerelease
+          else
+            gh release edit "$TAG" --draft=false --latest
+          fi
+          echo "Published GitHub Release $TAG"

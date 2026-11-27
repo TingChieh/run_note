@@ -19,7 +19,7 @@ test-results/
 .DS_Store
 *.egg-info/
 
-# Local database archives, keys and scratch files are never Git checkpoints.
+# Local database archives, signing material, keys and scratch files are never Git checkpoints.
 *.dump
 *.pgdump
 *.backup
@@ -27,6 +27,16 @@ test-results/
 *.key
 *.p12
 *.pfx
+*.jks
+*.keystore
+*.bks
+*.jks.b64
+*.keystore.b64
+*.p12.b64
+keystore.properties
+signing.properties
+*.apk
+*.aab
 /backups/
 /tmp/
 /backend/tmp/

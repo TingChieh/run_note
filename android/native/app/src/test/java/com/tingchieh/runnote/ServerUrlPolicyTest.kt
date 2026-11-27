@@ -1,19 +1,53 @@
 package com.tingchieh.runnote
 
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ServerUrlPolicyTest {
 
+    private fun readRootVersion(): String {
+        var dir: File? = File(System.getProperty("user.dir") ?: ".").canonicalFile
+        while (dir != null) {
+            val candidate = File(dir, "VERSION")
+            if (candidate.isFile) {
+                return candidate.readText(Charsets.UTF_8).trim()
+            }
+            dir = dir.parentFile
+        }
+        throw AssertionError("Repository root VERSION file not found from ${System.getProperty("user.dir")}")
+    }
+
+    private fun expectedVersionCode(version: String): Int {
+        val pattern = Regex("""^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(alpha|beta|rc)\.([1-9]\d*))?$""")
+        val match = pattern.matchEntire(version)
+        assertNotNull("VERSION must be valid SemVer: $version", match)
+        val major = match!!.groupValues[1].toInt()
+        val minor = match.groupValues[2].toInt()
+        val patch = match.groupValues[3].toInt()
+        val stage = match.groupValues[4]
+        val preNum = match.groupValues[5].toIntOrNull()
+        val stageCode = when (stage) {
+            "" -> 999
+            "alpha" -> 100 + preNum!!
+            "beta" -> 200 + preNum!!
+            "rc" -> 300 + preNum!!
+            else -> throw AssertionError("Unsupported prerelease stage: $stage")
+        }
+        return major * 10_000_000 + minor * 100_000 + patch * 1_000 + stageCode
+    }
+
     @Test
     fun verifiesFinalAppIdentityAndVersion() {
+        val rootVersion = readRootVersion()
         assertEquals("com.tingchieh.runnote", ServerUrlPolicy.EXPECTED_APP_ID)
         assertEquals("com.tingchieh.runnote", BuildConfig.APPLICATION_ID)
         assertEquals("com.tingchieh.runnote", BuildConfig.RUNNOTE_APP_ID)
-        assertEquals("2.6.0", BuildConfig.VERSION_NAME)
-        assertEquals(20600, BuildConfig.VERSION_CODE)
+        assertEquals(rootVersion, BuildConfig.VERSION_NAME)
+        assertEquals(expectedVersionCode(rootVersion), BuildConfig.VERSION_CODE)
     }
 
     @Test
