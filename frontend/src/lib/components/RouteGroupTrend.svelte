@@ -11,15 +11,15 @@
   function draw() {
     if (!chart) return;
     const style = getComputedStyle(container), color = (name: string) => style.getPropertyValue(name).trim();
-    const foreground = color('--foreground'), muted = color('--muted-foreground'), border = color('--border');
+    const foreground = color('--foreground'), muted = color('--muted-foreground'), border = color('--border'), primary = color('--primary');
     chart.setOption({
       animation: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
       textStyle: { color: foreground },
       tooltip: { trigger: 'axis', renderMode: 'richText', backgroundColor: color('--surface'), borderColor: border, textStyle: { color: foreground }, valueFormatter: (value: number | null) => value === null ? '—' : formatDuration(value * 60) },
       grid: { left: 55, right: 20, top: 30, bottom: 50 },
-      xAxis: { type: 'category', data: ordered.map(run => run.activity_date), axisLine: { lineStyle: { color: border } }, axisLabel: { color: muted } },
-      yAxis: { type: 'value', name: '用时（分钟）', scale: true, nameTextStyle: { color: muted }, axisLabel: { color: muted }, splitLine: { lineStyle: { color: border } } },
-      series: [{ name: '用时', type: 'line', connectNulls: false, data: ordered.map(run => minutes(run.duration_seconds)), itemStyle: { color: color('--chart-series') }, lineStyle: { color: color('--chart-series') } }]
+      xAxis: { type: 'category', data: ordered.map(run => run.activity_date), axisLine: { lineStyle: { color: border } }, axisTick: { show: false }, axisLabel: { color: muted, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 11 } },
+      yAxis: { type: 'value', name: '用时（分钟）', scale: true, nameTextStyle: { color: muted, fontSize: 11 }, axisLabel: { color: muted, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 11 }, splitLine: { lineStyle: { color: border, type: 'dashed' } } },
+      series: [{ name: '用时', type: 'line', connectNulls: false, data: ordered.map(run => minutes(run.duration_seconds)), itemStyle: { color: primary }, lineStyle: { color: primary, width: 2 } }]
     }, { notMerge: true });
   }
   $effect(() => { ordered; if (mounted) draw(); });

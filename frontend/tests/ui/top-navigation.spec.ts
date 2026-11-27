@@ -1141,8 +1141,9 @@ test.describe('segmented lens label', () => {
       await installActivities(page);
       await loginRunner(page);
       await page.setViewportSize({ width, height: 844 });
-      await page.goto('/routes');
-      const tabs = page.getByRole('group', { name: '排序方式' });
+      await page.goto('/wellbeing');
+      await page.getByTestId('wellbeing-add-dose').click();
+      const tabs = page.getByRole('group', { name: '类型' });
       await expect(tabs.locator('.rn-moving-copy')).toHaveCount(1);
       await page.waitForTimeout(600); // the lens spring has settled
       // On phones the tabs stretch (flex: 1 0 auto) and centre their text; the lens' copy of the label must centre it the same way.

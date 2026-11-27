@@ -19,20 +19,22 @@
   </div>
 </article>
 <style>
-  .route-card { display: grid; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); overflow: hidden; min-width: 0; }
-  svg { display: block; width: 100%; aspect-ratio: 360/220; padding: .65rem; background: var(--route-thumbnail); }
+  .route-card { position: relative; display: grid; background: var(--paper); border: 1px solid var(--border); border-radius: var(--radius-sheet); overflow: hidden; min-width: 0; transition: border-color var(--transition-control); }
+  svg { display: block; width: 100%; aspect-ratio: 360/220; padding: .65rem; background: var(--route-thumbnail); border-bottom: 1px solid var(--border); }
   svg path { fill: none; stroke: var(--primary); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-  .body { display: grid; gap: .5rem; padding: 1rem; }
+  .body { display: grid; gap: var(--space-2); padding: var(--space-4); }
   h2 { font-size: var(--text-section); font-weight: var(--weight-semibold); }
   h2 a { color: var(--foreground); }
   h2 a::after { content: ''; position: absolute; inset: 0; }
-  .route-card { position: relative; transition: border-color .15s, box-shadow .15s; }
-  @media (hover: hover) { .route-card:hover { border-color: var(--primary); } }
+  @media (hover: hover) { .route-card:hover { border-color: var(--rule); } }
   .route-card:has(a:focus-visible) { outline: 2px solid var(--ring); outline-offset: 3px; }
   /* The card draws the ring through :has(); keep the link's own outline where it is unsupported. */
   @supports selector(:has(*)) { h2 a:focus-visible { outline: none; } }
-  .count { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem; font-size: var(--text-small); }
-  .count span, dt { color: var(--muted-foreground); font-size: var(--text-small); }
-  dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
-  dd { font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; }
+  .count { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-1); font-family: var(--font-mono); font-size: var(--text-caption); font-variant-numeric: tabular-nums; }
+  .count strong { color: var(--primary); font-weight: var(--weight-bold); }
+  .count span, dt { color: var(--muted-foreground); font-size: var(--text-caption); }
+  dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+  dl > div { min-width: 0; }
+  dl > div + div { padding-left: var(--space-2); border-left: 1px solid var(--border); }
+  dd { margin-top: var(--space-1); font-size: var(--text-small); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 </style>
