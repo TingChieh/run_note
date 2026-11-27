@@ -52,7 +52,7 @@
 | `vitest run` | 80 files / 528 tests passed |
 | `vite build`（adapter-node） | 成功（仅既有大体积 chunk 警告） |
 | `node tests/fixtures/check-showcase-isolation.mjs` | PASS（1061 files，无 showcase 标识，5 个探测路由均 404） |
-| `playwright test --config playwright.ui.config.ts`（`admin-users`、`liquid-glass`、`settings-hub`、`shoes`、`theme`、`top-navigation`、`ui-shell`） | 142 passed / 1 skipped（仅环境变量触发的截图用例）/ 0 failed（首轮 138 passed + 修正 2 处测试选择器后 `settings-hub`/`top-navigation` 专项 9/9 passed） |
+| `playwright test --config playwright.ui.config.ts`（`admin-users`、`liquid-glass`、`scrollbars`、`settings-hub`、`shoes`、`theme`、`top-navigation`、`ui-shell`） | 148 passed / 1 skipped（仅环境变量触发的截图用例）/ 0 failed（并在 CI 发现 `.table-scroll` 负底边距误删后恢复 `padding-bottom`/`margin-bottom` 缓冲，`admin-users` + `scrollbars` 14/14 passed） |
 | `playwright test --config playwright.site-settings.config.ts` | 12 passed / 0 failed |
 | `playwright test --config playwright.username.config.ts` | 1 passed / 0 failed |
 | `playwright test --config playwright.companion-phase2.config.ts` | 6 passed / 0 failed（首次运行暴露并修复 `CompanionCachePanel` SSR 水合前点击竞态） |

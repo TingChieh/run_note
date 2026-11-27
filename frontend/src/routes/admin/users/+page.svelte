@@ -698,9 +698,12 @@
   .users-table-section {
     padding-top: var(--space-2);
   }
+  /* The switch/row controls paint a few pixels past the last row; the padding (taken back by the margin) keeps that ink inside the box, so a sideways-only scroller never grows a vertical scrollbar. */
   .table-scroll {
     max-width: 100%;
     overflow-x: auto;
+    padding-bottom: var(--space-3);
+    margin-bottom: calc(-1 * var(--space-3));
   }
   table {
     width: 100%;
