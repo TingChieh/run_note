@@ -672,9 +672,17 @@ test('side arrows switch the whole record, keep it centered and stop at both bou
   const cards = recordButtons(page);
   await expect(cards).toHaveCount(4);
   await expect(cards.first()).not.toHaveClass(/rn-glass-control/);
+  const surfaceColor = await deck.evaluate((el) => {
+    const probe = document.createElement('div');
+    probe.style.backgroundColor = 'var(--surface)';
+    el.append(probe);
+    const color = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return color;
+  });
   for (const card of [cards.first(), cards.nth(1)]) {
     await expect(card).toHaveCSS('backdrop-filter', 'none');
-    await expect(card).toHaveCSS('background-color', await deck.evaluate(el => getComputedStyle(el).backgroundColor));
+    await expect(card).toHaveCSS('background-color', surfaceColor);
   }
   const main = (await cards.first().boundingBox())!;
   const viewport = (await deck.locator('.stack-viewport').boundingBox())!;

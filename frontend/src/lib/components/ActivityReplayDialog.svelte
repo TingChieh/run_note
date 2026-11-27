@@ -4,7 +4,7 @@
   import { useViewContext } from '#lib/view-context.ts';
   import { viewsOwnRecords } from '#lib/api/view-context.ts';
   import { ActivityError } from '#lib/api/activities.ts';
-  import { readReplay } from '#lib/api/replay.ts';
+  import { readReplay, type ReplayData } from '#lib/api/replay.ts';
   import { buildTrack, type ReplayTrack } from '#lib/replay/engine.ts';
   import FeedbackState from './FeedbackState.svelte';
   import ReplayPlayer from './ReplayPlayer.svelte';
@@ -13,16 +13,30 @@
   let {
     activityId,
     facts = [],
+    showTrigger = true,
+    sharedReplay,
+    sharedLoading = false,
+    sharedError = '',
+    onensure,
+    onretry,
     onauthrequired,
   }: {
     activityId: string;
     /** Activity date and totals for the exported video, already formatted. */
     facts?: [string, string][];
+    showTrigger?: boolean;
+    /** Optional page-owned replay state so the pace chart and replay dialog share one fetch. */
+    sharedReplay?: ReplayData | null;
+    sharedLoading?: boolean;
+    sharedError?: string;
+    onensure?: () => void;
+    onretry?: () => void;
     onauthrequired?: (cause: unknown) => boolean;
   } = $props();
   const view = useViewContext();
   // Video files leave the site, so only the signed-in owner gets them, as with share images.
   const canExport = $derived(viewsOwnRecords(page.url.pathname, page.data.user));
+  const managed = $derived(!!onensure && !!onretry);
   let exporting = $state(false),
     exportPanel = $state<HTMLElement | null>(null);
   // Bring the export panel into view whenever it appears, including after the track finishes loading.
@@ -30,23 +44,29 @@
     if (exportPanel) void tick().then(() => exportPanel?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
   });
   let dialog = $state<HTMLDialogElement>(null!),
-    trigger = $state<HTMLButtonElement>(null!);
+    trigger = $state<HTMLButtonElement | null>(null);
   let mounted = $state(false),
     visible = $state(false),
-    loading = $state(false),
-    error = $state('');
+    localLoading = $state(false),
+    localError = $state('');
   // Kept for the page's lifetime so reopening the same record does not download the track again.
-  let track = $state.raw<ReplayTrack | null>(null),
+  let localTrack = $state.raw<ReplayTrack | null>(null),
     trackFor = '',
     token = 0,
     disposed = false;
+  const sharedTrack = $derived(sharedReplay ? buildTrack(sharedReplay) : null);
+  const track = $derived(managed ? sharedTrack : localTrack);
+  const loading = $derived(managed ? sharedLoading : localLoading);
+  const error = $derived(managed ? sharedError : localError);
 
   let returnFocus: HTMLElement | null = null;
-  function open(from: HTMLElement | null = null) {
+  export function open(from: HTMLElement | null = null) {
+    if (!mounted) return;
     returnFocus = from ?? trigger;
     visible = true;
     dialog.showModal();
-    if (trackFor !== activityId) void load();
+    if (managed) onensure?.();
+    else if (trackFor !== activityId) void load();
   }
   /** Opens the replay with the video export panel expanded (from the page's share menu). */
   export function openExport(from: HTMLElement | null = null) {
@@ -55,16 +75,20 @@
     if (!dialog.open) open(from);
   }
   async function load() {
+    if (managed) {
+      onretry?.();
+      return;
+    }
     const request = ++token,
       id = activityId;
-    loading = true;
-    error = '';
-    track = null;
+    localLoading = true;
+    localError = '';
+    localTrack = null;
     trackFor = '';
     try {
       const data = await readReplay(id, view.fetch);
       if (disposed || request !== token) return;
-      track = buildTrack(data);
+      localTrack = buildTrack(data);
       trackFor = id;
     } catch (cause) {
       if (disposed || request !== token) return;
@@ -73,19 +97,22 @@
         onauthrequired?.(cause);
         return;
       }
-      error = cause instanceof Error ? cause.message : '无法读取回放数据';
+      localError = cause instanceof Error ? cause.message : '无法读取回放数据';
     } finally {
-      if (!disposed && request === token) loading = false;
+      if (!disposed && request === token) localLoading = false;
     }
   }
   // Switching to another record in place drops the previous record's track.
+  let activeId = '';
   $effect(() => {
-    if (activityId !== trackFor && trackFor) {
+    const id = activityId;
+    if (activeId && id !== activeId) {
       token++;
-      track = null;
+      localTrack = null;
       trackFor = '';
       if (dialog?.open) dialog.close();
     }
+    activeId = id;
   });
   onMount(() => {
     mounted = true;
@@ -96,7 +123,7 @@
   });
 </script>
 
-<button bind:this={trigger} type="button" class="button-secondary" disabled={!mounted} onclick={() => open()}
+{#if showTrigger}<button bind:this={trigger} type="button" class="button-secondary" disabled={!mounted} onclick={() => open()}
   ><svg
     viewBox="0 0 24 24"
     width="18"
@@ -107,10 +134,11 @@
     aria-hidden="true"
     ><circle cx="12" cy="12" r="9" /><path d="M10 8.5v7l5.5-3.5z" fill="currentColor" stroke="none" /></svg
   >动态回放</button
->
+>{/if}
 <dialog
   bind:this={dialog}
   class="replay-dialog"
+  data-glass-overlay
   aria-labelledby="activity-replay-title"
   oncancel={(event) => {
     event.preventDefault();
@@ -119,9 +147,9 @@
   onclose={() => {
     visible = false;
     exporting = false;
-    if (loading) {
+    if (!managed && localLoading) {
       token++;
-      loading = false;
+      localLoading = false;
     }
     returnFocus?.focus();
   }}

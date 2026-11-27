@@ -38,7 +38,7 @@
   });
 </script>
 {#if loadingShares || sharesError || links.length}
-<section class="share-card" aria-labelledby="share-title" aria-busy={busy}>
+<section class="share-section section-hairline" aria-labelledby="share-title" aria-busy={busy}>
   <h2 id="share-title" class="text-xl font-semibold">旧版分享链接</h2>
   <p class="mt-3 text-sm text-muted-foreground">旧版摘要分享已停用，不能再创建新链接；此前创建的链接仍可在这里撤销。已被他人保存的摘要无法收回。</p>
   {#if loadingShares}<div class="mt-4"><FeedbackState kind="loading" title="正在读取分享链接…" /></div>{:else if sharesError}<button onclick={() => void reloadShares()} class="button-secondary mt-4">重试读取分享链接</button>{:else}<ul class="mt-4 space-y-3">{#each links as link}<li class="flex flex-wrap items-center gap-3 text-sm"><span>{new Date(link.created_at).toLocaleString()} · {link.status==='active'?'有效':link.status==='revoked'?'已撤销':'已到期'} · {link.expires_at?`到期：${new Date(link.expires_at).toLocaleDateString()}`:'永久'}</span>{#if link.status==='active'}<button onclick={() => revoke(link.link_id)} disabled={busy} class="text-destructive underline">撤销链接</button>{/if}</li>{/each}</ul>{/if}
@@ -48,6 +48,5 @@
 {/if}
 
 <style>
-  .share-card { margin-top: var(--space-6); padding: var(--space-6); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
-  @media (max-width: 639px) { .share-card { padding: var(--space-4); } }
+  .share-section { margin-top: var(--space-8); }
 </style>

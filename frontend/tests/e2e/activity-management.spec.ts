@@ -23,7 +23,8 @@ for (const format of ['gpx', 'tcx'] as const) {
     const stored = (await (await context.request.get(apiPath(path))).json()).data;
     expect(stored).toMatchObject({ title: '真实接口修改标题', notes: '备注仅本人可见', visibility: 'private' });
 
-    await page.getByRole('button', { name: '删除记录', exact: true }).click();
+    await page.getByRole('button', { name: '更多', exact: true }).click();
+    await page.getByRole('group', { name: '更多操作' }).getByRole('button', { name: '删除记录', exact: true }).click();
     await page.getByRole('dialog', { name: '删除这条跑步记录？' }).getByRole('button', { name: '确认删除' }).click();
     await expect(page).toHaveURL(/\/workspace\/activities(\?.*)?$/);
     await expect(page.getByText('暂无跑步记录。', { exact: true })).toBeVisible();

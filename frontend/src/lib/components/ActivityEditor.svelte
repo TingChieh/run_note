@@ -7,17 +7,27 @@
   import { onMount } from 'svelte';
   import { ActivityError, updateActivity as scoped_updateActivity, type Activity } from '#lib/api/activities.ts';
   import FeedbackState from './FeedbackState.svelte';
-  let { activity, onupdated, oncancel, onbusychange }: {
-    activity: Activity; onupdated: (value: Activity) => void; oncancel: () => void; onbusychange?: (busy: boolean) => void;
+  let {
+    activity,
+    initialFocus = 'title',
+    onupdated,
+    oncancel,
+    onbusychange,
+  }: {
+    activity: Activity;
+    initialFocus?: 'title' | 'notes';
+    onupdated: (value: Activity) => void;
+    oncancel: () => void;
+    onbusychange?: (busy: boolean) => void;
   } = $props();
   const id = $props.id();
   let title = $state(''), notes = $state(''), category = $state(''), tagText = $state('');
-  let saving = $state(false), error = $state(''), titleInput: HTMLInputElement;
+  let saving = $state(false), error = $state(''), titleInput: HTMLInputElement, notesInput: HTMLTextAreaElement;
   let disposed = false, initialTags: string[] = [], initialTagText = '';
   onMount(() => {
     title = activity.title; notes = activity.notes ?? ''; category = activity.category ?? ''; tagText = (activity.tags ?? []).join(', ');
     initialTags = [...(activity.tags ?? [])]; initialTagText = tagText;
-    titleInput.focus();
+    (initialFocus === 'notes' ? notesInput : titleInput).focus();
     return () => { disposed = true; onbusychange?.(false); };
   });
   async function save(event: SubmitEvent) {
@@ -48,18 +58,18 @@
   <datalist id={`${id}-categories`}>{#each ['轻松跑', '节奏跑', '间歇跑', '长距离', '比赛'] as item}<option value={item}></option>{/each}</datalist>
   <label>标签<input bind:value={tagText} name="tags" disabled={saving} aria-describedby={`${id}-tags-hint`} placeholder="例如：清晨, 公园" /></label>
   <p id={`${id}-tags-hint`} class="hint">用逗号分隔，最多 10 个，每个 30 字。标题、分类和标签会公开展示。</p>
-  <label>备注<textarea bind:value={notes} name="notes" maxlength="5000" rows="4" disabled={saving} aria-describedby={`${id}-notes-hint`}></textarea></label>
+  <label>备注<textarea bind:this={notesInput} bind:value={notes} name="notes" maxlength="5000" rows="4" disabled={saving} aria-describedby={`${id}-notes-hint`}></textarea></label>
   <p id={`${id}-notes-hint`} class="hint">备注仅自己可见，最多 5000 字。</p>
   {#if error}<FeedbackState kind="error" title={error} />{/if}
-  <div class="buttons"><button type="submit" disabled={saving} class="save">{saving ? '保存中…' : '保存修改'}</button><button type="button" onclick={oncancel} disabled={saving} class="button-secondary">取消编辑</button></div>
+  <div class="buttons"><button type="submit" disabled={saving} class="button-primary save">{saving ? '保存中…' : '保存修改'}</button><button type="button" onclick={oncancel} disabled={saving} class="button-secondary">取消编辑</button></div>
 </form>
 <style>
   .editor { display: grid; gap: .875rem; margin-top: 1rem; min-width: 0; }
   label { min-width: 0; font-size: var(--text-small); font-weight: var(--weight-semibold); }
-  input, textarea { display: block; box-sizing: border-box; width: 100%; min-width: 0; margin-top: .5rem; padding: .625rem .75rem; border: 1px solid var(--border); border-radius: .625rem; background: var(--background); color: var(--foreground); font-weight: var(--weight-regular); }
+  input, textarea { display: block; box-sizing: border-box; width: 100%; min-width: 0; margin-top: .5rem; padding: .625rem .75rem; border: 1px solid var(--control-border, var(--border)); border-radius: var(--radius-control); background: var(--surface); color: var(--foreground); font-weight: var(--weight-regular); }
   textarea { resize: vertical; }
   .hint { color: var(--muted-foreground); font-size: var(--text-small); line-height: var(--line-height-body); }
   .buttons { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
-  .save { padding: .625rem 1rem; border-radius: .75rem; background: var(--primary); color: var(--primary-foreground); font-size: var(--text-small); font-weight: var(--weight-semibold); }
+  .save { min-height: 2.75rem; padding: .625rem 1rem; border-radius: var(--radius-control); background: var(--primary); color: var(--primary-foreground); font-size: var(--text-small); font-weight: var(--weight-semibold); }
   button:disabled { opacity: .5; cursor: wait; }
 </style>

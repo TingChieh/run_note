@@ -226,12 +226,11 @@
   });
 </script>
 
-<section class="activity-wall-card" aria-label="本次足迹卡片" bind:this={section}>
+<section class="activity-wall-card section-hairline" aria-label="本次足迹卡片" bind:this={section}>
   <div class="preview-layout">
     <div class="preview-copy">
       <h2>本次足迹卡片</h2>
-      <p>每次跑步，留下属于你的路线记忆。</p>
-      <a href={view.href("/activities")} class="button-secondary">查看全部记录</a>
+      <a href={view.href("/activities")} class="button-text">查看全部记录 →</a>
     </div>
     <div class="preview-browser" aria-busy={pending} use:coverflowNavigation={{ onbrowse: stepBrowse }}>
       <button type="button" class="button-secondary deck-arrow" aria-label="较新一条" disabled={pending || browseIndex <= 0} onclick={() => void select(browseIndex - 1)}><span aria-hidden="true">←</span></button>
@@ -258,13 +257,11 @@
 </section>
 
 <style>
-  .activity-wall-card{container-type:inline-size;margin-top:var(--space-6);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);padding:var(--space-4);}
+  .activity-wall-card{container-type:inline-size;margin-top:var(--space-8);}
   /* Intro reads as a header so the fanned deck can use the full width. */
-  .preview-layout{padding:var(--space-2);display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-2);}
-  .preview-copy{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:var(--space-4);}
-  .preview-copy a{grid-column:2;grid-row:1/span 2;}
+  .preview-layout{padding:0;display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-2);}
+  .preview-copy{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:var(--space-2) var(--space-4);}
   .preview-copy h2{font-size: var(--text-section);font-weight: var(--weight-semibold);}
-  .preview-copy p{color:var(--muted-foreground);font-size: var(--text-body);margin-top:var(--space-1);}
   .preview-browser{min-width:0;display:grid;grid-template-columns:2.75rem minmax(0,1fr) 2.75rem;align-items:center;gap:var(--space-2);}
   .deck-arrow{position:relative;z-index:4;width:2.75rem;height:2.75rem;padding:var(--space-2);}
   .stack-viewport{--deck-card-width:12rem;touch-action:pan-y;user-select:none;cursor:grab;min-width:0;overflow:clip;isolation:isolate;}
@@ -273,6 +270,6 @@
   .card-stack{display:grid;grid-template-columns:var(--deck-card-width);justify-content:center;align-items:stretch;padding-block:var(--space-4) calc(var(--deck-card-width) * .5);}
   .stack-slot{position:relative;grid-area:1/1;width:var(--deck-card-width);transform-origin:50% 100%;container-type:inline-size;will-change:transform,opacity;}
   .preview-error{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2);margin-top:var(--space-3);font-size: var(--text-small);}
-  @container (max-width:42rem){.preview-layout{padding:0;}.stack-viewport{--deck-card-width:10rem;}.preview-copy{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:var(--space-2);}.preview-copy p{display:none;}}
+  @container (max-width:42rem){.stack-viewport{--deck-card-width:10rem;}}
   @container (max-width:22rem){.stack-viewport{--deck-card-width:9rem;}}
 </style>

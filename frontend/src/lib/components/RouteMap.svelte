@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, type Snippet } from 'svelte';
   import FeedbackState from './FeedbackState.svelte';
   import type { Map as MapLibreMap, Marker, LngLatBounds } from 'maplibre-gl';
   import type { Route, Coordinate } from '#lib/api/activities.ts';
@@ -13,6 +13,8 @@
     route,
     spacious = false,
     embedded = false,
+    appearance = 'default',
+    controls,
     color,
     lazy = false,
   }: {
@@ -20,6 +22,8 @@
     route: Route;
     spacious?: boolean;
     embedded?: boolean;
+    appearance?: 'default' | 'sheet';
+    controls?: Snippet;
     /** Load and start the map only when it scrolls near the viewport (a map below the first screen). */
     lazy?: boolean;
   } = $props();
@@ -263,6 +267,7 @@
   data-glass-overlay
   class:spacious
   class:embedded
+  class:sheet={appearance === 'sheet'}
 >
   <div
     bind:this={container}
@@ -273,8 +278,9 @@
       : '活动路线地图，起与终标记起终点'}
     data-testid={loaded ? 'route-map-ready' : 'route-map-loading'}
   ></div>
-  <div class="absolute left-3 top-3 z-[2]">
+  <div class="map-top-controls">
     <BasemapPicker preference={basemapPreference} style={basemapStyle} status={basemapStatus} />
+    {@render controls?.()}
   </div>
   <div class="absolute bottom-3 left-3">
     <button
@@ -338,6 +344,24 @@
 </details>
 
 <style>
+  .map-top-controls {
+    position: absolute;
+    left: var(--space-3);
+    top: var(--space-3);
+    z-index: 2;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    max-width: calc(100% - 4.5rem);
+  }
+  .sheet {
+    margin-top: 0;
+    border-radius: var(--radius-sheet);
+  }
+  .sheet .route-map {
+    height: var(--route-map-height, 35rem);
+  }
   .embedded {
     margin-top: 1rem;
   }
