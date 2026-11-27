@@ -792,6 +792,12 @@
     border-color: var(--control-border);
     border-radius: var(--radius-control);
   }
+  dialog .text-field:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-color: var(--control-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--control-accent) 20%, transparent);
+  }
   .user-form {
     display: grid;
     gap: var(--space-4);

@@ -704,6 +704,11 @@ test('Editorial Receipt settings pages use flat controls, hairline grouping, fla
   await page.getByRole('switch', { name: '公开个人主页' }).click();
   const saveBar = page.locator('.save-bar');
   await expect(saveBar).toBeVisible();
+  // Wait for the 360ms unfoldBar enter transition on .save-bar-slot to finish before measuring geometry.
+  await page.waitForFunction(() => {
+    const slot = document.querySelector('.save-bar-slot');
+    return !!slot && slot.getAnimations().length === 0;
+  });
   const barStyle = await saveBar.evaluate((el) => {
     const s = getComputedStyle(el);
     return {
@@ -718,7 +723,7 @@ test('Editorial Receipt settings pages use flat controls, hairline grouping, fla
   await page.getByRole('button', { name: '放弃', exact: true }).click();
   await expect(saveBar).toHaveCount(0);
 
-  // Zero horizontal overflow across 1440/768/390/320 in both light and dark modes.
+  // Zero horizontal overflow and >=44px button hit areas across 1440/768/390/320 in both light and dark modes.
   for (const viewport of [
     { width: 1440, height: 900 },
     { width: 768, height: 1024 },
@@ -728,15 +733,220 @@ test('Editorial Receipt settings pages use flat controls, hairline grouping, fla
     for (const theme of ['light', 'dark'] as const) {
       await page.setViewportSize(viewport);
       await page.evaluate((value) => localStorage.setItem('runnote-theme', value), theme);
-      for (const route of ['/settings', '/settings/preferences']) {
+      for (const route of ['/settings', '/settings/preferences', '/admin/users']) {
         await page.goto(route);
         await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+        await expect(page.locator('.editorial-page').first()).toBeVisible();
+        if (route === '/admin/users') {
+          await expect(page.locator('table tbody tr').first()).toBeVisible();
+        }
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
         expect(overflow, `${route} at ${viewport.width}x${viewport.height} ${theme}`).toBe(false);
+        if (route === '/settings/preferences' || route === '/admin/users') {
+          const undersized = await page.evaluate(() =>
+            [
+              ...document.querySelectorAll(
+                'main .editorial-page :is(.button-primary, .button-secondary, .button-compact)',
+              ),
+            ]
+              .filter((el) => !el.closest('[data-glass-overlay]'))
+              .map((el) => ({
+                text: (el.textContent ?? '').trim(),
+                height: Math.round(el.getBoundingClientRect().height * 10) / 10,
+                visible: el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0,
+              }))
+              .filter((item) => item.visible && item.height < 44),
+          );
+          expect(undersized, `${route} buttons <44px at ${viewport.width}x${viewport.height} ${theme}`).toEqual([]);
+        }
       }
     }
   }
 
   expect(consoleErrors).toEqual([]);
   expect(pageErrors).toEqual([]);
+});
+
+test('enhanced timezone select focus-visible and preferences invalid goal border remain visible across light and dark', async ({
+  page,
+}) => {
+  const resolveColor = (variable: string) =>
+    page.evaluate((name) => {
+      const host = document.querySelector('.editorial-page') ?? document.body;
+      const probe = document.createElement('div');
+      probe.style.border = `1px solid var(${name})`;
+      host.append(probe);
+      const value = getComputedStyle(probe).borderTopColor;
+      probe.remove();
+      return value;
+    }, variable);
+
+  await loginRunner(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  for (const theme of ['light', 'dark'] as const) {
+    await page.evaluate((value) => localStorage.setItem('runnote-theme', value), theme);
+    await page.goto('/settings');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+
+    const accent = await resolveColor('--control-accent');
+    const ring = await resolveColor('--ring');
+    const defaultBorder = await resolveColor('--control-border');
+    const errorColor = await resolveColor('--error');
+    expect(accent).not.toBe(defaultBorder);
+    expect(errorColor).not.toBe(defaultBorder);
+
+    // P2 #1: Desktop enhanced timezone select keeps a visible focus ring & green border on keyboard Tab.
+    const timezoneSelect = page.locator('#profile-timezone');
+    await expect(timezoneSelect).toBeVisible();
+    await expect(timezoneSelect).toHaveClass(/rn-liquid-select/);
+
+    await page.locator('#profile-bio').focus();
+    await page.keyboard.press('Tab');
+    await expect(timezoneSelect).toHaveCSS('border-top-color', accent);
+    await expect(timezoneSelect).toHaveCSS('outline-style', 'solid');
+    await expect(timezoneSelect).toHaveCSS('outline-color', ring);
+    const tzFocus = await timezoneSelect.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return {
+        isActive: document.activeElement === el,
+        focusVisible: el.matches(':focus-visible'),
+        outlineWidth: Number.parseFloat(s.outlineWidth),
+        boxShadow: s.boxShadow,
+      };
+    });
+    expect(tzFocus.isActive, `timezone active (${theme})`).toBe(true);
+    expect(tzFocus.focusVisible, `timezone :focus-visible (${theme})`).toBe(true);
+    expect(tzFocus.outlineWidth, `timezone outline width (${theme})`).toBeGreaterThanOrEqual(2);
+    expect(tzFocus.boxShadow, `timezone focus shadow (${theme})`).not.toBe('none');
+
+    // P2 #2: Preferences goal input filled with -10 shows red error border and preserves keyboard focus styling.
+    await page.goto('/settings/preferences');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    const weeklyInput = page.locator('#pref-goal-week');
+    const monthlyInput = page.locator('#pref-goal-month');
+    await expect(weeklyInput).toBeVisible();
+
+    await weeklyInput.fill('-10');
+    await page.getByRole('button', { name: '保存跑量目标' }).click();
+    await expect(weeklyInput).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.locator('#pref-goals-error')).toBeVisible();
+
+    await expect(weeklyInput).toHaveCSS('border-top-color', errorColor);
+    const invalidUnfocusedShadow = await weeklyInput.evaluate((el) => getComputedStyle(el).boxShadow);
+    expect(invalidUnfocusedShadow, `invalid weekly shadow (${theme})`).not.toBe('none');
+
+    // Keyboard focus on invalid input keeps red border AND displays visible keyboard focus outline.
+    await monthlyInput.focus();
+    await page.keyboard.press('Shift+Tab');
+    await expect(weeklyInput).toHaveCSS('border-top-color', errorColor);
+    await expect(weeklyInput).toHaveCSS('outline-style', 'solid');
+    await expect(weeklyInput).toHaveCSS('outline-color', errorColor);
+    const invalidFocused = await weeklyInput.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return {
+        isActive: document.activeElement === el,
+        focusVisible: el.matches(':focus-visible'),
+        outlineWidth: Number.parseFloat(s.outlineWidth),
+        boxShadow: s.boxShadow,
+      };
+    });
+    expect(invalidFocused.isActive, `invalid weekly active (${theme})`).toBe(true);
+    expect(invalidFocused.focusVisible, `invalid weekly :focus-visible (${theme})`).toBe(true);
+    expect(invalidFocused.outlineWidth, `invalid weekly focused outline width (${theme})`).toBeGreaterThanOrEqual(2);
+    expect(invalidFocused.boxShadow, `invalid weekly focused shadow (${theme})`).not.toBe('none');
+
+    // Keyboard Tab to valid monthly input shows green accent focus border & outline.
+    await page.keyboard.press('Tab');
+    await expect(monthlyInput).toHaveCSS('border-top-color', accent);
+    await expect(monthlyInput).toHaveCSS('outline-style', 'solid');
+    await expect(monthlyInput).toHaveCSS('outline-color', ring);
+    const validFocused = await monthlyInput.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return {
+        isActive: document.activeElement === el,
+        focusVisible: el.matches(':focus-visible'),
+        outlineWidth: Number.parseFloat(s.outlineWidth),
+        boxShadow: s.boxShadow,
+      };
+    });
+    expect(validFocused.isActive, `valid monthly active (${theme})`).toBe(true);
+    expect(validFocused.focusVisible, `valid monthly :focus-visible (${theme})`).toBe(true);
+    expect(validFocused.outlineWidth, `valid monthly focused outline width (${theme})`).toBeGreaterThanOrEqual(2);
+    expect(validFocused.boxShadow, `valid monthly focused shadow (${theme})`).not.toBe('none');
+  }
+});
+
+test('/settings/site SaveBar stays sticky within viewport at scroll 0, 0.5, and 1 across 5 viewports and light/dark', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/settings/site');
+  await expect(page.locator('#site-form')).toBeVisible();
+
+  const titleInput = page.getByLabel('站点标题', { exact: true });
+  const original = await titleInput.inputValue();
+  await titleInput.fill(`${original} 预览`);
+
+  const saveBar = page.locator('.save-bar');
+  await expect(saveBar).toBeVisible();
+  // Wait for the 360ms unfoldBar enter transition on .save-bar-slot to finish before measuring geometry.
+  await page.waitForFunction(() => {
+    const slot = document.querySelector('.save-bar-slot');
+    return !!slot && slot.getAnimations().length === 0;
+  });
+
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 1440, height: 768 },
+    { width: 768, height: 1024 },
+    { width: 390, height: 844 },
+    { width: 320, height: 640 },
+  ]) {
+    await page.setViewportSize(viewport);
+    for (const theme of ['light', 'dark'] as const) {
+      await page.evaluate((value) => {
+        localStorage.setItem('runnote-theme', value);
+        document.documentElement.dataset.theme = value;
+      }, theme);
+      for (const ratio of [0, 0.5, 1] as const) {
+        const metrics = await page.evaluate(async (r) => {
+          const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+          window.scrollTo(0, Math.round(maxScroll * r));
+          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          const bar = document.querySelector('.save-bar')!.getBoundingClientRect();
+          const buttons = [...document.querySelectorAll('.save-bar button')].map((b) => {
+            const r = b.getBoundingClientRect();
+            return {
+              text: (b.textContent ?? '').trim(),
+              top: Math.round(r.top),
+              bottom: Math.round(r.bottom),
+              height: Math.round(r.height * 10) / 10,
+            };
+          });
+          return {
+            viewportHeight: window.innerHeight,
+            barTop: Math.round(bar.top),
+            barBottom: Math.round(bar.bottom),
+            buttons,
+            overflow: document.documentElement.scrollWidth > window.innerWidth,
+          };
+        }, ratio);
+        const label = `${viewport.width}x${viewport.height} ${theme} scroll=${ratio}`;
+        expect(metrics.overflow, `overflow ${label}`).toBe(false);
+        expect(metrics.barTop, `barTop ${label}`).toBeGreaterThanOrEqual(0);
+        expect(metrics.barBottom, `barBottom ${label}`).toBeLessThanOrEqual(metrics.viewportHeight + 1);
+        expect(metrics.buttons.map((b) => b.text), `SaveBar buttons ${label}`).toEqual(['放弃', '保存站点设置']);
+        for (const btn of metrics.buttons) {
+          expect(btn.top, `${btn.text} top ${label}`).toBeGreaterThanOrEqual(0);
+          expect(btn.bottom, `${btn.text} bottom ${label}`).toBeLessThanOrEqual(metrics.viewportHeight + 1);
+          expect(btn.height, `${btn.text} height ${label}`).toBeGreaterThanOrEqual(44);
+        }
+      }
+    }
+  }
+
+  await page.getByRole('button', { name: '放弃', exact: true }).click();
+  await expect(saveBar).toHaveCount(0);
 });

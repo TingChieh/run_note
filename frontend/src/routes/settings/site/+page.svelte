@@ -113,14 +113,17 @@
         <ImageUpload label="浏览器图标" src={site.favicon_url} fallback={brandInitial(site.title)} busy={imageBusy === 'favicon'} error={imageError.favicon} hint="显示在浏览器标签页。" onselect={file => void change('favicon', () => uploadSiteImage('favicon', file))} onremove={() => void change('favicon', () => removeSiteImage('favicon'))} />
       </section>
     </aside>
-    <div class="site-save"><SaveBar form="site-form" {dirty} busy={saving} message={notice} {error} label="保存站点设置" busyLabel="正在保存站点设置…" ondiscard={discard} /></div>
   </div>
+  <SaveBar form="site-form" {dirty} busy={saving} message={notice} {error} label="保存站点设置" busyLabel="正在保存站点设置…" ondiscard={discard} />
   {/if}
 </div>
 
 <style>
   .site-settings-page {
     min-width: 0;
+  }
+  .site-settings-page > :global(.save-bar-slot) {
+    margin-top: var(--space-6);
   }
   .site-column {
     display: grid;

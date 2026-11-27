@@ -3098,11 +3098,27 @@
       display: none;
     }
   }
-  .editorial-page .text-field {
+  :where(.editorial-page) .text-field {
     min-height: 2.75rem;
     padding: 0.5rem 0.75rem;
     border-color: var(--control-border);
     border-radius: var(--radius-control);
+  }
+  .editorial-page .text-field:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-color: var(--control-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--control-accent) 20%, transparent);
+  }
+  .editorial-page .text-field[aria-invalid='true'] {
+    border-color: var(--error);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--error) 15%, transparent);
+  }
+  .editorial-page .text-field[aria-invalid='true']:focus-visible {
+    outline: 2px solid var(--error);
+    outline-offset: 2px;
+    border-color: var(--error);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--error) 20%, transparent);
   }
   .editorial-page textarea.text-field {
     min-height: 5.5rem;
@@ -3124,8 +3140,8 @@
     box-shadow: none;
   }
   .editorial-page .button-secondary.button-compact:where(:not([data-glass-overlay] *)) {
-    min-height: 2.25rem;
-    padding: 0.25rem 0.75rem;
+    min-height: 2.75rem;
+    padding: 0.5rem 0.75rem;
   }
   .settings-editorial-group {
     display: grid;

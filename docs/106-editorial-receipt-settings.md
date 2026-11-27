@@ -108,6 +108,13 @@
 - 整页长图：[账户总览 1440 浅色](assets/2026-11-28-editorial-receipt-settings/after-settings-1440-light-full.png)、[账户总览 1440 深色](assets/2026-11-28-editorial-receipt-settings/after-settings-1440-dark-full.png)、[目标与隐私 1440 浅色](assets/2026-11-28-editorial-receipt-settings/after-preferences-1440-light-full.png)、[目标与隐私 1440 深色](assets/2026-11-28-editorial-receipt-settings/after-preferences-1440-dark-full.png)。
 - 交互态：[平面 SaveBar（未保存态）](assets/2026-11-28-editorial-receipt-settings/after-preferences-1440-light-savebar.png)、[下划线标签键盘焦点](assets/2026-11-28-editorial-receipt-settings/after-settings-1440-light-focus.png)、[表单校验错误态](assets/2026-11-28-editorial-receipt-settings/after-preferences-1440-light-error.png)、[保存成功态](assets/2026-11-28-editorial-receipt-settings/after-preferences-1440-light-success.png)、[跑鞋空态](assets/2026-11-28-editorial-receipt-settings/after-shoes-1440-light-empty.png)、[跑鞋加载态](assets/2026-11-28-editorial-receipt-settings/after-shoes-1440-light-loading.png)。
 
+#### PR #164 审查跟进修复（3 项 P2 + 1 项 P3）
+
+- **P2 · 账户时区增强 `select` 键盘 `focus-visible`**：在 `liquid-glass-controls.css` 恢复 `.editorial-page select.rn-liquid-select:focus-visible` 的可见 `2px solid var(--ring)` 焦点环、绿色强调边框与阴影（[1440 浅色](assets/2026-11-28-editorial-receipt-settings/fix-timezone-focus-1440-light.png)、[1440 深色](assets/2026-11-28-editorial-receipt-settings/fix-timezone-focus-1440-dark.png)）。
+- **P2 · 目标与隐私无效输入（`-10`）红框与焦点态**：将 `app.css` 默认规则降权为 `:where(.editorial-page) .text-field` 并显式声明 `:focus-visible`、`[aria-invalid='true']` 与 `[aria-invalid='true']:focus-visible`，恢复红色错误边框与键盘焦点环（[1440 浅色](assets/2026-11-28-editorial-receipt-settings/fix-preferences-error-1440-light.png)、[1440 深色](assets/2026-11-28-editorial-receipt-settings/fix-preferences-error-1440-dark.png)）。
+- **P2 · `/settings/site` `SaveBar` 吸底作用域**：移除 `.site-save` 短网格行包裹，将 `<SaveBar>` 置于 `.site-settings-page` 直系子级，确保 1440×900 / 1440×768 / 768×1024 / 390×844 / 320×640 浅深色 × `scroll=0/0.5/1` 时保存条与双按钮始终处于视口内（[1440×768 浅色](assets/2026-11-28-editorial-receipt-settings/fix-site-savebar-1440x768-light.png)、[320×640 深色](assets/2026-11-28-editorial-receipt-settings/fix-site-savebar-320x640-dark.png)）。
+- **P3 · 偏好次操作与用户表按钮 44px 命中区**：将 `.editorial-page .button-secondary.button-compact` 由 `2.25rem`（36px）提升至 `2.75rem`（44px），在 4 视口 × 明暗主题下全部 ≥44px 且零横向溢出（[用户管理 1440 浅色](assets/2026-11-28-editorial-receipt-settings/fix-users-44px-1440-light.png)）。
+
 ## 未验证项与剩余风险
 
 - **真实后端 E2E（`playwright.config.ts`）与后端集成测试**：未在本机运行（本机未配置独立 `_test` 库，且本次未改动后端/数据库/API）；全量 `frontend-ui` 结果以 PR CI 为准。
