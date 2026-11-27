@@ -544,7 +544,8 @@ test('clipped glass filters stay compact, skip per-frame PNG re-encoding on pres
     };
   });
   await installActivities(page); await loginRunner(page); await page.goto('/dashboard');
-  const belowFold = page.getByRole('link', { name: /查看全部/ }).first();
+  // A floating control below the fold: the footprint map's projection toggle (content buttons on the Editorial Receipt dashboard are flat; map overlays keep glass).
+  const belowFold = page.locator('.globe-stage .proj-toggle-btn');
   await expect(belowFold).toBeVisible();
   await expect.poll(() => page.locator('.app-sidebar').evaluate(el => el.style.backdropFilter)).toMatch(/url\("?#lg/);
   await page.waitForTimeout(250);

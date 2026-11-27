@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   comparisonWindow,
   goalTotals,
+  periodElapsed,
   parseStreaks,
   parseProvinces,
   parseGlobalFootprints,
@@ -21,6 +22,15 @@ describe('running milestones', () => {
       current: { from: '2025-12-29', to: '2026-01-02' },
       previous: { from: '2025-12-22', to: '2025-12-26' },
     });
+  });
+  it('places the goal pace tick at the share of local calendar days started, today included', () => {
+    // Thursday 2026-01-01 in UTC: 4 of 7 week days, 1 of 31 January days, 1 of 365 year days.
+    const now = new Date('2026-01-01T12:00:00Z');
+    expect(periodElapsed('week', 'UTC', now)).toBeCloseTo(4 / 7);
+    expect(periodElapsed('month', 'UTC', now)).toBeCloseTo(1 / 31);
+    expect(periodElapsed('year', 'UTC', now)).toBeCloseTo(1 / 365);
+    // Late evening UTC is already the next local day in Shanghai: the last day of a leap February.
+    expect(periodElapsed('month', 'Asia/Shanghai', new Date('2024-02-28T18:00:00Z'))).toBe(1);
   });
   it('caps only the progress bar and leaves missing duration unknown', () => {
     expect(goalTotals({ distance_m: '52000', duration_sum_seconds: null, activity_count: 4 }, 35)).toEqual({

@@ -41,7 +41,7 @@
 {/if}
 
 <style>
-  .records-slot { display: grid; align-content: center; min-width: 0; min-height: 18rem; padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
+  .records-slot { display: grid; align-content: center; min-width: 0; min-height: 18rem; padding-top: var(--space-4); border-top: 1px solid var(--border); }
   .retry { margin-top: var(--space-3); }
-  @media (max-width: 639px) { .records-slot { min-height: 34rem; padding: 1.15rem; } }
+  @media (max-width: 639px) { .records-slot { min-height: 34rem; } }
 </style>

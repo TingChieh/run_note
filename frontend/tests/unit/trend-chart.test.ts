@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bucketLabel, trendChartOption, trendText, trendValue } from '../../src/lib/components/trend-chart';
+import { bucketLabel, contrastRatio, trendChartOption, trendText, trendValue } from '../../src/lib/components/trend-chart';
 import { SOFT_OPACITY, type ChartColors } from '../../src/lib/components/records-chart';
 import type { Trends, TrendBucket } from '../../src/lib/api/statistics';
 
@@ -52,6 +52,38 @@ describe('trend chart option', () => {
     expect(option.yAxis.inverse).toBe(true);
     expect(option.series[0].data.map((d: any) => d.value)).toEqual([350, null, 325]);
     expect(option.series[0].data[2].symbolSize).toBe(10);
+  });
+  it('receipt bars: square, accent colour, the peak in receipt yellow with a bold label and value, the unfinished bucket hatched', () => {
+    const complete: Trends = { ...trends, buckets: [trends.buckets[0], trends.buckets[1], { ...trends.buckets[2], is_partial: false }, bucket('2026-04-01', '2026-05-01', 1, '8000.000', 2800, '350.000', true)] };
+    const option: any = trendChartOption(complete, 'distance', colors, false, { mark: '#e0ab00', background: '#f6f7f4' });
+    const [series] = option.series;
+    expect(series.itemStyle.borderRadius).toBe(0);
+    expect(series.barMaxWidth).toBe(28);
+    const [jan, feb, mar, apr] = series.data;
+    expect(jan.itemStyle.color).toBe('#17745c');
+    expect(jan.itemStyle.opacity).toBe(1);
+    expect(jan.label.formatter()).toBe('12');
+    expect(feb.label).toBeUndefined();
+    expect(mar.itemStyle.color).toBe('#e0ab00');
+    expect(mar.label.fontWeight).toBe(700);
+    expect(mar.label.formatter()).toBe('30.5 km');
+    // Yellow on light paper is ~2:1, so the peak gets a 1px ink outline to stay distinguishable.
+    expect(mar.itemStyle.borderColor).toBe('#111');
+    expect(mar.itemStyle.borderWidth).toBe(1);
+    expect(apr.itemStyle.decal.color).toBe('#17745c');
+    expect(apr.itemStyle.color).toBe('#f6f7f4');
+    expect(option.xAxis.axisLabel.formatter('3月', 2)).toBe('{peak|3月}');
+    expect(option.xAxis.axisLabel.formatter('1月', 0)).toBe('1月');
+  });
+  it('receipt peak needs no outline where yellow already contrasts, and narrow charts print only the peak', () => {
+    const whole: Trends = { ...trends, buckets: trends.buckets.map(b => ({ ...b, is_partial: false })) };
+    const option: any = trendChartOption(whole, 'distance', colors, false, { mark: '#f5c519', background: '#292725', printAll: false });
+    const [jan, , mar] = option.series[0].data;
+    expect(mar.itemStyle.borderWidth).toBe(0);
+    expect(jan.label).toBeUndefined();
+    expect(contrastRatio('#e0ab00', '#f6f7f4')).toBeLessThan(3);
+    expect(contrastRatio('#f5c519', '#292725')).toBeGreaterThan(3);
+    expect(contrastRatio('var(--x)', '#fff')).toBeNull();
   });
   it('names the partial bucket in the tooltip', () => {
     const option: any = trendChartOption(trends, 'count', colors, false);

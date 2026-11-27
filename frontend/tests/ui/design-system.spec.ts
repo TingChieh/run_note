@@ -178,9 +178,12 @@ test('records banner showcase: compact, hero and phone-width variants', async ({
   const hero = banners.filter({ has: page.getByRole('heading', { name: '最佳成绩' }) });
   await expect(hero).toHaveCount(1);
   await expect(hero).toHaveAccessibleName('最佳成绩');
-  // One flat card like the dashboard cards (24px padding, hairline-separated columns, no tinted blocks inside).
+  // Hero (/records): one flat card (24px padding). Compact (Editorial Receipt dashboard): a ledger block opened by a 1px hairline, no card.
+  // Both keep hairline-separated columns and no tinted blocks inside.
   await expect(hero).toHaveCSS('padding-top', '24px');
-  await expect(banners.first()).toHaveCSS('padding-top', '24px');
+  await expect(banners.first()).toHaveCSS('padding-top', '16px');
+  await expect(banners.first()).toHaveCSS('border-top-width', '1px');
+  await expect(banners.first()).toHaveCSS('border-left-width', '0px');
   await expect(banners.first().getByTestId('records-banner-10km')).toHaveCSS('border-left-width', '1px');
   await expect(banners.first().getByTestId('records-banner-5km')).toHaveCSS('background-image', 'none');
   await expect(hero.getByTestId('records-banner-10km')).toContainText('还没有 10K 记录');
