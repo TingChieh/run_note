@@ -95,6 +95,9 @@
   --control-border: #7c8e82;
   --receipt-ink: #1e2c22;
   --receipt-mark: #e0ab00;
+  /* Active recording outdoor surface (brand.md §6.9): ≥15.7:1 luminance contrast in light and dark. */
+  --rec-bg: #fcfcf7;
+  --rec-ink: #10251b;
   /* Wellbeing journal: one hue per measure, so a dial is recognised by colour as well as by icon. Hue never says good or bad. */
   --well-mood: #7a6bd6;
   --well-anxiety: #d9692f;
@@ -152,6 +155,11 @@
   /* Editorial Receipt figures: one run's distance (64→88px) and a period's primary number on archive pages (56→128px). */
   --text-figure: clamp(4rem, 6.2vw, 5.5rem);
   --text-period-hero: clamp(3.5rem, 8.9vw, 8rem);
+  /* Outdoor recording readouts (brand.md §3.3 & §6.9): large ink numerals that fit 320px without overflow and reach 136px/52px on tablets. */
+  --text-rec-hero: clamp(4.25rem, 25vw, 8.5rem);
+  --text-rec-hero-narrow: clamp(3.25rem, 21vw, 4.5rem);
+  --text-rec-sub: clamp(2rem, 11vw, 3.25rem);
+  --text-rec-action: 1.375rem;
   --text-recap-unit: clamp(1.125rem, 2vw, 1.75rem);
   --text-recap-ledger: clamp(1.375rem, 2.2vw, 1.95rem);
   /* Deck cards are inline-size containers, so these shrink with the card and stop at the scale. */
@@ -161,6 +169,7 @@
   /* Page h1 is 28px (brand.md §4): the page's primary number, not its title, is the largest thing on screen. */
   --text-sport-title: var(--text-stat);
   --line-height-solid: 1;
+  --line-height-rec: 0.92;
   --line-height-hero: 1.02;
   --line-height-tight: 1.15;
   --line-height-title: 1.25;
@@ -169,6 +178,7 @@
   --tracking-title: 0;
   --tracking-heading: 0;
   --tracking-tight: -0.03em;
+  --tracking-rec: -0.04em;
   --tracking-caps: 0.12em;
   --weight-regular: 400;
   --weight-medium: 500;
@@ -2004,6 +2014,8 @@
   --control-border: #827d77;
   --receipt-ink: #1c1b19;
   --receipt-mark: #f5c519;
+  --rec-bg: #161514;
+  --rec-ink: #f6f4f1;
   --well-mood: #b3a8ff;
   --well-anxiety: #ffab80;
   --well-energy: #ffd75e;
@@ -2839,6 +2851,36 @@
     background: var(--paper);
     overflow-x: clip;
   }
+  /* Serrated tear bottom: completion receipt & share poster only (brand.md §2, §6.8). */
+  .receipt-sheet.receipt-serrated {
+    border-bottom: 0;
+    border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+    margin-bottom: 0.75rem;
+    overflow: visible;
+  }
+  .receipt-sheet.receipt-serrated::after {
+    content: '';
+    position: absolute;
+    left: -1px;
+    right: -1px;
+    bottom: -0.75rem;
+    height: 0.75rem;
+    background:
+      linear-gradient(-45deg, transparent 8px, var(--paper) 0) 0 0 / 16px 12px repeat-x,
+      linear-gradient(45deg, transparent 8px, var(--paper) 0) 0 0 / 16px 12px repeat-x;
+    pointer-events: none;
+  }
+  /* Immersive recording & finished-run surfaces (brand.md §6.9): full-bleed ground without footer clutter. */
+  .app-shell:has([data-recording-immersive]) {
+    background: var(--rec-bg);
+    color: var(--rec-ink);
+  }
+  .app-shell:has([data-recording-immersive]) .app-footer {
+    display: none;
+  }
+  .app-shell:has([data-recording-done]) {
+    background: var(--desk);
+  }
   .receipt-header {
     display: flex;
     flex-wrap: wrap;
@@ -3005,6 +3047,7 @@
   .status-strip {
     padding: var(--space-3) var(--space-4);
     border-left: 3px solid var(--warning);
+    border-radius: 0;
     background: var(--warning-soft);
     color: var(--foreground);
     font-size: var(--text-small);

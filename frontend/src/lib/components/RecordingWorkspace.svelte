@@ -3,9 +3,11 @@
   import { beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
   import { readSession } from '#lib/api/auth.ts';
-  import PageHeader from '#lib/components/PageHeader.svelte';
   import FeedbackState from '#lib/components/FeedbackState.svelte';
   import { useViewContext } from '#lib/view-context.ts';
+  import { formatReceiptDate, formatReceiptTimeRange, splitFigure, type KmSplit } from '#lib/api/activity-splits.ts';
+  import { extractRecordedSplits, summarizeLiveSplit } from '#lib/recording-splits.ts';
+  import { brandInitial, SITE_DEFAULTS } from '#lib/site.ts';
   import {
     acknowledgeNativeHandoff,
     checkRecorderPermissions,
@@ -74,9 +76,33 @@
   const view = useViewContext();
   const accountId = $derived(page.data.user?.id ?? '');
   const timezone = $derived(page.data.user?.timezone || 'Asia/Shanghai');
+  const siteTitle = $derived(page.data.site?.title || SITE_DEFAULTS.title);
   const fullShowcaseAutoPublishes = $derived(
     page.data.user?.is_admin === true || page.data.user?.showcase_enabled === true,
   );
+
+  interface FinishedRunSummary {
+    idempotencyKey: string;
+    title: string;
+    startedAtMs: number;
+    endedAtMs: number;
+    activeDurationMs: number;
+    previewDistanceM: number;
+    pointCount: number;
+    segmentCount: number;
+    splits: KmSplit[];
+  }
+
+  let mobileViewport = $state(false);
+  let screenLocked = $state(false);
+  let lastFinishedRun = $state<FinishedRunSummary | null>(null);
+  let finishDialog = $state<HTMLDialogElement>(null!);
+  let holdActive = $state(false);
+  let holdProgress = $state(0);
+  let holdRafId: number | null = null;
+  let holdStartMs = 0;
+  let holdCompleted = false;
+  const HOLD_TO_FINISH_MS = 1500;
 
   let mounted = $state(false);
   let offline = $state(false);
@@ -237,6 +263,144 @@
     }
     return '检测到上次未完成的跑步记录（可能因进程被系统终止、设备重启或页面关闭）。';
   });
+
+  const isActiveSession = $derived(status === 'recording' || status === 'paused');
+  const isDoneView = $derived(
+    lastFinishedRun !== null && status === 'idle' && !pendingHandoffSession && sessionRecoveryState === 'ready',
+  );
+  const distanceFigure = $derived(splitFigure(formatPreviewDistanceKm(previewDistanceM)));
+  const paceFigure = $derived(splitFigure(formatPreviewPace(displayedDurationMs, previewDistanceM)));
+  const liveSplit = $derived(summarizeLiveSplit(previewDistanceM, webPoints));
+  const finishedQueueItem = $derived(
+    lastFinishedRun ? (uploadItems.find((item) => item.idempotencyKey === lastFinishedRun!.idempotencyKey) ?? null) : null,
+  );
+  const finishedFastestSplit = $derived(
+    lastFinishedRun?.splits.find((row) => row.fastest && row.paceSecondsPerKm !== null) ?? null,
+  );
+  const finishedDistanceFigure = $derived.by(() => {
+    if (!lastFinishedRun) return { number: '0.00', unit: 'km' };
+    if (finishedQueueItem?.status === 'uploaded' && finishedQueueItem.serverDistanceM !== null) {
+      return splitFigure(formatDistance(finishedQueueItem.serverDistanceM));
+    }
+    return splitFigure(formatPreviewDistanceKm(lastFinishedRun.previewDistanceM));
+  });
+  const finishedDurationText = $derived.by(() => {
+    if (!lastFinishedRun) return '00:00';
+    if (finishedQueueItem?.status === 'uploaded' && finishedQueueItem.serverDurationS !== null) {
+      return formatDuration(finishedQueueItem.serverDurationS);
+    }
+    return formatClockDuration(lastFinishedRun.activeDurationMs);
+  });
+  const finishedPaceText = $derived.by(() => {
+    if (!lastFinishedRun) return '—';
+    if (finishedQueueItem?.status === 'uploaded' && finishedQueueItem.serverPaceSPerKm !== null) {
+      return formatPace(finishedQueueItem.serverPaceSPerKm);
+    }
+    return formatPreviewPace(lastFinishedRun.activeDurationMs, lastFinishedRun.previewDistanceM);
+  });
+  const preRunGpsReadout = $derived.by(() => {
+    if (permissions.location === 'denied') return { value: '未授权', unit: '', tone: 'error' as const };
+    if (permissions.location === 'approximate') return { value: '仅大致', unit: '', tone: 'error' as const };
+    if (!permissions.locationServicesEnabled) return { value: '已关闭', unit: '', tone: 'error' as const };
+    if (lastAccuracyM !== null) {
+      return {
+        value: `±${Math.round(lastAccuracyM)}`,
+        unit: 'm',
+        tone: lastAccuracyM <= 15 ? ('ok' as const) : ('warn' as const),
+      };
+    }
+    if (gpsStatus === 'good') return { value: '良好', unit: '', tone: 'ok' as const };
+    if (gpsStatus === 'weak') return { value: '较弱', unit: '', tone: 'warn' as const };
+    if (gpsStatus === 'acquiring') return { value: '搜星中', unit: '', tone: 'warn' as const };
+    if (capabilities.native) return { value: '就绪', unit: '', tone: 'ok' as const };
+    return { value: '待定位', unit: '', tone: 'neutral' as const };
+  });
+
+  $effect(() => {
+    if (status !== 'recording') screenLocked = false;
+    if (status !== 'paused') cancelHoldToFinish();
+  });
+
+  function cancelHoldToFinish() {
+    if (holdRafId !== null) {
+      window.cancelAnimationFrame(holdRafId);
+      holdRafId = null;
+    }
+    holdActive = false;
+    holdProgress = 0;
+  }
+
+  function startHoldToFinish(event: PointerEvent) {
+    if (!mobileViewport || actionBusy || status !== 'paused') return;
+    if (event.button !== 0 && event.pointerType === 'mouse') return;
+    cancelHoldToFinish();
+    holdCompleted = false;
+    holdActive = true;
+    holdStartMs = performance.now();
+    const tickHold = (now: number) => {
+      if (!holdActive || disposed) return;
+      const elapsed = now - holdStartMs;
+      holdProgress = Math.min(1, elapsed / HOLD_TO_FINISH_MS);
+      if (elapsed >= HOLD_TO_FINISH_MS) {
+        holdCompleted = true;
+        cancelHoldToFinish();
+        void handleStopAndSave();
+        return;
+      }
+      holdRafId = window.requestAnimationFrame(tickHold);
+    };
+    holdRafId = window.requestAnimationFrame(tickHold);
+  }
+
+  function handleStopButtonClick() {
+    if (actionBusy) return;
+    if (holdCompleted) {
+      holdCompleted = false;
+      return;
+    }
+    if (mobileViewport && status === 'paused') {
+      finishDialog?.showModal();
+      return;
+    }
+    void handleStopAndSave();
+  }
+
+  function confirmFinishDialog() {
+    finishDialog?.close();
+    void handleStopAndSave();
+  }
+
+  function cancelFinishDialog() {
+    finishDialog?.close();
+  }
+
+  function dismissFinishedRun() {
+    lastFinishedRun = null;
+    statusNotice = '';
+    errorMessage = '';
+  }
+
+  function scrollToUploadQueue() {
+    document.getElementById('upload-queue-heading')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function formatDateIsoInTimezone(ms: number, tz: string): string {
+    try {
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).formatToParts(new Date(ms));
+      const year = parts.find((p) => p.type === 'year')?.value;
+      const month = parts.find((p) => p.type === 'month')?.value;
+      const day = parts.find((p) => p.type === 'day')?.value;
+      if (year && month && day) return `${year}-${month}-${day}`;
+    } catch {
+      // Fall back to UTC ISO date below.
+    }
+    return new Date(ms).toISOString().slice(0, 10);
+  }
 
   function applyNativeState(event: RecorderStateEvent) {
     permissions = event.permissions;
@@ -1280,6 +1444,7 @@
     actionBusy = true;
     errorMessage = '';
     statusNotice = '';
+    lastFinishedRun = null;
     try {
       if (capabilities.native) {
         let perms = await checkRecorderPermissions();
@@ -1717,10 +1882,25 @@
         }
       }
 
+      const finalPreviewDistanceM = stoppedSession ? stoppedSession.previewDistanceM : previewDistanceM;
+      const finalSegmentCount = new Set(capturedPoints.map((pt) => pt.segmentIndex)).size || 1;
+      const finalSplits = extractRecordedSplits(capturedPoints);
+
       pendingHandoffSession = null;
       failedHandoffSessionId = null;
       resetLocalSessionState();
       runTitle = '';
+      lastFinishedRun = {
+        idempotencyKey: finalizeInput.idempotencyKey,
+        title: finalizeInput.title,
+        startedAtMs: finalizeInput.startedAtMs,
+        endedAtMs: finalizeInput.endedAtMs,
+        activeDurationMs: finalizeInput.activeDurationMs,
+        previewDistanceM: finalPreviewDistanceM,
+        pointCount: capturedPoints.length,
+        segmentCount: finalSegmentCount,
+        splits: finalSplits,
+      };
       await refreshUploadQueue();
       if (offline) {
         statusNotice = '轨迹已安全保存到本地上传队列，恢复网络后将自动上传一次。';
@@ -1809,6 +1989,9 @@
         statusNotice = '已安全丢弃未保存的记录会话。';
       } else {
         await discardUploadQueueItem(accountId, target.idempotencyKey);
+        if (lastFinishedRun?.idempotencyKey === target.idempotencyKey) {
+          lastFinishedRun = null;
+        }
         await refreshUploadQueue();
         statusNotice = '已从本地上传队列移除该记录。';
       }
@@ -1866,6 +2049,12 @@
   onMount(() => {
     mounted = true;
     offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    const mobileMql = window.matchMedia('(max-width: 799px)');
+    mobileViewport = mobileMql.matches;
+    const onViewportChange = (event: MediaQueryListEvent) => {
+      mobileViewport = event.matches;
+    };
+    mobileMql.addEventListener('change', onViewportChange);
 
     const onNetwork = () => {
       const nextOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
@@ -1885,6 +2074,7 @@
 
     const handleIdentityRevoked = () => {
       pageClaimRevoked = true;
+      lastFinishedRun = null;
       stopWebGeolocationWatch();
       if (!disposed && !capabilities.native && status === 'recording') {
         resetLocalSessionState();
@@ -2010,6 +2200,8 @@
 
     return () => {
       disposed = true;
+      cancelHoldToFinish();
+      mobileMql.removeEventListener('change', onViewportChange);
       if (activeRecoveryTimeoutId !== null) {
         window.clearTimeout(activeRecoveryTimeoutId);
         activeRecoveryTimeoutId = null;
@@ -2030,474 +2222,775 @@
   });
 </script>
 
-<PageHeader title="实时记录">
-  {#snippet actions()}
-    <a class="button-secondary" href={view.href('/activities')}>跑步记录</a>
-  {/snippet}
-</PageHeader>
+<div
+  class="editorial-page recording-page"
+  data-recording-immersive={isActiveSession ? '' : undefined}
+  data-recording-done={isDoneView ? '' : undefined}
+>
+  {#if isActiveSession}
+    <section
+      class="rec-screen"
+      aria-labelledby="recording-live-heading"
+      data-testid="recording-panel"
+    >
+      <h1 id="recording-live-heading" class="sr-only">
+        {status === 'recording' ? '正在记录跑步' : '跑步记录已暂停'}
+      </h1>
 
-<div class="aux-stack">
-  {#if pendingHandoffSession}
-    <section
-      class="aux-panel recording-recovery"
-      aria-labelledby="handoff-title"
-      data-testid="recording-pending-handoff-panel"
-    >
-      <FeedbackState kind="error" title="检测到已结束但尚未入队的跑步记录">
-        <p>
-          上次结束记录后应用在写入上传队列前中断。已安全保留 {pendingHandoffSession.pointCount} 个轨迹点（预览 {formatPreviewDistanceKm(
-            pendingHandoffSession.previewDistanceM,
-          )}），完成入队前不可开始新记录。
-        </p>
-        <div class="recording-actions mt-3">
-          <button
-            type="button"
-            class="button-primary"
-            disabled={handoffBusy || actionBusy}
-            onclick={() => pendingHandoffSession && void recoverPendingStoppedHandoff(pendingHandoffSession, true)}
-            data-testid="handoff-retry-btn"
-          >
-            {handoffBusy ? '正在保存…' : '重试保存到上传队列'}
-          </button>
-          <button
-            type="button"
-            class="button-secondary danger-outline"
-            disabled={handoffBusy || actionBusy}
-            onclick={() => requestDiscardConfirmation({ kind: 'session' })}
-            data-testid="handoff-discard-btn"
-          >
-            安全丢弃
-          </button>
+      <div class="rec-top">
+        <a class="rec-back-link" href={view.href('/activities')} aria-label="跑步记录">←</a>
+
+        <div class="rec-top-status">
+          <span class="rec-status-pill">
+            <span class="rec-dot" class:live={status === 'recording'} aria-hidden="true"></span>
+            <span data-testid="recording-status-badge">{statusBadgeText}</span>
+          </span>
+          <span class="rec-gps-inline" data-testid="recording-gps-badge">{gpsBadgeText}</span>
+          <span class="sr-only" data-testid="recording-upload-badge">{uploadBadgeText}</span>
         </div>
-      </FeedbackState>
-    </section>
-  {:else if status === 'interrupted'}
-    <section
-      class="aux-panel recording-recovery"
-      aria-labelledby="recovery-title"
-      data-testid="recording-recovery-panel"
-    >
-      <FeedbackState kind="error" title="检测到未完成的跑步记录">
-        <p>{interruptedReasonLabel}</p>
-        <p class="recovery-stats">
-          已捕获 {pointCount} 个轨迹点 · 预览距离 {formatPreviewDistanceKm(previewDistanceM)} · 用时 {formatClockDuration(
-            displayedDurationMs,
-          )}
-        </p>
-        <div class="recording-actions mt-3">
+
+        {#if status === 'recording'}
           <button
             type="button"
-            class="button-primary"
-            disabled={actionBusy || !mounted}
-            onclick={() => void handleStart(true)}
-            data-testid="recovery-resume-btn"
+            class="rec-lock-btn"
+            class:locked={screenLocked}
+            aria-pressed={screenLocked}
+            aria-label={screenLocked ? '解锁屏幕操作' : '锁定屏幕防误触'}
+            onclick={() => (screenLocked = !screenLocked)}
+            data-testid="recording-lock-btn"
           >
-            继续记录
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              {#if screenLocked}
+                <rect x="5" y="11" width="14" height="10" rx="2" />
+                <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+              {:else}
+                <rect x="5" y="11" width="14" height="10" rx="2" />
+                <path d="M8 11V7a4 4 0 0 1 7.4-2" />
+              {/if}
+            </svg>
           </button>
+        {:else}
+          <button
+            type="button"
+            class="rec-discard-btn"
+            disabled={actionBusy}
+            onclick={() => requestDiscardConfirmation({ kind: 'session' })}
+            data-testid="recording-discard-btn"
+          >
+            放弃本次
+          </button>
+        {/if}
+      </div>
+
+      <div class="rec-main" aria-label="实时运动数据预览">
+        <div class="rec-hero-block">
+          <span class="rec-label">距离（预览）</span>
+          <p class="rec-hero-num" data-testid="recording-distance">
+            {distanceFigure.number}{#if distanceFigure.unit}{' '}<span class="rec-hero-unit">{distanceFigure.unit}</span>{/if}
+          </p>
+        </div>
+
+        <dl class="rec-pair">
+          <div class="rec-pair-item">
+            <dt class="rec-label">用时</dt>
+            <dd class="rec-sub-num" data-testid="recording-duration">{formatClockDuration(displayedDurationMs)}</dd>
+          </div>
+          <div class="rec-pair-item">
+            <dt class="rec-label">平均配速</dt>
+            <dd class="rec-sub-num" data-testid="recording-pace">
+              {paceFigure.number}{#if paceFigure.unit}{' '}<span class="rec-sub-unit">{paceFigure.unit}</span>{/if}
+            </dd>
+          </div>
+        </dl>
+
+        <div class="rec-telemetry">
+          {#if liveSplit.lastFullKmPaceSecondsPerKm !== null}
+            <span>第 {liveSplit.currentKm} 公里 · 上一公里 {formatPace(liveSplit.lastFullKmPaceSecondsPerKm)}</span>
+          {:else if previewDistanceM > 0}
+            <span>第 {liveSplit.currentKm} 公里</span>
+          {/if}
+          <span data-testid="recording-points-count">{pointCount} 点 · {segmentIndex + 1} 段</span>
+        </div>
+
+        <div class="rec-notices">
+          {#if screenLocked && status === 'recording'}
+            <p class="rec-lock-hint" role="status">屏幕已防误触锁定，点右上角锁图标解锁后可暂停。</p>
+          {/if}
+
+          {#if gpsStatus === 'lost' && status === 'recording'}
+            <div class="status-strip" data-tone="error" data-testid="recording-gps-lost">
+              <strong>GPS 信号暂时丢失</strong>：请移至室外空旷处等待信号恢复；此前已记录的轨迹点已安全保存。
+            </div>
+          {/if}
+
+          {#if offline}
+            <p class="status-strip" role="status" data-testid="recording-offline-note">
+              当前处于无网络/飞行模式：GPS 轨迹仍正常记录，结束后将保存在本机，恢复联网后自动上传一次。
+            </p>
+          {/if}
+
+          {#if status === 'paused'}
+            <p class="status-strip" role="status" data-testid="recording-pause-note">
+              已暂停采集；继续后将开启新轨迹段（PostGIS 里程不连接暂停间隔，但服务端 GPX
+              总用时按首尾轨迹点计算，长时间暂停会影响服务端平均配速）。
+            </p>
+            <div class="recording-title-field rec-paused-title">
+              <label for="recording-title-input">跑步标题（可选）</label>
+              <input
+                id="recording-title-input"
+                type="text"
+                class="text-field"
+                maxlength="120"
+                placeholder="留空则按日期与地点自动命名"
+                bind:value={runTitle}
+                disabled={actionBusy}
+              />
+            </div>
+          {/if}
+
+          {#if errorMessage}
+            <div data-testid="recording-error">
+              <FeedbackState kind="error" title={errorMessage} />
+            </div>
+          {/if}
+
+          {#if statusNotice}
+            <p class="status-strip" role="status" data-testid="recording-status-notice">{statusNotice}</p>
+          {/if}
+        </div>
+      </div>
+
+      <div class="rec-bottom" role="group" aria-label="记录控制">
+        {#if status === 'recording'}
+          <button
+            type="button"
+            class="rec-pause-btn"
+            disabled={actionBusy || screenLocked}
+            onclick={() => void handlePause()}
+            data-testid="recording-pause-btn"
+          >
+            {screenLocked ? '屏幕已锁定' : '暂停'}
+          </button>
+          {#if !mobileViewport}
+            <button
+              type="button"
+              class="button-secondary rec-desktop-stop-btn"
+              disabled={actionBusy}
+              onclick={() => void handleStopAndSave()}
+              data-testid="recording-stop-btn"
+            >
+              {actionBusy ? '正在保存…' : '结束并保存'}
+            </button>
+          {/if}
+        {:else if status === 'paused'}
+          <button
+            type="button"
+            class="button-primary rec-resume-btn"
+            disabled={actionBusy}
+            onclick={() => void handleResume()}
+            data-testid="recording-resume-btn"
+          >
+            继续跑步
+          </button>
+          <button
+            type="button"
+            class="rec-hold-stop-btn"
+            class:holding={holdActive}
+            style={`--hold-progress: ${holdProgress};`}
+            disabled={actionBusy}
+            onpointerdown={startHoldToFinish}
+            onpointerup={cancelHoldToFinish}
+            onpointercancel={cancelHoldToFinish}
+            onpointerleave={cancelHoldToFinish}
+            onclick={handleStopButtonClick}
+            data-testid="recording-stop-btn"
+          >
+            <span class="rec-hold-label">
+              {#if actionBusy}
+                正在保存…
+              {:else if mobileViewport}
+                {holdActive ? '继续按住以结束并保存…' : '长按 1.5 秒结束并保存'}
+              {:else}
+                结束并保存
+              {/if}
+            </span>
+          </button>
+        {/if}
+      </div>
+    </section>
+  {:else if isDoneView && lastFinishedRun}
+    <div class="done-screen">
+      <div class="rec-topnav">
+        <button type="button" class="rec-back-btn" onclick={dismissFinishedRun}>← 返回</button>
+        <h1>跑步完成</h1>
+        <span class="rec-topnav-meta" data-testid="recording-upload-badge">{uploadBadgeText}</span>
+        <span class="sr-only" data-testid="recording-status-badge">{statusBadgeText}</span>
+        <span class="sr-only" data-testid="recording-gps-badge">{gpsBadgeText}</span>
+      </div>
+
+      <article class="receipt-sheet receipt-serrated done-receipt" data-testid="recording-done-sheet">
+        <div class="receipt-header">
+          <span class="done-brand">
+            <span class="done-brand-mark" aria-hidden="true">{brandInitial(siteTitle)}</span>
+            <span>{formatReceiptDate(formatDateIsoInTimezone(lastFinishedRun.startedAtMs, timezone))}</span>
+          </span>
+          <span>
+            {formatReceiptTimeRange(
+              new Date(lastFinishedRun.startedAtMs).toISOString(),
+              new Date(lastFinishedRun.endedAtMs).toISOString(),
+              timezone,
+            )}
+          </span>
+        </div>
+
+        {#if lastFinishedRun.title}
+          <h2 class="done-title">{lastFinishedRun.title}</h2>
+        {/if}
+
+        <div class="done-hero">
+          <span class="done-kicker">
+            {finishedQueueItem?.status === 'uploaded' && finishedQueueItem.serverDistanceM !== null
+              ? '距离 · 服务端权威指标'
+              : '距离（本地预览）'}
+          </span>
+          <p class="done-figure">
+            {finishedDistanceFigure.number}{#if finishedDistanceFigure.unit}{' '}<span class="done-unit">{finishedDistanceFigure.unit}</span>{/if}
+          </p>
+        </div>
+
+        <dl class="done-leaders">
+          <div class="leader-row">
+            <dt>用时</dt>
+            <dd>{finishedDurationText}</dd>
+          </div>
+          <div class="leader-row">
+            <dt>平均配速</dt>
+            <dd>{finishedPaceText}</dd>
+          </div>
+          {#if finishedFastestSplit && finishedFastestSplit.paceSecondsPerKm !== null}
+            <div class="leader-row">
+              <dt>最快公里</dt>
+              <dd>第 {finishedFastestSplit.label} km · {formatPace(finishedFastestSplit.paceSecondsPerKm)}</dd>
+            </div>
+          {/if}
+          <div class="leader-row">
+            <dt>轨迹点</dt>
+            <dd>{lastFinishedRun.pointCount} 点 · {lastFinishedRun.segmentCount} 段</dd>
+          </div>
+        </dl>
+
+        {#if lastFinishedRun.splits.length > 0}
+          <div class="receipt-perforation done-perforation" aria-hidden="true"></div>
+          <div class="done-splits">
+            <h3 class="done-splits-heading">每公里配速（本地预览）</h3>
+            <ol class="done-splits-list">
+              {#each lastFinishedRun.splits as row (row.index)}
+                <li class="done-split-row" class:fastest={row.fastest}>
+                  <span class="done-split-km">{row.label}</span>
+                  <span class="done-split-track" aria-hidden="true">
+                    <span class="done-split-bar" style={`width: ${Math.round(row.barRatio * 100)}%;`}></span>
+                  </span>
+                  <span class="done-split-pace">
+                    {row.paceSecondsPerKm !== null ? formatPace(row.paceSecondsPerKm) : '—'}
+                  </span>
+                </li>
+              {/each}
+            </ol>
+          </div>
+        {/if}
+
+        <div class="receipt-perforation done-perforation" aria-hidden="true"></div>
+
+        {#if finishedQueueItem?.status === 'uploaded'}
+          <p class="status-strip done-sync-strip" data-tone="success" role="status">
+            已同步至云端，里程、用时与配速已按服务端权威计算结果更新。
+          </p>
+        {:else if finishedQueueItem?.status === 'uploading' || uploadBusy}
+          <p class="status-strip done-sync-strip" role="status">正在上传本次跑步轨迹至服务端…</p>
+        {:else if finishedQueueItem?.status === 'failed'}
+          <p class="status-strip done-sync-strip" data-tone="error" role="alert">
+            {finishedQueueItem.lastError || '上传失败，轨迹已安全保存在本机上传队列，可稍后重试。'}
+          </p>
+        {:else}
+          <p class="status-strip done-sync-strip" role="status">
+            已暂存在本机上传队列，恢复联网后将自动上传一次。上传后由服务端计算权威里程、用时与配速。
+          </p>
+        {/if}
+      </article>
+
+      <div class="done-actions">
+        {#if finishedQueueItem?.status === 'uploaded' && finishedQueueItem.uploadedActivityId}
+          <a class="button-primary done-primary-action" href={view.href(`/activities/${finishedQueueItem.uploadedActivityId}`)}>
+            查看跑步详情
+          </a>
+        {:else if !offline && finishedQueueItem && !finishedQueueItem.permanentError}
+          <button
+            type="button"
+            class="button-primary done-primary-action"
+            disabled={uploadBusy}
+            onclick={() => void runUploadFlush(true)}
+          >
+            {uploadBusy ? '上传中…' : '立即上传'}
+          </button>
+        {/if}
+        <div class="done-secondary-row">
+          <button type="button" class="button-secondary" onclick={dismissFinishedRun}>再跑一次</button>
+          {#if finishedQueueItem && finishedQueueItem.status !== 'uploaded'}
+            <button
+              type="button"
+              class="button-secondary danger-outline"
+              disabled={uploadBusy}
+              onclick={() =>
+                requestDiscardConfirmation({
+                  kind: 'upload',
+                  idempotencyKey: finishedQueueItem.idempotencyKey,
+                  title: finishedQueueItem.title,
+                })}
+            >
+              放弃这次记录
+            </button>
+          {/if}
+        </div>
+      </div>
+
+      {#if errorMessage}
+        <div class="mt-4" data-testid="recording-error">
+          <FeedbackState kind="error" title={errorMessage} />
+        </div>
+      {/if}
+
+      {#if statusNotice}
+        <p class="status-strip mt-3" role="status" data-testid="recording-status-notice">{statusNotice}</p>
+      {/if}
+    </div>
+  {:else}
+    <div class="rec-topnav">
+      <a class="rec-back-link" href={view.href('/activities')}>← 跑步记录</a>
+      <h1>准备开跑</h1>
+      {#if uploadItems.length > 0}
+        <button type="button" class="rec-queue-jump" onclick={scrollToUploadQueue}>
+          队列 {uploadItems.length}
+        </button>
+      {/if}
+    </div>
+
+    <div class="prerun-stack">
+      {#if pendingHandoffSession}
+        <section
+          class="recording-alert-block"
+          aria-labelledby="handoff-title"
+          data-testid="recording-pending-handoff-panel"
+        >
+          <FeedbackState kind="error" title="检测到已结束但尚未入队的跑步记录">
+            <p>
+              上次结束记录后应用在写入上传队列前中断。已安全保留 {pendingHandoffSession.pointCount} 个轨迹点（预览 {formatPreviewDistanceKm(
+                pendingHandoffSession.previewDistanceM,
+              )}），完成入队前不可开始新记录。
+            </p>
+            <div class="recording-actions mt-3">
+              <button
+                type="button"
+                class="button-primary"
+                disabled={handoffBusy || actionBusy}
+                onclick={() => pendingHandoffSession && void recoverPendingStoppedHandoff(pendingHandoffSession, true)}
+                data-testid="handoff-retry-btn"
+              >
+                {handoffBusy ? '正在保存…' : '重试保存到上传队列'}
+              </button>
+              <button
+                type="button"
+                class="button-secondary danger-outline"
+                disabled={handoffBusy || actionBusy}
+                onclick={() => requestDiscardConfirmation({ kind: 'session' })}
+                data-testid="handoff-discard-btn"
+              >
+                安全丢弃
+              </button>
+            </div>
+          </FeedbackState>
+        </section>
+      {:else if status === 'interrupted'}
+        <section
+          class="recording-alert-block"
+          aria-labelledby="recovery-title"
+          data-testid="recording-recovery-panel"
+        >
+          <FeedbackState kind="error" title="检测到未完成的跑步记录">
+            <p>{interruptedReasonLabel}</p>
+            <p class="recovery-stats">
+              已捕获 {pointCount} 个轨迹点（<span data-testid="recording-points-count">{pointCount} 点 · {segmentIndex + 1} 段</span>）
+              · 预览距离 <span data-testid="recording-distance">{formatPreviewDistanceKm(previewDistanceM)}</span>
+              · 用时 <span data-testid="recording-duration">{formatClockDuration(displayedDurationMs)}</span>
+              · 配速 <span data-testid="recording-pace">{formatPreviewPace(displayedDurationMs, previewDistanceM)}</span>
+            </p>
+            <div class="recording-actions mt-3">
+              <button
+                type="button"
+                class="button-primary"
+                disabled={actionBusy || !mounted}
+                onclick={() => void handleStart(true)}
+                data-testid="recovery-resume-btn"
+              >
+                继续记录
+              </button>
+              <button
+                type="button"
+                class="button-secondary"
+                disabled={actionBusy || !mounted || pointCount === 0}
+                onclick={() => void handleStopAndSave()}
+                data-testid="recovery-save-btn"
+              >
+                结束并保存
+              </button>
+              <button
+                type="button"
+                class="button-secondary danger-outline"
+                disabled={actionBusy || !mounted}
+                onclick={() => requestDiscardConfirmation({ kind: 'session' })}
+                data-testid="recovery-discard-btn"
+              >
+                安全丢弃
+              </button>
+            </div>
+          </FeedbackState>
+        </section>
+      {/if}
+
+      {#if sessionRecoveryState === 'failed'}
+        <section
+          class="recording-alert-block"
+          aria-labelledby="recovery-error-title"
+          data-testid="recording-recovery-error-panel"
+        >
+          <FeedbackState kind="error" title={capabilities.native ? '无法确认原生记录状态' : '无法确认本地草稿状态'}>
+            <p>{recoveryFailureMessage}</p>
+            <div class="recording-actions mt-3">
+              <button
+                type="button"
+                class="button-primary"
+                disabled={actionBusy || !mounted}
+                onclick={() => void retrySessionRecovery()}
+                data-testid="recording-recovery-retry-btn"
+              >
+                重试恢复
+              </button>
+            </div>
+          </FeedbackState>
+        </section>
+      {/if}
+
+      {#if permissions.location === 'denied'}
+        <div data-testid="recording-permission-denied">
+          <FeedbackState kind="error" title="未授予定位权限">
+            <p>实时记录需要访问设备精确位置以生成跑步轨迹。你可以重新请求授权，或在系统应用设置中手动开启。</p>
+            <div class="recording-actions mt-3">
+              <button
+                type="button"
+                class="button-primary"
+                disabled={actionBusy || !mounted}
+                onclick={() => void handleRequestPermission()}
+                data-testid="recording-request-permission-btn"
+              >
+                请求定位权限
+              </button>
+              {#if capabilities.native}
+                <button
+                  type="button"
+                  class="button-secondary"
+                  onclick={() => void openRecorderAppSettings()}
+                  data-testid="recording-open-app-settings-btn"
+                >
+                  打开应用设置
+                </button>
+              {/if}
+            </div>
+          </FeedbackState>
+        </div>
+      {:else if permissions.location === 'approximate'}
+        <div data-testid="recording-approximate-warning">
+          <FeedbackState kind="error" title="需要精确位置权限">
+            <p>
+              当前仅授予了“大致位置”，误差通常超过 50
+              米，无法生成可靠的跑步轨迹。请重新授权并选择“精确位置”，或在系统应用设置中开启。
+            </p>
+            <div class="recording-actions mt-3">
+              <button
+                type="button"
+                class="button-primary"
+                disabled={actionBusy || !mounted}
+                onclick={() => void handleRequestPermission()}
+                data-testid="recording-request-precise-btn"
+              >
+                重新请求精确位置
+              </button>
+              {#if capabilities.native}
+                <button type="button" class="button-secondary" onclick={() => void openRecorderAppSettings()}>
+                  打开应用设置
+                </button>
+              {/if}
+            </div>
+          </FeedbackState>
+        </div>
+      {:else if !permissions.locationServicesEnabled}
+        <div data-testid="recording-location-disabled">
+          <FeedbackState kind="error" title="系统定位服务已关闭">
+            <p>请先在设备设置中开启定位服务，再开始或继续记录跑步轨迹。</p>
+            <div class="recording-actions mt-3">
+              {#if capabilities.native}
+                <button
+                  type="button"
+                  class="button-primary"
+                  onclick={() => void openRecorderLocationSettings()}
+                  data-testid="recording-open-location-settings-btn"
+                >
+                  打开定位设置
+                </button>
+              {/if}
+              <button type="button" class="button-secondary" onclick={() => void handleRequestPermission()}>
+                重新检查
+              </button>
+            </div>
+          </FeedbackState>
+        </div>
+      {/if}
+
+      {#if capabilities.native && permissions.notification === 'denied'}
+        <div data-testid="recording-notification-warning">
+          <FeedbackState kind="empty" title="通知权限未开启">
+            <p>后台定位服务仍会运行，但状态栏将不显示跑步进度常驻通知。建议在系统设置中允许通知以便查看运行状态。</p>
+            <button type="button" class="button-secondary mt-3" onclick={() => void openRecorderAppSettings()}>
+              打开通知设置
+            </button>
+          </FeedbackState>
+        </div>
+      {/if}
+
+      <section class="prerun-panel" aria-labelledby="recording-heading" data-testid="recording-panel">
+        <h2 id="recording-heading" class="sr-only">开跑准备</h2>
+
+        <div class="prerun-gps">
+          <div class="prerun-gps-meta">
+            <span class="prerun-kicker">定位精度</span>
+            <div class="recording-badges">
+              <span class="status-badge" class:on={sessionRecoveryState === 'ready'} data-testid="recording-status-badge">
+                {statusBadgeText}
+              </span>
+              <span class="status-badge" class:on={gpsStatus === 'good'} data-testid="recording-gps-badge">
+                {gpsBadgeText}
+              </span>
+              <span
+                class="status-badge"
+                class:on={pendingUploadCount === 0 && uploadItems.length > 0}
+                data-testid="recording-upload-badge"
+              >
+                {uploadBadgeText}
+              </span>
+            </div>
+          </div>
+          <p class="prerun-gps-figure" data-tone={preRunGpsReadout.tone}>
+            {preRunGpsReadout.value}{#if preRunGpsReadout.unit}{' '}<span class="prerun-gps-unit">{preRunGpsReadout.unit}</span>{/if}
+          </p>
+        </div>
+
+        <div class="prerun-checklist">
+          <div class="prerun-check-row">
+            <span class="prerun-check-label">定位模式</span>
+            <span class="prerun-check-val">
+              {capabilities.native ? 'Android 前台服务（支持锁屏）' : '浏览器前台定位'}
+            </span>
+          </div>
+          <div class="prerun-check-row">
+            <span class="prerun-check-label">网络与同步</span>
+            <span class="prerun-check-val">
+              {#if offline}
+                当前离线 · 结束后暂存本机
+              {:else if pendingUploadCount > 0}
+                在线 · {pendingUploadCount} 条待上传
+              {:else}
+                在线 · 结束后自动上传
+              {/if}
+            </span>
+          </div>
+          {#if fullShowcaseAutoPublishes}
+            <div class="prerun-check-row" data-testid="recording-showcase-privacy-note">
+              <span class="prerun-check-label">展示可见性</span>
+              <span class="prerun-check-val">已开启完整展示，上传后自动可见</span>
+            </div>
+          {/if}
+          <div class="recording-title-field prerun-title-row">
+            <label for="recording-title-input">跑步标题（可选）</label>
+            <input
+              id="recording-title-input"
+              type="text"
+              class="text-field"
+              maxlength="120"
+              placeholder="留空则按日期与地点自动命名"
+              bind:value={runTitle}
+              disabled={actionBusy}
+            />
+          </div>
+        </div>
+
+        {#if offline}
+          <p class="status-strip" role="status" data-testid="recording-offline-note">
+            当前处于无网络/飞行模式：GPS 轨迹仍正常记录，结束后将保存在本机，恢复联网后自动上传一次。
+          </p>
+        {/if}
+
+        {#if !capabilities.native}
+          <p class="status-strip prerun-web-strip" data-testid="recording-web-notice">
+            当前为浏览器前台定位模式，切后台或锁屏可能暂停定位；需要后台持续记录请使用 RunNote Android 客户端。
+          </p>
+        {/if}
+
+        {#if errorMessage}
+          <div data-testid="recording-error">
+            <FeedbackState kind="error" title={errorMessage} />
+          </div>
+        {/if}
+
+        {#if statusNotice}
+          <p class="status-strip" role="status" data-testid="recording-status-notice">{statusNotice}</p>
+        {/if}
+
+        {#if status === 'idle' || status === 'stopped'}
+          <div class="recording-controls prerun-controls" role="group" aria-label="记录控制">
+            <button
+              type="button"
+              class="button-primary prerun-start-btn"
+              disabled={actionBusy ||
+                handoffBusy ||
+                !mounted ||
+                !!pendingHandoffSession ||
+                startBlockedByPermissions ||
+                startBlockedByRecovery}
+              onclick={() => void handleStart(false)}
+              data-testid="recording-start-btn"
+            >
+              {actionBusy
+                ? '正在启动…'
+                : sessionRecoveryState === 'pending'
+                  ? '正在恢复会话…'
+                  : sessionRecoveryState === 'failed'
+                    ? '会话状态未就绪'
+                    : '开始跑步'}
+            </button>
+          </div>
+        {/if}
+      </section>
+    </div>
+  {/if}
+
+  {#if !isActiveSession}
+    <section
+      class="upload-queue-section"
+      aria-labelledby="upload-queue-heading"
+      data-testid="recording-upload-queue"
+    >
+      <div class="queue-header">
+        <h2 id="upload-queue-heading">本地上传队列</h2>
+        {#if pendingUploadCount > 0}
           <button
             type="button"
             class="button-secondary"
-            disabled={actionBusy || !mounted || pointCount === 0}
-            onclick={() => void handleStopAndSave()}
-            data-testid="recovery-save-btn"
+            disabled={uploadBusy || offline}
+            onclick={() => void runUploadFlush(true)}
+            data-testid="upload-queue-retry-all"
           >
-            结束并保存
+            {uploadBusy ? '上传中…' : '立即上传'}
           </button>
-          <button
-            type="button"
-            class="button-secondary danger-outline"
-            disabled={actionBusy || !mounted}
-            onclick={() => requestDiscardConfirmation({ kind: 'session' })}
-            data-testid="recovery-discard-btn"
-          >
-            安全丢弃
-          </button>
-        </div>
-      </FeedbackState>
-    </section>
-  {/if}
-
-  {#if sessionRecoveryState === 'failed'}
-    <section
-      class="aux-panel recording-recovery"
-      aria-labelledby="recovery-error-title"
-      data-testid="recording-recovery-error-panel"
-    >
-      <FeedbackState kind="error" title={capabilities.native ? '无法确认原生记录状态' : '无法确认本地草稿状态'}>
-        <p>{recoveryFailureMessage}</p>
-        <div class="recording-actions mt-3">
-          <button
-            type="button"
-            class="button-primary"
-            disabled={actionBusy || !mounted}
-            onclick={() => void retrySessionRecovery()}
-            data-testid="recording-recovery-retry-btn"
-          >
-            重试恢复
-          </button>
-        </div>
-      </FeedbackState>
-    </section>
-  {/if}
-
-  {#if permissions.location === 'denied'}
-    <div data-testid="recording-permission-denied">
-      <FeedbackState kind="error" title="未授予定位权限">
-        <p>实时记录需要访问设备精确位置以生成跑步轨迹。你可以重新请求授权，或在系统应用设置中手动开启。</p>
-        <div class="recording-actions mt-3">
-          <button
-            type="button"
-            class="button-primary"
-            disabled={actionBusy || !mounted}
-            onclick={() => void handleRequestPermission()}
-            data-testid="recording-request-permission-btn"
-          >
-            请求定位权限
-          </button>
-          {#if capabilities.native}
-            <button
-              type="button"
-              class="button-secondary"
-              onclick={() => void openRecorderAppSettings()}
-              data-testid="recording-open-app-settings-btn"
-            >
-              打开应用设置
-            </button>
-          {/if}
-        </div>
-      </FeedbackState>
-    </div>
-  {:else if permissions.location === 'approximate'}
-    <div data-testid="recording-approximate-warning">
-      <FeedbackState kind="error" title="需要精确位置权限">
-        <p>
-          当前仅授予了“大致位置”，误差通常超过 50
-          米，无法生成可靠的跑步轨迹。请重新授权并选择“精确位置”，或在系统应用设置中开启。
-        </p>
-        <div class="recording-actions mt-3">
-          <button
-            type="button"
-            class="button-primary"
-            disabled={actionBusy || !mounted}
-            onclick={() => void handleRequestPermission()}
-            data-testid="recording-request-precise-btn"
-          >
-            重新请求精确位置
-          </button>
-          {#if capabilities.native}
-            <button type="button" class="button-secondary" onclick={() => void openRecorderAppSettings()}>
-              打开应用设置
-            </button>
-          {/if}
-        </div>
-      </FeedbackState>
-    </div>
-  {:else if !permissions.locationServicesEnabled}
-    <div data-testid="recording-location-disabled">
-      <FeedbackState kind="error" title="系统定位服务已关闭">
-        <p>请先在设备设置中开启定位服务，再开始或继续记录跑步轨迹。</p>
-        <div class="recording-actions mt-3">
-          {#if capabilities.native}
-            <button
-              type="button"
-              class="button-primary"
-              onclick={() => void openRecorderLocationSettings()}
-              data-testid="recording-open-location-settings-btn"
-            >
-              打开定位设置
-            </button>
-          {/if}
-          <button type="button" class="button-secondary" onclick={() => void handleRequestPermission()}>
-            重新检查
-          </button>
-        </div>
-      </FeedbackState>
-    </div>
-  {/if}
-
-  {#if capabilities.native && permissions.notification === 'denied'}
-    <div data-testid="recording-notification-warning">
-      <FeedbackState kind="empty" title="通知权限未开启">
-        <p>后台定位服务仍会运行，但状态栏将不显示跑步进度常驻通知。建议在系统设置中允许通知以便查看运行状态。</p>
-        <button type="button" class="button-secondary mt-3" onclick={() => void openRecorderAppSettings()}>
-          打开通知设置
-        </button>
-      </FeedbackState>
-    </div>
-  {/if}
-
-  <section class="aux-panel recording-panel" aria-labelledby="recording-heading" data-testid="recording-panel">
-    <div class="recording-header-row">
-      <h2 id="recording-heading">当前会话</h2>
-      <div class="recording-badges">
-        <span class="status-badge" class:on={status === 'recording'} data-testid="recording-status-badge">
-          {statusBadgeText}
-        </span>
-        <span class="status-badge" class:on={gpsStatus === 'good'} data-testid="recording-gps-badge">
-          {gpsBadgeText}
-        </span>
-        <span
-          class="status-badge"
-          class:on={pendingUploadCount === 0 && uploadItems.length > 0}
-          data-testid="recording-upload-badge"
-        >
-          {uploadBadgeText}
-        </span>
+        {/if}
       </div>
-    </div>
 
-    <dl class="recording-metrics-grid" aria-label="实时运动数据预览">
-      <div class="metric-cell">
-        <dt>距离（预览）</dt>
-        <dd class="metric-primary" data-testid="recording-distance">{formatPreviewDistanceKm(previewDistanceM)}</dd>
-      </div>
-      <div class="metric-cell">
-        <dt>用时（运动段）</dt>
-        <dd class="metric-primary" data-testid="recording-duration">{formatClockDuration(displayedDurationMs)}</dd>
-      </div>
-      <div class="metric-cell">
-        <dt>配速（预览）</dt>
-        <dd data-testid="recording-pace">{formatPreviewPace(displayedDurationMs, previewDistanceM)}</dd>
-      </div>
-      <div class="metric-cell">
-        <dt>已记录轨迹</dt>
-        <dd data-testid="recording-points-count">{pointCount} 点 · {segmentIndex + 1} 段</dd>
-      </div>
-    </dl>
-
-    {#if gpsStatus === 'lost' && status === 'recording'}
-      <div class="mt-3" data-testid="recording-gps-lost">
-        <FeedbackState kind="error" title="GPS 信号暂时丢失">
-          <p>请移至室外空旷处等待信号恢复；此前已记录的轨迹点已安全保存。</p>
-        </FeedbackState>
-      </div>
-    {/if}
-
-    {#if status === 'paused'}
-      <p class="block-hint mt-3" role="status" data-testid="recording-pause-note">
-        已暂停采集；继续后将开启新轨迹段（PostGIS 里程不连接暂停间隔，但服务端 GPX
-        总用时按首尾轨迹点计算，长时间暂停会影响服务端平均配速）。
-      </p>
-    {/if}
-
-    {#if offline}
-      <p class="block-hint mt-3" role="status" data-testid="recording-offline-note">
-        当前处于无网络/飞行模式：GPS 轨迹仍正常记录，结束后将保存在本机，恢复联网后自动上传一次。
-      </p>
-    {/if}
-
-    {#if fullShowcaseAutoPublishes}
-      <p class="block-hint mt-3" data-testid="recording-showcase-privacy-note">
-        提示：当前账号已开启完整展示模式，结束保存并上传后的运动记录与完整轨迹将按展示规则自动可见。
-      </p>
-    {/if}
-
-    {#if !capabilities.native}
-      <p class="block-hint mt-3" data-testid="recording-web-notice">
-        当前为浏览器前台定位模式，切后台或锁屏可能暂停定位；需要后台持续记录请使用 RunNote Android 客户端。
-      </p>
-    {/if}
-
-    <div class="recording-title-field mt-4">
-      <label for="recording-title-input">跑步标题（可选）</label>
-      <input
-        id="recording-title-input"
-        type="text"
-        class="text-field"
-        maxlength="120"
-        placeholder="留空则按日期与地点自动命名"
-        bind:value={runTitle}
-        disabled={actionBusy}
-      />
-    </div>
-
-    <div class="recording-controls mt-4" role="group" aria-label="记录控制">
-      {#if status === 'idle' || status === 'stopped'}
-        <button
-          type="button"
-          class="button-primary recording-main-btn"
-          disabled={actionBusy ||
-            handoffBusy ||
-            !mounted ||
-            !!pendingHandoffSession ||
-            startBlockedByPermissions ||
-            startBlockedByRecovery}
-          onclick={() => void handleStart(false)}
-          data-testid="recording-start-btn"
-        >
-          {actionBusy
-            ? '正在启动…'
-            : sessionRecoveryState === 'pending'
-              ? '正在恢复会话…'
-              : sessionRecoveryState === 'failed'
-                ? '会话状态未就绪'
-                : '开始跑步'}
-        </button>
-      {:else if status === 'recording'}
-        <button
-          type="button"
-          class="button-secondary recording-main-btn"
-          disabled={actionBusy}
-          onclick={() => void handlePause()}
-          data-testid="recording-pause-btn"
-        >
-          暂停
-        </button>
-        <button
-          type="button"
-          class="button-primary recording-main-btn"
-          disabled={actionBusy}
-          onclick={() => void handleStopAndSave()}
-          data-testid="recording-stop-btn"
-        >
-          {actionBusy ? '正在保存…' : '结束并保存'}
-        </button>
-      {:else if status === 'paused'}
-        <button
-          type="button"
-          class="button-primary recording-main-btn"
-          disabled={actionBusy}
-          onclick={() => void handleResume()}
-          data-testid="recording-resume-btn"
-        >
-          继续跑步
-        </button>
-        <button
-          type="button"
-          class="button-secondary recording-main-btn"
-          disabled={actionBusy}
-          onclick={() => void handleStopAndSave()}
-          data-testid="recording-stop-btn"
-        >
-          {actionBusy ? '正在保存…' : '结束并保存'}
-        </button>
-        <button
-          type="button"
-          class="button-secondary danger-outline"
-          disabled={actionBusy}
-          onclick={() => requestDiscardConfirmation({ kind: 'session' })}
-          data-testid="recording-discard-btn"
-        >
-          放弃本次记录
-        </button>
-      {/if}
-    </div>
-
-    {#if errorMessage}
-      <div class="mt-4" data-testid="recording-error">
-        <FeedbackState kind="error" title={errorMessage} />
-      </div>
-    {/if}
-
-    {#if statusNotice}
-      <p class="block-hint mt-3" role="status" data-testid="recording-status-notice">{statusNotice}</p>
-    {/if}
-  </section>
-
-  <section class="aux-panel settings-block" aria-labelledby="upload-queue-heading" data-testid="recording-upload-queue">
-    <div class="block-title-row">
-      <h2 id="upload-queue-heading">本地上传队列</h2>
-      {#if pendingUploadCount > 0}
-        <button
-          type="button"
-          class="button-secondary button-compact"
-          disabled={uploadBusy || offline}
-          onclick={() => void runUploadFlush(true)}
-          data-testid="upload-queue-retry-all"
-        >
-          {uploadBusy ? '上传中…' : '立即上传'}
-        </button>
-      {/if}
-    </div>
-
-    {#if uploadItems.length === 0}
-      <p class="block-hint" data-testid="upload-queue-empty">暂无待上传或近期保存的实时记录。</p>
-    {:else}
-      <ul class="upload-list" data-testid="upload-queue-list">
-        {#each uploadItems as item (item.idempotencyKey)}
-          <li class="upload-item" data-testid="upload-queue-item" data-status={item.status}>
-            <div class="upload-item-main">
-              <div class="upload-item-head">
-                <strong class="upload-item-title">{item.title}</strong>
-                <span class="status-badge" class:on={item.status === 'uploaded'}>
-                  {formatUploadStatus(item)}
-                </span>
-              </div>
-              <p class="upload-item-meta">
-                {#if item.status === 'uploaded' && item.serverDistanceM !== null}
-                  服务端权威指标：{formatDistance(item.serverDistanceM)} · {formatDuration(item.serverDurationS)} · {formatPace(
-                    item.serverPaceSPerKm,
-                  )}
-                {:else}
-                  {item.pointCount} 个轨迹点 · {item.segmentCount} 段 · 预览 {formatPreviewDistanceKm(
-                    item.previewDistanceM,
-                  )} · {formatClockDuration(item.activeDurationMs)}
+      {#if uploadItems.length === 0}
+        <p class="queue-empty" data-testid="upload-queue-empty">暂无待上传或近期保存的实时记录。</p>
+      {:else}
+        <ul class="upload-list" data-testid="upload-queue-list">
+          {#each uploadItems as item (item.idempotencyKey)}
+            <li class="upload-item" data-testid="upload-queue-item" data-status={item.status}>
+              <div class="upload-item-main">
+                <div class="upload-item-head">
+                  <strong class="upload-item-title">{item.title}</strong>
+                  <span class="status-badge" class:on={item.status === 'uploaded'}>
+                    {formatUploadStatus(item)}
+                  </span>
+                </div>
+                <p class="upload-item-meta">
+                  {#if item.status === 'uploaded' && item.serverDistanceM !== null}
+                    服务端权威指标：{formatDistance(item.serverDistanceM)} · {formatDuration(item.serverDurationS)} · {formatPace(
+                      item.serverPaceSPerKm,
+                    )}
+                  {:else}
+                    {item.pointCount} 个轨迹点 · {item.segmentCount} 段 · 预览 {formatPreviewDistanceKm(
+                      item.previewDistanceM,
+                    )} · {formatClockDuration(item.activeDurationMs)}
+                  {/if}
+                </p>
+                {#if item.lastError && item.status !== 'uploaded'}
+                  <p class="upload-item-error" role="alert">{item.lastError}</p>
                 {/if}
-              </p>
-              {#if item.lastError && item.status !== 'uploaded'}
-                <p class="upload-item-error" role="alert">{item.lastError}</p>
-              {/if}
-            </div>
-            <div class="upload-item-actions">
-              {#if item.status === 'uploaded' && item.uploadedActivityId}
-                <a class="button-secondary button-compact" href={view.href(`/activities/${item.uploadedActivityId}`)}>
-                  查看活动
-                </a>
-                <button
-                  type="button"
-                  class="button-secondary button-compact"
-                  onclick={() =>
-                    void discardUploadQueueItem(accountId, item.idempotencyKey).then(() => refreshUploadQueue())}
-                >
-                  清除记录
-                </button>
-              {:else}
-                {#if !item.permanentError}
+              </div>
+              <div class="upload-item-actions">
+                {#if item.status === 'uploaded' && item.uploadedActivityId}
+                  <a class="button-secondary" href={view.href(`/activities/${item.uploadedActivityId}`)}>
+                    查看活动
+                  </a>
                   <button
                     type="button"
-                    class="button-secondary button-compact"
-                    disabled={uploadBusy || offline}
-                    onclick={() => void runUploadFlush(true)}
+                    class="button-secondary"
+                    onclick={() =>
+                      void discardUploadQueueItem(accountId, item.idempotencyKey).then(() => refreshUploadQueue())}
                   >
-                    重试
+                    清除记录
+                  </button>
+                {:else}
+                  {#if !item.permanentError}
+                    <button
+                      type="button"
+                      class="button-secondary"
+                      disabled={uploadBusy || offline}
+                      onclick={() => void runUploadFlush(true)}
+                    >
+                      重试
+                    </button>
+                  {/if}
+                  <button
+                    type="button"
+                    class="button-secondary danger-outline"
+                    disabled={uploadBusy}
+                    onclick={() =>
+                      requestDiscardConfirmation({
+                        kind: 'upload',
+                        idempotencyKey: item.idempotencyKey,
+                        title: item.title,
+                      })}
+                  >
+                    丢弃
                   </button>
                 {/if}
-                <button
-                  type="button"
-                  class="button-secondary button-compact danger-outline"
-                  disabled={uploadBusy}
-                  onclick={() =>
-                    requestDiscardConfirmation({
-                      kind: 'upload',
-                      idempotencyKey: item.idempotencyKey,
-                      title: item.title,
-                    })}
-                >
-                  丢弃
-                </button>
-              {/if}
-            </div>
-          </li>
-        {/each}
-      </ul>
-    {/if}
+              </div>
+            </li>
+          {/each}
+        </ul>
+      {/if}
 
-    <details class="block-details mt-3">
-      <summary>后台定位、隐私与指标说明</summary>
-      <p>
-        实时显示的距离与运动段用时仅供跑步过程参考；上传后由服务端 PostGIS GPX
-        管线权威计算里程、总用时（按首尾轨迹点间隔计算，包含暂停时长）与平均配速（里程不跨越暂停断点）。
-      </p>
-      <p>
-        每次记录生成唯一幂等键（Idempotency-Key）并与当前账号绑定，断网或瞬时失败后按退避计时自动重试，服务端去重且校验账号一致，不会产生重复或错归活动。
-      </p>
-      <p>
-        Android
-        端仅在主动记录且授予精确位置权限时运行位置前台服务（锁屏通知隐藏具体里程/时长），不申请后台常驻定位权限；上传活动默认标记为
-        private，若当前站点/账号启用了完整展示模式则会自动进入公开展示；退出登录或切换账号会自动中止在途上传并清理本机未上传轨迹。
-      </p>
-    </details>
-  </section>
+      <details class="block-details mt-3">
+        <summary>后台定位、隐私与指标说明</summary>
+        <p>
+          实时显示的距离与运动段用时仅供跑步过程参考；上传后由服务端 PostGIS GPX
+          管线权威计算里程、总用时（按首尾轨迹点间隔计算，包含暂停时长）与平均配速（里程不跨越暂停断点）。
+        </p>
+        <p>
+          每次记录生成唯一幂等键（Idempotency-Key）并与当前账号绑定，断网或瞬时失败后按退避计时自动重试，服务端去重且校验账号一致，不会产生重复或错归活动。
+        </p>
+        <p>
+          Android
+          端仅在主动记录且授予精确位置权限时运行位置前台服务（锁屏通知隐藏具体里程/时长），不申请后台常驻定位权限；上传活动默认标记为
+          private，若当前站点/账号启用了完整展示模式则会自动进入公开展示；退出登录或切换账号会自动中止在途上传并清理本机未上传轨迹。
+        </p>
+      </details>
+    </section>
+  {/if}
 </div>
 
 <dialog
@@ -2528,6 +3021,31 @@
 </dialog>
 
 <dialog
+  bind:this={finishDialog}
+  class="recording-dialog"
+  aria-labelledby="finish-dialog-title"
+  data-testid="recording-finish-dialog"
+>
+  <h3 id="finish-dialog-title">结束并保存本次跑步？</h3>
+  <p class="mt-2 text-sm text-muted-foreground">
+    已记录 {pointCount} 个轨迹点（预览 {formatPreviewDistanceKm(previewDistanceM)}，用时 {formatClockDuration(
+      displayedDurationMs,
+    )}）。确认后将停止采集并保存到本机上传队列。
+  </p>
+  <div class="dialog-actions mt-4">
+    <button type="button" class="button-secondary" onclick={cancelFinishDialog}>继续跑步</button>
+    <button
+      type="button"
+      class="button-primary"
+      onclick={confirmFinishDialog}
+      data-testid="recording-finish-confirm-btn"
+    >
+      确认结束并保存
+    </button>
+  </div>
+</dialog>
+
+<dialog
   bind:this={leaveDialog}
   class="recording-dialog"
   aria-labelledby="leave-dialog-title"
@@ -2550,50 +3068,148 @@
 </dialog>
 
 <style>
-  .recording-panel {
-    display: flex;
-    flex-direction: column;
+  .recording-page {
+    display: grid;
+    gap: var(--space-6);
+    max-width: 46rem;
+    margin-inline: auto;
   }
-  .recording-header-row {
+
+  /* ── Top navigation for pre-run & done ────────────────────────────── */
+  .rec-topnav {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-3);
+    padding-bottom: var(--space-3);
+    border-bottom: 2px solid var(--rule);
+  }
+  .rec-topnav h1 {
+    margin: 0;
+    font-size: var(--text-section);
+    font-weight: var(--weight-bold);
+    line-height: var(--line-height-heading);
+    letter-spacing: var(--tracking-heading);
+  }
+  .rec-back-link,
+  .rec-back-btn,
+  .rec-queue-jump {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.75rem;
+    padding: 0 var(--space-2);
+    border: 0;
+    background: none;
+    color: var(--foreground);
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .rec-back-link,
+  .rec-back-btn {
+    margin-left: calc(-1 * var(--space-2));
+  }
+  .rec-queue-jump {
+    color: var(--primary);
+    font-variant-numeric: tabular-nums;
+  }
+  .rec-topnav-meta {
+    font-size: var(--text-caption);
+    font-weight: var(--weight-semibold);
+    color: var(--muted-foreground);
+    white-space: nowrap;
+  }
+
+  /* ── Pre-run (Screen 2) ───────────────────────────────────────────── */
+  .prerun-stack {
+    display: grid;
+    gap: var(--space-4);
+  }
+  .recording-alert-block {
+    padding: var(--space-4);
+    border: 1px solid var(--error-border);
+    border-radius: var(--radius-sheet);
+    background: var(--surface);
+  }
+  .prerun-panel {
+    display: grid;
+    gap: var(--space-4);
+  }
+  .prerun-gps {
+    display: grid;
+    gap: var(--space-2);
+    padding-block: var(--space-2) var(--space-3);
+  }
+  .prerun-gps-meta {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: var(--space-3);
-    margin-bottom: var(--space-4);
+    gap: var(--space-2);
+  }
+  .prerun-kicker {
+    font-size: var(--text-caption);
+    font-weight: var(--weight-semibold);
+    color: var(--muted-foreground);
+    letter-spacing: var(--tracking-caps);
   }
   .recording-badges {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-2);
   }
-  .recording-metrics-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-4);
-    padding: var(--space-4) 0;
-    border-top: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
-  }
-  .metric-cell {
-    min-width: 0;
-  }
-  .metric-cell dt {
-    font-size: var(--text-caption);
-    color: var(--muted-foreground);
-  }
-  .metric-cell dd {
-    margin-top: var(--space-1);
-    font-size: var(--text-card);
-    font-weight: var(--weight-semibold);
+  .prerun-gps-figure {
+    margin: 0;
+    font-size: var(--text-figure);
+    font-weight: var(--weight-bold);
+    line-height: var(--line-height-solid);
+    letter-spacing: var(--tracking-tight);
     font-variant-numeric: tabular-nums;
-    line-height: var(--line-height-tight);
-    white-space: nowrap;
     color: var(--foreground);
   }
-  .metric-cell dd.metric-primary {
-    font-size: var(--text-stat);
+  .prerun-gps-figure[data-tone='ok'] {
     color: var(--primary);
+  }
+  .prerun-gps-figure[data-tone='warn'] {
+    color: var(--warning);
+  }
+  .prerun-gps-figure[data-tone='error'] {
+    color: var(--error);
+  }
+  .prerun-gps-unit {
+    font-size: var(--text-section);
+    font-weight: var(--weight-semibold);
+    color: var(--muted-foreground);
+    letter-spacing: 0;
+  }
+
+  .prerun-checklist {
+    border-top: 2px solid var(--rule);
+    border-bottom: 1px solid var(--border);
+  }
+  .prerun-check-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding-block: var(--space-3);
+    border-bottom: 1px solid var(--border);
+    font-size: var(--text-small);
+  }
+  .prerun-check-label {
+    color: var(--muted-foreground);
+    font-weight: var(--weight-medium);
+  }
+  .prerun-check-val {
+    color: var(--foreground);
+    font-weight: var(--weight-semibold);
+    text-align: right;
+  }
+  .prerun-title-row {
+    padding-block: var(--space-3);
   }
   .recording-title-field {
     display: grid;
@@ -2604,31 +3220,446 @@
     font-weight: var(--weight-medium);
     color: var(--foreground);
   }
-  .recording-controls,
+  .recording-title-field .text-field {
+    min-height: 3rem;
+    border-color: var(--control-border);
+    border-radius: var(--radius-field);
+    font-size: var(--text-body);
+  }
+  .prerun-web-strip {
+    margin: 0;
+  }
+  .prerun-controls {
+    display: grid;
+    padding-top: var(--space-2);
+  }
+  .prerun-start-btn {
+    width: 100%;
+    min-height: 3.75rem;
+    font-size: var(--text-card);
+    font-weight: var(--weight-bold);
+    letter-spacing: 0;
+  }
+
+  /* ── Active Recording & Paused (Screen 3) ─────────────────────────── */
+  .rec-screen {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: var(--space-6);
+    min-height: calc(100svh - var(--safe-top) - var(--safe-bottom) - var(--space-8));
+    color: var(--rec-ink);
+  }
+  .rec-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-height: 3.25rem;
+  }
+  .rec-top .rec-back-link {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    padding: 0;
+    color: var(--rec-ink);
+    font-size: var(--text-section);
+  }
+  .rec-top-status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2) var(--space-3);
+    min-width: 0;
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+  }
+  .rec-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    white-space: nowrap;
+  }
+  .rec-dot {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: var(--radius-pill);
+    background: var(--warning);
+    flex: none;
+  }
+  .rec-dot.live {
+    background: var(--primary);
+  }
+  .rec-gps-inline {
+    font-family: var(--font-mono);
+    font-size: var(--text-caption);
+    color: var(--muted-foreground);
+    font-variant-numeric: tabular-nums;
+  }
+  .rec-lock-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.25rem;
+    height: 3.25rem;
+    flex: none;
+    border: 1.5px solid var(--control-border);
+    border-radius: var(--radius-field);
+    background: transparent;
+    color: var(--rec-ink);
+  }
+  .rec-lock-btn.locked {
+    border-color: var(--rec-ink);
+    background: var(--rec-ink);
+    color: var(--rec-bg);
+  }
+  .rec-discard-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.75rem;
+    padding: 0 var(--space-3);
+    border: 1px solid var(--error-border);
+    border-radius: var(--radius-field);
+    background: transparent;
+    color: var(--error);
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+    white-space: nowrap;
+  }
+
+  .rec-main {
+    display: grid;
+    gap: var(--space-6);
+    margin-block: auto;
+  }
+  .rec-hero-block {
+    display: grid;
+    gap: var(--space-2);
+  }
+  .rec-label {
+    font-size: var(--text-caption);
+    font-weight: var(--weight-semibold);
+    color: var(--muted-foreground);
+    letter-spacing: var(--tracking-caps);
+  }
+  .rec-hero-num {
+    margin: 0;
+    font-size: var(--text-rec-hero);
+    font-weight: var(--weight-bold);
+    line-height: var(--line-height-rec);
+    letter-spacing: var(--tracking-rec);
+    font-variant-numeric: tabular-nums;
+    color: var(--rec-ink);
+    white-space: nowrap;
+  }
+  .rec-hero-unit {
+    font-size: var(--text-section);
+    font-weight: var(--weight-semibold);
+    letter-spacing: 0;
+    color: var(--muted-foreground);
+  }
+  .rec-pair {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-4);
+    margin: 0;
+    padding-block: var(--space-4);
+    border-top: 2px solid currentColor;
+    border-bottom: 1px solid var(--border);
+  }
+  .rec-pair-item {
+    display: grid;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+  .rec-sub-num {
+    margin: 0;
+    font-size: var(--text-rec-sub);
+    font-weight: var(--weight-bold);
+    line-height: var(--line-height-solid);
+    letter-spacing: var(--tracking-tight);
+    font-variant-numeric: tabular-nums;
+    color: var(--rec-ink);
+    white-space: nowrap;
+  }
+  .rec-sub-unit {
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+    letter-spacing: 0;
+    color: var(--muted-foreground);
+  }
+  .rec-telemetry {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    font-family: var(--font-mono);
+    font-size: var(--text-caption);
+    color: var(--muted-foreground);
+    font-variant-numeric: tabular-nums;
+  }
+  .rec-notices {
+    display: grid;
+    gap: var(--space-3);
+  }
+  .rec-lock-hint {
+    margin: 0;
+    font-size: var(--text-small);
+    font-weight: var(--weight-medium);
+    color: var(--muted-foreground);
+    text-align: center;
+  }
+  .rec-paused-title label {
+    color: var(--rec-ink);
+  }
+
+  .rec-bottom {
+    display: grid;
+    gap: var(--space-3);
+    padding-top: var(--space-2);
+    padding-bottom: max(var(--space-2), var(--safe-bottom));
+  }
+  .rec-pause-btn {
+    width: 100%;
+    min-height: 4.75rem;
+    border: 2px solid var(--rec-ink);
+    border-radius: var(--radius-field);
+    background: var(--rec-ink);
+    color: var(--rec-bg);
+    font-size: var(--text-rec-action);
+    font-weight: var(--weight-bold);
+    letter-spacing: 0;
+  }
+  .rec-desktop-stop-btn {
+    width: 100%;
+    min-height: 3.25rem;
+  }
+  .rec-resume-btn {
+    width: 100%;
+    min-height: 3.75rem;
+    font-size: var(--text-card);
+    font-weight: var(--weight-bold);
+  }
+  .rec-hold-stop-btn {
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+    min-height: 3.5rem;
+    padding: 0 var(--space-4);
+    border: 1.5px solid var(--rec-ink);
+    border-radius: var(--radius-field);
+    background: transparent;
+    color: var(--rec-ink);
+    font-size: var(--text-body);
+    font-weight: var(--weight-semibold);
+    touch-action: manipulation;
+    user-select: none;
+  }
+  .rec-hold-stop-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: color-mix(in srgb, var(--rec-ink) 16%, transparent);
+    transform-origin: left center;
+    transform: scaleX(var(--hold-progress, 0));
+    pointer-events: none;
+  }
+  .rec-hold-label {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ── Done Completion Receipt (Screen 4) ───────────────────────────── */
+  .done-screen {
+    display: grid;
+    gap: var(--space-4);
+  }
+  .done-receipt {
+    --sheet-pad: clamp(1rem, 4vw, 1.5rem);
+    --perforation-ground: var(--desk);
+    padding: var(--sheet-pad);
+  }
+  .done-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .done-brand-mark {
+    display: inline-grid;
+    place-items: center;
+    width: 1.375rem;
+    height: 1.375rem;
+    border-radius: 3px;
+    background: var(--receipt-ink);
+    color: var(--receipt);
+    font-size: var(--text-caption);
+    font-weight: var(--weight-bold);
+    line-height: var(--line-height-solid);
+  }
+  :global(:root[data-theme='dark']) .done-brand-mark {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+  .done-title {
+    margin: 0 0 var(--space-3);
+    font-size: var(--text-card);
+    font-weight: var(--weight-semibold);
+    line-height: var(--line-height-heading);
+    color: var(--foreground);
+  }
+  .done-hero {
+    display: grid;
+    gap: var(--space-1);
+    margin-bottom: var(--space-4);
+  }
+  .done-kicker {
+    font-size: var(--text-caption);
+    font-weight: var(--weight-semibold);
+    color: var(--muted-foreground);
+  }
+  .done-figure {
+    margin: 0;
+    font-size: var(--text-figure);
+    font-weight: var(--weight-bold);
+    line-height: var(--line-height-solid);
+    letter-spacing: var(--tracking-tight);
+    font-variant-numeric: tabular-nums;
+    color: var(--foreground);
+  }
+  .done-unit {
+    font-size: var(--text-section);
+    font-weight: var(--weight-semibold);
+    color: var(--muted-foreground);
+    letter-spacing: 0;
+  }
+  .done-leaders {
+    display: grid;
+    gap: var(--space-2);
+    margin: 0;
+    font-size: var(--text-small);
+    font-variant-numeric: tabular-nums;
+  }
+  .done-leaders dt {
+    color: var(--muted-foreground);
+  }
+  .done-leaders dd {
+    margin: 0;
+    font-weight: var(--weight-semibold);
+    color: var(--foreground);
+  }
+  .done-perforation {
+    margin-block: var(--space-4);
+  }
+  .done-splits {
+    display: grid;
+    gap: var(--space-2);
+  }
+  .done-splits-heading {
+    margin: 0;
+    font-size: var(--text-caption);
+    font-weight: var(--weight-semibold);
+    color: var(--muted-foreground);
+  }
+  .done-splits-list {
+    display: grid;
+    gap: 0.4rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-family: var(--font-mono);
+    font-size: var(--text-caption);
+    font-variant-numeric: tabular-nums;
+  }
+  .done-split-row {
+    display: grid;
+    grid-template-columns: 2rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .done-split-km {
+    color: var(--muted-foreground);
+  }
+  .done-split-track {
+    height: 0.5rem;
+    background: var(--muted);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .done-split-bar {
+    display: block;
+    height: 100%;
+    background: var(--primary);
+    border-radius: 2px;
+  }
+  .done-split-row.fastest .done-split-bar {
+    background: var(--receipt-mark);
+  }
+  .done-split-pace {
+    font-weight: var(--weight-semibold);
+    color: var(--foreground);
+  }
+  .done-sync-strip {
+    margin: 0;
+  }
+  .done-actions {
+    display: grid;
+    gap: var(--space-3);
+  }
+  .done-primary-action {
+    width: 100%;
+    min-height: 3.25rem;
+    text-decoration: none;
+  }
+  .done-secondary-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+    gap: var(--space-3);
+  }
+
+  /* ── Upload queue & shared helpers ────────────────────────────────── */
   .recording-actions {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-3);
   }
-  .recording-main-btn {
-    min-height: 2.75rem;
-    min-width: 7.5rem;
-    flex: 1 1 8.5rem;
-  }
   .danger-outline {
     color: var(--error);
+    border-color: var(--error-border);
   }
   .recovery-stats {
     margin-top: var(--space-2);
     font-variant-numeric: tabular-nums;
     font-weight: var(--weight-medium);
   }
+  .upload-queue-section {
+    padding-top: var(--space-4);
+    border-top: 2px solid var(--rule);
+  }
+  .queue-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+  .queue-header h2 {
+    margin: 0;
+    font-size: var(--text-card);
+    font-weight: var(--weight-semibold);
+  }
+  .queue-empty {
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-small);
+    color: var(--muted-foreground);
+  }
   .upload-list {
     display: grid;
-    gap: var(--space-3);
     list-style: none;
     padding: 0;
     margin: var(--space-3) 0 0;
+    border-top: 1px solid var(--border);
   }
   .upload-item {
     display: flex;
@@ -2636,10 +3667,8 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
-    padding: var(--space-3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    background: var(--background);
+    padding-block: var(--space-3);
+    border-bottom: 1px solid var(--border);
   }
   .upload-item-main {
     min-width: 0;
@@ -2676,53 +3705,47 @@
     width: 100%;
     padding: var(--space-5);
     border: 1px solid var(--border);
-    border-radius: var(--radius-card);
+    border-radius: var(--radius-header);
     background: var(--surface);
     color: var(--foreground);
+  }
+  .recording-dialog::backdrop {
+    background: var(--surface-backdrop);
   }
   .dialog-actions {
     display: flex;
     justify-content: flex-end;
     gap: var(--space-3);
   }
+  .dialog-actions button {
+    min-height: 2.75rem;
+  }
+
   @media (max-width: 799px) {
-    .recording-controls {
+    .prerun-controls {
       position: sticky;
       bottom: calc(var(--space-2) + var(--bottom-chrome));
       z-index: 2;
       margin-inline: calc(-1 * var(--space-2));
-      margin-bottom: calc(-1 * var(--space-2));
       padding: var(--space-2);
-      border-radius: calc(var(--radius-control) + var(--space-2));
-      background: color-mix(in srgb, var(--surface) 92%, transparent);
-      -webkit-backdrop-filter: blur(12px);
-      backdrop-filter: blur(12px);
+      border-radius: var(--radius-control);
+      background: color-mix(in srgb, var(--background) 92%, transparent);
     }
-    .recording-panel:has(input:focus) .recording-controls {
+    .prerun-panel:has(input:focus) .prerun-controls {
       position: static;
     }
   }
-  @media (max-width: 799px) and (prefers-reduced-transparency: reduce), (max-width: 799px) and (forced-colors: active) {
-    .recording-controls {
-      background: var(--surface);
-      -webkit-backdrop-filter: none;
-      backdrop-filter: none;
+  @media (max-width: 359px) {
+    .rec-hero-num {
+      font-size: var(--text-rec-hero-narrow);
+    }
+    .rec-pair {
+      gap: var(--space-3);
     }
   }
-  @media (min-width: 768px) {
-    .recording-metrics-grid {
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-    }
-    .recording-main-btn {
-      flex: 0 1 auto;
-    }
-  }
-  @media (max-width: 479px) {
-    .metric-cell dd.metric-primary {
-      font-size: var(--text-section);
-    }
-    .metric-cell dd {
-      font-size: var(--text-body);
+  @media (min-width: 800px) {
+    .rec-bottom {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
 </style>

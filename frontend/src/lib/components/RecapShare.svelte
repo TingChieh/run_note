@@ -283,6 +283,7 @@
 <dialog
   bind:this={dialog}
   data-glass-overlay
+  class="editorial-page"
   aria-labelledby={`${id}-title`}
   aria-describedby={`${id}-disclosure`}
   oncancel={(event) => {
@@ -475,7 +476,7 @@
   }
   dialog {
     width: min(100% - var(--space-6), 42rem);
-    max-height: calc(100dvh - var(--space-6));
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - var(--space-6));
     margin: auto;
     padding: var(--space-6);
     border: 1px solid var(--border);
@@ -507,8 +508,11 @@
   }
   .disclosure {
     margin-block: var(--space-2) var(--space-3);
-    font-size: var(--text-small);
-    color: var(--muted-foreground);
+    padding: var(--space-2) var(--space-3);
+    border-left: 3px solid var(--warning);
+    background: var(--warning-soft);
+    font-size: var(--text-caption);
+    color: var(--foreground);
   }
   .style-bar {
     margin-bottom: var(--space-3);
@@ -536,17 +540,17 @@
     display: grid;
     place-items: center;
     padding: var(--space-3);
-    background: var(--background);
+    background: var(--desk, var(--recap-desk));
     border: 1px solid var(--border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sheet);
   }
   .preview img {
     width: auto;
     max-height: 52dvh;
     max-width: 100%;
     height: auto;
-    border-radius: var(--radius-field);
-    border: 1px solid var(--border);
+    border-radius: var(--radius-sheet);
+    box-shadow: 0 10px 24px rgb(0 0 0 / 0.14);
   }
   .actions {
     margin-top: var(--space-3);
@@ -557,6 +561,8 @@
   }
   .text-field {
     width: auto;
+    border-color: var(--control-border);
+    border-radius: var(--radius-field);
   }
   .hint {
     margin-top: var(--space-2);
@@ -619,13 +625,28 @@
       justify-self: center;
     }
     dialog {
+      width: min(100% - var(--space-4), 32rem);
       padding: var(--space-4);
+      padding-bottom: calc(var(--space-4) + var(--safe-bottom));
+      border-radius: var(--radius-header);
     }
     .style-tabs {
       width: 100%;
     }
     .style-tabs button {
       flex: 1;
+      min-height: 2.75rem;
+    }
+    .text-field {
+      font-size: var(--text-body);
+    }
+    .actions {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .action-buttons {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
     }
   }
   @media (forced-colors: active) {

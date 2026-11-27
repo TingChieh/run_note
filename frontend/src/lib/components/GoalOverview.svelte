@@ -15,7 +15,15 @@
   import type { Summary } from '#lib/api/statistics.ts';
   import { goalInputPop } from '#lib/styles/goal-input-transition.ts';
   import FeedbackState from './FeedbackState.svelte';
-  let { user, readonly = false }: { user: ShowcaseProfile; readonly?: boolean } = $props();
+  let {
+    user,
+    readonly = false,
+    calendarDays = null,
+  }: {
+    user: ShowcaseProfile;
+    readonly?: boolean;
+    calendarDays?: { date: string; distance_m: string | number | null }[] | null;
+  } = $props();
   type Card = { period: GoalPeriod; title: string; current: Summary | null; previous: Summary | null; target: number | null; input: string; editing: boolean; loading: boolean; error: string; feedback: string; token: number; saving?: boolean };
   let cards = $state<Card[]>([
     {period:'year',title:'年度目标',current:null,previous:null,target:null,input:'',editing:false,loading:true,error:'',feedback:'',token:0},
@@ -28,6 +36,37 @@
   let goalToken = 0;
   const comparisons = {year:'去年同期',month:'上月同期',week:'上周同期'};
   const number = (value: number) => value.toLocaleString('zh-CN',{maximumFractionDigits:1});
+  const weekPunch = $derived.by(() => {
+    const current = streaks;
+    if (!current) return [];
+    const byDate = new Map<string, number>();
+    if (calendarDays) {
+      for (const item of calendarDays) {
+        const dist = Number(item.distance_m ?? 0);
+        if (Number.isFinite(dist) && dist > 0) byDate.set(item.date, dist);
+      }
+    }
+    const distances = current.week.map((day) => byDate.get(day.date) ?? 0);
+    const maxDist = Math.max(0, ...distances);
+    return current.week.map((day, idx) => {
+      const dist = distances[idx];
+      const isToday = day.date === current.today;
+      const isFuture = day.date > current.today;
+      const blocks = day.active
+        ? maxDist > 0 && dist > 0
+          ? Math.max(1, Math.min(5, Math.round((dist / maxDist) * 5)))
+          : 2
+        : 0;
+      return {
+        date: day.date,
+        active: day.active,
+        isToday,
+        isFuture,
+        blocks,
+        weekday: ['一', '二', '三', '四', '五', '六', '日'][idx],
+      };
+    });
+  });
   function failed(cause: unknown) {
     if (cause instanceof ActivityError && cause.status === 401) {
       active = false; streaks = null; cards.forEach(card => {card.current = null; card.previous = null;});
@@ -101,7 +140,7 @@
     {@const totals = card.current ? goalTotals(card.current,card.target) : null}
     {@const delta = card.current && card.previous ? (Number(card.current.distance_m)-Number(card.previous.distance_m))/1000 : null}
     {@const elapsed = periodElapsed(card.period,user.timezone)}
-    <article class="goal-card" aria-busy={card.loading || goalLoading || !!card.saving}>
+    <article class="goal-card" data-period={card.period} aria-busy={card.loading || goalLoading || !!card.saving}>
       <form onsubmit={(event)=>save(card,event)}>
       <div class="goal-heading"><h3>{card.title}</h3>{#if !readonly}<div class="goal-actions rn-goal-actions">
         <div class="goal-save-reveal" class:is-open={card.editing} inert={!card.editing} aria-hidden={!card.editing}>
@@ -135,7 +174,7 @@
     <div class="goal-heading"><h3>连续记录</h3></div>
     {#if streakLoading}<FeedbackState kind="loading" title="正在读取连续记录…" />{:else if streakError}<FeedbackState kind="error" title={streakError}><button class="button-secondary" onclick={()=>void loadStreaks()}>重试连续记录</button></FeedbackState>{:else if streaks}
       <p class="goal-value"><strong>{streaks.current_days}</strong><span>天 · {streaks.current_weeks} 周</span></p>
-      <ol class="week-strip" aria-label="本周活动记录">{#each streaks.week as day,i}<li><span>{['一','二','三','四','五','六','日'][i]}</span><span class="week-day" class:active={day.active} class:today={day.date===streaks.today} aria-label={`${day.date}，${day.active?'有活动':'无活动'}${day.date===streaks.today?'，今天':''}`}>{Number(day.date.slice(-2))}</span></li>{/each}</ol>
+      <ol class="week-strip" aria-label="本周活动记录">{#each weekPunch as day (day.date)}<li class:is-today={day.isToday} class:is-rest={!day.active && !day.isToday && !day.isFuture} class:is-future={day.isFuture} class:is-active={day.active}><span class="week-weekday">{day.isToday ? '今天' : day.weekday}</span><span class="week-day" class:active={day.active} class:today={day.isToday} aria-label={`${day.date}，${day.active?'有活动':'无活动'}${day.isToday?'，今天':''}`}>{Number(day.date.slice(-2))}</span><span class="week-punch" aria-hidden="true">{#if day.blocks > 0}{#each Array(day.blocks) as _}<i class="punch-blk"></i>{/each}{:else}<i class="punch-blk punch-slot"></i>{/if}</span></li>{/each}</ol>
       <p class="goal-facts streak-best">最长 {streaks.longest_days} 天 / {streaks.longest_weeks} 周</p>
     {/if}
   </section>
@@ -179,6 +218,7 @@
   .week-day{display:grid;place-items:center;width:1.5rem;height:1.5rem;font-family:var(--font-mono);font-size:var(--text-caption);font-variant-numeric:tabular-nums;border:1px solid var(--border);}
   .week-day.active{border-color:var(--primary);background:var(--primary);color:var(--primary-foreground);font-weight:var(--weight-bold);}
   .week-day.today{outline:2px solid var(--rule);outline-offset:1px;}
+  .week-punch{display:none;}
   .streak-best{grid-area:facts;}
   /* Wide screens: one strip of four equal columns (year, month, week, streak) split by vertical hairlines. */
   @media(min-width:1024px){
@@ -196,15 +236,32 @@
     .week-strip{margin-top:var(--space-2);grid-template-columns:repeat(7,minmax(0,1.75rem));}
     .goal-card :global(.feedback),.goal-feedback{grid-column:1 / -1;}
   }
+  /* Mobile (<800px): scenario-first order (brand.md §8.2) — this week & punch-card rhythm lead, then month & year. */
+  @media(max-width:799px){
+    .goal-card[data-period='week']{order:1;border-top:0;}
+    .streak-card{order:2;border-top:1px solid var(--border);}
+    .goal-card[data-period='month']{order:3;border-top:1px solid var(--border);}
+    .goal-card[data-period='year']{order:4;border-top:1px solid var(--border);}
+  }
   /* Phones: title and its edit/save actions on one line, the figure (and the inline editor) gets the full width under
-     it, so opening the editor never squeezes the number; the streak strip gets its own line. */
+     it, so opening the editor never squeezes the number; the 7-day strip switches to Editorial Receipt punch-card blocks. */
   @media(max-width:639px){
     .goal-overview.even .goal-rows{grid-auto-rows:auto;}
     form{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"title actions" "value value" "progress progress" "facts facts";}
     .streak-card{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"title value" "strip strip" "facts facts";}
     h3{padding-top:0;align-self:center;}
     .goal-progress{margin-top:var(--space-1);}
-    .week-strip{margin-top:var(--space-2);}
+    .week-strip{margin-top:var(--space-3);grid-template-columns:repeat(7,minmax(0,1fr));gap:0.375rem;height:5rem;align-items:end;}
+    .week-strip li{grid-template-rows:1fr auto;height:100%;gap:0.375rem;align-items:end;}
+    .week-day{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);border:0;}
+    .week-weekday{order:2;font-size:var(--text-caption);color:var(--muted-foreground);}
+    .week-strip li.is-today .week-weekday{color:var(--foreground);font-weight:var(--weight-bold);}
+    .week-punch{order:1;display:flex;flex-direction:column-reverse;align-items:center;gap:0.1875rem;width:100%;}
+    .punch-blk{display:block;width:min(100%,1.625rem);height:0.5625rem;border-radius:2px;background:var(--primary);opacity:0.85;}
+    .week-strip li.is-today .punch-blk{background:var(--receipt-mark);opacity:1;}
+    .week-strip li.is-today .punch-blk.punch-slot{background:transparent;outline:2px solid var(--receipt-mark);outline-offset:-2px;}
+    .week-strip li.is-rest .punch-blk.punch-slot{background:transparent;outline:1.5px dashed var(--border);outline-offset:-1.5px;opacity:1;}
+    .week-strip li.is-future .punch-blk.punch-slot{height:2px;background:var(--border);opacity:1;}
     .streak-best{margin-top:var(--space-2);}
     .goal-card :global(.feedback),.goal-feedback{grid-column:1 / -1;}
   }

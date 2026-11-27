@@ -242,15 +242,15 @@
 
 <dialog
   bind:this={dialog}
-  class="story-dialog"
+  class="story-dialog editorial-page"
   data-glass-overlay
   aria-labelledby={`${uid}-dialog-title`}
   data-testid="story-poster-dialog"
   onclose={handleDialogClose}
 >
   <div class="dialog-head">
-    <h2 id={`${uid}-dialog-title`}>{story.year} 跑步年度故事 · 纪实卷轴（1080×1920）</h2>
-    <button type="button" class="button-secondary" bind:this={closeBtn} onclick={close}>关闭</button>
+    <h2 id={`${uid}-dialog-title`}>{story.year} 年度故事海报</h2>
+    <button type="button" class="button-secondary dialog-close-btn" bind:this={closeBtn} onclick={close}>关闭</button>
   </div>
 
   <div class="dialog-body">
@@ -269,7 +269,7 @@
     <div class="dialog-controls">
       <div class="option-group">
         <span class="option-label">海报外观</span>
-        <div class="underline-tabs dialog-theme-tabs" role="group" aria-label="海报外观">
+        <div class="segment-group" role="group" aria-label="海报外观">
           <button type="button" aria-pressed={appearance === 'light'} onclick={() => setAppearance('light')}>
             浅色纸面
           </button>
@@ -281,14 +281,16 @@
 
       <div class="option-group">
         <span class="option-label">隐私脱敏控制</span>
-        <label class="toggle-row">
-          <span>隐藏具体城市名</span>
-          <input type="checkbox" bind:checked={hideCities} onchange={handlePrivacyChange} />
-        </label>
-        <label class="toggle-row">
-          <span>隐藏具体路线名</span>
-          <input type="checkbox" bind:checked={hideRouteNames} onchange={handlePrivacyChange} />
-        </label>
+        <div class="toggle-list">
+          <label class="toggle-row">
+            <span>隐藏具体城市名</span>
+            <input type="checkbox" bind:checked={hideCities} onchange={handlePrivacyChange} />
+          </label>
+          <label class="toggle-row">
+            <span>隐藏具体路线名</span>
+            <input type="checkbox" bind:checked={hideRouteNames} onchange={handlePrivacyChange} />
+          </label>
+        </div>
       </div>
 
       <p class="status-strip privacy-notice" data-testid="story-poster-privacy-note">
@@ -296,10 +298,10 @@
       </p>
 
       {#if shareError}
-        <p class="status-strip" data-tone="error" role="alert">{shareError}</p>
+        <p class="status-strip share-error" data-tone="error" role="alert">{shareError}</p>
       {/if}
 
-      <div class="dialog-actions">
+      <div class="dialog-actions" class:two-col={!nativeApp && shareable}>
         {#if !nativeApp}
           <button type="button" class="button-primary" disabled={!url || !file || busy || Boolean(error)} onclick={save}>
             保存 PNG
@@ -403,21 +405,28 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--space-4);
-    padding: var(--space-4) var(--space-6);
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-6);
     border-bottom: 1px solid var(--border);
+    background: var(--surface);
   }
   .dialog-head h2 {
     font-size: var(--text-card);
     font-weight: var(--weight-semibold);
     line-height: var(--line-height-heading);
+    min-width: 0;
+  }
+  .dialog-close-btn {
+    flex: none;
+    min-height: 2.75rem;
+    white-space: nowrap;
   }
   .dialog-body {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(16rem, 20rem);
     gap: var(--space-6);
     padding: var(--space-6);
-    max-height: calc(92dvh - 5rem);
+    max-height: calc(92dvh - 4.75rem);
     overflow-y: auto;
   }
   .dialog-stage {
@@ -441,6 +450,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
+    min-width: 0;
   }
   .option-group {
     display: grid;
@@ -452,45 +462,111 @@
     font-weight: var(--weight-semibold);
     color: var(--muted-foreground);
   }
-  .dialog-theme-tabs {
-    border-bottom: 1px solid var(--border);
+  .segment-group {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border: 1px solid var(--control-border);
+    border-radius: var(--radius-field);
+    overflow: hidden;
+    background: var(--surface);
   }
-  .dialog-theme-tabs > button {
-    margin-bottom: -1px;
+  .segment-group button {
+    min-height: 2.75rem;
+    padding: var(--space-2) var(--space-3);
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--foreground);
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+    white-space: nowrap;
+  }
+  .segment-group button + button {
+    border-left: 1px solid var(--control-border);
+  }
+  .segment-group button[aria-pressed='true'] {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+  .toggle-list {
+    border-top: 1px solid var(--border);
   }
   .toggle-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
-    min-height: 2.75rem;
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-control);
-    border: 1px solid var(--control-border);
-    background: var(--background);
+    min-height: 3rem;
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--border);
     font-size: var(--text-small);
     font-weight: var(--weight-medium);
+    cursor: pointer;
+  }
+  .toggle-row input[type='checkbox'] {
+    width: 1.25rem;
+    height: 1.25rem;
+    accent-color: var(--primary);
+    flex: none;
   }
   .privacy-notice {
+    margin: 0;
     font-size: var(--text-caption);
     line-height: var(--line-height-body);
+  }
+  .share-error {
+    margin: 0;
+    font-size: var(--text-small);
+    color: var(--error);
   }
   .dialog-actions {
     margin-top: auto;
     display: grid;
     gap: var(--space-2);
   }
+  .dialog-actions.two-col {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .dialog-actions :is(.button-primary, .button-secondary) {
+    min-height: 3rem;
+    border-radius: var(--radius-field);
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+    box-shadow: none;
+  }
+  .dialog-actions .button-secondary {
+    border: 1px solid var(--control-border);
+    background: transparent;
+  }
 
   @media (max-width: 767px) {
     .keepsake-dock {
       grid-template-columns: 1fr;
     }
+    .story-dialog {
+      width: min(100% - var(--space-4), 32rem);
+      max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - var(--space-4));
+      border-radius: var(--radius-header);
+    }
+    .dialog-head {
+      padding: var(--space-3) var(--space-4);
+    }
     .dialog-body {
       grid-template-columns: 1fr;
-      padding: var(--space-4);
+      gap: var(--space-3);
+      padding: var(--space-3) var(--space-4);
+      padding-bottom: calc(var(--space-4) + var(--safe-bottom));
+      max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 4.75rem);
+    }
+    .dialog-stage {
+      min-height: 11.5rem;
+      padding: var(--space-3);
     }
     .poster-preview-img {
-      width: min(100%, 14rem);
+      width: min(100%, 10.5rem);
+    }
+    .dialog-controls {
+      gap: var(--space-3);
     }
   }
 </style>

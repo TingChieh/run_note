@@ -76,6 +76,10 @@
 | `--radius-header` | 1rem | 同左 | 已迁移页面的黄色页头（`.editorial-page .page-header`，内边距同时收紧为 clamp(1rem, 1.6vw, 1.375rem)） |
 | `--text-figure` | clamp(4rem, 6.2vw, 5.5rem) | 同左 | 单次跑步主数字（64→88px） |
 | `--text-period-hero` | clamp(3.5rem, 8.9vw, 8rem) | 同左 | 档案页周期主数字（数据汇总年度距离，56→128px） |
+| `--rec-bg` / `--rec-ink` | #fcfcf7 / #10251b | #161514 / #f6f4f1 | 记录中户外高对比纸面与全墨色文字（对比度 15.7:1 / 16.6:1） |
+| `--text-rec-hero` / `--text-rec-hero-narrow` | clamp(4.25rem, 25vw, 8.5rem) / clamp(3.25rem, 21vw, 4.5rem) | 同左 | 记录中主距离读数（320px 零溢出，平板达 136px） |
+| `--text-rec-sub` / `--text-rec-action` | clamp(2rem, 11vw, 3.25rem) / 1.375rem | 同左 | 记录中用时/配速读数（32→52px）与 76px 暂停主按钮字号 |
+| `--tracking-rec` / `--line-height-rec` | -0.04em / 0.92 | 同左 | 记录中超大距离字距与行高 |
 
 `.editorial-page`（页面根元素）把 `--radius-control` 覆盖为 .625rem，并让该页内容区按钮不挂 Liquid Glass；全局 `--radius-control` 仍为 .75rem，直到所有页面迁移完成。
 

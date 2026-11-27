@@ -120,6 +120,12 @@
         unit: pace.unit,
         missing: pace.number === '—',
       },
+      {
+        label: '平均心率',
+        value: activity.avg_heart_rate_bpm == null ? '—' : String(activity.avg_heart_rate_bpm),
+        unit: activity.avg_heart_rate_bpm == null ? '' : 'bpm',
+        missing: activity.avg_heart_rate_bpm == null,
+      },
       ...(activity.timer_seconds != null
         ? [
             {
@@ -129,12 +135,6 @@
             },
           ]
         : []),
-      {
-        label: '平均心率',
-        value: activity.avg_heart_rate_bpm == null ? '—' : String(activity.avg_heart_rate_bpm),
-        unit: activity.avg_heart_rate_bpm == null ? '' : 'bpm',
-        missing: activity.avg_heart_rate_bpm == null,
-      },
       {
         label: '热量',
         value: activity.calories_kcal == null ? '—' : String(activity.calories_kcal),
@@ -613,15 +613,17 @@
             {/if}
           </section>
 
-          <ActivityPaceChart
-            replay={replayData}
-            loading={paceLoading}
-            error={replayError}
-            routeUnavailable={paceRouteUnavailable}
-            hasRoute={activity.has_route}
-            avgPaceSecondsPerKm={avgPaceNum}
-            onretry={() => void loadReplay(activity!.id, true)}
-          />
+          <div class="detail-pace">
+            <ActivityPaceChart
+              replay={replayData}
+              loading={paceLoading}
+              error={replayError}
+              routeUnavailable={paceRouteUnavailable}
+              hasRoute={activity.has_route}
+              avgPaceSecondsPerKm={avgPaceNum}
+              onretry={() => void loadReplay(activity!.id, true)}
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -901,7 +903,8 @@
     min-height: 2.75rem;
   }
   .detail-main,
-  .route-panel {
+  .route-panel,
+  .detail-pace {
     min-width: 0;
   }
   .route-panel {
@@ -984,12 +987,109 @@
       --route-map-height: 26rem;
     }
   }
-  @media (max-width: 639px) {
+  /* Mobile (<800px, brand.md §8 & prototypes/mobile.html): map leads at top, followed by receipt summary & pace chart. */
+  @media (max-width: 799px) {
+    .detail-main {
+      display: contents;
+    }
     .route-panel {
-      --route-map-height: clamp(18.5rem, 46svh, 23rem);
+      order: 1;
+    }
+    .stub {
+      order: 2;
+    }
+    .detail-pace {
+      order: 3;
+    }
+    .detail-toolbar {
+      flex-wrap: nowrap;
+      gap: var(--space-2);
+    }
+    .detail-actions {
+      flex-wrap: nowrap;
+      gap: var(--space-1);
+    }
+  }
+  @media (max-width: 639px) {
+    .detail-toolbar {
+      margin-bottom: var(--space-3);
+    }
+    .detail-actions :global(.button-secondary) {
+      padding-inline: 0.625rem;
+    }
+    .route-panel {
+      --route-map-height: clamp(18.5rem, 42svh, 21.25rem);
+      margin-inline: calc(-1 * clamp(1rem, 3vw, 3rem));
+    }
+    .route-panel :global(.sheet) {
+      border-inline: 0;
+      border-radius: 0;
+    }
+    .route-panel :global(details),
+    .route-panel :global(.basemap-feedback),
+    .route-panel > :global(p[role='status']) {
+      margin-inline: clamp(1rem, 3vw, 3rem);
+    }
+    .route-placeholder {
+      border-inline: 0;
+      border-radius: 0;
+    }
+    /* Phone receipt trio: first 3 key metrics (duration / pace / heart rate) sit in a 3-column vertical-hairline band. */
+    .stub-leaders {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      border-top: 1px solid var(--border);
+    }
+    .stub-leaders .leader-row:nth-child(-n + 3) {
+      display: flex;
+      flex-direction: column-reverse;
+      align-items: flex-start;
+      justify-content: flex-end;
+      gap: 0.125rem;
+      min-width: 0;
+      padding: var(--space-3) var(--space-2) var(--space-2) var(--space-3);
+      border-bottom: 1px solid var(--border);
+    }
+    .stub-leaders .leader-row:nth-child(-n + 3)::before {
+      display: none;
+    }
+    .stub-leaders .leader-row:nth-child(1) {
+      padding-left: 0;
+    }
+    .stub-leaders .leader-row:nth-child(2),
+    .stub-leaders .leader-row:nth-child(3) {
+      border-left: 1px solid var(--border);
+    }
+    .stub-leaders .leader-row:nth-child(-n + 3) dt {
+      font-size: var(--text-caption);
+      color: var(--muted-foreground);
+    }
+    .stub-leaders .leader-row:nth-child(-n + 3) dd {
+      font-size: var(--text-section);
+      line-height: var(--line-height-tight);
+      text-align: left;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .stub-leaders .leader-row:nth-child(n + 4) {
+      grid-column: 1 / -1;
     }
     .splits-bars li {
       grid-template-columns: 2rem 4.75rem minmax(0, 1fr);
+    }
+  }
+  @media (max-width: 359px) {
+    .detail-actions :global(.button-secondary) {
+      padding-inline: 0.5rem;
+      font-size: var(--text-caption);
+    }
+    .stub-leaders .leader-row:nth-child(-n + 3) {
+      padding-inline: var(--space-2);
+    }
+    .stub-leaders .leader-row:nth-child(1) {
+      padding-left: 0;
+    }
+    .stub-leaders .leader-row:nth-child(-n + 3) dd {
+      font-size: var(--text-card);
     }
   }
 </style>

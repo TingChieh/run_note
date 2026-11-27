@@ -34,6 +34,7 @@ export default defineConfig({
     'annual-story.spec.ts',
     'top-navigation.spec.ts',
     'mobile-tabbar.spec.ts',
+    'mobile-editorial-receipt.spec.ts',
     'scrollbars.spec.ts',
     'first-read-preload.spec.ts',
     'shoes.spec.ts',

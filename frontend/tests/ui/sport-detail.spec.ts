@@ -151,7 +151,8 @@ test('full device metrics and route stay compact on short desktops and narrow ph
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const stub = await page.getByRole('region', { name: '运动指标' }).boundingBox();
     const map = await page.locator('.route-map').boundingBox();
-    if (width < 1024) expect(map!.y).toBeGreaterThan(stub!.y);
+    if (width < 800) expect(map!.y).toBeLessThan(stub!.y);
+    else if (width < 1024) expect(map!.y).toBeGreaterThan(stub!.y);
     else expect(map!.x).toBeGreaterThan(stub!.x + stub!.width);
   }
   await page.setViewportSize({ width: 390, height: 900 });
