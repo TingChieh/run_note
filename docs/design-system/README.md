@@ -6,23 +6,23 @@
 
 - **核心品牌语言（Editorial Receipt Design）**：RunNote 的视觉设计以项目现有的 Editorial Receipt Design 为核心品牌语言。所有新增或修改的 UI 必须遵循本规范，优先复用已有的 Design Tokens、排版规则及组件，不得自行引入新的视觉体系。强调**排版而非容器、数据而非装饰、品牌一致性而非流行设计趋势**；避免通用 AI Dashboard 风格、过度卡片化（如卡片套卡片、将一组指标拆成零碎小框）及无意义的装饰性胶囊标签。
 - **场景边界**：具象票据元素（纸感、存根/账簿编排等）主要用于**记录、报告和分享**场景（如活动记录、周期报告、跑步回顾与分享海报）；表单、导入、设置与管理等**操作型界面**始终以可用性为优先。
-- **表面与色彩**：顶部悬浮玻璃导航、暖浅色背景、暖炭灰深色外观、24px 内容卡片与既有胶囊交互控件（导航、按钮、分段控件，区别于无意义的装饰性胶囊标签）。浅色：淡奶油黄页头、品牌绿 Logo、淡绿当前导航与分段滑块、品牌绿主操作；深色：页头无色块，Logo、当前导航、分段滑块与主操作都是中性灰。绿色（`--primary`）始终是强调色，用于数字、链接、进度与开关状态。
-- **排版与信息锚点**：系统字体，舒展的中文正文，指标用等宽数字；彩色圆形图标是信息锚点，不能把数据色、状态色与品牌色混用。
-- **克制的材质**：普通表面使用边框与留白，控件保留既有 Liquid Glass 材质和弹性反馈；不将所有容器玻璃化。
+- **表面与色彩**：顶部悬浮玻璃导航（保持现状，含胶囊当前项与 40px 控件）、暖浅色背景、暖炭灰深色外观。页头保留底色：浅色淡奶油黄、深色中性深灰。浅色：品牌绿 Logo、淡绿当前导航、品牌绿主操作；深色：Logo、当前导航与主操作都是中性灰。绿色（`--primary`）始终是强调色，用于数字、单位、链接、进度与开关状态；票据黄只作票据页票头与图表峰值标记。
+- **排版与信息锚点**：系统字体，舒展的中文正文，页面 h1 为 28px，统计数据用等宽数字与等宽小写单位；层级靠对齐、大字号主数字和线建立：主区块 2px 墨色节线，次级分组 1px 发丝线或留白。已迁移页面不再用彩色圆形图标、24px 内容卡片或阴影；未迁移页面在各自迁移 PR 前保持原样。
+- **双层体系（Editorial Receipt × Liquid Glass）**：内容层是 Editorial Receipt（数据、排版、留白），交互层是 Liquid Glass（导航、浮动控件、菜单与弹层、空间层级与反馈）。玻璃不承载数据内容；已迁移页面（`.editorial-page`）的内容区按钮是 10px 圆角的平面按钮，数据区保持实底。保留全部玻璃实现、参数调节与仅开发环境可见的调节器，不另建组件体系；边界与参数见 [brand.md §8.1](brand.md#81-双层体系editorial-receipt--liquid-glass)。
 - **壳层与外观**：私人顶部玻璃条与公开顶部导航分开；详情 hero 保持业务布局；手机导航沿文档流展开。外观支持系统、手动浅色/深色及恢复自动，沿用 `runnote-theme` 和 `watchSystemTheme`，不引入新偏好体系。
 
-## Editorial Receipt 落地规范（评审稿，待确认）
+## Editorial Receipt 落地规范
 
-上述品牌语言的具体落地写在 [brand.md](brand.md)：品牌原则、场景分级（票据页 / 档案页 / 操作页 / 记录中）、拟议令牌增量、排版与网格、图表、组件与状态规则，以及 Web / Mobile / Share 的共享与差异。现状诊断见 [Web 审计](web-audit.md)，高保真原型见 [prototypes/](prototypes/index.html)。
+负责人已确认（2026-11-27，决定记录在 [brand.md §12](brand.md#12-负责人决定2026-11-27)），按页迁移：第 1 阶段完成令牌、共享样式、`PageHeader` 与数据汇总页，其余页面每页一个 PR。上述品牌语言的具体落地写在 [brand.md](brand.md)：品牌原则、场景分级（票据页 / 档案页 / 操作页 / 记录中）、拟议令牌增量、排版与网格、图表、组件与状态规则，以及 Web / Mobile / Share 的共享与差异。现状诊断见 [Web 审计](web-audit.md)，高保真原型见 [prototypes/](prototypes/index.html)。
 
 | 问题 | 单一来源 |
 | --- | --- |
 | 品牌语言、场景边界、Agent 流程 | 本文 |
-| 落地规则与拟议令牌增量 | [brand.md](brand.md)（确认实施后增量并入 [tokens.md](tokens.md)） |
+| 落地规则、迁移进度与负责人决定 | [brand.md](brand.md)（已实施的令牌同步在 [tokens.md](tokens.md)） |
 | 当前令牌实际值 | [tokens.md](tokens.md) → `frontend/src/app.css` |
 | 移动端信息架构与记录流状态机 | [移动端方案](../mobile-ui-design/README.md)（视觉以 brand.md 为准） |
 
-在负责人确认前，下方"视觉不变量"中与 brand.md 冲突的条目（24px 内容卡片、彩色圆形图标、淡奶油黄页头、内容区玻璃按钮）仍描述现行实现；确认后由本文统一改写，不另建平行规范。
+迁移方式：页面根元素加 `.editorial-page`，共享组件用可选外观（如 `TrendChart appearance="receipt"`、`ProvinceMap appearance="ledger"`、`MetricSummary appearance="receipt"`）进入新样式，未迁移的调用方保持原样；不做全局换肤。
 
 ## Agent 必须遵循的流程
 
@@ -54,7 +54,7 @@ node tests/fixtures/check-showcase-isolation.mjs
 
 隔离脚本先要求已有生产 build，检查产物无展示标识，再使用 8191 内存 API 和 5194 adapter-node（就绪探测等 `/admin` 返回 200）检查 `/showcase`、`/ui-showcase`、`/tests/fixtures/ui-showcase/`、`/main.ts` 与已下线的 `/login` 均为 404，结束关闭本次进程。端口被占用时拒绝运行，不复用或停止已有服务。不要与占用 8191 的业务 UI 测试同时执行。
 
-展示包含 PageHeader、FeedbackState、PageSkeleton、MetricSummary、DatePicker、TimePicker、AnchoredPanel 与 GoalRing、ThemeToggle、原生表单和布局组合。依赖 `$app/state`、接口或私有数据的组件通过既有 `playwright.ui.config.ts` 合成路由夹具测试，不在独立入口中伪造运行环境。
+展示包含 PageHeader（含 `meta` 元信息行）、FeedbackState、PageSkeleton、MetricSummary、DatePicker、TimePicker、AnchoredPanel 与 GoalRing、ThemeToggle、原生表单和布局组合。依赖 `$app/state`、接口或私有数据的组件通过既有 `playwright.ui.config.ts` 合成路由夹具测试，不在独立入口中伪造运行环境。
 
 视觉基线使用固定时间、UTC、合成数据、默认玻璃参数、真实 light/dark 根主题及 reduced-motion。需要更新快照时先查看差异和实际页面；`--update-snapshots` 不能替代设计审阅。首次基线只建立今后的对照点，不证明历史页面完全无差异。
 
