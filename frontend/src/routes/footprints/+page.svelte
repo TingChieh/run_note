@@ -62,6 +62,21 @@
         }).format(new Date(generatedAt))
       : '',
   );
+  const headerMeta = $derived.by(() => {
+    if (data) {
+      return [
+        '全部年份',
+        `${data.visible_activity_count} / ${data.activity_count} 条路线`,
+        refreshing ? '后台更新中' : '',
+      ]
+        .filter(Boolean)
+        .join(' · ');
+    }
+    if (offlineMeta) {
+      return ['离线缓存', `${offlineMeta.visible_activity_count} / ${offlineMeta.activity_count} 条路线`].join(' · ');
+    }
+    return '全部年份';
+  });
   function changeMode(next: Selection['mode']) {
     if (mode === next) return;
     mode = next;
@@ -184,36 +199,45 @@
   <title>{pageTitle('个人足迹', page.data.site)}</title>
   <link rel="preload" as="fetch" href={firstRead} crossorigin="anonymous" />
 </svelte:head>
-<PageHeader title="个人足迹" description="沿着跑过的路，看看你的运动版图。">
-  {#snippet actions()}
-    {#if page.data.user && view.manage}
-      <a class="button-secondary" href={view.href('/footprints/exploration')}>城市探索</a>
-    {/if}
-  {/snippet}
-  {#snippet footer()}
-    <div class="settings-tabs" role="group" aria-label="地图模式">
-      <button type="button" aria-pressed={mode === 'tracks'} disabled={!mounted} onclick={() => changeMode('tracks')}
-        >轨迹叠加</button
-      ><button type="button" aria-pressed={mode === 'heatmap'} disabled={!mounted} onclick={() => changeMode('heatmap')}
-        >运动热力图</button
-      >
+<!-- Editorial Receipt archive page (brand.md §2, §5, §6.2): compact yellow header, underline view tabs, 4px map sheet. -->
+<div class="editorial-page footprints-page">
+  <PageHeader title="个人足迹" meta={headerMeta}>
+    {#snippet actions()}
+      {#if data}
+        <button type="button" class="button-secondary" onclick={reload}>重新读取足迹</button>
+      {/if}
+    {/snippet}
+  </PageHeader>
+  <div class="footprints-tabs-bar">
+    <div class="footprints-tabs-left">
+      <div class="underline-tabs" role="group" aria-label="地图模式">
+        <button type="button" aria-pressed={mode === 'tracks'} disabled={!mounted} onclick={() => changeMode('tracks')}
+          >轨迹叠加</button
+        ><button
+          type="button"
+          aria-pressed={mode === 'heatmap'}
+          disabled={!mounted}
+          onclick={() => changeMode('heatmap')}>运动热力图</button
+        >
+      </div>
+      {#if page.data.user && view.manage}
+        <a class="exploration-tab-link" href={view.href('/footprints/exploration')}>城市探索</a>
+      {/if}
     </div>
-  {/snippet}
-</PageHeader>
-<div class="footprints-page">
-  <p class="mode-hint" data-testid="footprint-mode-hint">
-    {mode === 'tracks' ? '看每次跑步的路线' : '看不同记录经过的区域'}
-  </p>
+    <p class="mode-hint" data-testid="footprint-mode-hint">
+      {mode === 'tracks' ? '看每次跑步的路线' : '看不同记录经过的区域'}
+    </p>
+  </div>
   {#if loading}<div class="page-loading"><PageSkeleton title="正在读取个人足迹…" /></div>{/if}
   {#if status === 'pending'}<FeedbackState kind="loading" title="正在生成全部足迹…"
       ><p>导入后会自动更新，完成后即可查看全部记录。页面会自动检查进度。</p>
-      <button onclick={reload} class="button-secondary mt-3">重新读取足迹</button></FeedbackState
+      <button type="button" onclick={reload} class="button-secondary mt-3">重新读取足迹</button></FeedbackState
     >{/if}
   {#if message}<FeedbackState kind="error" title={message}
-      ><button onclick={reload} class="button-secondary">重新读取足迹</button></FeedbackState
+      ><button type="button" onclick={reload} class="button-secondary">重新读取足迹</button></FeedbackState
     >{/if}
   {#if offlineMeta && !data}
-    <section class="aux-panel" data-testid="footprint-offline-meta" aria-label="离线足迹元数据">
+    <section class="section-hairline" data-testid="footprint-offline-meta" aria-label="离线足迹元数据">
       <FeedbackState
         kind="empty"
         title={`离线缓存足迹概览 · 全部 ${offlineMeta.activity_count} 条记录（地图可显示 ${offlineMeta.visible_activity_count} 条）`}
@@ -229,25 +253,20 @@
     </section>
   {/if}
   {#if data}
-    {#if refreshFailed}<div data-testid="footprint-refresh-failed">
-        <FeedbackState title="自动更新暂未完成，当前显示上次生成的足迹。"
-          ><p>后台会继续尝试更新，也可稍后重新读取。</p></FeedbackState
-        >
+    {#if refreshFailed}<div class="status-strip" role="status" data-testid="footprint-refresh-failed">
+        <strong>自动更新暂未完成，当前显示上次生成的足迹。</strong>后台会继续尝试更新，也可稍后重新读取。
       </div>{/if}
     <div class="result-summary" aria-live="polite">
       <p data-testid="footprint-summary">
         全部 <strong>{data.activity_count}</strong> 条运动记录，地图显示 <strong>{data.visible_activity_count}</strong> 条。
       </p>
-      <div class="snapshot-status">
-        <p class="generated-label" data-testid="footprint-generated">
-          更新于 {generatedLabel}{refreshing ? ' · 后台更新中' : ''}
-        </p>
-        <button class="button-secondary" onclick={reload}>重新读取足迹</button>
-      </div>
+      <p class="generated-label" data-testid="footprint-generated">
+        更新于 {generatedLabel}{refreshing ? ' · 后台更新中' : ''}
+      </p>
     </div>
-    {#if data.unsupported_segment_count}<FeedbackState title="部分轨迹超出地图支持范围"
-        >{data.unsupported_segment_count} 个轨迹段包含超出 ±85.051129° 的极区部分，地图仅显示支持范围。</FeedbackState
-      >{/if}
+    {#if data.unsupported_segment_count}<div class="status-strip" role="status">
+        <strong>部分轨迹超出地图支持范围：</strong>{data.unsupported_segment_count} 个轨迹段包含超出 ±85.051129° 的极区部分，地图仅显示支持范围。
+      </div>{/if}
     {#if data.features.length === 0}<FeedbackState title="还没有可显示的足迹"
         ><p>导入带路线的运动记录后，足迹会自动生成。</p>
         <a href={view.href('/activities')} class="button-secondary mt-3">导入 GPX 或查看运动记录</a></FeedbackState
@@ -255,14 +274,15 @@
     {:else}
       {#key mapVersion}<FootprintMap
           {data}
+          appearance="sheet"
           onretry={() => {
             mapVersion++;
           }}
         />{/key}
-      {#if data.mode === 'heatmap'}<section class="heat-legend" data-testid="heat-legend" aria-label="热度图例">
-          <div class="legend-heading">
+      {#if data.mode === 'heatmap'}<section class="section-hairline heat-legend" data-testid="heat-legend" aria-label="热度图例">
+          <div class="section-head legend-heading">
             <h2>每格经过的不同运动记录数</h2>
-            <span>当前最高 {data.max_count} 次</span>
+            <span class="section-meta legend-peak">当前最高 {data.max_count} 次</span>
           </div>
           <div class="legend-levels">
             {#each HEAT_LEVELS as level}<span
@@ -297,8 +317,43 @@
   .footprints-page {
     display: grid;
     gap: var(--space-4);
-    margin-top: var(--space-6);
     min-width: 0;
+  }
+  .footprints-tabs-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2) var(--space-4);
+    border-bottom: 1px solid var(--border);
+  }
+  .footprints-tabs-left {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 var(--space-4);
+    margin-bottom: -1px;
+  }
+  .exploration-tab-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    padding: 0;
+    border-bottom: 2px solid transparent;
+    color: var(--muted-foreground);
+    font-size: var(--text-small);
+    font-weight: var(--weight-medium);
+    white-space: nowrap;
+    transition:
+      color var(--transition-control),
+      border-color var(--transition-control);
+  }
+  @media (hover: hover) {
+    .exploration-tab-link:hover {
+      color: var(--foreground);
+    }
   }
   .mode-hint {
     color: var(--muted-foreground);
@@ -308,56 +363,48 @@
     cursor: pointer;
     font-weight: var(--weight-semibold);
   }
-  .snapshot-status {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
   .result-summary {
     display: flex;
     flex-wrap: wrap;
     justify-content: space-between;
     align-items: baseline;
-    gap: 0.5rem;
+    gap: var(--space-1) var(--space-4);
     font-size: var(--text-small);
+    font-variant-numeric: tabular-nums;
   }
   .generated-label {
     color: var(--muted-foreground);
-    font-size: var(--text-small);
+    font-family: var(--font-mono);
+    font-size: var(--text-caption);
+    font-variant-numeric: tabular-nums;
   }
   .heat-legend {
-    padding: 0.25rem 0.25rem 0.75rem;
-  }
-  .legend-heading {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 0.5rem;
-    font-size: var(--text-small);
+    display: grid;
+    gap: var(--space-2);
   }
   .legend-heading h2 {
+    font-size: var(--text-body);
     font-weight: var(--weight-semibold);
   }
-  .legend-heading span {
-    color: var(--muted-foreground);
+  .legend-peak {
+    font-family: var(--font-mono);
   }
   .legend-levels {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem 1.25rem;
-    margin-block: 0.75rem;
+    gap: var(--space-2) var(--space-4);
     font-size: var(--text-small);
+    font-variant-numeric: tabular-nums;
   }
   .legend-levels span {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
   .legend-levels i {
-    width: 1rem;
-    height: 1rem;
-    border-radius: 0.2rem;
+    width: 0.875rem;
+    height: 0.875rem;
+    border-radius: 0.125rem;
   }
   .heat-legend p {
     color: var(--muted-foreground);
@@ -365,7 +412,7 @@
   }
   .map-notes {
     border-top: 1px solid var(--border);
-    padding-top: 1rem;
+    padding-top: var(--space-4);
     font-size: var(--text-small);
   }
   .map-notes summary {
@@ -373,9 +420,9 @@
   }
   .notes-content {
     display: grid;
-    gap: 0.75rem;
+    gap: var(--space-3);
     color: var(--muted-foreground);
-    margin-top: 0.75rem;
+    margin-top: var(--space-3);
     line-height: var(--line-height-body);
   }
   @media (max-width: 767px) {
@@ -384,7 +431,7 @@
     }
     .result-summary {
       display: grid;
-      gap: 0.5rem;
+      gap: var(--space-1);
     }
   }
 </style>

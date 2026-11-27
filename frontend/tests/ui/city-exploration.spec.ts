@@ -395,20 +395,36 @@ test('pending, retry, empty and expired session', async ({ page }) => {
   await expect(page).toHaveURL(/\/admin\?reason=changed/);
 });
 
-for (const width of [390, 768, 1440]) {
+for (const width of [320, 390, 768, 1440]) {
   for (const theme of ['light', 'dark'] as const) {
     test(`overview and drill-down at ${width}px in ${theme}`, async ({ page }, info) => {
       await page.context().addCookies([ownerCookie]);
       await page.addInitScript((value) => localStorage.setItem('runnote-theme', value), theme);
       await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: theme });
-      await page.setViewportSize({ width, height: width === 390 ? 844 : width === 768 ? 1024 : 900 });
+      await page.setViewportSize({
+        width,
+        height: width === 320 ? 640 : width === 390 ? 844 : width === 768 ? 1024 : 900,
+      });
       await fixture(page);
       const errors: string[] = [];
       page.on('pageerror', (err) => errors.push(err.message));
 
       await page.goto(root);
       await expect(page.getByRole('heading', { name: '城市探索' })).toBeVisible();
+      await expect(page.locator('.editorial-page.exploration-page')).toBeVisible();
+      await expect(page.locator('.metric-icon')).toHaveCount(0);
+      await expect(page.locator('.fp-sum')).toBeVisible();
+      await expect(page.getByRole('group', { name: '格网图层', exact: true })).toHaveClass(/underline-tabs/);
+      await expect(page.getByRole('group', { name: '城市类别筛选', exact: true })).toHaveClass(/underline-tabs/);
       await expect(page.getByTestId('exploration-map')).toHaveAttribute('data-drawn', 'true');
+      await expect(page.getByTestId('exploration-map')).toHaveAttribute('data-glass-overlay', '');
+      expect(await page.getByTestId('exploration-map').evaluate((el) => getComputedStyle(el).borderTopLeftRadius)).toBe(
+        '4px',
+      );
+      await expect(page.locator('.month.peak')).toHaveCount(1);
+      await expect(page.locator('.month.peak .bar-val')).toHaveText('23');
+      await expect(page.locator('.month.empty')).toHaveCount(2);
+      await expect(page.locator('.city-share-track')).toHaveCount(3);
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       const noOverflow = () => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
       expect(await noOverflow()).toBe(true);

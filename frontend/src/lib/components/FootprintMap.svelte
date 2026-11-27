@@ -43,6 +43,7 @@
     selectedRunner = '',
     selectedActivity = '',
     compact = false,
+    appearance = 'default',
     detailHref = undefined,
     children,
     onclearRunner,
@@ -56,6 +57,7 @@
     selectedRunner?: string;
     selectedActivity?: string;
     compact?: boolean;
+    appearance?: 'default' | 'sheet';
     detailHref?: string;
     children?: Snippet;
     onclearRunner?: () => void;
@@ -963,7 +965,7 @@
   });
 </script>
 
-<div class="map-section content-reveal">
+<div class="map-section content-reveal" class:sheet={appearance === 'sheet'}>
   <div class="map-toolbar">
     <div class="toolbar-actions">
       <button type="button" onclick={overview} disabled={!ready || !!error} class="button-secondary"
@@ -979,6 +981,23 @@
         class="button-secondary city-menu-toggle">城市</button
       >
     </div>
+    {#if cityLookup === 'ready' && (cities.length || unlocatedBounds)}
+      <div class="city-buttons" role="group" aria-label="有记录的城市">
+        {#each cities as city}<button
+            type="button"
+            onclick={() => locateCity(city.code)}
+            disabled={!ready || !!error}
+            aria-pressed={selectedCity === city.code}
+            class="button-secondary">{city.name}</button
+          >{/each}{#if unlocatedBounds}<button
+            type="button"
+            onclick={() => locateCity('unlocated')}
+            disabled={!ready || !!error}
+            aria-pressed={selectedCity === 'unlocated'}
+            class="button-secondary">未识别区域</button
+          >{/if}
+      </div>
+    {/if}
     <p class="sr-only" id="footprint-map-help">拖动或缩放探索 · 方向键移动 · + / − 缩放</p>
     {#if detailHref}<a class="button-secondary map-detail-link" href={detailHref} data-testid="map-detail-link"
         >查看完整详情 →</a
@@ -988,24 +1007,7 @@
   {:else if cityLookup === 'failed' && !quietCityFailure}<div class="city-actions">
       <p role="status" class="city-hint">城市识别暂不可用，全部足迹仍可查看。</p>
       <button type="button" onclick={loadCities} class="button-secondary">重试识别城市</button>
-    </div>
-  {:else}
-    <div class="city-buttons" role="group" aria-label="有记录的城市">
-      {#each cities as city}<button
-          type="button"
-          onclick={() => locateCity(city.code)}
-          disabled={!ready || !!error}
-          aria-pressed={selectedCity === city.code}
-          class="button-secondary">{city.name}</button
-        >{/each}{#if unlocatedBounds}<button
-          type="button"
-          onclick={() => locateCity('unlocated')}
-          disabled={!ready || !!error}
-          aria-pressed={selectedCity === 'unlocated'}
-          class="button-secondary">未识别区域</button
-        >{/if}
-    </div>
-  {/if}
+    </div>{/if}
   {#if cityOpen}<div id="footprint-cities" class="city-panel">
       <div class="city-actions">
         <label
@@ -1036,7 +1038,12 @@
   {#if error}<FeedbackState kind="error" title={error}
       ><button type="button" class="button-secondary" onclick={onretry}>重新绘制地图</button></FeedbackState
     >{:else if !ready}<p role="status" class="basemap-status">正在绘制足迹…</p>{/if}
-  <div class="map-frame" class:compact bind:this={frameEl}>
+  <div
+    class="map-frame"
+    class:compact
+    data-glass-overlay={appearance === 'sheet' ? '' : undefined}
+    bind:this={frameEl}
+  >
     <div
       bind:this={container}
       class="map-canvas"
@@ -1454,6 +1461,68 @@
   }
   .map-frame.compact {
     height: clamp(424px, calc(100dvh - 13rem), 720px);
+  }
+  /* Editorial Receipt sheet appearance (brand.md §5, W-17): 4px fine map frame, flat controls, hairline rows. */
+  .sheet .map-toolbar {
+    justify-content: flex-start;
+    gap: var(--space-2) var(--space-3);
+  }
+  .sheet .city-buttons {
+    padding-left: var(--space-3);
+    border-left: 1px solid var(--border);
+  }
+  .sheet .city-buttons button[aria-pressed='true'] {
+    outline: none;
+    border-color: var(--rule);
+    background: var(--foreground);
+    color: var(--background);
+  }
+  .sheet .city-buttons button[aria-pressed='true']:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  .sheet .city-panel {
+    padding: var(--space-3) 0;
+    border: 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+  }
+  .sheet .city-actions select {
+    border-color: var(--control-border);
+  }
+  .sheet .basemap-feedback {
+    border: 0;
+    border-left: 3px solid var(--warning);
+    border-radius: 0;
+    background: var(--warning-soft);
+    color: var(--foreground);
+    padding: var(--space-2) var(--space-3);
+  }
+  .sheet .map-frame {
+    border-radius: var(--radius-sheet);
+  }
+  .sheet .route-choices,
+  .sheet .heat-selection {
+    border-radius: var(--radius-sheet);
+  }
+  .sheet .route-choices li + li,
+  .sheet .record-list li + li {
+    border-top: 1px solid var(--border);
+  }
+  .sheet .record-date {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .sheet .record-list,
+  .sheet .heat-data {
+    border-top: 1px solid var(--border);
+    padding-top: var(--space-3);
+  }
+  .sheet table {
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
   }
   @media (max-width: 959px) {
     .map-frame.compact {
