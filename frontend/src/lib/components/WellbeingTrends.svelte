@@ -26,10 +26,10 @@
 </script>
 
 <div class="trends" data-testid="wellbeing-trends">
-  <section class="card" aria-labelledby="trend-title">
+  <section class="editorial-page section-rule trends-head" aria-labelledby="trend-title">
     <div class="head">
-      <div><p class="eyebrow">变化趋势</p><h2 id="trend-title">趋势分析</h2></div>
-      <div class="settings-tabs" role="group" aria-label="趋势范围">
+      <h2 id="trend-title">趋势分析</h2>
+      <div class="underline-tabs" role="group" aria-label="趋势范围">
         {#each [7, 14, 30] as range (range)}<button type="button" aria-pressed={days === range} onclick={() => { days = range as TrendDays; }}>近 {range} 天</button>{/each}
       </div>
     </div>
@@ -53,15 +53,10 @@
 
 <style>
   .trends, .charts { display: grid; gap: var(--space-4); min-width: 0; }
-  .card { display: grid; gap: var(--space-3); min-width: 0; padding: var(--space-6); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
-  .head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-4); }
-  .eyebrow { margin-bottom: var(--space-1); color: var(--muted-foreground); font-size: var(--text-caption); }
+  .trends-head { display: grid; gap: var(--space-3); min-width: 0; }
+  .head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
   h2 { font-size: var(--text-section); font-weight: var(--weight-semibold); letter-spacing: 0; }
   .hint, .summary { color: var(--muted-foreground); font-size: var(--text-small); line-height: var(--line-height-body); }
-  .summary { color: var(--foreground); }
-  .card .settings-tabs { background: var(--muted); }
-  .card .settings-tabs > button { color: var(--muted-foreground); }
-  .card .settings-tabs:not(:global(.rn-liquid-navigation)) > button[aria-pressed='true'] { color: var(--primary-foreground); } /* with the glass lens the chosen label stays dark when the lens moves away (the lens carries the white copy) */
-  @media (max-width: 767px) { .card { padding: var(--space-4); } }
+  .summary { color: var(--foreground); font-variant-numeric: tabular-nums; }
   @media (min-width: 1100px) { .charts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

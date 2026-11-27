@@ -123,7 +123,7 @@
   /* Wide: the calendar stays in view while the page scrolls past the editor. If the screen is short, the card scrolls inside itself. */
   /* The fixed top bar (>= 800px, so always at this width) sits above the page: the card sticks below it. */
   @media (min-width: 64rem) { .card { --stick-top: calc(var(--top-navigation-offset) + var(--top-navigation-height) + var(--space-4)); position: sticky; top: var(--stick-top); margin-top: var(--align-offset, 0px); max-height: calc(100dvh - var(--stick-top) - var(--space-4)); overflow-y: auto; overscroll-behavior: contain; } }
-  .card { display: grid; gap: var(--space-3); min-width: 0; padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
+  .card { display: grid; gap: var(--space-3); min-width: 0; padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-sheet); background: var(--paper); }
   .column { position: relative; min-width: 0; }
   .stage { display: grid; min-width: 0; overflow-x: clip; }
   .pane { grid-area: 1 / 1; min-width: 0; }

@@ -88,10 +88,10 @@
 </script>
 
 <div class="report-page" data-testid="wellbeing-report-page">
-  <section class="card no-print" aria-labelledby="report-form-title">
+  <section class="editorial-page section-rule report-head no-print" aria-labelledby="report-form-title">
     <div class="head">
-      <div><p class="eyebrow">一段时间的记录汇总</p><h2 id="report-form-title">总结</h2></div>
-      <div class="settings-tabs" role="group" aria-label="总结范围">
+      <h2 id="report-form-title">总结</h2>
+      <div class="underline-tabs" role="group" aria-label="总结范围">
         {#each [7, 14, 30] as range (range)}<button type="button" aria-pressed={mode === range} onclick={() => { choose(range as Mode); }}>近 {range} 天</button>{/each}
         <button type="button" aria-pressed={mode === 'custom'} onclick={() => { choose('custom'); }}>自定义</button>
       </div>
@@ -214,7 +214,7 @@
 
     <WellbeingReportPrint report={r} />
 
-    <section class="card no-print" aria-labelledby="export-title" data-testid="wellbeing-export">
+    <section class="editorial-page section-hairline export-section no-print" aria-labelledby="export-title" data-testid="wellbeing-export">
       <h3 id="export-title">打印或导出</h3>
       {#if nativeApp}
         <p class="hint" role="status">打印与 CSV 文件导出仅支持在浏览器中使用，请在浏览器中打开此页面。</p>
@@ -234,16 +234,13 @@
 
 <style>
   .report-page { display: grid; gap: var(--space-6); min-width: 0; }
-  .card { display: grid; gap: var(--space-4); min-width: 0; padding: var(--space-6); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
-  .eyebrow { margin-bottom: var(--space-1); color: var(--muted-foreground); font-size: var(--text-caption); }
+  .report-head, .export-section { display: grid; gap: var(--space-4); min-width: 0; }
+  .card { display: grid; gap: var(--space-4); min-width: 0; padding: var(--space-5); border: 1px solid var(--border); border-radius: var(--radius-sheet); background: var(--paper); }
   h2 { font-size: var(--text-section); font-weight: var(--weight-semibold); letter-spacing: 0; }
   h3 { font-size: var(--text-section); font-weight: var(--weight-semibold); letter-spacing: 0; }
   .hint, .muted { color: var(--muted-foreground); font-size: var(--text-small); line-height: var(--line-height-body); }
-  .head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-4); }
-  .summary { color: var(--foreground); font-size: var(--text-small); line-height: var(--line-height-body); }
-  .card .settings-tabs { background: var(--muted); }
-  .card .settings-tabs > button { color: var(--muted-foreground); }
-  .card .settings-tabs:not(:global(.rn-liquid-navigation)) > button[aria-pressed='true'] { color: var(--primary-foreground); } /* with the glass lens the chosen label stays dark when the lens moves away (the lens carries the white copy) */
+  .head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
+  .summary { color: var(--foreground); font-size: var(--text-small); line-height: var(--line-height-body); font-variant-numeric: tabular-nums; }
   .range { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-4); }
   /* The print button and the three files, each with a line on what it holds, in even columns. */
   .export { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: var(--space-4); }

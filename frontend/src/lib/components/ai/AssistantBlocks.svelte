@@ -242,7 +242,7 @@
                 : `${str(block.data.date_from)} 至 ${str(block.data.date_to)}（不含结束日）`}
             </span>
           </div>
-          <MetricSummary items={summaryItems(summary)} compact />
+          <MetricSummary items={summaryItems(summary)} appearance="receipt" compact />
           {#if device && totalCount > 0}
             <dl class="device-strip">
               <div>
@@ -279,7 +279,7 @@
               <span class="block-sub">{str(block.data.date_from)} 至 {str(block.data.date_to)}</span>
             </div>
             {#if trends}
-              <div class="mode-switch compact-switch" role="group" aria-label="趋势指标切换">
+              <div class="underline-tabs" role="group" aria-label="趋势指标切换">
                 <button
                   type="button"
                   aria-pressed={currentMetric === 'distance'}
@@ -299,7 +299,7 @@
             {/if}
           </div>
           {#if trends}
-            <TrendChart {trends} metric={currentMetric} />
+            <TrendChart {trends} metric={currentMetric} appearance="receipt" />
           {:else if Array.isArray(block.data.buckets) && block.data.buckets.length > 0}
             <!-- svelte-ignore a11y_no_noninteractive_tabindex (Scrollable table needs keyboard access.) -->
             <div class="mini-table-wrap" tabindex="0" role="region" aria-label="周期趋势数据表">
@@ -334,7 +334,7 @@
               <span class="status-pill warn">进行中 · 截至 {str(block.data.cutoff_date, str(block.data.today))}</span>
             {/if}
           </div>
-          <MetricSummary items={summaryItems(block.data)} compact />
+          <MetricSummary items={summaryItems(block.data)} appearance="receipt" compact />
         </section>
 
       {:else if block.type === 'comparison_card' && isObj(block.data.period_a) && isObj(block.data.period_b) && isObj(block.data.delta)}
@@ -449,7 +449,7 @@
               {#if block.data.truncated}<span class="block-sub">仅展示最近 {monthly.length} 个月</span>{/if}
             </div>
             {#if monthly.length > 0}
-              <div class="mode-switch compact-switch" role="group" aria-label="月度图表指标切换">
+              <div class="underline-tabs" role="group" aria-label="月度图表指标切换">
                 <button
                   type="button"
                   aria-pressed={currentMetric === 'distance'}
@@ -581,7 +581,7 @@
                           {:else if preview.error}
                             <FeedbackState kind="error" title={preview.error} />
                           {:else if preview.route}
-                            <RouteMap route={preview.route} embedded lazy />
+                            <RouteMap route={preview.route} appearance="sheet" embedded lazy />
                           {/if}
                         </div>
                       {/if}
@@ -618,6 +618,7 @@
             {/if}
           </div>
           <MetricSummary
+            appearance="receipt"
             compact
             items={[
               { label: '距离', value: formatDistance(metricVal(block.data.distance_m)), icon: 'distance' },
@@ -644,7 +645,7 @@
                 {:else if preview.error}
                   <FeedbackState kind="error" title={preview.error} />
                 {:else if preview.route}
-                  <RouteMap route={preview.route} embedded lazy />
+                  <RouteMap route={preview.route} appearance="sheet" embedded lazy />
                 {/if}
               </div>
             {/if}
@@ -792,7 +793,7 @@
     overflow-x: clip;
     padding: var(--space-4);
     border: 1px solid var(--border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sheet);
     background: var(--background);
   }
   @media (max-width: 479px) {
@@ -806,6 +807,8 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-2);
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--border);
   }
   .block-head h4 {
     margin: 0;
@@ -819,6 +822,7 @@
     color: var(--muted-foreground);
     font-size: var(--text-caption);
     line-height: var(--line-height-body);
+    font-variant-numeric: tabular-nums;
   }
   .block-link {
     color: var(--primary);
@@ -856,15 +860,16 @@
   .caveat-line {
     margin: 0;
     padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-field);
+    border-left: 3px solid var(--warning);
+    border-radius: 0;
     background: var(--warning-soft);
-    color: var(--warning);
+    color: var(--foreground);
     font-size: var(--text-caption);
     line-height: var(--line-height-body);
   }
   .status-pill {
-    padding: 0.1rem 0.5rem;
-    border-radius: var(--radius-pill);
+    padding: 0.1rem 0.45rem;
+    border-radius: var(--radius-sheet);
     font-size: var(--text-caption);
     font-weight: var(--weight-medium);
   }
@@ -887,8 +892,8 @@
     gap: var(--space-1);
     padding: var(--space-3);
     border: 1px solid var(--border);
-    border-radius: var(--radius-field);
-    background: var(--surface);
+    border-radius: var(--radius-sheet);
+    background: var(--paper);
   }
   .compare-label {
     margin: 0;
@@ -907,10 +912,11 @@
     gap: var(--space-2);
   }
   .delta-chip {
-    padding: 0.25rem 0.65rem;
-    border-radius: var(--radius-pill);
+    padding: 0.2rem 0.55rem;
+    border-radius: var(--radius-sheet);
     border: 1px solid var(--border);
-    background: var(--surface);
+    background: var(--paper);
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     font-weight: var(--weight-medium);
     font-variant-numeric: tabular-nums;
@@ -930,8 +936,8 @@
     gap: var(--space-1);
     padding: var(--space-3);
     border: 1px solid var(--border);
-    border-radius: var(--radius-field);
-    background: var(--surface);
+    border-radius: var(--radius-sheet);
+    background: var(--paper);
   }
   .pb-cat {
     font-size: var(--text-caption);
@@ -1003,8 +1009,8 @@
     gap: 0.15rem;
     padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border);
-    border-radius: var(--radius-field);
-    background: var(--surface);
+    border-radius: var(--radius-sheet);
+    background: var(--paper);
   }
   .streak-item strong {
     font-size: var(--text-card);
@@ -1030,15 +1036,15 @@
     font-variant-numeric: tabular-nums;
   }
   .goal-bar {
-    height: 0.5rem;
-    border-radius: var(--radius-pill);
-    background: var(--muted);
+    height: 0.25rem;
+    border-radius: 0;
+    background: var(--recap-well);
     overflow: hidden;
   }
   .goal-bar > span {
     display: block;
     height: 100%;
-    border-radius: var(--radius-pill);
+    border-radius: 0;
     background: var(--primary);
   }
   .activity-items,
@@ -1056,8 +1062,8 @@
     gap: var(--space-1);
     padding: var(--space-3);
     border: 1px solid var(--border);
-    border-radius: var(--radius-control);
-    background: var(--surface);
+    border-radius: var(--radius-sheet);
+    background: var(--paper);
     color: var(--foreground);
   }
   .fallback-activity-card:hover {
@@ -1090,13 +1096,13 @@
   }
   .route-preview-box {
     min-height: 16rem;
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sheet);
     overflow: hidden;
   }
   .footprint-map-box {
     min-width: 0;
     overflow: hidden;
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sheet);
   }
   .place-chips {
     margin: 0;
@@ -1110,14 +1116,15 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
-    padding: 0.25rem 0.65rem;
+    padding: 0.2rem 0.55rem;
     border: 1px solid var(--border);
-    border-radius: var(--radius-pill);
-    background: var(--surface);
+    border-radius: var(--radius-sheet);
+    background: var(--paper);
     font-size: var(--text-small);
   }
   .place-chips b {
     color: var(--primary);
+    font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
   .route-group-item {
@@ -1125,8 +1132,8 @@
     gap: var(--space-1);
     padding: var(--space-3);
     border: 1px solid var(--border);
-    border-radius: var(--radius-field);
-    background: var(--surface);
+    border-radius: var(--radius-sheet);
+    background: var(--paper);
   }
   .route-group-top {
     display: flex;
