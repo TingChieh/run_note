@@ -225,23 +225,23 @@ RunNote 是两层，不是一层替换另一层：
 
 打开 [prototypes/index.html](prototypes/index.html)，或直接访问 `web.html?page=<dashboard|activities|detail|footprints|report|settings>&theme=<light|dark>`、`mobile.html?screen=<home|prerun|recording|done|detail|share>&theme=…`。原型纯静态、零外部请求、合成数据；`brand.css` 即 §3 令牌的参考实现，`proto.js` 只做切换与合成数据。
 
-| Web 1440 | 浅色 | 深色 | Web 768 | 浅色 | 深色 |
-| --- | --- | --- | --- | --- | --- |
-| 数据汇总 | [▣](prototypes/screenshots/web-dashboard-1440-light.png) | [▣](prototypes/screenshots/web-dashboard-1440-dark.png) | 数据汇总 | [▣](prototypes/screenshots/web-dashboard-768-light.png) | [▣](prototypes/screenshots/web-dashboard-768-dark.png) |
-| 跑步记录 | [▣](prototypes/screenshots/web-activities-1440-light.png) | [▣](prototypes/screenshots/web-activities-1440-dark.png) | 跑步记录 | [▣](prototypes/screenshots/web-activities-768-light.png) | [▣](prototypes/screenshots/web-activities-768-dark.png) |
-| 跑步详情 | [▣](prototypes/screenshots/web-detail-1440-light.png) | [▣](prototypes/screenshots/web-detail-1440-dark.png) | 跑步详情 | [▣](prototypes/screenshots/web-detail-768-light.png) | [▣](prototypes/screenshots/web-detail-768-dark.png) |
-| 个人足迹 | [▣](prototypes/screenshots/web-footprints-1440-light.png) | [▣](prototypes/screenshots/web-footprints-1440-dark.png) | 个人足迹 | [▣](prototypes/screenshots/web-footprints-768-light.png) | [▣](prototypes/screenshots/web-footprints-768-dark.png) |
-| 年度回顾 | [▣](prototypes/screenshots/web-report-1440-light.png) | [▣](prototypes/screenshots/web-report-1440-dark.png) | 年度回顾 | [▣](prototypes/screenshots/web-report-768-light.png) | [▣](prototypes/screenshots/web-report-768-dark.png) |
-| 设置 | [▣](prototypes/screenshots/web-settings-1440-light.png) | [▣](prototypes/screenshots/web-settings-1440-dark.png) | 设置 | [▣](prototypes/screenshots/web-settings-768-light.png) | [▣](prototypes/screenshots/web-settings-768-dark.png) |
+| Web | 1440 浅 | 1440 深 | 768 浅 | 768 深 |
+| --- | --- | --- | --- | --- |
+| 数据汇总 | ![数据汇总 1440 浅色](prototypes/screenshots/web-dashboard-1440-light.png) | ![数据汇总 1440 深色](prototypes/screenshots/web-dashboard-1440-dark.png) | ![数据汇总 768 浅色](prototypes/screenshots/web-dashboard-768-light.png) | ![数据汇总 768 深色](prototypes/screenshots/web-dashboard-768-dark.png) |
+| 跑步记录 | ![跑步记录 1440 浅色](prototypes/screenshots/web-activities-1440-light.png) | ![跑步记录 1440 深色](prototypes/screenshots/web-activities-1440-dark.png) | ![跑步记录 768 浅色](prototypes/screenshots/web-activities-768-light.png) | ![跑步记录 768 深色](prototypes/screenshots/web-activities-768-dark.png) |
+| 跑步详情 | ![跑步详情 1440 浅色](prototypes/screenshots/web-detail-1440-light.png) | ![跑步详情 1440 深色](prototypes/screenshots/web-detail-1440-dark.png) | ![跑步详情 768 浅色](prototypes/screenshots/web-detail-768-light.png) | ![跑步详情 768 深色](prototypes/screenshots/web-detail-768-dark.png) |
+| 个人足迹 | ![个人足迹 1440 浅色](prototypes/screenshots/web-footprints-1440-light.png) | ![个人足迹 1440 深色](prototypes/screenshots/web-footprints-1440-dark.png) | ![个人足迹 768 浅色](prototypes/screenshots/web-footprints-768-light.png) | ![个人足迹 768 深色](prototypes/screenshots/web-footprints-768-dark.png) |
+| 年度回顾 | ![年度回顾 1440 浅色](prototypes/screenshots/web-report-1440-light.png) | ![年度回顾 1440 深色](prototypes/screenshots/web-report-1440-dark.png) | ![年度回顾 768 浅色](prototypes/screenshots/web-report-768-light.png) | ![年度回顾 768 深色](prototypes/screenshots/web-report-768-dark.png) |
+| 设置 | ![设置 1440 浅色](prototypes/screenshots/web-settings-1440-light.png) | ![设置 1440 深色](prototypes/screenshots/web-settings-1440-dark.png) | ![设置 768 浅色](prototypes/screenshots/web-settings-768-light.png) | ![设置 768 深色](prototypes/screenshots/web-settings-768-dark.png) |
 
 | Mobile | 390 浅 | 390 深 | 768 浅 | 768 深 |
 | --- | --- | --- | --- | --- |
-| 今天 | ![](prototypes/screenshots/mobile-home-390-light.png) | ![](prototypes/screenshots/mobile-home-390-dark.png) | [▣](prototypes/screenshots/mobile-home-768-light.png) | [▣](prototypes/screenshots/mobile-home-768-dark.png) |
-| 准备开跑 | ![](prototypes/screenshots/mobile-prerun-390-light.png) | ![](prototypes/screenshots/mobile-prerun-390-dark.png) | [▣](prototypes/screenshots/mobile-prerun-768-light.png) | [▣](prototypes/screenshots/mobile-prerun-768-dark.png) |
-| 记录中 | ![](prototypes/screenshots/mobile-recording-390-light.png) | ![](prototypes/screenshots/mobile-recording-390-dark.png) | [▣](prototypes/screenshots/mobile-recording-768-light.png) | [▣](prototypes/screenshots/mobile-recording-768-dark.png) |
-| 跑步完成 | ![](prototypes/screenshots/mobile-done-390-light.png) | ![](prototypes/screenshots/mobile-done-390-dark.png) | [▣](prototypes/screenshots/mobile-done-768-light.png) | [▣](prototypes/screenshots/mobile-done-768-dark.png) |
-| 跑步详情 | ![](prototypes/screenshots/mobile-detail-390-light.png) | ![](prototypes/screenshots/mobile-detail-390-dark.png) | [▣](prototypes/screenshots/mobile-detail-768-light.png) | [▣](prototypes/screenshots/mobile-detail-768-dark.png) |
-| 分享图 | ![](prototypes/screenshots/mobile-share-390-light.png) | ![](prototypes/screenshots/mobile-share-390-dark.png) | [▣](prototypes/screenshots/mobile-share-768-light.png) | [▣](prototypes/screenshots/mobile-share-768-dark.png) |
+| 今天 | ![今天 390 浅色](prototypes/screenshots/mobile-home-390-light.png) | ![今天 390 深色](prototypes/screenshots/mobile-home-390-dark.png) | ![今天 768 浅色](prototypes/screenshots/mobile-home-768-light.png) | ![今天 768 深色](prototypes/screenshots/mobile-home-768-dark.png) |
+| 准备开跑 | ![准备开跑 390 浅色](prototypes/screenshots/mobile-prerun-390-light.png) | ![准备开跑 390 深色](prototypes/screenshots/mobile-prerun-390-dark.png) | ![准备开跑 768 浅色](prototypes/screenshots/mobile-prerun-768-light.png) | ![准备开跑 768 深色](prototypes/screenshots/mobile-prerun-768-dark.png) |
+| 记录中 | ![记录中 390 浅色](prototypes/screenshots/mobile-recording-390-light.png) | ![记录中 390 深色](prototypes/screenshots/mobile-recording-390-dark.png) | ![记录中 768 浅色](prototypes/screenshots/mobile-recording-768-light.png) | ![记录中 768 深色](prototypes/screenshots/mobile-recording-768-dark.png) |
+| 跑步完成 | ![跑步完成 390 浅色](prototypes/screenshots/mobile-done-390-light.png) | ![跑步完成 390 深色](prototypes/screenshots/mobile-done-390-dark.png) | ![跑步完成 768 浅色](prototypes/screenshots/mobile-done-768-light.png) | ![跑步完成 768 深色](prototypes/screenshots/mobile-done-768-dark.png) |
+| 跑步详情 | ![跑步详情 390 浅色](prototypes/screenshots/mobile-detail-390-light.png) | ![跑步详情 390 深色](prototypes/screenshots/mobile-detail-390-dark.png) | ![跑步详情 768 浅色](prototypes/screenshots/mobile-detail-768-light.png) | ![跑步详情 768 深色](prototypes/screenshots/mobile-detail-768-dark.png) |
+| 分享图 | ![分享图 390 浅色](prototypes/screenshots/mobile-share-390-light.png) | ![分享图 390 深色](prototypes/screenshots/mobile-share-390-dark.png) | ![分享图 768 浅色](prototypes/screenshots/mobile-share-768-light.png) | ![分享图 768 深色](prototypes/screenshots/mobile-share-768-dark.png) |
 
 另有 390 整页长图（`mobile-*-390-light-full.png`）与 320×640 极窄屏（`mobile-home-320-light.png`、`mobile-recording-320-light.png`）。
 
