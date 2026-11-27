@@ -25,7 +25,7 @@
   }
 </script>
 <svelte:head><title>{pageTitle(label, page.data.site)}</title></svelte:head>
-<section class="editorial-page auth-card">
+<section class="auth-card">
   <div class="auth-intro">
     <h1>{label}</h1>
     <p class="auth-lead">使用已启用账号的邮箱和密码登录。</p>
@@ -135,6 +135,9 @@
   .auth-field input {
     width: 100%;
     min-width: 0;
+    min-height: 2.75rem;
+    border-color: var(--control-border);
+    border-radius: var(--radius-control);
   }
   .auth-password-meta {
     display: flex;
