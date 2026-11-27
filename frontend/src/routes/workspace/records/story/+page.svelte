@@ -320,15 +320,15 @@
 
 <svelte:head><title>{storyTitle(shownYear)} · RunNote</title></svelte:head>
 
-<div class="story-page" data-testid="annual-story-page">
-  <a class="back-link text-muted-foreground" href="/workspace/records">‹ 返回个人记录</a>
+<div class="editorial-page story-page" data-testid="annual-story-page">
+  <a class="button-text back-link" href="/workspace/records">‹ 返回个人记录</a>
 
   <header class="story-toolbar">
     <div class="toolbar-lead">
       <div class="title-row">
         <h1>{storyTitle(shownYear)}</h1>
         {#if story?.is_partial && story.cutoff_date}
-          <span class="partial-pill" data-testid="story-partial-pill">
+          <span class="partial-tag" data-testid="story-partial-pill">
             进行中 · 截至 {storyShortDate(story.cutoff_date)}
           </span>
         {/if}
@@ -397,18 +397,28 @@
         title={story.date_from === story.date_to ? '这一年尚未开始' : `${story.year} 年还没有跑步记录`}
       />
     {:else}
-      <!-- Prologue Card -->
-      <section class="prologue-card" aria-label="年度故事序章" data-testid="story-prologue">
-        <div class="prologue-top">
-          <p class="mono-kicker">ANNUAL STORY · {story.year}</p>
+      <!-- Editorial Receipt Prologue Sheet (brand.md §2, web-audit W-12) -->
+      <section class="receipt-sheet story-prologue" aria-label="年度故事序章" data-testid="story-prologue">
+        <div class="receipt-header">
+          <span>ANNUAL STORY · {story.year}</span>
+          <span>
+            {storyRangeText(story)}{story.is_partial && story.cutoff_date
+              ? ` · 截至 ${storyShortDate(story.cutoff_date)}`
+              : ' · 已封存'}
+          </span>
+        </div>
+
+        <div class="prologue-hero">
+          <div class="hero-figure-wrap">
+            <p class="hero-label">年度总里程</p>
+            <p class="hero-distance tabular">
+              <span>{storyKm(story.summary.distance_m)}</span><span class="figure-unit">km</span>
+            </p>
+          </div>
           <p class="lead-sentence">{leadSentence}</p>
         </div>
 
         <dl class="prologue-metrics tabular" aria-label="年度核心概览">
-          <div class="prologue-metric">
-            <dt>年度总里程</dt>
-            <dd class="accent">{storyKm(story.summary.distance_m)}<small>km</small></dd>
-          </div>
           <div class="prologue-metric">
             <dt>跑步次数 / 天数</dt>
             <dd>{story.summary.activity_count}<small>次 · {story.summary.activity_days} 天</small></dd>
@@ -420,7 +430,7 @@
               {#if story.summary.avg_pace_seconds_per_km === null}
                 <span class="sr-only">（数据缺失）</span>
               {:else}
-                <small>/km</small>
+                <small class="figure-unit">/km</small>
               {/if}
               <small>· {storyDurationHours(story.summary.duration_sum_seconds)}</small>
             </dd>
@@ -446,25 +456,43 @@
         </dl>
 
         {#if coverage}
-          <p class="coverage-banner" data-testid="story-coverage">{coverage}</p>
+          <p class="status-strip coverage-banner" data-testid="story-coverage">{coverage}</p>
         {/if}
 
-        <nav class="chapter-pills" aria-label="故事章节索引">
-          <a href="#ch-first" class:is-active={activeChapter === 'first'} onclick={() => focusChapter('first')}>
+        <div class="receipt-perforation" aria-hidden="true"></div>
+
+        <nav class="underline-tabs chapter-tabs" aria-label="故事章节索引">
+          <a
+            href="#ch-first"
+            aria-current={activeChapter === 'first' ? 'page' : undefined}
+            onclick={() => focusChapter('first')}
+          >
             01 第一跑
           </a>
-          <a href="#ch-longest" class:is-active={activeChapter === 'longest'} onclick={() => focusChapter('longest')}>
+          <a
+            href="#ch-longest"
+            aria-current={activeChapter === 'longest' ? 'page' : undefined}
+            onclick={() => focusChapter('longest')}
+          >
             02 最长路线
           </a>
-          <a href="#ch-best" class:is-active={activeChapter === 'best'} onclick={() => focusChapter('best')}>
+          <a
+            href="#ch-best"
+            aria-current={activeChapter === 'best' ? 'page' : undefined}
+            onclick={() => focusChapter('best')}
+          >
             03 最佳表现
           </a>
-          <a href="#ch-cities" class:is-active={activeChapter === 'cities'} onclick={() => focusChapter('cities')}>
+          <a
+            href="#ch-cities"
+            aria-current={activeChapter === 'cities' ? 'page' : undefined}
+            onclick={() => focusChapter('cities')}
+          >
             04 探索城市
           </a>
           <a
             href="#ch-frequent"
-            class:is-active={activeChapter === 'frequent'}
+            aria-current={activeChapter === 'frequent' ? 'page' : undefined}
             onclick={() => focusChapter('frequent')}
           >
             05 最常跑路线
@@ -856,7 +884,7 @@
             </div>
             <div class="stage-footer">
               <span class="stage-caption">{stageMeta.caption}</span>
-              <div class="settings-tabs stage-quick-dots" role="group" aria-label="切换同步舞台章节">
+              <div class="underline-tabs stage-quick-dots" role="group" aria-label="切换同步舞台章节">
                 {#each [['first', '01'], ['longest', '02'], ['best', '03'], ['cities', '04'], ['frequent', '05']] as const as [id, code] (id)}
                   <button type="button" aria-pressed={activeChapter === id} onclick={() => focusChapter(id)}>
                     {code}
@@ -869,7 +897,7 @@
       </section>
 
       <!-- Chapter 06: Annual Footprint Animation Finale -->
-      <section class="finale-card" id="ch-film" aria-labelledby="finale-title" data-testid="story-footprint-finale">
+      <section class="section-rule finale-card" id="ch-film" aria-labelledby="finale-title" data-testid="story-footprint-finale">
         <div class="finale-head">
           <div>
             <p class="mono-kicker">CHAPTER 06 · ANNUAL FOOTPRINT ANIMATION</p>
@@ -912,7 +940,7 @@
               {filmPlaying ? '暂停播放' : filmProgress >= 0.999 ? '重新播放' : '播放足迹'}
             </button>
             <button type="button" class="button-secondary" onclick={restartFilm}>重头开始</button>
-            <div class="settings-tabs speed-tabs" role="group" aria-label="播放倍速">
+            <div class="underline-tabs speed-tabs" role="group" aria-label="播放倍速">
               {#each [1, 2, 4] as sp (sp)}
                 <button type="button" aria-pressed={filmSpeed === sp} onclick={() => (filmSpeed = sp)}>
                   {sp}x
@@ -981,10 +1009,9 @@
     min-width: 0;
   }
   .back-link {
-    display: inline-flex;
-    align-items: center;
-    min-height: 2.75rem;
-    font-size: var(--text-small);
+    justify-content: flex-start;
+    color: var(--muted-foreground);
+    font-weight: var(--weight-medium);
   }
   .story-toolbar {
     display: flex;
@@ -1000,23 +1027,23 @@
   .title-row {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
+    align-items: baseline;
     gap: var(--space-3);
   }
   h1 {
-    font-size: var(--text-title);
+    font-size: var(--text-stat);
     font-weight: var(--weight-bold);
     line-height: var(--line-height-title);
-    letter-spacing: var(--tracking-title);
+    letter-spacing: 0;
   }
-  .partial-pill {
+  .partial-tag {
     display: inline-flex;
     align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-1) var(--space-3);
-    border-radius: var(--radius-pill);
-    background: var(--primary-soft);
+    padding: 0.125rem var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sheet);
     color: var(--primary);
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     font-weight: var(--weight-semibold);
   }
@@ -1024,6 +1051,7 @@
   .refresh-note {
     margin-top: var(--space-1);
     color: var(--muted-foreground);
+    font-family: var(--font-mono);
     font-size: var(--text-small);
   }
   .year-controls,
@@ -1050,47 +1078,59 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Prologue Card */
-  .prologue-card {
-    background: var(--header-tint);
-    color: var(--header-ink);
-    border-radius: var(--radius-card);
-    padding: clamp(1.25rem, 3vw, 2rem);
-    border: 1px solid var(--border);
+  /* Editorial Receipt Prologue Sheet */
+  .story-prologue {
     display: grid;
     gap: var(--space-4);
+    --perforation-ground: var(--background);
   }
-  .prologue-top {
+  .prologue-hero {
     display: flex;
     flex-wrap: wrap;
-    align-items: baseline;
+    align-items: flex-end;
     justify-content: space-between;
-    gap: var(--space-2) var(--space-6);
+    gap: var(--space-4) var(--space-8);
+  }
+  .hero-figure-wrap {
+    min-width: 0;
+  }
+  .hero-label {
+    font-size: var(--text-small);
+    color: var(--muted-foreground);
+  }
+  .hero-distance {
+    margin-top: var(--space-1);
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    font-size: var(--text-period-hero);
+    font-weight: var(--weight-bold);
+    line-height: var(--line-height-solid);
+    letter-spacing: var(--tracking-tight);
+    color: var(--foreground);
+  }
+  .hero-distance .figure-unit {
+    font-size: var(--text-section);
   }
   .mono-kicker {
     font-family: var(--font-mono);
     font-size: var(--text-caption);
     font-weight: var(--weight-semibold);
     letter-spacing: var(--tracking-caps);
-    color: var(--header-ink-muted);
-  }
-  .finale-card .mono-kicker {
     color: var(--primary);
   }
   .lead-sentence {
     font-size: var(--text-body);
     font-weight: var(--weight-medium);
     line-height: var(--line-height-body);
+    color: var(--foreground);
     max-width: 34rem;
   }
   .prologue-metrics {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    background: var(--surface);
-    color: var(--foreground);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-control);
-    padding: var(--space-4);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--border);
   }
   .prologue-metric {
     min-width: 0;
@@ -1117,69 +1157,54 @@
     line-height: var(--line-height-tight);
     overflow-wrap: anywhere;
   }
-  .prologue-metric dd.accent {
-    color: var(--primary);
-  }
   .prologue-metric dd small {
     font-size: var(--text-caption);
     font-weight: var(--weight-semibold);
     color: var(--muted-foreground);
     margin-left: var(--space-1);
   }
+  .prologue-metric dd small.figure-unit {
+    color: var(--primary);
+  }
   .coverage-banner {
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-control);
-    background: var(--warning-soft);
-    border: 1px solid var(--warning-border);
-    color: var(--warning);
     font-size: var(--text-caption);
-    font-weight: var(--weight-medium);
+    line-height: var(--line-height-body);
   }
-  .chapter-pills {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
+  .story-prologue .receipt-perforation {
+    margin-block: var(--space-2);
   }
-  .chapter-pills a {
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-pill);
-    background: var(--header-tab-track);
-    color: var(--header-ink);
-    font-size: var(--text-caption);
-    font-weight: var(--weight-semibold);
-    border: 1px solid var(--border);
+  .chapter-tabs {
+    border-bottom: 1px solid var(--border);
   }
-  .chapter-pills a.is-active,
-  .chapter-pills a:hover {
-    background: var(--primary);
-    color: var(--primary-foreground);
-    border-color: var(--primary);
+  .chapter-tabs > a {
+    margin-bottom: -1px;
+    font-family: var(--font-mono);
   }
 
   /* Scrollytelling Two-Column Layout */
   .scrolly-layout {
-    margin-top: var(--space-6);
+    margin-top: var(--space-12);
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(22rem, 1.05fr);
-    gap: var(--space-6);
+    gap: var(--space-8);
     align-items: start;
   }
   .narrative-column {
     display: grid;
-    gap: var(--space-4);
+    gap: var(--space-8);
     min-width: 0;
   }
   .chapter-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    padding: var(--space-6);
+    border-top: 2px solid var(--rule);
+    padding: var(--space-4) 0 0 var(--space-4);
+    border-left: 3px solid transparent;
     display: grid;
     gap: var(--space-3);
     scroll-margin-top: 5.5rem;
+    transition: border-color var(--transition-control);
   }
   .chapter-card.is-focused {
-    border-color: var(--primary);
+    border-left-color: var(--primary);
   }
   .chapter-head {
     display: flex;
@@ -1195,18 +1220,19 @@
     letter-spacing: var(--tracking-caps);
   }
   .chapter-focus-btn {
-    border: 1px solid var(--border);
-    background: var(--muted);
+    border: 1px solid var(--control-border);
+    background: transparent;
     color: var(--muted-foreground);
-    padding: var(--space-1) var(--space-3);
-    border-radius: var(--radius-pill);
+    min-height: 2.75rem;
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-control);
     font-size: var(--text-caption);
     font-weight: var(--weight-semibold);
   }
   .chapter-focus-btn[aria-pressed='true'] {
-    background: var(--primary-soft);
-    color: var(--primary);
-    border-color: var(--primary);
+    background: var(--recap-well);
+    color: var(--foreground);
+    border-color: var(--rule);
   }
   .chapter-card h2 {
     font-size: var(--text-section);
@@ -1224,21 +1250,19 @@
     font-size: var(--text-title);
     font-weight: var(--weight-bold);
     line-height: var(--line-height-tight);
-    color: var(--primary);
+    color: var(--foreground);
   }
   .beat-big-num small {
+    font-family: var(--font-mono);
     font-size: var(--text-small);
     font-weight: var(--weight-semibold);
-    color: var(--muted-foreground);
+    color: var(--primary);
     margin-left: var(--space-1);
   }
   .beat-date-pill {
     font-family: var(--font-mono);
     font-size: var(--text-caption);
     color: var(--muted-foreground);
-    background: var(--muted);
-    padding: var(--space-1) var(--space-3);
-    border-radius: var(--radius-pill);
   }
   .beat-run-title {
     font-size: var(--text-card);
@@ -1271,11 +1295,12 @@
     font-weight: var(--weight-semibold);
   }
   .pb-badge {
-    padding: var(--space-1) var(--space-3);
-    border-radius: var(--radius-pill);
+    padding: 0.125rem var(--space-2);
+    border-radius: var(--radius-sheet);
     background: var(--error-soft);
     color: var(--error);
     border: 1px solid var(--error-border);
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     font-weight: var(--weight-semibold);
   }
@@ -1286,13 +1311,15 @@
   }
   .sub-best-chip {
     padding: var(--space-1) var(--space-3);
-    border-radius: var(--radius-control);
-    background: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sheet);
+    background: var(--paper);
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
   }
   .city-list {
     display: grid;
-    gap: var(--space-2);
+    border-top: 1px solid var(--border);
   }
   .city-row {
     width: 100%;
@@ -1301,14 +1328,17 @@
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--space-3);
-    padding: var(--space-3);
-    border-radius: var(--radius-control);
-    border: 1px solid var(--border);
-    background: var(--background);
+    min-height: 2.75rem;
+    padding: var(--space-2) var(--space-3);
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-left: 3px solid transparent;
+    border-radius: 0;
+    background: transparent;
   }
   .city-row[aria-pressed='true'] {
-    border-color: var(--primary);
-    background: var(--primary-soft);
+    border-left-color: var(--primary);
+    background: var(--recap-well);
   }
   .city-row-main {
     display: flex;
@@ -1322,15 +1352,13 @@
     color: var(--muted-foreground);
   }
   .city-new-tag {
-    padding: 0 var(--space-2);
-    border-radius: var(--radius-pill);
-    background: var(--warning-soft);
-    border: 1px solid var(--warning-border);
     color: var(--warning);
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     font-weight: var(--weight-semibold);
   }
   .city-row-stats {
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     color: var(--muted-foreground);
     white-space: nowrap;
@@ -1341,6 +1369,8 @@
     gap: var(--space-1);
     align-items: end;
     padding-top: var(--space-2);
+    padding-bottom: var(--space-1);
+    border-bottom: 1px solid var(--border);
   }
   .freq-bar-col {
     display: grid;
@@ -1349,21 +1379,22 @@
   }
   .freq-bar {
     width: 100%;
-    border-radius: 4px;
+    border-radius: 0;
     background: var(--primary);
   }
   .freq-bar.is-zero {
     background: var(--border);
   }
   .freq-bar-lbl {
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     color: var(--muted-foreground);
   }
   .fallback-box {
     padding: var(--space-4);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sheet);
     border: 1px dashed var(--border);
-    background: var(--background);
+    background: var(--paper);
     display: grid;
     gap: var(--space-1);
   }
@@ -1383,9 +1414,9 @@
     min-width: 0;
   }
   .sticky-stage-card {
-    background: var(--surface);
+    background: var(--paper);
     border: 1px solid var(--border);
-    border-radius: var(--radius-card);
+    border-radius: var(--radius-sheet);
     padding: var(--space-4);
     display: grid;
     gap: var(--space-3);
@@ -1413,9 +1444,7 @@
     line-height: var(--line-height-heading);
   }
   .stage-mode-pill {
-    padding: var(--space-1) var(--space-3);
-    border-radius: var(--radius-pill);
-    background: var(--muted);
+    font-family: var(--font-mono);
     color: var(--muted-foreground);
     font-size: var(--text-caption);
     font-weight: var(--weight-semibold);
@@ -1424,7 +1453,7 @@
   .stage-canvas-wrap {
     width: 100%;
     aspect-ratio: 4 / 3;
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sheet);
     overflow: hidden;
     border: 1px solid var(--border);
   }
@@ -1440,22 +1469,19 @@
     color: var(--muted-foreground);
     flex: 1 1 12rem;
   }
+  .stage-quick-dots {
+    gap: 0 var(--space-2);
+  }
   .stage-quick-dots button {
-    min-width: 2.15rem;
-    min-height: 2rem;
-    padding: 0 var(--space-2);
+    min-width: 2.75rem;
+    min-height: 2.75rem;
     font-family: var(--font-mono);
     font-size: var(--text-caption);
-    font-weight: var(--weight-semibold);
   }
 
   /* Chapter 06: Annual Footprint Animation Finale */
   .finale-card {
-    margin-top: var(--space-6);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    padding: clamp(1.25rem, 3vw, 2rem);
+    margin-top: var(--space-12);
     display: grid;
     gap: var(--space-4);
     scroll-margin-top: 5.5rem;
@@ -1469,28 +1495,34 @@
   }
   .finale-head h2 {
     font-size: var(--text-section);
-    font-weight: var(--weight-bold);
+    font-weight: var(--weight-semibold);
     line-height: var(--line-height-heading);
     margin-top: var(--space-1);
   }
   .finale-live-stats {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--space-2);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
   }
   .live-chip {
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-control);
-    background: var(--muted);
+    padding: var(--space-2) var(--space-4);
     display: grid;
     gap: var(--space-1);
     min-width: 6.2rem;
+  }
+  .live-chip:first-child {
+    padding-left: 0;
+  }
+  .live-chip + .live-chip {
+    border-left: 1px solid var(--border);
   }
   .live-chip span {
     font-size: var(--text-caption);
     color: var(--muted-foreground);
   }
   .live-chip strong {
+    font-family: var(--font-mono);
     font-size: var(--text-small);
     font-weight: var(--weight-bold);
   }
@@ -1498,7 +1530,7 @@
     position: relative;
     width: 100%;
     aspect-ratio: 16 / 9;
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sheet);
     overflow: hidden;
     border: 1px solid var(--border);
   }
@@ -1508,9 +1540,10 @@
     left: var(--space-3);
     max-width: calc(100% - 1.5rem);
     padding: var(--space-1) var(--space-3);
-    border-radius: var(--radius-pill);
-    background: var(--surface);
+    border-radius: var(--radius-sheet);
+    background: var(--paper);
     border: 1px solid var(--border);
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     font-weight: var(--weight-semibold);
   }
@@ -1524,7 +1557,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-2);
+    gap: var(--space-3);
   }
   .speed-tabs {
     width: auto;
@@ -1545,6 +1578,7 @@
   .month-ticks {
     display: flex;
     justify-content: space-between;
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     color: var(--muted-foreground);
   }
@@ -1552,6 +1586,7 @@
     font-size: var(--text-small);
     font-weight: var(--weight-semibold);
     color: var(--primary);
+    cursor: pointer;
   }
   .table-scroll {
     margin-top: var(--space-3);
@@ -1598,6 +1633,9 @@
     }
   }
   @media (max-width: 639px) {
+    .hero-distance {
+      font-size: var(--text-recap-hero);
+    }
     .player-bar {
       grid-template-columns: 1fr;
     }
@@ -1612,10 +1650,26 @@
       border-left: 0;
     }
     .prologue-metric + .prologue-metric {
+      border-left: 0;
       border-top: 1px solid var(--border);
     }
     .chapter-card {
-      padding: var(--space-4);
+      padding-left: var(--space-3);
+    }
+    .finale-live-stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      width: 100%;
+    }
+    .live-chip {
+      padding: var(--space-2);
+    }
+    .live-chip:nth-child(odd) {
+      padding-left: 0;
+      border-left: 0;
+    }
+    .live-chip:nth-child(n + 3) {
+      border-top: 1px solid var(--border);
     }
   }
 </style>

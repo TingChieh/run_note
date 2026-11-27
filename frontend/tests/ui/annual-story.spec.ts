@@ -294,12 +294,15 @@ test('responsive viewports and light/dark themes have zero console errors and ze
     { width: 1440, height: 900 },
     { width: 768, height: 1024 },
     { width: 390, height: 844 },
+    { width: 320, height: 640 },
   ]) {
     await page.setViewportSize(vp);
     for (const theme of ['light', 'dark'] as const) {
       await page.addInitScript((t) => window.localStorage.setItem('runnote-theme', t), theme);
       await page.goto(`${storyUrl}?year=2025`);
-      await expect(page.getByTestId('story-prologue')).toBeVisible();
+      await expect(page.locator('.editorial-page.story-page')).toBeVisible();
+      await expect(page.getByTestId('story-prologue')).toHaveClass(/receipt-sheet/);
+      await expect(page.locator('.story-prologue .receipt-header')).toBeVisible();
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
       expect(overflow, `overflow at ${vp.width}x${vp.height} ${theme}`).toBe(false);
     }

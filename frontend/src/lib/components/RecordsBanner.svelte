@@ -3,7 +3,7 @@
   import { formatDuration } from '#lib/api/activities.ts';
   import { CATEGORY_NAMES, CATEGORY_RANGES, gainWords, kmNumber, progressSpan, recordMonth, recordSentence, type CategoryBest, type Totals } from '#lib/api/records.ts';
   // Presentational only: every number comes from the server; `year` only decides whether dates repeat the year.
-  let { bests, totals, variant = 'compact', href, year }: { bests: CategoryBest[]; totals: Totals; variant?: 'compact' | 'hero'; href?: string; year?: number } = $props();
+  let { bests, totals, variant = 'compact', appearance = 'default', href, year }: { bests: CategoryBest[]; totals: Totals; variant?: 'compact' | 'hero'; appearance?: 'default' | 'ledger'; href?: string; year?: number } = $props();
 
   // Entrance: paces count down from the first run to the best, the total counts up and the progress
   // tracks draw when the banner first comes into view. Final values are the default state: they render
@@ -44,7 +44,7 @@
   });
 </script>
 
-<section bind:this={root} class="records-banner" class:hero={variant === 'hero'} class:play={playing} aria-labelledby={`${uid}-title`} data-testid="records-banner">
+<section bind:this={root} class="records-banner" class:hero={variant === 'hero'} class:ledger={appearance === 'ledger'} class:play={playing} aria-labelledby={`${uid}-title`} data-testid="records-banner">
   <div class="banner-head">
     <div><p class="eyebrow">全部历史 · 整次活动</p><h2 id={`${uid}-title`}>{variant === 'hero' ? '最佳成绩' : '个人记录'}</h2></div>
     {#if href}<a class="button-text banner-link" {href} aria-label="查看全部个人记录">查看全部<span aria-hidden="true">→</span></a>{/if}
@@ -103,6 +103,7 @@
      card until that page migrates. */
   .records-banner { --gap: var(--space-6); position: relative; container-type: inline-size; min-width: 0; padding: var(--space-4) 0 0; border-top: 1px solid var(--border); }
   .records-banner.hero { padding: var(--space-6); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
+  .records-banner.hero.ledger { padding: var(--space-4) 0 0; border: 0; border-top: 2px solid var(--rule); border-radius: 0; background: transparent; }
   .banner-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-4); margin-bottom: var(--space-6); }
   .eyebrow { margin-bottom: .25rem; color: var(--muted-foreground); font-family: var(--font-mono); font-size: var(--text-caption); }
   h2 { font-size: var(--text-section); font-weight: var(--weight-semibold); letter-spacing: 0; }

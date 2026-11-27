@@ -69,4 +69,20 @@ describe('monthly chart option', () => {
     expect(pace.tooltip.formatter([{ dataIndex: 1 }])).toBe('2026-01\n配速 —（无可靠配速）\n0 次 · 里程 0 km');
     expect(pace.tooltip.formatter([])).toBe('');
   });
+  it('draws Editorial Receipt square bars with receipt yellow peak and contrast outline on light paper', () => {
+    const option: any = monthlyChartOption(months, 'distance', colors, false, {
+      mark: '#e0ab00',
+      background: '#f6f7f4',
+    });
+    const [series] = option.series;
+    expect(series.itemStyle.borderRadius).toBe(0);
+    expect(series.data[0].itemStyle.color).toBe('#17745c');
+    expect(series.data[0].itemStyle.opacity).toBe(1);
+    expect(series.data[2].itemStyle.color).toBe('#e0ab00');
+    expect(series.data[2].itemStyle.borderColor).toBe('#111');
+    expect(series.data[2].itemStyle.borderWidth).toBe(1);
+    expect(series.data[2].label.fontWeight).toBe(700);
+    expect(option.xAxis.axisLabel.formatter('2026-02', 2)).toBe('{peak|2026-02}');
+    expect(option.xAxis.axisLabel.formatter('2026-01', 1)).toBe('2026-01');
+  });
 });
