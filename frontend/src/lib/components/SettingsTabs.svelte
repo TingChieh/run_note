@@ -39,7 +39,7 @@
   });
 </script>
 
-<nav aria-label="设置分区" class="settings-tabs settings-tabs-sections">
+<nav aria-label="设置分区" class="underline-tabs settings-tabs-sections">
   <a href={view.href('/settings')} aria-current={current === 'account' ? 'page' : undefined}>账户总览</a>
   <a href={view.href('/settings/shoes')} aria-current={current === 'shoes' ? 'page' : undefined}>
     跑鞋{#if reminderCount > 0}<span class="settings-tab-badge" aria-label={`${reminderCount} 双需要替换关注`}

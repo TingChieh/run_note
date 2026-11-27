@@ -12,16 +12,15 @@
 
 <style>
   .track {
-    height: var(--space-2);
-    border-radius: var(--radius-pill);
-    background: var(--muted);
+    height: 0.25rem;
+    border-radius: 0;
+    background: var(--border);
     overflow: hidden;
   }
   .track span {
     display: block;
     height: 100%;
     background: var(--primary);
-    border-radius: inherit;
   }
   .track.warning span {
     background: var(--warning);

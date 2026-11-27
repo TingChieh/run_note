@@ -449,7 +449,7 @@ for (const width of [320, 358, 361, 375]) {
     await button.scrollIntoViewIfNeeded();
     await expect.poll(() => button.locator('.rn-glass-layer').evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(0);
     await page.goto('/settings/site');
-    const tabs = page.locator('.settings-tabs.settings-tabs-sections');
+    const tabs = page.locator('.underline-tabs.settings-tabs-sections');
     await expect(tabs).toBeVisible();
     const metrics = await tabs.evaluate(el => {
       const box = el.getBoundingClientRect();

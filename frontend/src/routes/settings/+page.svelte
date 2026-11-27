@@ -344,8 +344,8 @@
 
 <svelte:head><title>{pageTitle('设置', page.data.site)}</title></svelte:head>
 {#if view.manage && page.data.user}
-  <div class="settings-stack">
-    <section class="aux-panel identity-card" aria-labelledby="avatar-title">
+  <div class="editorial-page settings-page">
+    <section class="settings-identity section-rule" aria-labelledby="avatar-title">
       <h2 id="avatar-title" class="sr-only">头像与账户信息</h2>
       <ImageUpload
         label="头像"
@@ -359,33 +359,32 @@
         onremove={() => void clearAvatar()}
       />
       <div class="identity-meta">
-        <p class="identity-name">{page.data.user.display_name}</p>
-        <p class="text-sm text-muted-foreground">@{currentUsername}</p>
+        <div class="identity-heading">
+          <p class="identity-name">{page.data.user.display_name}</p>
+          <p class="identity-handle">@{currentUsername}</p>
+        </div>
         <ul class="identity-chips" aria-label="账户信息">
           <li><span>邮箱</span>{page.data.user.email}</li>
           <li><span>时区</span>{baseline.timezone}</li>
         </ul>
-        <p class="text-xs text-muted-foreground">
+        <p class="identity-hint">
           头像支持 PNG、JPEG、WebP，不超过 5 MiB，自动裁成正方形并移除位置信息。
         </p>
       </div>
     </section>
 
-    <section class="settings-hub-strip" aria-label="个人管理概览" data-testid="settings-hub-strip">
-      <a class="settings-hub-cell" href={view.href('/settings/shoes')} data-testid="hub-shoes">
-        <div class="settings-hub-head">
-          <span class="settings-hub-kicker">装备 · 跑鞋</span>
-          <span class="settings-hub-badge shoes" aria-hidden="true">鞋</span>
-        </div>
+    <section class="hub-strip" aria-label="个人管理概览" data-testid="settings-hub-strip">
+      <a class="hub-cell" href={view.href('/settings/shoes')} data-testid="hub-shoes">
+        <span class="hub-kicker">装备 · 跑鞋</span>
         {#if shoesError}
-          <p class="settings-hub-stat">—</p>
-          <p class="settings-hub-detail" role="status">{shoesError}</p>
+          <p class="hub-stat">—</p>
+          <p class="hub-detail" role="status">{shoesError}</p>
         {:else if shoesLoading && !shoesSummary}
-          <p class="settings-hub-stat">—</p>
-          <p class="settings-hub-detail">正在读取跑鞋…</p>
+          <p class="hub-stat">—</p>
+          <p class="hub-detail">正在读取跑鞋…</p>
         {:else if shoesSummary}
-          <p class="settings-hub-stat">{shoesSummary.total ? `${shoesSummary.total} 双使用中` : '尚未添加'}</p>
-          <p class="settings-hub-detail">
+          <p class="hub-stat">{shoesSummary.total ? `${shoesSummary.total} 双使用中` : '尚未添加'}</p>
+          <p class="hub-detail">
             {#if !shoesSummary.total}
               添加跑鞋后可在跑步详情绑定累计里程
             {:else if shoesSummary.due || shoesSummary.near}
@@ -400,51 +399,47 @@
             {/if}
           </p>
         {/if}
-        <span class="settings-hub-action">管理跑鞋 →</span>
+        <span class="hub-action">管理跑鞋 →</span>
       </a>
 
-      <a class="settings-hub-cell" href={view.href('/settings/preferences#goals')} data-testid="hub-goals">
-        <div class="settings-hub-head">
-          <span class="settings-hub-kicker">训练 · 跑量目标</span>
-          <span class="settings-hub-badge goals" aria-hidden="true">标</span>
-        </div>
+      <a class="hub-cell" href={view.href('/settings/preferences#goals')} data-testid="hub-goals">
+        <span class="hub-kicker">训练 · 跑量目标</span>
         {#if goalsError}
-          <p class="settings-hub-stat">—</p>
-          <p class="settings-hub-detail" role="status">{goalsError}</p>
+          <p class="hub-stat">—</p>
+          <p class="hub-detail" role="status">{goalsError}</p>
         {:else if goalsLoading && !goalsSummary}
-          <p class="settings-hub-stat">—</p>
-          <p class="settings-hub-detail">正在读取目标…</p>
+          <p class="hub-stat">—</p>
+          <p class="hub-detail">正在读取目标…</p>
         {:else}
-          <p class="settings-hub-stat">{goalsHeadline}</p>
-          <p class="settings-hub-detail">{goalsDetail}</p>
+          <p class="hub-stat">{goalsHeadline}</p>
+          <p class="hub-detail">{goalsDetail}</p>
         {/if}
-        <span class="settings-hub-action">调整目标 →</span>
+        <span class="hub-action">调整目标 →</span>
       </a>
 
-      <a class="settings-hub-cell" href={view.href('/settings/preferences#privacy')} data-testid="hub-privacy">
-        <div class="settings-hub-head">
-          <span class="settings-hub-kicker">可见性与模块</span>
-          <span class="settings-hub-badge privacy" aria-hidden="true">隐</span>
-        </div>
-        <p class="settings-hub-stat">{privacySummary.headline}</p>
-        <p class="settings-hub-detail">{privacySummary.detail}</p>
-        <span class="settings-hub-action">隐私与数据 →</span>
+      <a class="hub-cell" href={view.href('/settings/preferences#privacy')} data-testid="hub-privacy">
+        <span class="hub-kicker">可见性与模块</span>
+        <p class="hub-stat">{privacySummary.headline}</p>
+        <p class="hub-detail">{privacySummary.detail}</p>
+        <span class="hub-action">隐私与数据 →</span>
       </a>
     </section>
 
-    <div class="settings-grid">
-      <form
-        id="profile-form"
-        onsubmit={(event) => {
-          event.preventDefault();
-          void save();
-        }}
-        class="aux-panel settings-block"
-        aria-labelledby="profile-title"
-        aria-busy={busy}
-      >
+    <form
+      id="profile-form"
+      onsubmit={(event) => {
+        event.preventDefault();
+        void save();
+      }}
+      class="settings-editorial-group"
+      aria-labelledby="profile-title"
+      aria-busy={busy}
+    >
+      <div class="settings-editorial-lead">
         <h2 id="profile-title">个人资料</h2>
         <p class="block-hint">昵称与简介会出现在个人展示页；时区决定活动日期与目标统计范围。</p>
+      </div>
+      <div class="settings-editorial-body">
         <label class="block-field" for="profile-name">
           昵称
           <input class="text-field" id="profile-name" required maxlength="80" bind:value={name} disabled={busy} />
@@ -462,109 +457,113 @@
             {/each}
           </select>
         </div>
-      </form>
+      </div>
+    </form>
 
-      <div class="settings-sub-stack">
-        <section class="aux-panel settings-block" aria-labelledby="username-title">
-          <h2 id="username-title">修改用户名</h2>
-          <p class="block-hint">用户名由 3–30 位小写字母、数字或下划线组成，每次修改后需等待 30 天。</p>
-          {#if remaining > 0 && availableAt}
-            <p class="block-hint">
-              剩余约 {Math.ceil(remaining / 86400000)} 天，可于 {new Date(availableAt).toLocaleString()} 后再次修改。
-            </p>
-          {:else}
-            <p class="block-hint">现在可以修改用户名。</p>
-          {/if}
-          <form
-            class="password-form"
-            onsubmit={(event) => {
-              event.preventDefault();
-              usernameOpen = true;
-            }}
-          >
-            <label class="block-field" for="username">
-              新用户名
-              <input
-                class="text-field"
-                id="username"
-                required
-                minlength="3"
-                maxlength="30"
-                pattern="[a-z0-9_]+"
-                bind:value={username}
-                disabled={usernameBusy}
-              />
-            </label>
-            <div>
-              <button class="button-secondary" disabled={usernameBusy || remaining > 0 || username === currentUsername}>
-                修改用户名
-              </button>
-            </div>
-          </form>
-          {#if usernameError}<FeedbackState kind="error" title={usernameError} />{/if}
-          {#if usernameMessage}<p role="status">{usernameMessage}</p>{/if}
-        </section>
-
-        <section class="aux-panel settings-block" aria-labelledby="password-title">
-          <div class="block-title-row">
-            <div>
-              <h2 id="password-title">账户安全</h2>
-              <p class="block-hint">修改成功后全部会话失效，请使用新密码重新登录。</p>
-            </div>
-            <button
-              type="button"
-              class="button-secondary"
-              aria-expanded={passwordOpen}
-              aria-controls="password-form"
-              disabled={!passwordReady}
-              onclick={() => (passwordOpen = !passwordOpen)}
-            >
-              {passwordOpen ? '收起' : '修改密码'}
+    <section class="settings-editorial-group" aria-labelledby="username-title">
+      <div class="settings-editorial-lead">
+        <h2 id="username-title">修改用户名</h2>
+        <p class="block-hint">用户名由 3–30 位小写字母、数字或下划线组成，每次修改后需等待 30 天。</p>
+        {#if remaining > 0 && availableAt}
+          <p class="block-hint">
+            剩余约 {Math.ceil(remaining / 86400000)} 天，可于 {new Date(availableAt).toLocaleString()} 后再次修改。
+          </p>
+        {:else}
+          <p class="block-hint">现在可以修改用户名。</p>
+        {/if}
+      </div>
+      <div class="settings-editorial-body">
+        <form
+          class="inline-form"
+          onsubmit={(event) => {
+            event.preventDefault();
+            usernameOpen = true;
+          }}
+        >
+          <label class="block-field" for="username">
+            新用户名
+            <input
+              class="text-field username-input"
+              id="username"
+              required
+              minlength="3"
+              maxlength="30"
+              pattern="[a-z0-9_]+"
+              bind:value={username}
+              disabled={usernameBusy}
+            />
+          </label>
+          <div>
+            <button class="button-secondary" disabled={usernameBusy || remaining > 0 || username === currentUsername}>
+              修改用户名
             </button>
           </div>
-          {#if passwordOpen}
-            <div transition:unfoldBar id="password-form">
-              <form onsubmit={updatePassword} class="password-form" aria-busy={passwordBusy}>
-                <label class="block-field" for="current-password">
-                  当前密码
-                  <input
-                    class="text-field"
-                    id="current-password"
-                    type="password"
-                    autocomplete="current-password"
-                    required
-                    minlength="12"
-                    maxlength="128"
-                    bind:value={currentPassword}
-                    disabled={passwordBusy}
-                  />
-                </label>
-                <label class="block-field" for="new-password">
-                  新密码（至少 12 位）
-                  <input
-                    class="text-field"
-                    id="new-password"
-                    type="password"
-                    autocomplete="new-password"
-                    required
-                    minlength="12"
-                    maxlength="128"
-                    bind:value={newPassword}
-                    disabled={passwordBusy}
-                  />
-                </label>
-                <div>
-                  <button class="button-primary" disabled={passwordBusy || !passwordReady}>
-                    {passwordBusy ? '修改中…' : '修改密码并重新登录'}
-                  </button>
-                </div>
-                {#if passwordError}<FeedbackState kind="error" title={passwordError} />{/if}
-              </form>
-            </div>
-          {/if}
-        </section>
+        </form>
+        {#if usernameError}<FeedbackState kind="error" title={usernameError} />{/if}
+        {#if usernameMessage}<p class="status-note" role="status">{usernameMessage}</p>{/if}
       </div>
-    </div>
+    </section>
+
+    <section class="settings-editorial-group" aria-labelledby="password-title">
+      <div class="settings-editorial-lead">
+        <h2 id="password-title">账户安全</h2>
+        <p class="block-hint">修改成功后全部会话失效，请使用新密码重新登录。</p>
+      </div>
+      <div class="settings-editorial-body">
+        <div>
+          <button
+            type="button"
+            class="button-secondary"
+            aria-expanded={passwordOpen}
+            aria-controls="password-form"
+            disabled={!passwordReady}
+            onclick={() => (passwordOpen = !passwordOpen)}
+          >
+            {passwordOpen ? '收起' : '修改密码'}
+          </button>
+        </div>
+        {#if passwordOpen}
+          <div transition:unfoldBar id="password-form">
+            <form onsubmit={updatePassword} class="inline-form" aria-busy={passwordBusy}>
+              <label class="block-field" for="current-password">
+                当前密码
+                <input
+                  class="text-field"
+                  id="current-password"
+                  type="password"
+                  autocomplete="current-password"
+                  required
+                  minlength="12"
+                  maxlength="128"
+                  bind:value={currentPassword}
+                  disabled={passwordBusy}
+                />
+              </label>
+              <label class="block-field" for="new-password">
+                新密码（至少 12 位）
+                <input
+                  class="text-field"
+                  id="new-password"
+                  type="password"
+                  autocomplete="new-password"
+                  required
+                  minlength="12"
+                  maxlength="128"
+                  bind:value={newPassword}
+                  disabled={passwordBusy}
+                />
+              </label>
+              <div>
+                <button class="button-primary" disabled={passwordBusy || !passwordReady}>
+                  {passwordBusy ? '修改中…' : '修改密码并重新登录'}
+                </button>
+              </div>
+              {#if passwordError}<FeedbackState kind="error" title={passwordError} />{/if}
+            </form>
+          </div>
+        {/if}
+      </div>
+    </section>
 
     <WellbeingDialog
       open={usernameOpen}
@@ -574,22 +573,21 @@
         if (!usernameBusy) usernameOpen = false;
       }}
     >
-      <h2 id="username-confirm-title">确认修改用户名</h2>
-      <p>将 @{currentUsername} 改为 @{username}。旧的 /p/{currentUsername} 链接将失效，修改后 30 天内不能再次修改。</p>
-      <div class="password-form">
-        <div>
-          <button type="button" class="button-secondary" disabled={usernameBusy} onclick={() => (usernameOpen = false)}>
-            取消
-          </button>
-          <button type="button" class="button-primary" disabled={usernameBusy} onclick={() => void submitUsername()}>
-            {usernameBusy ? '修改中…' : '确认修改'}
-          </button>
-        </div>
+      <h2 id="username-confirm-title" class="dialog-title">确认修改用户名</h2>
+      <p class="dialog-copy">
+        将 @{currentUsername} 改为 @{username}。旧的 /p/{currentUsername} 链接将失效，修改后 30 天内不能再次修改。
+      </p>
+      <div class="dialog-actions">
+        <button type="button" class="button-secondary" disabled={usernameBusy} onclick={() => (usernameOpen = false)}>
+          取消
+        </button>
+        <button type="button" class="button-primary" disabled={usernameBusy} onclick={() => void submitUsername()}>
+          {usernameBusy ? '修改中…' : '确认修改'}
+        </button>
       </div>
     </WellbeingDialog>
 
     <SaveBar
-      glass
       form="profile-form"
       {dirty}
       {busy}
@@ -603,9 +601,146 @@
 {/if}
 
 <style>
-  .settings-sub-stack {
+  .settings-page {
     display: grid;
-    gap: var(--space-6);
-    align-content: start;
+    margin-top: var(--space-6);
+    min-width: 0;
+  }
+  .settings-identity {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-6) var(--space-8);
+    padding-block: var(--space-6);
+  }
+  .identity-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-3);
+  }
+  .identity-handle {
+    font-family: var(--font-mono);
+    font-size: var(--text-small);
+    color: var(--muted-foreground);
+  }
+  .settings-identity .identity-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-6);
+    margin: var(--space-2) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .settings-identity .identity-chips li {
+    padding: 0;
+    border-radius: 0;
+    background: none;
+    font-family: var(--font-mono);
+    font-size: var(--text-small);
+    color: var(--foreground);
+  }
+  .settings-identity .identity-chips li > span {
+    font-family: var(--font-body);
+    color: var(--muted-foreground);
+    margin-right: var(--space-2);
+  }
+  .identity-hint {
+    margin-top: var(--space-1);
+    font-size: var(--text-caption);
+    color: var(--muted-foreground);
+  }
+  .hub-strip {
+    display: grid;
+    border-top: 1px solid var(--border);
+    min-width: 0;
+  }
+  @media (min-width: 900px) {
+    .hub-strip {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+  .hub-cell {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+    padding: var(--space-4) 0;
+    text-align: left;
+    transition: background-color var(--transition-control);
+  }
+  .hub-cell + .hub-cell {
+    border-top: 1px solid var(--border);
+  }
+  @media (min-width: 900px) {
+    .hub-cell {
+      padding: var(--space-4) var(--space-6);
+    }
+    .hub-cell:first-child {
+      padding-left: 0;
+    }
+    .hub-cell:last-child {
+      padding-right: 0;
+    }
+    .hub-cell + .hub-cell {
+      border-top: 0;
+      border-left: 1px solid var(--border);
+    }
+  }
+  @media (hover: hover) {
+    .hub-cell:hover .hub-action {
+      text-decoration: underline;
+      text-underline-offset: 0.2em;
+    }
+  }
+  .hub-kicker {
+    font-size: var(--text-caption);
+    font-weight: var(--weight-medium);
+    color: var(--muted-foreground);
+  }
+  .hub-stat {
+    font-size: var(--text-stat);
+    font-weight: var(--weight-bold);
+    line-height: var(--line-height-tight);
+    font-variant-numeric: tabular-nums;
+  }
+  .hub-detail {
+    font-size: var(--text-small);
+    color: var(--muted-foreground);
+  }
+  .hub-action {
+    margin-top: auto;
+    padding-top: var(--space-2);
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+    color: var(--primary);
+  }
+  .inline-form {
+    display: grid;
+    gap: var(--space-4);
+    max-width: 28rem;
+  }
+  .username-input {
+    font-family: var(--font-mono);
+  }
+  .status-note {
+    font-size: var(--text-small);
+    color: var(--muted-foreground);
+  }
+  .dialog-title {
+    font-size: var(--text-section);
+    font-weight: var(--weight-semibold);
+  }
+  .dialog-copy {
+    margin-top: var(--space-3);
+    font-size: var(--text-small);
+    color: var(--muted-foreground);
+  }
+  .dialog-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    margin-top: var(--space-6);
   }
 </style>

@@ -1077,7 +1077,7 @@ test.describe('page chrome per appearance', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/settings');
     await expect(page.locator('.page-header')).toBeVisible();
-    await expect(page.locator('.settings-tabs')).toBeVisible();
+    await expect(page.locator('.underline-tabs.settings-tabs-sections')).toBeVisible();
   }
   test('light: butter-yellow page header, brand-green logo, soft-green nav pill and lens, green actions', async ({
     page,
@@ -1112,7 +1112,7 @@ test.describe('page chrome per appearance', () => {
     const geometry = () =>
       page.evaluate(() => {
         const header = document.querySelector('.page-header')!,
-          tabs = document.querySelector('.settings-tabs')!;
+          tabs = document.querySelector('.underline-tabs.settings-tabs-sections')!;
         const box = (el: Element) => {
           const r = el.getBoundingClientRect();
           return [r.left, r.top, r.width, r.height].map(Math.round);
@@ -1128,7 +1128,7 @@ test.describe('page chrome per appearance', () => {
     const light = await geometry();
     await page.emulateMedia({ colorScheme: 'dark' });
     await page.goto('/settings');
-    await expect(page.locator('.settings-tabs')).toBeVisible();
+    await expect(page.locator('.underline-tabs.settings-tabs-sections')).toBeVisible();
     await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark');
     const dark = await geometry();
     expect(dark).toEqual(light);
@@ -1141,8 +1141,8 @@ test.describe('segmented lens label', () => {
       await installActivities(page);
       await loginRunner(page);
       await page.setViewportSize({ width, height: 844 });
-      await page.goto('/settings');
-      const tabs = page.locator('.settings-tabs');
+      await page.goto('/routes');
+      const tabs = page.getByRole('group', { name: '排序方式' });
       await expect(tabs.locator('.rn-moving-copy')).toHaveCount(1);
       await page.waitForTimeout(600); // the lens spring has settled
       // On phones the tabs stretch (flex: 1 0 auto) and centre their text; the lens' copy of the label must centre it the same way.

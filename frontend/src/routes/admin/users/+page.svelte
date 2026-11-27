@@ -316,211 +316,213 @@
 </script>
 
 <svelte:head><title>{pageTitle('用户管理', page.data.site)}</title></svelte:head>
-{#if !administrator}
-  <div class="mt-6"><FeedbackState kind="error" title="仅站主可管理用户。" /></div>
-{:else}
-  <div class="aux-stack">
-    <section class="user-toolbar" aria-label="筛选用户">
-      <form onsubmit={filter} class="toolbar-search" role="search">
-        <label for="user-search" class="sr-only">邮箱或用户名</label>
-        <input class="text-field" id="user-search" maxlength="254" placeholder="搜索邮箱或用户名" bind:value={search} />
-        <button type="submit" class="button-secondary button-compact" disabled={busy}>搜索</button>
-      </form>
-      <div class="mode-switch compact-switch" role="group" aria-label="登录状态">
-        {#each stateOptions as option}<button
-            type="button"
-            aria-pressed={filterState === option.value}
-            disabled={busy}
-            onclick={() => setState(option.value)}>{option.label}</button
-          >{/each}
-      </div>
-      <span class="toolbar-count">共 {users?.total ?? 0} 位</span>
-    </section>
-    {#if notice}<FeedbackState kind="success" title={notice} />{/if}
-    {#if error}<FeedbackState kind="error" title={error}
-        ><button type="button" class="button-secondary mt-3" disabled={busy} onclick={() => load(users?.offset ?? 0)}
-          >重新读取用户</button
-        ></FeedbackState
-      >{/if}
-    {#if loading && slow && !users}<FeedbackState kind="loading" title="正在读取用户…" />{/if}
-    {#if users && !users.items.length && !loading}<FeedbackState
-        kind="empty"
-        title="没有符合条件的用户。"
-      />{:else if users}
-      <section class="aux-panel" aria-label="用户列表" aria-busy={loading}>
-        {#if chosen.length}<div transition:unfoldBar class="selection-toolbar" role="region" aria-label="批量管理用户">
-            <span class="selected-count">已选 {shownCount} 个</span>
-            <button type="button" class="button-secondary" disabled={busy} onclick={() => (chosen = [])}
-              >清除选择</button
-            >
-            <button type="button" class="delete-button" disabled={busy} onclick={confirmDeletion}>删除所选</button>
-          </div>{/if}
-        <div class="table-scroll" role="region" aria-label="用户表格，可横向滚动">
-          <table>
-            <caption class="sr-only">账号资料、登录状态和公开展示状态</caption><thead
-              ><tr
-                ><th scope="col" class="select-cell"
-                  >{#if selectable.length}<input
-                      id="select-page"
-                      type="checkbox"
-                      aria-label="全选本页"
-                      checked={allChosen}
-                      indeterminate={chosen.length > 0 && !allChosen}
-                      disabled={busy}
-                      onchange={(event) =>
-                        (chosen = event.currentTarget.checked ? selectable.map((user) => user.id) : [])}
-                    />{:else}<span class="sr-only">选择</span>{/if}</th
-                ><th scope="col">用户</th><th scope="col">登录状态</th><th scope="col">个人展示</th><th scope="col"
-                  >身心健康</th
-                ><th scope="col">一起跑步</th><th scope="col">操作</th></tr
-              ></thead
-            >
-            <tbody class="stagger"
-              >{#each users.items as user (user.id)}<tr>
-                  <td class="select-cell"
-                    >{#if !user.is_admin}<input
+<div class="editorial-page admin-users-page">
+  {#if !administrator}
+    <div class="mt-6"><FeedbackState kind="error" title="仅站主可管理用户。" /></div>
+  {:else}
+    <div class="users-stack">
+      <section class="user-toolbar" aria-label="筛选用户">
+        <form onsubmit={filter} class="toolbar-search" role="search">
+          <label for="user-search" class="sr-only">邮箱或用户名</label>
+          <input class="text-field" id="user-search" maxlength="254" placeholder="搜索邮箱或用户名" bind:value={search} />
+          <button type="submit" class="button-secondary" disabled={busy}>搜索</button>
+        </form>
+        <div class="underline-tabs user-state-tabs" role="group" aria-label="登录状态">
+          {#each stateOptions as option}<button
+              type="button"
+              aria-pressed={filterState === option.value}
+              disabled={busy}
+              onclick={() => setState(option.value)}>{option.label}</button
+            >{/each}
+        </div>
+        <span class="toolbar-count">共 {users?.total ?? 0} 位</span>
+      </section>
+      {#if notice}<FeedbackState kind="success" title={notice} />{/if}
+      {#if error}<FeedbackState kind="error" title={error}
+          ><button type="button" class="button-secondary mt-3" disabled={busy} onclick={() => load(users?.offset ?? 0)}
+            >重新读取用户</button
+          ></FeedbackState
+        >{/if}
+      {#if loading && slow && !users}<FeedbackState kind="loading" title="正在读取用户…" />{/if}
+      {#if users && !users.items.length && !loading}<FeedbackState
+          kind="empty"
+          title="没有符合条件的用户。"
+        />{:else if users}
+        <section class="section-rule users-table-section" aria-label="用户列表" aria-busy={loading}>
+          {#if chosen.length}<div transition:unfoldBar class="selection-toolbar" role="region" aria-label="批量管理用户">
+              <span class="selected-count">已选 {shownCount} 个</span>
+              <button type="button" class="button-secondary" disabled={busy} onclick={() => (chosen = [])}
+                >清除选择</button
+              >
+              <button type="button" class="delete-button" disabled={busy} onclick={confirmDeletion}>删除所选</button>
+            </div>{/if}
+          <div class="table-scroll" role="region" aria-label="用户表格，可横向滚动">
+            <table>
+              <caption class="sr-only">账号资料、登录状态和公开展示状态</caption><thead
+                ><tr
+                  ><th scope="col" class="select-cell"
+                    >{#if selectable.length}<input
+                        id="select-page"
                         type="checkbox"
-                        aria-label={`选择 ${user.display_name} @${user.username}`}
-                        checked={chosen.includes(user.id)}
+                        aria-label="全选本页"
+                        checked={allChosen}
+                        indeterminate={chosen.length > 0 && !allChosen}
                         disabled={busy}
-                        onchange={(event) => choose(user.id, event.currentTarget.checked)}
-                      />{/if}</td
-                  >
-                  <th scope="row"
-                    ><div class="user-cell">
-                      <span class="user-avatar" aria-hidden="true"
-                        >{Array.from(user.display_name || user.username)[0]}</span
-                      >
-                      <div class="min-w-0">
-                        <span class="block font-semibold">{user.display_name}{user.is_admin ? ' · 站主' : ''}</span
-                        ><span class="block text-sm text-muted-foreground">@{user.username}</span><span
-                          class="block break-all text-sm text-muted-foreground">{user.email}</span
+                        onchange={(event) =>
+                          (chosen = event.currentTarget.checked ? selectable.map((user) => user.id) : [])}
+                      />{:else}<span class="sr-only">选择</span>{/if}</th
+                  ><th scope="col">用户</th><th scope="col">登录状态</th><th scope="col">个人展示</th><th scope="col"
+                    >身心健康</th
+                  ><th scope="col">一起跑步</th><th scope="col">操作</th></tr
+                ></thead
+              >
+              <tbody class="stagger"
+                >{#each users.items as user (user.id)}<tr>
+                    <td class="select-cell"
+                      >{#if !user.is_admin}<input
+                          type="checkbox"
+                          aria-label={`选择 ${user.display_name} @${user.username}`}
+                          checked={chosen.includes(user.id)}
+                          disabled={busy}
+                          onchange={(event) => choose(user.id, event.currentTarget.checked)}
+                        />{/if}</td
+                    >
+                    <th scope="row"
+                      ><div class="user-cell">
+                        <span class="user-avatar" aria-hidden="true"
+                          >{Array.from(user.display_name || user.username)[0]}</span
                         >
-                      </div>
-                    </div></th
-                  >
-                  <td
-                    ><button
-                      type="button"
-                      role="switch"
-                      class="rn-switch"
-                      aria-checked={user.is_admin || user.is_active}
-                      disabled={user.is_admin}
-                      onclick={() => toggleSwitch(user, 'is_active')}
-                      aria-label={user.is_admin
-                        ? `允许登录 ${user.display_name}（站主受保护，不可调节）`
-                        : `允许登录 ${user.display_name}`}
-                      ><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span
-                      ></button
-                    ></td
-                  ><td
-                    ><button
-                      type="button"
-                      role="switch"
-                      class="rn-switch"
-                      aria-checked={user.is_admin || (user.is_active && user.showcase_enabled)}
-                      disabled={user.is_admin || !user.is_active}
-                      onclick={() => toggleSwitch(user, 'showcase_enabled')}
-                      aria-label={user.is_admin
-                        ? `公开展示 ${user.display_name}（站主受保护，不可调节）`
-                        : `公开展示 ${user.display_name}`}
-                      ><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span
-                      ></button
-                    ></td
-                  >
-                  <td
-                    ><button
-                      type="button"
-                      role="switch"
-                      class="rn-switch"
-                      aria-checked={user.wellbeing_allowed}
-                      onclick={() => toggleSwitch(user, 'wellbeing_allowed')}
-                      aria-label={`身心健康 ${user.display_name}`}
-                      ><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span
-                      ></button
-                    ></td
-                  >
-                  <td
-                    ><button
-                      type="button"
-                      role="switch"
-                      class="rn-switch"
-                      aria-checked={user.together_allowed}
-                      onclick={() => toggleSwitch(user, 'together_allowed')}
-                      aria-label={`一起跑步 ${user.display_name}`}
-                      ><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span
-                      ></button
-                    ></td
-                  >
-                  <td
-                    ><div class="user-actions">
-                      <a
-                        class="button-secondary button-compact"
-                        href={`/admin/users/${user.id}/activities`}
-                        aria-label={`查看记录 ${user.display_name}`}>查看记录</a
-                      >
-                      <button
+                        <div class="min-w-0">
+                          <span class="block font-semibold">{user.display_name}{user.is_admin ? ' · 站主' : ''}</span
+                          ><span class="block font-mono text-sm text-muted-foreground">@{user.username}</span><span
+                            class="block break-all text-sm text-muted-foreground">{user.email}</span
+                          >
+                        </div>
+                      </div></th
+                    >
+                    <td
+                      ><button
                         type="button"
-                        class="button-secondary button-compact"
-                        disabled={busy}
-                        onclick={() => edit(user)}
-                        aria-label={`编辑 ${user.display_name}`}>编辑</button
-                      >
-                      {#if user.is_admin}<span class="text-sm text-muted-foreground">受保护账号</span>{:else}
+                        role="switch"
+                        class="rn-switch"
+                        aria-checked={user.is_admin || user.is_active}
+                        disabled={user.is_admin}
+                        onclick={() => toggleSwitch(user, 'is_active')}
+                        aria-label={user.is_admin
+                          ? `允许登录 ${user.display_name}（站主受保护，不可调节）`
+                          : `允许登录 ${user.display_name}`}
+                        ><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span
+                        ></button
+                      ></td
+                    ><td
+                      ><button
+                        type="button"
+                        role="switch"
+                        class="rn-switch"
+                        aria-checked={user.is_admin || (user.is_active && user.showcase_enabled)}
+                        disabled={user.is_admin || !user.is_active}
+                        onclick={() => toggleSwitch(user, 'showcase_enabled')}
+                        aria-label={user.is_admin
+                          ? `公开展示 ${user.display_name}（站主受保护，不可调节）`
+                          : `公开展示 ${user.display_name}`}
+                        ><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span
+                        ></button
+                      ></td
+                    >
+                    <td
+                      ><button
+                        type="button"
+                        role="switch"
+                        class="rn-switch"
+                        aria-checked={user.wellbeing_allowed}
+                        onclick={() => toggleSwitch(user, 'wellbeing_allowed')}
+                        aria-label={`身心健康 ${user.display_name}`}
+                        ><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span
+                        ></button
+                      ></td
+                    >
+                    <td
+                      ><button
+                        type="button"
+                        role="switch"
+                        class="rn-switch"
+                        aria-checked={user.together_allowed}
+                        onclick={() => toggleSwitch(user, 'together_allowed')}
+                        aria-label={`一起跑步 ${user.display_name}`}
+                        ><span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span
+                        ></button
+                      ></td
+                    >
+                    <td
+                      ><div class="user-actions">
+                        <a
+                          class="button-secondary button-compact"
+                          href={`/admin/users/${user.id}/activities`}
+                          aria-label={`查看记录 ${user.display_name}`}>查看记录</a
+                        >
                         <button
                           type="button"
                           class="button-secondary button-compact"
                           disabled={busy}
-                          onclick={() => confirm(user, 'password')}
-                          aria-label={`重置密码 ${user.display_name}`}>重置密码</button
+                          onclick={() => edit(user)}
+                          aria-label={`编辑 ${user.display_name}`}>编辑</button
                         >
-                      {/if}
-                      {#if user.is_active && user.showcase_enabled}<a
-                          transition:revealFromLeft
-                          data-reveal
-                          class="button-secondary button-compact"
-                          href={`/p/${encodeURIComponent(user.username)}`}
-                          aria-label={`查看展示 ${user.display_name}`}>查看展示</a
-                        ><button
-                          transition:revealFromLeft={{ delay: 70 }}
-                          data-reveal
-                          type="button"
-                          class="button-secondary button-compact"
-                          disabled={busy}
-                          onclick={() => copy(user)}
-                          aria-label={`复制链接 ${user.display_name}`}>复制链接</button
-                        >{/if}
-                    </div></td
-                  >
-                </tr>{/each}</tbody
+                        {#if user.is_admin}<span class="text-sm text-muted-foreground">受保护账号</span>{:else}
+                          <button
+                            type="button"
+                            class="button-secondary button-compact"
+                            disabled={busy}
+                            onclick={() => confirm(user, 'password')}
+                            aria-label={`重置密码 ${user.display_name}`}>重置密码</button
+                          >
+                        {/if}
+                        {#if user.is_active && user.showcase_enabled}<a
+                            transition:revealFromLeft
+                            data-reveal
+                            class="button-secondary button-compact"
+                            href={`/p/${encodeURIComponent(user.username)}`}
+                            aria-label={`查看展示 ${user.display_name}`}>查看展示</a
+                          ><button
+                            transition:revealFromLeft={{ delay: 70 }}
+                            data-reveal
+                            type="button"
+                            class="button-secondary button-compact"
+                            disabled={busy}
+                            onclick={() => copy(user)}
+                            aria-label={`复制链接 ${user.display_name}`}>复制链接</button
+                          >{/if}
+                      </div></td
+                    >
+                  </tr>{/each}</tbody
+              >
+            </table>
+          </div>
+          <nav aria-label="用户分页" class="user-pager">
+            <span class="font-mono"
+              >第 {Math.floor(users.offset / users.limit) + 1} / {Math.max(1, Math.ceil(users.total / users.limit))} 页</span
+            ><button
+              type="button"
+              class="button-secondary button-compact"
+              disabled={busy || users.offset === 0}
+              onclick={() => load(Math.max(0, users!.offset - users!.limit))}>上一页</button
+            ><button
+              type="button"
+              class="button-secondary button-compact"
+              disabled={busy || users.offset + users.limit >= users.total}
+              onclick={() => load(users!.offset + users!.limit)}>下一页</button
             >
-          </table>
-        </div>
-        <nav aria-label="用户分页" class="user-pager">
-          <span
-            >第 {Math.floor(users.offset / users.limit) + 1} / {Math.max(1, Math.ceil(users.total / users.limit))} 页</span
-          ><button
-            type="button"
-            class="button-secondary button-compact"
-            disabled={busy || users.offset === 0}
-            onclick={() => load(Math.max(0, users!.offset - users!.limit))}>上一页</button
-          ><button
-            type="button"
-            class="button-secondary button-compact"
-            disabled={busy || users.offset + users.limit >= users.total}
-            onclick={() => load(users!.offset + users!.limit)}>下一页</button
-          >
-        </nav>
-        <details class="block-details user-note">
-          <summary>管理说明</summary>
-          <p>
-            登录启用和公开展示分别控制。禁用会立即退出全部设备并关闭展示；重新启用后需另行开启展示。站主账号受保护。
-          </p>
-        </details>
-      </section>
-    {/if}
-  </div>
-{/if}
+          </nav>
+          <details class="block-details user-note">
+            <summary>管理说明</summary>
+            <p>
+              登录启用和公开展示分别控制。禁用会立即退出全部设备并关闭展示；重新启用后需另行开启展示。站主账号受保护。
+            </p>
+          </details>
+        </section>
+      {/if}
+    </div>
+  {/if}
+</div>
 
 <dialog
   bind:this={editor}
@@ -678,7 +680,25 @@
 </dialog>
 
 <style>
-  /* The glass of the row buttons paints up to 12px past them; the padding (taken back by the margin) keeps that ink inside the box, so a sideways-only scroller never grows a vertical scrollbar. */
+  .admin-users-page {
+    min-width: 0;
+  }
+  .users-stack {
+    display: grid;
+    gap: var(--space-6);
+    margin-top: var(--space-6);
+    min-width: 0;
+  }
+  .user-state-tabs {
+    border-bottom: 1px solid var(--border);
+  }
+  .user-state-tabs > button {
+    margin-bottom: -1px;
+  }
+  .users-table-section {
+    padding-top: var(--space-2);
+  }
+  /* The switch/row controls paint a few pixels past the last row; the padding (taken back by the margin) keeps that ink inside the box, so a sideways-only scroller never grows a vertical scrollbar. */
   .table-scroll {
     max-width: 100%;
     overflow-x: auto;
@@ -696,10 +716,18 @@
     border-bottom: 1px solid var(--border);
     vertical-align: middle;
   }
+  th:first-child,
+  td:first-child {
+    padding-left: 0;
+  }
+  th:last-child,
+  td:last-child {
+    padding-right: 0;
+  }
   thead th {
     padding-block: var(--space-2);
-    font-size: var(--text-small);
-    font-weight: var(--weight-semibold);
+    font-size: var(--text-caption);
+    font-weight: var(--weight-medium);
     color: var(--muted-foreground);
     white-space: nowrap;
   }
@@ -709,7 +737,7 @@
   /* The switch lens paints an opaque copy of its ground: give it the hovered row's colour so no halo shows. */
   @media (hover: hover) {
     tbody tr:hover {
-      --switch-ground: color-mix(in srgb, var(--muted) 60%, var(--surface));
+      --switch-ground: color-mix(in srgb, var(--muted) 60%, var(--background));
       background: color-mix(in srgb, var(--muted) 60%, transparent);
     }
   }
@@ -733,8 +761,9 @@
     width: 2.5rem;
     height: 2.5rem;
     border-radius: 50%;
-    background: var(--primary-soft);
-    color: var(--primary);
+    border: 1px solid var(--border);
+    background: var(--recap-well);
+    color: var(--foreground);
     font-weight: var(--weight-bold);
   }
   .user-actions {
@@ -757,6 +786,11 @@
   }
   dialog::backdrop {
     background: var(--surface-backdrop);
+  }
+  dialog .text-field {
+    min-height: 2.75rem;
+    border-color: var(--control-border);
+    border-radius: var(--radius-control);
   }
   .user-form {
     display: grid;
@@ -786,8 +820,8 @@
     gap: var(--space-3);
     padding: var(--space-3) var(--space-4);
     margin-bottom: var(--space-4);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-card);
+    border: 1px solid var(--control-border);
+    border-radius: var(--radius-control);
     background: var(--surface);
   }
   .selected-count {
@@ -798,7 +832,8 @@
   }
   .delete-button,
   .delete-submit {
-    padding: 0.625rem 0.875rem;
+    min-height: 2.75rem;
+    padding: 0.5rem 0.875rem;
     border-radius: var(--radius-control);
     font-size: var(--text-small);
     font-weight: var(--weight-semibold);
@@ -814,5 +849,9 @@
     overflow-y: auto;
     padding-left: var(--space-6);
     list-style: disc;
+  }
+  .admin-users-page :global(.user-pager) {
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--border);
   }
 </style>
