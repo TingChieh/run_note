@@ -228,10 +228,9 @@ for (const viewport of [
         await png.saveAs(info.outputPath(`poster-${style.slug}-${viewport.name}-${scheme}.png`));
       }
 
+      const originPrefix = `${new URL(page.url()).origin}/`;
       expect(
-        requests.filter(
-          (url) => !url.startsWith('blob:') && (!url.startsWith('http://127.0.0.1:5191/') || url.includes('/api/')),
-        ),
+        requests.filter((url) => !url.startsWith('blob:') && (!url.startsWith(originPrefix) || url.includes('/api/'))),
       ).toEqual([]);
       await page.keyboard.press('Escape');
       await expect(dialog).toHaveCount(0);
@@ -636,4 +635,47 @@ test('dual-axis terrain aligns periodic left axis and cumulative right axis for 
   expect(equalCheck.rightTexts).toEqual(['10', '5', '0']);
   expect(equalCheck.cumYs[0]).toBeCloseTo(equalCheck.firstPointY, 1);
   expect(equalCheck.cumYs[1]).toBeCloseTo(equalCheck.firstPointY, 1);
+});
+
+test('editorial receipt structure, punch-card sync, flat content buttons, and modal glass boundary', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await page.goto(recap + '?period=year&year=2025');
+
+  const root = page.getByTestId('recap-page');
+  await expect(root).toHaveClass(/editorial-page/);
+  await expect(page.getByTestId('recap-overview')).toHaveClass(/receipt-sheet/);
+  await expect(page.getByTestId('recap-overview').locator('.receipt-header')).toBeVisible();
+
+  // Content buttons print flat (no Liquid Glass inside .editorial-page content area).
+  const shareBtn = page.getByRole('button', { name: '生成分享图' });
+  await expect(shareBtn).toBeEnabled();
+  await expect(shareBtn).not.toHaveClass(/rn-glass-control/);
+
+  // Punch-card rhythm columns sync with the terrain inspector and attendance ledger.
+  const punch = page.getByTestId('recap-punch-rhythm');
+  await expect(punch).toBeVisible();
+  const mayPunch = punch.getByRole('button', { name: /^5月/ });
+  await mayPunch.click();
+  await expect(mayPunch).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('recap-terrain-inspector')).toContainText('5月');
+  await expect(page.getByTestId('recap-attendance-grid').getByRole('button', { name: /^5月/ })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+
+  // Share desk appearance switcher and style tabs work cleanly, and share dialog preserves data-glass-overlay.
+  const dock = page.getByTestId('recap-poster-dock');
+  const darkAppearance = dock.getByRole('button', { name: '深色暖炭' });
+  await darkAppearance.click();
+  await expect(darkAppearance).toHaveAttribute('aria-pressed', 'true');
+
+  await shareBtn.click();
+  const dialog = page.getByRole('dialog', { name: '分享图预览' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAttribute('data-glass-overlay', '');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(shareBtn).toBeFocused();
 });

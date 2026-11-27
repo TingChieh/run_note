@@ -17,8 +17,6 @@
   );
 
   const maxDays = $derived(Math.max(1, ...recap.buckets.map((bucket) => bucket.activityDays ?? 0)));
-  const ringR = 18;
-  const ringCirc = 2 * Math.PI * ringR;
 
   // Render pace SVG at 1:1 CSS pixels using measured plot width; keep all axis/slot/peak labels in HTML at 12px.
   const paceW = $derived(Math.max(160, Math.round(pacePlotWidth || 420)));
@@ -101,7 +99,7 @@
     return { paced, pathD, points, minP, maxP, yAvg, showAvgAxisLabel, fastestBadge };
   });
 
-  const paceChip = $derived(
+  const paceMeta = $derived(
     recap.derived.fastestPace !== null
       ? `${recap.derived.fastestTied ? '并列最快' : '最快'} ${recap.derived.fastestLabelCompact} · ${recap.derived.fastestPaceText}`
       : '暂无配速数据',
@@ -112,196 +110,190 @@
   );
 </script>
 
-<section class="spread" aria-label="出勤节律与配速演进" data-testid="recap-rhythm-spread">
-  <article class="chapter-card" aria-labelledby="recap-attendance-title">
-    <div class="chapter-head">
-      <div>
-        <p class="chapter-num">03A · CONSISTENCY</p>
-        <h2 id="recap-attendance-title">出勤节律矩阵</h2>
+<div class="spread-wrap">
+  <section class="spread" aria-label="出勤节律与配速演进" data-testid="recap-rhythm-spread">
+    <article class="section-hairline chapter-col" aria-labelledby="recap-attendance-title">
+      <div class="chapter-head">
+        <div>
+          <p class="chapter-num">03A · CONSISTENCY</p>
+          <h2 id="recap-attendance-title">出勤节律矩阵</h2>
+        </div>
+        <span class="chapter-meta">
+          {recap.activityDays.toLocaleString('zh-CN')} 天 · {recap.activityCount.toLocaleString('zh-CN')} 次
+        </span>
       </div>
-      <span class="chip">
-        {recap.activityDays.toLocaleString('zh-CN')} 天 · {recap.activityCount.toLocaleString('zh-CN')} 次
-      </span>
-    </div>
 
-    <div
-      class="ring-grid"
-      class:ring-grid-month={recap.period === 'month'}
-      role="group"
-      aria-label="各时段出勤天数与次数"
-      data-testid="recap-attendance-grid"
-    >
-      {#each recap.buckets as bucket, index (bucket.start)}
-        {@const ratio = !bucket.future && bucket.activityDays ? Math.min(1, bucket.activityDays / maxDays) : 0}
-        {@const dashOffset = ringCirc * (1 - ratio)}
-        {@const isSelected = index === activeIndex}
-        <button
-          type="button"
-          data-date={bucket.start}
-          class="ring-cell"
-          class:is-selected={isSelected}
-          class:is-future={bucket.future}
-          aria-pressed={isSelected}
-          aria-label={`${bucket.rangeShort}，${
-            bucket.future ? '尚未到达' : `活跃 ${bucket.activityDays ?? 0} 天，跑步 ${bucket.activityCount ?? 0} 次`
-          }`}
-          onclick={() => {
-            selectedIndex = index;
-          }}
-        >
-          <svg width="46" height="46" viewBox="0 0 46 46" aria-hidden="true">
-            <circle cx="23" cy="23" r={ringR} fill="none" class="ring-track" stroke-width="4" />
-            {#if !bucket.future && (bucket.activityDays ?? 0) > 0}
-              <circle
-                cx="23"
-                cy="23"
-                r={ringR}
-                fill="none"
-                class="ring-fill"
-                class:ring-peak={bucket.peak}
-                stroke-width="4"
-                stroke-linecap="round"
-                stroke-dasharray={ringCirc.toFixed(1)}
-                stroke-dashoffset={dashOffset.toFixed(1)}
-                transform="rotate(-90 23 23)"
-              />
-            {/if}
-            <text x="23" y="27" text-anchor="middle" class="ring-num">
-              {bucket.future ? '—' : (bucket.activityDays ?? 0)}
-            </text>
-          </svg>
-          <span class="ring-label">{bucket.shortLabel}</span>
-          <span class="ring-sub">{bucket.future ? '未到' : `${bucket.activityCount ?? 0} 次`}</span>
-        </button>
-      {/each}
-    </div>
-  </article>
-
-  <article class="chapter-card" aria-labelledby="recap-pace-title">
-    <div class="chapter-head">
-      <div>
-        <p class="chapter-num">03B · PACE PROFILE</p>
-        <h2 id="recap-pace-title">均配速走势</h2>
+      <div
+        class="ledger-grid"
+        class:ledger-grid-month={recap.period === 'month'}
+        role="group"
+        aria-label="各时段出勤天数与次数"
+        data-testid="recap-attendance-grid"
+      >
+        {#each recap.buckets as bucket, index (bucket.start)}
+          {@const ratio = !bucket.future && bucket.activityDays ? Math.min(1, bucket.activityDays / maxDays) : 0}
+          {@const isSelected = index === activeIndex}
+          <button
+            type="button"
+            data-date={bucket.start}
+            class="ledger-cell"
+            class:is-selected={isSelected}
+            class:is-peak={bucket.peak}
+            class:is-future={bucket.future}
+            aria-pressed={isSelected}
+            aria-label={`${bucket.rangeShort}，${
+              bucket.future ? '尚未到达' : `活跃 ${bucket.activityDays ?? 0} 天，跑步 ${bucket.activityCount ?? 0} 次`
+            }`}
+            onclick={() => {
+              selectedIndex = index;
+            }}
+          >
+            <span class="cell-label">{bucket.shortLabel}</span>
+            <span class="cell-days">
+              <strong>{bucket.future ? '—' : (bucket.activityDays ?? 0)}</strong>
+              {#if !bucket.future}<span class="cell-unit">天</span>{/if}
+            </span>
+            <span class="cell-bar" aria-hidden="true">
+              <i class="cell-bar-fill" style:width={`${Math.round(ratio * 100)}%`}></i>
+            </span>
+            <span class="cell-sub">{bucket.future ? '未到' : `${bucket.activityCount ?? 0} 次`}</span>
+          </button>
+        {/each}
       </div>
-      <span class="chip chip-accent">{paceChip}</span>
-    </div>
+    </article>
 
-    <div class="pace-stage" data-testid="recap-pace-chart">
-      {#if paceChart.paced.length >= 2}
-        <div class="pace-frame">
-          <div class="pace-y-axis" aria-hidden="true" style:height={`${paceH}px`}>
-            <span class="axis-label" style:top={`${padT}px`}>
-              {formatPace(paceChart.minP).replace(/ \/km$/, '')}
-            </span>
-            {#if paceChart.showAvgAxisLabel && paceChart.yAvg !== null}
-              <span class="axis-label avg-label" style:top={`${paceChart.yAvg}px`}>均 {avgPaceShort}</span>
-            {/if}
-            <span class="axis-label" style:top={`${padT + innerH}px`}>
-              {formatPace(paceChart.maxP).replace(/ \/km$/, '')}
-            </span>
-          </div>
+    <article class="section-hairline chapter-col" aria-labelledby="recap-pace-title">
+      <div class="chapter-head">
+        <div>
+          <p class="chapter-num">03B · PACE PROFILE</p>
+          <h2 id="recap-pace-title">均配速走势</h2>
+        </div>
+        <span class="chapter-meta chapter-meta-accent">{paceMeta}</span>
+      </div>
 
-          <div class="pace-plot-col" bind:clientWidth={pacePlotWidth}>
-            <div class="pace-canvas" style:height={`${paceH}px`}>
-              <svg
-                class="pace-svg"
-                viewBox={`0 0 ${paceW} ${paceH}`}
-                width={paceW}
-                height={paceH}
-                role="img"
-                aria-label={`各时段加权平均配速走势图，${paceChip}`}
-              >
-                <line x1={padX} y1={padT} x2={paceW - padX} y2={padT} class="guide-line" />
-                {#if paceChart.yAvg !== null}
-                  <line x1={padX} y1={paceChart.yAvg} x2={paceW - padX} y2={paceChart.yAvg} class="avg-line" />
-                {/if}
-                <line x1={padX} y1={padT + innerH} x2={paceW - padX} y2={padT + innerH} class="guide-line" />
-
-                {#key `${recap.period}-${recap.year}-${recap.month ?? ''}-${recap.derived.fastestPace}`}
-                  <path class="pace-path" d={paceChart.pathD} fill="none" />
-                {/key}
-
-                {#each paceChart.points as pt (pt.bucket.start)}
-                  {#if pt.y !== null}
-                    <circle
-                      cx={pt.x}
-                      cy={pt.y}
-                      r={pt.bucket.fastest ? 5.5 : 3.5}
-                      class="pace-dot"
-                      class:pace-dot-fast={pt.bucket.fastest}
-                    />
-                  {/if}
-                {/each}
-              </svg>
-
-              {#if paceChart.fastestBadge}
-                <span
-                  class="pace-fast-badge"
-                  class:badge-start={paceChart.fastestBadge.xPct < 14}
-                  class:badge-end={paceChart.fastestBadge.xPct > 86}
-                  style:left={`${paceChart.fastestBadge.xPct.toFixed(2)}%`}
-                  style:top={`${paceChart.fastestBadge.y}px`}
-                  aria-hidden="true"
-                >
-                  {paceChart.fastestBadge.text}
-                </span>
+      <div class="pace-stage" data-testid="recap-pace-chart">
+        {#if paceChart.paced.length >= 2}
+          <div class="pace-frame">
+            <div class="pace-y-axis" aria-hidden="true" style:height={`${paceH}px`}>
+              <span class="axis-label" style:top={`${padT}px`}>
+                {formatPace(paceChart.minP).replace(/ \/km$/, '')}
+              </span>
+              {#if paceChart.showAvgAxisLabel && paceChart.yAvg !== null}
+                <span class="axis-label avg-label" style:top={`${paceChart.yAvg}px`}>均 {avgPaceShort}</span>
               {/if}
+              <span class="axis-label" style:top={`${padT + innerH}px`}>
+                {formatPace(paceChart.maxP).replace(/ \/km$/, '')}
+              </span>
             </div>
 
-            <div class="pace-x-axis" aria-hidden="true">
-              {#each paceChart.points as pt (pt.bucket.start)}
-                {#if visiblePaceXIndices.has(pt.index)}
+            <div class="pace-plot-col" bind:clientWidth={pacePlotWidth}>
+              <div class="pace-canvas" style:height={`${paceH}px`}>
+                <svg
+                  class="pace-svg"
+                  viewBox={`0 0 ${paceW} ${paceH}`}
+                  width={paceW}
+                  height={paceH}
+                  role="img"
+                  aria-label={`各时段加权平均配速走势图，${paceMeta}`}
+                >
+                  <line x1={padX} y1={padT} x2={paceW - padX} y2={padT} class="guide-line" />
+                  {#if paceChart.yAvg !== null}
+                    <line x1={padX} y1={paceChart.yAvg} x2={paceW - padX} y2={paceChart.yAvg} class="avg-line" />
+                  {/if}
+                  <line x1={padX} y1={padT + innerH} x2={paceW - padX} y2={padT + innerH} class="guide-line" />
+
+                  {#key `${recap.period}-${recap.year}-${recap.month ?? ''}-${recap.derived.fastestPace}`}
+                    <path class="pace-path" d={paceChart.pathD} fill="none" />
+                  {/key}
+
+                  {#each paceChart.points as pt (pt.bucket.start)}
+                    {#if pt.y !== null}
+                      <circle
+                        cx={pt.x}
+                        cy={pt.y}
+                        r={pt.bucket.fastest ? 5.5 : 3.5}
+                        class="pace-dot"
+                        class:pace-dot-fast={pt.bucket.fastest}
+                      />
+                    {/if}
+                  {/each}
+                </svg>
+
+                {#if paceChart.fastestBadge}
                   <span
-                    class="slot-label"
-                    class:slot-fast={pt.bucket.fastest}
-                    class:slot-first={pt.index === 0}
-                    class:slot-last={pt.index === recap.buckets.length - 1 && recap.buckets.length > 1}
-                    style:left={`${pt.xPct.toFixed(2)}%`}
+                    class="pace-fast-badge"
+                    class:badge-start={paceChart.fastestBadge.xPct < 14}
+                    class:badge-end={paceChart.fastestBadge.xPct > 86}
+                    style:left={`${paceChart.fastestBadge.xPct.toFixed(2)}%`}
+                    style:top={`${paceChart.fastestBadge.y}px`}
+                    aria-hidden="true"
                   >
-                    {pt.bucket.shortLabel}
+                    {paceChart.fastestBadge.text}
                   </span>
                 {/if}
-              {/each}
+              </div>
+
+              <div class="pace-x-axis" aria-hidden="true">
+                {#each paceChart.points as pt (pt.bucket.start)}
+                  {#if visiblePaceXIndices.has(pt.index)}
+                    <span
+                      class="slot-label"
+                      class:slot-fast={pt.bucket.fastest}
+                      class:slot-first={pt.index === 0}
+                      class:slot-last={pt.index === recap.buckets.length - 1 && recap.buckets.length > 1}
+                      style:left={`${pt.xPct.toFixed(2)}%`}
+                    >
+                      {pt.bucket.shortLabel}
+                    </span>
+                  {/if}
+                {/each}
+              </div>
             </div>
           </div>
-        </div>
-        <p class="footnote">
-          纵轴越靠上代表该时段加权平均配速越快（周期均配 {avgPaceShort} /km），均取自服务端聚合。
-        </p>
-      {:else if paceChart.paced.length === 1}
-        {@const single = paceChart.paced[0].bucket}
-        <div class="pace-single">
-          <p class="pace-single-period">{single.rangeShort}</p>
-          <p class="pace-single-val">{formatPace(single.avgPaceSeconds)}</p>
-          <p class="footnote">当前仅 1 个时段具备有效配速，更多记录后会呈现配速演进曲线。</p>
-        </div>
-      {:else}
-        <p class="footnote">该周期暂无足够的有效配速记录。</p>
-      {/if}
-    </div>
-  </article>
-</section>
+          <p class="footnote">
+            纵轴越靠上代表该时段加权平均配速越快（周期均配 {avgPaceShort} /km），均取自服务端聚合。
+          </p>
+        {:else if paceChart.paced.length === 1}
+          {@const single = paceChart.paced[0].bucket}
+          <div class="pace-single">
+            <p class="pace-single-period">{single.rangeShort}</p>
+            <p class="pace-single-val">{formatPace(single.avgPaceSeconds)}</p>
+            <p class="footnote">当前仅 1 个时段具备有效配速，更多记录后会呈现配速演进曲线。</p>
+          </div>
+        {:else}
+          <p class="footnote">该周期暂无足够的有效配速记录。</p>
+        {/if}
+      </div>
+    </article>
+  </section>
+</div>
 
 <style>
+  .spread-wrap {
+    container-type: inline-size;
+    margin-top: var(--space-8);
+    min-width: 0;
+  }
   .spread {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-6);
-    margin-top: var(--space-6);
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-8);
   }
-  .chapter-card {
+  @container (min-width: 48rem) {
+    .spread {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-8);
+    }
+  }
+  .chapter-col {
     min-width: 0;
-    padding: var(--space-6);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    background: var(--surface);
   }
   .chapter-head {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
+    align-items: baseline;
     justify-content: space-between;
-    gap: var(--space-3);
+    gap: var(--space-2) var(--space-3);
     margin-bottom: var(--space-4);
   }
   .chapter-num {
@@ -318,78 +310,105 @@
     font-weight: var(--weight-semibold);
     line-height: var(--line-height-heading);
   }
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    padding: var(--space-1) var(--space-3);
-    border-radius: var(--radius-pill);
-    background: var(--muted);
-    color: var(--foreground);
+  .chapter-meta {
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
-    font-weight: var(--weight-semibold);
+    font-weight: var(--weight-medium);
+    color: var(--muted-foreground);
     font-variant-numeric: tabular-nums;
   }
-  .chip-accent {
-    background: var(--primary-soft);
+  .chapter-meta-accent {
     color: var(--primary);
+    font-weight: var(--weight-semibold);
   }
-  .ring-grid {
+
+  /* Flat editorial attendance ledger (brand.md §1.3: no circular rings) */
+  .ledger-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: var(--space-2);
   }
-  .ring-grid-month {
-    grid-template-columns: repeat(auto-fit, minmax(5.2rem, 1fr));
+  .ledger-grid-month {
+    grid-template-columns: repeat(auto-fit, minmax(5rem, 1fr));
   }
-  .ring-cell {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+  .ledger-cell {
+    display: grid;
     gap: var(--space-1);
+    justify-items: start;
+    min-width: 0;
     min-height: 2.75rem;
-    padding: var(--space-2) var(--space-1);
-    border-radius: var(--radius-control);
-    border: 1px solid transparent;
-    background: var(--background);
+    padding: var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sheet);
+    background: var(--paper);
     color: var(--foreground);
     font-variant-numeric: tabular-nums;
+    text-align: left;
     cursor: pointer;
     transition:
       border-color var(--transition-control),
       background-color var(--transition-control);
   }
-  .ring-cell:hover {
-    border-color: var(--control-hover-border);
+  .ledger-cell:hover {
+    border-color: var(--control-border);
   }
-  .ring-cell.is-selected {
-    border-color: var(--primary);
+  .ledger-cell.is-selected {
+    border-color: var(--rule);
     background: var(--primary-soft);
   }
-  .ring-cell.is-future {
+  .ledger-cell.is-future {
     opacity: 0.45;
   }
-  .ring-track {
-    stroke: var(--border);
+  .ledger-cell:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
   }
-  .ring-fill {
-    stroke: var(--primary);
-  }
-  .ring-peak {
-    stroke: var(--recap-gold);
-  }
-  .ring-num {
-    font-size: var(--text-caption);
-    font-weight: var(--weight-bold);
-    fill: var(--foreground);
-  }
-  .ring-label {
+  .cell-label {
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     font-weight: var(--weight-semibold);
+    line-height: var(--line-height-solid);
+    color: var(--muted-foreground);
   }
-  .ring-sub {
+  .ledger-cell.is-selected .cell-label,
+  .ledger-cell.is-peak .cell-label {
+    color: var(--foreground);
+  }
+  .cell-days {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 2px;
+  }
+  .cell-days strong {
+    font-size: var(--text-section);
+    font-weight: var(--weight-bold);
+    line-height: var(--line-height-solid);
+  }
+  .cell-unit {
     font-size: var(--text-caption);
     color: var(--muted-foreground);
   }
+  .cell-bar {
+    display: block;
+    width: 100%;
+    height: 3px;
+    background: var(--border);
+  }
+  .cell-bar-fill {
+    display: block;
+    height: 100%;
+    background: var(--primary);
+  }
+  .ledger-cell.is-peak .cell-bar-fill {
+    background: var(--receipt-mark);
+  }
+  .cell-sub {
+    font-family: var(--font-mono);
+    font-size: var(--text-caption);
+    line-height: var(--line-height-solid);
+    color: var(--muted-foreground);
+  }
+
   .pace-stage {
     min-width: 0;
     font-variant-numeric: tabular-nums;
@@ -408,6 +427,7 @@
     position: absolute;
     right: 0;
     transform: translateY(-50%);
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     line-height: var(--line-height-solid);
     color: var(--muted-foreground);
@@ -436,29 +456,35 @@
   }
   .avg-line {
     stroke: var(--primary);
-    stroke-opacity: 0.48;
+    stroke-opacity: 0.52;
     stroke-dasharray: 4 4;
   }
   .pace-path {
     stroke: var(--primary);
-    stroke-width: 2.75;
+    stroke-width: 2;
     stroke-linecap: round;
     stroke-dasharray: 1400;
     stroke-dashoffset: 1400;
-    animation: pace-draw 780ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+    animation: pace-draw 720ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
   }
   .pace-dot {
     fill: var(--primary);
-    stroke: var(--surface);
+    stroke: var(--background);
     stroke-width: 2;
   }
   .pace-dot-fast {
-    fill: var(--recap-gold);
+    fill: var(--receipt-mark);
+    stroke: var(--foreground);
+    stroke-width: 1.5;
+  }
+  :global(:root[data-theme='dark']) .pace-dot-fast {
+    stroke: var(--background);
   }
   .pace-fast-badge {
     position: absolute;
     transform: translateX(-50%);
     pointer-events: none;
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     font-weight: var(--weight-bold);
     line-height: var(--line-height-solid);
@@ -480,6 +506,7 @@
     position: absolute;
     top: 0;
     transform: translateX(-50%);
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     font-weight: var(--weight-medium);
     line-height: var(--line-height-heading);
@@ -498,8 +525,9 @@
   }
   .pace-single {
     padding: var(--space-4);
-    border-radius: var(--radius-control);
-    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sheet);
+    background: var(--paper);
     font-variant-numeric: tabular-nums;
   }
   .pace-single-period {
@@ -528,30 +556,25 @@
       stroke-dashoffset: 0;
     }
   }
-  @media (max-width: 959px) {
-    .spread {
-      grid-template-columns: 1fr;
-    }
-  }
   @media (max-width: 639px) {
-    .chapter-card {
-      padding: var(--space-4);
-    }
-    .ring-grid {
+    .ledger-grid {
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
   }
   @media (forced-colors: active) {
-    .ring-fill,
+    .cell-bar-fill,
     .pace-path,
     .pace-dot {
+      forced-color-adjust: none;
       stroke: Highlight;
       fill: Highlight;
+      background: Highlight;
     }
-    .ring-peak,
+    .ledger-cell.is-peak .cell-bar-fill,
     .pace-dot-fast {
       stroke: LinkText;
       fill: LinkText;
+      background: LinkText;
     }
   }
 </style>
