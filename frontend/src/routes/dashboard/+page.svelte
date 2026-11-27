@@ -491,7 +491,7 @@
                 class="button-secondary">重新读取趋势</button
               ></FeedbackState
             >{:else if trends}
-            {#if hasTrendActivities}<TrendChart {trends} metric={trendMetric} appearance="receipt" />{:else}<div
+            {#if hasTrendActivities}<TrendChart {trends} metric={trendMetric} appearance="receipt" {today} />{:else}<div
                 data-testid="trend-empty"
               >
                 <FeedbackState title="记录一次跑步，让趋势开始生长"

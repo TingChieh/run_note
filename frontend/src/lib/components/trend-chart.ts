@@ -34,6 +34,12 @@ export interface ReceiptMarks {
   background: string;
   /** Print every monthly value (wide charts); narrow charts print only the peak so labels never collide. */
   printAll?: boolean;
+  /**
+   * Today (YYYY-MM-DD) in the subject's timezone: the bucket containing it is the unfinished one. The API's
+   * `is_partial` only says a bucket was clipped by the requested range (e.g. a week crossing 1 January), so it
+   * cannot mark an unfinished period.
+   */
+  today?: string;
 }
 
 /** WCAG contrast ratio of two #rgb/#rrggbb colours; null when either cannot be parsed. */
@@ -71,17 +77,19 @@ export function trendChartOption(trends: Trends, metric: TrendMetric, colors: Ch
   const printAll = receipt && (receipt.printAll ?? true) && trends.period === 'month';
   const bare = (text: string) => text.replace(/^(.*\d)\s+\S+$/, '$1');
   const hatch = (color: string) => ({ color, symbol: 'rect', dashArrayX: [1, 0], dashArrayY: [2, 3], rotation: -Math.PI / 4 });
+  const today = receipt?.today;
   const receiptBar = (bucket: Bucket, i: number) => {
     const peak = i === best && (values[i] ?? 0) > 0;
     const color = peak ? receipt!.mark : colors.primary;
+    const running = !!today && bucket.bucket_start <= today && today < bucket.bucket_end;
     return {
       value: values[i],
       itemStyle: {
-        color: bucket.is_partial && !peak ? receipt!.background : color,
+        color: running && !peak ? receipt!.background : color,
         opacity: 1,
-        borderColor: peak && outline ? colors.foreground : bucket.is_partial ? color : undefined,
-        borderWidth: (peak && outline) || bucket.is_partial ? 1 : 0,
-        ...(bucket.is_partial ? { decal: hatch(color) } : {}),
+        borderColor: peak && outline ? colors.foreground : running ? color : undefined,
+        borderWidth: (peak && outline) || running ? 1 : 0,
+        ...(running ? { decal: hatch(color) } : {}),
       },
       ...(peak ? { label: label(trendText(bucket, metric), true) } : printAll && (values[i] ?? 0) > 0 ? { label: label(bare(trendText(bucket, metric))) } : {}),
     };

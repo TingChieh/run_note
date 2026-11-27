@@ -54,8 +54,8 @@ describe('trend chart option', () => {
     expect(option.series[0].data[2].symbolSize).toBe(10);
   });
   it('receipt bars: square, accent colour, the peak in receipt yellow with a bold label and value, the unfinished bucket hatched', () => {
-    const complete: Trends = { ...trends, buckets: [trends.buckets[0], trends.buckets[1], { ...trends.buckets[2], is_partial: false }, bucket('2026-04-01', '2026-05-01', 1, '8000.000', 2800, '350.000', true)] };
-    const option: any = trendChartOption(complete, 'distance', colors, false, { mark: '#e0ab00', background: '#f6f7f4' });
+    const complete: Trends = { ...trends, buckets: [trends.buckets[0], trends.buckets[1], { ...trends.buckets[2], is_partial: false }, bucket('2026-04-01', '2026-05-01', 1, '8000.000', 2800, '350.000')] };
+    const option: any = trendChartOption(complete, 'distance', colors, false, { mark: '#e0ab00', background: '#f6f7f4', today: '2026-04-17' });
     const [series] = option.series;
     expect(series.itemStyle.borderRadius).toBe(0);
     expect(series.barMaxWidth).toBe(28);
@@ -74,6 +74,20 @@ describe('trend chart option', () => {
     expect(apr.itemStyle.color).toBe('#f6f7f4');
     expect(option.xAxis.axisLabel.formatter('3月', 2)).toBe('{peak|3月}');
     expect(option.xAxis.axisLabel.formatter('1月', 0)).toBe('1月');
+  });
+  it('receipt hatching follows today, not the API flag for buckets clipped by the requested range', () => {
+    // A finished week crossing 1 January is clipped (is_partial) but not unfinished; the week holding today is.
+    const weeks: Trends = { period: 'week', date_from: '2025-01-01', date_to: '2026-01-01', week_start: 'monday', date_assignment: 'activity_local_date', buckets: [
+      bucket('2025-01-01', '2025-01-06', 1, '5000.000', 1800, '360.000', true),
+      bucket('2025-12-22', '2025-12-29', 2, '9000.000', 3200, '355.000'),
+      bucket('2025-12-29', '2026-01-01', 1, '4000.000', 1500, '375.000', true),
+    ] };
+    const past: any = trendChartOption(weeks, 'distance', colors, false, { mark: '#e0ab00', background: '#f6f7f4', today: '2026-11-27' });
+    expect(past.series[0].data.some((d: any) => d.itemStyle.decal)).toBe(false);
+    const running: any = trendChartOption(weeks, 'distance', colors, false, { mark: '#e0ab00', background: '#f6f7f4', today: '2025-12-30' });
+    expect(running.series[0].data.map((d: any) => !!d.itemStyle.decal)).toEqual([false, false, true]);
+    const unknown: any = trendChartOption(weeks, 'distance', colors, false, { mark: '#e0ab00', background: '#f6f7f4' });
+    expect(unknown.series[0].data.some((d: any) => d.itemStyle.decal)).toBe(false);
   });
   it('receipt peak needs no outline where yellow already contrasts, and narrow charts print only the peak', () => {
     const whole: Trends = { ...trends, buckets: trends.buckets.map(b => ({ ...b, is_partial: false })) };

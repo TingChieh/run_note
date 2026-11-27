@@ -7,11 +7,13 @@
   import { TREND_LABELS, trendChartOption, trendText, type TrendMetric } from './trend-chart';
   // Weekly or monthly trend for one year; the chart is presentation only, the table below is the full fallback.
   // appearance="receipt": Editorial Receipt bars (square, peak in receipt yellow, unfinished bucket hatched); used by migrated pages.
+  // today (YYYY-MM-DD, subject timezone) lets the receipt chart hatch the unfinished bucket.
   let {
     trends,
     metric,
     appearance = 'default',
-  }: { trends: Trends; metric: TrendMetric; appearance?: 'default' | 'receipt' } = $props();
+    today,
+  }: { trends: Trends; metric: TrendMetric; appearance?: 'default' | 'receipt'; today?: string } = $props();
   let container: HTMLDivElement,
     mounted = $state(false),
     message = $state('');
@@ -39,7 +41,7 @@
         },
         !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
         appearance === 'receipt'
-          ? { mark: color('--receipt-mark'), background: color('--background'), printAll: wide }
+          ? { mark: color('--receipt-mark'), background: color('--background'), printAll: wide, today }
           : undefined,
       ),
       { notMerge: true },
@@ -49,6 +51,7 @@
     trends;
     metric;
     appearance;
+    today;
     if (mounted) draw();
   });
   onMount(() => {
