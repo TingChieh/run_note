@@ -301,6 +301,7 @@ test('overview-first map, zero external requests, all-years default, drill-down,
   await expect(page.locator('.map-label').first()).toBeVisible();
   await page.getByRole('button', { name: '查看全部年份' }).click();
   await expect(page.getByLabel('年份')).toHaveValue('all');
+  await expect(page.getByText('各月首次探索分布（全部年份）')).toBeVisible();
 
   await page.getByText('查看逐月数据').click();
   await expect(page.getByRole('rowheader', { name: '1 月', exact: true })).toBeVisible();
