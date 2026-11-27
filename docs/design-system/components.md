@@ -96,7 +96,7 @@ RecordsBannerLoader：`onMount` 读取 `readRecords()`，保留 `disposed` 与�
 
 数据汇总的共享组件以可选外观进入新样式，其余调用方不变：`TrendChart appearance="receipt"`（直角细柱、峰值 `--receipt-mark` 加粗标签与数值、对比度不足 3:1 时 1px 墨色描边、含今天（展示对象时区，由调用方传 `today`）的未结束周期斜线；接口的 `is_partial` 只表示被查询范围截断，不用于此；宽度 <640px 只印峰值）、`ProvinceMap appearance="ledger"`（节线开头、无卡片、4px 地图外框）、`MetricSummary appearance="receipt"`。`GoalOverview` 与 `ActivityExplorer` 只用于数据汇总，直接改为账页写法：目标在 ≥1024px 是一条四栏（年/月/周/连续记录，竖发丝线分隔），更窄时按周期分行，进度条为 4px 直条加“按日期此刻应到的位置”竖线（`periodElapsed`，`lib/api/milestones.ts`）。
 
-浮动栏玻璃：`attachFloatingGlass(node, recipe?)`（`lib/styles/menu-glass.ts`），`recipe` 默认 `TOP_BAR_GLASS`；`MobileTabBar` 传 `TAB_BAR_GLASS`（折射更弱、模糊更强）。参数含义见 brand.md §8.1。
+浮动栏玻璃：`attachFloatingGlass(node, recipe?)`（`lib/styles/menu-glass.ts`），`recipe` 默认 `TOP_BAR_GLASS`；`MobileTabBar` 传 `TAB_BAR_GLASS`（折射更弱、模糊更强）；`TOP_BAR_GLASS` 是基础光学（×1、无额外模糊），桌面顶部条保持不变。参数含义见 brand.md §8.1。
 
 ## 设置页与开关相关组件
 

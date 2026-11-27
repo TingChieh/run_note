@@ -206,7 +206,7 @@ RunNote 是两层，不是一层替换另一层：
 | --- | --- |
 | 桌面顶部条与手机底部 Tab 栏；地图浮层控件（投影、缩放、定位、底图、回放）；浮动工具栏；菜单、选择器弹层、AnchoredPanel；空间交互面板 | 数据统计、活动列表、目标与趋势图、活动详情数据、月度/年度回顾、分享海报；已迁移页面内容区的按钮与视图切换 |
 
-实现：内容区由 `.editorial-page` 排除（`liquid-glass.ts` 选择器与 `liquid-glass.css` 的 `:where(:not(.editorial-page *), [data-glass-overlay] *)`），页面内的浮层容器加 `[data-glass-overlay]` 继续用玻璃。玻璃参数不锁死为一个值，按背景与用途调：`attachFloatingGlass(node, recipe)`（`lib/styles/menu-glass.ts`）在共享设置之上叠加每条栏的配方——顶部条 `TOP_BAR_GLASS`（折射 ×0.85、额外模糊 1px），底部 Tab 栏 `TAB_BAR_GLASS`（折射 ×0.4、额外模糊 4px，底色 `--glass-fill-base` 约 39%），因为图表和列表会在 Tab 栏下滚动、它的文字必须可读。WebKit 走磨砂（`rn-frosted-glass`），`prefers-reduced-transparency` 与强制色回退为实底，`prefers-reduced-motion` 停止动效。玻璃渲染、调节能力与 DEV 调节器（`LiquidGlassTuner`，仅 `import.meta.env.DEV` 加载，生产不出现）全部保留，不另建第二套组件体系。
+实现：内容区由 `.editorial-page` 排除（`liquid-glass.ts` 选择器与 `liquid-glass.css` 的 `:where(:not(.editorial-page *), [data-glass-overlay] *)`），页面内的浮层容器加 `[data-glass-overlay]` 继续用玻璃。玻璃参数不锁死为一个值，按背景与用途调：`attachFloatingGlass(node, recipe)`（`lib/styles/menu-glass.ts`）在共享设置之上叠加每条栏的配方——顶部条 `TOP_BAR_GLASS`（折射 ×1、无额外模糊，即原有基础光学，保持不变），底部 Tab 栏 `TAB_BAR_GLASS`（折射 ×0.4、额外模糊 4px，底色 `--glass-fill-base` 约 39%），因为图表和列表会在 Tab 栏下滚动、它的文字必须可读。WebKit 走磨砂（`rn-frosted-glass`），`prefers-reduced-transparency` 与强制色回退为实底，`prefers-reduced-motion` 停止动效。玻璃渲染、调节能力与 DEV 调节器（`LiquidGlassTuner`，仅 `import.meta.env.DEV` 加载，生产不出现）全部保留，不另建第二套组件体系。
 
 ## 8.2 跨端规则（单一设计系统）
 

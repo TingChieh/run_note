@@ -20,7 +20,7 @@
 | 区域 | 文件 | 意图 |
 | --- | --- | --- |
 | 令牌与共享样式 | `frontend/src/app.css` | 新增 `--control-border`、`--receipt-ink`、`--receipt-mark`、`--radius-sheet`、`--radius-header`、`--text-figure`、`--text-period-hero` 与别名 `--rule`/`--paper`/`--desk`/`--receipt`（不删旧令牌）；`--text-sport-title` 改为 28px；Editorial Receipt 共享类；手机 Tab 栏底色加密 |
-| 玻璃边界 | `lib/styles/liquid-glass.ts`、`liquid-glass.css`、`menu-glass.ts`、`MobileTabBar.svelte` | `.editorial-page` 内容区排除、`[data-glass-overlay]` 保留；浮动栏按配方调折射与模糊。未删除任何玻璃代码，DEV 调节器仍只在开发环境加载 |
+| 玻璃边界 | `lib/styles/liquid-glass.ts`、`liquid-glass.css`、`menu-glass.ts`、`MobileTabBar.svelte` | `.editorial-page` 内容区排除、`[data-glass-overlay]` 保留；仅手机底部 Tab 栏按配方调折射与模糊（`TAB_BAR_GLASS`），桌面顶部条 `TOP_BAR_GLASS` 是基础光学（×1、无额外模糊），与 main 完全一致。未删除任何玻璃代码，DEV 调节器仍只在开发环境加载 |
 | 手机外壳 | `AppNavigation.svelte`、`MobileAccountLinks.svelte`、`routes/+layout.svelte`（页脚）、`app.css`、`WellbeingReport.svelte`（打印样式里删掉已不存在的 `.mobile-bar`） | 删除手机顶部条；页面从安全区开始；主题切换移到“我的”面板（未登录时在页脚） |
 | 组件 | `PageHeader`、`MetricSummary`、`TrendChart` + `trend-chart.ts`、`ProvinceMap`、`GoalOverview`、`RecordsBanner`、`RecordsBannerLoader`、`ActivityExplorer` | 见上；props 只增不减，`GoalOverview`/`ActivityExplorer` 只用于数据汇总，直接改为账页写法；`RecordsBanner` 去掉运动色圆形徽章（hero 变体保留卡片外框） |
 | 页面 | `routes/dashboard/+page.svelte` | 新版面；数据读取、离线缓存、年份/日期/URL 状态、401 处理、重试与所有链接不变 |
@@ -47,6 +47,8 @@
 | `playwright test --config playwright.design-system.config.ts` | 7 个行为用例通过；2 个像素基线用例无法在本机比较（仓库只有 `-darwin` 基线），需在 macOS 上审阅后更新 |
 
 `pnpm` 在本机不经 TTY 会要求重装依赖，因此按仓库习惯直接调用 `node_modules/.bin`；`scripts/verify.py` 依赖 `pnpm`，未整体运行。后端未改动，后端测试与集成测试未运行。
+
+**桌面顶部条玻璃光学（评审 P2 修复）**：评审发现首版把 `TOP_BAR_GLASS` 调成折射 ×0.85、额外模糊 1px，违背“桌面顶部条完全不变”。现恢复为基础光学（×1、无额外模糊），`tests/unit/liquid-glass-settings.test.ts` 固定这一点。证据：在 1440×900 浮动态（浅色/深色）下，比较 main（734a038）、本修复与旧 0.85/1 配方的实际生成的 SVG 滤镜：本修复与 main 的 `feGaussianBlur stdDeviation`（0.00145 / 0.03125）与 `feDisplacementMap scale`（0.02035）完全相同，旧配方为 0.00218 / 0.046875 与 0.01730。768 宽度下顶部条处于 docked 态（实底，不挂折射），该态不涉及玻璃配方。UI 子集（liquid-glass、crossbrowser-glass、top-navigation、mobile-tabbar、ui-shell、theme、dashboard）143 passed、4 skipped、0 failed。
 
 **CI 字体差异**：PR 首次 CI 的 `frontend-ui` 有 5 个用例在 320px 报横向溢出，本机（Noto 字体）没有复现。CI 的拉丁文字用 DejaVu Sans / DejaVu Sans Mono，数字更宽。把这两个字体以 `@font-face` 注入本机页面后复现：第三个辅助数字的单位 `/km` 超出 2px。现在 <480px 时三个辅助数字降为 `--text-section`，并允许单位换行；同样注入后 320–1440px 都不再溢出。
 

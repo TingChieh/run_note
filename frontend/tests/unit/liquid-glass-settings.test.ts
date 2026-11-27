@@ -31,3 +31,15 @@ describe('glass preview settings', () => {
     expect(switchOptics(settings).blur).toBe(0);
   });
 });
+
+describe('floating chrome recipes', () => {
+  it('keeps the desktop top bar on the base optics, whatever the tab bar recipe does', async () => {
+    const { TOP_BAR_GLASS, TAB_BAR_GLASS } = await import('../../src/lib/styles/menu-glass.ts');
+    expect(TOP_BAR_GLASS).toEqual({ refraction: 1, frost: 0 });
+    const settings = { ...DEFAULT_GLASS_SETTINGS, blur: 3 };
+    const applied = (recipe: { refraction: number; frost: number }) =>
+      glassOptics({ ...settings, blur: settings.blur + recipe.frost }, recipe.refraction);
+    expect(applied(TOP_BAR_GLASS)).toEqual(glassOptics(settings, 1));
+    expect(applied(TAB_BAR_GLASS)).not.toEqual(glassOptics(settings, 1));
+  });
+});

@@ -30,10 +30,11 @@ export function attachMenuGlass(panel: HTMLElement, settings: GlassSettings, sca
 /**
  * Per-bar optics on top of the shared (tuner-driven) settings: `refraction` scales the displacement, `frost` adds
  * backdrop blur in px. The phone tab bar sits over charts and lists while they scroll, so it bends less and frosts
- * more than the top bars to keep its labels readable (brand.md §12, Liquid Glass boundaries).
+ * more to keep its labels readable (brand.md §12, Liquid Glass boundaries). The desktop top bar is the unscaled base
+ * optics (x1, no extra blur): the owner asked for it to stay exactly as it was, so do not tune it with the tab bar.
  */
 export type ChromeGlass = { refraction: number; frost: number };
-export const TOP_BAR_GLASS: ChromeGlass = { refraction: 0.85, frost: 1 };
+export const TOP_BAR_GLASS: ChromeGlass = { refraction: 1, frost: 0 };
 export const TAB_BAR_GLASS: ChromeGlass = { refraction: 0.4, frost: 4 };
 
 export function attachFloatingGlass(node: HTMLElement, recipe: ChromeGlass = TOP_BAR_GLASS): () => void {
