@@ -6,11 +6,20 @@
   import { dashboardDistance } from '#lib/api/dashboard-format.ts';
   import { TREND_LABELS, trendChartOption, trendText, type TrendMetric } from './trend-chart';
   // Weekly or monthly trend for one year; the chart is presentation only, the table below is the full fallback.
-  let { trends, metric }: { trends: Trends; metric: TrendMetric } = $props();
+  // appearance="receipt": Editorial Receipt bars (square, peak in receipt yellow, unfinished bucket hatched); used by migrated pages.
+  // today (YYYY-MM-DD, subject timezone) lets the receipt chart hatch the unfinished bucket.
+  let {
+    trends,
+    metric,
+    appearance = 'default',
+    today,
+  }: { trends: Trends; metric: TrendMetric; appearance?: 'default' | 'receipt'; today?: string } = $props();
   let container: HTMLDivElement,
     mounted = $state(false),
     message = $state('');
   let chart: import('echarts/core').ECharts | undefined;
+  // Receipt charts print every monthly value only when there is room for them.
+  let wide = true;
   const unit = $derived(trends.period === 'week' ? '周' : '月');
   const missing = $derived(
     trends.buckets.some((bucket) => trendText(bucket, 'duration') === '—' || trendText(bucket, 'pace') === '—'),
@@ -28,9 +37,12 @@
           muted: color('--muted-foreground'),
           border: color('--border'),
           surface: color('--surface'),
-          primary: color('--chart-series'),
+          primary: color(appearance === 'receipt' ? '--primary' : '--chart-series'),
         },
         !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+        appearance === 'receipt'
+          ? { mark: color('--receipt-mark'), background: color('--background'), printAll: wide, today }
+          : undefined,
       ),
       { notMerge: true },
     );
@@ -38,6 +50,8 @@
   $effect(() => {
     trends;
     metric;
+    appearance;
+    today;
     if (mounted) draw();
   });
   onMount(() => {
@@ -54,8 +68,16 @@
             if (disposed) return;
             chart = ec.init(container);
             mounted = true;
+            wide = container.clientWidth >= 640;
             draw();
-            observer = new ResizeObserver(() => chart?.resize());
+            observer = new ResizeObserver(() => {
+              chart?.resize();
+              const next = container.clientWidth >= 640;
+              if (next !== wide) {
+                wide = next;
+                draw();
+              }
+            });
             observer.observe(container);
           } catch {
             if (!disposed) message = '图表暂时无法显示，下方数据表仍可查看。';

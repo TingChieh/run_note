@@ -103,6 +103,16 @@ export function comparisonWindow(
   const previousEnd = new Date(Date.UTC(previousYear, previousMonth, Math.min(day.getUTCDate(), lastDay) + 1));
   return { current, previous: { from: iso(previousStart), to: iso(previousEnd) } };
 }
+/**
+ * Share of the goal period's calendar days that have started, today included (0–1): the "where you should be by
+ * now" tick on a goal bar. Calendar arithmetic only; the distance itself always comes from the server.
+ */
+export function periodElapsed(period: GoalPeriod, timezone: string, now = new Date()): number {
+  const full = goalRange(period, timezone, now);
+  const { current } = comparisonWindow(period, timezone, now);
+  const span = Date.parse(full.to) - Date.parse(full.from);
+  return Math.min(1, Math.max(0, (Date.parse(current.to) - Date.parse(full.from)) / span));
+}
 export function goalTotals(
   summary: { distance_m: Metric; duration_sum_seconds: Metric; activity_count: number },
   target: number | null,

@@ -518,8 +518,10 @@ test('glass buttons sample their displacement map at device resolution on high-d
   const context = await browser.newContext({ viewport: { width: 390, height: 851 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
   const page = await context.newPage();
   await installActivities(page); await loginRunner(page);
-  await page.goto('/activities');
-  const layer = page.locator('.mobile-bar .theme-toggle .rn-glass-layer');
+  // Phones have no top bar; the 我的 panel's theme button is the glass control on the account page.
+  await page.goto('/settings');
+  await page.getByTestId('mobile-account-links').locator('.theme-toggle').scrollIntoViewIfNeeded();
+  const layer = page.getByTestId('mobile-account-links').locator('.theme-toggle .rn-glass-layer');
   await expect.poll(() => layer.evaluate(el => el.style.backdropFilter)).toMatch(/url\("?#lg/);
   const ratio = await layer.evaluate(async el => {
     const id = el.style.backdropFilter.match(/#(lg\d+-v\d+)/)![1];
@@ -544,7 +546,8 @@ test('clipped glass filters stay compact, skip per-frame PNG re-encoding on pres
     };
   });
   await installActivities(page); await loginRunner(page); await page.goto('/dashboard');
-  const belowFold = page.getByRole('link', { name: /查看全部/ }).first();
+  // A floating control below the fold: the footprint map's projection toggle (content buttons on the Editorial Receipt dashboard are flat; map overlays keep glass).
+  const belowFold = page.locator('.globe-stage .proj-toggle-btn');
   await expect(belowFold).toBeVisible();
   await expect.poll(() => page.locator('.app-sidebar').evaluate(el => el.style.backdropFilter)).toMatch(/url\("?#lg/);
   await page.waitForTimeout(250);

@@ -762,6 +762,9 @@
       {/if}
     </main>
     <footer class="app-footer">
+      {#if appLayout && !page.data.user && !checking}<div class="app-footer-controls" data-testid="footer-controls">
+          <ThemeToggle compact /><a href="/admin" class="button-secondary">登录</a>
+        </div>{/if}
       <span>{site.title}</span>{#if site.footer_tagline}<span>{site.footer_tagline}</span>{/if}
       <div class="app-footer-links">
         <a class="app-footer-link" href="/privacy">隐私政策</a>

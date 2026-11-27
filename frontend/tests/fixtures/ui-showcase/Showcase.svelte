@@ -153,13 +153,14 @@
     <section aria-labelledby="metrics-title" class="example-stack">
       <h2 id="metrics-title">指标变体</h2>
       <h3>default：中性表面</h3><MetricSummary items={metrics} appearance="default" />
+      <h3>receipt：Editorial Receipt 账页（无图标、发丝线、等宽单位）</h3><MetricSummary items={metrics} appearance="receipt" />
       <h3>compact：卡片内摘要</h3><div class="aux-panel"><MetricSummary items={metrics} compact /></div>
       <h3>stacked：窄列、零值与长数字</h3><MetricSummary stacked items={[{ label: '次数', value: '0', icon: 'count' }, { label: '累计距离', value: '123,456.78 km', icon: 'distance' }, { label: '缺失心率', value: '—', icon: 'heart' }]} />
     </section>
 
     <section class="example-stack" aria-labelledby="patterns-title">
       <h2 id="patterns-title">布局组合</h2>
-      <PageHeader title="较长标题的布局组合：训练概览与日期筛选示例" />
+      <PageHeader title="较长标题的布局组合：训练概览与日期筛选示例" meta="2026 · 截至 10.16 · 12 次" />
       <div class="pattern-grid">
         <section class="aux-panel" aria-labelledby="summary-title"><h3 id="summary-title">摘要与局部空状态</h3><MetricSummary items={metrics} compact /><FeedbackState kind="empty" title="当前范围无训练记录" /></section>
         <section class="aux-panel" aria-labelledby="settings-title"><h3 id="settings-title">设置分组</h3><p>字段、帮助文字、操作与结果保持在同一上下文。</p><label class="choice"><input type="checkbox" disabled /> 只读范围示例</label></section>

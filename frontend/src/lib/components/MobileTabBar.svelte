@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { useViewContext } from '#lib/view-context.ts';
   import { mobileNavigation, mobileTabFor } from '#lib/navigation.ts';
-  import { attachFloatingGlass } from '#lib/styles/menu-glass.ts';
+  import { attachFloatingGlass, TAB_BAR_GLASS } from '#lib/styles/menu-glass.ts';
   import type { User } from '#lib/api/auth.ts';
   let { pathname, user }: { pathname: string; user: User | null } = $props();
   const view = useViewContext();
@@ -17,7 +17,7 @@
     return () => media.removeEventListener('change', update);
   });
   // Content always scrolls under this bar, so it carries the same floating glass as the phone top bar; on desktop it is display: none and keeps no filter.
-  $effect(() => { if (!mobile || !bar) return; return attachFloatingGlass(bar); });
+  $effect(() => { if (!mobile || !bar) return; return attachFloatingGlass(bar, TAB_BAR_GLASS); });
   /** Tapping the tab of the page already open returns to its top instead of reloading it. */
   function visit(event: MouseEvent, href: string) {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || pathname !== href) return;

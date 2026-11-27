@@ -109,7 +109,9 @@ test('on a phone the bottom tab bar replaces the menu, so the shell has no ring 
   await expect(page.getByRole('region', { name: '跑量目标' })).toBeHidden();
 });
 
-test('the phone bar exposes only one theme switch and one automatic control', async ({ page }) => {
+test('phones expose one theme switch and one automatic control, in the 我的 panel instead of a top bar', async ({
+  page,
+}) => {
   await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
   await installActivities(page);
   await loginRunner(page);
@@ -118,10 +120,16 @@ test('the phone bar exposes only one theme switch and one automatic control', as
   await expect(page.locator('header[data-auth-ready="true"]')).toHaveCount(1);
   const themeSwitch = page.getByRole('button', { name: /^切换到(浅|深)色模式$/ });
   const automatic = page.getByRole('button', { name: '跟随系统外观', exact: true });
+  // No top bar on phones, so the dashboard itself carries no theme control.
+  await expect(themeSwitch).toHaveCount(0);
+  await page.getByTestId('mobile-tabbar').getByRole('link', { name: '我的', exact: true }).click();
+  await expect(page).toHaveURL(/\/settings$/);
+  const panel = page.getByTestId('mobile-account-links');
   await expect(themeSwitch).toHaveCount(1);
+  await expect(panel.getByRole('button', { name: /^切换到(浅|深)色模式$/ })).toHaveCount(1);
   await themeSwitch.click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  for (const width of [320, 799, 800, 390]) {
+  for (const width of [320, 799, 390]) {
     await page.setViewportSize({ width, height: 844 });
     await expect(themeSwitch).toHaveCount(1);
     await expect(automatic).toHaveCount(1);
@@ -131,8 +139,10 @@ test('the phone bar exposes only one theme switch and one automatic control', as
   await automatic.click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await expect(automatic).toHaveCount(0);
+  // From 800px the desktop bar's control takes over and the phone panel is gone: still exactly one switch.
   await page.setViewportSize({ width: 800, height: 844 });
   await expect(page.locator('.nav-account .appearance-row')).toBeVisible();
+  await expect(panel).toBeHidden();
   await expect(themeSwitch).toHaveCount(1);
 });
 
@@ -545,22 +555,23 @@ test.describe('shell breakpoint', () => {
   });
   for (const width of [SHELL_BREAKPOINT - 1, SHELL_BREAKPOINT, SHELL_BREAKPOINT + 1, 1023, 1024]) {
     const top = width >= SHELL_BREAKPOINT;
-    test(`${width}px: ${top ? 'floating top bar, no mobile bar, lens on x' : 'mobile bar and bottom tab bar, top-bar list hidden'}`, async ({
+    test(`${width}px: ${top ? 'floating top bar, no tab bar, lens on x' : 'no top bar at all, bottom tab bar, top-bar list hidden'}`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto('/dashboard');
       await page.locator('.app-sidebar .goal-container:not([hidden])').waitFor({ state: 'attached' });
       const nav = page.getByRole('navigation', { name: '主要导航' });
+      await expect(page.locator('.mobile-bar')).toHaveCount(0);
       if (top) {
-        await expect(page.locator('.mobile-bar')).toBeHidden();
         await expect(bar(page)).toBeVisible();
         expect(await bar(page).evaluate((el) => getComputedStyle(el).position)).toBe('fixed');
         await expect(nav).toHaveAttribute('data-axis', 'x');
         await expect(page.locator('.goal-container .anchored-trigger')).toBeVisible();
         await expect(page.getByTestId('mobile-tabbar')).toBeHidden();
       } else {
-        await expect(page.locator('.mobile-bar')).toBeVisible();
+        // Phones: the header holds only the hidden desktop list, so it takes no room above the page.
+        expect(await page.locator('.app-shell > header').evaluate((el) => el.getBoundingClientRect().height)).toBe(0);
         await expect(bar(page)).toBeHidden();
         await expect(page.getByTestId('mobile-tabbar')).toBeVisible();
         expect(await page.getByTestId('mobile-tabbar').evaluate((el) => getComputedStyle(el).position)).toBe('fixed');
@@ -578,7 +589,6 @@ test.describe('shell breakpoint', () => {
     await expect(nav).toHaveAttribute('data-axis', 'x');
     await expect(tabs).toBeHidden();
     await page.setViewportSize({ width: SHELL_BREAKPOINT - 1, height: 900 });
-    await expect(page.locator('.mobile-bar')).toBeVisible();
     await expect(tabs).toBeVisible();
     await expect(nav).toBeHidden();
     await page.setViewportSize({ width: SHELL_BREAKPOINT, height: 900 });
@@ -587,18 +597,18 @@ test.describe('shell breakpoint', () => {
   });
 });
 
-// The phone bar and the bottom tab bar use the same surface, border, foreground and current-item tokens as the desktop bar: no solid green block (Oppo Find X8s is ~361px wide).
-test.describe('phone bar and tab bar colours', () => {
+// The bottom tab bar uses the same foreground and current-item tokens as the desktop bar: no solid green block (Oppo Find X8s is ~361px wide). Phones have no top bar.
+test.describe('tab bar colours', () => {
   for (const scheme of ['light', 'dark'] as const) {
-    test(`361px ${scheme}: bar on the card surface, tabs legible`, async ({ page }) => {
+    test(`361px ${scheme}: no top bar, tabs legible`, async ({ page }) => {
       await page.emulateMedia({ colorScheme: scheme });
       await installActivities(page);
       await loginRunner(page);
       await page.setViewportSize({ width: 361, height: 800 });
       await page.goto('/dashboard');
-      await expect(page.locator('.mobile-bar')).toBeVisible();
       await page.locator('.app-sidebar .goal-container:not([hidden])').waitFor({ state: 'attached' });
       await expect(page.getByTestId('mobile-tabbar')).toBeVisible();
+      await expect(page.locator('.mobile-bar')).toHaveCount(0);
       await page.evaluate(() =>
         Promise.all(
           document
@@ -620,29 +630,19 @@ test.describe('phone bar and tab bar colours', () => {
         const token = (name: string) => {
           const i = document.createElement('i');
           i.style.color = `var(${name})`;
-          document.querySelector('.mobile-bar')!.append(i);
+          document.querySelector('.mobile-tabbar')!.append(i);
           const value = rgb(getComputedStyle(i).color);
           i.remove();
           return value;
         };
         const style = (selector: string) => getComputedStyle(document.querySelector(selector)!);
-        const mark = style('.mobile-bar .brand-mark');
         return {
           surface: token('--surface'),
-          border: token('--border'),
           foreground: token('--foreground'),
-          muted: token('--muted-foreground'),
-          brand: token('--sport-brand'),
-          brandInk: token('--brand-foreground'),
           active: token('--sport-nav-active'),
           ink: token('--sport-nav-active-ink'),
           primary: token('--primary'),
           primaryInk: token('--primary-foreground'),
-          barBackground: rgb(style('.mobile-bar').backgroundColor),
-          barBorder: rgb(style('.mobile-bar').borderBottomColor),
-          barText: rgb(style('.mobile-bar .brand-name').color),
-          markBackground: rgb(mark.backgroundColor),
-          markText: rgb(mark.color),
           tabLink: rgb(style('.mobile-tabbar .mobile-tab:not([aria-current])').color),
           currentTab: rgb(style('.mobile-tabbar .mobile-tab[aria-current]').color),
           currentPlate: rgb(style('.mobile-tabbar .mobile-tab[aria-current]').backgroundColor),
@@ -650,11 +650,6 @@ test.describe('phone bar and tab bar colours', () => {
           recordText: rgb(style('.mobile-tab-record').color),
         };
       });
-      expect(probe.barBackground, 'bar background').toEqual(probe.surface);
-      expect(probe.barBorder, 'bar bottom border').toEqual(probe.border);
-      expect(probe.barText, 'bar text').toEqual(probe.foreground);
-      expect(probe.markBackground, 'logo square').toEqual(probe.brand);
-      expect(probe.markText, 'logo letter').toEqual(probe.brandInk);
       expect(probe.tabLink, 'tab label').toEqual(probe.foreground);
       expect(probe.currentTab, 'current tab').toEqual(probe.ink);
       expect(probe.currentPlate, 'current tab plate').toEqual(probe.active);
@@ -671,13 +666,11 @@ test.describe('phone bar and tab bar colours', () => {
         const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
         return (hi + 0.05) / (lo + 0.05);
       };
-      expect(contrast(probe.barText, probe.barBackground), 'bar text contrast').toBeGreaterThanOrEqual(4.5);
       expect(contrast(probe.tabLink, probe.surface), 'tab label contrast').toBeGreaterThanOrEqual(4.5);
       expect(contrast(probe.currentTab, probe.currentPlate), 'current tab on the active plate').toBeGreaterThanOrEqual(
         4.5,
       );
       expect(contrast(probe.recordText, probe.recordBackground), '开跑 label contrast').toBeGreaterThanOrEqual(4.5);
-      expect(contrast(probe.markText, probe.markBackground), 'logo letter contrast').toBeGreaterThanOrEqual(4.5);
     });
   }
 });
@@ -987,7 +980,7 @@ test('the goal ring draws no arc at 0% (a round cap on a zero-length dash would 
   await expect(ring.locator('.goal-arc')).toHaveCount(1);
 });
 
-test.describe('phone bar hides while scrolling down and returns on a short scroll up', () => {
+test.describe('phones have no top bar: the page header opens the page and the tab bar stays in reach', () => {
   const mobileBar = (page: Page) => page.locator('.mobile-bar');
   const scrollBy = async (page: Page, dy: number) => {
     await page.mouse.wheel(0, dy);
@@ -998,8 +991,7 @@ test.describe('phone bar hides while scrolling down and returns on a short scrol
     await loginRunner(page);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/dashboard');
-    await expect(mobileBar(page)).toBeVisible();
-    // Scroll once the summary has loaded and the bar listens; a load-time layout jump used to replay early scrolls.
+    await expect(page.getByTestId('mobile-tabbar')).toBeVisible();
     await expect(page.getByTestId('annual-distance')).toBeVisible();
     expect(
       await page.evaluate(() => document.documentElement.scrollHeight),
@@ -1007,69 +999,22 @@ test.describe('phone bar hides while scrolling down and returns on a short scrol
     ).toBeGreaterThan(1500);
   });
 
-  test('scrolling down tucks the bar away, a short scroll up brings it back without reaching the top', async ({
-    page,
-  }) => {
-    await scrollBy(page, 700);
-    await expect(mobileBar(page)).toBeHidden();
-    await scrollBy(page, 300);
-    await expect(mobileBar(page)).toBeHidden();
-    await scrollBy(page, -40);
-    await expect(mobileBar(page)).toBeVisible();
-    expect(await page.evaluate(() => window.scrollY), 'still far from the top').toBeGreaterThan(500);
-    expect(
-      (await mobileBar(page).boundingBox())!.y,
-      'floats the same 14px below the top edge as the desktop bar',
-    ).toBeCloseTo(14, 0);
-    await scrollBy(page, 300);
-    await expect(mobileBar(page)).toBeHidden();
+  test('the page header is the first thing on screen and nothing covers the top while scrolling', async ({ page }) => {
+    await expect(mobileBar(page)).toHaveCount(0);
+    const headerTop = await page.locator('.page-header').evaluate((el) => el.getBoundingClientRect().top);
+    expect(headerTop, 'starts right below the top safe area, no dead strip').toBeLessThanOrEqual(24);
+    expect(headerTop).toBeGreaterThanOrEqual(0);
+    for (const dy of [700, 300, -40]) {
+      await scrollBy(page, dy);
+      const covered = await page.evaluate(() =>
+        [20, 195, 370].some((x) => !!document.elementFromPoint(x, 12)?.closest('header, nav, .mobile-tabbar')),
+      );
+      expect(covered, `nothing floats over the top edge after scrolling ${dy}px`).toBe(false);
+    }
   });
 
-  test('hiding is a slide that takes a moment, not a snap, and never fades the header', async ({ page }) => {
-    await scrollBy(page, 300);
-    await expect(mobileBar(page)).toBeHidden();
-    await scrollBy(page, -40);
-    await expect(mobileBar(page)).toBeVisible();
-    await page.waitForTimeout(500);
-    await page.evaluate(() => {
-      const bar = document.querySelector('.mobile-bar')!,
-        header = bar.parentElement!;
-      (window as any).__frames = [] as { top: number; bottom: number; opacity: number; visibility: string }[];
-      const t0 = performance.now();
-      const tick = () => {
-        (window as any).__frames.push({
-          top: bar.getBoundingClientRect().top,
-          bottom: bar.getBoundingClientRect().bottom,
-          opacity: Number(getComputedStyle(header).opacity),
-          visibility: getComputedStyle(header).visibility,
-        });
-        if (performance.now() - t0 < 900) requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-    });
-    await page.mouse.wheel(0, 80);
-    await page.waitForTimeout(1000);
-    const frames = await page.evaluate(
-      () => (window as any).__frames as { top: number; bottom: number; opacity: number; visibility: string }[],
-    );
-    const halfway = frames.filter((frame) => frame.visibility === 'visible' && frame.top < 14 && frame.top > -50);
-    expect(halfway.length, 'the bar is seen sliding for several frames').toBeGreaterThanOrEqual(8);
-    // No opacity on the header: it would make the header a backdrop root and the bar's glass would stop seeing the page behind it while it moves.
-    expect(
-      frames.every((frame) => frame.visibility === 'hidden' || frame.opacity === 1),
-      'the glass keeps its backdrop the whole way',
-    ).toBe(true);
-    expect(frames.at(-1)!.visibility, 'and ends hidden').toBe('hidden');
-    const lastShown = frames.filter((frame) => frame.visibility === 'visible').at(-1)!;
-    expect(
-      lastShown.bottom,
-      'the bar and its shadow (about 2rem below it) are off screen before it is cut, so the shadow does not pop away',
-    ).toBeLessThanOrEqual(-30);
-  });
-
-  test('the bottom tab bar stays in reach deep in the page while the top bar is tucked away', async ({ page }) => {
+  test('the bottom tab bar stays in reach deep in the page', async ({ page }) => {
     await scrollBy(page, 900);
-    await expect(mobileBar(page)).toBeHidden();
     const tabs = page.getByRole('navigation', { name: '底部导航' });
     await expect(tabs).toBeVisible();
     const box = (await tabs.boundingBox())!;
@@ -1083,7 +1028,7 @@ test.describe('phone bar hides while scrolling down and returns on a short scrol
       .getByRole('link', { name: '个人记录', exact: true })
       .click();
     await expect(page).toHaveURL(/\/records/);
-    await expect(mobileBar(page)).toBeVisible();
+    await expect(mobileBar(page)).toHaveCount(0);
     await expect(tabs.getByRole('link', { name: '探索', exact: true })).toHaveAttribute('aria-current', 'true');
     await noOverflow(page);
   });
@@ -1094,7 +1039,7 @@ test.describe('phone bar hides while scrolling down and returns on a short scrol
     await expect(bar(page)).toBeVisible();
     await scrollBy(page, 900);
     await expect(bar(page)).toBeVisible();
-    await expect(mobileBar(page)).toBeHidden();
+    await expect(mobileBar(page)).toHaveCount(0);
   });
 });
 
@@ -1218,66 +1163,16 @@ test.describe('segmented lens label', () => {
   }
 });
 
-test.describe('phone bar looks like the desktop bar', () => {
+test.describe('the bottom tab bar on phones', () => {
   test.beforeEach(async ({ page }) => {
     await installActivities(page);
     await loginRunner(page);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/dashboard');
-    await expect(page.locator('.mobile-bar')).toBeVisible();
+    await expect(page.getByTestId('mobile-tabbar')).toBeVisible();
     await page.locator('.app-sidebar .goal-container:not([hidden])').waitFor({ state: 'attached' }); // hydrated: an earlier click is not handled
   });
-  test('a rounded pill inset from the edges, solid at the top and clear glass once the page scrolls under it', async ({
-    page,
-  }) => {
-    const barBox = async () => (await page.locator('.mobile-bar').boundingBox())!;
-    const box = await barBox();
-    expect(box.x, 'inset from the left edge').toBeGreaterThanOrEqual(10);
-    expect(box.x + box.width, 'inset from the right edge').toBeLessThanOrEqual(390 - 10);
-    const look = () =>
-      page.locator('.mobile-bar').evaluate((el) => {
-        const cs = getComputedStyle(el);
-        return {
-          radius: parseFloat(cs.borderTopLeftRadius),
-          height: el.getBoundingClientRect().height,
-          floating: el.hasAttribute('data-floating'),
-          background: cs.backgroundColor,
-        };
-      });
-    const docked = await look();
-    expect(docked.radius, 'pill radius').toBeGreaterThanOrEqual(docked.height / 2 - 1);
-    expect(docked.floating).toBe(false);
-    await page.mouse.wheel(0, 300);
-    await page.waitForTimeout(500);
-    await page.mouse.wheel(0, -40);
-    await page.waitForTimeout(500);
-    const floating = await look();
-    expect(floating.floating, 'floating once scrolled').toBe(true);
-    const alpha = (value: string) => {
-      const m = value.match(/\/\s*([\d.]+)\s*\)|rgba\([^)]*,\s*([\d.]+)\)/);
-      return m ? Number(m[1] ?? m[2]) : 1;
-    };
-    expect(alpha(docked.background), 'docked is solid').toBe(1);
-    expect(alpha(floating.background), 'floating is clear glass').toBeLessThan(0.5);
-  });
-  test('the phone bar keeps its refraction prepared but only applies it once the page scrolls under it', async ({
-    page,
-    browserName,
-  }) => {
-    test.skip(browserName !== 'chromium', 'only Chromium refracts through backdrop-filter: url()');
-    const filter = () => page.locator('.mobile-bar').evaluate((el) => getComputedStyle(el).backdropFilter);
-    await expect
-      .poll(() => page.locator('.mobile-bar').evaluate((el) => el.style.backdropFilter), 'prepared before any scroll')
-      .toContain('url(');
-    expect(await filter(), 'docked bar applies no backdrop filter').toBe('none');
-    await page.mouse.wheel(0, 300);
-    await expect(page.locator('.mobile-bar')).toHaveAttribute('data-floating', '');
-    expect(await filter(), 'floating bar refracts the page').toContain('url(');
-    await page.mouse.wheel(0, -300);
-    await expect(page.locator('.mobile-bar')).not.toHaveAttribute('data-floating');
-    expect(await filter(), 'back at the top it is released again').toBe('none');
-  });
-  test('the bottom tab bar is the same kind of pill: inset, full border and refracting glass over the page', async ({
+  test('the bottom tab bar is a pill: inset, full border and refracting glass over the page', async ({
     page,
     browserName,
   }) => {

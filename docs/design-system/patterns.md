@@ -1,14 +1,14 @@
 # UI 页面模式
 
-先按最相似的现有页面组合组件，再决定是否需要新抽象。以下是现有规则的规范化，不授权重写业务页面。组件与 Token 详见 [components](components.md)、[tokens](tokens.md)。
+先按最相似的现有页面组合组件，再决定是否需要新抽象。Editorial Receipt 的页面骨架与场景分级见 [brand.md §2、§4](brand.md#2-场景分级)。以下是现有规则的规范化，不授权重写业务页面。组件与 Token 详见 [components](components.md)、[tokens](tokens.md)。
 
 ## 1. 仪表盘
 
-适用：个人跑步总览。参考 [dashboard](../../frontend/src/routes/dashboard/+page.svelte)。结构：PageHeader → 累计/年度指标 dl → GoalOverview 与 ProvinceMap → RecordsBanner（个人记录横幅）→ ActivityExplorer → CalendarGrid/TrendChart。数据汇总里的“概览条”（年度指标、个人记录横幅）统一为同一种写法：一张平面卡片 + 等宽列 + 列间 `--border` 发丝线，运动色只出现在圆形徽章上；不要在卡片里再嵌带底色的块，也不要把一排指标拆成各自带边框的小卡片。各页面入口只在顶部导航与手机菜单出现，数据汇总不再重复一组“功能入口”卡片。目标卡（年度/月度/周目标与连续记录）在桌面上等宽等高，进度与对比贴卡底，卡下不再加口径小字（口径统一放在页尾“统计口径与数据质量”）。“运动趋势”与个人记录的月度图同一种图表语言（`trend-chart.ts` 复用 `records-chart.ts` 的高亮规则）：小号说明 + 标题，周期与指标用分段按钮，图表不画网格线和数值轴，柱子圆角、最高一期全色并标数值，配速为反向纵轴的折线，下方 `<details>` 完整数据表。
+适用：个人跑步总览（Editorial Receipt 档案页，第 1 阶段已迁移）。参考 [dashboard](../../frontend/src/routes/dashboard/+page.svelte)。结构：`.editorial-page` → PageHeader（紧凑黄色色带；`meta` 写年份与“截至 MM.DD”，右侧连体年份步进器）→ `.milestone-section`：年度距离主数字（`--text-period-hero`）+ 三个竖发丝线分隔的辅助数字 + 累计一行，其下 GoalOverview 压成一条四栏 → 运动趋势（`.underline-tabs`、`TrendChart appearance="receipt"`）与 `ProvinceMap appearance="ledger"`（≥1024px 7:5 并排）→ 运动日历（<768px 隐藏）→ RecordsBanner → ActivityExplorer → 统计口径 details。主区块（里程碑、趋势、地理）用 2px 节线，其余 1px 发丝线；区块间 48px，不用卡片、彩色图标或阴影。手机上同一 DOM 顺序即使用顺序：年度数字 → 目标进度 → 趋势 → 地图 → 记录 → 浏览。
 
-每区独立 loading/error/retry，保留已成功内容；年份只影响对应统计，不能重置累计省份。保留 URL 选中项与页面位置。摘要用彩色指标锚点和表面卡片，不把所有信息压成后台表格。
+每区独立 loading/error/retry，保留已成功内容；年份只影响对应统计，不能重置累计省份。保留 URL 选中项与页面位置；年度数字与趋势区预留高度，数据到达时下方区块不跳动。
 
-反例：一个接口失败隐藏整页；把全站新布局从另一个 UI 库的 dashboard 模板复制过来；筛选年份时丢失目标草稿。
+反例：一个接口失败隐藏整页；把全站新布局从另一个 UI 库的 dashboard 模板复制过来；筛选年份时丢失目标草稿；为了“丰富”给指标加彩色圆形图标或把一组指标拆成小卡片。
 
 ## 2. 列表、筛选与浏览
 
@@ -73,7 +73,7 @@ error 为 alert，其他状态 polite；文本与图形共同表意。缺失 `�
 
 ## 8. 桌面与移动适配
 
-适用：所有私人/公开页面。参考 [app.css](../../frontend/src/app.css)、[AppNavigation](../../frontend/src/lib/components/AppNavigation.svelte)。桌面（800px 起）为悬浮顶部条，800px 以下是顶部手机栏加底部标签栏 `今天 | 记录 | 开跑 | 探索 | 我的`（见 [components](components.md) 的“手机底部标签栏”）；公开页面独立顶部导航。外壳模式见下。内容和栅格项 min-width:0，动作可换行，表格只在局部滚动。
+适用：所有私人/公开页面。参考 [app.css](../../frontend/src/app.css)、[AppNavigation](../../frontend/src/lib/components/AppNavigation.svelte)。桌面（800px 起）为悬浮顶部条，800px 以下没有顶部条，页面从顶部安全区直接开始（第一屏是页头），导航只有底部标签栏 `今天 | 记录 | 开跑 | 探索 | 我的`，主题切换在“我的”页（未登录时在页脚）（见 [components](components.md) 的“手机底部标签栏”）；公开页面独立顶部导航。外壳模式见下。内容和栅格项 min-width:0，动作可换行，表格只在局部滚动。
 
 验证 320/390/768/1024/1440px、关键断点两侧与桌面低高度；长中文、长数值不溢出。保留 DOM 阅读顺序、skip link、Escape/焦点恢复及常用 44px 目标；密集日历按间距和适用例外评估。按容器查询的组件（如活动详情页的足迹卡片）不能仅看 viewport。
 

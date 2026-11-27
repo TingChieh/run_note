@@ -126,8 +126,9 @@ test('the entrance count-up never leaves wrong values: final before it plays, af
 });
 
 // The banner switches layout by its own width (container query, 54rem of content width), not by the viewport. With the left sidebar gone (top navigation, shell breakpoint 800px) the content column is the viewport minus
-// two page paddings, so the two-column-plus-strip layout now covers roughly 700-980px viewports; measured: 1000px and wider already give three columns (tested at 1440 above), 640px stacks.
-for (const width of [800, 900, 960]) {
+// two page paddings, and since the Editorial Receipt dashboard the banner is a ledger block without card padding, so the two-column-plus-strip layout covers roughly 700-915px viewports;
+// measured: 920px and wider already give three columns (tested at 1440 above), 640px stacks.
+for (const width of [800, 860, 900]) {
   test(`at a mid-width viewport (${width}px) 5K and 10K sit side by side above a full-width totals strip`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/');

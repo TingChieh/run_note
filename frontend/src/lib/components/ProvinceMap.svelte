@@ -27,6 +27,8 @@
     applyMercatorPinch,
     TouchGestureTracker,
   } from '#lib/map/province-touch.ts';
+  // appearance="ledger": Editorial Receipt block (2px rule, no card, 4px map frame) for migrated pages; the AI assistant keeps the card.
+  let { appearance = 'card' }: { appearance?: 'card' | 'ledger' } = $props();
 
   const view = useViewContext();
   const readGlobalFootprints = view.bind(scoped_readGlobalFootprints, 1);
@@ -1745,10 +1747,16 @@
   });
 </script>
 
-<section class="province-map-card" aria-label="足迹地图" aria-busy={loading}>
+<section
+  class="province-map-card"
+  class:ledger={appearance === 'ledger'}
+  class:section-rule={appearance === 'ledger'}
+  aria-label="足迹地图"
+  aria-busy={loading}
+>
   <div class="map-heading">
     <div>
-      <p class="eyebrow">用脚步点亮地图</p>
+      {#if appearance === 'card'}<p class="eyebrow">用脚步点亮地图</p>{/if}
       <h2>足迹地图</h2>
     </div>
     <div class="map-totals">
@@ -1774,7 +1782,8 @@
     </FeedbackState>
   {/if}
 
-  <div bind:this={stageEl} class="globe-stage">
+  <!-- Projection, zoom and locate float over the map and keep the glass material on Editorial Receipt pages. -->
+  <div bind:this={stageEl} class="globe-stage" data-glass-overlay>
     <div
       bind:this={hostEl}
       class="globe-canvas"
@@ -2223,8 +2232,36 @@
       min-height: 14rem;
     }
   }
+  .ledger {
+    padding: var(--space-4) 0 0;
+    border: 0;
+    border-top: 2px solid var(--rule);
+    border-radius: 0;
+    background: none;
+  }
+  .ledger .map-heading {
+    align-items: baseline;
+  }
+  .ledger .map-stats dd {
+    font-size: var(--text-section);
+    color: var(--foreground);
+  }
+  .ledger .map-stats dt,
+  .ledger .map-year {
+    font-family: var(--font-mono);
+    font-size: var(--text-caption);
+  }
+  .ledger .globe-stage {
+    border-radius: var(--radius-sheet);
+  }
+  .ledger .globe-canvas:focus-visible {
+    border-radius: var(--radius-sheet);
+  }
+  .ledger .footprint-chip {
+    border-radius: var(--radius-control);
+  }
   @media (max-width: 639px) {
-    .province-map-card {
+    .province-map-card:not(.ledger) {
       padding: 1.15rem;
     }
     .globe-stage {

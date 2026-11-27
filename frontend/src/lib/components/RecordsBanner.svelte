@@ -47,7 +47,7 @@
 <section bind:this={root} class="records-banner" class:hero={variant === 'hero'} class:play={playing} aria-labelledby={`${uid}-title`} data-testid="records-banner">
   <div class="banner-head">
     <div><p class="eyebrow">全部历史 · 整次活动</p><h2 id={`${uid}-title`}>{variant === 'hero' ? '最佳成绩' : '个人记录'}</h2></div>
-    {#if href}<a class="button-secondary banner-link" {href} aria-label="查看全部个人记录">查看全部<span aria-hidden="true">→</span></a>{/if}
+    {#if href}<a class="button-text banner-link" {href} aria-label="查看全部个人记录">查看全部<span aria-hidden="true">→</span></a>{/if}
   </div>
   <div class="banner-body">
     {#each bests as item (item.category)}
@@ -98,21 +98,21 @@
 </section>
 
 <style>
-  /* Same language as the dashboard cards: one flat surface card, a round sport-colour chip, muted labels, plain
-     numerals. The three columns are separated by hairlines instead of nesting tinted blocks inside the card. */
-  .records-banner { --gap: var(--space-6); position: relative; container-type: inline-size; min-width: 0; padding: var(--space-6); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
+  /* Editorial Receipt (brand.md §6.5): the compact banner is a secondary ledger block (1px hairline, no card) with three columns
+     split by hairlines; the category is a mono label, not a coloured badge. The hero variant (/records) keeps its
+     card until that page migrates. */
+  .records-banner { --gap: var(--space-6); position: relative; container-type: inline-size; min-width: 0; padding: var(--space-4) 0 0; border-top: 1px solid var(--border); }
+  .records-banner.hero { padding: var(--space-6); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
   .banner-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-4); margin-bottom: var(--space-6); }
-  .eyebrow { margin-bottom: .25rem; color: var(--muted-foreground); font-size: var(--text-caption); }
+  .eyebrow { margin-bottom: .25rem; color: var(--muted-foreground); font-family: var(--font-mono); font-size: var(--text-caption); }
   h2 { font-size: var(--text-section); font-weight: var(--weight-semibold); letter-spacing: 0; }
-  .banner-link { gap: var(--space-1); border-radius: var(--radius-pill); color: var(--primary); }
+  .banner-link { gap: var(--space-1); color: var(--primary); }
 
   .banner-body { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; }
-  .panel { --tone: var(--sport-green); min-width: 0; padding-inline: var(--gap); }
+  .panel { min-width: 0; padding-inline: var(--gap); }
   .panel:first-child { padding-left: 0; }
   .panel:last-child { padding-right: 0; }
   .panel + .panel { border-left: 1px solid var(--border); }
-  .panel[data-kind="10km"] { --tone: var(--sport-blue); }
-  .panel[data-kind="total"] { --tone: var(--sport-yellow-accent); }
   /* Three-column layout only: number on top, facts settle at the bottom so the column balances its taller neighbours. */
   @container (min-width: 54.0625rem) {
     .panel[data-kind="total"]:not(.empty) { display: flex; flex-direction: column; }
@@ -120,12 +120,10 @@
   }
 
   .label { display: flex; align-items: center; gap: var(--space-3); color: var(--muted-foreground); font-size: var(--text-small); }
-  /* Same round chip as the annual metric cards. */
-  .bib { display: inline-grid; place-items: center; flex-shrink: 0; min-width: 2.5rem; height: 2.5rem; border-radius: 50%; background: var(--tone); color: var(--sport-ink); font-size: var(--text-caption); font-weight: var(--weight-bold); }
-  .empty .bib { background: transparent; box-shadow: inset 0 0 0 1.5px var(--tone); color: var(--foreground); }
+  .bib { flex-shrink: 0; color: var(--foreground); font-family: var(--font-mono); font-size: var(--text-caption); font-weight: var(--weight-bold); }
   .figure { display: flex; align-items: baseline; gap: var(--space-2); margin-top: var(--space-4); font-variant-numeric: tabular-nums; }
   .figure strong { color: var(--foreground); font-size: var(--text-stat); font-weight: var(--weight-bold); line-height: var(--line-height-tight); letter-spacing: 0; }
-  .figure > span:last-child { color: var(--muted-foreground); font-size: var(--text-small); font-weight: var(--weight-semibold); }
+  .figure > span:last-child { color: var(--primary); font-family: var(--font-mono); font-size: var(--text-small); font-weight: var(--weight-semibold); }
   .line, .facts { color: var(--muted-foreground); font-size: var(--text-small); line-height: var(--line-height-body); }
   .figure + .line, .figure + .facts { margin-top: var(--space-2); }
   .facts span { display: block; }

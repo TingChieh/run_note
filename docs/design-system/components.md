@@ -6,10 +6,10 @@
 
 | 实现 | 实际 API / 默认值 | 状态、语义与消费者 |
 | --- | --- | --- |
-| [PageHeader](../../frontend/src/lib/components/PageHeader.svelte) | `title:string`；`description?:string`；`actions?:Snippet` | 输出 h1；无动作时不创建空容器。运动壳层里浅色是淡奶油黄（`--header-tint`）的圆角卡片，深色是无底色标题区，文字用 `--header-ink` / `--header-ink-muted`；640px 以下动作全宽。dashboard/activities/settings/AI 等使用；详情 hero 保持独立 |
+| [PageHeader](../../frontend/src/lib/components/PageHeader.svelte) | `title:string`；`meta?:string`；`description?:string`；`actions?:Snippet`；`footer?:Snippet` | 输出 h1（28/700）；`meta` 是 h1 下的一行等宽元信息（周期 · 截至日期 · 计数，`.page-meta`，`data-testid="page-meta"`）；`description` 默认不传；动作最多一个主操作；无动作时不创建空容器。运动壳层里浅色是淡奶油黄（`--header-tint`）的圆角卡片，深色是中性深灰的同尺寸卡片（负责人决定保留底色，见 brand.md §12），文字用 `--header-ink` / `--header-ink-muted`；640px 以下动作全宽（数据汇总的年份切换保持在标题右侧）。dashboard/activities/settings/AI 等使用；详情 hero 保持独立 |
 | [FeedbackState](../../frontend/src/lib/components/FeedbackState.svelte) | `kind?:'loading'\|'success'\|'error'\|'empty'`，默认 empty；`title:string`；`children?:Snippet` | error 为 alert/assertive，其余 status/polite；图标 aria-hidden。重试按钮由调用方提供；不能让组件猜测业务请求 |
 | [PageSkeleton](../../frontend/src/lib/components/PageSkeleton.svelte) | `title?:string`，默认“正在加载页面…” | status/polite/aria-busy，装饰骨架 aria-hidden；reduced-motion 停止呼吸动画。用于初次页面加载，刷新保留旧内容时不强制替换 |
-| [MetricSummary](../../frontend/src/lib/components/MetricSummary.svelte) | `items:{label:string,value:string,testId?:string,icon?:…}[]`；`compact=false`；`appearance='sport'`（可选 default）；`stacked=false` | dl/dt/dd，value 已格式化；不计算指标。`—` 附缺失说明。compact 无卡片外框；stacked 作用于 sport。ActivityCard、详情、公开详情复用 |
+| [MetricSummary](../../frontend/src/lib/components/MetricSummary.svelte) | `items:{label:string,value:string,testId?:string,icon?:…}[]`；`compact=false`；`appearance='sport'`（可选 default、receipt）；`stacked=false` | dl/dt/dd，value 已格式化；不计算指标。`—` 附缺失说明。compact 无卡片外框；stacked 作用于 sport。`receipt`（Editorial Receipt，brand.md §6.5）：无图标（忽略 `icon`）、无卡片，行间发丝线，数字后的单位拆成等宽 `.figure-unit`；目前用于数据汇总的 ActivityExplorer。ActivityCard、详情、公开详情仍用 sport，随各页迁移切换 |
 | [DatePicker](../../frontend/src/lib/components/DatePicker.svelte) | `label:string`；`value=$bindable('')`；`min='1900-01-01'`；`max='2100-12-31'`；`timezone='UTC'`；`required=false`；`disabled=false`；`granularity='date'|'month'`；`onselect?(value)` | 原生 date/month + Popover；month 模式值为 `YYYY-MM`，3×4 月份格、年份选择与上/下一年，方向键按月/行，Home/End 行首尾，PageUp/Down 按年，底部清除/本月，label/controls/expanded/dialog。方向键按日/周，Home/End 按周，PageUp/Down 按月，Enter 选择，Escape 回触发器。AI 日期范围、分享图统计月份使用；日期解释与验证仍由领域调用方负责 |
 | [TimePicker](../../frontend/src/lib/components/TimePicker.svelte) | `label:string`；`value=$bindable('')`（`HH:mm`）；`max=''`（`HH:mm`，其后的时间置灰不可选）；`now=''`（“现在”按钮用）；`required=false`；`disabled=false`；`onselect?(value)` | 与 DatePicker 同一套：输入框是纯文本的 24 小时输入（键入数字时自动补冒号，不用浏览器自带的时间框——各浏览器样子不同，Firefox 还会多出自己的时钟图标；可直接键入、读屏），时钟按钮打开 Popover（**纯色实底、不用玻璃材质**；弹出/收回动效照搬日历弹层、定位复用 `popover-motion`，面板里的按钮都带 `data-date` 不被液态玻璃接管）。弹层里上方是大号的当前时间，下面“时/分”两列滚轮：选中的时间固定在每列正中间（一条主色的横带），列表在它下面上下滚动，**滚到哪一项就选中哪一项**（滚动中实时更新、停下后吸附到整行；比 `max` 晚的项置灰，滚过头会退回到允许的最晚时间），也可以点某一项让它滑到中间；底部“现在/完成”，没有额外的提示小字；选项带 `data-date` 以免液态玻璃洗掉填充；上下键逐项、PageUp/Down 跳 5、Home/End 首尾，Esc 关闭回触发器。身心健康里的服药时间使用（日期固定为所在日，只选时间）；时区与“不能晚于现在”的业务判断仍由调用方负责 |
 | [ThemeToggle](../../frontend/src/lib/components/ThemeToggle.svelte) | `compact=false` | 挂载前禁用，手动浅深色与“自动”；恢复自动把焦点留在切换按钮。私人导航中，手机只显示顶部栏的紧凑入口；桌面使用账户区入口。偏好仅本机；不接受服务器用户主题配置 |
@@ -40,25 +40,25 @@ MetricSummary 的 icon 枚举：`distance/duration/elapsed/pace/count/days/heart
 
 ## 个人记录横幅 RecordsBanner
 
-[RecordsBanner](../../frontend/src/lib/components/RecordsBanner.svelte) 是页面的“主角”横幅：整行宽，一张与数据汇总其它卡片同款的平面卡片，内部三列——5K 最佳、10K 最佳、跑步总览——每列一个圆形运动色徽章、一个大数字加几句人话，不做成表格。它只负责呈现，所有数字来自服务端 `personal_bests` 与 `totals`；取数、加载与失败由调用方负责（数据汇总用 [RecordsBannerLoader](../../frontend/src/lib/components/RecordsBannerLoader.svelte)）。
+[RecordsBanner](../../frontend/src/lib/components/RecordsBanner.svelte) 是页面的“主角”横幅：整行宽，内部三列——5K 最佳、10K 最佳、跑步总览——每列一个等宽类别标签、一个大数字加几句人话，不做成表格。compact（数据汇总）是 Editorial Receipt 账页区块；hero（`/records`）在该页迁移前保留卡片外框。它只负责呈现，所有数字来自服务端 `personal_bests` 与 `totals`；取数、加载与失败由调用方负责（数据汇总用 [RecordsBannerLoader](../../frontend/src/lib/components/RecordsBannerLoader.svelte)）。
 
 | 项 | 契约 |
 | --- | --- |
-| API | `bests: CategoryBest[]`（固定 5km、10km 两项）；`totals: Totals`；`variant?: 'compact' \| 'hero'`，默认 compact；`href?: string`，有值时标题行右侧出现玻璃胶囊“查看全部 →”（`a.button-secondary`，由根 liquidGlass 增强；无障碍名称“查看全部个人记录”）；`year?: number`，当前年份，记录日期不在这一年时才带出年份 |
-| 外框 | `<section aria-labelledby>` 指向自身标题（`$props.id()` 生成，页面上多个横幅互不冲突）：与 `.dashboard-card` 相同的 `--surface` 底、`--border` 描边、`--radius-card`、`--space-6` 内边距；标题沿用“弱色 eyebrow（`--text-caption`）+ `--text-section` 标题”的写法，不加图标 |
-| 分栏 | 三列等宽，列间只画 `--border` 发丝线，不再嵌套带底色的块（避免卡片套卡片）。每列的运动色只出现在左上角 2.5rem 圆形徽章上（`--sport-green`、`--sport-blue`、`--sport-yellow-accent`，与年度指标卡的图标同款），徽章内为“5K”“10K”“累计”，文字 `--sport-ink` |
+| API | `bests: CategoryBest[]`（固定 5km、10km 两项）；`totals: Totals`；`variant?: 'compact' \| 'hero'`，默认 compact；`href?: string`，有值时标题行右侧出现文字链接“查看全部 →”（`a.button-text`，无底无玻璃；无障碍名称“查看全部个人记录”）；`year?: number`，当前年份，记录日期不在这一年时才带出年份 |
+| 外框 | `<section aria-labelledby>` 指向自身标题（`$props.id()` 生成，页面上多个横幅互不冲突）。compact：2px `--rule` 节线开头、无底无框；hero：`--surface` 底、`--border` 描边、`--radius-card`、`--space-6` 内边距。标题为“弱色等宽 eyebrow（`--text-caption`）+ `--text-section` 标题”，不加图标 |
+| 分栏 | 三列等宽，列间只画 `--border` 发丝线，不嵌套带底色的块。类别（“5K”“10K”“累计”）是 `--foreground` 等宽粗体文字标签，不再是运动色圆形徽章（brand.md §6.5）；单位（`/km`、`km`）为等宽 `--primary` |
 | 数字 | 大数字用 `--text-stat`（hero 用 `--text-display`），`--foreground`；单位、标签与说明为 `--muted-foreground`；进步线与“比第一次快了…”用 `--primary`，首次点空心、最佳点实心。没有渐变、水印或背景涂鸦，装饰完全交给版式和留白 |
 | 5K / 10K | 圆形徽章（“5K”“10K”）+ 弱色“最佳配速”→ 配速大数字（`--text-stat` 粗体等宽；hero `--text-display`；手机 `--text-title`）→ 弱色人话两行（“3 月 5 日，5.0 km，用了 27:30”“共跑过 4 次 5K 级”）→ 进步轨道与“比第一次快了 42 秒 / km”。配速是服务端的 `avg_pace_seconds_per_km`，前端不计算
 | 进步轨道 | 仅当 `first` 与 `pace_gain_seconds_per_km` 都有时出现：`--border` 底轨 + `--primary` 圆头实线；首次为空心点，最佳为实心点加柔和外圈。长度为 `progressSpan × 16rem`（`pace_gain / first.pace`，提升 25% 即满长，下限 20%），并限制在 10rem 到栏宽之间。纯表现，不产生新指标；`role="img"` + 中文 `aria-label`（“首次配速 6:12，最佳配速 5:30，快了 42 秒每公里”） |
 | 总览 | 标签“累计 · 全部里程”→ 累计里程大数字 + `km` → “共 44 次 · 42 个活动日”“从 2025 年 1 月开始”“平均配速 5:47 /km”（无可靠配速时省略）。三栏时数字在上、事实沉到底部并以一条发丝线分隔，与旁边较高的 5K/10K 平衡；宽度不足 54rem 时变为 5K/10K 下方的整行横条，事实连成一行；手机上收为两行 |
-| 空状态 | 徽章变为 `--tone` 描边的空心圆，标签为“等你来跑”，大数字位置为“还没有 5K 记录”（`--text-card`），下方“跑一次 4.0–7.5 km 的整次跑步，就会出现在这里”（按逗号分成两个不拆开的短语，避免中文在词中间折行）；总览无活动时为“还没有跑步记录 / 第一次跑步之后，这里会开始累计你的里程”。三块始终存在。只有一次合格记录时提示“再跑一次 5K，就能和这次比一比”；最快仍是第一次时提示“最快的一次仍是第一次” |
+| 空状态 | 类别标签不变，标签为“等你来跑”，大数字位置为“还没有 5K 记录”（`--text-card`），下方“跑一次 4.0–7.5 km 的整次跑步，就会出现在这里”（按逗号分成两个不拆开的短语，避免中文在词中间折行）；总览无活动时为“还没有跑步记录 / 第一次跑步之后，这里会开始累计你的里程”。三块始终存在。只有一次合格记录时提示“再跑一次 5K，就能和这次比一比”；最快仍是第一次时提示“最快的一次仍是第一次” |
 | 布局 | 容器查询（按横幅自身宽度）：≥54rem 三列等宽等高、列间发丝线；36–54rem 两列并排 + 总览横条（上方发丝线）；<36rem 三段堆叠，段间发丝线 |
 | 动效 | 最终值是默认状态：SSR、无 JS、`prefers-reduced-motion: reduce`、无 IntersectionObserver、打印（`beforeprint` 立即结束，`@media print` 取消轨道动画）以及动画以外的任何时刻都显示服务端数值。横幅任意部分进入视口（threshold 0；挂载时已在视口内则在首帧前开始）才播放一次：配速从首次配速数到最佳、累计里程从 0 数到总数、轨道从左向右画出、最佳点最后出现（约 1.1s，ease-out）；1.6s 兜底计时器保证后台标签页暂停 rAF 时也不会停在中间值。读屏始终读 `sr-only` 中的最终值，动画数字 `aria-hidden` |
-| 对比度 | 正文、标签均落在 `--surface` 上，沿用全站令牌的对比度；徽章 `--sport-ink` 在三种运动色上 ≥4.9:1（琥珀 6.75） |
+| 对比度 | 正文、标签落在页面底色（compact）或 `--surface`（hero）上，沿用全站令牌的对比度 |
 | hero | 用于 `/records` 顶部：标题改为“最佳成绩”，大数字升为 `--text-display`，其余与 compact 相同 |
 | 测试标识 | `records-banner`、`records-banner-5km`、`records-banner-10km`、`records-banner-total`、`records-banner-gain-5km` / `-10km`；Loader 的占位与错误为 `records-banner-slot`；播放中根元素带 `play` 类。合成 UI：`tests/ui/records-banner.spec.ts`；showcase 变体：`tests/ui/design-system.spec.ts`（`playwright.design-system.config.ts`） |
 
-RecordsBannerLoader：`onMount` 读取 `readRecords()`，保留 `disposed` 与请求令牌；加载中显示与横幅同框、近似同高的 `FeedbackState kind="loading"`（桌面 18rem、手机 34rem；与横幅同为 `--surface` 外框）防止下方跳动；失败时在横幅位置显示 `FeedbackState kind="error"`（“个人记录暂时读不到”+ 原因 + 重试），其余数据汇总内容不受影响；401 清空并跳转 `/admin?reason=expired&next=%2Fdashboard`。
+RecordsBannerLoader：`onMount` 读取 `readRecords()`，保留 `disposed` 与请求令牌；加载中显示与横幅同为 2px 节线开头、近似同高的 `FeedbackState kind="loading"`（桌面 18rem、手机 34rem）防止下方跳动；失败时在横幅位置显示 `FeedbackState kind="error"`（“个人记录暂时读不到”+ 原因 + 重试），其余数据汇总内容不受影响；401 清空并跳转 `/admin?reason=expired&next=%2Fdashboard`。
 
 独立展示见 showcase 的“个人记录横幅”区块（两项都有、仅 5K 且 10K 只跑过一次、还没有任何跑步、hero、手机宽度）。
 
@@ -66,7 +66,7 @@ RecordsBannerLoader：`onMount` 读取 `readRecords()`，保留 `disposed` 与�
 
 | 审计范围 | 当前入口 | 必须保留的契约 |
 | --- | --- | --- |
-| Button / IconButton | 原生 button；主操作 `bg-primary text-primary-foreground`；次操作 `.button-secondary`；危险确认已有 `.delete-confirm` | 显式 type；导航用 a；异步禁用/aria-busy 由调用方管理；图标按钮有中文名称；不嵌套交互元素 |
+| Button / IconButton | 原生 button；主操作 `bg-primary text-primary-foreground`；次操作 `.button-secondary`；危险确认已有 `.delete-confirm`。`.editorial-page` 内（已迁移页面）：`.button-primary` 实心主色、`.button-secondary` 1px `--control-border` 透明底、`.button-text` 主色无底，均 44px / 10px / 14·600，无玻璃无阴影 | 显式 type；导航用 a；异步禁用/aria-busy 由调用方管理；图标按钮有中文名称；不嵌套交互元素 |
 | Input / Textarea / Select | 原生元素 + `.text-field`（`app.css`，36px 高、`--radius-field`、主色聚焦环；设置页、站点设置、用户管理已采用，其余页面仍用 base + 工具类） | label、help/error 的 ID 关联、required/min/max/disabled；失败保留输入；单选 select 可被 action 增强，保留原生值与 change |
 | File picker | `.file-pick`（`app.css`）：label 包裹视觉隐藏的原生 `input[type=file]`，子元素 `.file-pick-text/title/hint/tag`；`data-filled`、`data-dragging` 控制已选/拖入态 | 保留原生 input、label 名称与 `name`；选中后显示文件名、大小与识别出的格式；拖放由调用方处理（写入 `input.files` 后走同一 change 逻辑）；禁用时整体降为 50%；焦点环由 `:has(input:focus-visible)` 绘制。活动导入与 MifitnessImport 使用 |
 | Checkbox / Radio | 原生 input，primary accent；单选组也可做成整卡可点的选项（站点设置“默认外观”：`.theme-tile`，原生 radio 透明铺满整卡） | 可见 label；同组 radio 使用共同 name 与 fieldset/legend；布尔值不自动等价于 Switch，见下文“开关” |
@@ -74,9 +74,29 @@ RecordsBannerLoader：`onMount` 读取 `readRecords()`，保留 `disposed` 与�
 | Card / Panel | `.aux-panel`、`.dashboard-card`、设置页的 `.settings-block` / `.identity-card` 与业务专用卡片 | 不按名字合并布局；普通表面不自动玻璃化 |
 | Stack / Grid / Container / Section / Divider | `.aux-stack`、`.page-content`、原生 section、grid/flex、border | 使用语义区域/标题与 min-width:0；无需一个类包装一个 Svelte 组件 |
 | Dialog / Popover / Dropdown | 原生 dialog；DatePicker Popover；select 增强 | dialog 标题/描述、Escape、取消、焦点恢复、失败留草稿；top layer 不靠 z-index；不要复制菜单引擎 |
-| Tabs / 分段控件 | 设置分区用 `.settings-tabs`（链接，`aria-current="page"`）；页面级的模式/排序切换（个人足迹的轨迹/热力图、常跑路线的排序）同样放进 `PageHeader` 的 `footer` 插槽，容器写 `<div class="settings-tabs" role="group" aria-label="…">`，子项为 `type="button"` + `aria-pressed`；表格工具栏内的列表筛选用 `.mode-switch.compact-switch`（按钮，`aria-pressed`）；两者共用玻璃指示器，见下文“玻璃分段” | 没有 tabpanel 与方向键协议时不能加 role=tab；当前项靠 aria-current / aria-pressed 表达，不靠颜色 |
+| Tabs / 分段控件 | 已迁移页面的视图切换用 `.underline-tabs`（`role="group"` + `aria-pressed`，或链接 + `aria-current`；当前项 600 + 2px `--rule` 下划线，≥44×44，不挂玻璃透镜）；设置分区用 `.settings-tabs`（链接，`aria-current="page"`）；页面级的模式/排序切换（个人足迹的轨迹/热力图、常跑路线的排序）同样放进 `PageHeader` 的 `footer` 插槽，容器写 `<div class="settings-tabs" role="group" aria-label="…">`，子项为 `type="button"` + `aria-pressed`；表格工具栏内的列表筛选用 `.mode-switch.compact-switch`（按钮，`aria-pressed`）；两者共用玻璃指示器，见下文“玻璃分段” | 没有 tabpanel 与方向键协议时不能加 role=tab；当前项靠 aria-current / aria-pressed 表达，不靠颜色 |
 | Pagination | 页面局部实现（用户管理用 `.user-pager` + `.button-compact`） | 保留 limit/offset/total、pending 和既有分页大小；页空后回退属于业务；不在通用控件内 fetch |
 | DataTable | 原生 table + 局部 overflow；图表 details 数据兜底 | caption/列头/scope、缺失值；横向滚动只限容器 |
+
+## Editorial Receipt 共享样式（`app.css` components 层）
+
+不是新组件，是迁移页面直接使用的类；规则见 [brand.md §4–§6](brand.md#4-排版结构)。
+
+| 类 | 用途 |
+| --- | --- |
+| `.editorial-page` | 已迁移页面的根元素：`--radius-control` 10px；内容按钮不挂 Liquid Glass（`liquid-glass.ts` 与 `liquid-glass.css` 的排除条件）。页面内的地图浮层控件放在 `[data-glass-overlay]` 容器里以保留玻璃 |
+| `.section-rule` / `.section-hairline` | 主区块开头 2px `--rule` 节线；次级分组开头 1px `--border` 发丝线 |
+| `.section-head` / `.section-meta` | 标题行（h2 20/600 左，14px 次要说明或一个文字链接右） |
+| `.hairline-rows` | 子元素之间 1px `--border` 发丝线 |
+| `.figure-unit` | 数字后的等宽小写单位（主色） |
+| `.underline-tabs` | 下划线视图切换 |
+| `.button-text` | 文字操作（仅 `.editorial-page` 内有样式） |
+| `.status-strip` (`data-tone="error\|success"`，默认警告) | 3px 左边线 + soft 底的状态条 |
+| `.receipt-sheet` / `.receipt-header` / `.receipt-perforation` / `.leader-row` | 票据纸、黄票头、打孔线（侧缺口颜色取 `--perforation-ground`，默认 `--desk`）、点线引导行；只用于票据页（详情、完成、回顾、分享），第 1 阶段尚无页面使用 |
+
+数据汇总的共享组件以可选外观进入新样式，其余调用方不变：`TrendChart appearance="receipt"`（直角细柱、峰值 `--receipt-mark` 加粗标签与数值、对比度不足 3:1 时 1px 墨色描边、含今天（展示对象时区，由调用方传 `today`）的未结束周期斜线；接口的 `is_partial` 只表示被查询范围截断，不用于此；宽度 <640px 只印峰值）、`ProvinceMap appearance="ledger"`（节线开头、无卡片、4px 地图外框）、`MetricSummary appearance="receipt"`。`GoalOverview` 与 `ActivityExplorer` 只用于数据汇总，直接改为账页写法：目标在 ≥1024px 是一条四栏（年/月/周/连续记录，竖发丝线分隔），更窄时按周期分行，进度条为 4px 直条加“按日期此刻应到的位置”竖线（`periodElapsed`，`lib/api/milestones.ts`）。
+
+浮动栏玻璃：`attachFloatingGlass(node, recipe?)`（`lib/styles/menu-glass.ts`），`recipe` 默认 `TOP_BAR_GLASS`；`MobileTabBar` 传 `TAB_BAR_GLASS`（折射更弱、模糊更强）；`TOP_BAR_GLASS` 是基础光学（×1、无额外模糊），桌面顶部条保持不变。参数含义见 brand.md §8.1。
 
 ## 设置页与开关相关组件
 
@@ -121,7 +141,7 @@ RecordsBannerLoader：`onMount` 读取 `readRecords()`，保留 `disposed` 与�
 
 ## 顶部导航与锚定弹层
 
-私人页面的导航是 [AppNavigation](../../frontend/src/lib/components/AppNavigation.svelte) 里的同一个 `<aside class="app-sidebar" id="app-navigation">`：≥800px 样式成悬浮顶部条；<800px 只保留顶部手机栏（Logo 与主题切换），`aside` 隐藏且 `inert`，导航交给底部标签栏（见下文“手机底部标签栏”）。类名与 id 沿用旧侧栏，只改样式与结构。设计与实测见 [top-navigation 设计](../superpowers/specs/2026-10-30-top-navigation-design.md)，验收见 [78-top-navigation](../78-top-navigation.md)。
+私人页面的导航是 [AppNavigation](../../frontend/src/lib/components/AppNavigation.svelte) 里的同一个 `<aside class="app-sidebar" id="app-navigation">`：≥800px 样式成悬浮顶部条；<800px 没有顶部条，`aside` 隐藏且 `inert`，导航交给底部标签栏（见下文“手机底部标签栏”）。类名与 id 沿用旧侧栏，只改样式与结构。设计与实测见 [top-navigation 设计](../superpowers/specs/2026-10-30-top-navigation-design.md)，验收见 [78-top-navigation](../78-top-navigation.md)。
 
 | 名称 | 入口 | 契约 |
 | --- | --- | --- |
@@ -129,11 +149,11 @@ RecordsBannerLoader：`onMount` 读取 `readRecords()`，保留 `disposed` 与�
 | GoalRing | [GoalRing](../../frontend/src/lib/components/GoalRing.svelte)：`progress:number\|null` | 28px 进度环，装饰性（`aria-hidden`，名称由外层触发按钮提供），颜色取 `currentColor`（顶部条里设为 `--primary`）。`null` 是虚线空环加“+”（未设置目标），数字按 0–100 截断画实弧，0 是空环（不画实弧，否则圆角端点会在起点留一个小点）。只显示传入值，不计算目标；展示见 showcase“锚定弹层与进度环” |
 | 顶部条 | `.app-sidebar`（≥800px，`app.css` 的 `@media (min-width: 800px)`） | 圆角胶囊，距视口顶部与左右 `--top-navigation-offset`，高 `--top-navigation-height`，宽对齐 `--content-width`；左 Logo 加站点名，中导航项，右账户区。站点副标题（`.nav-caption`）在顶部条隐藏；Phase 4a 去掉手机菜单后外壳里不再显示它 |
 | docked / floating | `aside` 的 `data-floating` 属性（`AppNavigation.svelte` 按 `#main` 内容首行是否已滚到条的下边缘计算，监听 scroll/resize） | docked：不透明 `--surface` 卡片，无模糊无阴影。floating：与身心健康 `SaveBar` 同一玻璃配方——`--glass-edge` 亮边、`--glass-fill-base` 约 9% 的淡底色（`--glass-opacity` × 75%，默认 .12）、`--glass-sheen` 内高光、`--glass-shadow` 轻阴影，加 `attachFloatingGlass` 折射；**不加文字光晕**（会在字形边缘留白边）。悬浮时未选中的标签与图标用 `--foreground`（灰色在黄色页头上太弱），docked 仍是灰色；当前项保持 `--sport-nav-active-ink`。WebKit 无法折射，`attachFloatingGlass` 在 WebKit 里只给条加 `.rn-frosted-glass`（`app.css`：`backdrop-filter: blur(14px) saturate(1.5)` 的真实背景模糊，底色约 60% 的 `--surface`，即 `.5 + --glass-opacity × .8`，亮边与较轻的阴影沿用），内容被模糊而不是透出重影；Chromium 保持折射（淡底色约 9%），Firefox 保留模糊回退；Safari 比 Chromium 不够清透，这是已接受的取舍，且只在 Playwright 的 WebKit 引擎里验证过，没有真机 Safari；`prefers-reduced-transparency` 与 `forced-colors` 保持实心卡片 |
-| 三档响应式 | `app.css` | ≥1360px 图标加文字；800–1359px 只有图标（每项带 `title` 与 `aria-label`，滑块克隆图标与文字，所以不做“当前项展开文字”）；<800px 手机栏加菜单。主导航最多 8 个入口（普通账户多“本人工作区”），带文字时也不压到账户区。壳层断点 B=800px 在 CSS、`enhanceNavigation` 与 `matchMedia` 里各写一份，改动要一起改，`top-navigation.spec.ts` 的 shell breakpoint 用 799/800/801/1023/1024 守住一致。跨 800/1360px 时销毁并重建横向滑块 |
+| 三档响应式 | `app.css` | ≥1360px 图标加文字；800–1359px 只有图标（每项带 `title` 与 `aria-label`，滑块克隆图标与文字，所以不做“当前项展开文字”）；<800px 无顶部条，只有底部标签栏。主导航最多 8 个入口（普通账户多“本人工作区”），带文字时也不压到账户区。壳层断点 B=800px 在 CSS、`enhanceNavigation` 与 `matchMedia` 里各写一份，改动要一起改，`top-navigation.spec.ts` 的 shell breakpoint 用 799/800/801/1023/1024 守住一致。跨 800/1360px 时销毁并重建横向滑块 |
 | 账户区 | 顶部条右侧：进度环 → 主题切换（图标）→ 头像 | 进度环弹层复用 `RunningGoal`（只读展示视图 `readonly`，只显示不可改）；身份确认中（`checking`）隐藏进度环，头像区显示占位；头像菜单是玻璃弹层：姓名与模式（管理员模式 / 本人工作区 / 个人跑步展示）、设置（仅 `view.manage`，保持 `aria-current` 与同路径点击不重复导航）、退出登录。当前在设置或用户管理页时头像带主色描边 |
 | 头像按压跟随 | `liquid-glass.ts` 的 `render()` 在玻璃控件上发布 `--glass-press`（0–1，弹簧值，销毁时移除）；`app.css` 里 `.account-avatar` 用它缩放 | 玻璃按压只形变玻璃层（宽 +10px、高 −4px），里面的实心内容不会动；头像用同比例缩放（`1 + .227 × press`、`1 − .091 × press`）跟着变形。文字与线条图标不需要。`--glass-press` 现在每个玻璃控件上都有初始值 0.000 |
-| 手机栏 | `.mobile-bar`（<800px） | 外观与桌面顶部条一致：整个 `header` 吸顶（`position: sticky`），栏距边缘 `--top-navigation-offset`，圆角胶囊（`--radius-pill`）、`--surface` 底、`--border` 边；页面滚到栏下面后（`data-floating`）变成清透液态玻璃（`attachFloatingGlass`，WebKit 用 `rn-frosted-glass`，减少透明度/强制颜色时实心），规则与桌面 docked/floating 相同。Logo 方块用 `--sport-brand` + `--brand-foreground`。向下滚动累计 12px 后整个 header 用 420ms 缓入缓出的滑动收起（终点是 `translateY(calc(-100% - 2.5rem))`，让浮起的阴影也离开屏幕，之后才 `visibility: hidden`；曲线别改成前快后慢，否则大半个动作在 100ms 内走完，看起来像一下消失；也不要给 header 加 `opacity`/`filter`，那会让它成为 backdrop root，玻璃看不到页面），向上滚动累计 4px 就用 340ms 滑回（不必回到页面顶部）；`prefers-reduced-motion` 下无动画。状态在 `AppNavigation.svelte` 的 scroll 监听里计算，写成 `.mobile-bar` 的 `data-hidden` / `data-floating`。栏内只有 Logo 与紧凑主题切换，没有菜单按钮（Phase 4a 起）。顶部 padding 叠加 `--safe-top` |
-| `attachFloatingGlass` | [menu-glass.ts](../../frontend/src/lib/styles/menu-glass.ts)：`attachFloatingGlass(node): () => void` | 悬浮外壳的玻璃挂载：`attachMenuGlass` 加 `glassOptics(设置, 1)`（与玻璃按钮同一光学，色散 0，模糊取玻璃设置，默认 2），随 `watchGlassSettings` 更新，返回清理函数；WebKit 分支不调用 `attachMenuGlass`，只加/去 `.rn-frosted-glass` 类（样式由 `app.css` 决定，不写行内 `backdrop-filter`）；降低透明度与强制色下不挂。顶部条使用。`SaveBar` 里有一份相似的挂载逻辑（`glass` 模式的 `$effect`），后续可让 `SaveBar` 改用它，这次未动 |
+| 手机（<800px）无顶部条 | `app.css` 的 `@media (max-width: 799px)` | 负责人决定（2026-11-27）：手机上不显示任何顶部条（原 `.mobile-bar` 已删除）。`header` 只剩隐藏的桌面列表，`position: static`、无 padding、高度 0；页面从顶部安全区开始（`.page-content` 顶部 `calc(--safe-top + --space-4)`），第一屏就是页头。导航只有底部标签栏。主题切换：已登录在“我的”→ 设置账户页的 `MobileAccountLinks`（“外观”一行，紧凑 `ThemeToggle`）；未登录没有“我的”，放在页脚的 `.app-footer-controls`（紧凑 `ThemeToggle` + “登录”，仅 <800px） |
+| `attachFloatingGlass` | [menu-glass.ts](../../frontend/src/lib/styles/menu-glass.ts)：`attachFloatingGlass(node): () => void` | 悬浮外壳的玻璃挂载：`attachMenuGlass` 加 `glassOptics(设置, 1)`（与玻璃按钮同一光学，色散 0，模糊取玻璃设置，默认 2），随 `watchGlassSettings` 更新，返回清理函数；WebKit 分支不调用 `attachMenuGlass`，只加/去 `.rn-frosted-glass` 类（样式由 `app.css` 决定，不写行内 `backdrop-filter`）；降低透明度与强制色下不挂。桌面顶部条与手机底部标签栏使用（各自配方见 brand.md §8.1）。`SaveBar` 里有一份相似的挂载逻辑（`glass` 模式的 `$effect`），后续可让 `SaveBar` 改用它，这次未动 |
 | `contentOptics` | [liquid-glass-settings.ts](../../frontend/src/lib/styles/liquid-glass-settings.ts)：`contentOptics(settings, scale = 1)` | 只作用于滤镜自身内容的玻璃（标签副本、滑块轨道、开关轨道、旋钮）：`glassOptics` 且 `blur` 恒为 0，因为光学模糊是给背景打霜的，用在副本上会把副本自己糊掉。滑块、旋钮、导航滑块（`createIndicator`）与开关（`switchOptics`）用它；背景玻璃（弹层、顶部条、保存条）用 `glassOptics` |
 
 ## 手机底部标签栏（<800px，item 49 方案 B）
@@ -143,12 +163,12 @@ RecordsBannerLoader：`onMount` 读取 `readRecords()`，保留 `disposed` 与�
 | 名称 | 入口 | 契约 |
 | --- | --- | --- |
 | 导航模型 | [navigation.ts](../../frontend/src/lib/navigation.ts)：`mobileNavigation(user, href)`、`mobileTabFor(pathname)`、`isRecordingRoute`、`exploreSectionFor`、`EXPLORE_SECTIONS`、`canSeeAssistant` / `canSeeWellbeing` | 纯函数，单元测试 `tests/unit/mobile-navigation.test.ts`。今天/记录/探索用 `useViewContext().href` 跟随当前视图（根展示、`/workspace`、`/p/{username}`）；“我的”和“开跑”永远属于登录账户（站主 `/settings`、`/activities/record`，其他账户 `/workspace/...`）。匿名访客只有今天/记录/探索三项。AI 与身心健康的可见规则与桌面列表共用 |
-| MobileTabBar | [MobileTabBar](../../frontend/src/lib/components/MobileTabBar.svelte)：`pathname`、`user` | 由根布局渲染在 sticky header 之外（header 收起时的 transform 会带走 fixed 子元素）。`<nav aria-label="底部导航">`；标签是普通链接，所在区段的标签带 `aria-current`（正好是该页为 `page`，区段内子页为 `true`）；点当前页标签回到页顶而不重新加载。中间“开跑”是指向沉浸式记录页的动作链接（`--primary` 底、`--primary-foreground` 字），从不带 `aria-current`。高 `--mobile-tabbar-height`（4rem），距底 `--space-2 + --safe-bottom`，左右 `--space-3` 加安全区，最宽 34rem 居中；外观与手机栏 floating 相同（`attachFloatingGlass`，WebKit `rn-frosted-glass`，减少透明度/强制颜色时实心）。标签 ≥44×48px，当前项 `--sport-nav-active` 底、`--sport-nav-active-ink` 字 |
+| MobileTabBar | [MobileTabBar](../../frontend/src/lib/components/MobileTabBar.svelte)：`pathname`、`user` | 由根布局渲染在 header 之外。`<nav aria-label="底部导航">`；标签是普通链接，所在区段的标签带 `aria-current`（正好是该页为 `page`，区段内子页为 `true`）；点当前页标签回到页顶而不重新加载。中间“开跑”是指向沉浸式记录页的动作链接（`--primary` 底、`--primary-foreground` 字），从不带 `aria-current`。高 `--mobile-tabbar-height`（4rem），距底 `--space-2 + --safe-bottom`，左右 `--space-3` 加安全区，最宽 34rem 居中；液态玻璃（`attachFloatingGlass(bar, TAB_BAR_GLASS)`，WebKit `rn-frosted-glass`，减少透明度/强制颜色时实心）。标签 ≥44×48px，当前项 `--sport-nav-active` 底、`--sport-nav-active-ink` 字 |
 | 隐藏规则 | `+layout.svelte` 的 `tabBar`、`app.css` | 实时记录页（`/activities/record`、`/workspace/activities/record`）不渲染；聚焦文本输入（软键盘弹出）时用 `:has(...:focus)` 隐藏；原生 dialog/popover 在顶层覆盖它。公开外壳（登录页、分享页）没有它 |
 | `--bottom-chrome` | `app.css` | 底部固定外壳占用的高度：默认 `--safe-bottom`，有标签栏时为 `--mobile-tabbar-height + --space-2 + --safe-bottom`。`.content-column` 的底部留白与 `SaveBar`（`bottom: calc(--space-4 + --bottom-chrome)`）、开发用玻璃调节按钮都用它，安全区只计一次 |
 | ExploreTabs | [ExploreTabs](../../frontend/src/lib/components/ExploreTabs.svelte)：`current` | 仅手机：“探索”落在个人足迹，这条 `.settings-tabs` 分段（`aria-label="探索分区"`）在个人足迹/常跑路线/个人记录/一起跑步四个区段根页面顶部互相切换；详情页不显示。桌面隐藏（顶部条已直接列出这些入口） |
 | MobileAccountLinks | [MobileAccountLinks](../../frontend/src/lib/components/MobileAccountLinks.svelte)：`user`、`busy`、`mounted`、`onlogout` | 仅手机、仅账户总览（“我的”的落点）底部：“更多”分组列出身心健康、AI 助手（按共用可见规则）与退出登录。跑鞋、目标与隐私、设备健康与离线同步、站点设置、用户管理仍由设置分区标签进入 |
-| 安全区令牌 | `app.css`：`--safe-top/right/bottom/left`（`env(safe-area-inset-*, 0px)`） | `app.html` 已设 `viewport-fit=cover`。手机栏与公开页手机顶栏的顶部 padding 加 `--safe-top`，桌面顶部条的 inset 加对应安全区，外壳容器左右 padding 用左右安全区；普通屏幕都是 0。Android 原生 WindowInsets 未接入（Q5 待真机决定），二者只能选其一，避免双倍留白 |
+| 安全区令牌 | `app.css`：`--safe-top/right/bottom/left`（`env(safe-area-inset-*, 0px)`） | `app.html` 已设 `viewport-fit=cover`。私人页面在手机上由 `.page-content` 的顶部 padding 加 `--safe-top`（没有顶部条），公开页手机顶栏的顶部 padding 加 `--safe-top`，桌面顶部条的 inset 加对应安全区，外壳容器左右 padding 用左右安全区；普通屏幕都是 0。Android 原生 WindowInsets 未接入（Q5 待真机决定），二者只能选其一，避免双倍留白 |
 
 不要在业务页面里另写顶部栏、账户菜单或弹层：新的锚定弹层复用 `AnchoredPanel`，导航入口放进 `AppNavigation` 的 `navigation` 列表。公开页面（`/p/{username}/*`、匿名展示）有自己独立的顶部导航，与这里无关。
 

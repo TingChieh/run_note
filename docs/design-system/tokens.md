@@ -1,6 +1,6 @@
 # Design Tokens
 
-唯一来源：[app.css](../../frontend/src/app.css)。材质几何在 [liquid-glass.css](../../frontend/src/lib/styles/liquid-glass.css) 与 [controls](../../frontend/src/lib/styles/liquid-glass-controls.css)，引擎参数在 [settings](../../frontend/src/lib/styles/liquid-glass-settings.ts)。不建立 `--ds-*` 平行色板。
+唯一来源：[app.css](../../frontend/src/app.css)。Editorial Receipt 第 1 阶段已加入的令牌见下文“Editorial Receipt”一节；仍待各页迁移的调整（`--text-rec-*`、内容区停用 `--radius-card` 等）见 [brand.md §3](brand.md#3-design-tokens)。材质几何在 [liquid-glass.css](../../frontend/src/lib/styles/liquid-glass.css) 与 [controls](../../frontend/src/lib/styles/liquid-glass-controls.css)，引擎参数在 [settings](../../frontend/src/lib/styles/liquid-glass-settings.ts)。不建立 `--ds-*` 平行色板。
 
 ## 主题与层叠
 
@@ -30,7 +30,7 @@
 | `--control-hover-border` | #91aca0 | #8b8680 | 字段 hover |
 | `--scrollbar-thumb` / `--scrollbar-thumb-hover` | `--muted-foreground` 42% / 70% 透明混合 | `--muted-foreground` 46% / 75% 透明混合 | 全站统一的细滚动条滑块；`app.css` 的 `@layer base` 用 `scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent` 作用于所有元素（含页面根），hover 色只用于不支持标准属性的旧 WebKit 后备（`@supports not (scrollbar-width: thin)` 下的 `::-webkit-scrollbar`，8px、圆角滑块、透明轨道）。不要在组件里另写滚动条颜色 |
 | `--sport-sidebar` | #218538 | #34322f | 目前没有样式读取（原绿色侧栏与站点设置预览都已改走 `--surface` / `--border` / `--sport-brand` / `--foreground`）；令牌保留 |
-| `--sport-brand` / `--brand-foreground` | #218538 / #ffffff | #f2f0ee / #1d1c1a | Logo 方块底色与字母色（顶部条、手机栏、公开页顶部导航、站点设置预览）；浅色是品牌绿，深色是中性浅灰 |
+| `--sport-brand` / `--brand-foreground` | #218538 / #ffffff | #f2f0ee / #1d1c1a | Logo 方块底色与字母色（桌面顶部条、公开页顶部导航、站点设置预览；手机私人页面没有顶部条）；浅色是品牌绿，深色是中性浅灰 |
 | `--sport-nav-hover` | #0000000a | #ffffff12 | 导航 hover |
 | `--sport-nav-active` / `--sport-nav-active-ink` | #e3f3d9 / #14532d | #4d4644 / #f2f0ee | 当前导航胶囊（也用于头像底）及其文字；浅色淡绿，深色中性灰 |
 | `--action` / `--action-hover` | #218538 / #176a2c | #8a847d / #a39d95 | 玻璃主操作按钮（`button.bg-primary`、`.button-primary` 等）的染色，按 `--glass-tint-opacity` 混合 |
@@ -61,6 +61,24 @@
 
 回顾页与 9:16 分享图局部令牌：`--recap-forest` / `--recap-forest-deep` / `--recap-forest-ink` / `--recap-forest-muted` / `--recap-hero-num`（浅 #124e3d/#0b3529/#f6f7f4/#b7d7cb/#ffffff，深 #1e2421/#151917/#f2f0ee/#a9b6ae/#77d4ac）、`--recap-gold`（浅 #f5c519，深 #f5d36c）、`--recap-paper` / `--recap-desk` / `--recap-well` / `--recap-dock-tint`（浅 #fcfcf7/#eaece4/#f2f4ec/#fbf0bd，深 #312f2c/#201e1c/#272523/#37332e）。配套展示字号令牌 `--text-recap-hero`（`clamp(2.75rem, 7.6vw, 6rem)`）、`--text-recap-unit`、`--text-recap-ledger`、`--line-height-hero`、`--tracking-tight` 与 `--font-mono` 仅用于 `/workspace/records/recap` 及其分享图探针。
 
+## Editorial Receipt（第 1 阶段）
+
+规则与用法见 [brand.md](brand.md)。别名在 `:root, .sport-theme, [data-poster-theme]` 上声明：引用另一个变量的自定义属性在声明处解析，运动壳层重定义了 `--foreground`，只在根上声明会拿到根的值。
+
+| Token | light | dark | 用途 |
+| --- | --- | --- | --- |
+| `--rule` | = `--foreground` | = `--foreground` | 区块开头的 2px 节线（`.section-rule`） |
+| `--control-border` | #7c8e82 | #827d77 | 已迁移页面的输入框、次级按钮描边（对纸色 ≥3:1）；`--border` 只作结构发丝线 |
+| `--paper` / `--desk` / `--receipt` | = `--recap-paper` / `--recap-desk` / `--recap-gold` | 同左（随主题） | 票据纸面、票据背后的桌面、黄票头 |
+| `--receipt-ink` | #1e2c22 | #1c1b19 | 黄票头文字；深色票头底色（文字用 `--primary`） |
+| `--receipt-mark` | #e0ab00 | #f5c519 | 纸面上的黄标记：图表峰值、今天、最快一公里。浅色对纸仅约 2:1，必须配加粗标签与数值，图表峰值另加 1px 墨色描边 |
+| `--radius-sheet` | .25rem | 同左 | 票据纸、地图外框 |
+| `--radius-header` | 1rem | 同左 | 已迁移页面的黄色页头（`.editorial-page .page-header`，内边距同时收紧为 clamp(1rem, 1.6vw, 1.375rem)） |
+| `--text-figure` | clamp(4rem, 6.2vw, 5.5rem) | 同左 | 单次跑步主数字（64→88px） |
+| `--text-period-hero` | clamp(3.5rem, 8.9vw, 8rem) | 同左 | 档案页周期主数字（数据汇总年度距离，56→128px） |
+
+`.editorial-page`（页面根元素）把 `--radius-control` 覆盖为 .625rem，并让该页内容区按钮不挂 Liquid Glass；全局 `--radius-control` 仍为 .75rem，直到所有页面迁移完成。
+
 ## Typography
 
 字体栈不变：`--font-body` 为 system-ui / Apple / Segoe UI / PingFang SC / Microsoft YaHei / sans-serif。组件里的 `font-size`、`font-weight`、`letter-spacing`、`line-height` 只引用下表 token；Tailwind 的 `text-xs`…`text-4xl` 与 `font-normal|medium|semibold|bold` 在 `@theme` 里对齐同一阶梯。禁止 550/650/750：苹方没有这些档，macOS 上数字会比中文更粗。
@@ -72,8 +90,8 @@
 | `--text-body` | 1rem / 16px | 正文；足迹墙卡片标题（唯一允许比 18 更小的卡片标题） |
 | `--text-card` | 1.125rem / 18px | 卡片标题，字重 semibold |
 | `--text-section` | 1.25rem / 20px | 区块 h2、行内数字 |
-| `--text-stat` | 1.75rem / 28px | 卡片大数字 |
-| `--text-title` / `--text-sport-title` | 2.5rem / 40px | 页面 h1、主数字 |
+| `--text-stat` / `--text-sport-title` | 1.75rem / 28px | 页面 h1（运动壳层 `.page-header h1`）、卡片与表格大数字 |
+| `--text-title` | 2.5rem / 40px | 主数字旁的 KPI |
 | `--text-display` | 3rem / 48px | 特大展示数字 |
 
 | Token | 值 | 角色 |
@@ -86,19 +104,20 @@
 
 行高只有五档：`--line-height-solid: 1`（图标与单行居中）、`--line-height-tight: 1.15`（大数字）、`--line-height-title: 1.25`（h1）、`--line-height-heading: 1.4`（h2/h3 与控件）、`--line-height-body: 1.65`（正文）。中文标题字距为 0（`--tracking-title` / `--tracking-heading`）。仅全大写拉丁短标用 `--tracking-caps: .12em`。大数字加 `tabular-nums`。
 
-同类元素：所有区块 h2 为 20/600；卡片标题为 18/600，足迹墙为 16/600；大数字按 hero 40、卡片 28、行内 20，一律 700。日历月份小标题保持 14，它是格内标签而不是卡片标题。海报画布用像素坐标排版，字重仍只能是 400/500/600/700。
+同类元素：页面 h1 为 28/700；所有区块 h2 为 20/600；卡片标题为 18/600，足迹墙为 16/600；大数字按 hero 40、卡片 28、行内 20，一律 700（已迁移的档案页主数字用 `--text-period-hero`）。日历月份小标题保持 14，它是格内标签而不是卡片标题。海报画布用像素坐标排版，字重仍只能是 400/500/600/700。
 
 ## Spacing、Radius 与布局
 
 | 既有 Token | 值 | 典型用途 |
 | --- | --- | --- |
 | `--space-1/2/3/4/6/8/12` | .25/.5/.75/1/1.5/2/3rem | 内边距、字段、模块与页面留白 |
-| `--radius-control` | .75rem | 字段和基础控件 |
+| `--radius-control` | .75rem（`.editorial-page` 内 .625rem） | 字段和基础控件 |
 | `--radius-field` | .625rem | 紧凑文本框 `.text-field` |
-| `--radius-card` | 1.5rem | 内容卡片、页头 |
+| `--radius-card` | 1.5rem | 页头、弹层；未迁移页面的内容卡片（已迁移页面不再用于内容区） |
+| `--radius-sheet` | .25rem | 票据纸、地图外框 |
 | `--radius-pill` | 9999px | 胶囊与材质控件 |
 | `--radius-glass-control/panel` | 引用 pill/card | 材质 CSS 中的最终几何 |
-| `--sidebar-width` | 15rem | 旧侧栏宽度。顶部条（≥800px）与手机菜单（<800px）都已覆盖它，不再生效；`app.css` 里的基础规则仍引用，后续可连同旧侧栏规则一起清理，新代码不要使用 |
+| `--sidebar-width` | 15rem | 旧侧栏宽度。顶部条（≥800px）与手机布局（<800px）都已覆盖它，不再生效；`app.css` 里的基础规则仍引用，后续可连同旧侧栏规则一起清理，新代码不要使用 |
 | `--top-navigation-offset` | 14px | 桌面顶部条距视口顶部与左右的间距（`.app-sidebar` 的 `inset`） |
 | `--top-navigation-height` | 4rem | 桌面顶部条高度；内容区 `padding-top: 5rem` 为它留位 |
 | `--content-width` | 86rem | 内容最大宽度 |
@@ -136,11 +155,11 @@
 
 | 边界 | 现有用途 |
 | --- | --- |
-| 479px 以下 | 手机栏“导航”按钮收起文字，只留图标（`app.css`）；359px 以下仪表盘指标数字另行收小（`routes/dashboard/+page.svelte`） |
+| 479px 以下 | 公开页手机顶栏的“导航”按钮收起文字，只留图标（`app.css` 的 `.public-header .nav-toggle`） |
 | 480px | 骨架与局部密度 |
 | 640px | 表单/页头动作换行、指标纵排、公开导航收敛 |
 | 768px | DatePicker 全宽及局部布局 |
-| 800px | 壳层断点 B：≥800px 为私人悬浮顶部条，<800px 为手机栏加展开菜单（见 [top-navigation 设计文档](../superpowers/specs/2026-10-30-top-navigation-design.md)；`app.css`、`liquid-glass-controls.css`、`enhanceNavigation` 与 `AppNavigation.svelte` 的 `matchMedia` 各写一份，注释互相指向，要改一起改）；`.site-layout` 等页面内布局仍以 1024px 为界 |
+| 800px | 壳层断点 B：≥800px 为私人悬浮顶部条，<800px 无顶部条、只有底部标签栏（2026-11-27 起）（见 [top-navigation 设计文档](../superpowers/specs/2026-10-30-top-navigation-design.md)；`app.css`、`liquid-glass-controls.css`、`enhanceNavigation` 与 `AppNavigation.svelte` 的 `matchMedia` 各写一份，注释互相指向，要改一起改）；`.site-layout` 等页面内布局仍以 1024px 为界 |
 | 1200px | 指标图标横排恢复 |
 | 1360px | 顶部条图标加文字的下限：800–1359px 只有图标，≥1360px 带文字；普通账户 9 个入口（含末尾最长的“本人工作区”）使用紧凑内边距，避免压到账户区 |
 

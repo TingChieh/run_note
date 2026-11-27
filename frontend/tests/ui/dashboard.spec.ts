@@ -340,6 +340,8 @@ test('the explorer map and the trend chart start only when a reader scrolls near
   page.on('request', (request) => {
     if (/\/echarts/.test(request.url())) chartLibrary.push(request.url());
   });
+  // The trend is a primary section right under the year's figures and goals, so a short window keeps it below the first screen.
+  await page.setViewportSize({ width: 1440, height: 500 });
   await page.goto('/dashboard?year=2026');
   await expect(page.getByTestId('annual-distance')).toHaveText('10.2 km');
   const explorer = page.getByRole('region', { name: '运动足迹', exact: true });

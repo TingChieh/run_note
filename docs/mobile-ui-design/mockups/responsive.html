@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light dark" />
+  <title>RunNote 响应式断点对照（390 / 768 / 1440）</title>
+  <style>
+    :root,
+    :root[data-theme="light"] {
+      color-scheme: light;
+      --background: #f6f7f4;
+      --surface: #ffffff;
+      --foreground: #202d23;
+      --muted-foreground: #5c695e;
+      --muted: #eff2e9;
+      --border: #e0e6da;
+      --control-border: #7c8e82;
+      --primary: #17745c;
+      --primary-soft: #e8f6df;
+      --primary-foreground: #ffffff;
+      --sport-brand: #218538;
+      --brand-foreground: #ffffff;
+      --sport-nav-active: #e3f3d9;
+      --sport-nav-active-ink: #14532d;
+      --header-tint: #fbf0bd;
+      --header-ink: #2a2a12;
+      --header-ink-muted: #5a5628;
+      --success: #176448;
+      --success-soft: #ecf7ef;
+      --success-border: #bcdcca;
+      --sport-green: #86a912;
+      --sport-blue: #4bb6df;
+      --sport-coral: #f06373;
+      --map-bg: #eef2e8;
+      --map-route: #17745c;
+      --glass-bar-bg: rgba(255, 255, 255, 0.86);
+      --glass-bar-border: rgba(32, 45, 35, 0.11);
+      --glass-bar-shadow: 0 8px 28px rgba(30, 48, 43, 0.10);
+    }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --background: #292725;
+      --surface: #33312f;
+      --foreground: #f2f0ee;
+      --muted-foreground: #b1aca6;
+      --muted: #3e3b39;
+      --border: #46433f;
+      --control-border: #827d77;
+      --primary: #77d4ac;
+      --primary-soft: #2c3a32;
+      --primary-foreground: #10251b;
+      --sport-brand: #f2f0ee;
+      --brand-foreground: #1d1c1a;
+      --sport-nav-active: #4d4644;
+      --sport-nav-active-ink: #f2f0ee;
+      --header-tint: #3a3735;
+      --header-ink: #f2f0ee;
+      --header-ink-muted: #b1aca6;
+      --success: #9fe1b6;
+      --success-soft: #24392d;
+      --success-border: #4c8362;
+      --sport-green: #86a912;
+      --sport-blue: #4bb6df;
+      --sport-coral: #f06373;
+      --map-bg: #302e2c;
+      --map-route: #77d4ac;
+      --glass-bar-bg: rgba(54, 51, 49, 0.88);
+      --glass-bar-border: rgba(242, 240, 238, 0.14);
+      --glass-bar-shadow: 0 10px 30px rgba(0, 0, 0, 0.42);
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--background);
+      color: var(--foreground);
+      min-height: 100dvh;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
+    :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+    .brand-mark {
+      width: 34px; height: 34px; border-radius: 10px;
+      background: var(--sport-brand); color: var(--brand-foreground);
+      font-weight: 700; font-style: italic; display: grid; place-items: center; font-size: 18px; flex: none;
+    }
+    .tabular { font-variant-numeric: tabular-nums; }
+
+    /* ==========================================================================
+       Adaptive Shell:
+         - < 600px (390×844): Phone Bottom Tab Bar + Center Record Trigger
+         - 600–1023px (768×1024): Left Navigation Rail (88px) + 2-Column Content
+         - >= 1024px (1440×900): Existing RunNote Floating Top Bar Preserved + Promoted Record CTA
+       ========================================================================== */
+    .desktop-topbar {
+      display: none;
+    }
+    .tablet-rail {
+      display: none;
+    }
+    .phone-bottombar {
+      position: fixed;
+      left: 12px; right: 12px; bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+      height: 64px;
+      background: var(--glass-bar-bg);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--glass-bar-border);
+      border-radius: 32px;
+      box-shadow: var(--glass-bar-shadow);
+      display: grid;
+      grid-template-columns: 1fr 1fr 72px 1fr 1fr;
+      align-items: center;
+      padding: 0 6px;
+      z-index: 30;
+    }
+    .nav-btn {
+      min-height: 48px; min-width: 48px;
+      border-radius: 22px; border: 0; background: transparent;
+      color: var(--muted-foreground);
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+      font-size: 12px; font-weight: 600; text-decoration: none; cursor: pointer;
+    }
+    .nav-btn[aria-current="page"] {
+      background: var(--sport-nav-active); color: var(--sport-nav-active-ink);
+    }
+    .rec-cta {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      min-height: 48px; padding: 0 18px; border-radius: 999px; border: 0;
+      background: var(--primary); color: var(--primary-foreground);
+      font-size: 15px; font-weight: 700; text-decoration: none; cursor: pointer; white-space: nowrap;
+    }
+
+    .shell-main {
+      padding: 16px 16px 96px;
+      max-width: 1320px;
+      margin: 0 auto;
+      display: grid;
+      gap: 16px;
+    }
+    .bp-banner {
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 10px 14px; border-radius: 16px;
+      background: var(--surface); border: 1px solid var(--border);
+      font-size: 13px; color: var(--muted-foreground);
+    }
+    .bp-badge {
+      padding: 3px 10px; border-radius: 999px;
+      background: var(--primary-soft); color: var(--primary);
+      font-weight: 700; font-size: 12px;
+    }
+
+    .grid-adaptive {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+    .rn-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 24px; padding: 18px;
+    }
+    .rn-card.tint-hero {
+      background: var(--header-tint); color: var(--header-ink); border-color: transparent;
+    }
+    :root[data-theme="dark"] .rn-card.tint-hero { border-color: var(--border); }
+
+    .metric-strip {
+      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0;
+    }
+    .metric-col { padding: 0 10px; border-left: 1px solid var(--border); min-width: 0; }
+    .metric-col:first-child { border-left: 0; padding-left: 0; }
+    .metric-val { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; white-space: nowrap; }
+    .metric-val small { font-size: 12px; font-weight: 500; color: var(--muted-foreground); margin-left: 2px; }
+    .metric-lbl { font-size: 12px; color: var(--muted-foreground); }
+
+    .run-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 12px 0; border-top: 1px solid var(--border);
+      min-height: 60px;
+    }
+    .run-row:first-of-type { border-top: 0; padding-top: 4px; }
+
+    /* Medium / Tablet (600px–1023px, e.g. 768×1024): Left Navigation Rail */
+    @media (min-width: 600px) and (max-width: 1023px) {
+      .phone-bottombar { display: none; }
+      .tablet-rail {
+        display: flex; flex-direction: column; align-items: center; gap: 10px;
+        position: fixed; left: 12px; top: 14px; bottom: 14px; width: 84px;
+        padding: 16px 8px;
+        background: var(--surface); border: 1px solid var(--border);
+        border-radius: 28px; z-index: 30;
+      }
+      .tablet-rail .nav-btn { width: 64px; min-height: 54px; border-radius: 18px; }
+      .tablet-rail .rec-cta { width: 56px; height: 56px; padding: 0; border-radius: 20px; margin: 8px 0 6px; }
+      .shell-main {
+        margin-left: 108px;
+        padding: 20px 24px 32px;
+      }
+      .grid-adaptive {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: start;
+      }
+    }
+
+    /* Expanded / Desktop (>=1024px, e.g. 1440×900): Preserved RunNote Floating Top Bar */
+    @media (min-width: 1024px) {
+      .phone-bottombar, .tablet-rail { display: none; }
+      .desktop-topbar {
+        display: flex; align-items: center; justify-content: space-between; gap: 16px;
+        position: sticky; top: 14px; z-index: 30;
+        max-width: 1320px; margin: 14px auto 0;
+        height: 64px; padding: 0 14px 0 18px;
+        background: var(--glass-bar-bg); backdrop-filter: blur(16px);
+        border: 1px solid var(--glass-bar-border); border-radius: 999px;
+        box-shadow: var(--glass-bar-shadow);
+      }
+      .desktop-nav {
+        display: flex; align-items: center; gap: 4px;
+      }
+      .desktop-nav a {
+        min-height: 44px; padding: 0 14px; border-radius: 999px;
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: 14px; font-weight: 600; color: var(--muted-foreground); text-decoration: none;
+      }
+      .desktop-nav a[aria-current="page"] {
+        background: var(--sport-nav-active); color: var(--sport-nav-active-ink);
+      }
+      .shell-main {
+        padding: 24px 28px 40px;
+      }
+      .grid-adaptive {
+        grid-template-columns: 1.1fr 1fr 1fr;
+        align-items: start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Desktop >=1024px: Existing RunNote Floating Top Bar preserved + promoted Record CTA -->
+  <header class="desktop-topbar">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div class="brand-mark" aria-hidden="true">R</div>
+      <strong style="font-size:17px;">RunNote</strong>
+    </div>
+    <nav class="desktop-nav" aria-label="桌面主导航">
+      <a href="#today" aria-current="page">数据汇总</a>
+      <a href="#records">个人记录</a>
+      <a href="#history">跑步记录</a>
+      <a href="#footprints">个人足迹</a>
+      <a href="#routes">常跑路线</a>
+      <a href="#ai">AI 助手</a>
+    </nav>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <a href="#record" class="rec-cta" style="min-height:44px;padding:0 16px;font-size:14px;">● 开始记录</a>
+      <a href="./index.html" style="min-height:44px;padding:0 14px;border-radius:999px;border:1px solid var(--border);display:inline-flex;align-items:center;text-decoration:none;color:var(--foreground);font-size:13px;font-weight:600;">返回 390 原型</a>
+    </div>
+  </header>
+
+  <!-- Tablet 600-1023px: Left Navigation Rail -->
+  <aside class="tablet-rail" aria-label="平板侧边导航轨">
+    <div class="brand-mark" aria-hidden="true">R</div>
+    <a href="#record" class="rec-cta" aria-label="开始跑步记录" title="开始跑步">▶</a>
+    <a class="nav-btn" href="#today" aria-current="page"><span>今天</span></a>
+    <a class="nav-btn" href="#history"><span>记录</span></a>
+    <a class="nav-btn" href="#explore"><span>探索</span></a>
+    <a class="nav-btn" href="#settings"><span>我的</span></a>
+  </aside>
+
+  <main class="shell-main">
+    <div class="bp-banner">
+      <div>
+        <strong style="color:var(--foreground);">响应式壳层连续性验证</strong> ·
+        <span>&lt;600px 手机底部 4+1 胶囊栏 · 600–1023px 平板左侧导航轨 · ≥1024px 保持现有桌面悬浮顶栏</span>
+      </div>
+      <span class="bp-badge" id="bp-label">检测视口…</span>
+    </div>
+
+    <div class="grid-adaptive">
+      <section class="rn-card tint-hero">
+        <div style="font-size:13px;opacity:0.78;">本周跑量 · 目标 35 km</div>
+        <div style="font-size:40px;font-weight:700;line-height:1.1;margin-top:6px;" class="tabular">24.8 <span style="font-size:16px;font-weight:600;">km</span></div>
+        <div style="font-size:13px;opacity:0.8;margin-top:6px;">已完成 71% · 已跑 3 天 · 还差 10.2 km</div>
+        <div style="margin-top:16px;">
+          <a href="#record" class="rec-cta" style="width:100%;">▶ 开始跑步</a>
+        </div>
+      </section>
+
+      <section class="rn-card">
+        <h2 style="margin:0 0 12px;font-size:17px;">最近跑步</h2>
+        <div class="run-row">
+          <div><div style="font-weight:600;">奥森南园 5K 节奏跑</div><div class="metric-lbl">11/24 · 27:00</div></div>
+          <div style="text-align:right;" class="tabular"><div style="font-weight:700;color:var(--primary);">5.02 km</div><div class="metric-lbl">5:23 /km</div></div>
+        </div>
+        <div class="run-row">
+          <div><div style="font-weight:600;">滨江轻松有氧 10K</div><div class="metric-lbl">11/21 · 57:40</div></div>
+          <div style="text-align:right;" class="tabular"><div style="font-weight:700;color:var(--primary);">10.08 km</div><div class="metric-lbl">5:43 /km</div></div>
+        </div>
+        <div class="run-row">
+          <div><div style="font-weight:600;">夜跑恢复 4.2K</div><div class="metric-lbl">11/18 · 26:00</div></div>
+          <div style="text-align:right;" class="tabular"><div style="font-weight:700;color:var(--primary);">4.20 km</div><div class="metric-lbl">6:11 /km</div></div>
+        </div>
+      </section>
+
+      <section class="rn-card">
+        <h2 style="margin:0 0 12px;font-size:17px;">近 7 天恢复参考</h2>
+        <div class="metric-strip">
+          <div class="metric-col"><div class="metric-lbl">步数</div><div class="metric-val">54,820</div></div>
+          <div class="metric-col"><div class="metric-lbl">静息心率</div><div class="metric-val">53<small>bpm</small></div></div>
+          <div class="metric-col"><div class="metric-lbl">睡眠</div><div class="metric-val">7.4<small>h</small></div></div>
+        </div>
+        <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);font-size:13px;color:var(--muted-foreground);">
+          同步状态：<strong style="color:var(--success);">已同步</strong> · 离线缓存 24 条活动可用
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Phone <600px: Bottom 4+1 Tab Bar -->
+  <nav class="phone-bottombar" aria-label="手机主导航">
+    <a class="nav-btn" href="#today" aria-current="page"><span>今天</span></a>
+    <a class="nav-btn" href="#history"><span>记录</span></a>
+    <a class="rec-cta" href="#record" style="width:56px;height:52px;padding:0;font-size:12px;margin:0 auto;">开跑</a>
+    <a class="nav-btn" href="#explore"><span>探索</span></a>
+    <a class="nav-btn" href="#settings"><span>我的</span></a>
+  </nav>
+
+  <script>
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+      const label = document.getElementById('bp-label');
+      const update = () => {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        const mode = w < 600 ? 'Compact 手机底栏' : w < 1024 ? 'Medium 平板侧轨' : 'Expanded 桌面顶栏';
+        if (label) label.textContent = `${w}×${h} · ${mode}`;
+      };
+      update();
+      window.addEventListener('resize', update);
+    })();
+  </script>
+</body>
+</html>

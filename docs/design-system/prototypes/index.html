@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RunNote · Editorial Receipt 原型索引</title>
+<link rel="stylesheet" href="brand.css">
+<script src="proto.js"></script>
+<style>
+  main { max-width: 72rem; margin: 0 auto; padding: 48px var(--page-pad) 72px; }
+  .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; padding-bottom: 16px; }
+  .head h1 { font-size: var(--text-stat); font-weight: 700; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 24px 32px; margin-bottom: 48px; }
+  .card a { display: block; }
+  .card img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; object-position: top; border: 1px solid var(--border); border-radius: var(--radius-sheet); background: var(--well); }
+  .card.m img { aspect-ratio: 390 / 844; }
+  .card b { display: block; margin-top: 8px; font-weight: 600; }
+  .card .links { display: flex; gap: 12px; font-size: var(--text-small); }
+  .card .links a { color: var(--primary); font-weight: 600; min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; }
+  .label a { display: inline-flex; align-items: center; min-height: 44px; }
+  .grid.m { grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); }
+</style>
+</head>
+<body>
+<main>
+  <div class="head">
+    <div><h1>Editorial Receipt 原型</h1><p class="caption mono">RunNote · 设计评审稿 · 2026.11.26 · 合成数据</p></div>
+    <button class="btn btn-secondary" type="button" data-theme-toggle><span data-icon="sun"></span>切换浅/深色</button>
+  </div>
+  <p class="label" style="margin-bottom:24px">规范：<a class="primary" href="../brand.md">brand.md</a> · 审计：<a class="primary" href="../web-audit.md">web-audit.md</a></p>
+
+  <section class="section"><div class="section-head"><h2>Web · 1440 × 900（兼顾 768）</h2><span class="meta">顶部条保持现有设计</span></div>
+    <div class="grid" id="web"></div>
+  </section>
+  <section class="section"><div class="section-head"><h2>Mobile · 390 × 844（兼顾 768 × 1024）</h2><span class="meta">4+1 Tab 栏</span></div>
+    <div class="grid m" id="mob"></div>
+  </section>
+</main>
+<script>
+  const t = document.documentElement.dataset.theme;
+  const web = [['dashboard', '数据汇总'], ['activities', '跑步记录'], ['detail', '跑步详情'], ['footprints', '个人足迹'], ['report', '年度回顾'], ['settings', '设置']];
+  const mob = [['home', '今天'], ['prerun', '准备开跑'], ['recording', '记录中'], ['done', '跑步完成'], ['detail', '跑步详情'], ['share', '分享图']];
+  document.getElementById('web').innerHTML = web.map(([k, n]) => `<div class="card"><a href="web.html?page=${k}&theme=${t}"><img src="screenshots/web-${k}-1440-${t}.png" alt="${n} 1440 截图"></a><b>${n}</b><span class="links"><a href="web.html?page=${k}&theme=${t}">打开</a><a href="screenshots/web-${k}-768-${t}.png">768 截图</a></span></div>`).join('');
+  document.getElementById('mob').innerHTML = mob.map(([k, n]) => `<div class="card m"><a href="mobile.html?screen=${k}&theme=${t}"><img src="screenshots/mobile-${k}-390-${t}.png" alt="${n} 390 截图"></a><b>${n}</b><span class="links"><a href="mobile.html?screen=${k}&theme=${t}">打开</a><a href="screenshots/mobile-${k}-768-${t}.png">768</a></span></div>`).join('');
+</script>
+</body>
+</html>

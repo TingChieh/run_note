@@ -311,12 +311,9 @@
   >
 {/snippet}
 
-<section class="activity-explorer" aria-label="运动足迹">
+<section class="activity-explorer section-hairline" aria-label="运动足迹">
   <div class="explorer-heading">
-    <div>
-      <p class="eyebrow">回到每一次出发</p>
-      <h2>运动足迹</h2>
-    </div>
+    <h2>运动足迹</h2>
     <div class="explorer-filters">
       <label
         >分类 <select aria-label="足迹分类" bind:value={filter} onchange={() => void loadPage()}
@@ -350,7 +347,8 @@
             class:inactive={detailLoading || listLoading || !!detailError || !!listError}>活动详情 ↗</a
           >{/if}
       </div>
-      <div class="explorer-workspace">
+      <!-- The arrows float over the map like its own controls, so they keep the glass material. -->
+      <div class="explorer-workspace" data-glass-overlay>
         <button
           type="button"
           class="button-secondary record-arrow record-previous"
@@ -382,6 +380,7 @@
         </div>
         <div class="explorer-metrics" data-testid="explorer-metrics">
           <MetricSummary
+            appearance="receipt"
             items={[
               { label: '距离', value: activity ? formatDistance(activity.distance_m) : '—', icon: 'distance' },
               { label: '设备用时', value: formatDuration(activity?.timer_seconds ?? null), icon: 'duration' },
@@ -485,13 +484,7 @@
 
 <style>
   .activity-explorer {
-    --explorer-padding: var(--space-4);
     --route-map-height: clamp(14rem, 36svh, 24rem);
-    min-width: 0;
-    padding: var(--explorer-padding);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    background: var(--surface);
   }
   .explorer-heading,
   .selected-heading,
@@ -502,7 +495,6 @@
     align-items: center;
     gap: 1rem;
   }
-  .eyebrow,
   .selected-heading p,
   .browse-controls p {
     color: var(--muted-foreground);
@@ -533,7 +525,7 @@
   select {
     min-height: 2.75rem;
     max-width: 14rem;
-    border: 1px solid var(--border);
+    border: 1px solid var(--control-border);
     border-radius: var(--radius-control);
     background: var(--surface);
     padding: 0.5rem;
@@ -588,12 +580,10 @@
     height: 1.5rem;
   }
   .record-previous {
-    left: calc(0px - var(--explorer-padding) - 0.5px);
-    transform: translate(-50%, -50%);
+    left: var(--space-2);
   }
   .record-next {
-    right: calc(0px - var(--explorer-padding) - 0.5px);
-    transform: translate(50%, -50%);
+    right: var(--space-2);
   }
   .explorer-route,
   .explorer-metrics {
@@ -629,42 +619,17 @@
     display: grid;
     align-content: center;
     border: 1px solid var(--border);
-    border-radius: 0.75rem;
-    background: var(--muted);
+    border-radius: var(--radius-sheet);
+    background: var(--recap-well);
   }
 
+  /* Two hairline columns of label + number; the column rule replaces the old tinted tiles. */
   .explorer-metrics :global(.metrics) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-2);
-  }
-  .explorer-metrics :global(.metrics > div) {
-    padding: var(--space-2);
-    background: var(--muted);
-    border: 0;
-    border-radius: 0.75rem;
-  }
-  .explorer-metrics :global(.metrics.sport dt),
-  .explorer-metrics :global(.metrics.sport dd) {
-    padding-left: var(--space-8);
+    column-gap: var(--space-4);
   }
   .explorer-metrics :global(.metrics dt) {
     font-size: var(--text-caption);
-  }
-  .explorer-metrics :global(.metrics dd) {
-    font-size: var(--text-section);
-  }
-  .explorer-metrics :global(.metrics.sport .metric-icon) {
-    position: absolute;
-    left: var(--space-2);
-    top: 50%;
-    transform: translateY(-50%);
-    margin-bottom: 0;
-    width: 1.5rem;
-    height: 1.5rem;
-  }
-  .explorer-metrics :global(.metric-icon svg) {
-    width: 16px;
-    height: 16px;
   }
   .browse-controls {
     margin-top: var(--space-3);
@@ -714,7 +679,7 @@
     pointer-events: none;
     z-index: 1;
     opacity: 0;
-    background: linear-gradient(to left, var(--surface), transparent);
+    background: linear-gradient(to left, var(--background), transparent);
   }
   .strip-frame.can-scroll-next .strip-viewport::after {
     opacity: 1;
@@ -725,9 +690,9 @@
     width: 2.25rem;
     height: 2.25rem;
     padding: 0;
-    border: 1px solid var(--border);
+    border: 1px solid var(--control-border);
     border-radius: 50%;
-    background: var(--surface);
+    background: transparent;
     color: var(--foreground);
   }
   .strip-page span {
@@ -758,7 +723,7 @@
     padding: var(--space-2);
     text-align: left;
     border: 1px solid var(--border);
-    border-radius: 1rem;
+    border-radius: var(--radius-control);
     transition:
       background-color 180ms ease,
       border-color 180ms ease,
@@ -852,12 +817,6 @@
   @media (max-width: 639px) {
     .activity-explorer {
       --route-map-height: clamp(13rem, 32svh, 18rem);
-    }
-    .record-previous {
-      left: calc(0px - var(--explorer-padding) + var(--space-2));
-    }
-    .record-next {
-      right: calc(0px - var(--explorer-padding) + var(--space-2));
     }
     .selected-heading {
       grid-template-columns: 1fr;

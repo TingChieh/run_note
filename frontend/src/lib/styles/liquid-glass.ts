@@ -21,8 +21,10 @@ export function liquidGlass(root: HTMLElement) {
         { enhanceSwitch },
       ]) => {
         if (disposed) return;
-        const selector =
-          'button:not(.rn-switch):not(.compact-switch > button):not(.settings-tabs > button):not(.maplibregl-ctrl-zoom-in):not(.maplibregl-ctrl-zoom-out):not([data-date]):not(.history-card):not(.wall-card):not(.footprint-chip):not(.rn-menu-option):not(.rn-select-toggle), a.button-primary, a.button-secondary, .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in)';
+        // Editorial Receipt pages (.editorial-page) print their content buttons flat; glass stays on the shell and
+        // on floating overlays inside the page, which opt back in with [data-glass-overlay] (brand.md §6.1).
+        const floating = ':where(:not(.editorial-page *), [data-glass-overlay] *)';
+        const selector = `button:not(.rn-switch):not(.compact-switch > button):not(.settings-tabs > button):not(.underline-tabs > button):not(.maplibregl-ctrl-zoom-in):not(.maplibregl-ctrl-zoom-out):not([data-date]):not(.history-card):not(.wall-card):not(.footprint-chip):not(.rn-menu-option):not(.rn-select-toggle)${floating}, a.button-primary${floating}, a.button-secondary${floating}, .maplibregl-ctrl-group:has(> .maplibregl-ctrl-zoom-in)`;
         const preferences = [
           matchMedia('(prefers-reduced-transparency: reduce)'),
           matchMedia('(forced-colors: active)'),
@@ -50,7 +52,7 @@ export function liquidGlass(root: HTMLElement) {
         const backdrops = new Map<HTMLElement, number>();
         const enhancements = new Map<HTMLElement, { update(settings: GlassSettings): void; destroy(): void }>();
         const enhancementSelector =
-          '.app-sidebar nav, .settings-tabs, .compact-switch, .rn-slider > input[type="range"], .rn-switch-track, select:not([multiple]):not([inert])';
+          '.app-sidebar nav, .settings-tabs:not(.underline-tabs), .compact-switch, .rn-slider > input[type="range"], .rn-switch-track, select:not([multiple]):not([inert])';
         let settings = readGlassSettings();
         const previousOpacity = root.style.getPropertyValue('--glass-opacity');
         let frame = 0;

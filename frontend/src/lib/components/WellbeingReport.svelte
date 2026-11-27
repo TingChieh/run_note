@@ -302,7 +302,7 @@
 
   /* Printing: only the print report (its own paper layout), on plain paper; the page's charts and cards are left out. */
   @media print {
-    :global(.app-sidebar), :global(.mobile-bar), :global(.skip-link), :global(.app-footer), :global(.page-header), :global(.save-bar-slot), :global(.navigation-progress) { display: none !important; }
+    :global(.app-sidebar), :global(.skip-link), :global(.app-footer), :global(.page-header), :global(.save-bar-slot), :global(.navigation-progress) { display: none !important; }
     :global(body), :global(.sport-theme) { background: #fff !important; color: #000 !important; }
     :global(.page-content) { max-width: none; padding: 0 !important; margin: 0 !important; }
     :global(.content-column) { margin: 0 !important; }

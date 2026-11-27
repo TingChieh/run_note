@@ -309,12 +309,15 @@ test.describe('signed-in site owner', () => {
       barGap: innerHeight - document.querySelector('.mobile-tabbar')!.getBoundingClientRect().bottom,
       barHeight: document.querySelector('.mobile-tabbar')!.getBoundingClientRect().height,
       contentPadding: parseFloat(getComputedStyle(document.querySelector('.content-column')!).paddingBottom),
-      headerPadding: parseFloat(getComputedStyle(document.querySelector('.app-shell > header')!).paddingTop),
+      headerHeight: document.querySelector('.app-shell > header')!.getBoundingClientRect().height,
+      contentTop: parseFloat(getComputedStyle(document.querySelector('.page-content')!).paddingTop),
     }));
     expect(metrics.barGap, 'bar = 8px gap + 34px inset from the bottom edge').toBeCloseTo(8 + 34, 0);
     expect(metrics.barHeight).toBeCloseTo(64, 0);
     expect(metrics.contentPadding, 'content clears the bar plus the inset once').toBeCloseTo(64 + 8 + 34, 0);
-    expect(metrics.headerPadding, 'top bar clears the status bar').toBeCloseTo(14 + 47, 0);
+    // Phones have no top bar: the page itself starts below the status bar, padded once.
+    expect(metrics.headerHeight, 'no top bar above the page').toBe(0);
+    expect(metrics.contentTop, 'the page clears the status bar plus a 16px gap').toBeCloseTo(47 + 16, 0);
   });
 
   test('tabbar-hidden recording page keeps primary action and page content above safe-area-inset-bottom', async ({

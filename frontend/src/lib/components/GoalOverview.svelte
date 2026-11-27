@@ -10,17 +10,17 @@
   import { onMount, tick } from 'svelte';
   import type { ShowcaseProfile } from '#lib/api/showcase.ts';
   import { ActivityError } from '#lib/api/activities.ts';
-  import { comparisonWindow, goalTotals, readRange as scoped_readRange, readStreaks as scoped_readStreaks, type Streaks } from '#lib/api/milestones.ts';
+  import { comparisonWindow, goalTotals, periodElapsed, readRange as scoped_readRange, readStreaks as scoped_readStreaks, type Streaks } from '#lib/api/milestones.ts';
   import { validGoal, readGoals as scoped_readGoals, saveGoal as scoped_saveGoal, type GoalPeriod } from '#lib/api/running-goal.ts';
   import type { Summary } from '#lib/api/statistics.ts';
   import { goalInputPop } from '#lib/styles/goal-input-transition.ts';
   import FeedbackState from './FeedbackState.svelte';
   let { user, readonly = false }: { user: ShowcaseProfile; readonly?: boolean } = $props();
-  type Card = { period: GoalPeriod; title: string; icon: string; current: Summary | null; previous: Summary | null; target: number | null; input: string; editing: boolean; loading: boolean; error: string; feedback: string; token: number; saving?: boolean };
+  type Card = { period: GoalPeriod; title: string; current: Summary | null; previous: Summary | null; target: number | null; input: string; editing: boolean; loading: boolean; error: string; feedback: string; token: number; saving?: boolean };
   let cards = $state<Card[]>([
-    {period:'year',title:'年度目标',icon:'↗',current:null,previous:null,target:null,input:'',editing:false,loading:true,error:'',feedback:'',token:0},
-    {period:'month',title:'月度目标',icon:'▦',current:null,previous:null,target:null,input:'',editing:false,loading:true,error:'',feedback:'',token:0},
-    {period:'week',title:'周目标',icon:'◷',current:null,previous:null,target:null,input:'',editing:false,loading:true,error:'',feedback:'',token:0}
+    {period:'year',title:'年度目标',current:null,previous:null,target:null,input:'',editing:false,loading:true,error:'',feedback:'',token:0},
+    {period:'month',title:'月度目标',current:null,previous:null,target:null,input:'',editing:false,loading:true,error:'',feedback:'',token:0},
+    {period:'week',title:'周目标',current:null,previous:null,target:null,input:'',editing:false,loading:true,error:'',feedback:'',token:0}
   ]);
   let streaks = $state<Streaks | null>(null), streakLoading = $state(true), streakError = $state('');
   let active = false;
@@ -92,14 +92,18 @@
   });
 </script>
 
-<section aria-label="运动目标" class="goal-overview" class:even={!goalError}>
+<!-- One ledger table (brand.md §6.6): a row per period, then the streak row; hairlines instead of cards. -->
+<section aria-label="运动目标" class="goal-overview section-hairline" class:even={!goalError}>
+  <div class="section-head goal-head"><h2>运动目标</h2><span class="section-meta">竖线 = 按日期此刻应到的位置</span></div>
   {#if goalError}<FeedbackState kind="error" title={goalError}><button class="button-secondary" onclick={()=>void readTargets()}>重试目标设置</button></FeedbackState>{/if}
+  <div class="goal-rows">
   {#each cards as card (card.period)}
     {@const totals = card.current ? goalTotals(card.current,card.target) : null}
     {@const delta = card.current && card.previous ? (Number(card.current.distance_m)-Number(card.previous.distance_m))/1000 : null}
+    {@const elapsed = periodElapsed(card.period,user.timezone)}
     <article class="goal-card" aria-busy={card.loading || goalLoading || !!card.saving}>
       <form onsubmit={(event)=>save(card,event)}>
-      <div class="goal-heading"><h2><span aria-hidden="true">{card.icon}</span>{card.title}</h2>{#if !readonly}<div class="goal-actions rn-goal-actions">
+      <div class="goal-heading"><h3>{card.title}</h3>{#if !readonly}<div class="goal-actions rn-goal-actions">
         <div class="goal-save-reveal" class:is-open={card.editing} inert={!card.editing} aria-hidden={!card.editing}>
           <div class="goal-save-clip"><button type="submit" class="button-secondary goal-edit" disabled={!card.editing || card.saving} aria-label={`保存${card.title}`}>{card.saving?'…':'保存'}</button></div>
         </div>
@@ -115,9 +119,12 @@
         <p class="goal-value"><strong data-testid={`${card.period}-km`}>{totals?number(totals.km):'—'}</strong>{@render targetValue()}</p>
       {/if}
       {#if card.loading}<FeedbackState kind="loading" title="正在读取目标进度…" />{:else if card.current && totals}
-        <progress value={totals.percent??0} max="100" aria-label={`${card.title}进度`}>{totals.percent===null?'未设置':`${Math.round(totals.percent)}%`}</progress>
-        <div class="goal-facts"><span><span aria-hidden="true">ϟ</span> {totals.count} 次活动</span><span>{totals.hours===null?'耗时未知':`${number(totals.hours)}h`}{card.current.missing_duration_count>0 && totals.hours!==null?' 已知':''}</span></div>
-        {#if delta!==null}<p class="goal-comparison" class:down={delta<0}><span aria-hidden="true">{delta<0?'↘':delta>0?'↗':'→'}</span> {number(Math.abs(delta))} km <span>vs {comparisons[card.period]}</span></p>{/if}
+        <div class="goal-progress">
+          <progress value={totals.percent??0} max="100" aria-label={`${card.title}进度`}>{totals.percent===null?'未设置':`${Math.round(totals.percent)}%`}</progress>
+          {#if card.target!==null}<span class="goal-pace" style:left={`${elapsed*100}%`} aria-hidden="true"></span><span class="sr-only">按日期此刻应完成 {Math.round(elapsed*100)}%</span>{/if}
+        </div>
+        <div class="goal-facts"><span>{totals.count} 次 · {totals.hours===null?'耗时未知':`${number(totals.hours)}h`}{card.current.missing_duration_count>0 && totals.hours!==null?' 已知':''}</span>
+        {#if delta!==null}<span class="goal-comparison" class:down={delta<0}>{delta<0?'−':delta>0?'+':'±'}{number(Math.abs(delta))} km <span>比{comparisons[card.period]}</span></span>{/if}</div>
       {/if}
       {#if card.error}<FeedbackState kind="error" title={card.error}><button type="button" class="button-secondary" disabled={card.saving} onclick={()=>void load(card)} aria-label={`重试${card.title}`}>重试</button></FeedbackState>{/if}
       {#if card.feedback}<p class="goal-feedback" id={`overview-feedback-${card.period}`} role="alert">{card.feedback}</p>{/if}
@@ -125,40 +132,80 @@
     </article>
   {/each}
   <section class="goal-card streak-card" aria-label="连续记录" aria-busy={streakLoading}>
-    <h2><span aria-hidden="true">♨</span>连续记录</h2>
+    <div class="goal-heading"><h3>连续记录</h3></div>
     {#if streakLoading}<FeedbackState kind="loading" title="正在读取连续记录…" />{:else if streakError}<FeedbackState kind="error" title={streakError}><button class="button-secondary" onclick={()=>void loadStreaks()}>重试连续记录</button></FeedbackState>{:else if streaks}
-      <p class="goal-value"><strong>{streaks.current_days}</strong><span>天</span></p>
-      <div class="week-strip"><div class="week-flame"><span aria-hidden="true">♨</span><strong>{streaks.current_weeks}</strong><span>周</span></div><ol aria-label="本周活动记录">{#each streaks.week as day,i}<li><span>{['一','二','三','四','五','六','日'][i]}</span><span class="week-day" class:active={day.active} class:today={day.date===streaks.today} aria-label={`${day.date}，${day.active?'有活动':'无活动'}${day.date===streaks.today?'，今天':''}`}>{Number(day.date.slice(-2))}</span></li>{/each}</ol></div>
-      <p class="streak-best"><span aria-hidden="true">✦</span> 最长 {streaks.longest_days} 天 / {streaks.longest_weeks} 周</p>
+      <p class="goal-value"><strong>{streaks.current_days}</strong><span>天 · {streaks.current_weeks} 周</span></p>
+      <ol class="week-strip" aria-label="本周活动记录">{#each streaks.week as day,i}<li><span>{['一','二','三','四','五','六','日'][i]}</span><span class="week-day" class:active={day.active} class:today={day.date===streaks.today} aria-label={`${day.date}，${day.active?'有活动':'无活动'}${day.date===streaks.today?'，今天':''}`}>{Number(day.date.slice(-2))}</span></li>{/each}</ol>
+      <p class="goal-facts streak-best">最长 {streaks.longest_days} 天 / {streaks.longest_weeks} 周</p>
     {/if}
   </section>
+  </div>
 </section>
 
 <style>
-  .goal-overview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--dashboard-card-gap,1rem);min-width:0;}
-  .goal-overview.even{grid-auto-rows:1fr;}
-  .goal-card{display:flex;flex-direction:column;min-width:0;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);padding:var(--space-4);}
-  .goal-heading{display:flex;align-items:center;justify-content:space-between;gap:.5rem;}
-  h2{display:flex;align-items:center;gap:.6rem;flex-shrink:0;white-space:nowrap;color:var(--muted-foreground);font-size: var(--text-section);font-weight: var(--weight-semibold);}
-  h2>span{font-size: var(--text-stat);color:var(--primary);}
-  .goal-edit{min-height:44px;color:var(--primary);font-size: var(--text-small);font-weight: var(--weight-semibold);padding:.35rem .65rem;border-radius:var(--radius-pill);}
-  @media (hover: hover) { .goal-edit:hover {background:var(--primary-soft);} }
-  .goal-value{display:flex;align-items:baseline;flex-wrap:nowrap;gap:.5rem;margin:.8rem 0 1rem;font-variant-numeric:tabular-nums;}
-  .goal-value strong{font-size: var(--text-title);font-weight: var(--weight-bold);line-height: var(--line-height-tight);letter-spacing: 0;}
-  .goal-value>span{font-size: var(--text-body);color:var(--muted-foreground);}
-  progress{appearance:none;display:block;margin-top:auto;width:100%;height:.55rem;border:0;border-radius:99px;overflow:hidden;background:var(--muted);color:var(--sport-green);}
-  progress::-webkit-progress-bar{background:var(--muted);border-radius:99px;}progress::-webkit-progress-value{background:var(--sport-green);border-radius:99px;}progress::-moz-progress-bar{background:var(--sport-green);border-radius:99px;}
-  .goal-facts{display:flex;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-top:1rem;color:var(--muted-foreground);font-size: var(--text-small);}.goal-facts span[aria-hidden]{color:var(--primary);font-size: var(--text-section);}
-  .goal-comparison{margin-top:.5rem;color:var(--primary);font-size: var(--text-small);}.goal-comparison.down{color:var(--comparison-down);}
-  form{display:flex;flex:1;flex-direction:column;margin:0;min-width:0;}.goal-actions{display:flex;align-items:center;gap:0;flex-shrink:0;}
+  /* Each row: title | figure / target | actions, then the progress rule and its facts. Rows share one height on
+     wide screens so the table reads as a grid of equal lines (the streak row included). */
+  .goal-head{margin-bottom:var(--space-2);}
+  .goal-rows{display:grid;min-width:0;}
+  .goal-overview.even .goal-rows{grid-auto-rows:1fr;}
+  .goal-card{display:flex;flex-direction:column;justify-content:center;min-width:0;padding:var(--space-3) 0;}
+  .goal-card + .goal-card{border-top:1px solid var(--border);}
+  form{display:grid;grid-template-columns:5.5rem minmax(0,1fr) auto;grid-template-areas:"title value actions" "title progress progress" "title facts facts";column-gap:var(--space-4);align-items:center;margin:0;min-width:0;}
+  .goal-heading{display:contents;}
+  h3{grid-area:title;align-self:start;padding-top:.45rem;font-size:var(--text-body);font-weight:var(--weight-semibold);white-space:nowrap;}
+  .goal-actions{grid-area:actions;display:flex;align-items:center;gap:0;flex-shrink:0;}
+  .goal-edit{min-height:44px;min-width:44px;padding:.35rem .5rem;border:0;background:none;color:var(--primary);font-size:var(--text-small);font-weight:var(--weight-semibold);}
+  @media (hover: hover) { .goal-edit:not(:disabled):hover {background:none;color:var(--primary-hover);text-decoration:underline;text-underline-offset:.2em;} }
+  .goal-value{grid-area:value;display:flex;align-items:baseline;flex-wrap:nowrap;gap:.5rem;min-width:0;min-height:2.5rem;margin:0;font-variant-numeric:tabular-nums;}
+  .goal-value strong{white-space:nowrap;font-size:var(--text-stat);font-weight:var(--weight-bold);line-height:var(--line-height-tight);letter-spacing:var(--tracking-tight);}
+  .goal-value>span{font-family:var(--font-mono);font-size:var(--text-small);color:var(--muted-foreground);}
+  .goal-card :global(.feedback){grid-column:2 / -1;}
+  .goal-progress{grid-area:progress;position:relative;margin-top:var(--space-2);}
+  progress{appearance:none;display:block;width:100%;height:4px;border:0;border-radius:0;overflow:hidden;background:var(--border);color:var(--primary);}
+  progress::-webkit-progress-bar{background:var(--border);border-radius:0;}progress::-webkit-progress-value{background:var(--primary);border-radius:0;}progress::-moz-progress-bar{background:var(--primary);border-radius:0;}
+  .goal-pace{position:absolute;top:-4px;width:2px;height:12px;margin-left:-1px;background:var(--rule);}
+  .goal-facts{grid-area:facts;display:flex;justify-content:space-between;flex-wrap:wrap;gap:.25rem var(--space-3);margin-top:var(--space-2);color:var(--muted-foreground);font-size:var(--text-small);font-variant-numeric:tabular-nums;}
+  .goal-comparison{color:var(--success);font-weight:var(--weight-semibold);}.goal-comparison.down{color:var(--comparison-down);}.goal-comparison span{color:var(--muted-foreground);font-weight:var(--weight-regular);}
   .goal-save-clip .goal-edit{min-width:3rem;white-space:nowrap;}
   .goal-value>.goal-target{display:flex;align-items:baseline;gap:.35rem;min-width:0;white-space:nowrap;}
-  .goal-target input{width:7ch;min-width:0;min-height:0;height:1.65rem;padding:.1rem .35rem;font:inherit;line-height: var(--line-height-heading);border:1px solid var(--control-hover-border);border-radius:var(--radius-control);background:color-mix(in srgb,var(--primary-soft) 55%,var(--surface));color:var(--foreground);}
+  .goal-target input{width:7ch;min-width:0;min-height:0;height:1.65rem;padding:.1rem .35rem;font:inherit;line-height: var(--line-height-heading);border:1px solid var(--control-border);border-radius:var(--radius-control);background:var(--surface);color:var(--foreground);}
   .goal-target input:focus-visible{border-color:var(--ring);background:var(--primary-soft);}
-  .goal-feedback{font-size: var(--text-caption);margin-top:.5rem;color:var(--primary);}
-  .week-strip{display:flex;gap:.5rem;align-items:center;margin:1rem 0;}.week-strip ol{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:.2rem;flex:1;min-width:0;}.week-strip li{display:grid;grid-template-columns:minmax(0,1fr);justify-items:center;gap:.35rem;min-width:0;font-size: var(--text-caption);color:var(--muted-foreground);}
-  .week-day{display:grid;place-items:center;width:100%;max-width:2rem;aspect-ratio:1;border-radius:50%;font-variant-numeric:tabular-nums;}.week-day.active{background:var(--sport-green);color:var(--sport-ink);font-weight: var(--weight-bold);}.week-day.today{outline:2px solid var(--primary);outline-offset:2px;}
-  .week-flame{display:grid;justify-items:center;color:var(--muted-foreground);font-size: var(--text-caption);min-width:1.5rem;}.week-flame>span:first-child{color:#f68721;font-size: var(--text-stat);}.week-flame strong{color:var(--foreground);}
-  .streak-best{margin-top:auto;color:var(--muted-foreground);font-size: var(--text-small);}.streak-best span{color:var(--primary);}
-  @media(max-width:639px){.goal-overview{grid-template-columns:1fr;}.goal-overview.even{grid-auto-rows:auto;}.goal-card{padding:1.15rem;}.week-strip{gap:.5rem;}.week-day{max-width:1.8rem;}}
+  .goal-feedback{grid-column:2 / -1;font-size: var(--text-caption);margin-top:.5rem;color:var(--primary);}
+  .streak-card{display:grid;grid-template-columns:5.5rem minmax(0,1fr) auto;grid-template-areas:"title value strip" "title facts facts";column-gap:var(--space-4);align-items:center;}
+  .streak-card .goal-heading{display:contents;}
+  .streak-card :global(.feedback){grid-column:2 / -1;}
+  .week-strip{grid-area:strip;display:grid;grid-template-columns:repeat(7,1.75rem);gap:.25rem;}
+  .week-strip li{display:grid;justify-items:center;gap:.125rem;font-size:var(--text-caption);color:var(--muted-foreground);}
+  .week-day{display:grid;place-items:center;width:1.5rem;height:1.5rem;font-family:var(--font-mono);font-size:var(--text-caption);font-variant-numeric:tabular-nums;border:1px solid var(--border);}
+  .week-day.active{border-color:var(--primary);background:var(--primary);color:var(--primary-foreground);font-weight:var(--weight-bold);}
+  .week-day.today{outline:2px solid var(--rule);outline-offset:1px;}
+  .streak-best{grid-area:facts;}
+  /* Wide screens: one strip of four equal columns (year, month, week, streak) split by vertical hairlines. */
+  @media(min-width:1024px){
+    .goal-overview.even .goal-rows{grid-auto-rows:auto;}
+    .goal-rows{grid-template-columns:repeat(4,minmax(0,1fr));}
+    .goal-card{justify-content:flex-start;padding:var(--space-2) var(--space-6);}
+    .goal-card:first-child{padding-left:0;}
+    .goal-card:last-child{padding-right:0;}
+    .goal-card + .goal-card{border-top:0;border-left:1px solid var(--border);}
+    form{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"title actions" "value value" "progress progress" "facts facts";}
+    .streak-card{grid-template-columns:minmax(0,1fr);grid-template-areas:"title" "value" "strip" "facts";}
+    h3{padding-top:0;align-self:center;}
+    .goal-heading h3{min-height:2.75rem;display:flex;align-items:center;}
+    .goal-value{margin-top:var(--space-1);}
+    .week-strip{margin-top:var(--space-2);grid-template-columns:repeat(7,minmax(0,1.75rem));}
+    .goal-card :global(.feedback),.goal-feedback{grid-column:1 / -1;}
+  }
+  /* Phones: title and its edit/save actions on one line, the figure (and the inline editor) gets the full width under
+     it, so opening the editor never squeezes the number; the streak strip gets its own line. */
+  @media(max-width:639px){
+    .goal-overview.even .goal-rows{grid-auto-rows:auto;}
+    form{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"title actions" "value value" "progress progress" "facts facts";}
+    .streak-card{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"title value" "strip strip" "facts facts";}
+    h3{padding-top:0;align-self:center;}
+    .goal-progress{margin-top:var(--space-1);}
+    .week-strip{margin-top:var(--space-2);}
+    .streak-best{margin-top:var(--space-2);}
+    .goal-card :global(.feedback),.goal-feedback{grid-column:1 / -1;}
+  }
 </style>
