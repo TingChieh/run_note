@@ -144,35 +144,35 @@
     <p class="chapter-num">02 · RHYTHM TERRAIN</p>
     <h2 id="recap-distribution">里程地形与累计轨迹</h2>
   </div>
-  {#if activeBucket}
-    <div class="inspector-pill" aria-live="polite" data-testid="recap-terrain-inspector">
-      {#if activeBucket.future}
-        <strong>{activeBucket.rangeShort}</strong>
-        <span class="sep" aria-hidden="true">|</span>
-        <span>尚未到达</span>
-      {:else}
-        <strong>
-          {activeBucket.rangeShort}{#if activeBucket.peak}{` · ${recap.derived.peakTied ? '并列峰值' : '峰值'}`}{/if}
-        </strong>
-        <span class="sep" aria-hidden="true">|</span>
-        <span>单期 <strong>{km(activeBucket.distance ?? 0)} km</strong></span>
-        {#if activeBucket.cumulative !== null && recap.totalDistanceM > 0}
-          <span class="sep" aria-hidden="true">|</span>
-          <span>累计 {km(activeBucket.cumulative)} km</span>
-        {/if}
-        <span class="sep" aria-hidden="true">|</span>
-        <span>{activeBucket.activityCount ?? 0} 次 · {activeBucket.activityDays ?? 0} 天</span>
-        <span class="sep" aria-hidden="true">|</span>
-        <span>均配 {formatPace(activeBucket.avgPaceSeconds)}</span>
-      {/if}
-    </div>
-  {/if}
+  <p class="chart-note">
+    {recap.period === 'year' ? '按月统计' : '按周统计 · 周一开始'}{#if peak}
+      · {peak}{/if}
+  </p>
 </div>
 
-<p class="chart-note">
-  {recap.period === 'year' ? '按月统计' : '按周统计 · 周一开始'}{#if peak}
-    · {peak}{/if}
-</p>
+{#if activeBucket}
+  <div class="inspector-bar" aria-live="polite" data-testid="recap-terrain-inspector">
+    {#if activeBucket.future}
+      <strong>{activeBucket.rangeShort}</strong>
+      <span class="sep" aria-hidden="true">/</span>
+      <span>尚未到达</span>
+    {:else}
+      <strong>
+        {activeBucket.rangeShort}{#if activeBucket.peak}{` · ${recap.derived.peakTied ? '并列峰值' : '峰值'}`}{/if}
+      </strong>
+      <span class="sep" aria-hidden="true">/</span>
+      <span>单期 <strong>{km(activeBucket.distance ?? 0)} km</strong></span>
+      {#if activeBucket.cumulative !== null && recap.totalDistanceM > 0}
+        <span class="sep" aria-hidden="true">/</span>
+        <span>累计 {km(activeBucket.cumulative)} km</span>
+      {/if}
+      <span class="sep" aria-hidden="true">/</span>
+      <span>{activeBucket.activityCount ?? 0} 次 · {activeBucket.activityDays ?? 0} 天</span>
+      <span class="sep" aria-hidden="true">/</span>
+      <span>均配 {formatPace(activeBucket.avgPaceSeconds)}</span>
+    {/if}
+  </div>
+{/if}
 
 <div class="terrain-stage" bind:this={stageEl} data-testid="recap-terrain-chart">
   <div class="axis-units" aria-hidden="true">
@@ -199,13 +199,6 @@
           role="img"
           aria-label={chartAriaLabel}
         >
-          <defs>
-            <linearGradient id={`${uid}-area`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="var(--primary)" stop-opacity="0.3" />
-              <stop offset="100%" stop-color="var(--primary)" stop-opacity="0.02" />
-            </linearGradient>
-          </defs>
-
           {#each geometry.guides as guide (guide.y)}
             <line x1={padX} y1={guide.y} x2={svgW - padX} y2={guide.y} class="guide-line" />
           {/each}
@@ -214,7 +207,7 @@
             <path class="cum-path" d={geometry.cumD} fill="none" data-testid="recap-terrain-cum-path" />
           {/if}
           {#if geometry.areaD}
-            <path d={geometry.areaD} fill={`url(#${uid}-area)`} />
+            <path class="area-fill" d={geometry.areaD} />
           {/if}
           {#if geometry.curveD}
             {#key `${recap.period}-${recap.year}-${recap.month ?? ''}-${recap.totalDistanceM}`}
@@ -251,7 +244,7 @@
                 y={padT - 8}
                 width={geometry.colW}
                 height={innerH + 14}
-                rx="8"
+                rx="4"
               />
               {#if pt.y !== null}
                 <line
@@ -266,7 +259,7 @@
                 <circle
                   cx={pt.x}
                   cy={pt.y}
-                  r={pt.bucket.peak ? 6.5 : isSelected ? 5.5 : geometry.validCount === 1 ? 5.5 : 4}
+                  r={pt.bucket.peak ? 6 : isSelected ? 5.5 : geometry.validCount === 1 ? 5.5 : 4}
                   class="point"
                   class:point-peak={pt.bucket.peak}
                 />
@@ -390,10 +383,10 @@
   .terrain-head {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-end;
+    align-items: baseline;
     justify-content: space-between;
-    gap: var(--space-3);
-    margin-bottom: var(--space-2);
+    gap: var(--space-2) var(--space-4);
+    margin-bottom: var(--space-3);
   }
   .chapter-num {
     margin: 0 0 var(--space-1);
@@ -409,31 +402,33 @@
     font-weight: var(--weight-semibold);
     line-height: var(--line-height-heading);
   }
-  .inspector-pill {
-    display: inline-flex;
+  .chart-note {
+    margin: 0;
+    font-family: var(--font-mono);
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
+    font-variant-numeric: tabular-nums;
+  }
+  .inspector-bar {
+    display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-1) var(--space-3);
-    padding: var(--space-2) var(--space-4);
-    border-radius: var(--radius-pill);
-    background: var(--muted);
-    border: 1px solid var(--border);
+    margin-bottom: var(--space-4);
+    padding: var(--space-2) var(--space-3);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    background: var(--recap-well);
     font-size: var(--text-small);
     font-variant-numeric: tabular-nums;
     max-width: 100%;
   }
-  .inspector-pill strong {
+  .inspector-bar strong {
     color: var(--primary);
     font-weight: var(--weight-bold);
   }
   .sep {
     color: var(--border);
-  }
-  .chart-note {
-    margin: 0 0 var(--space-3);
-    color: var(--muted-foreground);
-    font-size: var(--text-small);
-    font-variant-numeric: tabular-nums;
   }
   .terrain-stage {
     width: 100%;
@@ -448,6 +443,7 @@
     margin-bottom: var(--space-1);
   }
   .axis-unit {
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     line-height: var(--line-height-solid);
     white-space: nowrap;
@@ -479,6 +475,7 @@
   .axis-label {
     position: absolute;
     transform: translateY(-50%);
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     line-height: var(--line-height-solid);
     white-space: nowrap;
@@ -512,17 +509,21 @@
   }
   .cum-path {
     stroke: var(--muted-foreground);
-    stroke-width: 1.75;
-    stroke-dasharray: 6 6;
-    opacity: 0.72;
+    stroke-width: 1.5;
+    stroke-dasharray: 5 5;
+    opacity: 0.75;
+  }
+  .area-fill {
+    fill: var(--recap-well);
+    opacity: 0.9;
   }
   .terrain-path {
     stroke: var(--primary);
-    stroke-width: 3;
+    stroke-width: 2.25;
     stroke-linecap: round;
     stroke-dasharray: 2400;
     stroke-dashoffset: 2400;
-    animation: terrain-draw 820ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+    animation: terrain-draw 760ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
   }
   .hit-col {
     cursor: pointer;
@@ -536,7 +537,7 @@
   }
   .hit-col.is-selected .col-focus {
     fill: var(--primary-soft);
-    opacity: 0.7;
+    opacity: 0.6;
   }
   .hit-col:focus-visible .col-focus {
     stroke: var(--ring);
@@ -550,22 +551,27 @@
     stroke-dasharray: 3 3;
   }
   .stem-peak {
-    stroke: var(--recap-gold);
-    stroke-width: 2.5;
+    stroke: var(--receipt-mark);
+    stroke-width: 2;
     stroke-dasharray: none;
   }
   .stem-selected {
     stroke: var(--primary);
-    stroke-width: 2;
+    stroke-width: 1.75;
     stroke-dasharray: none;
   }
   .point {
     fill: var(--primary);
-    stroke: var(--surface);
-    stroke-width: 2.5;
+    stroke: var(--background);
+    stroke-width: 2;
   }
   .point-peak {
-    fill: var(--recap-gold);
+    fill: var(--receipt-mark);
+    stroke: var(--foreground);
+    stroke-width: 1.5;
+  }
+  :global(:root[data-theme='dark']) .point-peak {
+    stroke: var(--background);
   }
   .point-future {
     fill: var(--border);
@@ -574,6 +580,7 @@
     position: absolute;
     transform: translateX(-50%);
     pointer-events: none;
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     font-weight: var(--weight-bold);
     line-height: var(--line-height-solid);
@@ -601,6 +608,7 @@
     border: 0;
     background: transparent;
     transform: translateX(-50%);
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     font-weight: var(--weight-medium);
     line-height: var(--line-height-heading);
@@ -632,18 +640,18 @@
   }
   .swatch {
     display: inline-block;
-    width: 0.7rem;
-    height: 0.7rem;
-    border-radius: 3px;
+    width: 0.65rem;
+    height: 0.65rem;
+    border-radius: 1px;
     vertical-align: -1px;
     margin-inline-end: var(--space-1);
   }
   .swatch-area {
-    background: color-mix(in srgb, var(--primary) 42%, var(--surface));
-    border: 1px solid var(--primary);
+    background: var(--primary);
   }
   .swatch-peak {
-    background: var(--recap-gold);
+    background: var(--receipt-mark);
+    border: 1px solid color-mix(in srgb, var(--foreground) 35%, transparent);
   }
   .swatch-cum {
     height: 2px;
@@ -662,7 +670,8 @@
     padding-block: var(--space-3);
     min-height: 2.75rem;
     font-size: var(--text-small);
-    font-weight: var(--weight-medium);
+    font-weight: var(--weight-semibold);
+    color: var(--primary);
   }
   .table-wrap {
     overflow-x: auto;
@@ -712,9 +721,6 @@
     .legend-hint {
       margin-inline-start: 0;
       width: 100%;
-    }
-    .inspector-pill {
-      border-radius: var(--radius-control);
     }
   }
   @media (max-width: 479px) {

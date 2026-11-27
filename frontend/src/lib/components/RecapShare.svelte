@@ -77,7 +77,7 @@
 
   $effect(() => {
     if (!mounted) return;
-    // Re-render the compact Chapter 04 dock preview whenever recap, style, or appearance changes.
+    // Re-render the compact share desk preview whenever recap, style, or appearance changes.
     void recap;
     void style;
     void appearance;
@@ -142,7 +142,7 @@
       if (dockUrl) URL.revokeObjectURL(dockUrl);
       dockUrl = nextUrl;
     } catch {
-      // Dock preview is non-blocking; users can still open the full dialog.
+      // Desk preview is non-blocking; users can still open the full dialog.
     }
   }
 
@@ -178,9 +178,10 @@
     if (opened) void generate();
   }
 
-  function toggleAppearance() {
+  function setAppearance(next: 'light' | 'dark') {
+    if (appearance === next) return;
     followsPage = false;
-    appearance = appearance === 'light' ? 'dark' : 'light';
+    appearance = next;
     if (opened) void generate();
   }
 
@@ -201,56 +202,18 @@
   }
 </script>
 
-<!-- Hidden token probe for the live Chapter 04 mini poster preview. -->
+<!-- Hidden token probe for the live share desk mini poster preview. -->
 <div hidden data-poster-theme={appearance}>
   <div class="sport-theme" bind:this={dockProbe}></div>
 </div>
 
-<!-- Chapter 04: Keepsake Poster Dock -->
-<section class="poster-dock" aria-labelledby={`${id}-dock-title`} data-testid="recap-poster-dock">
-  <div class="dock-copy">
-    <p class="chapter-num">04 · KEEPSAKE POSTER</p>
-    <h2 id={`${id}-dock-title`}>封存这一期的 9:16 跑步海报</h2>
-    <p class="dock-meta">
-      仅绘入周期日期、服务端聚合数字、无坐标里程分布与 RunNote 通用字标。提供特刊、环道与存根三款 1080×1920 版式，本机
-      Canvas 2D 实时生成。
-    </p>
-    <div class="dock-style-row">
-      <div class="settings-tabs style-tabs" role="group" aria-label="快捷切换海报版式">
-        {#each recapPosterStyles as preset (preset.id)}
-          <button
-            type="button"
-            aria-pressed={style === preset.id}
-            disabled={disabled || !mounted}
-            onclick={() => selectStyle(preset.id)}
-          >
-            {preset.code}
-            {preset.name}
-          </button>
-        {/each}
-      </div>
-    </div>
-    <div class="dock-actions">
-      <button
-        type="button"
-        bind:this={dockOpenBtn}
-        class="button-primary"
-        disabled={disabled || !mounted}
-        onclick={() => open(dockOpenBtn)}
-      >
-        打开高清预览与保存
-      </button>
-      <button type="button" class="button-secondary" disabled={disabled || !mounted} onclick={toggleAppearance}>
-        {appearance === 'light' ? '切换深色海报预览' : '切换浅色海报预览'}
-      </button>
-    </div>
-  </div>
-
+<!-- Sticky Editorial Share Desk (brand.md §4, web-audit W-12) -->
+<section class="share-desk" aria-labelledby={`${id}-dock-title`} data-testid="recap-poster-dock">
   <button
     type="button"
     data-date={recap.dateFrom}
     bind:this={dockFrameBtn}
-    class="dock-frame"
+    class="desk-frame"
     disabled={disabled || !mounted}
     aria-label="放大预览并保存 1080×1920 分享海报"
     onclick={() => open(dockFrameBtn)}
@@ -258,14 +221,68 @@
     {#if dockUrl}
       <img src={dockUrl} width="360" height="640" alt={`${recap.title}${activeStyleMeta.name}版式缩略预览`} />
     {:else}
-      <span class="dock-placeholder" aria-hidden="true">9:16</span>
+      <span class="desk-placeholder" aria-hidden="true">9:16</span>
     {/if}
   </button>
+
+  <div class="desk-controls">
+    <h2 id={`${id}-dock-title`}>分享图</h2>
+
+    <div class="appearance-row" role="group" aria-label="海报外观">
+      <button
+        type="button"
+        class="appearance-btn"
+        aria-pressed={appearance === 'light'}
+        disabled={disabled || !mounted}
+        onclick={() => setAppearance('light')}
+      >
+        浅色纸面
+      </button>
+      <button
+        type="button"
+        class="appearance-btn"
+        aria-pressed={appearance === 'dark'}
+        disabled={disabled || !mounted}
+        onclick={() => setAppearance('dark')}
+      >
+        深色暖炭
+      </button>
+    </div>
+
+    <div class="underline-tabs desk-style-tabs" role="group" aria-label="快捷切换海报版式">
+      {#each recapPosterStyles as preset (preset.id)}
+        <button
+          type="button"
+          aria-pressed={style === preset.id}
+          disabled={disabled || !mounted}
+          onclick={() => selectStyle(preset.id)}
+        >
+          {preset.code}
+          {preset.name}
+        </button>
+      {/each}
+    </div>
+
+    <button
+      type="button"
+      bind:this={dockOpenBtn}
+      class="button-primary desk-launch"
+      disabled={disabled || !mounted}
+      onclick={() => open(dockOpenBtn)}
+    >
+      打开高清预览与保存
+    </button>
+
+    <p class="desk-caption">
+      分享图仅含周期日期、汇总数字与无坐标节律，不含姓名、账号、坐标、地点、备注或身心健康数据。
+    </p>
+  </div>
 </section>
 
-<!-- Native 1080×1920 Share Preview Dialog -->
+<!-- Native 1080×1920 Share Preview Dialog (preserves Liquid Glass boundary on modal controls) -->
 <dialog
   bind:this={dialog}
+  data-glass-overlay
   aria-labelledby={`${id}-title`}
   aria-describedby={`${id}-disclosure`}
   oncancel={(event) => {
@@ -341,98 +358,116 @@
         {/if}
       </div>
     </div>
-    {#if nativeApp && !shareable}<p class="hint" role="status">当前客户端暂不支持直接保存图片文件，请在浏览器中打开保存 PNG。</p>{/if}
+    {#if nativeApp && !shareable}<p class="hint" role="status">
+        当前客户端暂不支持直接保存图片文件，请在浏览器中打开保存 PNG。
+      </p>{/if}
     {#if shareError}<p role="alert">{shareError}</p>{/if}
   {/if}
 </dialog>
 
 <style>
-  .poster-dock {
-    margin-top: var(--space-6);
+  .share-desk {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: var(--space-8);
-    padding: clamp(1.25rem, 3vw, 2.25rem);
-    border-radius: var(--radius-card);
-    background: linear-gradient(120deg, var(--recap-dock-tint) 0%, var(--surface) 68%);
-    border: 1px solid var(--border);
-  }
-  .dock-copy {
+    gap: var(--space-4);
+    align-content: start;
     min-width: 0;
   }
-  .chapter-num {
-    margin: 0 0 var(--space-1);
-    font-family: var(--font-mono);
-    font-size: var(--text-caption);
-    font-weight: var(--weight-bold);
-    letter-spacing: var(--tracking-caps);
-    color: var(--primary);
-  }
-  .dock-copy h2 {
-    margin: 0;
-    font-size: var(--text-section);
-    font-weight: var(--weight-bold);
-    line-height: var(--line-height-heading);
-  }
-  .dock-meta {
-    margin: var(--space-2) 0 var(--space-4);
-    max-width: 36rem;
-    font-size: var(--text-small);
-    color: var(--muted-foreground);
-  }
-  .dock-style-row {
-    margin-bottom: var(--space-4);
-  }
-  .style-tabs {
-    margin: 0;
-    width: max-content;
-    max-width: 100%;
-  }
-  .style-tabs button {
-    min-height: 2.5rem;
-    white-space: nowrap;
-  }
-  .dock-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-  }
-  .dock-frame {
-    padding: var(--space-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    background: var(--surface);
-    box-shadow: 0 14px 32px rgb(0 0 0 / 0.14);
-    transform: rotate(1.5deg);
-    transition:
-      transform var(--motion-hover),
-      box-shadow var(--motion-hover);
-    cursor: pointer;
-  }
-  .dock-frame:hover:not(:disabled) {
-    transform: rotate(0deg) translateY(-4px);
-    box-shadow: 0 20px 40px rgb(0 0 0 / 0.2);
-  }
-  .dock-frame img {
+  .desk-frame {
     display: block;
-    width: 11rem;
+    width: 100%;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sheet);
+    background: var(--desk);
+    box-shadow: var(--shadow-popover);
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform var(--motion-hover);
+  }
+  .desk-frame:hover:not(:disabled) {
+    transform: translateY(-2px);
+  }
+  .desk-frame:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 3px;
+  }
+  .desk-frame img {
+    display: block;
+    width: 100%;
     aspect-ratio: 9 / 16;
     height: auto;
-    border-radius: var(--radius-control);
     object-fit: cover;
   }
-  .dock-placeholder {
+  .desk-placeholder {
     display: grid;
     place-items: center;
-    width: 11rem;
+    width: 100%;
     aspect-ratio: 9 / 16;
-    border-radius: var(--radius-control);
-    background: var(--muted);
+    background: var(--desk);
     color: var(--muted-foreground);
+    font-family: var(--font-mono);
     font-size: var(--text-small);
     font-weight: var(--weight-semibold);
   }
+
+  .desk-controls {
+    display: grid;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+  .desk-controls h2 {
+    margin: 0;
+    font-size: var(--text-card);
+    font-weight: var(--weight-semibold);
+    line-height: var(--line-height-heading);
+  }
+  .appearance-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border: 1px solid var(--control-border);
+    border-radius: var(--radius-control);
+    overflow: hidden;
+  }
+  .appearance-btn {
+    min-height: 2.75rem;
+    padding: 0 var(--space-3);
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--foreground);
+    font-size: var(--text-small);
+    font-weight: var(--weight-medium);
+    cursor: pointer;
+    transition:
+      background-color var(--transition-control),
+      color var(--transition-control);
+  }
+  .appearance-btn + .appearance-btn {
+    border-left: 1px solid var(--control-border);
+  }
+  .appearance-btn[aria-pressed='true'] {
+    background: var(--foreground);
+    color: var(--background);
+    font-weight: var(--weight-semibold);
+  }
+  .appearance-btn:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: -2px;
+  }
+  .desk-style-tabs {
+    border-bottom: 1px solid var(--border);
+  }
+  .desk-launch {
+    width: 100%;
+  }
+  .desk-caption {
+    margin: 0;
+    font-size: var(--text-caption);
+    line-height: var(--line-height-body);
+    color: var(--muted-foreground);
+  }
+
+  /* Native Share Preview Dialog */
   .button-primary,
   .button-secondary,
   .text-field {
@@ -478,6 +513,15 @@
   .style-bar {
     margin-bottom: var(--space-3);
   }
+  .style-tabs {
+    margin: 0;
+    width: max-content;
+    max-width: 100%;
+  }
+  .style-tabs button {
+    min-height: 2.5rem;
+    white-space: nowrap;
+  }
   .control-label,
   .style-desc {
     font-size: var(--text-small);
@@ -514,31 +558,42 @@
   .text-field {
     width: auto;
   }
+  .hint {
+    margin-top: var(--space-2);
+    font-size: var(--text-caption);
+    color: var(--muted-foreground);
+  }
   [role='alert'] {
     margin-top: var(--space-2);
     color: var(--error);
     font-size: var(--text-small);
   }
+
   @media (prefers-reduced-motion: reduce) {
-    .dock-frame {
-      transform: none;
+    .desk-frame {
       transition: none;
     }
-    .dock-frame:hover:not(:disabled) {
+    .desk-frame:hover:not(:disabled) {
       transform: none;
     }
   }
+  @media (min-width: 640px) and (max-width: 1079px) {
+    .share-desk {
+      padding-top: var(--space-6);
+      border-top: 2px solid var(--rule);
+      grid-template-columns: 13.5rem minmax(0, 1fr);
+      gap: var(--space-6);
+      align-items: start;
+    }
+  }
   @media (max-width: 639px) {
-    .poster-dock {
-      grid-template-columns: 1fr;
-      gap: var(--space-4);
+    .share-desk {
+      padding-top: var(--space-6);
+      border-top: 2px solid var(--rule);
     }
-    .dock-frame {
+    .desk-frame {
+      max-width: 15rem;
       justify-self: center;
-      transform: none;
-    }
-    .dock-actions button {
-      flex: 1 1 11rem;
     }
     dialog {
       padding: var(--space-4);
@@ -551,9 +606,13 @@
     }
   }
   @media (forced-colors: active) {
-    .poster-dock {
-      background: Canvas;
+    .desk-frame,
+    .appearance-row {
       border-color: ButtonText;
+    }
+    .appearance-btn[aria-pressed='true'] {
+      background: Highlight;
+      color: HighlightText;
     }
   }
 </style>
