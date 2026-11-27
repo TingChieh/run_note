@@ -38,8 +38,8 @@ async function expectInInitialViewportAndUnoccluded(page: Page, locator: ReturnT
   expect(check.unoccluded).toBe(true);
 }
 
-async function installMockNativeRecorder(page: Page) {
-  await page.addInitScript(() => {
+async function installMockNativeRecorder(page: Page, rejectPoints = false) {
+  await page.addInitScript((rejectPoints) => {
     type Point = {
       lat: number;
       lon: number;
@@ -52,6 +52,7 @@ async function installMockNativeRecorder(page: Page) {
     let points: Point[] = [];
     let gpsStatus = 'good';
     let serviceRunning = false;
+    let pointReads = 0;
     const listeners: Array<(payload: unknown) => void> = [];
     const perms = {
       location: 'granted',
@@ -72,6 +73,7 @@ async function installMockNativeRecorder(page: Page) {
       for (const fn of listeners) fn(payload);
     };
     (window as unknown as Record<string, unknown>).__editorialMockRecorder = {
+      pointReads: () => pointReads,
       pushPoints(pts: Point[], totalDistanceM: number, totalDurationMs: number) {
         if (!session) return;
         points = [...points, ...pts];
@@ -163,7 +165,12 @@ async function installMockNativeRecorder(page: Page) {
             return { discarded: true };
           },
           getSessionState: async () => buildState(),
-          getSessionPoints: async () => ({ points: [...points], totalReturned: points.length }),
+          getSessionPoints: async () => {
+            pointReads++;
+            // Keep the pre-fix recursion bounded so the browser can report the failed assertion.
+            if (rejectPoints && pointReads <= 20) throw new Error('Recorder points unavailable');
+            return { points: [...points], totalReturned: points.length };
+          },
           clearAccountSessions: async () => ({ cleared: false }),
           addListener: (_name: string, fn: (payload: unknown) => void) => {
             listeners.push(fn);
@@ -172,7 +179,7 @@ async function installMockNativeRecorder(page: Page) {
         },
       },
     };
-  });
+  }, rejectPoints);
 }
 
 test('mobile home puts week goal and 7-day punch card first while desktop keeps 4-column order', async ({ page }) => {
@@ -207,7 +214,7 @@ test('mobile home puts week goal and 7-day punch card first while desktop keeps 
 test('mobile recording flow: pre-run -> single Pause + screen lock -> paused confirm dialog -> serrated done receipt', async ({
   page,
   context,
-}) => {
+}, testInfo) => {
   const pageErrors: string[] = [];
   page.on('pageerror', (err) => pageErrors.push(err.message));
 
@@ -216,6 +223,8 @@ test('mobile recording flow: pre-run -> single Pause + screen lock -> paused con
 
   for (const vp of [
     { width: 390, height: 844, theme: 'light' as const },
+    { width: 390, height: 844, theme: 'dark' as const },
+    { width: 320, height: 640, theme: 'light' as const },
     { width: 320, height: 640, theme: 'dark' as const },
   ]) {
     await page.setViewportSize({ width: vp.width, height: vp.height });
@@ -285,6 +294,17 @@ test('mobile recording flow: pre-run -> single Pause + screen lock -> paused con
       rec.pushPoints(pts, 2670, 900_000);
     });
     await expect(page.getByTestId('recording-distance')).toContainText('2.67 km');
+    await expect(page.getByTestId('recording-gps-badge')).toHaveText('GPS ±6 m');
+    await context.setOffline(true);
+    const offlineBadge = page.getByTestId('recording-offline-badge');
+    await expect(offlineBadge).toBeVisible();
+    await expect(page.getByTestId('offline-banner')).toBeHidden();
+    const statusBox = await page.getByTestId('recording-status-badge').boundingBox();
+    const offlineBox = await offlineBadge.boundingBox();
+    expect(Math.abs(statusBox!.y - offlineBox!.y)).toBeLessThan(2);
+    await expect(page.getByTestId('recording-duration')).toHaveCSS('font-size', vp.width === 390 ? '52px' : '43.2px');
+    await page.screenshot({ path: testInfo.outputPath(`recording-${vp.width}-${vp.theme}.png`) });
+    await context.setOffline(false);
     await expect(page.locator('.rec-telemetry')).toContainText('第 3 公里 · 上一公里');
     await expectNoOverflow(page);
 
@@ -308,6 +328,7 @@ test('mobile recording flow: pre-run -> single Pause + screen lock -> paused con
     // Paused state -> both Resume and Hold-to-Finish actions must be visible & unobstructed in initial viewport
     await pauseBtn.click();
     await expect(page.getByTestId('recording-status-badge')).toHaveText('已暂停');
+    await expect(page.getByRole('link', { name: '跑步记录' })).toBeVisible();
     await expect(page.getByTestId('recording-discard-btn')).toBeVisible();
     await expectInInitialViewportAndUnoccluded(page, page.getByTestId('recording-resume-btn'));
     await expectInInitialViewportAndUnoccluded(page, page.getByTestId('recording-stop-btn'));
@@ -340,6 +361,7 @@ test('mobile recording flow: pre-run -> single Pause + screen lock -> paused con
     expect(dialogPos.bottom).toBeLessThanOrEqual(dialogPos.vh);
     expect(dialogPos.centerDx).toBeLessThanOrEqual(16);
     expect(dialogPos.centerDy).toBeLessThanOrEqual(32);
+    await page.screenshot({ path: testInfo.outputPath(`finish-${vp.width}-${vp.theme}.png`) });
 
     await page.keyboard.press('Escape');
     await expect(finishDialog).not.toBeVisible();
@@ -374,12 +396,14 @@ test('mobile recording flow: pre-run -> single Pause + screen lock -> paused con
 
 test('mobile activity detail and story share dialog stay flat Editorial Receipt with zero overflow at 390 and 320', async ({
   page,
-}) => {
+}, testInfo) => {
   await installActivities(page);
   await loginRunner(page);
 
   for (const vp of [
     { width: 390, height: 844, theme: 'light' as const },
+    { width: 390, height: 844, theme: 'dark' as const },
+    { width: 320, height: 640, theme: 'light' as const },
     { width: 320, height: 640, theme: 'dark' as const },
   ]) {
     await page.setViewportSize({ width: vp.width, height: vp.height });
@@ -391,7 +415,18 @@ test('mobile activity detail and story share dialog stay flat Editorial Receipt 
     await expectNoOverflow(page);
     const mapBox = await page.locator('.route-map').boundingBox();
     const stubBox = await page.getByRole('region', { name: '运动指标' }).boundingBox();
-    expect(mapBox!.y).toBeLessThan(stubBox!.y);
+    const toolbar = page.getByTestId('activity-detail-toolbar');
+    const toolbarBox = await toolbar.boundingBox();
+    expect(mapBox!.y + mapBox!.height).toBeLessThanOrEqual(toolbarBox!.y);
+    expect(toolbarBox!.y + toolbarBox!.height).toBeLessThanOrEqual(stubBox!.y);
+    const back = toolbar.getByRole('button', { name: '返回' });
+    await back.focus();
+    await page.keyboard.press('Shift+Tab');
+    await expect(page.locator('.route-panel :focus')).toHaveCount(1);
+    await page.keyboard.press('Tab');
+    await expect(back).toBeFocused();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: testInfo.outputPath(`detail-${vp.width}-${vp.theme}.png`) });
 
     // Screen 6: Story Share Dialog (flat Editorial Receipt controls, readable active segment, focus restore)
     await page.goto('/workspace/records/story?year=2025');
@@ -418,6 +453,7 @@ test('mobile activity detail and story share dialog stay flat Editorial Receipt 
     const savePngBtn = dialog.getByRole('button', { name: '保存 PNG' });
     await expect(savePngBtn).toBeEnabled();
     await expectInInitialViewportAndUnoccluded(page, savePngBtn);
+    await page.screenshot({ path: testInfo.outputPath(`share-${vp.width}-${vp.theme}.png`) });
 
     await page.keyboard.press('Escape');
     await expect(dialog).not.toBeVisible();
@@ -456,34 +492,87 @@ test('mobile home current-week punch card stays independent of browsed historica
     const year = Number(url.searchParams.get('year'));
     const overrides = new Map<
       string,
-      { activity_count: number; distance_m: number; duration_sum_seconds: number | null; known_duration_count: number; missing_duration_count: number }
+      {
+        activity_count: number;
+        distance_m: number;
+        duration_sum_seconds: number | null;
+        known_duration_count: number;
+        missing_duration_count: number;
+      }
     >(
       year === 2025
-        ? [['2025-12-29', { activity_count: 1, distance_m: 6000, duration_sum_seconds: 1800, known_duration_count: 1, missing_duration_count: 0 }]]
+        ? [
+            [
+              '2025-12-29',
+              {
+                activity_count: 1,
+                distance_m: 6000,
+                duration_sum_seconds: 1800,
+                known_duration_count: 1,
+                missing_duration_count: 0,
+              },
+            ],
+          ]
         : year === 2026
           ? [
-              ['2026-01-01', { activity_count: 1, distance_m: 10000, duration_sum_seconds: 3000, known_duration_count: 1, missing_duration_count: 0 }],
+              [
+                '2026-01-01',
+                {
+                  activity_count: 1,
+                  distance_m: 10000,
+                  duration_sum_seconds: 3000,
+                  known_duration_count: 1,
+                  missing_duration_count: 0,
+                },
+              ],
               // 2026-01-02 active in streaks, but distance_m is 0/missing -> must render active dot (0 blocks), not 2 blocks
-              ['2026-01-02', { activity_count: 1, distance_m: 0, duration_sum_seconds: null, known_duration_count: 0, missing_duration_count: 1 }],
+              [
+                '2026-01-02',
+                {
+                  activity_count: 1,
+                  distance_m: 0,
+                  duration_sum_seconds: null,
+                  known_duration_count: 0,
+                  missing_duration_count: 1,
+                },
+              ],
             ]
           : [],
     );
     const days = [];
     let totalCount = 0;
     let totalDistance = 0;
-    for (let d = new Date(`${year}-01-01T00:00:00Z`); d.getUTCFullYear() === year; d = new Date(d.getTime() + 86400000)) {
+    for (
+      let d = new Date(`${year}-01-01T00:00:00Z`);
+      d.getUTCFullYear() === year;
+      d = new Date(d.getTime() + 86400000)
+    ) {
       const iso = d.toISOString().slice(0, 10);
       const ov = overrides.get(iso);
       const row = ov
         ? { date: iso, ...ov }
-        : { date: iso, activity_count: 0, distance_m: 0, duration_sum_seconds: null, known_duration_count: 0, missing_duration_count: 0 };
+        : {
+            date: iso,
+            activity_count: 0,
+            distance_m: 0,
+            duration_sum_seconds: null,
+            known_duration_count: 0,
+            missing_duration_count: 0,
+          };
       totalCount += row.activity_count;
       totalDistance += row.distance_m;
       days.push(row);
     }
     return route.fulfill({
       json: {
-        data: { year, metric: url.searchParams.get('metric') ?? 'distance', days, activity_count: totalCount, distance_m: totalDistance, date_assignment: 'activity_local_date' },
+        data: {
+          year,
+          metric: url.searchParams.get('metric') ?? 'distance',
+          days,
+          activity_count: totalCount,
+          distance_m: totalDistance,
+          date_assignment: 'activity_local_date',
+        },
         error: null,
       },
     });
@@ -513,4 +602,40 @@ test('mobile home current-week punch card stays independent of browsed historica
   await expect(jan01).toHaveAttribute('data-blocks', '5');
   await expect(jan02).toHaveAttribute('data-punch-state', 'active');
   await expect(jan02).toHaveAttribute('data-blocks', '0');
+});
+
+test('native live splits try a rejected point count only once and cap consecutive failures', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 640 });
+  await installMockNativeRecorder(page, true);
+  await loginRunner(page);
+  await page.goto('/activities/record');
+  await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+
+  for (const [distance, expectedReads] of [
+    [1100, 1],
+    [1200, 2],
+    [123450, 2],
+  ]) {
+    const reads = await page.evaluate(async (distance) => {
+      const recorder = (
+        window as unknown as {
+          __editorialMockRecorder: {
+            pushPoints: (points: unknown[], distance: number, duration: number) => void;
+            pointReads: () => number;
+          };
+        }
+      ).__editorialMockRecorder;
+      recorder.pushPoints(
+        [{ lat: 31.23, lon: 121.47, elevationM: 12, accuracyM: 6, recordedAtMs: Date.now(), segmentIndex: 0 }],
+        distance,
+        300_000,
+      );
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      return recorder.pointReads();
+    }, distance);
+    expect(reads).toBe(expectedReads);
+  }
+  await expect(page.getByTestId('recording-distance')).toHaveText('123.45 km');
+  await expectNoOverflow(page);
 });

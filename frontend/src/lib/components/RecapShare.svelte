@@ -283,7 +283,6 @@
 <dialog
   bind:this={dialog}
   data-glass-overlay
-  class="editorial-page"
   aria-labelledby={`${id}-title`}
   aria-describedby={`${id}-disclosure`}
   oncancel={(event) => {

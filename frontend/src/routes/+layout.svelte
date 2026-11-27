@@ -716,7 +716,7 @@
       class:auth-content={authPage}
       aria-busy={!!navigating.to && !shallowNavigation && !navigating.shallow}
     >
-      {#if offline}<div class="mb-5" data-testid="offline-banner">
+      {#if offline}<div class="offline-banner mb-5" data-testid="offline-banner">
           <FeedbackState kind="error" title="当前处于离线模式，可浏览已缓存数据，恢复网络后将自动同步。" />
         </div>{/if}
       {#if message || page.data.authError || (page.data.showcaseError && page.status < 400)}<div class="mb-5">

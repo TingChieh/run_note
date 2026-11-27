@@ -194,8 +194,10 @@
   let nativeLivePointsSessionId = '';
   let nativeLivePointsFetchedKm = 0;
   let nativeLivePointsLastTriedPointCount = 0;
+  let nativeLivePointsConsecutiveFailures = 0;
   let nativeLivePointsInFlight = false;
   let nativeLivePointsRequestToken = 0;
+  const MAX_NATIVE_LIVE_SPLIT_FAILURES = 2;
 
   const displayedDurationMs = $derived.by(() => {
     if (status === 'recording' && lastSegmentStartMs !== null && clockNowMs > lastSegmentStartMs) {
@@ -275,10 +277,17 @@
     lastFinishedRun !== null && status === 'idle' && !pendingHandoffSession && sessionRecoveryState === 'ready',
   );
   const distanceFigure = $derived(splitFigure(formatPreviewDistanceKm(previewDistanceM)));
+  const durationDisplayText = $derived(formatClockDuration(displayedDurationMs));
   const paceFigure = $derived(splitFigure(formatPreviewPace(displayedDurationMs, previewDistanceM)));
+  const distanceLengthClass = $derived(
+    distanceFigure.number.length >= 6 ? 'xlong' : distanceFigure.number.length >= 5 ? 'long' : '',
+  );
+  const subFigureLong = $derived(durationDisplayText.length >= 6 || paceFigure.number.length >= 5);
   const liveSplit = $derived(summarizeLiveSplit(previewDistanceM, capabilities.native ? nativeLivePoints : webPoints));
   const finishedQueueItem = $derived(
-    lastFinishedRun ? (uploadItems.find((item) => item.idempotencyKey === lastFinishedRun!.idempotencyKey) ?? null) : null,
+    lastFinishedRun
+      ? (uploadItems.find((item) => item.idempotencyKey === lastFinishedRun!.idempotencyKey) ?? null)
+      : null,
   );
   const finishedFastestSplit = $derived(
     lastFinishedRun?.splits.find((row) => row.fastest && row.paceSecondsPerKm !== null) ?? null,
@@ -455,6 +464,7 @@
       nativeLivePointsSessionId = targetSessionId;
       nativeLivePointsFetchedKm = 0;
       nativeLivePointsLastTriedPointCount = 0;
+      nativeLivePointsConsecutiveFailures = 0;
       nativeLivePointsInFlight = false;
       nativeLivePoints = [];
       nativeLivePointsRequestToken++;
@@ -462,12 +472,17 @@
     const completedFullKms = Math.floor(distanceM / 1000);
     // Re-fetch whenever a new full km is crossed OR a previous fetch for this km returned rounded
     // native points that still fell shy of the exact km boundary and new points have since arrived.
+    // Cap consecutive failures so a persistently rejecting native bridge never spins in a retry loop.
     if (completedFullKms <= nativeLivePointsFetchedKm) return;
+    if (nativeLivePointsConsecutiveFailures >= MAX_NATIVE_LIVE_SPLIT_FAILURES) return;
     if (nativeLivePointsInFlight) return;
     if (currentPointCount <= nativeLivePointsLastTriedPointCount) return;
 
     const expectedAccountId = accountId;
     const token = ++nativeLivePointsRequestToken;
+    // Advance last-tried before invoking the bridge so a rejection at this pointCount never
+    // triggers an immediate recursive microtask retry in `.finally()`.
+    nativeLivePointsLastTriedPointCount = Math.max(nativeLivePointsLastTriedPointCount, currentPointCount);
     nativeLivePointsInFlight = true;
     void getNativeRecorderPoints(0, expectedAccountId)
       .then((pts) => {
@@ -481,8 +496,13 @@
         ) {
           return;
         }
+        nativeLivePointsConsecutiveFailures = 0;
         nativeLivePoints = pts;
-        nativeLivePointsLastTriedPointCount = Math.max(nativeLivePointsLastTriedPointCount, currentPointCount, pts.length);
+        nativeLivePointsLastTriedPointCount = Math.max(
+          nativeLivePointsLastTriedPointCount,
+          currentPointCount,
+          pts.length,
+        );
         const computedSplits = extractRecordedSplits(pts);
         const resolvedFullKms = computedSplits.filter((row) => row.distanceM === 1000).length;
         if (resolvedFullKms >= completedFullKms) {
@@ -490,6 +510,9 @@
         }
       })
       .catch(() => {
+        if (token === nativeLivePointsRequestToken && sessionId === targetSessionId) {
+          nativeLivePointsConsecutiveFailures += 1;
+        }
         // Live split hint is best-effort; authoritative track points are read on stop/handoff.
       })
       .finally(() => {
@@ -499,6 +522,7 @@
             !disposed &&
             sessionId === targetSessionId &&
             (status === 'recording' || status === 'paused') &&
+            nativeLivePointsConsecutiveFailures < MAX_NATIVE_LIVE_SPLIT_FAILURES &&
             Math.floor(previewDistanceM / 1000) > nativeLivePointsFetchedKm &&
             pointCount > nativeLivePointsLastTriedPointCount
           ) {
@@ -605,6 +629,7 @@
     nativeLivePointsSessionId = '';
     nativeLivePointsFetchedKm = 0;
     nativeLivePointsLastTriedPointCount = 0;
+    nativeLivePointsConsecutiveFailures = 0;
     nativeLivePointsInFlight = false;
     nativeLivePointsRequestToken++;
     webLastFixMs = null;
@@ -2310,6 +2335,7 @@
   {#if isActiveSession}
     <section
       class="rec-screen"
+      class:is-paused={status === 'paused'}
       aria-labelledby="recording-live-heading"
       data-testid="recording-panel"
     >
@@ -2318,15 +2344,25 @@
       </h1>
 
       <div class="rec-top">
-        <a class="rec-back-link" href={view.href('/activities')} aria-label="跑步记录">←</a>
+        {#if status === 'paused'}
+          <a class="rec-back-link" href={view.href('/activities')} aria-label="跑步记录">←</a>
+        {/if}
 
-        <div class="rec-top-status">
-          <span class="rec-status-pill">
+        <div class="rec-top-status" role="status">
+          <span class="rec-status-item">
             <span class="rec-dot" class:live={status === 'recording'} aria-hidden="true"></span>
             <span data-testid="recording-status-badge">{statusBadgeText}</span>
           </span>
-          <span class="rec-gps-inline" data-testid="recording-gps-badge">{gpsBadgeText}</span>
-          <span class="sr-only" data-testid="recording-upload-badge">{uploadBadgeText}</span>
+          <span class="rec-status-sep" aria-hidden="true">·</span>
+          <span class="rec-status-item rec-gps-inline" data-testid="recording-gps-badge">
+            {mobileViewport && gpsStatus === 'good' && lastAccuracyM !== null
+              ? `GPS ±${Math.round(lastAccuracyM)} m`
+              : gpsBadgeText}
+          </span>
+          {#if offline}
+            <span class="rec-status-sep" aria-hidden="true">·</span>
+            <span class="rec-status-item rec-offline-inline" data-testid="recording-offline-badge">离线</span>
+          {/if}
         </div>
 
         {#if status === 'recording'}
@@ -2339,7 +2375,15 @@
             onclick={() => (screenLocked = !screenLocked)}
             data-testid="recording-lock-btn"
           >
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              width="22"
+              height="22"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              aria-hidden="true"
+            >
               {#if screenLocked}
                 <rect x="5" y="11" width="14" height="10" rx="2" />
                 <path d="M8 11V7a4 4 0 0 1 8 0v4" />
@@ -2365,19 +2409,27 @@
       <div class="rec-main" aria-label="实时运动数据预览">
         <div class="rec-hero-block">
           <span class="rec-label">距离（预览）</span>
-          <p class="rec-hero-num" data-testid="recording-distance">
-            {distanceFigure.number}{#if distanceFigure.unit}{' '}<span class="rec-hero-unit">{distanceFigure.unit}</span>{/if}
+          <p
+            class="rec-hero-num"
+            class:is-long={distanceLengthClass === 'long'}
+            class:is-xlong={distanceLengthClass === 'xlong'}
+            data-testid="recording-distance"
+          >
+            {distanceFigure.number}{#if distanceFigure.unit}{' '}<span class="rec-hero-unit">{distanceFigure.unit}</span
+              >{/if}
           </p>
         </div>
 
         <dl class="rec-pair">
           <div class="rec-pair-item">
             <dt class="rec-label">用时</dt>
-            <dd class="rec-sub-num" data-testid="recording-duration">{formatClockDuration(displayedDurationMs)}</dd>
+            <dd class="rec-sub-num" class:is-long={subFigureLong} data-testid="recording-duration">
+              {durationDisplayText}
+            </dd>
           </div>
           <div class="rec-pair-item">
             <dt class="rec-label">平均配速</dt>
-            <dd class="rec-sub-num" data-testid="recording-pace">
+            <dd class="rec-sub-num" class:is-long={subFigureLong} data-testid="recording-pace">
               {paceFigure.number}{#if paceFigure.unit}{' '}<span class="rec-sub-unit">{paceFigure.unit}</span>{/if}
             </dd>
           </div>
@@ -2385,11 +2437,16 @@
 
         <div class="rec-telemetry">
           {#if liveSplit.lastFullKmPaceSecondsPerKm !== null}
-            <span>第 {liveSplit.currentKm} 公里 · 上一公里 {formatPace(liveSplit.lastFullKmPaceSecondsPerKm)}</span>
+            <span class="rec-split-text"
+              >第 {liveSplit.currentKm} 公里
+              <span class="rec-split-prev">· 上一公里 {formatPace(liveSplit.lastFullKmPaceSecondsPerKm)}</span></span
+            >
           {:else if previewDistanceM > 0}
-            <span>第 {liveSplit.currentKm} 公里</span>
+            <span class="rec-split-text">第 {liveSplit.currentKm} 公里</span>
           {/if}
-          <span data-testid="recording-points-count">{pointCount} 点 · {segmentIndex + 1} 段</span>
+          <span class="rec-points-meta" data-testid="recording-points-count"
+            >{pointCount} 点 · {segmentIndex + 1} 段</span
+          >
         </div>
 
         <div class="rec-notices">
@@ -3333,9 +3390,8 @@
   .rec-top {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--space-2);
-    min-height: 3.25rem;
+    gap: var(--space-3);
+    min-height: 3.5rem;
   }
   .rec-top .rec-back-link {
     min-width: 2.75rem;
@@ -3348,17 +3404,21 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: center;
-    gap: var(--space-2) var(--space-3);
+    gap: var(--space-1) var(--space-2);
+    flex: 1 1 auto;
     min-width: 0;
     font-size: var(--text-small);
-    font-weight: var(--weight-semibold);
+    font-weight: var(--weight-bold);
+    color: var(--rec-ink);
   }
-  .rec-status-pill {
+  .rec-status-item {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.375rem;
     white-space: nowrap;
+  }
+  .rec-status-sep {
+    opacity: 0.45;
   }
   .rec-dot {
     width: 0.55rem;
@@ -3372,18 +3432,25 @@
   }
   .rec-gps-inline {
     font-family: var(--font-mono);
-    font-size: var(--text-caption);
-    color: var(--muted-foreground);
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+    color: var(--rec-ink);
+    opacity: 0.82;
     font-variant-numeric: tabular-nums;
   }
+  .rec-offline-inline {
+    color: var(--warning);
+    font-weight: var(--weight-bold);
+  }
   .rec-lock-btn {
+    margin-left: auto;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 3.25rem;
     height: 3.25rem;
     flex: none;
-    border: 1.5px solid var(--control-border);
+    border: 2px solid currentColor;
     border-radius: var(--radius-field);
     background: transparent;
     color: var(--rec-ink);
@@ -3394,6 +3461,7 @@
     color: var(--rec-bg);
   }
   .rec-discard-btn {
+    margin-left: auto;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -3410,18 +3478,19 @@
 
   .rec-main {
     display: grid;
-    gap: var(--space-6);
+    gap: var(--space-5);
     margin-block: auto;
   }
   .rec-hero-block {
     display: grid;
-    gap: var(--space-2);
+    gap: var(--space-1);
   }
   .rec-label {
-    font-size: var(--text-caption);
-    font-weight: var(--weight-semibold);
-    color: var(--muted-foreground);
-    letter-spacing: var(--tracking-caps);
+    font-size: var(--text-small);
+    font-weight: var(--weight-bold);
+    color: var(--rec-ink);
+    opacity: 0.72;
+    letter-spacing: 0;
   }
   .rec-hero-num {
     margin: 0;
@@ -3433,18 +3502,26 @@
     color: var(--rec-ink);
     white-space: nowrap;
   }
+  .rec-hero-num.is-long {
+    font-size: var(--text-rec-hero-long);
+  }
+  .rec-hero-num.is-xlong {
+    font-size: var(--text-rec-hero-xlong);
+  }
   .rec-hero-unit {
     font-size: var(--text-section);
     font-weight: var(--weight-semibold);
     letter-spacing: 0;
-    color: var(--muted-foreground);
+    color: var(--rec-ink);
+    opacity: 0.72;
   }
   .rec-pair {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-4);
+    gap: 0;
     margin: 0;
-    padding-block: var(--space-4);
+    padding-top: var(--space-3);
+    padding-bottom: var(--space-4);
     border-top: 2px solid currentColor;
     border-bottom: 1px solid var(--border);
   }
@@ -3452,6 +3529,10 @@
     display: grid;
     gap: var(--space-1);
     min-width: 0;
+  }
+  .rec-pair-item + .rec-pair-item {
+    padding-left: var(--space-4);
+    border-left: 2px solid currentColor;
   }
   .rec-sub-num {
     margin: 0;
@@ -3463,22 +3544,37 @@
     color: var(--rec-ink);
     white-space: nowrap;
   }
+  .rec-sub-num.is-long {
+    font-size: var(--text-rec-sub-long);
+  }
   .rec-sub-unit {
-    font-size: var(--text-small);
+    font-size: var(--text-caption);
     font-weight: var(--weight-semibold);
     letter-spacing: 0;
-    color: var(--muted-foreground);
+    color: var(--rec-ink);
+    opacity: 0.68;
   }
   .rec-telemetry {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
+    align-items: baseline;
     justify-content: space-between;
     gap: var(--space-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .rec-split-text {
+    font-size: var(--text-body);
+    font-weight: var(--weight-bold);
+    color: var(--rec-ink);
+  }
+  .rec-split-prev {
+    font-weight: var(--weight-semibold);
+    opacity: 0.76;
+  }
+  .rec-points-meta {
     font-family: var(--font-mono);
     font-size: var(--text-caption);
     color: var(--muted-foreground);
-    font-variant-numeric: tabular-nums;
   }
   .rec-notices {
     display: grid;
@@ -3840,7 +3936,7 @@
     .rec-main {
       gap: var(--space-3);
     }
-    .rec-hero-num {
+    .rec-screen.is-paused .rec-hero-num:not(.is-long, .is-xlong) {
       font-size: var(--text-rec-hero-narrow);
     }
     .rec-pair {
@@ -3869,11 +3965,11 @@
     }
   }
   @media (max-width: 359px) {
-    .rec-hero-num {
-      font-size: var(--text-rec-hero-narrow);
+    .rec-pair-item + .rec-pair-item {
+      padding-left: var(--space-3);
     }
-    .rec-pair {
-      gap: var(--space-3);
+    .rec-gps-inline {
+      font-size: var(--text-caption);
     }
   }
   @media (min-width: 800px) {

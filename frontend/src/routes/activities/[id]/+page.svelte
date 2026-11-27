@@ -166,6 +166,7 @@
     moreMenu = $state<ReturnType<typeof AnchoredPanel>>(),
     editButton = $state<HTMLButtonElement | null>(null),
     addNoteButton = $state<HTMLButtonElement | null>(null);
+  let mobileViewport = $state(false);
   let mounted = $state(false),
     activityToken = 0,
     routeToken = 0,
@@ -351,7 +352,12 @@
   }
   onMount(() => {
     mounted = true;
+    const mobileMedia = window.matchMedia('(max-width: 799px)');
+    const updateViewport = () => (mobileViewport = mobileMedia.matches);
+    updateViewport();
+    mobileMedia.addEventListener('change', updateViewport);
     return () => {
+      mobileMedia.removeEventListener('change', updateViewport);
       disposed = true;
       activityToken++;
       routeToken++;
@@ -387,88 +393,105 @@
     </div>
     <div class="mt-6">
       <FeedbackState kind="error" title={message}>
-        <button type="button" onclick={() => void loadActivity()} class="button-secondary mt-3">重新读取活动详情</button>
+        <button type="button" onclick={() => void loadActivity()} class="button-secondary mt-3">重新读取活动详情</button
+        >
       </FeedbackState>
     </div>
   {:else if activity}
     {#if showingCachedDetail}
       <div class="status-strip offline-strip" data-testid="activity-detail-offline-notice" role="status">
         <span>当前显示离线缓存详情，恢复网络后可重新同步最新数据。</span>
-        <button type="button" class="button-text" onclick={() => void loadActivity(activity!.id)}>重新读取活动详情</button>
+        <button type="button" class="button-text" onclick={() => void loadActivity(activity!.id)}
+          >重新读取活动详情</button
+        >
       </div>
     {/if}
 
-    <div class="detail-stage" class:switching data-testid="sport-hero" aria-busy={switching}>
-      <div class="detail-toolbar">
-        <button type="button" class="back-crumb" onclick={goBack}>
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg
-          >返回
-        </button>
-        <div class="detail-actions">
-          {#if activity.has_route}
-            <ActivityShareMenu
-              onposter={(from) => poster?.open(from)}
-              onvideo={(from) => replay?.openExport(from)}
-            />
-          {/if}
-          {#if view.manage}
-            <button
-              bind:this={editButton}
-              type="button"
-              class="button-secondary"
-              disabled={manageBusy || editing}
-              onclick={() => actions?.openEdit('title', editButton)}
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z" /></svg
-              >编辑记录
-            </button>
-            <AnchoredPanel bind:this={moreMenu} label="更多" panelLabel="更多操作">
-              {#snippet trigger()}
+    <div
+      class="detail-stage"
+      class:switching
+      data-testid="sport-hero"
+      data-detail-map-lead={activity.has_route && !showingCachedDetail ? '' : undefined}
+      aria-busy={switching}
+    >
+      {#snippet toolbar(activity: Activity)}
+        <div class="detail-toolbar" data-testid="activity-detail-toolbar">
+          <button type="button" class="back-crumb" onclick={goBack}>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg
+            >返回
+          </button>
+          <div class="detail-actions">
+            {#if activity.has_route}
+              <ActivityShareMenu onposter={(from) => poster?.open(from)} onvideo={(from) => replay?.openExport(from)} />
+            {/if}
+            {#if view.manage}
+              <button
+                bind:this={editButton}
+                type="button"
+                class="button-secondary"
+                disabled={manageBusy || editing}
+                onclick={() => actions?.openEdit('title', editButton)}
+              >
                 <svg
-                  width="18"
-                  height="18"
+                  width="16"
+                  height="16"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
-                  stroke-width="2"
+                  stroke-width="1.8"
                   stroke-linecap="round"
                   stroke-linejoin="round"
-                  aria-hidden="true"><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></svg
-                >
-              {/snippet}
-              <div class="more-menu">
-                <button
-                  type="button"
-                  class="rn-menu-option danger-option"
-                  data-tone="danger"
-                  disabled={manageBusy}
-                  onclick={chooseDelete}
-                >
-                  删除记录
-                </button>
-              </div>
-            </AnchoredPanel>
-          {/if}
+                  aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z" /></svg
+                >编辑记录
+              </button>
+              <AnchoredPanel bind:this={moreMenu} label="更多" panelLabel="更多操作">
+                {#snippet trigger()}
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                    ><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle
+                      cx="19"
+                      cy="12"
+                      r="1"
+                    /></svg
+                  >
+                {/snippet}
+                <div class="more-menu">
+                  <button
+                    type="button"
+                    class="rn-menu-option danger-option"
+                    data-tone="danger"
+                    disabled={manageBusy}
+                    onclick={chooseDelete}
+                  >
+                    删除记录
+                  </button>
+                </div>
+              </AnchoredPanel>
+            {/if}
+          </div>
         </div>
-      </div>
+      {/snippet}
+
+      {#if !mobileViewport}
+        {@render toolbar(activity)}
+      {/if}
 
       {#if view.manage}
         <ActivityActions
@@ -482,7 +505,7 @@
         />
       {/if}
 
-      <div class="detail-workspace">
+      {#snippet receipt(activity: Activity)}
         <section class="receipt-sheet stub" aria-label="运动指标">
           <div class="receipt-header">
             <span>{receiptDate}</span>
@@ -495,14 +518,17 @@
             {#each activity.tags ?? [] as tag}<span>#{tag}</span>{/each}
           </p>
           <p class="stub-distance" data-testid="activity-distance">
-            <span class="stub-distance-num">{distance.number}</span>{#if distance.unit}{' '}<span class="figure-unit stub-distance-unit">{distance.unit}</span>{/if}{#if distance.number === '—'}<span class="sr-only">（缺失或无法可靠计算）</span>{/if}
+            <span class="stub-distance-num">{distance.number}</span>{#if distance.unit}{' '}<span
+                class="figure-unit stub-distance-unit">{distance.unit}</span
+              >{/if}{#if distance.number === '—'}<span class="sr-only">（缺失或无法可靠计算）</span>{/if}
           </p>
           <dl class="stub-leaders">
             {#each leaderMetrics as item (item.label)}
               <div class="leader-row">
                 <dt>{item.label}</dt>
                 <dd class:muted={item.missing}>
-                  {item.value}{#if item.unit}{' '}<span class="figure-unit">{item.unit}</span>{/if}{#if item.missing}<span class="sr-only">（缺失或无法可靠计算）</span>{/if}
+                  {item.value}{#if item.unit}{' '}<span class="figure-unit">{item.unit}</span
+                    >{/if}{#if item.missing}<span class="sr-only">（缺失或无法可靠计算）</span>{/if}
                 </dd>
               </div>
             {/each}
@@ -522,7 +548,9 @@
                   <span class="split-km">{row.label}</span>
                   <span class="split-pace">
                     {#if row.paceSecondsPerKm !== null}
-                      <strong>{formatDuration(row.paceSecondsPerKm)}</strong>{#if row.fastest}<span class="split-best">最快</span>{/if}
+                      <strong>{formatDuration(row.paceSecondsPerKm)}</strong>{#if row.fastest}<span class="split-best"
+                          >最快</span
+                        >{/if}
                     {:else}
                       <span class="muted">—<span class="sr-only">（缺失）</span></span>
                     {/if}
@@ -555,7 +583,12 @@
             </div>
           {/if}
         </section>
+      {/snippet}
 
+      <div class="detail-workspace">
+        {#if !mobileViewport}
+          {@render receipt(activity)}
+        {/if}
         <div class="detail-main">
           <section class="route-panel" aria-labelledby="route-title">
             <h2 id="route-title" class="sr-only">路线</h2>
@@ -613,6 +646,11 @@
             {/if}
           </section>
 
+          {#if mobileViewport}
+            {@render toolbar(activity)}
+            {@render receipt(activity)}
+          {/if}
+
           <div class="detail-pace">
             <ActivityPaceChart
               replay={replayData}
@@ -640,7 +678,9 @@
       <summary>数据质量与指标说明</summary>
       <div class="mt-4">
         <p>{qualityLabel(activity.temporal_quality)}</p>
-        <p class="mt-2 text-sm text-muted-foreground">“—”表示缺失或无法可靠计算。指标版本：{activity.metrics_version}</p>
+        <p class="mt-2 text-sm text-muted-foreground">
+          “—”表示缺失或无法可靠计算。指标版本：{activity.metrics_version}
+        </p>
         {#if Object.keys(activity.quality_summary).length}
           <dl class="mt-4 grid gap-3 sm:grid-cols-2">
             {#each qualityEntries(activity.quality_summary) as [key, value]}
@@ -992,14 +1032,11 @@
     .detail-main {
       display: contents;
     }
-    .route-panel {
-      order: 1;
+    .detail-stage .detail-toolbar {
+      margin-bottom: 0;
     }
-    .stub {
-      order: 2;
-    }
-    .detail-pace {
-      order: 3;
+    .detail-workspace {
+      row-gap: var(--space-4);
     }
     .detail-toolbar {
       flex-wrap: nowrap;

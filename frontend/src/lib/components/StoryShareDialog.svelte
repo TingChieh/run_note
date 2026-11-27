@@ -243,7 +243,6 @@
 <dialog
   bind:this={dialog}
   class="story-dialog editorial-page"
-  data-glass-overlay
   aria-labelledby={`${uid}-dialog-title`}
   data-testid="story-poster-dialog"
   onclose={handleDialogClose}

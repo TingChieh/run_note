@@ -155,10 +155,13 @@
   /* Editorial Receipt figures: one run's distance (64→88px) and a period's primary number on archive pages (56→128px). */
   --text-figure: clamp(4rem, 6.2vw, 5.5rem);
   --text-period-hero: clamp(3.5rem, 8.9vw, 8rem);
-  /* Outdoor recording readouts (brand.md §3.3 & §6.9): large ink numerals that fit 320px without overflow and reach 136px/52px on tablets. */
-  --text-rec-hero: clamp(4.25rem, 25vw, 8.5rem);
-  --text-rec-hero-narrow: clamp(3.25rem, 21vw, 4.5rem);
-  --text-rec-sub: clamp(2rem, 11vw, 3.25rem);
+  /* Outdoor recording readouts (brand.md §6.9 & prototypes/mobile.html:69-74): min(8.5rem, 31vw) hero & 52px (3.25rem) dual figures at 390px+, scaling safely at 320px. */
+  --text-rec-hero: min(8.5rem, 31vw);
+  --text-rec-hero-long: min(6.25rem, 23vw);
+  --text-rec-hero-xlong: min(5rem, 18.5vw);
+  --text-rec-hero-narrow: clamp(4.25rem, 25vw, 5.5rem);
+  --text-rec-sub: clamp(2.35rem, 13.5vw, 3.25rem);
+  --text-rec-sub-long: clamp(1.75rem, 9.5vw, 2.5rem);
   --text-rec-action: 1.375rem;
   --text-recap-unit: clamp(1.125rem, 2vw, 1.75rem);
   --text-recap-ledger: clamp(1.375rem, 2.2vw, 1.95rem);
@@ -2884,6 +2887,14 @@
   }
   .app-shell:has([data-recording-done]) {
     background: var(--desk);
+  }
+  @media (max-width: 799px) {
+    .app-shell:has([data-recording-immersive]) .offline-banner {
+      display: none;
+    }
+    .app-shell:has([data-detail-map-lead]) .page-content {
+      padding-top: var(--safe-top);
+    }
   }
   .receipt-header {
     display: flex;
