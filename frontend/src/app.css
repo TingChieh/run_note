@@ -2781,6 +2781,9 @@
   .editorial-page {
     --radius-control: 0.625rem;
   }
+  .editorial-page [data-glass-overlay] {
+    --radius-control: 0.75rem;
+  }
   /* The yellow brand header stays (brand.md §12) but prints as a compact band: less height, a tighter radius. */
   .sport-theme .editorial-page .page-header {
     padding-block: clamp(1rem, 1.6vw, 1.375rem);
@@ -2934,8 +2937,9 @@
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
-  /* Content buttons (brand.md §6.1): 44px, 10px, 14/600; no glass, no shadow. */
-  .editorial-page :is(.button-primary, .button-secondary, .button-text) {
+  /* Content buttons (brand.md §6.1): 44px, 10px, 14/600; no glass, no shadow.
+     Floating overlays ([data-glass-overlay]) inside .editorial-page opt back into Liquid Glass. */
+  .editorial-page :is(.button-primary, .button-secondary, .button-text):where(:not([data-glass-overlay] *)) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -2946,19 +2950,19 @@
     font-weight: var(--weight-semibold);
     box-shadow: none;
   }
-  .editorial-page .button-primary {
+  .editorial-page .button-primary:where(:not([data-glass-overlay] *)) {
     padding: 0.5rem 1rem;
     border: 1px solid var(--primary);
     background: var(--primary);
     color: var(--primary-foreground);
   }
-  .editorial-page .button-secondary {
+  .editorial-page .button-secondary:where(:not([data-glass-overlay] *)) {
     padding: 0.5rem 0.875rem;
     border: 1px solid var(--control-border);
     background: transparent;
     color: var(--foreground);
   }
-  .editorial-page .button-text {
+  .editorial-page .button-text:where(:not([data-glass-overlay] *)) {
     min-width: 2.75rem;
     padding: 0;
     border: 0;
@@ -2966,21 +2970,25 @@
     color: var(--primary);
   }
   @media (hover: hover) {
-    .editorial-page .button-primary:not(:disabled):hover {
+    .editorial-page .button-primary:where(:not([data-glass-overlay] *)):not(:disabled):hover {
       border-color: var(--primary-hover);
       background: var(--primary-hover);
       color: var(--primary-foreground);
     }
-    .editorial-page .button-secondary:not(:disabled):hover {
+    .editorial-page .button-secondary:where(:not([data-glass-overlay] *)):not(:disabled):hover {
       background: var(--muted);
       color: var(--foreground);
     }
-    .editorial-page .button-text:not(:disabled):hover {
+    .sport-theme .editorial-page .page-header .button-secondary:where(:not([data-glass-overlay] *)):not(:disabled):hover {
+      background: color-mix(in srgb, var(--header-ink) 8%, transparent);
+      color: var(--header-ink);
+    }
+    .editorial-page .button-text:where(:not([data-glass-overlay] *)):not(:disabled):hover {
       text-decoration: underline;
       text-underline-offset: 0.2em;
     }
   }
-  .editorial-page :is(.button-primary, .button-secondary, .button-text):disabled {
+  .editorial-page :is(.button-primary, .button-secondary, .button-text):where(:not([data-glass-overlay] *)):disabled {
     opacity: 0.45;
     cursor: not-allowed;
   }

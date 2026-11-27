@@ -159,7 +159,7 @@
 <!-- Hidden token probe: resolves the chosen fixed appearance without switching the site theme. It is present only for a fixed appearance, so the records page keeps its single `.sport-theme` shell (same as the single-record dialog). -->
 {#if theme !== 'auto'}<div hidden data-poster-theme={theme}><div class="sport-theme" bind:this={themeProbe}></div></div>{/if}
 <button bind:this={trigger} type="button" class="button-secondary" disabled={!mounted} onclick={open}>生成分享图</button>
-<dialog bind:this={dialog} class="poster-dialog" aria-labelledby="poster-title" aria-describedby="poster-description"
+<dialog bind:this={dialog} class="poster-dialog" data-glass-overlay aria-labelledby="poster-title" aria-describedby="poster-description"
   oncancel={(event) => { event.preventDefault(); close(); }}
   onclose={() => { // A close event queued before a quick reopen must not stop the new session.
     if (dialog.open) return; stop(); visible = false; trigger?.focus(); }}>

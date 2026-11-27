@@ -26,8 +26,10 @@
 </div>
 <style>
   .batch-panel { display: grid; gap: var(--space-2); margin-top: var(--space-4); padding: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-control); min-width: 0; }
+  :global(.editorial-page) .batch-panel { padding: var(--space-3) var(--space-4); background: var(--recap-well); border-radius: var(--radius-sheet); }
   .batch-headline { font-size: var(--text-body); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
   .batch-progress { width: 100%; height: .375rem; overflow: hidden; background: var(--muted); border-radius: 999px; }
+  :global(.editorial-page) .batch-progress { height: 4px; background: var(--border); border-radius: 0; }
   .batch-progress span { display: block; height: 100%; background: var(--primary); border-radius: inherit; transition: width .2s ease; }
   @media (prefers-reduced-motion: reduce) { .batch-progress span { transition: none; } }
   .batch-note { color: var(--muted-foreground); font-size: var(--text-small); }

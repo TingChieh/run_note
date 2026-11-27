@@ -115,7 +115,7 @@
      and keeps the page's single `.sport-theme` shell unique otherwise. -->
 {#if visible && theme !== 'auto'}<div hidden data-poster-theme={theme}><div class="sport-theme" bind:this={themeProbe}></div></div>{/if}
 {#if showTrigger}<button bind:this={trigger} type="button" class="button-secondary" disabled={!mounted} onclick={() => open()}>{label}</button>{/if}
-<dialog bind:this={dialog} class="poster-dialog" aria-labelledby="activity-poster-title" aria-describedby="activity-poster-description"
+<dialog bind:this={dialog} class="poster-dialog" data-glass-overlay aria-labelledby="activity-poster-title" aria-describedby="activity-poster-description"
   oncancel={(event) => { event.preventDefault(); close(); }}
   onclose={() => { if (dialog.open) return; stop(); visible = false; returnFocus?.focus(); }}>
   <div class="poster-heading"><h2 id="activity-poster-title">生成分享图</h2><button type="button" class="button-secondary" onclick={close}>关闭</button></div>

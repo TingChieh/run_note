@@ -394,3 +394,230 @@ test('活动列表路线缩略图保留默认主题颜色', async ({ page }) => 
   const darkPrimary = await path.evaluate(el => getComputedStyle(el.closest('.route-thumbnail')!).color);
   await expect(path).toHaveCSS('stroke', darkPrimary);
 });
+
+test('editorial ledger header, whole-page GPX drop, missing-value sr-only and zero overflow across themes', async ({ page }) => {
+  const state = await installActivities(page);
+  state.records = [
+    ...Array.from({ length: 8 }, (_, i) => ({
+      ...sampleActivity,
+      id: `${String(i + 1).padStart(8, '0')}-3333-4333-8333-333333333333`,
+      title: `十月记录 ${i + 1}`,
+      activity_date: `2026-10-${String(11 - i).padStart(2, '0')}`,
+    })),
+    { ...incompleteActivity, activity_date: '2026-09-20' },
+  ];
+  await loginRunner(page);
+  await page.goto('/activities');
+  await expect(page.locator('.editorial-page.activities-page')).toBeVisible();
+  await expect(page.locator('.page-header .page-description')).toHaveCount(0);
+  await expect(page.getByTestId('page-meta')).toHaveText('9 次');
+  await expect(page.locator('.activity-card .chip')).toHaveCount(0);
+  // 1440x900 above-the-fold density: ~8 records visible without opening import.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.locator('.activity-card').first()).toBeVisible();
+  const visibleInFold = await page.evaluate(() =>
+    [...document.querySelectorAll('.activity-card')].filter(el => el.getBoundingClientRect().bottom <= window.innerHeight).length
+  );
+  expect(visibleInFold).toBeGreaterThanOrEqual(7);
+  // Missing duration/pace on incomplete record keeps '—' with screen-reader explanation.
+  const incompleteRow = page.locator('.activity-card').filter({ has: page.getByRole('heading', { name: incompleteActivity.title }) });
+  await expect(incompleteRow.locator('.sr-only', { hasText: '（缺失）' }).first()).toBeAttached();
+  // Dropping a GPX file anywhere on the page opens the import area, clears drag highlight, and submits cleanly.
+  await expect(page.getByRole('button', { name: '导入轨迹', exact: true })).toHaveAttribute('aria-expanded', 'false');
+  await page.evaluate(() => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(['<gpx version="1.1" creator="synthetic"></gpx>'], 'page-drop.gpx', { type: 'application/gpx+xml' }));
+    const target = document.querySelector('.activities-page')!;
+    target.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+  });
+  await expect(page.locator('.records-strip')).toHaveAttribute('data-dragging', 'false');
+  await expect(page.getByRole('button', { name: '导入轨迹', exact: true })).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByText('page-drop.gpx')).toBeVisible();
+  await page.getByRole('button', { name: '导入 GPX', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: '导入成功' })).toBeVisible();
+  expect(state.uploadCount).toBe(1);
+  // Explicit light and dark html[data-theme] checks across desktop, tablet, and narrow mobile viewports.
+  await page.getByRole('button', { name: '导入轨迹', exact: true }).click();
+  const backgrounds: Record<string, string> = {};
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe(theme);
+    backgrounds[theme] = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    for (const [width, height] of [[1440, 900], [1024, 1024], [768, 1024], [390, 844], [320, 640]] as const) {
+      await page.setViewportSize({ width, height });
+      await noOverflow(page);
+    }
+  }
+  expect(backgrounds.light).not.toBe(backgrounds.dark);
+});
+
+test('edit mode preserves non-zero title and metric geometry at 1440px, 1024px, 768px, 390px and 320px', async ({ page }) => {
+  const state = await installActivities(page);
+  state.records = [
+    { ...sampleActivity, id: '10000000-4444-4444-8444-000000000001', title: '滨江晨跑五公里', activity_date: '2026-11-25', distance_m: '5100' },
+    { ...sampleActivity, id: '10000000-4444-4444-8444-000000000002', title: '秋季半马节奏拉练', activity_date: '2026-11-20', distance_m: '21100' },
+  ];
+  await loginRunner(page);
+  await page.goto('/activities');
+  await page.getByRole('button', { name: '编辑', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: '选择 滨江晨跑五公里' })).toBeVisible();
+  for (const [width, height] of [[1440, 900], [1024, 1024], [768, 1024], [390, 844], [320, 640]] as const) {
+    await page.setViewportSize({ width, height });
+    await noOverflow(page);
+    const geometry = await page.evaluate(() => {
+      const card = document.querySelector('.activity-card.ledger.editing')!;
+      const cardBox = card.getBoundingClientRect();
+      const thumb = card.querySelector('.route-thumbnail')!.getBoundingClientRect();
+      const title = card.querySelector('h3')!.getBoundingClientRect();
+      const meta = card.querySelector('.card-meta')!.getBoundingClientRect();
+      const dist = card.querySelector('.col-dist')!.getBoundingClientRect();
+      const dur = card.querySelector('.col-dur')!.getBoundingClientRect();
+      const pace = card.querySelector('.col-pace')!.getBoundingClientRect();
+      const actions = card.querySelector('.card-actions')!.getBoundingClientRect();
+      const overlap =
+        title.left < actions.right &&
+        title.right > actions.left &&
+        title.top < actions.bottom &&
+        title.bottom > actions.top;
+      const thumbOverlap = thumb.right > title.left + 1 || thumb.right > meta.left + 1;
+      return {
+        cardH: Math.round(cardBox.height),
+        titleW: Math.round(title.width),
+        titleH: Math.round(title.height),
+        metaH: Math.round(meta.height),
+        distW: Math.round(dist.width),
+        durW: Math.round(dur.width),
+        paceW: Math.round(pace.width),
+        actionsW: Math.round(actions.width),
+        overlap,
+        thumbOverlap,
+      };
+    });
+    expect(geometry.cardH, `${width}px edit card height must not collapse vertically`).toBeLessThanOrEqual(220);
+    expect(geometry.titleW, `${width}px edit title width`).toBeGreaterThanOrEqual(80);
+    expect(geometry.titleH, `${width}px edit title height`).toBeLessThanOrEqual(48);
+    expect(geometry.metaH, `${width}px edit meta height`).toBeLessThanOrEqual(60);
+    expect(geometry.distW, `${width}px edit distance width`).toBeGreaterThan(20);
+    expect(geometry.durW, `${width}px edit duration width`).toBeGreaterThan(20);
+    expect(geometry.paceW, `${width}px edit pace width`).toBeGreaterThan(20);
+    expect(geometry.actionsW, `${width}px edit actions width`).toBeGreaterThan(80);
+    expect(geometry.overlap, `${width}px title must not overlap actions`).toBe(false);
+    expect(geometry.thumbOverlap, `${width}px thumbnail must not overlap title or meta`).toBe(false);
+  }
+});
+
+test('dropping a Mi Fitness summary file clears the page drag highlight, preserves file-pick states and loads preview', async ({ page }) => {
+  await installActivities(page);
+  let previewCalls = 0;
+  await page.route('**/api/v1/mifitness-imports**', async route => {
+    if (route.request().url().includes('preview=true')) previewCalls++;
+    await route.fulfill({
+      status: 200,
+      json: {
+        data: {
+          activity_date: '2026-10-12',
+          timezone: 'Asia/Shanghai',
+          started_at: '2026-10-12T00:00:00Z',
+          ended_at: '2026-10-12T00:20:00Z',
+          distance_m: '3000',
+          timer_seconds: '1200',
+          elapsed_seconds: '1200',
+          calories_kcal: null,
+          steps: null,
+          avg_heart_rate_bpm: null,
+          max_heart_rate_bpm: null,
+          min_heart_rate_bpm: null,
+          avg_cadence_spm: null,
+          max_cadence_spm: null,
+          vo2_max_ml_kg_min: null,
+          training_load: null,
+          aerobic_training_effect: null,
+          anaerobic_training_effect: null,
+          has_route: false,
+          point_count: 0,
+          segment_count: 0,
+          warnings: [],
+          suspected_activity_ids: [],
+        },
+      },
+    });
+  });
+  await loginRunner(page);
+  await page.goto('/activities');
+  await openImport(page);
+  const mifitness = page.getByRole('region', { name: 'Mi Fitness 跑步导入', exact: true });
+  await expect(mifitness.getByLabel(/running_summaries\.json/)).toBeEnabled();
+  const dropZone = mifitness.locator('.file-pick').first();
+  const idleBg = await dropZone.evaluate(el => getComputedStyle(el).backgroundColor);
+  // First verify dragenter/dragover turns both page-level and file-pick drag feedback ON.
+  await page.evaluate(() => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(['{}'], 'running_summaries.json', { type: 'application/json' }));
+    const zone = document.querySelector('.mifitness-import .file-pick')!;
+    zone.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    zone.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+  });
+  await expect(page.locator('.records-strip')).toHaveAttribute('data-dragging', 'true');
+  await expect(dropZone).toHaveAttribute('data-dragging', 'true');
+  await expect
+    .poll(() => dropZone.evaluate(el => getComputedStyle(el).backgroundColor), {
+      message: 'file-pick dragging state must show primary-soft feedback, not idle surface',
+    })
+    .not.toBe(idleBg);
+  // Then drop onto the Mi Fitness summary zone: parent page highlight must clear and file-pick must keep filled feedback.
+  await page.evaluate(() => {
+    const dt = new DataTransfer();
+    const payload = JSON.stringify({
+      records: [{ source_time: 1791763200, has_downloaded_track: false, source_metrics: { distance: 3000, duration: 1200, start_time: 1791763200, end_time: 1791764400 } }],
+    });
+    dt.items.add(new File([payload], 'running_summaries.json', { type: 'application/json' }));
+    const zone = document.querySelector('.mifitness-import .file-pick')!;
+    zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+  });
+  await expect(page.locator('.records-strip')).toHaveAttribute('data-dragging', 'false');
+  await expect(dropZone).toHaveAttribute('data-filled', 'true');
+  await expect
+    .poll(() => dropZone.evaluate(el => getComputedStyle(el).backgroundColor), {
+      message: 'file-pick filled state must show primary-soft feedback, not idle surface',
+    })
+    .not.toBe(idleBg);
+  await expect(mifitness.getByText('running_summaries.json', { exact: true })).toBeVisible();
+  expect(
+    await mifitness.locator('input[type="file"]').first().evaluate((el: HTMLInputElement) => el.files?.[0]?.name)
+  ).toBe('running_summaries.json');
+  await mifitness.getByRole('button', { name: '预览所选记录' }).click();
+  await expect(mifitness.getByText('仅汇总（无轨迹）', { exact: true })).toBeVisible();
+  expect(previewCalls).toBe(1);
+});
+
+test('poster dialogs sit on the glass overlay boundary and restore focus on Escape', async ({ page }) => {
+  await installActivities(page);
+  await loginRunner(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/activities');
+  await expect(page.getByTestId('activity-preview')).toBeVisible();
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe(theme);
+    for (const [trigger, title] of [
+      [page.locator('.page-header').getByRole('button', { name: '生成分享图', exact: true }), '生成分享图'],
+      [page.getByTestId('activity-preview').getByRole('button', { name: '本次分享图', exact: true }), '生成分享图'],
+    ] as const) {
+      await trigger.click();
+      const dialog = page.locator('dialog.poster-dialog[open]');
+      await expect(dialog).toBeVisible();
+      await expect(dialog).toHaveAttribute('data-glass-overlay', '');
+      await expect(dialog.getByRole('heading', { name: title, exact: true })).toBeVisible();
+      const closeBtn = dialog.getByRole('button', { name: '关闭', exact: true });
+      await expect(closeBtn).toHaveClass(/rn-glass-control/);
+      await expect(closeBtn.locator('.rn-glass-layer')).toBeAttached();
+      const radius = await closeBtn.evaluate(el => getComputedStyle(el).borderRadius);
+      expect(radius, `${theme} poster close button should use glass pill radius, not 10px content radius`).not.toBe('10px');
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      await expect(trigger).toBeFocused();
+    }
+  }
+});
