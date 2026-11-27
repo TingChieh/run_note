@@ -1279,7 +1279,7 @@
     display: grid;
     gap: var(--space-3);
     min-width: 0;
-    padding-right: var(--space-5);
+    padding-right: var(--space-6);
     border-right: 1px solid var(--border);
     max-height: calc(100dvh - 8rem);
     overflow-y: auto;

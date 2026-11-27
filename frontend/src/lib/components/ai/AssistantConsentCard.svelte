@@ -91,7 +91,7 @@
   .consent-card {
     display: grid;
     gap: var(--space-4);
-    padding: var(--space-5);
+    padding: var(--space-6);
     border: 1px solid var(--border);
     border-top: 2px solid var(--rule);
     border-radius: var(--radius-sheet);

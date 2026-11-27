@@ -235,7 +235,7 @@
 <style>
   .report-page { display: grid; gap: var(--space-6); min-width: 0; }
   .report-head, .export-section { display: grid; gap: var(--space-4); min-width: 0; }
-  .card { display: grid; gap: var(--space-4); min-width: 0; padding: var(--space-5); border: 1px solid var(--border); border-radius: var(--radius-sheet); background: var(--paper); }
+  .card { display: grid; gap: var(--space-4); min-width: 0; padding: var(--space-6); border: 1px solid var(--border); border-radius: var(--radius-sheet); background: var(--paper); }
   h2 { font-size: var(--text-section); font-weight: var(--weight-semibold); letter-spacing: 0; }
   h3 { font-size: var(--text-section); font-weight: var(--weight-semibold); letter-spacing: 0; }
   .hint, .muted { color: var(--muted-foreground); font-size: var(--text-small); line-height: var(--line-height-body); }
