@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { join } from 'node:path';
 import { loginRunner, installActivities } from '../fixtures/activities';
 import { installBasemaps } from '../fixtures/basemaps';
 
@@ -40,6 +41,9 @@ test('sorting asks the server and keeps the URL clean', async ({ page }) => {
   const requests = await fixture(page); await loginRunner(page);
   await page.goto('/routes');
   await expect(page.getByTestId('route-card').first()).toBeVisible();
+  const total = page.getByTestId('page-meta');
+  await expect(total).toHaveText('共 1 条常跑路线');
+  await expect(total, '结果数量变化会通过实时区域播报').toHaveAttribute('aria-live', 'polite');
   await page.getByRole('button', { name: '最近跑过' }).click();
   await expect.poll(() => requests.some(url => url.searchParams.get('sort') === 'recent')).toBe(true);
   await expect(page).toHaveURL(/\/routes$/);
@@ -141,5 +145,82 @@ for (const [width, height] of [[1440, 900], [768, 1024], [390, 844], [320, 640]]
       await expect(page.getByTestId('route-detail-ready')).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     });
+  }
+}
+
+// PR #169 follow-up: the 标题 column must absorb long titles instead of widening the table, so 日期/距离/用时/配速
+// stay on screen without horizontal scrolling at every width.
+const sixCharTitle = '周末环湖晨跑';
+const longTitle = '沿江晨跑'.repeat(30);
+
+async function detailWithTitle(page: Page, title: string) {
+  // The first row is the widest realistic case: two-digit distance, an hour-long duration and a minute-range pace.
+  const rows = runs.map((run, index) =>
+    index === 0
+      ? { ...run, title, distance_m: '12345.000', duration_seconds: '3723.000', avg_pace_seconds_per_km: '375.000' }
+      : { ...run, title },
+  );
+  await page.route(`**/api/v1/showcase/routes/groups/${id}`, route =>
+    route.fulfill({ json: { data: { ...item, runs: rows }, error: null } }),
+  );
+}
+
+for (const title of [sixCharTitle, longTitle]) {
+  const label = title === sixCharTitle ? '六字标题' : '120 字标题';
+  for (const width of [320, 390, 768, 1440] as const) {
+    for (const scheme of ['light', 'dark'] as const) {
+      test(`${label} keeps every run-table column visible at ${width}px (${scheme})`, async ({ page }) => {
+        await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
+        await page.setViewportSize({ width, height: 900 });
+        await fixture(page);
+        await detailWithTitle(page, title);
+        await loginRunner(page);
+        await page.goto(`/routes/${id}`);
+        await expect(page.getByTestId('route-detail-ready')).toBeVisible();
+        await expect(page.getByTestId('route-run-row')).toHaveCount(2);
+
+        const metrics = await page.locator('.table-wrap').evaluate((wrap) => {
+          const box = wrap.getBoundingClientRect();
+          return {
+            left: box.left,
+            right: box.right,
+            scrollWidth: wrap.scrollWidth,
+            clientWidth: wrap.clientWidth,
+            cells: [...wrap.querySelectorAll('tbody tr:first-child > td')].map((cell) => {
+              const rect = cell.getBoundingClientRect();
+              return {
+                left: rect.left,
+                right: rect.right,
+                scrollWidth: cell.scrollWidth,
+                clientWidth: cell.clientWidth,
+                text: (cell.textContent ?? '').trim(),
+              };
+            }),
+          };
+        });
+
+        expect(metrics.cells).toHaveLength(5);
+        expect(metrics.scrollWidth, '表格不产生横向滚动').toBeLessThanOrEqual(metrics.clientWidth + 1);
+        for (const [index, cell] of metrics.cells.entries()) {
+          expect(cell.left, `第 ${index + 1} 列不越过表格左缘`).toBeGreaterThanOrEqual(metrics.left - 1);
+          expect(cell.right, `第 ${index + 1} 列不越过表格右缘`).toBeLessThanOrEqual(metrics.right + 1);
+          expect(cell.right, `第 ${index + 1} 列在视口内`).toBeLessThanOrEqual(width);
+        }
+        // 日期(0)、标题(1)、距离(2)、用时(3)、配速(4) must wrap or fit inside their own column.
+        for (const index of [0, 1, 2, 3, 4]) {
+          const cell = metrics.cells[index]!;
+          expect(cell.text.length, `第 ${index + 1} 列有内容`).toBeGreaterThan(0);
+          expect(cell.scrollWidth, `第 ${index + 1} 列文本完整可见`).toBeLessThanOrEqual(cell.clientWidth + 1);
+        }
+        const outDir = process.env.RUNNOTE_ROUTES_SCREENSHOTS;
+        if (outDir) {
+          await page.screenshot({
+            path: join(outDir, `route-table-${label}-${width}-${scheme}.png`),
+            fullPage: true,
+            animations: 'disabled',
+          });
+        }
+      });
+    }
   }
 }

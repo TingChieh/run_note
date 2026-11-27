@@ -1164,6 +1164,31 @@ test.describe('segmented lens label', () => {
   }
 });
 
+// /settings and /routes moved to Editorial Receipt underline tabs (#164/#169). Keep the settings section selection and
+// return path covered here; the glass segment itself is covered on /wellbeing above and in wellbeing.spec.ts.
+test.describe('settings section tabs', () => {
+  test('the selected section follows navigation and returning restores the account tab', async ({ page }) => {
+    await installActivities(page);
+    await loginRunner(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/settings');
+    const tabs = page.locator('.underline-tabs.settings-tabs-sections');
+    await expect(tabs).toBeVisible();
+    await expect(tabs.locator('.rn-moving-copy'), '设置分区使用下划线标签，不挂玻璃透镜').toHaveCount(0);
+    const account = tabs.getByRole('link', { name: '账户总览', exact: true });
+    const shoes = tabs.getByRole('link', { name: '跑鞋' });
+    await expect(account).toHaveAttribute('aria-current', 'page');
+    await shoes.click();
+    await expect(page).toHaveURL(/\/settings\/shoes$/);
+    await expect(shoes).toHaveAttribute('aria-current', 'page');
+    await expect(account).not.toHaveAttribute('aria-current', 'page');
+    await account.click();
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(account).toHaveAttribute('aria-current', 'page');
+    await expect(shoes).not.toHaveAttribute('aria-current', 'page');
+  });
+});
+
 test.describe('the bottom tab bar on phones', () => {
   test.beforeEach(async ({ page }) => {
     await installActivities(page);

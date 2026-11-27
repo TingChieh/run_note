@@ -93,7 +93,11 @@
 
 <svelte:head><title>{pageTitle('常跑路线', page.data.site)}</title></svelte:head>
 <div class="editorial-page routes-shell">
-  <PageHeader title="常跑路线" meta={data && data.total > 0 ? `共 ${data.total} 条常跑路线` : undefined} />
+  <PageHeader
+    title="常跑路线"
+    meta={data && data.total > 0 ? `共 ${data.total} 条常跑路线` : undefined}
+    metaLive
+  />
   <div class="routes-tabs-bar">
     <div class="underline-tabs" role="group" aria-label="排序方式">
       {#each SORTS as item}<button type="button" aria-pressed={sort === item.value} onclick={() => choose(item.value)}

@@ -115,18 +115,34 @@
           </div>
           <div class="table-wrap" role="region" aria-label="常跑路线历次成绩表">
             <table>
-              <thead><tr><th scope="col">日期</th><th scope="col">标题</th><th scope="col" class="num">距离</th><th scope="col" class="num">用时</th><th scope="col" class="num">配速</th></tr></thead><tbody>
+              <colgroup>
+                <col class="col-date" />
+                <col class="col-title" />
+                <col class="col-distance" />
+                <col class="col-duration" />
+                <col class="col-pace" />
+              </colgroup>
+              <thead
+                ><tr
+                  ><th scope="col" class="col-date">日期</th><th scope="col" class="col-title">标题</th><th
+                    scope="col"
+                    class="num col-distance">距离</th
+                  ><th scope="col" class="num col-duration">用时</th><th scope="col" class="num col-pace">配速</th></tr
+                ></thead
+              ><tbody>
                 {#each data.runs as run (run.activity_id)}
                   <tr data-testid="route-run-row"
-                    ><td class="mono">{run.activity_date}</td><td
-                      ><a class="run-link" href={view.href(`/activities/${run.activity_id}`)}>{run.title || '未命名活动'}</a></td
-                    ><td class="num">{formatDistance(run.distance_m)}</td><td class="num"
+                    ><td class="mono col-date">{run.activity_date}</td><td class="col-title"
+                      ><a class="run-link" href={view.href(`/activities/${run.activity_id}`)}
+                        >{run.title || '未命名活动'}</a
+                      ></td
+                    ><td class="num col-distance">{formatDistance(run.distance_m)}</td><td class="num col-duration"
                       >{run.duration_seconds === null
                         ? '—'
                         : formatDuration(run.duration_seconds)}{#if run.duration_seconds === null}<span class="sr-only"
                           >未记录用时</span
                         >{/if}</td
-                    ><td class="num">{formatPace(run.avg_pace_seconds_per_km)}</td></tr
+                    ><td class="num col-pace">{formatPace(run.avg_pace_seconds_per_km)}</td></tr
                   >
                 {/each}
               </tbody>
@@ -187,36 +203,62 @@
     margin-top: var(--space-4);
     overflow-x: auto;
   }
+  /* Fixed layout keeps the long 标题 column from pushing the numeric columns out; the title wraps instead. */
   table {
     width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
     text-align: left;
     font-size: var(--text-small);
     font-variant-numeric: tabular-nums;
   }
+  .col-date {
+    width: 17%;
+  }
+  .col-title {
+    width: 27%;
+  }
+  .col-distance {
+    width: 19%;
+  }
+  .col-duration {
+    width: 17%;
+  }
+  .col-pace {
+    width: 20%;
+  }
   thead th {
-    padding: var(--space-2) var(--space-4) var(--space-2) 0;
+    padding: var(--space-2) var(--space-3) var(--space-2) 0;
     color: var(--muted-foreground);
     font-size: var(--text-caption);
     font-weight: var(--weight-medium);
     white-space: nowrap;
   }
   tbody td {
-    padding: var(--space-3) var(--space-4) var(--space-3) 0;
+    padding: var(--space-3) var(--space-3) var(--space-3) 0;
     border-top: 1px solid var(--border);
-    white-space: nowrap;
   }
   .num {
     text-align: right;
+    white-space: nowrap;
   }
   thead th.num,
   tbody td.num {
     padding-right: 0;
-    padding-left: var(--space-4);
+    padding-left: var(--space-3);
+  }
+  .col-title,
+  .col-title .run-link,
+  .mono {
+    overflow-wrap: anywhere;
+  }
+  .col-title {
+    white-space: normal;
   }
   .mono {
     font-family: var(--font-mono);
     color: var(--muted-foreground);
+    white-space: normal;
   }
   .run-link {
     color: var(--foreground);
@@ -264,6 +306,34 @@
       padding-top: var(--space-3);
       margin-top: var(--space-3);
       border-top: 1px solid var(--border);
+    }
+    .col-date {
+      width: 22%;
+    }
+    .col-title {
+      width: 23%;
+    }
+    .col-distance {
+      width: 19%;
+    }
+    .col-duration {
+      width: 17%;
+    }
+    .col-pace {
+      width: 19%;
+    }
+    table {
+      font-size: var(--text-caption);
+    }
+    thead th {
+      padding: var(--space-2) var(--space-1) var(--space-2) 0;
+    }
+    tbody td {
+      padding: var(--space-3) var(--space-1) var(--space-3) 0;
+    }
+    thead th.num,
+    tbody td.num {
+      padding-left: var(--space-1);
     }
   }
 </style>

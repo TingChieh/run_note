@@ -34,6 +34,7 @@ Target next release: `2.7.0` (Android `versionCode`: `20700999`). No Git tag or 
   - Expanded `.gitignore` and `android/.gitignore` to block keystores, base64-encoded keystores, signing property files, and built APKs/AABs from being committed.
 
 ### Fixed
+- **Routes Run Table Layout** (#169 follow-up): Fixed `/routes/[id]` 成绩表 so a long 标题 wraps inside a fixed-width column instead of widening the table; 日期/距离/用时/配速 now stay on screen at 320/390px and with 120-character titles at 1440px. Restored the `aria-live` result-count announcement on `/routes` and refreshed the settings/routes tab documentation to reflect the underline-tab migration.
 - **Mobile Safe-Area Layout** (#155):
   - Respected the bottom safe-area inset on pages where the mobile bottom tab bar is hidden.
 
