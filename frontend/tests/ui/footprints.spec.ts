@@ -2,12 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { loginRunner, installActivities, sampleActivity, incompleteActivity } from '../fixtures/activities';
 import { settingsLink } from '../fixtures/top-navigation';
 import { installBasemaps } from '../fixtures/basemaps';
-import {
-  blockGlassModules,
-  expectEnhancedLook,
-  expectUnenhancedFallback,
-  reduceTransparency,
-} from '../fixtures/segmented';
+import { blockGlassModules, reduceTransparency } from '../fixtures/segmented';
 import type { FootprintCollection } from '../../src/lib/api/footprints.ts';
 import { encodeFootprints } from '../fixtures/footprint-encoding';
 async function fixture(page: Page) {
@@ -988,72 +983,99 @@ test('route-less manual records remain counted in the all-record summary', async
   await expect(page.getByRole('status').filter({ hasText: '还没有可显示的足迹' })).toContainText('带路线的运动记录');
 });
 for (const scheme of ['light', 'dark'] as const) {
-  test(`the mode switch sits in the page header with the settings-tabs look (${scheme})`, async ({ page }) => {
+  test(`the mode switch uses Editorial Receipt underline tabs with 4px map sheet and glass overlay boundary (${scheme})`, async ({
+    page,
+  }) => {
+    await page.addInitScript((theme) => localStorage.setItem('runnote-theme', theme), scheme);
     await page.emulateMedia({ colorScheme: scheme });
     await fixture(page);
     await loginRunner(page);
     await page.goto('/footprints');
     await ready(page);
-    const group = page
-      .locator('.page-header .page-header-footer')
-      .getByRole('group', { name: '地图模式', exact: true });
-    await expect(group).toHaveClass(/settings-tabs/);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', scheme);
+    await expect(page.locator('.editorial-page.footprints-page')).toBeVisible();
+    const group = page.locator('.footprints-tabs-bar').getByRole('group', { name: '地图模式', exact: true });
+    await expect(group).toHaveClass(/underline-tabs/);
+    await expect(group).not.toHaveClass(/settings-tabs/);
     await expect(group).not.toHaveClass(/compact-switch/);
-    await expect(group).toHaveClass(/rn-liquid-navigation/);
-    await expect(group.locator('.rn-moving-copy')).toHaveCount(1);
+    await expect(group).not.toHaveClass(/rn-liquid-navigation/);
+    await expect(group.locator('.rn-moving-copy')).toHaveCount(0);
     const tracks = group.getByRole('button', { name: '轨迹叠加', exact: true }),
       heat = group.getByRole('button', { name: '运动热力图', exact: true });
     await expect(tracks).toHaveAttribute('aria-pressed', 'true');
     await expect(heat).toHaveAttribute('aria-pressed', 'false');
-    const outline = group.locator('.rn-moving-outline');
-    const share = async (item: typeof tracks) => {
-      const [o, b] = await Promise.all([outline.boundingBox(), item.boundingBox()]);
-      return (
-        (Math.max(0, Math.min(o!.x + o!.width, b!.x + b!.width) - Math.max(o!.x, b!.x)) *
-          Math.max(0, Math.min(o!.y + o!.height, b!.y + b!.height) - Math.max(o!.y, b!.y))) /
-        (b!.width * b!.height)
-      );
-    };
-    await expect.poll(() => share(tracks)).toBeGreaterThan(0.8);
-    expect(await share(heat)).toBeLessThan(0.2);
+    // Active tab carries the 2px ink underline and >=44px hit height without a glass pill.
+    const tabMetrics = await tracks.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        borderBottomWidth: style.borderBottomWidth,
+        borderBottomColor: style.borderBottomColor,
+        fontWeight: style.fontWeight,
+        height: el.getBoundingClientRect().height,
+        hasGlass: el.classList.contains('rn-glass-control'),
+      };
+    });
+    expect(tabMetrics.borderBottomWidth).toBe('2px');
+    expect(tabMetrics.borderBottomColor).not.toBe('rgba(0, 0, 0, 0)');
+    expect(Number(tabMetrics.fontWeight)).toBeGreaterThanOrEqual(600);
+    expect(tabMetrics.height).toBeGreaterThanOrEqual(44);
+    expect(tabMetrics.hasGlass).toBe(false);
+    // Editorial Receipt sheet boundary: 4px map frame, flat 10px content buttons, Liquid Glass kept on map overlays.
+    expect(await page.locator('.map-frame').evaluate((el) => getComputedStyle(el).borderTopLeftRadius)).toBe('4px');
+    expect(
+      await page
+        .getByRole('button', { name: '重新读取足迹', exact: true })
+        .evaluate((el) => ({ radius: getComputedStyle(el).borderTopLeftRadius, glass: el.classList.contains('rn-glass-control') })),
+    ).toEqual({ radius: '10px', glass: false });
+    await expect(page.locator('.map-frame')).toHaveAttribute('data-glass-overlay', '');
     await heat.click();
     await ready(page);
     await expect(heat).toHaveAttribute('aria-pressed', 'true');
     await expect(tracks).toHaveAttribute('aria-pressed', 'false');
-    await expect.poll(() => share(heat)).toBeGreaterThan(0.8);
-    await page.mouse.move(0, 0);
+    expect(await heat.evaluate((el) => getComputedStyle(el).borderBottomWidth)).toBe('2px');
+    expect(await tracks.evaluate((el) => getComputedStyle(el).borderBottomColor)).toBe('rgba(0, 0, 0, 0)');
     await expect(page.getByTestId('footprint-mode-hint')).toContainText('经过的区域');
   });
 }
 for (const scheme of ['light', 'dark'] as const) {
-  const find = (page: Page) =>
-    page.locator('.page-header .page-header-footer').getByRole('group', { name: '地图模式', exact: true });
-  test(`footprints: enhanced mode switch is plain buttons with a distinct lens (${scheme})`, async ({ page }) => {
+  const find = (page: Page) => page.locator('.footprints-tabs-bar').getByRole('group', { name: '地图模式', exact: true });
+  test(`footprints: underline mode switch keeps plain flat buttons without glass lens (${scheme})`, async ({ page }) => {
+    await page.addInitScript((theme) => localStorage.setItem('runnote-theme', theme), scheme);
     await page.emulateMedia({ colorScheme: scheme });
     await fixture(page);
     await loginRunner(page);
     await page.goto('/footprints');
     await ready(page);
-    await expectEnhancedLook(find(page));
+    const group = find(page);
+    await expect(group).toHaveClass(/underline-tabs/);
+    await expect(group).not.toHaveClass(/rn-liquid-navigation/);
+    await expect(group.locator('.rn-glass-layer')).toHaveCount(0);
+    await expect(group.getByRole('button', { name: '轨迹叠加', exact: true })).toHaveAttribute('aria-pressed', 'true');
   });
-  test(`footprints: reduced transparency keeps the selected mode filled (${scheme})`, async ({ page }) => {
+  test(`footprints: reduced transparency preserves the selected underline tab (${scheme})`, async ({ page }) => {
+    await page.addInitScript((theme) => localStorage.setItem('runnote-theme', theme), scheme);
     await page.emulateMedia({ colorScheme: scheme });
     await fixture(page);
     await loginRunner(page);
     await page.goto('/footprints');
     await ready(page);
-    await expect(find(page)).toHaveClass(/rn-liquid-navigation/);
     await reduceTransparency(page);
-    await expectUnenhancedFallback(find(page));
+    const active = find(page).getByRole('button', { name: '轨迹叠加', exact: true });
+    await expect(active).toHaveAttribute('aria-pressed', 'true');
+    expect(await active.evaluate((el) => getComputedStyle(el).borderBottomColor)).not.toBe('rgba(0, 0, 0, 0)');
   });
-  test(`footprints: without the glass modules the selected mode keeps its fill (${scheme})`, async ({ page }) => {
+  test(`footprints: without the glass modules the underline mode switch stays usable (${scheme})`, async ({ page }) => {
+    await page.addInitScript((theme) => localStorage.setItem('runnote-theme', theme), scheme);
     await page.emulateMedia({ colorScheme: scheme });
     await blockGlassModules(page);
     await fixture(page);
     await loginRunner(page);
     await page.goto('/footprints');
-    await expect(find(page)).toBeVisible();
-    await expectUnenhancedFallback(find(page));
+    const group = find(page);
+    await expect(group).toBeVisible();
+    const active = group.getByRole('button', { name: '轨迹叠加', exact: true });
+    await expect(active).toHaveAttribute('aria-pressed', 'true');
+    expect(await active.evaluate((el) => getComputedStyle(el).borderBottomWidth)).toBe('2px');
   });
 }
 

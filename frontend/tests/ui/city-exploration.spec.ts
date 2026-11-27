@@ -301,6 +301,7 @@ test('overview-first map, zero external requests, all-years default, drill-down,
   await expect(page.locator('.map-label').first()).toBeVisible();
   await page.getByRole('button', { name: '查看全部年份' }).click();
   await expect(page.getByLabel('年份')).toHaveValue('all');
+  await expect(page.getByText('各月首次探索分布（全部年份）')).toBeVisible();
 
   await page.getByText('查看逐月数据').click();
   await expect(page.getByRole('rowheader', { name: '1 月', exact: true })).toBeVisible();
@@ -395,20 +396,36 @@ test('pending, retry, empty and expired session', async ({ page }) => {
   await expect(page).toHaveURL(/\/admin\?reason=changed/);
 });
 
-for (const width of [390, 768, 1440]) {
+for (const width of [320, 390, 768, 1440]) {
   for (const theme of ['light', 'dark'] as const) {
     test(`overview and drill-down at ${width}px in ${theme}`, async ({ page }, info) => {
       await page.context().addCookies([ownerCookie]);
       await page.addInitScript((value) => localStorage.setItem('runnote-theme', value), theme);
       await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: theme });
-      await page.setViewportSize({ width, height: width === 390 ? 844 : width === 768 ? 1024 : 900 });
+      await page.setViewportSize({
+        width,
+        height: width === 320 ? 640 : width === 390 ? 844 : width === 768 ? 1024 : 900,
+      });
       await fixture(page);
       const errors: string[] = [];
       page.on('pageerror', (err) => errors.push(err.message));
 
       await page.goto(root);
       await expect(page.getByRole('heading', { name: '城市探索' })).toBeVisible();
+      await expect(page.locator('.editorial-page.exploration-page')).toBeVisible();
+      await expect(page.locator('.metric-icon')).toHaveCount(0);
+      await expect(page.locator('.fp-sum')).toBeVisible();
+      await expect(page.getByRole('group', { name: '格网图层', exact: true })).toHaveClass(/underline-tabs/);
+      await expect(page.getByRole('group', { name: '城市类别筛选', exact: true })).toHaveClass(/underline-tabs/);
       await expect(page.getByTestId('exploration-map')).toHaveAttribute('data-drawn', 'true');
+      await expect(page.getByTestId('exploration-map')).toHaveAttribute('data-glass-overlay', '');
+      expect(await page.getByTestId('exploration-map').evaluate((el) => getComputedStyle(el).borderTopLeftRadius)).toBe(
+        '4px',
+      );
+      await expect(page.locator('.month.peak')).toHaveCount(1);
+      await expect(page.locator('.month.peak .bar-val')).toHaveText('23');
+      await expect(page.locator('.month.empty')).toHaveCount(2);
+      await expect(page.locator('.city-share-track')).toHaveCount(3);
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       const noOverflow = () => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
       expect(await noOverflow()).toBe(true);

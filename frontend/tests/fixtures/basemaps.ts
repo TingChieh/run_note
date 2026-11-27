@@ -135,7 +135,10 @@ export async function mapState(page: Page) {
 }
 export async function chooseBasemap(page: Page, name: string) {
   await page.getByRole('button', { name: '切换底图', exact: true }).click();
-  await page.getByRole('button', { name, exact: true }).click();
+  const menu = page.getByRole('group', { name: '底图样式', exact: true });
+  await expect(menu).toBeVisible();
+  await expect(menu).toHaveCSS('scale', '1');
+  await menu.getByRole('button', { name, exact: true }).click();
 }
 export async function basemapReady(page: Page, style: string) {
   await expect(page.locator('[data-basemap-status="ready"]')).toHaveAttribute('data-basemap-style', style);

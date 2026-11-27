@@ -48,6 +48,7 @@
     selectedCode = '',
     yearLabel = '全部年份',
     focusTarget = null,
+    appearance = 'default',
     onviewport,
     onselectcity,
     onresetscope,
@@ -59,6 +60,7 @@
     selectedCode?: string;
     yearLabel?: string;
     focusTarget?: FocusTarget | null;
+    appearance?: 'default' | 'sheet';
     onviewport: (viewport: Viewport | null) => void;
     onselectcity?: (marker: ExplorationMarker) => void;
     onresetscope?: () => void;
@@ -764,6 +766,8 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions : keyboard shortcuts bubble from focusable MapLibre canvas -->
 <div
   class="map"
+  class:sheet={appearance === 'sheet'}
+  data-glass-overlay={appearance === 'sheet' ? '' : undefined}
   role="region"
   aria-label="城市探索足迹地图"
   aria-describedby="exploration-map-help"
@@ -785,6 +789,16 @@
   {#if ready}
     <div class="map-overlay-top">
       <div class="framing-actions">
+        {#if appearance === 'sheet'}
+          <BasemapPicker
+            preference={active ?? 'off'}
+            allowOff
+            {style}
+            {status}
+            onselect={choose}
+            onoff={() => choose(null)}
+          />
+        {/if}
         {#if framing.hasChina && framing.hasOverseas}
           <button type="button" class="button-secondary map-chip-btn" onclick={() => resetToOverview('china')}
             >聚焦中国</button
@@ -906,14 +920,16 @@
 
   {#if ready}
     <div class="basemap">
-      <BasemapPicker
-        preference={active ?? 'off'}
-        allowOff
-        {style}
-        {status}
-        onselect={choose}
-        onoff={() => choose(null)}
-      />
+      {#if appearance !== 'sheet'}
+        <BasemapPicker
+          preference={active ?? 'off'}
+          allowOff
+          {style}
+          {status}
+          onselect={choose}
+          onoff={() => choose(null)}
+        />
+      {/if}
       {#if active}
         <button class="button-secondary" type="button" onclick={() => choose(null)}>关闭外部底图</button>
       {/if}
@@ -929,6 +945,11 @@
     border-radius: var(--radius-control);
     border: 1px solid var(--border);
     background: var(--muted);
+  }
+  /* Editorial Receipt sheet appearance (brand.md §5, W-17): 4px fine frame, 620px desktop stage. */
+  .map.sheet {
+    min-height: clamp(24rem, 62vh, 38.75rem);
+    border-radius: var(--radius-sheet);
   }
   .map:focus-visible {
     outline: 2px solid var(--ring);
@@ -1132,8 +1153,14 @@
     border-radius: var(--radius-field);
     background: linear-gradient(to right, var(--calendar-1), var(--calendar-4));
   }
+  @media (max-width: 1023px) {
+    .map.sheet {
+      min-height: clamp(22rem, 52vh, 27.5rem);
+    }
+  }
   @media (max-width: 480px) {
-    .map {
+    .map,
+    .map.sheet {
       min-height: 20rem;
     }
   }
