@@ -679,3 +679,65 @@ test('editorial receipt structure, punch-card sync, flat content buttons, and mo
   await expect(dialog).toHaveCount(0);
   await expect(shareBtn).toBeFocused();
 });
+
+for (const vp of [
+  { name: '1440x768', width: 1440, height: 768 },
+  { name: '1440x900', width: 1440, height: 900 },
+]) {
+  test(`sticky share desk controls remain visible and clickable while mid-scrolled at ${vp.name}`, async ({ page }) => {
+    await loginRunner(page);
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await page.goto(recap + '?period=year&year=2025');
+
+    const dock = page.getByTestId('recap-poster-dock');
+    await expect(dock.getByRole('img')).toBeVisible();
+    const styleC = dock.getByRole('button', { name: 'C 存根' });
+    const launchBtn = dock.getByRole('button', { name: '打开高清预览与保存' });
+
+    for (const scrollY of [400, 800]) {
+      await page.evaluate((y) => window.scrollTo(0, y), scrollY);
+      const boxes = await Promise.all([styleC.boundingBox(), launchBtn.boundingBox()]);
+      for (const box of boxes) {
+        expect(box, `control visible at scrollY=${scrollY}`).not.toBeNull();
+        expect(box!.y).toBeGreaterThanOrEqual(0);
+        expect(box!.y + box!.height).toBeLessThanOrEqual(vp.height);
+      }
+    }
+
+    await styleC.click();
+    await expect(styleC).toHaveAttribute('aria-pressed', 'true');
+    await launchBtn.click();
+    const dialog = page.getByRole('dialog', { name: '分享图预览' });
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+  });
+}
+
+test('in-progress partial month in punch-card rhythm uses hatched mark and accessible in-progress name', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await page.goto(recap);
+  await expect(page.getByTestId('recap-partial-pill')).toContainText('进行中');
+
+  const punch = page.getByTestId('recap-punch-rhythm');
+  await expect(punch).toBeVisible();
+  await expect(punch).toContainText('斜线为进行中');
+
+  const partialCols = punch.locator('[data-partial="true"]');
+  await expect(partialCols).toHaveCount(1);
+  const partialBtn = partialCols.first();
+  await expect(partialBtn).toHaveAccessibleName(/进行中（未结束）/);
+
+  const bgImage = await partialBtn
+    .locator('.punch-blk')
+    .first()
+    .evaluate((el) => getComputedStyle(el).backgroundImage);
+  expect(bgImage).toContain('repeating-linear-gradient');
+
+  // Completed earlier month must not carry partial state or in-progress accessible name.
+  const janBtn = punch.getByRole('button', { name: /^1月/ });
+  await expect(janBtn).not.toHaveAttribute('data-partial', 'true');
+  await expect(janBtn).not.toHaveAccessibleName(/进行中/);
+});

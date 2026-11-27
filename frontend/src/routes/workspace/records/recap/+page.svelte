@@ -94,24 +94,33 @@
       : -1,
   );
 
-  // Punch-card rhythm columns (brand.md §5.3): each block ≈ peak / 10, synced with distribution & spread.
+  // Punch-card rhythm columns (brand.md §5.3, W-11): each block ≈ peak / 10, synced with distribution & spread.
   const punchColumns = $derived.by(() => {
     if (!distribution) return [];
     const max = distribution.max;
+    const cutoff = distribution.isPartial ? distribution.cutoff : null;
     return distribution.buckets.map((bucket, index) => {
       const hasDist = !bucket.future && bucket.distance !== null && bucket.distance > 0 && max > 0;
       const blocks = hasDist ? Math.max(1, Math.round((bucket.distance! / max) * PUNCH_MAX_BLOCKS)) : 1;
       const compactLabel = distribution!.period === 'year' ? String(index + 1) : bucket.shortLabel;
+      const inProgress = Boolean(
+        cutoff &&
+        !bucket.future &&
+        ((bucket.start <= cutoff && bucket.last >= cutoff) || (distribution!.period === 'year' && bucket.partial)),
+      );
       return {
         bucket,
         index,
         hasDist,
         blocks,
         compactLabel,
+        inProgress,
         valueText: bucket.future ? '未到' : `${km(bucket.distance ?? 0, 1)} km`,
       };
     });
   });
+
+  const hasInProgressPunch = $derived(punchColumns.some((col) => col.inProgress));
 
   const punchUnitText = $derived(
     distribution && distribution.max > 0 ? `每格 ≈ ${km(distribution.max / PUNCH_MAX_BLOCKS, 1)} km` : '',
@@ -457,7 +466,9 @@
                   <h2 id="recap-punch-title">{distribution.period === 'year' ? '逐月节律' : '逐周节律'}</h2>
                   <span class="section-meta mono">
                     {#if distribution.max > 0 && distribution.derived.peakLabelCompact}
-                      {punchUnitText} · 最高 {distribution.derived.peakLabelCompact} {km(distribution.max, 1)} km
+                      {punchUnitText} · 最高 {distribution.derived.peakLabelCompact}
+                      {km(distribution.max, 1)} km{#if hasInProgressPunch}
+                        · 斜线为进行中{/if}
                     {:else}
                       本期暂无有效里程
                     {/if}
@@ -476,12 +487,14 @@
                       type="button"
                       class="punch-col"
                       class:is-peak={col.bucket.peak}
+                      class:is-partial={col.inProgress}
                       class:is-empty={!col.hasDist}
                       class:is-future={col.bucket.future}
                       class:is-selected={isSelected}
                       data-date={col.bucket.start}
+                      data-partial={col.inProgress ? 'true' : undefined}
                       aria-pressed={isSelected}
-                      aria-label={`${col.bucket.rangeShort}，${col.valueText}${col.bucket.peak ? '，最高' : ''}`}
+                      aria-label={`${col.bucket.rangeShort}，${col.valueText}${col.bucket.peak ? '，最高' : ''}${col.inProgress ? '，进行中（未结束）' : ''}`}
                       onclick={() => {
                         selectedBucketIndex = col.index;
                       }}
@@ -844,6 +857,36 @@
   :global(:root[data-theme='dark']) .punch-col.is-peak .punch-blk {
     box-shadow: none;
   }
+  /* In-progress period (brand.md §3.2, W-11): hatched primary fill + 2px top cap on the uppermost block. */
+  .punch-col.is-partial:not(.is-empty) .punch-blk {
+    background: repeating-linear-gradient(
+      135deg,
+      var(--primary) 0 3px,
+      color-mix(in srgb, var(--primary) 18%, var(--paper)) 3px 6px
+    );
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 65%, transparent);
+    opacity: 1;
+  }
+  .punch-col.is-partial:not(.is-empty) .punch-blk:last-child {
+    border-top: 2px solid var(--primary);
+  }
+  .punch-col.is-peak.is-partial:not(.is-empty) .punch-blk {
+    background: repeating-linear-gradient(
+      135deg,
+      var(--receipt-mark) 0 3px,
+      color-mix(in srgb, var(--receipt-mark) 22%, var(--paper)) 3px 6px
+    );
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 35%, transparent);
+  }
+  .punch-col.is-peak.is-partial:not(.is-empty) .punch-blk:last-child {
+    border-top: 2px solid var(--foreground);
+  }
+  :global(:root[data-theme='dark']) .punch-col.is-peak.is-partial:not(.is-empty) .punch-blk {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--receipt-mark) 70%, transparent);
+  }
+  :global(:root[data-theme='dark']) .punch-col.is-peak.is-partial:not(.is-empty) .punch-blk:last-child {
+    border-top-color: var(--receipt-mark);
+  }
   .punch-col.is-empty .punch-blk {
     background: transparent;
     box-shadow: inset 0 0 0 1.5px var(--border);
@@ -950,6 +993,12 @@
     .report-layout.has-share-desk {
       grid-template-columns: minmax(0, 1fr);
     }
+    .report-desk-col {
+      position: static;
+    }
+  }
+  /* Release sticky on very short desktop viewports so share controls scroll naturally into reach. */
+  @media (min-width: 1080px) and (max-height: 640px) {
     .report-desk-col {
       position: static;
     }

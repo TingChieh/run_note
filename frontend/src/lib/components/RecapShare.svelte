@@ -577,6 +577,22 @@
       transform: none;
     }
   }
+  @media (min-width: 1080px) {
+    /* Fit the sticky share desk (poster + controls) within shorter desktop viewports such as 1440×768
+       while preserving the tall 9:16 presence at 1440×900+. */
+    .desk-frame {
+      width: fit-content;
+      max-width: 100%;
+      justify-self: center;
+    }
+    .desk-frame img,
+    .desk-placeholder {
+      width: auto;
+      height: clamp(14rem, calc(100dvh - 24rem), 33rem);
+      max-width: 100%;
+      aspect-ratio: 9 / 16;
+    }
+  }
   @media (min-width: 640px) and (max-width: 1079px) {
     .share-desk {
       padding-top: var(--space-6);
