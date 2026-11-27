@@ -212,7 +212,7 @@
   }
 </script>
 
-<section class="keepsake-dock" aria-labelledby={`${uid}-dock-title`} data-testid="story-poster-dock">
+<section class="section-rule keepsake-dock" aria-labelledby={`${uid}-dock-title`} data-testid="story-poster-dock">
   <div class="dock-copy" bind:this={probe}>
     <p class="dock-kicker">KEEPSAKE · 9:16 MEMOIR FOLIO</p>
     <h2 id={`${uid}-dock-title`}>封存这一年的长卷海报</h2>
@@ -243,6 +243,7 @@
 <dialog
   bind:this={dialog}
   class="story-dialog"
+  data-glass-overlay
   aria-labelledby={`${uid}-dialog-title`}
   data-testid="story-poster-dialog"
   onclose={handleDialogClose}
@@ -268,7 +269,7 @@
     <div class="dialog-controls">
       <div class="option-group">
         <span class="option-label">海报外观</span>
-        <div class="settings-tabs" role="group" aria-label="海报外观">
+        <div class="underline-tabs dialog-theme-tabs" role="group" aria-label="海报外观">
           <button type="button" aria-pressed={appearance === 'light'} onclick={() => setAppearance('light')}>
             浅色纸面
           </button>
@@ -290,12 +291,12 @@
         </label>
       </div>
 
-      <p class="privacy-notice" data-testid="story-poster-privacy-note">
+      <p class="status-strip privacy-notice" data-testid="story-poster-privacy-note">
         本分享图包含本人私人跑步记录的汇总，仅在浏览器本机绘制无坐标系的抽象足迹轮廓，不含真实经纬度、街道地图、起终点、邮箱、备注或身心健康数据。
       </p>
 
       {#if shareError}
-        <p role="alert">{shareError}</p>
+        <p class="status-strip" data-tone="error" role="alert">{shareError}</p>
       {/if}
 
       <div class="dialog-actions">
@@ -315,18 +316,14 @@
           </button>
         {/if}
       </div>
-      {#if nativeApp && !shareable}<p class="privacy-notice" role="status">当前客户端暂不支持直接保存图片文件，请在浏览器中打开保存 PNG。</p>{/if}
+      {#if nativeApp && !shareable}<p class="status-strip privacy-notice" role="status">当前客户端暂不支持直接保存图片文件，请在浏览器中打开保存 PNG。</p>{/if}
     </div>
   </div>
 </dialog>
 
 <style>
   .keepsake-dock {
-    margin-top: var(--space-6);
-    padding: clamp(1.25rem, 3vw, 2rem);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    background: linear-gradient(135deg, var(--recap-dock-tint) 0%, var(--surface) 75%);
+    margin-top: var(--space-12);
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
@@ -346,7 +343,7 @@
   }
   .dock-copy h2 {
     font-size: var(--text-section);
-    font-weight: var(--weight-bold);
+    font-weight: var(--weight-semibold);
     line-height: var(--line-height-heading);
   }
   .dock-note {
@@ -368,9 +365,9 @@
   .dock-frame {
     padding: 0;
     border: 1px solid var(--border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sheet);
     overflow: hidden;
-    background: var(--surface);
+    background: var(--paper);
     box-shadow: var(--shadow-popover);
   }
   .dock-frame img {
@@ -382,9 +379,9 @@
   .dock-placeholder {
     width: 8rem;
     aspect-ratio: 9 / 16;
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sheet);
     border: 1px dashed var(--border);
-    background: var(--muted);
+    background: var(--recap-well);
   }
 
   .story-dialog {
@@ -427,8 +424,8 @@
     display: grid;
     place-items: center;
     padding: var(--space-4);
-    border-radius: var(--radius-control);
-    background: var(--recap-desk);
+    border-radius: var(--radius-sheet);
+    background: var(--desk);
     border: 1px solid var(--border);
     min-height: 20rem;
   }
@@ -437,7 +434,7 @@
     width: min(100%, 19rem);
     aspect-ratio: 9 / 16;
     height: auto;
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sheet);
     box-shadow: var(--shadow-popover);
   }
   .dialog-controls {
@@ -450,28 +447,31 @@
     gap: var(--space-2);
   }
   .option-label {
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     font-weight: var(--weight-semibold);
     color: var(--muted-foreground);
+  }
+  .dialog-theme-tabs {
+    border-bottom: 1px solid var(--border);
+  }
+  .dialog-theme-tabs > button {
+    margin-bottom: -1px;
   }
   .toggle-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
-    padding: var(--space-3);
+    min-height: 2.75rem;
+    padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-control);
-    border: 1px solid var(--border);
+    border: 1px solid var(--control-border);
     background: var(--background);
     font-size: var(--text-small);
     font-weight: var(--weight-medium);
   }
   .privacy-notice {
-    padding: var(--space-3);
-    border-radius: var(--radius-control);
-    background: var(--warning-soft);
-    border: 1px solid var(--warning-border);
-    color: var(--warning);
     font-size: var(--text-caption);
     line-height: var(--line-height-body);
   }

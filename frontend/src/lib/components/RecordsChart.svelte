@@ -6,7 +6,7 @@
   import { dashboardDistance } from '#lib/api/dashboard-format.ts';
   import { monthLabel, type MonthPoint } from '#lib/api/records.ts';
   // Monthly distance or pace over the whole history; the chart is presentation only, the table below is the full fallback.
-  let { monthly, metric }: { monthly: MonthPoint[]; metric: MonthlyMetric } = $props();
+  let { monthly, metric, appearance = 'default' }: { monthly: MonthPoint[]; metric: MonthlyMetric; appearance?: 'default' | 'receipt' } = $props();
   let container: HTMLDivElement, mounted = $state(false), message = $state('');
   let chart: import('echarts/core').ECharts | undefined;
   const name = $derived(metric === 'distance' ? '月度里程' : '月度配速');
@@ -19,11 +19,12 @@
     if (!chart) return;
     const style = getComputedStyle(container);
     const color = (token: string) => style.getPropertyValue(token).trim();
+    const receipt = appearance === 'receipt' ? { mark: color('--receipt-mark'), background: color('--background') } : undefined;
     chart.setOption(monthlyChartOption(monthly, metric, {
-      foreground: color('--foreground'), muted: color('--muted-foreground'), border: color('--border'), surface: color('--surface'), primary: color('--chart-series')
-    }, !window.matchMedia('(prefers-reduced-motion: reduce)').matches), { notMerge: true });
+      foreground: color('--foreground'), muted: color('--muted-foreground'), border: color('--border'), surface: color('--surface'), primary: color(receipt ? '--primary' : '--chart-series')
+    }, !window.matchMedia('(prefers-reduced-motion: reduce)').matches, receipt), { notMerge: true });
   }
-  $effect(() => { monthly; metric; if (mounted) draw(); });
+  $effect(() => { monthly; metric; appearance; if (mounted) draw(); });
   onMount(() => {
     let disposed = false; let observer: ResizeObserver | undefined;
     const stopTheme = watchSystemTheme(() => draw());

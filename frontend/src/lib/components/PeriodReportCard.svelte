@@ -176,18 +176,18 @@
 </script>
 
 <section
-  class="records-card report-card"
+  class="section-rule report-section"
   aria-labelledby={`${uid}-title`}
   aria-busy={loading}
   data-testid="period-report"
   data-loading={loading ? 'true' : 'false'}
 >
-  <div class="card-heading">
+  <div class="section-head report-head">
     <div>
       <p class="eyebrow">按月或按年</p>
       <h2 id={`${uid}-title`}>月度与年度报告</h2>
     </div>
-    <div class="settings-tabs period-switch" role="group" aria-label="报告周期" data-testid="period-report-mode">
+    <div class="underline-tabs period-switch" role="group" aria-label="报告周期" data-testid="period-report-mode">
       <button
         type="button"
         aria-pressed={period === 'month'}
@@ -328,94 +328,24 @@
     {:else}
       <div class="report-body" data-testid="period-report-ready">
         <dl class="report-metrics" aria-label={`${shownTitle}跑步报告核心指标`} data-testid="period-report-metrics">
-          <div class="metric-cell" data-kind="count">
-            <dt>
-              <span class="metric-chip" aria-hidden="true">
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M6 5h12 M6 12h12 M6 19h12 M3 5h.01 M3 12h.01 M3 19h.01" />
-                </svg>
-              </span>
-              跑步次数
-            </dt>
+          <div class="metric-cell">
+            <dt>跑步次数</dt>
             <dd data-testid="period-report-count">{report.activity_count.toLocaleString('zh-CN')} 次</dd>
           </div>
-          <div class="metric-cell" data-kind="distance">
-            <dt>
-              <span class="metric-chip" aria-hidden="true">
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <circle cx="5" cy="6" r="2" /><circle cx="19" cy="18" r="2" /><path
-                    d="M5 8v5a4 4 0 0 0 4 4h2a4 4 0 0 0 0-8h-1a3 3 0 0 1 0-6h5"
-                  />
-                </svg>
-              </span>
-              总里程
-            </dt>
+          <div class="metric-cell">
+            <dt>总里程</dt>
             <dd class="accent" data-testid="period-report-distance">{dashboardDistance(report.distance_m)}</dd>
           </div>
-          <div class="metric-cell" data-kind="duration">
-            <dt>
-              <span class="metric-chip" aria-hidden="true">
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <circle cx="12" cy="12" r="8" /><path d="M12 7v5l3 2 M9 2h6" />
-                </svg>
-              </span>
-              总用时
-            </dt>
+          <div class="metric-cell">
+            <dt>总用时</dt>
             <dd data-testid="period-report-duration">
               {formatDuration(report.duration_sum_seconds)}{#if report.duration_sum_seconds === null}<span
                   class="sr-only">（缺失或无法可靠计算）</span
                 >{/if}
             </dd>
           </div>
-          <div class="metric-cell" data-kind="pace">
-            <dt>
-              <span class="metric-chip" aria-hidden="true">
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M4 17a9 9 0 1 1 16 0 M12 13l4-5 M5 13h1 M18 13h1 M9 5l1 2" /><circle
-                    cx="12"
-                    cy="13"
-                    r="1.5"
-                  />
-                </svg>
-              </span>
-              平均配速
-            </dt>
+          <div class="metric-cell">
+            <dt>平均配速</dt>
             <dd data-testid="period-report-pace">
               {formatPace(report.avg_pace_seconds_per_km)}{#if report.avg_pace_seconds_per_km === null}<span
                   class="sr-only">（缺失或无法可靠计算）</span
@@ -432,24 +362,17 @@
 </section>
 
 <style>
-  .report-card {
+  .report-section {
     container-type: inline-size;
     min-width: 0;
-    padding: var(--space-6);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    background: var(--surface);
   }
-  .card-heading {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: var(--space-4);
+  .report-head {
+    align-items: flex-end;
   }
   .eyebrow {
     margin-bottom: var(--space-1);
     color: var(--muted-foreground);
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
   }
   h2 {
@@ -457,16 +380,8 @@
     font-weight: var(--weight-semibold);
     letter-spacing: 0;
   }
-  .report-card .period-switch {
+  .period-switch {
     width: max-content;
-    margin-top: 0;
-    background: var(--muted);
-  }
-  .report-card .period-switch > button {
-    color: var(--muted-foreground);
-  }
-  .report-card .period-switch > button[aria-pressed='true'] {
-    color: var(--primary-foreground);
   }
 
   .report-toolbar {
@@ -475,8 +390,8 @@
     justify-content: space-between;
     flex-wrap: wrap;
     gap: var(--space-4);
-    margin-top: var(--space-6);
-    padding-bottom: var(--space-6);
+    margin-top: var(--space-4);
+    padding-bottom: var(--space-4);
     border-bottom: 1px solid var(--border);
   }
   .picker-group {
@@ -515,20 +430,23 @@
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: var(--space-2);
+    gap: var(--space-2) var(--space-3);
     color: var(--muted-foreground);
+    font-family: var(--font-mono);
     font-size: var(--text-small);
     font-variant-numeric: tabular-nums;
   }
   .period-name {
     color: var(--foreground);
+    font-family: var(--font-body);
     font-weight: var(--weight-semibold);
   }
   .tag {
-    padding: 0 var(--space-2);
+    padding: 0.125rem var(--space-2);
     border: 1px solid var(--border);
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-sheet);
     color: var(--foreground);
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     line-height: var(--line-height-heading);
   }
@@ -538,7 +456,7 @@
   }
 
   .report-state {
-    margin-top: var(--space-6);
+    margin-top: var(--space-4);
   }
   .empty-note {
     margin-top: var(--space-2);
@@ -558,7 +476,6 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
   .metric-cell {
-    --tone: var(--sport-blue);
     min-width: 0;
     padding-inline: var(--space-6);
   }
@@ -571,34 +488,12 @@
   .metric-cell + .metric-cell {
     border-left: 1px solid var(--border);
   }
-  .metric-cell[data-kind='distance'] {
-    --tone: var(--sport-green);
-  }
-  .metric-cell[data-kind='duration'] {
-    --tone: var(--sport-yellow-accent);
-  }
-  .metric-cell[data-kind='pace'] {
-    --tone: var(--sport-coral);
-  }
   .metric-cell dt {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
     color: var(--muted-foreground);
     font-size: var(--text-small);
   }
-  .metric-chip {
-    display: inline-grid;
-    place-items: center;
-    flex-shrink: 0;
-    width: 2.5rem;
-    height: 2.5rem;
-    border-radius: 50%;
-    background: var(--tone);
-    color: var(--sport-ink);
-  }
   .metric-cell dd {
-    margin-top: var(--space-3);
+    margin-top: var(--space-2);
     color: var(--foreground);
     font-size: var(--text-stat);
     font-weight: var(--weight-bold);
@@ -611,8 +506,8 @@
     color: var(--primary);
   }
   .report-footnote {
-    margin-top: var(--space-6);
-    padding-top: var(--space-4);
+    margin-top: var(--space-4);
+    padding-top: var(--space-3);
     border-top: 1px solid var(--border);
     color: var(--muted-foreground);
     font-size: var(--text-small);
@@ -636,7 +531,7 @@
       padding-right: 0;
     }
     .metric-cell:nth-child(n + 3) {
-      padding-top: var(--space-6);
+      padding-top: var(--space-4);
       border-top: 1px solid var(--border);
     }
   }
@@ -665,12 +560,6 @@
     }
     .year-select {
       width: 100%;
-    }
-  }
-
-  @media (max-width: 767px) {
-    .report-card {
-      padding: var(--space-4);
     }
   }
 </style>

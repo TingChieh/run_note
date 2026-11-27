@@ -357,11 +357,22 @@ test('the period report renders cleanly across desktop, tablet, and mobile in li
   page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
 
   await loginRunner(page);
-  for (const [width, height, theme] of [[1440, 900, 'light'], [1440, 900, 'dark'], [768, 1024, 'light'], [768, 1024, 'dark'], [390, 844, 'light'], [390, 844, 'dark']] as const) {
+  for (const [width, height, theme] of [
+    [1440, 900, 'light'],
+    [1440, 900, 'dark'],
+    [768, 1024, 'light'],
+    [768, 1024, 'dark'],
+    [390, 844, 'light'],
+    [390, 844, 'dark'],
+    [320, 640, 'light'],
+    [320, 640, 'dark'],
+  ] as const) {
     await page.setViewportSize({ width, height });
     await page.addInitScript(t => localStorage.setItem('runnote-theme', t), theme);
     await page.goto('/workspace/records');
+    await expect(page.locator('.editorial-page.records-shell')).toBeVisible();
     await expect(page.getByTestId('period-report-ready')).toBeVisible();
+    await expect(page.locator('.records-shell .records-card, .records-shell .metric-chip')).toHaveCount(0);
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     await noOverflow(page);
   }
