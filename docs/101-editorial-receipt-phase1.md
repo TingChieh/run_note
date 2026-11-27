@@ -13,12 +13,15 @@
 
 数据汇总的新结构：紧凑黄色页头（连体年份步进器）→ 年度距离主数字与三个辅助数字 → 目标压成一条四栏（年/月/周/连续记录）→ 运动趋势（7 栏）与足迹地图（5 栏）→ 运动日历 → 个人记录 → 运动足迹 → 统计口径。手机上同一顺序即使用顺序：年度数字 → 目标进度 → 趋势 → 地图 → 记录 → 浏览。
 
+**手机无顶部条**（负责人后续要求，同一 PR）：<800px 不再渲染顶部条（原 `.mobile-bar` 及其滚动收起逻辑、样式全部删除），不留空条，也不再有第二条玻璃栏。页面从顶部安全区开始（`.page-content` 顶部 `calc(--safe-top + 16px)`），第一屏就是黄色页头和年份控件；导航只有底部液态玻璃 Tab 栏。主题切换：已登录在“我的”→ 设置账户页的“更多”面板（“外观”一行）；未登录没有“我的”，放在页脚（主题 + “登录”，仅手机）。≥800px 的桌面顶部条完全不变。
+
 ## 改动范围
 
 | 区域 | 文件 | 意图 |
 | --- | --- | --- |
 | 令牌与共享样式 | `frontend/src/app.css` | 新增 `--control-border`、`--receipt-ink`、`--receipt-mark`、`--radius-sheet`、`--radius-header`、`--text-figure`、`--text-period-hero` 与别名 `--rule`/`--paper`/`--desk`/`--receipt`（不删旧令牌）；`--text-sport-title` 改为 28px；Editorial Receipt 共享类；手机 Tab 栏底色加密 |
 | 玻璃边界 | `lib/styles/liquid-glass.ts`、`liquid-glass.css`、`menu-glass.ts`、`MobileTabBar.svelte` | `.editorial-page` 内容区排除、`[data-glass-overlay]` 保留；浮动栏按配方调折射与模糊。未删除任何玻璃代码，DEV 调节器仍只在开发环境加载 |
+| 手机外壳 | `AppNavigation.svelte`、`MobileAccountLinks.svelte`、`routes/+layout.svelte`（页脚）、`app.css`、`WellbeingReport.svelte`（打印样式里删掉已不存在的 `.mobile-bar`） | 删除手机顶部条；页面从安全区开始；主题切换移到“我的”面板（未登录时在页脚） |
 | 组件 | `PageHeader`、`MetricSummary`、`TrendChart` + `trend-chart.ts`、`ProvinceMap`、`GoalOverview`、`RecordsBanner`、`RecordsBannerLoader`、`ActivityExplorer` | 见上；props 只增不减，`GoalOverview`/`ActivityExplorer` 只用于数据汇总，直接改为账页写法；`RecordsBanner` 去掉运动色圆形徽章（hero 变体保留卡片外框） |
 | 页面 | `routes/dashboard/+page.svelte` | 新版面；数据读取、离线缓存、年份/日期/URL 状态、401 处理、重试与所有链接不变 |
 | 纯逻辑 | `lib/api/milestones.ts` | `periodElapsed`：目标进度条上“按日期此刻应到的位置”竖线（只做日历计算，距离仍来自服务端） |
@@ -37,10 +40,10 @@
 | --- | --- |
 | `svelte-kit sync && svelte-check --tsconfig ./tsconfig.json` | 0 errors / 0 warnings |
 | `stylelint "src/**/*.{css,svelte}" "tests/fixtures/**/*.{css,svelte}"` | 通过 |
-| `vitest run` | 79 files / 519 tests passed |
+| `vitest run` | 79 files / 520 tests passed |
 | `vite build` | 成功（既有的大 chunk 警告） |
 | `node tests/fixtures/check-showcase-isolation.mjs` | PASS（生产产物无 showcase 标识）；生产产物中无“玻璃调节”调节器字符串 |
-| `playwright test --config playwright.ui.config.ts`（合成 UI，507 用例） | 502 passed、5 skipped（既有的条件跳过）、0 failed，35.5 分钟 |
+| `playwright test --config playwright.ui.config.ts`（合成 UI） | 首轮（5035e62）502 passed、5 skipped、0 failed。去掉手机顶部条后的全量运行：498 passed、5 skipped、1 failed（`theme.spec.ts` 仍在已登录手机数据汇总上找主题开关），改为到“我的”页查找后，该文件单独重跑 9 passed |
 | `playwright test --config playwright.design-system.config.ts` | 7 个行为用例通过；2 个像素基线用例无法在本机比较（仓库只有 `-darwin` 基线），需在 macOS 上审阅后更新 |
 
 `pnpm` 在本机不经 TTY 会要求重装依赖，因此按仓库习惯直接调用 `node_modules/.bin`；`scripts/verify.py` 依赖 `pnpm`，未整体运行。后端未改动，后端测试与集成测试未运行。
@@ -53,6 +56,17 @@
 - `liquid-glass.spec.ts`“pause offscreen controls”：首屏下方的玻璃控件从“查看全部”链接（现为实底文字链接，数据区不挂玻璃）换成足迹地图的投影切换浮层（仍是玻璃）。
 - `records-banner.spec.ts` 中宽横条：横幅去掉卡片内边距后，两栏加横条的视口区间从约 700–980px 变为约 700–915px，宽度改为 800/860/900。
 - `design-system.spec.ts` records banner showcase：compact 变体改为断言 16px 顶部内边距与 1px 发丝线（hero 仍断言 24px 卡片）。
+
+**手机无顶部条的 UI 断言**：`top-navigation.spec.ts` 中各个手机栏用例改为断言手机上没有顶部条（`.mobile-bar` 数量为 0、header 高度 0）、页头在顶部 24px 以内、滚动时顶部没有任何浮层；只有一个页面主题开关，在“我的”面板里。删除的用例只有“收起时的滑动动画”，因为该行为已不存在。`mobile-tabbar.spec.ts` 的安全区用例改为断言页面顶部 padding = 安全区 + 16px；`ui-shell.spec.ts` 与 `liquid-glass.spec.ts` 用来抽查玻璃按钮的对象从顶部条的主题按钮换成“我的”面板里的主题按钮（同一个组件，仍是玻璃）。
+
+**手机核对**（合成数据，已登录与未登录，浅色与深色）：320×640、390×844、768×1024 页头顶部都在 16px，header 高度 0，横向溢出 0。滚到底时页脚最后一行在 Tab 栏上方。Tab 栏“我的”能进入设置，面板里的主题按钮能切换外观；未登录时页脚有主题与“登录”（指向 `/admin`），≥800px 时隐藏。1440×900 桌面页头位置与修改前一致（y=112）。页面错误 0。
+
+| | 浅色 | 深色 |
+| --- | --- | --- |
+| 320×640 | ![](assets/2026-11-27-editorial-receipt-phase1/after-dashboard-320-light.png) | ![](assets/2026-11-27-editorial-receipt-phase1/after-dashboard-320-dark.png) |
+| 390 滚到底（页脚在 Tab 栏上方） | ![](assets/2026-11-27-editorial-receipt-phase1/after-dashboard-390-light-bottom.png) | ![](assets/2026-11-27-editorial-receipt-phase1/after-dashboard-390-dark-bottom.png) |
+| “我的”面板 · 外观 | ![](assets/2026-11-27-editorial-receipt-phase1/after-me-appearance-390-light.png) | ![](assets/2026-11-27-editorial-receipt-phase1/after-me-appearance-390-dark.png) |
+| 未登录页脚 | ![](assets/2026-11-27-editorial-receipt-phase1/after-anon-footer-390-light.png) | ![](assets/2026-11-27-editorial-receipt-phase1/after-anon-footer-390-dark.png) |
 
 **视觉核对**（合成数据；1440×900、768×1024、390×844，浅/深色；控制台只有被阻止的外部底图请求 `ERR_FAILED`，与修改前相同；三档宽度横向溢出 0）
 

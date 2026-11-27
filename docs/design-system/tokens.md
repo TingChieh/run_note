@@ -30,7 +30,7 @@
 | `--control-hover-border` | #91aca0 | #8b8680 | 字段 hover |
 | `--scrollbar-thumb` / `--scrollbar-thumb-hover` | `--muted-foreground` 42% / 70% 透明混合 | `--muted-foreground` 46% / 75% 透明混合 | 全站统一的细滚动条滑块；`app.css` 的 `@layer base` 用 `scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent` 作用于所有元素（含页面根），hover 色只用于不支持标准属性的旧 WebKit 后备（`@supports not (scrollbar-width: thin)` 下的 `::-webkit-scrollbar`，8px、圆角滑块、透明轨道）。不要在组件里另写滚动条颜色 |
 | `--sport-sidebar` | #218538 | #34322f | 目前没有样式读取（原绿色侧栏与站点设置预览都已改走 `--surface` / `--border` / `--sport-brand` / `--foreground`）；令牌保留 |
-| `--sport-brand` / `--brand-foreground` | #218538 / #ffffff | #f2f0ee / #1d1c1a | Logo 方块底色与字母色（顶部条、手机栏、公开页顶部导航、站点设置预览）；浅色是品牌绿，深色是中性浅灰 |
+| `--sport-brand` / `--brand-foreground` | #218538 / #ffffff | #f2f0ee / #1d1c1a | Logo 方块底色与字母色（桌面顶部条、公开页顶部导航、站点设置预览；手机私人页面没有顶部条）；浅色是品牌绿，深色是中性浅灰 |
 | `--sport-nav-hover` | #0000000a | #ffffff12 | 导航 hover |
 | `--sport-nav-active` / `--sport-nav-active-ink` | #e3f3d9 / #14532d | #4d4644 / #f2f0ee | 当前导航胶囊（也用于头像底）及其文字；浅色淡绿，深色中性灰 |
 | `--action` / `--action-hover` | #218538 / #176a2c | #8a847d / #a39d95 | 玻璃主操作按钮（`button.bg-primary`、`.button-primary` 等）的染色，按 `--glass-tint-opacity` 混合 |
@@ -117,7 +117,7 @@
 | `--radius-sheet` | .25rem | 票据纸、地图外框 |
 | `--radius-pill` | 9999px | 胶囊与材质控件 |
 | `--radius-glass-control/panel` | 引用 pill/card | 材质 CSS 中的最终几何 |
-| `--sidebar-width` | 15rem | 旧侧栏宽度。顶部条（≥800px）与手机菜单（<800px）都已覆盖它，不再生效；`app.css` 里的基础规则仍引用，后续可连同旧侧栏规则一起清理，新代码不要使用 |
+| `--sidebar-width` | 15rem | 旧侧栏宽度。顶部条（≥800px）与手机布局（<800px）都已覆盖它，不再生效；`app.css` 里的基础规则仍引用，后续可连同旧侧栏规则一起清理，新代码不要使用 |
 | `--top-navigation-offset` | 14px | 桌面顶部条距视口顶部与左右的间距（`.app-sidebar` 的 `inset`） |
 | `--top-navigation-height` | 4rem | 桌面顶部条高度；内容区 `padding-top: 5rem` 为它留位 |
 | `--content-width` | 86rem | 内容最大宽度 |
@@ -155,11 +155,11 @@
 
 | 边界 | 现有用途 |
 | --- | --- |
-| 479px 以下 | 手机栏“导航”按钮收起文字，只留图标（`app.css`） |
+| 479px 以下 | 公开页手机顶栏的“导航”按钮收起文字，只留图标（`app.css` 的 `.public-header .nav-toggle`） |
 | 480px | 骨架与局部密度 |
 | 640px | 表单/页头动作换行、指标纵排、公开导航收敛 |
 | 768px | DatePicker 全宽及局部布局 |
-| 800px | 壳层断点 B：≥800px 为私人悬浮顶部条，<800px 为手机栏加展开菜单（见 [top-navigation 设计文档](../superpowers/specs/2026-10-30-top-navigation-design.md)；`app.css`、`liquid-glass-controls.css`、`enhanceNavigation` 与 `AppNavigation.svelte` 的 `matchMedia` 各写一份，注释互相指向，要改一起改）；`.site-layout` 等页面内布局仍以 1024px 为界 |
+| 800px | 壳层断点 B：≥800px 为私人悬浮顶部条，<800px 无顶部条、只有底部标签栏（2026-11-27 起）（见 [top-navigation 设计文档](../superpowers/specs/2026-10-30-top-navigation-design.md)；`app.css`、`liquid-glass-controls.css`、`enhanceNavigation` 与 `AppNavigation.svelte` 的 `matchMedia` 各写一份，注释互相指向，要改一起改）；`.site-layout` 等页面内布局仍以 1024px 为界 |
 | 1200px | 指标图标横排恢复 |
 | 1360px | 顶部条图标加文字的下限：800–1359px 只有图标，≥1360px 带文字；普通账户 9 个入口（含末尾最长的“本人工作区”）使用紧凑内边距，避免压到账户区 |
 

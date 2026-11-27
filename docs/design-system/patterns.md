@@ -73,7 +73,7 @@ error 为 alert，其他状态 polite；文本与图形共同表意。缺失 `�
 
 ## 8. 桌面与移动适配
 
-适用：所有私人/公开页面。参考 [app.css](../../frontend/src/app.css)、[AppNavigation](../../frontend/src/lib/components/AppNavigation.svelte)。桌面（800px 起）为悬浮顶部条，800px 以下是顶部手机栏加底部标签栏 `今天 | 记录 | 开跑 | 探索 | 我的`（见 [components](components.md) 的“手机底部标签栏”）；公开页面独立顶部导航。外壳模式见下。内容和栅格项 min-width:0，动作可换行，表格只在局部滚动。
+适用：所有私人/公开页面。参考 [app.css](../../frontend/src/app.css)、[AppNavigation](../../frontend/src/lib/components/AppNavigation.svelte)。桌面（800px 起）为悬浮顶部条，800px 以下没有顶部条，页面从顶部安全区直接开始（第一屏是页头），导航只有底部标签栏 `今天 | 记录 | 开跑 | 探索 | 我的`，主题切换在“我的”页（未登录时在页脚）（见 [components](components.md) 的“手机底部标签栏”）；公开页面独立顶部导航。外壳模式见下。内容和栅格项 min-width:0，动作可换行，表格只在局部滚动。
 
 验证 320/390/768/1024/1440px、关键断点两侧与桌面低高度；长中文、长数值不溢出。保留 DOM 阅读顺序、skip link、Escape/焦点恢复及常用 44px 目标；密集日历按间距和适用例外评估。按容器查询的组件（如活动详情页的足迹卡片）不能仅看 viewport。
 
