@@ -306,327 +306,392 @@
 </script>
 
 <svelte:head><title>{pageTitle('跑鞋', page.data.site)}</title></svelte:head>
-{#if message}<p role="status" class="mt-3 text-sm text-muted-foreground">{message}</p>{/if}
+<div class="editorial-page shoes-page">
+  {#if message}<p role="status" class="mt-3 text-sm text-muted-foreground">{message}</p>{/if}
 
-{#if !shoes && listBusy && !id}
-  <div class="mt-5"><PageSkeleton title="正在读取跑鞋…" /></div>
-{:else}
-  <div class="shoe-layout mt-5" class:show-detail={id !== null} class:single-column={!selected}>
-    <section class="inventory min-w-0" aria-label="跑鞋列表" aria-busy={listBusy}>
-      <div class="filter-row mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div class="settings-tabs" role="group" aria-label="跑鞋状态">
-          <button type="button" aria-pressed={status === 'active'} onclick={() => filter('active')}>使用中</button>
-          <button type="button" aria-pressed={status === 'retired'} onclick={() => filter('retired')}>已退役</button>
-        </div>
-        {#if shoes && !listBusy}<span class="text-sm text-muted-foreground">{shoes.total} 双</span>{/if}
-      </div>
-      {#if listError}
-        <FeedbackState kind="error" title={listError}>
-          <button class="button-secondary min-h-11" onclick={() => loadList(status, shoes?.offset)}>重试</button>
-        </FeedbackState>
-      {/if}
-      {#if shoes?.items.length}
-        <ul class="grid gap-2">
-          {#each shoes.items as record (record.id)}
-            <li>
-              <a
-                class="shoe-card"
-                href={href(record.retired_on ? 'retired' : 'active', record.id)}
-                aria-current={selected === record.id ? 'true' : undefined}
-                data-shoe-id={record.id}
-                onclick={(event) => void openDetail(event, record)}
-              >
-                <div class="flex items-start justify-between gap-2">
-                  <div class="min-w-0">
-                    <strong class="block">{record.name}</strong>
-                    {#if details(record)}<p class="text-sm text-muted-foreground">{details(record)}</p>{/if}
-                  </div>
-                  <span aria-hidden="true" class="text-muted-foreground">›</span>
-                </div>
-                <div class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
-                  <strong class="text-lg tabular-nums">{kmLabel(record.total_distance_m)}</strong>
-                  {#if record.reminder}
-                    <span class="text-sm text-warning">{reminderLabel(record.reminder)}</span>
-                  {:else if record.retired_on}
-                    <span class="text-sm text-muted-foreground">已退役</span>
-                  {:else if record.replacement_distance_m}
-                    <span class="text-sm text-muted-foreground">阈值 {kmLabel(record.replacement_distance_m)}</span>
-                  {/if}
-                </div>
-                <ShoeProgress shoe={record} />
-              </a>
-            </li>
-          {/each}
-        </ul>
-        {#if shoes.total > shoes.limit}
-          <div class="pagination" aria-label="跑鞋列表分页">
-            <button
-              class="button-secondary min-h-11"
-              disabled={listBusy || shoes.offset === 0}
-              onclick={() => loadList(status, shoes!.offset - shoes!.limit)}>上一页</button
-            >
-            <span class="text-sm text-muted-foreground">第 {Math.floor(shoes.offset / shoes.limit) + 1} 页</span>
-            <button
-              class="button-secondary min-h-11"
-              disabled={listBusy || shoes.offset + shoes.limit >= shoes.total}
-              onclick={() => loadList(status, shoes!.offset + shoes!.limit)}>下一页</button
-            >
+  {#if !shoes && listBusy && !id}
+    <div class="mt-5"><PageSkeleton title="正在读取跑鞋…" /></div>
+  {:else}
+    <div class="shoe-layout mt-6" class:show-detail={id !== null} class:single-column={!selected}>
+      <section class="inventory min-w-0" aria-label="跑鞋列表" aria-busy={listBusy}>
+        <div class="filter-row">
+          <div class="underline-tabs" role="group" aria-label="跑鞋状态">
+            <button type="button" aria-pressed={status === 'active'} onclick={() => filter('active')}>使用中</button>
+            <button type="button" aria-pressed={status === 'retired'} onclick={() => filter('retired')}>已退役</button>
           </div>
-        {/if}
-      {:else if !listBusy && !listError}
-        <FeedbackState title={status === 'active' ? '没有使用中的跑鞋' : '没有已退役的跑鞋'}>
-          {#if status === 'active'}
-            <button
-              type="button"
-              class="button-primary mt-3 min-h-11"
-              onclick={(event) => openEditor(null, event.currentTarget)}>＋ 添加跑鞋</button
-            >
-          {/if}
-        </FeedbackState>
-      {/if}
-    </section>
-
-    {#if selected}
-      <section class="detail min-w-0" aria-label="跑鞋详情" aria-busy={detailBusy}>
-        {#if id}
-          <a class="detail-back button-secondary min-h-11" href={href(status)} onclick={backToList}>← 跑鞋列表</a>
-        {/if}
-        {#if detailError}
-          <FeedbackState kind="error" title={detailError}>
-            <button class="button-secondary min-h-11" onclick={() => loadDetail(selected)}>重试</button>
+          {#if shoes && !listBusy}<span class="inventory-count">{shoes.total} 双</span>{/if}
+        </div>
+        {#if listError}
+          <FeedbackState kind="error" title={listError}>
+            <button class="button-secondary min-h-11" onclick={() => loadList(status, shoes?.offset)}>重试</button>
           </FeedbackState>
         {/if}
-        {#if freshShoe}
-          {@const record = freshShoe}
-          <div class="detail-card">
-            <header class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <h2 bind:this={detailHeading} tabindex="-1" class="text-xl font-semibold">{record.name}</h2>
-                {#if details(record)}<p class="text-sm text-muted-foreground">{details(record)}</p>{/if}
-              </div>
-              <button
-                class="button-secondary min-h-11"
-                disabled={busy}
-                type="button"
-                onclick={(event) => openEditor(record, event.currentTarget)}>编辑</button
-              >
-            </header>
-            <section class="totals" aria-label="里程">
-              <p class="text-sm text-muted-foreground">累计里程</p>
-              <p class="metric text-3xl font-semibold tabular-nums">{kmLabel(record.total_distance_m)}</p>
-              {#if record.replacement_distance_m && !record.retired_on}
-                <div class="flex flex-wrap justify-between gap-2 text-sm">
-                  <span class:text-warning={record.reminder}
-                    >{record.reminder ? reminderLabel(record.reminder) : '替换里程'}</span
-                  >
-                  <span class="text-muted-foreground">阈值 {kmLabel(record.replacement_distance_m)}</span>
-                </div>
-                <ShoeProgress shoe={record} />
-                {#if record.remaining_distance_m}
-                  <p class="text-sm text-muted-foreground">{remainingLabel(record.remaining_distance_m)}</p>
-                {/if}
-              {/if}
-              <dl class="breakdown">
-                <div>
-                  <dt>初始里程</dt>
-                  <dd>{kmLabel(record.initial_distance_m)}</dd>
-                </div>
-                <div>
-                  <dt>已绑活动里程</dt>
-                  <dd>{kmLabel(record.activity_distance_m)}</dd>
-                </div>
-              </dl>
-            </section>
-            <section aria-labelledby="shoe-activity-title" aria-busy={runsBusy}>
-              <header class="mb-1 flex flex-wrap items-center justify-between gap-2">
-                <h3 id="shoe-activity-title" class="font-semibold">关联活动</h3>
-                <span class="text-sm text-muted-foreground">{record.activity_count} 次</span>
-              </header>
-              {#if runsError}
-                <FeedbackState kind="error" title={runsError}>
-                  <button class="button-secondary min-h-11" onclick={() => loadRuns(record.id, runs?.offset)}
-                    >重试</button
-                  >
-                </FeedbackState>
-              {/if}
-              {#if runs?.items.length}
-                <ul>
-                  {#each runs.items as activity (activity.id)}
-                    <li>
-                      <a class="activity-link" href={view.href('/activities/' + activity.id)}>
-                        <time datetime={activity.activity_date}>{activity.activity_date}</time>
-                        <span>{activity.title}</span>
-                        <strong>{kmLabel(activity.distance_m)}</strong>
-                      </a>
-                    </li>
-                  {/each}
-                </ul>
-                {#if runs.total > runs.limit}
-                  <div class="pagination" aria-label="关联活动分页">
-                    <button
-                      class="button-secondary min-h-11"
-                      disabled={runsBusy || runs.offset === 0}
-                      onclick={() => loadRuns(record.id, runs!.offset - runs!.limit)}>上一页</button
-                    >
-                    <span class="text-sm text-muted-foreground">第 {Math.floor(runs.offset / runs.limit) + 1} 页</span>
-                    <button
-                      class="button-secondary min-h-11"
-                      disabled={runsBusy || runs.offset + runs.limit >= runs.total}
-                      onclick={() => loadRuns(record.id, runs!.offset + runs!.limit)}>下一页</button
-                    >
+        {#if shoes?.items.length}
+          <ul class="shoe-list">
+            {#each shoes.items as record (record.id)}
+              <li>
+                <a
+                  class="shoe-card"
+                  href={href(record.retired_on ? 'retired' : 'active', record.id)}
+                  aria-current={selected === record.id ? 'true' : undefined}
+                  data-shoe-id={record.id}
+                  onclick={(event) => void openDetail(event, record)}
+                >
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                      <strong class="block">{record.name}</strong>
+                      {#if details(record)}<p class="text-sm text-muted-foreground">{details(record)}</p>{/if}
+                    </div>
+                    <span aria-hidden="true" class="text-muted-foreground">›</span>
                   </div>
-                {/if}
-              {:else if runsBusy}
-                <p role="status" class="text-sm text-muted-foreground">正在读取关联活动…</p>
-              {:else if !runsError}
-                <FeedbackState title="暂无关联活动">
-                  <a class="button-secondary min-h-11" href={view.href('/activities')}>查看跑步记录</a>
-                </FeedbackState>
-              {/if}
-            </section>
-            <details class="border-t border-border">
-              <summary class="cursor-pointer py-3 font-medium">跑鞋资料</summary>
-              <dl class="grid gap-2 text-sm">
-                <div class="flex flex-wrap gap-2">
-                  <dt class="text-muted-foreground">购入日期</dt>
-                  <dd>{record.purchased_on ?? '—'}</dd>
-                </div>
-                {#if record.retired_on}<div class="flex flex-wrap gap-2">
-                    <dt class="text-muted-foreground">退役日期</dt>
-                    <dd>{record.retired_on}</dd>
-                  </div>{/if}
-                {#if record.notes}<div>
-                    <dt class="text-muted-foreground">备注</dt>
-                    <dd class="whitespace-pre-wrap">{record.notes}</dd>
-                  </div>{/if}
-              </dl>
-            </details>
-            <div class="flex flex-wrap gap-2">
+                  <div class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
+                    <strong class="shoe-km">{kmLabel(record.total_distance_m)}</strong>
+                    {#if record.reminder}
+                      <span class="text-sm text-warning">{reminderLabel(record.reminder)}</span>
+                    {:else if record.retired_on}
+                      <span class="text-sm text-muted-foreground">已退役</span>
+                    {:else if record.replacement_distance_m}
+                      <span class="shoe-threshold">阈值 {kmLabel(record.replacement_distance_m)}</span>
+                    {/if}
+                  </div>
+                  <ShoeProgress shoe={record} />
+                </a>
+              </li>
+            {/each}
+          </ul>
+          {#if shoes.total > shoes.limit}
+            <div class="pagination" aria-label="跑鞋列表分页">
               <button
                 class="button-secondary min-h-11"
-                type="button"
-                disabled={busy}
-                onclick={(event) => {
-                  if (record.retired_on) void change(record, 'status');
-                  else openConfirmDialog(retireDialog, event.currentTarget);
-                }}>{record.retired_on ? '恢复使用' : '退役跑鞋'}</button
+                disabled={listBusy || shoes.offset === 0}
+                onclick={() => loadList(status, shoes!.offset - shoes!.limit)}>上一页</button
               >
+              <span class="text-sm text-muted-foreground">第 {Math.floor(shoes.offset / shoes.limit) + 1} 页</span>
               <button
-                class="button-secondary min-h-11 shoe-danger"
-                type="button"
-                disabled={busy}
-                onclick={(event) => openConfirmDialog(deleteDialog, event.currentTarget)}>删除跑鞋</button
+                class="button-secondary min-h-11"
+                disabled={listBusy || shoes.offset + shoes.limit >= shoes.total}
+                onclick={() => loadList(status, shoes!.offset + shoes!.limit)}>下一页</button
               >
             </div>
-            {#if actionError && !deleteDialog?.open && !retireDialog?.open}
-              <p role="alert" class="shoe-danger text-sm">{actionError}</p>
-            {/if}
+          {/if}
+        {:else if !listBusy && !listError}
+          <div class="mt-4">
+            <FeedbackState title={status === 'active' ? '没有使用中的跑鞋' : '没有已退役的跑鞋'}>
+              {#if status === 'active'}
+                <button
+                  type="button"
+                  class="button-primary mt-3 min-h-11"
+                  onclick={(event) => openEditor(null, event.currentTarget)}>＋ 添加跑鞋</button
+                >
+              {/if}
+            </FeedbackState>
           </div>
-        {:else if detailBusy}
-          <PageSkeleton title="正在读取跑鞋详情…" />
         {/if}
       </section>
-    {/if}
-  </div>
-{/if}
 
-<dialog
-  bind:this={retireDialog}
-  aria-labelledby="shoe-retire-title"
-  oncancel={(event) => {
-    if (busy) event.preventDefault();
-  }}
-  onclose={closeConfirmDialog}
->
-  <h2 class="text-xl font-semibold" id="shoe-retire-title">退役跑鞋？</h2>
-  <p class="mt-2 text-muted-foreground">
-    退役后将记录为今日退役，不再出现在新活动的可选绑定列表中，并停止替换里程提醒。历史关联活动与累计里程完整保留，随时可恢复使用。
-  </p>
-  {#if actionError}<p role="alert" class="shoe-danger mt-2 text-sm">{actionError}</p>{/if}
-  <div class="mt-4 flex flex-wrap justify-end gap-2">
-    <button class="button-secondary min-h-11" type="button" disabled={busy} onclick={() => retireDialog.close()}
-      >取消</button
-    >
-    <button
-      class="button-primary min-h-11"
-      type="button"
-      disabled={busy || !freshShoe}
-      onclick={() => {
-        if (freshShoe) void change(freshShoe, 'status');
-      }}>{busy ? '处理中…' : '确认退役'}</button
-    >
-  </div>
-</dialog>
+      {#if selected}
+        <section class="detail min-w-0" aria-label="跑鞋详情" aria-busy={detailBusy}>
+          {#if id}
+            <a class="detail-back button-secondary min-h-11" href={href(status)} onclick={backToList}>← 跑鞋列表</a>
+          {/if}
+          {#if detailError}
+            <FeedbackState kind="error" title={detailError}>
+              <button class="button-secondary min-h-11" onclick={() => loadDetail(selected)}>重试</button>
+            </FeedbackState>
+          {/if}
+          {#if freshShoe}
+            {@const record = freshShoe}
+            <div class="detail-card section-rule">
+              <header class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <h2 bind:this={detailHeading} tabindex="-1" class="detail-title">{record.name}</h2>
+                  {#if details(record)}<p class="text-sm text-muted-foreground">{details(record)}</p>{/if}
+                </div>
+                <button
+                  class="button-secondary min-h-11"
+                  disabled={busy}
+                  type="button"
+                  onclick={(event) => openEditor(record, event.currentTarget)}>编辑</button
+                >
+              </header>
+              <section class="totals" aria-label="里程">
+                <p class="text-sm text-muted-foreground">累计里程</p>
+                <p class="metric">{kmLabel(record.total_distance_m)}</p>
+                {#if record.replacement_distance_m && !record.retired_on}
+                  <div class="flex flex-wrap justify-between gap-2 text-sm">
+                    <span class:text-warning={record.reminder}
+                      >{record.reminder ? reminderLabel(record.reminder) : '替换里程'}</span
+                    >
+                    <span class="shoe-threshold">阈值 {kmLabel(record.replacement_distance_m)}</span>
+                  </div>
+                  <ShoeProgress shoe={record} />
+                  {#if record.remaining_distance_m}
+                    <p class="text-sm text-muted-foreground">{remainingLabel(record.remaining_distance_m)}</p>
+                  {/if}
+                {/if}
+                <dl class="breakdown">
+                  <div>
+                    <dt>初始里程</dt>
+                    <dd>{kmLabel(record.initial_distance_m)}</dd>
+                  </div>
+                  <div>
+                    <dt>已绑活动里程</dt>
+                    <dd>{kmLabel(record.activity_distance_m)}</dd>
+                  </div>
+                </dl>
+              </section>
+              <section aria-labelledby="shoe-activity-title" aria-busy={runsBusy}>
+                <header class="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <h3 id="shoe-activity-title" class="section-subhead">关联活动</h3>
+                  <span class="inventory-count">{record.activity_count} 次</span>
+                </header>
+                {#if runsError}
+                  <FeedbackState kind="error" title={runsError}>
+                    <button class="button-secondary min-h-11" onclick={() => loadRuns(record.id, runs?.offset)}
+                      >重试</button
+                    >
+                  </FeedbackState>
+                {/if}
+                {#if runs?.items.length}
+                  <ul>
+                    {#each runs.items as activity (activity.id)}
+                      <li>
+                        <a class="activity-link" href={view.href('/activities/' + activity.id)}>
+                          <time datetime={activity.activity_date}>{activity.activity_date}</time>
+                          <span>{activity.title}</span>
+                          <strong>{kmLabel(activity.distance_m)}</strong>
+                        </a>
+                      </li>
+                    {/each}
+                  </ul>
+                  {#if runs.total > runs.limit}
+                    <div class="pagination" aria-label="关联活动分页">
+                      <button
+                        class="button-secondary min-h-11"
+                        disabled={runsBusy || runs.offset === 0}
+                        onclick={() => loadRuns(record.id, runs!.offset - runs!.limit)}>上一页</button
+                      >
+                      <span class="text-sm text-muted-foreground"
+                        >第 {Math.floor(runs.offset / runs.limit) + 1} 页</span
+                      >
+                      <button
+                        class="button-secondary min-h-11"
+                        disabled={runsBusy || runs.offset + runs.limit >= runs.total}
+                        onclick={() => loadRuns(record.id, runs!.offset + runs!.limit)}>下一页</button
+                      >
+                    </div>
+                  {/if}
+                {:else if runsBusy}
+                  <p role="status" class="text-sm text-muted-foreground">正在读取关联活动…</p>
+                {:else if !runsError}
+                  <FeedbackState title="暂无关联活动">
+                    <a class="button-secondary min-h-11" href={view.href('/activities')}>查看跑步记录</a>
+                  </FeedbackState>
+                {/if}
+              </section>
+              <details class="border-t border-border">
+                <summary class="cursor-pointer py-3 font-medium">跑鞋资料</summary>
+                <dl class="grid gap-2 text-sm">
+                  <div class="flex flex-wrap gap-2">
+                    <dt class="text-muted-foreground">购入日期</dt>
+                    <dd class="font-mono">{record.purchased_on ?? '—'}</dd>
+                  </div>
+                  {#if record.retired_on}<div class="flex flex-wrap gap-2">
+                      <dt class="text-muted-foreground">退役日期</dt>
+                      <dd class="font-mono">{record.retired_on}</dd>
+                    </div>{/if}
+                  {#if record.notes}<div>
+                      <dt class="text-muted-foreground">备注</dt>
+                      <dd class="whitespace-pre-wrap">{record.notes}</dd>
+                    </div>{/if}
+                </dl>
+              </details>
+              <div class="detail-actions">
+                <button
+                  class="button-secondary min-h-11"
+                  type="button"
+                  disabled={busy}
+                  onclick={(event) => {
+                    if (record.retired_on) void change(record, 'status');
+                    else openConfirmDialog(retireDialog, event.currentTarget);
+                  }}>{record.retired_on ? '恢复使用' : '退役跑鞋'}</button
+                >
+                <button
+                  class="button-secondary min-h-11 shoe-danger"
+                  type="button"
+                  disabled={busy}
+                  onclick={(event) => openConfirmDialog(deleteDialog, event.currentTarget)}>删除跑鞋</button
+                >
+              </div>
+              {#if actionError && !deleteDialog?.open && !retireDialog?.open}
+                <p role="alert" class="shoe-danger text-sm">{actionError}</p>
+              {/if}
+            </div>
+          {:else if detailBusy}
+            <PageSkeleton title="正在读取跑鞋详情…" />
+          {/if}
+        </section>
+      {/if}
+    </div>
+  {/if}
 
-<dialog
-  bind:this={deleteDialog}
-  aria-labelledby="shoe-delete-title"
-  oncancel={(event) => {
-    if (busy) event.preventDefault();
-  }}
-  onclose={closeConfirmDialog}
->
-  <h2 class="text-xl font-semibold" id="shoe-delete-title">删除跑鞋？</h2>
-  <p class="mt-2 text-muted-foreground">删除后无法恢复。仍有关联活动的跑鞋可保留或退役。</p>
-  {#if actionError}<p role="alert" class="shoe-danger mt-2 text-sm">{actionError}</p>{/if}
-  <div class="mt-4 flex flex-wrap justify-end gap-2">
-    <button class="button-secondary min-h-11" type="button" disabled={busy} onclick={() => deleteDialog.close()}
-      >取消</button
-    >
-    <button
-      class="button-primary min-h-11"
-      type="button"
-      disabled={busy || !freshShoe}
-      onclick={() => {
-        if (freshShoe) void change(freshShoe, 'delete');
-      }}>{busy ? '删除中…' : '确认删除'}</button
-    >
-  </div>
-</dialog>
+  <dialog
+    bind:this={retireDialog}
+    aria-labelledby="shoe-retire-title"
+    oncancel={(event) => {
+      if (busy) event.preventDefault();
+    }}
+    onclose={closeConfirmDialog}
+  >
+    <h2 class="text-xl font-semibold" id="shoe-retire-title">退役跑鞋？</h2>
+    <p class="mt-2 text-muted-foreground">
+      退役后将记录为今日退役，不再出现在新活动的可选绑定列表中，并停止替换里程提醒。历史关联活动与累计里程完整保留，随时可恢复使用。
+    </p>
+    {#if actionError}<p role="alert" class="shoe-danger mt-2 text-sm">{actionError}</p>{/if}
+    <div class="mt-4 flex flex-wrap justify-end gap-2">
+      <button class="button-secondary min-h-11" type="button" disabled={busy} onclick={() => retireDialog.close()}
+        >取消</button
+      >
+      <button
+        class="button-primary min-h-11"
+        type="button"
+        disabled={busy || !freshShoe}
+        onclick={() => {
+          if (freshShoe) void change(freshShoe, 'status');
+        }}>{busy ? '处理中…' : '确认退役'}</button
+      >
+    </div>
+  </dialog>
 
-{#if editing !== undefined}
-  <ShoeEditor shoe={editing} onclose={closeEditor} onsave={(value) => void saved(value)} onexpired={expire} />
-{/if}
+  <dialog
+    bind:this={deleteDialog}
+    aria-labelledby="shoe-delete-title"
+    oncancel={(event) => {
+      if (busy) event.preventDefault();
+    }}
+    onclose={closeConfirmDialog}
+  >
+    <h2 class="text-xl font-semibold" id="shoe-delete-title">删除跑鞋？</h2>
+    <p class="mt-2 text-muted-foreground">删除后无法恢复。仍有关联活动的跑鞋可保留或退役。</p>
+    {#if actionError}<p role="alert" class="shoe-danger mt-2 text-sm">{actionError}</p>{/if}
+    <div class="mt-4 flex flex-wrap justify-end gap-2">
+      <button class="button-secondary min-h-11" type="button" disabled={busy} onclick={() => deleteDialog.close()}
+        >取消</button
+      >
+      <button
+        class="button-primary min-h-11"
+        type="button"
+        disabled={busy || !freshShoe}
+        onclick={() => {
+          if (freshShoe) void change(freshShoe, 'delete');
+        }}>{busy ? '删除中…' : '确认删除'}</button
+      >
+    </div>
+  </dialog>
+
+  {#if editing !== undefined}
+    <ShoeEditor shoe={editing} onclose={closeEditor} onsave={(value) => void saved(value)} onexpired={expire} />
+  {/if}
+</div>
 
 <style>
+  .shoes-page {
+    min-width: 0;
+  }
   .shoe-layout {
     display: grid;
     align-items: start;
-    gap: var(--space-6);
+    gap: var(--space-8);
   }
-  .shoe-card,
-  .detail-card {
-    padding: var(--space-4);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    background: var(--surface);
+  .filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    border-top: 2px solid var(--rule);
+    border-bottom: 1px solid var(--border);
+  }
+  .filter-row .underline-tabs {
+    flex-wrap: nowrap;
+    margin-bottom: -1px;
+  }
+  .inventory-count {
+    font-family: var(--font-mono);
+    font-size: var(--text-small);
+    font-variant-numeric: tabular-nums;
+    color: var(--muted-foreground);
+  }
+  .shoe-list {
     display: grid;
-    gap: var(--space-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .shoe-card {
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-4) var(--space-3);
+    border-bottom: 1px solid var(--border);
+    overflow-wrap: anywhere;
+    transition: background-color var(--transition-control);
+  }
+  @media (hover: hover) {
+    .shoe-card:hover {
+      background: color-mix(in srgb, var(--foreground) 3%, transparent);
+    }
+  }
+  .shoe-card[aria-current='true'] {
+    background: var(--recap-well);
+    box-shadow: inset 3px 0 0 var(--rule);
+  }
+  .shoe-km {
+    font-size: var(--text-card);
+    font-weight: var(--weight-bold);
+    font-variant-numeric: tabular-nums;
+  }
+  .shoe-threshold {
+    font-family: var(--font-mono);
+    font-size: var(--text-caption);
+    font-variant-numeric: tabular-nums;
+    color: var(--muted-foreground);
+  }
+  .detail-card {
+    display: grid;
+    gap: var(--space-6);
     overflow-wrap: anywhere;
   }
-  .shoe-card:hover,
-  .shoe-card[aria-current='true'] {
-    border-color: var(--primary);
+  .detail-title {
+    font-size: var(--text-section);
+    font-weight: var(--weight-semibold);
   }
-  .detail-card {
-    gap: var(--space-4);
+  .section-subhead {
+    font-size: var(--text-card);
+    font-weight: var(--weight-semibold);
+  }
+  .metric {
+    font-size: var(--text-title);
+    font-weight: var(--weight-bold);
+    line-height: var(--line-height-tight);
+    letter-spacing: var(--tracking-tight);
+    font-variant-numeric: tabular-nums;
   }
   .detail-back {
-    margin-bottom: var(--space-3);
+    margin-bottom: var(--space-4);
   }
   .totals {
     display: grid;
     gap: var(--space-2);
     border-block: 1px solid var(--border);
-    padding-block: var(--space-3);
+    padding-block: var(--space-4);
   }
   .breakdown {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-2);
+    gap: var(--space-3);
     border-top: 1px solid var(--border);
     margin-top: var(--space-2);
-    padding-top: var(--space-2);
+    padding-top: var(--space-3);
   }
   .breakdown dt {
     color: var(--muted-foreground);
@@ -634,13 +699,13 @@
   }
   .breakdown dd {
     font-variant-numeric: tabular-nums;
-    font-weight: var(--weight-medium);
+    font-weight: var(--weight-semibold);
   }
   .activity-link {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
-    gap: var(--space-2);
+    gap: var(--space-3);
     min-height: 2.75rem;
     border-top: 1px solid var(--border);
     padding-block: var(--space-2);
@@ -650,6 +715,7 @@
     text-decoration: underline;
   }
   .activity-link time {
+    font-family: var(--font-mono);
     color: var(--muted-foreground);
   }
   .activity-link strong {
@@ -664,15 +730,16 @@
     gap: var(--space-2);
     margin-top: var(--space-3);
   }
-  .inventory .settings-tabs button {
-    min-height: 2.75rem;
-  }
-  .filter-row .settings-tabs {
-    width: auto;
-    margin-top: 0;
+  .detail-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border);
   }
   .shoe-danger {
     color: var(--error);
+    border-color: var(--error-border);
   }
   dialog {
     margin: auto;
@@ -693,9 +760,6 @@
     }
     .detail-back {
       display: none;
-    }
-    .detail-card {
-      padding: var(--space-6);
     }
   }
   @media (max-width: 1023px) {

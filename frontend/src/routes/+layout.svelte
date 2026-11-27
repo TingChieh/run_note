@@ -728,6 +728,7 @@
       {#if !(identityBlocked && privateView)}
         {#if routeLoading}<div data-testid="navigation-skeleton"><PageSkeleton /></div>{/if}
         {#if settingsKind}<div
+            class="editorial-page settings-header-shell"
             hidden={routeLoading || (checking && privateView)}
             inert={routeLoading || (checking && privateView)}
           >

@@ -224,157 +224,165 @@
 
 <svelte:head><title>{pageTitle('目标与隐私', page.data.site)}</title></svelte:head>
 {#if view.manage && page.data.user}
-  <div class="settings-stack">
+  <div class="editorial-page settings-page">
     <section
       id="goals"
-      class="aux-panel settings-block"
+      class="settings-editorial-group section-rule"
       aria-labelledby="goals-title"
       aria-busy={goalsLoading || goalsSaving}
     >
-      <h2 id="goals-title">跑量目标</h2>
-      <p class="block-hint">统一调整每周、每月与年度目标，数据汇总页与顶栏进度环同步更新。</p>
-      {#if goalsLoadError}
-        <FeedbackState kind="error" title={goalsLoadError}>
-          <button type="button" class="button-secondary mt-3" onclick={() => void loadGoals()}>重试读取目标</button>
-        </FeedbackState>
-      {:else}
-        <form onsubmit={submitGoals} class="goal-form-grid" novalidate>
-          {#each GOAL_PERIODS as item (item.key)}
-            <div class="goal-input-card">
-              <label class="block-field" for={`pref-goal-${item.key}`}>
-                {item.label}
-                <div class="goal-input-row">
-                  <input
-                    id={`pref-goal-${item.key}`}
-                    class="text-field"
-                    inputmode="decimal"
-                    placeholder="未设置"
-                    bind:value={goalInputs[item.key]}
-                    disabled={goalsLoading || goalsSaving}
-                    aria-invalid={goalsInvalidField === item.key ? 'true' : undefined}
-                    aria-describedby={goalsInvalidField === item.key ? 'pref-goals-error' : undefined}
-                  />
-                  <span class="goal-input-unit">km</span>
-                </div>
-              </label>
-              <p class="block-hint">
-                已保存：{savedGoals[item.key] === null ? '未设置' : `${savedGoals[item.key]} km`}
-              </p>
+      <div class="settings-editorial-lead">
+        <h2 id="goals-title">跑量目标</h2>
+        <p class="block-hint">统一调整每周、每月与年度目标，数据汇总页与顶栏进度环同步更新。</p>
+      </div>
+      <div class="settings-editorial-body">
+        {#if goalsLoadError}
+          <FeedbackState kind="error" title={goalsLoadError}>
+            <button type="button" class="button-secondary mt-3" onclick={() => void loadGoals()}>重试读取目标</button>
+          </FeedbackState>
+        {:else}
+          <form onsubmit={submitGoals} class="goal-fields-grid" novalidate>
+            {#each GOAL_PERIODS as item (item.key)}
+              <div class="goal-input-card goal-field-item">
+                <label class="block-field" for={`pref-goal-${item.key}`}>
+                  {item.label}
+                  <span class="input-suffix">
+                    <input
+                      id={`pref-goal-${item.key}`}
+                      class="text-field goal-num-input"
+                      inputmode="decimal"
+                      placeholder="未设置"
+                      bind:value={goalInputs[item.key]}
+                      disabled={goalsLoading || goalsSaving}
+                      aria-invalid={goalsInvalidField === item.key ? 'true' : undefined}
+                      aria-describedby={goalsInvalidField === item.key ? 'pref-goals-error' : undefined}
+                    />
+                    <span class="input-suffix-unit" aria-hidden="true">km</span>
+                  </span>
+                </label>
+                <p class="saved-caption">
+                  已保存：{savedGoals[item.key] === null ? '未设置' : `${savedGoals[item.key]} km`}
+                </p>
+              </div>
+            {/each}
+            <div class="goal-submit-row">
+              <button type="submit" class="button-primary" disabled={goalsLoading || goalsSaving || !goalsDirty}>
+                {goalsSaving ? '正在保存目标…' : '保存跑量目标'}
+              </button>
+              {#if goalsMessage}<p role="status" class="status-note">{goalsMessage}</p>{/if}
             </div>
-          {/each}
-          <div class="goal-submit-row">
-            <button type="submit" class="button-primary" disabled={goalsLoading || goalsSaving || !goalsDirty}>
-              {goalsSaving ? '正在保存目标…' : '保存跑量目标'}
-            </button>
-            {#if goalsMessage}<p role="status" class="text-sm text-muted-foreground">{goalsMessage}</p>{/if}
-          </div>
-          {#if goalsError}
-            <div id="pref-goals-error" class="goal-error-row">
-              <FeedbackState kind="error" title={goalsError} />
-            </div>
-          {/if}
-        </form>
-      {/if}
+            {#if goalsError}
+              <div id="pref-goals-error" class="goal-error-row">
+                <FeedbackState kind="error" title={goalsError} />
+              </div>
+            {/if}
+          </form>
+        {/if}
+      </div>
     </section>
 
     <form
       id="privacy-form"
       onsubmit={savePrivacy}
-      class="aux-panel settings-block"
+      class="settings-editorial-group"
       aria-labelledby="privacy-title"
       aria-busy={privacyBusy}
     >
-      <h2 id="privacy-title">展示、隐私与个人模块</h2>
+      <div class="settings-editorial-lead">
+        <h2 id="privacy-title">展示、隐私与个人模块</h2>
+        <p class="block-hint">展示页始终只读；跑鞋、私人备注与身心健康永不公开。</p>
+      </div>
+      <div class="settings-editorial-body toggle-list">
+        <div id="privacy" class="toggle-item">
+          <div class="block-title-row">
+            <div class="min-w-0">
+              <h3>个人完整展示</h3>
+              <p class="block-hint">
+                由站主在用户管理中控制。开启后访客可浏览个人展示页的全部记录与完整轨迹；跑鞋、私人备注与身心健康永不公开。
+              </p>
+            </div>
+            <span class="settings-status-label" class:on={page.data.user.showcase_enabled}>
+              {page.data.user.showcase_enabled ? '已开启' : '未开启'}
+            </span>
+          </div>
+          {#if page.data.user.showcase_enabled}
+            <div>
+              <a class="inline-link" href={`/p/${encodeURIComponent(page.data.user.username)}`}>
+                查看我的个人展示（/p/{page.data.user.username}） →
+              </a>
+            </div>
+          {/if}
+        </div>
 
-      <div id="privacy" class="switch-row">
-        <div class="block-title-row">
-          <div>
-            <h3>个人完整展示</h3>
-            <p class="block-hint">
-              由站主在用户管理中控制。开启后访客可浏览个人展示页的全部记录与完整轨迹；跑鞋、私人备注与身心健康永不公开。
+        <div class="toggle-item">
+          <div class="block-title-row">
+            <div class="min-w-0">
+              <h3 id="public-profile-label">公开个人主页</h3>
+              <p class="block-hint">仅展示主动设为公开的记录、统计和日历，不会公开历史私人记录。</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              class="rn-switch"
+              aria-checked={enabled}
+              aria-labelledby="public-profile-label"
+              disabled={privacyBusy || !privacyReady}
+              onclick={() => (enabled = !enabled)}
+            >
+              <span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span>
+            </button>
+          </div>
+          <p class="settings-status-label" class:on={baseline.enabled}>已保存：{baseline.enabled ? '已开启' : '已关闭'}</p>
+          <details class="block-details">
+            <summary>展示与隐私说明</summary>
+            <p>
+              开启完整展示后，个人展示页将展示全部记录和完整路线；这里的公开主页设置仅影响旧版摘要主页。私人备注和原始文件不公开。
             </p>
-          </div>
-          <span class="status-badge" class:on={page.data.user.showcase_enabled}>
-            {page.data.user.showcase_enabled ? '已开启' : '未开启'}
-          </span>
+            <p>
+              关闭主页会立即关闭主页及其资料、统计、日历和列表接口。关闭主页不会撤销独立分享链接或单条公开记录；独立记录需到详情单独撤销链接或设为私人，已被他人保存的摘要无法收回。
+            </p>
+          </details>
         </div>
-        {#if page.data.user.showcase_enabled}
-          <div>
-            <a class="text-sm text-primary underline" href={`/p/${encodeURIComponent(page.data.user.username)}`}>
-              查看我的个人展示（/p/{page.data.user.username}） →
-            </a>
-          </div>
-        {/if}
-      </div>
 
-      <div class="switch-row">
-        <div class="block-title-row">
-          <div>
-            <h3 id="public-profile-label">公开个人主页</h3>
-            <p class="block-hint">仅展示主动设为公开的记录、统计和日历，不会公开历史私人记录。</p>
+        <div class="toggle-item">
+          <div class="block-title-row">
+            <div class="min-w-0">
+              <h3 id="wellbeing-label">身心健康</h3>
+              <p class="block-hint">关闭后隐藏入口，记录会保留。</p>
+              {#if !page.data.user.wellbeing_allowed}<p class="block-hint">已被管理员关闭。</p>{/if}
+            </div>
+            <button
+              type="button"
+              role="switch"
+              class="rn-switch"
+              aria-checked={wellbeing}
+              aria-labelledby="wellbeing-label"
+              disabled={privacyBusy || !privacyReady || !page.data.user.wellbeing_allowed}
+              onclick={() => (wellbeing = !wellbeing)}
+            >
+              <span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span>
+            </button>
           </div>
-          <button
-            type="button"
-            role="switch"
-            class="rn-switch"
-            aria-checked={enabled}
-            aria-labelledby="public-profile-label"
-            disabled={privacyBusy || !privacyReady}
-            onclick={() => (enabled = !enabled)}
-          >
-            <span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span>
-          </button>
         </div>
-        <p class="status-badge" class:on={baseline.enabled}>已保存：{baseline.enabled ? '已开启' : '已关闭'}</p>
-        <details class="block-details">
-          <summary>展示与隐私说明</summary>
-          <p>
-            开启完整展示后，个人展示页将展示全部记录和完整路线；这里的公开主页设置仅影响旧版摘要主页。私人备注和原始文件不公开。
-          </p>
-          <p>
-            关闭主页会立即关闭主页及其资料、统计、日历和列表接口。关闭主页不会撤销独立分享链接或单条公开记录；独立记录需到详情单独撤销链接或设为私人，已被他人保存的摘要无法收回。
-          </p>
-        </details>
-      </div>
 
-      <div class="switch-row">
-        <div class="block-title-row">
-          <div>
-            <h3 id="wellbeing-label">身心健康</h3>
-            <p class="block-hint">关闭后隐藏入口，记录会保留。</p>
-            {#if !page.data.user.wellbeing_allowed}<p class="block-hint">已被管理员关闭。</p>{/if}
+        <div class="toggle-item">
+          <div class="block-title-row">
+            <div class="min-w-0">
+              <h3 id="together-label">加入一起跑步</h3>
+              <p class="block-hint">开启后，你的全部运动记录（含私人记录）和对应精确路线都会公开汇入一起跑步。</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              class="rn-switch"
+              aria-checked={together}
+              aria-labelledby="together-label"
+              disabled={privacyBusy || !privacyReady}
+              onclick={() => (together = !together)}
+            >
+              <span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span>
+            </button>
           </div>
-          <button
-            type="button"
-            role="switch"
-            class="rn-switch"
-            aria-checked={wellbeing}
-            aria-labelledby="wellbeing-label"
-            disabled={privacyBusy || !privacyReady || !page.data.user.wellbeing_allowed}
-            onclick={() => (wellbeing = !wellbeing)}
-          >
-            <span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span>
-          </button>
-        </div>
-      </div>
-
-      <div class="switch-row">
-        <div class="block-title-row">
-          <div>
-            <h3 id="together-label">加入一起跑步</h3>
-            <p class="block-hint">开启后，你的全部运动记录（含私人记录）和对应精确路线都会公开汇入一起跑步。</p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            class="rn-switch"
-            aria-checked={together}
-            aria-labelledby="together-label"
-            disabled={privacyBusy || !privacyReady}
-            onclick={() => (together = !together)}
-          >
-            <span class="rn-switch-track" aria-hidden="true"><span class="rn-switch-static"></span></span>
-          </button>
         </div>
       </div>
     </form>
@@ -390,27 +398,29 @@
       }}
     />
 
-    <section id="data" class="aux-panel settings-block" aria-labelledby="data-title">
-      <h2 id="data-title">数据与记录入口</h2>
-      <div class="data-links-grid">
-        <div class="data-link-card">
-          <div>
+    <section id="data" class="settings-editorial-group wide-body" aria-labelledby="data-title">
+      <div class="settings-editorial-lead">
+        <h2 id="data-title">数据与记录入口</h2>
+      </div>
+      <div class="settings-editorial-body data-links-list">
+        <div class="data-link-row">
+          <div class="min-w-0">
             <strong>导入与管理跑步记录</strong>
             <p class="block-hint">导入 GPX、TCX 或小米运动健康记录，并管理旧版单条分享链接。</p>
           </div>
           <a class="button-secondary button-compact" href={view.href('/activities')}>前往跑步记录 →</a>
         </div>
         {#if page.data.user.wellbeing_allowed && baseline.wellbeing}
-          <div class="data-link-card">
-            <div>
+          <div class="data-link-row">
+            <div class="min-w-0">
               <strong>身心健康就诊报告</strong>
               <p class="block-hint">在身心健康页查看汇总并导出 CSV 报告。</p>
             </div>
             <a class="button-secondary button-compact" href={view.href('/wellbeing')}>前往身心健康 →</a>
           </div>
         {/if}
-        <div class="data-link-card" data-testid="settings-privacy-deletion-card">
-          <div>
+        <div class="data-link-row" data-testid="settings-privacy-deletion-card">
+          <div class="min-w-0">
             <strong>隐私政策与账号删除</strong>
             <p class="block-hint">查看数据处理说明，或按指引提交账号及关联数据删除请求。</p>
           </div>
@@ -429,7 +439,6 @@
     </section>
 
     <SaveBar
-      glass
       form="privacy-form"
       dirty={privacyDirty}
       busy={privacyBusy}
@@ -443,10 +452,93 @@
 {/if}
 
 <style>
-  .switch-row h3 {
-    font-size: var(--text-card);
+  .settings-page {
+    display: grid;
+    margin-top: var(--space-6);
+    min-width: 0;
+  }
+  .goal-fields-grid {
+    display: grid;
+    gap: var(--space-4);
+    min-width: 0;
+  }
+  @media (min-width: 640px) {
+    .goal-fields-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+  .goal-field-item {
+    display: grid;
+    gap: var(--space-1);
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+  .input-suffix {
+    position: relative;
+    display: block;
+  }
+  .goal-num-input {
+    padding-right: 2.75rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .input-suffix-unit {
+    position: absolute;
+    right: var(--space-3);
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: var(--font-mono);
+    font-size: var(--text-small);
+    font-weight: var(--weight-medium);
+    color: var(--muted-foreground);
+    pointer-events: none;
+  }
+  .saved-caption {
+    font-family: var(--font-mono);
+    font-size: var(--text-caption);
+    font-variant-numeric: tabular-nums;
+    color: var(--muted-foreground);
+  }
+  .status-note {
+    font-size: var(--text-small);
+    color: var(--muted-foreground);
+  }
+  .toggle-list {
+    gap: 0;
+  }
+  .toggle-item {
+    display: grid;
+    gap: var(--space-2);
+    padding-block: var(--space-4);
+    border-bottom: 1px solid var(--border);
+  }
+  .toggle-item:first-child {
+    padding-top: 0;
+  }
+  .toggle-item:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+  .toggle-item h3 {
+    font-size: var(--text-body);
     font-weight: var(--weight-semibold);
     line-height: var(--line-height-heading);
+  }
+  .inline-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    font-size: var(--text-small);
+    font-weight: var(--weight-semibold);
+    color: var(--primary);
+  }
+  @media (hover: hover) {
+    .inline-link:hover {
+      text-decoration: underline;
+      text-underline-offset: 0.2em;
+    }
   }
   .goal-submit-row {
     grid-column: 1 / -1;
@@ -457,6 +549,29 @@
   }
   .goal-error-row {
     grid-column: 1 / -1;
+  }
+  .data-links-list {
+    gap: 0;
+  }
+  .data-link-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3) var(--space-6);
+    padding-block: var(--space-4);
+    border-bottom: 1px solid var(--border);
+  }
+  .data-link-row:first-child {
+    padding-top: 0;
+  }
+  .data-link-row:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+  .data-link-row strong {
+    font-size: var(--text-body);
+    font-weight: var(--weight-semibold);
   }
   .data-link-actions {
     display: flex;

@@ -48,70 +48,132 @@
   }
 </script>
 <svelte:head><title>{pageTitle('站点设置', page.data.site)}</title></svelte:head>
-{#if loading}{#if slow}<div class="mt-6"><FeedbackState kind="loading" title="正在读取站点设置…" /></div>{/if}
-{:else if loadError}<div class="mt-6"><FeedbackState kind="error" title={loadError}><button type="button" class="button-secondary mt-3" onclick={() => void load()}>重新读取</button></FeedbackState></div>
-{:else if site}
-<div class="site-layout">
-  <form id="site-form" onsubmit={save} class="settings-stack" aria-busy={saving}>
-    <section class="aux-panel settings-block" aria-labelledby="site-text-title">
-      <h2 id="site-text-title">站点文字</h2>
-      <p class="block-hint">显示在侧栏、页脚、浏览器标签和分享图中。</p>
-      <div class="block-pair">
-        <label class="block-field">站点标题<input class="text-field" required maxlength="40" bind:value={title} disabled={saving} /></label>
-        <label class="block-field">侧栏副标题<input class="text-field" maxlength="40" bind:value={subtitle} disabled={saving} /></label>
-      </div>
-      <label class="block-field">页脚标语<input class="text-field" maxlength="80" bind:value={tagline} disabled={saving} /></label>
-      <label class="block-field">站点描述<textarea class="text-field" maxlength="200" rows="3" bind:value={description} disabled={saving}></textarea></label>
-    </section>
-    <fieldset class="aux-panel settings-block" aria-busy={saving}>
-      <legend>默认外观</legend>
-      <p class="block-hint">访客未在本机手动切换时使用；手动切换始终优先。</p>
-      <div class="theme-tiles">
-        {#each themes as option}<label class="theme-tile" class:selected={theme === option.value}>
-          <input type="radio" name="default-theme" value={option.value} bind:group={theme} disabled={saving} />
-          <span class="theme-swatch swatch-{option.value}" aria-hidden="true"><i></i><i></i></span>
-          <span class="theme-name">{option.label}</span>
-        </label>{/each}
-      </div>
-    </fieldset>
-    <section class="aux-panel settings-block" aria-labelledby="version-title" data-testid="version-info">
-      <h2 id="version-title">版本信息</h2>
-      {#if version}
-        <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-          <dt class="text-muted-foreground">版本</dt><dd data-testid="app-version">v{version.version}</dd>
-          {#if version.build}
-            <dt class="text-muted-foreground">提交</dt><dd class="font-mono" data-testid="app-commit">{version.build.git_sha}</dd>
-            <dt class="text-muted-foreground">构建时间</dt><dd>{builtAtLabel(version.build.built_at)}</dd>
-            <dt class="text-muted-foreground">发布 ID</dt><dd class="font-mono break-all">{version.build.release_id}</dd>
-          {:else}
-            <dt class="text-muted-foreground">来源</dt><dd>本地源码运行（非发布包）</dd>
-          {/if}
-        </dl>
-      {:else if versionError}
-        <p class="block-hint" role="status">版本信息暂时无法读取。</p>
-      {:else}
-        <p class="block-hint">正在读取版本信息…</p>
-      {/if}
-    </section>
-  </form>
-  <aside class="settings-stack" aria-label="预览与图标">
-    <section class="aux-panel settings-block" aria-labelledby="site-preview-title">
-      <h2 id="site-preview-title">预览</h2>
-      <div class="site-preview">
-        <div class="preview-side">
-          <span class="preview-mark">{#if site.logo_url}<img src={site.logo_url} alt="" />{:else}{brandInitial(title)}{/if}</span>
-          <span class="min-w-0"><span class="preview-title">{title || '站点标题'}</span>{#if subtitle}<span class="preview-sub">{subtitle}</span>{/if}</span>
+<div class="editorial-page site-settings-page">
+  {#if loading}{#if slow}<div class="mt-6"><FeedbackState kind="loading" title="正在读取站点设置…" /></div>{/if}
+  {:else if loadError}<div class="mt-6"><FeedbackState kind="error" title={loadError}><button type="button" class="button-secondary mt-3" onclick={() => void load()}>重新读取</button></FeedbackState></div>
+  {:else if site}
+  <div class="site-layout">
+    <form id="site-form" onsubmit={save} class="site-column" aria-busy={saving}>
+      <section class="site-section section-rule" aria-labelledby="site-text-title">
+        <h2 id="site-text-title">站点文字</h2>
+        <p class="block-hint">显示在侧栏、页脚、浏览器标签和分享图中。</p>
+        <div class="block-pair">
+          <label class="block-field">站点标题<input class="text-field" required maxlength="40" bind:value={title} disabled={saving} /></label>
+          <label class="block-field">侧栏副标题<input class="text-field" maxlength="40" bind:value={subtitle} disabled={saving} /></label>
         </div>
-        <p class="preview-foot"><strong>{title || '站点标题'}</strong> {tagline}</p>
-      </div>
-    </section>
-    <section class="aux-panel settings-block" aria-labelledby="images-title">
-      <h2 id="images-title">图标</h2>
-      <p class="block-hint">支持 PNG、JPEG、WebP，不超过 5 MiB；自动居中裁成正方形并移除元数据。</p>
-      <ImageUpload label="站内标志" src={site.logo_url} fallback={brandInitial(site.title)} busy={imageBusy === 'logo'} error={imageError.logo} hint="显示在侧栏、顶栏和分享图。" onselect={file => void change('logo', () => uploadSiteImage('logo', file))} onremove={() => void change('logo', () => removeSiteImage('logo'))} />
-      <ImageUpload label="浏览器图标" src={site.favicon_url} fallback={brandInitial(site.title)} busy={imageBusy === 'favicon'} error={imageError.favicon} hint="显示在浏览器标签页。" onselect={file => void change('favicon', () => uploadSiteImage('favicon', file))} onremove={() => void change('favicon', () => removeSiteImage('favicon'))} />
-    </section>
-  </aside>
-  <div class="site-save"><SaveBar glass form="site-form" {dirty} busy={saving} message={notice} {error} label="保存站点设置" busyLabel="正在保存站点设置…" ondiscard={discard} /></div>
+        <label class="block-field">页脚标语<input class="text-field" maxlength="80" bind:value={tagline} disabled={saving} /></label>
+        <label class="block-field">站点描述<textarea class="text-field" maxlength="200" rows="3" bind:value={description} disabled={saving}></textarea></label>
+      </section>
+      <fieldset class="site-section section-hairline" aria-busy={saving}>
+        <legend>默认外观</legend>
+        <p class="block-hint">访客未在本机手动切换时使用；手动切换始终优先。</p>
+        <div class="theme-tiles">
+          {#each themes as option}<label class="theme-tile" class:selected={theme === option.value}>
+            <input type="radio" name="default-theme" value={option.value} bind:group={theme} disabled={saving} />
+            <span class="theme-swatch swatch-{option.value}" aria-hidden="true"><i></i><i></i></span>
+            <span class="theme-name">{option.label}</span>
+          </label>{/each}
+        </div>
+      </fieldset>
+      <section class="site-section section-hairline" aria-labelledby="version-title" data-testid="version-info">
+        <h2 id="version-title">版本信息</h2>
+        {#if version}
+          <dl class="version-ledger">
+            <div><dt>版本</dt><dd class="font-mono" data-testid="app-version">v{version.version}</dd></div>
+            {#if version.build}
+              <div><dt>提交</dt><dd class="font-mono" data-testid="app-commit">{version.build.git_sha}</dd></div>
+              <div><dt>构建时间</dt><dd class="font-mono">{builtAtLabel(version.build.built_at)}</dd></div>
+              <div><dt>发布 ID</dt><dd class="font-mono break-all">{version.build.release_id}</dd></div>
+            {:else}
+              <div><dt>来源</dt><dd>本地源码运行（非发布包）</dd></div>
+            {/if}
+          </dl>
+        {:else if versionError}
+          <p class="block-hint" role="status">版本信息暂时无法读取。</p>
+        {:else}
+          <p class="block-hint">正在读取版本信息…</p>
+        {/if}
+      </section>
+    </form>
+    <aside class="site-column" aria-label="预览与图标">
+      <section class="site-section section-rule" aria-labelledby="site-preview-title">
+        <h2 id="site-preview-title">预览</h2>
+        <div class="site-preview">
+          <div class="preview-side">
+            <span class="preview-mark">{#if site.logo_url}<img src={site.logo_url} alt="" />{:else}{brandInitial(title)}{/if}</span>
+            <span class="min-w-0"><span class="preview-title">{title || '站点标题'}</span>{#if subtitle}<span class="preview-sub">{subtitle}</span>{/if}</span>
+          </div>
+          <p class="preview-foot"><strong>{title || '站点标题'}</strong> {tagline}</p>
+        </div>
+      </section>
+      <section class="site-section section-hairline" aria-labelledby="images-title">
+        <h2 id="images-title">图标</h2>
+        <p class="block-hint">支持 PNG、JPEG、WebP，不超过 5 MiB；自动居中裁成正方形并移除元数据。</p>
+        <ImageUpload label="站内标志" src={site.logo_url} fallback={brandInitial(site.title)} busy={imageBusy === 'logo'} error={imageError.logo} hint="显示在侧栏、顶栏和分享图。" onselect={file => void change('logo', () => uploadSiteImage('logo', file))} onremove={() => void change('logo', () => removeSiteImage('logo'))} />
+        <ImageUpload label="浏览器图标" src={site.favicon_url} fallback={brandInitial(site.title)} busy={imageBusy === 'favicon'} error={imageError.favicon} hint="显示在浏览器标签页。" onselect={file => void change('favicon', () => uploadSiteImage('favicon', file))} onremove={() => void change('favicon', () => removeSiteImage('favicon'))} />
+      </section>
+    </aside>
+    <div class="site-save"><SaveBar form="site-form" {dirty} busy={saving} message={notice} {error} label="保存站点设置" busyLabel="正在保存站点设置…" ondiscard={discard} /></div>
+  </div>
+  {/if}
 </div>
-{/if}
+
+<style>
+  .site-settings-page {
+    min-width: 0;
+  }
+  .site-column {
+    display: grid;
+    gap: var(--space-8);
+    align-content: start;
+    min-width: 0;
+  }
+  .site-section {
+    display: grid;
+    align-content: start;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+  .site-section h2,
+  .site-section > legend {
+    font-size: var(--text-card);
+    font-weight: var(--weight-semibold);
+    line-height: var(--line-height-heading);
+    padding: 0;
+  }
+  .site-section > legend {
+    float: left;
+    width: 100%;
+    margin-bottom: var(--space-2);
+  }
+  .site-settings-page :global(.theme-tile) {
+    border-color: var(--control-border);
+  }
+  .site-settings-page :global(.theme-tile.selected) {
+    border-color: var(--primary);
+  }
+  .site-settings-page :global(.site-preview) {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sheet);
+    background: var(--recap-well);
+  }
+  .version-ledger {
+    display: grid;
+    margin: 0;
+    font-size: var(--text-small);
+    font-variant-numeric: tabular-nums;
+  }
+  .version-ledger > div {
+    display: grid;
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+    gap: var(--space-3);
+    padding-block: var(--space-2);
+    border-bottom: 1px solid var(--border);
+  }
+  .version-ledger > div:last-child {
+    border-bottom: 0;
+  }
+  .version-ledger dt {
+    color: var(--muted-foreground);
+  }
+</style>

@@ -33,21 +33,17 @@ async function createAndSignInMember(page: Page, browser: Browser) {
   return { context, member };
 }
 
-test('settings hub shows 5 tabs for owner with pseudo-element divider and keeps liquid-glass lens aligned', async ({
+test('settings hub shows 5 underline tabs for owner with pseudo-element divider and flat Editorial Receipt layout', async ({
   page,
 }) => {
   await loginRunner(page);
   await page.goto('/settings');
   const tabs = page.getByRole('navigation', { name: '设置分区' });
+  await expect(tabs).toHaveClass(/underline-tabs/);
+  await expect(tabs.locator('.rn-moving-copy')).toHaveCount(0);
   await expect(tabs.locator(':scope > a')).toHaveCount(5);
   // Divider is a CSS pseudo-element on .settings-tab-admin-start, never an extra indexed child.
-  expect(
-    await tabs.evaluate((el) =>
-      [...el.children]
-        .filter((c) => !c.classList.contains('rn-moving-copy') && !c.classList.contains('rn-moving-outline'))
-        .every((c) => c.tagName === 'A'),
-    ),
-  ).toBe(true);
+  expect(await tabs.evaluate((el) => [...el.children].every((c) => c.tagName === 'A'))).toBe(true);
   await expect(tabs.locator('a.settings-tab-admin-start')).toHaveText('站点设置');
   await expect(tabs.getByRole('link', { name: '账户总览', exact: true })).toHaveAttribute('aria-current', 'page');
 
@@ -264,7 +260,7 @@ test('shrinking /settings from 1440px to 320px after select enhancement causes z
   await page.goto('/settings');
   await expect(page.locator('header')).toHaveAttribute('data-auth-ready', 'true');
   await page.locator('#profile-form .rn-select-toggle').waitFor({ state: 'attached' });
-  await page.locator('.settings-tabs .rn-moving-copy').waitFor({ state: 'attached' });
+  await expect(page.locator('.underline-tabs.settings-tabs-sections')).toBeVisible();
 
   for (let i = 0; i < 5; i++) {
     await page.setViewportSize({ width: 1440, height: 1000 });
@@ -372,7 +368,7 @@ test('visual QA screenshots across viewports, themes and interaction states with
       ] as const) {
         await page.goto(route);
         await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-        await expect(page.locator('.settings-tabs.settings-tabs-sections')).toBeVisible();
+        await expect(page.locator('.underline-tabs.settings-tabs-sections')).toBeVisible();
         if (slug === 'hub') {
           await expect(page.getByTestId('hub-shoes')).toContainText('双使用中');
           await expect(page.getByTestId('hub-goals')).toContainText('周 40 km');
@@ -464,7 +460,7 @@ test('visual QA screenshots across viewports, themes and interaction states with
   expect(pageErrors).toEqual([]);
 });
 
-test('mobile settings section tabs use a 2-column grid for 3, 4, and 5 links without affecting other segmented controls', async ({
+test('mobile settings section tabs use a 2-column underline grid for 3, 4, and 5 links without affecting other switches', async ({
   page,
   browser,
 }) => {
@@ -482,15 +478,16 @@ test('mobile settings section tabs use a 2-column grid for 3, 4, and 5 links wit
     await page.evaluate((value) => localStorage.setItem('runnote-theme', value), theme);
     await page.goto('/admin/users');
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-    const tabs = page.locator('.settings-tabs.settings-tabs-sections');
+    const tabs = page.locator('.underline-tabs.settings-tabs-sections');
     await expect(tabs).toBeVisible();
-    await tabs.locator('.rn-moving-copy').waitFor({ state: 'attached' });
+    await expect(tabs.locator('.rn-moving-copy')).toHaveCount(0);
     await expect(tabs.locator(':scope > a .settings-tab-badge')).toHaveText('1');
     await expect(tabs.getByRole('link', { name: '用户管理', exact: true })).toHaveAttribute('aria-current', 'page');
 
     const gridMetrics = await tabs.evaluate((el) => {
       const box = el.getBoundingClientRect();
       const adminStart = el.querySelector('a.settings-tab-admin-start')!;
+      const active = el.querySelector(':scope > a[aria-current="page"]')!;
       const separatorStyle = getComputedStyle(adminStart, '::before');
       const links = [...el.querySelectorAll(':scope > a')].map((link) => {
         const rect = link.getBoundingClientRect();
@@ -511,6 +508,7 @@ test('mobile settings section tabs use a 2-column grid for 3, 4, and 5 links wit
         docOverflow: document.documentElement.scrollWidth > window.innerWidth,
         adminMarginStart: getComputedStyle(adminStart).marginInlineStart,
         separatorDisplay: separatorStyle.display,
+        activeUnderlineWidth: getComputedStyle(active).borderBottomWidth,
         links,
       };
     });
@@ -519,6 +517,7 @@ test('mobile settings section tabs use a 2-column grid for 3, 4, and 5 links wit
     expect(gridMetrics.docOverflow).toBe(false);
     expect(gridMetrics.adminMarginStart).toBe('0px');
     expect(gridMetrics.separatorDisplay).toBe('none');
+    expect(gridMetrics.activeUnderlineWidth).toBe('2px');
     expect(new Set(gridMetrics.links.map((link) => link.top)).size).toBe(3);
     for (const link of gridMetrics.links) {
       expect(link.left).toBeGreaterThanOrEqual(gridMetrics.boxLeft - 1);
@@ -527,30 +526,14 @@ test('mobile settings section tabs use a 2-column grid for 3, 4, and 5 links wit
     }
     // Odd 5th item spans both columns.
     expect(gridMetrics.links[4].width).toBeGreaterThan(gridMetrics.links[0].width * 1.5);
-
-    // Active lens outline aligns over the spanning active tab.
-    await page.waitForTimeout(350);
-    const activeAlignment = await tabs.evaluate((el) => {
-      const active = el.querySelector(':scope > a[aria-current="page"]')!.getBoundingClientRect();
-      const outline = el.querySelector('.rn-moving-outline')!.getBoundingClientRect();
-      return {
-        dx: Math.abs(active.left - outline.left),
-        dy: Math.abs(active.top - outline.top),
-        dw: Math.abs(active.width - outline.width),
-      };
-    });
-    expect(activeAlignment.dx).toBeLessThan(2);
-    expect(activeAlignment.dy).toBeLessThan(2);
-    expect(activeAlignment.dw).toBeLessThan(2);
   }
 
-  // Keyboard focus remains clearly visible with ring above the glass layer.
+  // Keyboard focus remains clearly visible with ring above the underline.
   await page.evaluate(() => localStorage.setItem('runnote-theme', 'light'));
   await page.goto('/settings');
   await expect(page.locator('header')).toHaveAttribute('data-auth-ready', 'true');
-  const hubTabs = page.locator('.settings-tabs.settings-tabs-sections');
+  const hubTabs = page.locator('.underline-tabs.settings-tabs-sections');
   await expect(hubTabs.locator(':scope > a')).toHaveCount(5);
-  await hubTabs.locator('.rn-moving-copy').waitFor({ state: 'attached' });
   const firstTab = hubTabs.locator(':scope > a').first();
   await firstTab.focus();
   await page.keyboard.press('Tab');
@@ -558,10 +541,11 @@ test('mobile settings section tabs use a 2-column grid for 3, 4, and 5 links wit
   await expect(secondTab).toBeFocused();
   const focusStyle = await secondTab.evaluate((el) => {
     const s = getComputedStyle(el);
-    return { outlineStyle: s.outlineStyle, outlineWidth: s.outlineWidth, zIndex: s.zIndex };
+    return { outlineStyle: s.outlineStyle, outlineWidth: s.outlineWidth, outlineOffset: s.outlineOffset, zIndex: s.zIndex };
   });
   expect(focusStyle.outlineStyle).toBe('solid');
   expect(focusStyle.outlineWidth).toBe('2px');
+  expect(focusStyle.outlineOffset).toBe('3px');
   expect(focusStyle.zIndex).toBe('5');
   const outDir = process.env.RUNNOTE_SETTINGS_SCREENSHOTS;
   if (outDir) {
@@ -570,13 +554,13 @@ test('mobile settings section tabs use a 2-column grid for 3, 4, and 5 links wit
 
   // Long Chinese labels wrap cleanly without overflow, and 4 visible links form a balanced 2x2 grid.
   await page.setViewportSize({ width: 320, height: 844 });
-  await page.locator('.settings-tabs.settings-tabs-sections').evaluate((el) => {
+  await page.locator('.underline-tabs.settings-tabs-sections').evaluate((el) => {
     const links = el.querySelectorAll(':scope > a');
     links[0].textContent = '账户资料与安全总览设置';
     links[4]?.remove();
   });
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  const fourLinkMetrics = await page.locator('.settings-tabs.settings-tabs-sections').evaluate((el) => {
+  const fourLinkMetrics = await page.locator('.underline-tabs.settings-tabs-sections').evaluate((el) => {
     const links = [...el.querySelectorAll(':scope > a')].map((link) => {
       const rect = link.getBoundingClientRect();
       return { top: Math.round(rect.top), width: rect.width, height: rect.height };
@@ -595,11 +579,11 @@ test('mobile settings section tabs use a 2-column grid for 3, 4, and 5 links wit
   expect(Math.abs(fourLinkMetrics.links[3].width - fourLinkMetrics.links[0].width)).toBeLessThan(2);
   for (const link of fourLinkMetrics.links) expect(link.height).toBeGreaterThanOrEqual(44);
 
-  // Other segmented .settings-tabs controls remain single-row on mobile.
+  // Other underline/segmented switches remain single-row on mobile.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/settings/shoes');
   const statusSwitch = page.getByRole('group', { name: '跑鞋状态' });
-  await expect(statusSwitch).toHaveClass(/settings-tabs/);
+  await expect(statusSwitch).toHaveClass(/underline-tabs/);
   await expect(statusSwitch).not.toHaveClass(/settings-tabs-sections/);
   const statusRows = await statusSwitch
     .locator(':scope > button')
@@ -610,7 +594,7 @@ test('mobile settings section tabs use a 2-column grid for 3, 4, and 5 links wit
   for (const width of [480, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/settings');
-    const desktopMetrics = await page.locator('.settings-tabs.settings-tabs-sections').evaluate((el) => {
+    const desktopMetrics = await page.locator('.underline-tabs.settings-tabs-sections').evaluate((el) => {
       const adminStart = el.querySelector('a.settings-tab-admin-start')!;
       const rows = new Set([...el.querySelectorAll(':scope > a')].map((a) => Math.round(a.getBoundingClientRect().top)))
         .size;
@@ -654,7 +638,7 @@ test('mobile settings section tabs use a 2-column grid for 3, 4, and 5 links wit
     await expect(member).toHaveURL(/\/workspace\/settings$/);
     await expect(member.locator('header')).toHaveAttribute('data-auth-ready', 'true');
     await member.setViewportSize({ width: 390, height: 844 });
-    const memberTabs = member.locator('.settings-tabs.settings-tabs-sections');
+    const memberTabs = member.locator('.underline-tabs.settings-tabs-sections');
     await expect(memberTabs).toBeVisible();
     const memberMetrics = await memberTabs.evaluate((el) => {
       const links = [...el.querySelectorAll(':scope > a')].map((link) => {
@@ -685,7 +669,7 @@ test('mobile settings section tabs use a 2-column grid for 3, 4, and 5 links wit
   expect(pageErrors).toEqual([]);
 });
 
-test('mobile lens flight from right column to full-width odd last item never overflows 390px via hover or Tab', async ({
+test('Editorial Receipt settings pages use flat controls, hairline grouping, flat SaveBar and zero overflow across viewports and themes', async ({
   page,
 }) => {
   const consoleErrors: string[] = [];
@@ -695,107 +679,63 @@ test('mobile lens flight from right column to full-width odd last item never ove
   });
   page.on('pageerror', (err) => pageErrors.push(err.message));
 
-  await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await page.setViewportSize({ width: 390, height: 844 });
   await loginRunner(page);
 
-  type FrameSample = { scrollWidth: number; innerWidth: number; outlineRight: number; navRight: number };
-
-  const armSampler = () =>
-    page.evaluate(() => {
-      const nav = document.querySelector('.settings-tabs.settings-tabs-sections')!;
-      const outline = nav.querySelector('.rn-moving-outline')!;
-      const samples: FrameSample[] = [];
-      let frames = 0;
-      const done = new Promise<FrameSample[]>((resolve) => {
-        const tick = () => {
-          samples.push({
-            scrollWidth: document.documentElement.scrollWidth,
-            innerWidth: window.innerWidth,
-            outlineRight: outline.getBoundingClientRect().right,
-            navRight: nav.getBoundingClientRect().right,
-          });
-          if (++frames < 24) requestAnimationFrame(tick);
-          else resolve(samples);
-        };
-        requestAnimationFrame(tick);
-      });
-      (window as unknown as { __settingsFlightSamples?: Promise<FrameSample[]> }).__settingsFlightSamples = done;
-    });
-
-  const collectSamples = () =>
-    page.evaluate(async () => {
-      const pending = (window as unknown as { __settingsFlightSamples?: Promise<FrameSample[]> })
-        .__settingsFlightSamples;
-      return pending ? await pending : [];
-    });
-
-  // 1. Hover path: right-column 站点设置 -> full-width 用户管理 without waiting for settle.
-  await page.goto('/settings/site');
-  await expect(page.locator('header')).toHaveAttribute('data-auth-ready', 'true');
-  const tabs = page.locator('.settings-tabs.settings-tabs-sections');
-  await expect(tabs.locator(':scope > a')).toHaveCount(5);
-  await tabs.locator('.rn-moving-copy').waitFor({ state: 'attached' });
-  await expect
-    .poll(() =>
-      tabs.evaluate((el) => {
-        const active = el.querySelector(':scope > a[aria-current="page"]')!.getBoundingClientRect();
-        const outline = el.querySelector('.rn-moving-outline')!.getBoundingClientRect();
-        return Math.abs(active.left - outline.left) + Math.abs(active.width - outline.width);
-      }),
-    )
-    .toBeLessThan(2);
-
-  await armSampler();
-  await tabs.getByRole('link', { name: '用户管理', exact: true }).hover();
-  const hoverSamples = await collectSamples();
-  expect(hoverSamples.length).toBeGreaterThanOrEqual(20);
-  for (const sample of hoverSamples) {
-    expect(sample.scrollWidth).toBeLessThanOrEqual(sample.innerWidth);
-    expect(sample.outlineRight).toBeLessThanOrEqual(sample.navRight + 1);
+  for (const route of ['/settings', '/settings/preferences', '/settings/shoes', '/settings/site', '/admin/users']) {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(route);
+    await expect(page.locator('header').first()).toHaveAttribute('data-auth-ready', 'true');
+    await expect(page.locator('.editorial-page').first()).toBeVisible();
+    // Content blocks no longer use 24px .aux-panel cards; tabs have no liquid-glass lens copy.
+    await expect(page.locator('main .aux-panel')).toHaveCount(0);
+    await expect(page.locator('.underline-tabs.settings-tabs-sections .rn-moving-copy')).toHaveCount(0);
+    // Flat content buttons inside .editorial-page do not mount .rn-glass-surface.
+    expect(
+      await page.evaluate(() =>
+        [...document.querySelectorAll('main .editorial-page button, main .editorial-page a.button-secondary')]
+          .filter((el) => !el.closest('[data-glass-overlay]'))
+          .every((el) => !el.classList.contains('rn-glass-control')),
+      ),
+    ).toBe(true);
   }
 
-  // 2. Keyboard Tab path: right-column 站点设置 -> full-width 用户管理 without waiting for settle.
-  await page.goto('/settings/site');
-  await expect(page.locator('header')).toHaveAttribute('data-auth-ready', 'true');
-  await expect(tabs.locator(':scope > a')).toHaveCount(5);
-  await tabs.locator('.rn-moving-copy').waitFor({ state: 'attached' });
-  await expect
-    .poll(() =>
-      tabs.evaluate((el) => {
-        const active = el.querySelector(':scope > a[aria-current="page"]')!.getBoundingClientRect();
-        const outline = el.querySelector('.rn-moving-outline')!.getBoundingClientRect();
-        return Math.abs(active.left - outline.left) + Math.abs(active.width - outline.width);
-      }),
-    )
-    .toBeLessThan(2);
-
-  const siteTab = tabs.getByRole('link', { name: '站点设置', exact: true });
-  const usersTab = tabs.getByRole('link', { name: '用户管理', exact: true });
-  await siteTab.focus();
-  await armSampler();
-  await page.keyboard.press('Tab');
-  const tabSamples = await collectSamples();
-  expect(tabSamples.length).toBeGreaterThanOrEqual(20);
-  for (const sample of tabSamples) {
-    expect(sample.scrollWidth).toBeLessThanOrEqual(sample.innerWidth);
-    expect(sample.outlineRight).toBeLessThanOrEqual(sample.navRight + 1);
-  }
-
-  await expect(usersTab).toBeFocused();
-  const focusStyle = await usersTab.evaluate((el) => {
+  // Flat Editorial Receipt SaveBar (no glass backdrop-filter, 10px radius) on /settings/preferences.
+  await page.goto('/settings/preferences');
+  await page.getByRole('switch', { name: '公开个人主页' }).click();
+  const saveBar = page.locator('.save-bar');
+  await expect(saveBar).toBeVisible();
+  const barStyle = await saveBar.evaluate((el) => {
     const s = getComputedStyle(el);
     return {
-      outlineStyle: s.outlineStyle,
-      outlineWidth: s.outlineWidth,
-      outlineOffset: s.outlineOffset,
-      zIndex: s.zIndex,
+      radius: s.borderRadius,
+      backdrop: s.backdropFilter,
+      glass: el.getAttribute('data-glass'),
     };
   });
-  expect(focusStyle.outlineStyle).toBe('solid');
-  expect(focusStyle.outlineWidth).toBe('2px');
-  expect(focusStyle.outlineOffset).toBe('3px');
-  expect(focusStyle.zIndex).toBe('5');
+  expect(barStyle.radius).toBe('10px');
+  expect(barStyle.backdrop).toBe('none');
+  expect(barStyle.glass).toBeNull();
+  await page.getByRole('button', { name: '放弃', exact: true }).click();
+  await expect(saveBar).toHaveCount(0);
+
+  // Zero horizontal overflow across 1440/768/390/320 in both light and dark modes.
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 768, height: 1024 },
+    { width: 390, height: 844 },
+    { width: 320, height: 640 },
+  ]) {
+    for (const theme of ['light', 'dark'] as const) {
+      await page.setViewportSize(viewport);
+      await page.evaluate((value) => localStorage.setItem('runnote-theme', value), theme);
+      for (const route of ['/settings', '/settings/preferences']) {
+        await page.goto(route);
+        await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+        const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+        expect(overflow, `${route} at ${viewport.width}x${viewport.height} ${theme}`).toBe(false);
+      }
+    }
+  }
 
   expect(consoleErrors).toEqual([]);
   expect(pageErrors).toEqual([]);

@@ -21,6 +21,7 @@
     onauthrequired?: () => void;
   } = $props();
 
+  let ready = $state(false);
   let syncStatus = $state<SyncStatus>('idle');
   let syncing = $state(false);
   let clearing = $state(false);
@@ -112,6 +113,7 @@
   }
 
   onMount(() => {
+    ready = true;
     void refreshStats();
     const onSynced = () => void refreshStats();
     window.addEventListener('runnote-cache-updated', onSynced);
@@ -124,17 +126,15 @@
 
 <section
   id="offline-cache"
-  class="aux-panel settings-block"
+  class="settings-editorial-group wide-body"
   aria-labelledby="offline-cache-title"
   data-testid="companion-cache-panel"
 >
-  <div class="block-title-row">
-    <div>
-      <h2 id="offline-cache-title">离线缓存与增量同步</h2>
-      <p class="block-hint">使用本机 IndexedDB 按账号隔离缓存汇总、跑步记录与足迹元数据，服务端始终为数据权威。</p>
-    </div>
+  <div class="settings-editorial-lead">
+    <h2 id="offline-cache-title">离线缓存与增量同步</h2>
+    <p class="block-hint">使用本机 IndexedDB 按账号隔离缓存汇总、跑步记录与足迹元数据，服务端始终为数据权威。</p>
     <span
-      class="status-badge"
+      class="settings-status-label cache-status"
       class:on={syncStatus === 'synced' || cachedActivities > 0}
       data-testid="cache-sync-badge"
     >
@@ -150,62 +150,67 @@
     </span>
   </div>
 
-  <dl class="cache-meta-grid" data-testid="cache-meta-grid">
-    <div>
-      <dt>最近同步</dt>
-      <dd data-testid="cache-last-synced">{lastSyncedLabel}</dd>
-    </div>
-    <div>
-      <dt>服务端数据版本</dt>
-      <dd data-testid="cache-data-version">
-        {syncMeta?.dataVersion !== null && syncMeta?.dataVersion !== undefined ? `v${syncMeta.dataVersion}` : '—'}
-      </dd>
-    </div>
-    <div>
-      <dt>已缓存内容</dt>
-      <dd data-testid="cache-sections">{cachedSectionsLabel}</dd>
-    </div>
-  </dl>
+  <div class="settings-editorial-body">
+    <dl class="cache-meta-grid" data-testid="cache-meta-grid">
+      <div>
+        <dt>最近同步</dt>
+        <dd data-testid="cache-last-synced">{lastSyncedLabel}</dd>
+      </div>
+      <div>
+        <dt>服务端数据版本</dt>
+        <dd class="mono-val" data-testid="cache-data-version">
+          {syncMeta?.dataVersion !== null && syncMeta?.dataVersion !== undefined ? `v${syncMeta.dataVersion}` : '—'}
+        </dd>
+      </div>
+      <div>
+        <dt>已缓存内容</dt>
+        <dd data-testid="cache-sections">{cachedSectionsLabel}</dd>
+      </div>
+    </dl>
 
-  <div class="cache-actions">
-    <button
-      type="button"
-      class="button-secondary"
-      disabled={syncing || clearing}
-      onclick={() => void triggerSync()}
-      data-testid="cache-sync-button"
-    >
-      {syncing ? '正在增量同步…' : '立即增量同步'}
-    </button>
-    <button
-      type="button"
-      class="button-secondary"
-      disabled={syncing || clearing}
-      onclick={() => void clearCache()}
-      data-testid="cache-clear-button"
-    >
-      {clearing ? '清理中…' : '清除本地缓存'}
-    </button>
+    <div class="cache-actions">
+      <button
+        type="button"
+        class="button-secondary"
+        disabled={!ready || syncing || clearing}
+        onclick={() => void triggerSync()}
+        data-testid="cache-sync-button"
+      >
+        {syncing ? '正在增量同步…' : '立即增量同步'}
+      </button>
+      <button
+        type="button"
+        class="button-secondary"
+        disabled={!ready || syncing || clearing}
+        onclick={() => void clearCache()}
+        data-testid="cache-clear-button"
+      >
+        {clearing ? '清理中…' : '清除本地缓存'}
+      </button>
+    </div>
+
+    {#if errorMessage}
+      <FeedbackState kind="error" title={errorMessage} />
+    {/if}
+    {#if statusMessage}
+      <p class="block-hint" role="status" data-testid="cache-status-message">{statusMessage}</p>
+    {/if}
+
+    <details class="block-details">
+      <summary>缓存安全与隔离说明</summary>
+      <p>
+        离线缓存仅保存只读展示所需的汇总、活动记录与足迹元数据；不会缓存明文令牌、Cookie、原始 GPX/TCX
+        文件、离线底图瓦片或私人身心健康日记。
+      </p>
+      <p>退出登录、会话失效（401）或切换账号时，系统会自动清空上一个账号的全部私有离线缓存。</p>
+    </details>
   </div>
-
-  {#if errorMessage}
-    <FeedbackState kind="error" title={errorMessage} />
-  {/if}
-  {#if statusMessage}
-    <p class="block-hint" role="status" data-testid="cache-status-message">{statusMessage}</p>
-  {/if}
-
-  <details class="block-details">
-    <summary>缓存安全与隔离说明</summary>
-    <p>
-      离线缓存仅保存只读展示所需的汇总、活动记录与足迹元数据；不会缓存明文令牌、Cookie、原始 GPX/TCX
-      文件、离线底图瓦片或私人身心健康日记。
-    </p>
-    <p>退出登录、会话失效（401）或切换账号时，系统会自动清空上一个账号的全部私有离线缓存。</p>
-  </details>
 </section>
 
 <style>
+  .cache-status {
+    margin-top: var(--space-2);
+  }
   .cache-meta-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -224,14 +229,13 @@
     font-weight: var(--weight-semibold);
     font-variant-numeric: tabular-nums;
   }
+  .cache-meta-grid .mono-val {
+    font-family: var(--font-mono);
+  }
   .cache-actions {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-3);
-  }
-  .status-badge {
-    white-space: nowrap;
-    flex-shrink: 0;
   }
   @media (max-width: 639px) {
     .cache-meta-grid {
