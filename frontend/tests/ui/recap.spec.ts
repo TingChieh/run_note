@@ -679,3 +679,253 @@ test('editorial receipt structure, punch-card sync, flat content buttons, and mo
   await expect(dialog).toHaveCount(0);
   await expect(shareBtn).toBeFocused();
 });
+
+for (const vp of [
+  { name: '1440x768', width: 1440, height: 768 },
+  { name: '1440x900', width: 1440, height: 900 },
+]) {
+  test(`sticky share desk controls remain visible and directly clickable at scrollY=0, mid, and bottom on ${vp.name}`, async ({
+    page,
+  }) => {
+    await loginRunner(page);
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await page.goto(recap + '?period=year&year=2025');
+
+    const dock = page.getByTestId('recap-poster-dock');
+    const posterImg = dock.getByRole('img');
+    await expect(posterImg).toBeVisible();
+    if (vp.name === '1440x900') {
+      const overviewBox = await page.getByTestId('recap-overview').boundingBox();
+      const deskColBox = await page.locator('.report-desk-col').boundingBox();
+      const imgBox = await posterImg.boundingBox();
+      expect(overviewBox).not.toBeNull();
+      expect(deskColBox).not.toBeNull();
+      expect(imgBox).not.toBeNull();
+      // Preserve two-column 20rem (320px) share desk and tall 9:16 preview at 1440x900.
+      expect(deskColBox!.x).toBeGreaterThan(overviewBox!.x + overviewBox!.width - 1);
+      expect(Math.abs(deskColBox!.width - 320)).toBeLessThanOrEqual(1);
+      expect(Math.abs(imgBox!.width / imgBox!.height - 9 / 16)).toBeLessThan(0.02);
+      expect(imgBox!.height).toBeGreaterThanOrEqual(400);
+    }
+    const styleB = dock.getByRole('button', { name: 'B 环道' });
+    const styleC = dock.getByRole('button', { name: 'C 存根' });
+    const launchBtn = dock.getByRole('button', { name: '打开高清预览与保存' });
+    await expect(launchBtn).toBeEnabled();
+
+    const assertInViewportAndHittable = async (locator: typeof launchBtn, label: string) => {
+      const box = await locator.boundingBox();
+      expect(box, `${label} bounding box`).not.toBeNull();
+      expect(box!.y, `${label} top inside viewport`).toBeGreaterThanOrEqual(0);
+      expect(box!.y + box!.height, `${label} bottom inside viewport`).toBeLessThanOrEqual(vp.height);
+      const hitMatches = await locator.evaluate((el) => {
+        const rect = el.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const hit = document.elementFromPoint(cx, cy);
+        return Boolean(hit && (hit === el || el.contains(hit)));
+      });
+      expect(hitMatches, `${label} center hittable via elementFromPoint`).toBe(true);
+    };
+
+    // scrollY === 0: controls must fit above the fold and open dialog without causing scroll.
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+    await assertInViewportAndHittable(styleC, 'styleC at scrollY=0');
+    await assertInViewportAndHittable(launchBtn, 'launchBtn at scrollY=0');
+
+    await styleC.click();
+    await expect(styleC).toHaveAttribute('aria-pressed', 'true');
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+
+    await launchBtn.click();
+    const dialog = page.getByRole('dialog', { name: '分享图预览' });
+    await expect(dialog).toBeVisible();
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+
+    // Mid (0.5) and bottom (1.0) scroll checkpoints: controls remain inside viewport and hittable.
+    const maxScroll = await page.evaluate(() =>
+      Math.max(0, document.documentElement.scrollHeight - window.innerHeight),
+    );
+    expect(maxScroll).toBeGreaterThan(200);
+    for (const ratio of [0.5, 1]) {
+      const targetY = Math.round(maxScroll * ratio);
+      await page.evaluate((y) => window.scrollTo(0, y), targetY);
+      await assertInViewportAndHittable(styleC, `styleC at ratio=${ratio}`);
+      await assertInViewportAndHittable(launchBtn, `launchBtn at ratio=${ratio}`);
+    }
+
+    await page.evaluate((y) => window.scrollTo(0, y), Math.round(maxScroll * 0.5));
+    await styleB.click();
+    await expect(styleB).toHaveAttribute('aria-pressed', 'true');
+    await launchBtn.click();
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+  });
+}
+
+test('in-progress partial month in punch-card rhythm uses hatched mark and accessible in-progress name', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  await page.goto(recap);
+  await expect(page.getByTestId('recap-partial-pill')).toContainText('进行中');
+
+  const punch = page.getByTestId('recap-punch-rhythm');
+  await expect(punch).toBeVisible();
+  await expect(punch).toContainText('斜线为进行中');
+
+  const partialCols = punch.locator('[data-partial="true"]');
+  await expect(partialCols).toHaveCount(1);
+  const partialBtn = partialCols.first();
+  await expect(partialBtn).toHaveAccessibleName(/进行中（未结束）/);
+
+  const bgImage = await partialBtn
+    .locator('.punch-blk')
+    .first()
+    .evaluate((el) => getComputedStyle(el).backgroundImage);
+  expect(bgImage).toContain('repeating-linear-gradient');
+
+  // Completed earlier month must not carry partial state or in-progress accessible name.
+  const janBtn = punch.getByRole('button', { name: /^1月/ });
+  await expect(janBtn).not.toHaveAttribute('data-partial', 'true');
+  await expect(janBtn).not.toHaveAccessibleName(/进行中/);
+});
+
+test('zero-distance in-progress partial month still renders visible hatched mark consistent with legend and aria name', async ({
+  page,
+}) => {
+  await loginRunner(page);
+  const bucket = (
+    month: number,
+    overrides: Partial<{
+      bucket_start: string;
+      bucket_end: string;
+      activity_count: number;
+      activity_days: number;
+      distance_m: string;
+      duration_sum_seconds: number | null;
+      known_duration_count: number;
+      missing_duration_count: number;
+      pace_eligible_count: number;
+      pace_eligible_distance_m: string;
+      avg_pace_seconds_per_km: string | null;
+      is_partial: boolean;
+    }> = {},
+  ) => {
+    const mm = String(month).padStart(2, '0');
+    const nextYear = month === 12 ? 2027 : 2026;
+    const nextMm = String(month === 12 ? 1 : month + 1).padStart(2, '0');
+    return {
+      bucket_start: `2026-${mm}-01`,
+      bucket_end: `${nextYear}-${nextMm}-01`,
+      activity_count: 0,
+      activity_days: 0,
+      distance_m: '0.000',
+      duration_sum_seconds: null,
+      known_duration_count: 0,
+      missing_duration_count: 0,
+      pace_eligible_count: 0,
+      pace_eligible_distance_m: '0.000',
+      avg_pace_seconds_per_km: null,
+      quality_warning_count: 0,
+      date_assignment: 'activity_local_date',
+      is_partial: false,
+      ...overrides,
+    };
+  };
+
+  await page.route('**/api/v1/statistics/report**', (route) =>
+    route.fulfill({
+      status: 200,
+      json: {
+        data: {
+          period: 'year',
+          year: 2026,
+          month: null,
+          date_from: '2026-01-01',
+          date_to: '2026-11-29',
+          is_partial: true,
+          cutoff_date: '2026-11-28',
+          today: '2026-11-28',
+          activity_count: 4,
+          activity_days: 4,
+          distance_m: '40000.000',
+          duration_sum_seconds: 14400,
+          known_duration_count: 4,
+          missing_duration_count: 0,
+          pace_eligible_count: 4,
+          pace_eligible_distance_m: '40000.000',
+          avg_pace_seconds_per_km: '360.000',
+          quality_warning_count: 0,
+          date_assignment: 'activity_local_date',
+        },
+        error: null,
+      },
+    }),
+  );
+  await page.route('**/api/v1/statistics/trends**', (route) =>
+    route.fulfill({
+      status: 200,
+      json: {
+        data: {
+          period: 'month',
+          date_from: '2026-01-01',
+          date_to: '2026-11-29',
+          week_start: 'monday',
+          date_assignment: 'activity_local_date',
+          buckets: [
+            bucket(1, {
+              activity_count: 4,
+              activity_days: 4,
+              distance_m: '40000.000',
+              duration_sum_seconds: 14400,
+              known_duration_count: 4,
+              missing_duration_count: 0,
+              pace_eligible_count: 4,
+              pace_eligible_distance_m: '40000.000',
+              avg_pace_seconds_per_km: '360.000',
+            }),
+            ...Array.from({ length: 9 }, (_, i) => bucket(i + 2)),
+            bucket(11, { bucket_end: '2026-11-29', is_partial: true }),
+          ],
+        },
+        error: null,
+      },
+    }),
+  );
+
+  await page.goto(recap + '?period=year&year=2026');
+  const punch = page.getByTestId('recap-punch-rhythm');
+  await expect(punch).toBeVisible();
+  await expect(punch).toContainText('斜线为进行中');
+
+  const partialCols = punch.locator('[data-partial="true"]');
+  await expect(partialCols).toHaveCount(1);
+  const novBtn = partialCols.first();
+  await expect(novBtn).toHaveAttribute('data-date', '2026-11-01');
+  await expect(novBtn).toHaveClass(/is-empty/);
+  await expect(novBtn).toHaveAccessibleName(/11月，0\.0 km，进行中（未结束）/);
+  await expect(novBtn.locator('.punch-blk')).toHaveCount(1);
+
+  const novStyle = await novBtn
+    .locator('.punch-blk')
+    .first()
+    .evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { backgroundImage: cs.backgroundImage, borderTopWidth: cs.borderTopWidth };
+    });
+  expect(novStyle.backgroundImage).toContain('repeating-linear-gradient');
+  expect(novStyle.borderTopWidth).toBe('2px');
+
+  // Sealed zero-distance month must remain plain empty (no hatch, no partial state).
+  const febBtn = punch.locator('button[data-date="2026-02-01"]');
+  await expect(febBtn).not.toHaveAttribute('data-partial', 'true');
+  await expect(febBtn).not.toHaveAccessibleName(/进行中/);
+  const febBg = await febBtn
+    .locator('.punch-blk')
+    .first()
+    .evaluate((el) => getComputedStyle(el).backgroundImage);
+  expect(febBg).toBe('none');
+});

@@ -577,6 +577,29 @@
       transform: none;
     }
   }
+  @media (min-width: 1080px) {
+    /* Fit the sticky share desk (poster + controls through the primary save CTA) within both
+       above-the-fold scrollY=0 (below the page masthead) and mid/bottom sticky scroll on 1440×768+,
+       while preserving the two-column 20rem desk and tall 9:16 preview at 1440×900+. */
+    .share-desk {
+      gap: var(--space-3);
+    }
+    .desk-controls {
+      gap: var(--space-2);
+    }
+    .desk-frame {
+      width: fit-content;
+      max-width: 100%;
+      justify-self: center;
+    }
+    .desk-frame img,
+    .desk-placeholder {
+      width: auto;
+      height: clamp(14rem, calc(100dvh - 27.5rem), 33rem);
+      max-width: 100%;
+      aspect-ratio: 9 / 16;
+    }
+  }
   @media (min-width: 640px) and (max-width: 1079px) {
     .share-desk {
       padding-top: var(--space-6);
