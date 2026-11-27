@@ -72,7 +72,8 @@
 <style>
   .wellbeing-head { min-width: 0; }
   .wellbeing-tabs-bar { margin-top: var(--space-4); border-bottom: 1px solid var(--border); }
-  .wellbeing-tabs { width: 100%; max-width: 100%; }
+  .wellbeing-tabs { width: 100%; max-width: 100%; scrollbar-width: none; }
+  .wellbeing-tabs::-webkit-scrollbar { display: none; }
   .wellbeing-tabs > :global(button) { margin-bottom: -1px; white-space: nowrap; }
   @media (max-width: 479px) {
     .wellbeing-tabs > :global(button) { flex: 1 1 0; min-width: 0; padding-inline: var(--space-1); }
