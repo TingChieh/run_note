@@ -2,7 +2,11 @@
 
 All notable changes to RunNote (Web, Backend, and Android Companion) are documented in this file.
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and RunNote adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (`MAJOR.MINOR.PATCH` and `-(alpha|beta|rc).N` prereleases).
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and RunNote adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (`MAJOR.MINOR.PATCH` and `-(alpha|beta|rc).N` prereleases):
+- Routine small updates and bug fixes use **patch** increments (`2.6.1`, `2.6.2`, …, `2.6.10`, up to `99`).
+- Backwards-compatible feature updates use **minor** increments, including multi-digit minors (`2.10.0`, `2.11.0`, …, up to `2.99.0`); never collapse `2.10.0` to `2.1.0` and never zero-pad (e.g., `2.010.0` is invalid).
+- **Major** increments are reserved for true major/breaking releases.
+- `alpha` / `beta` / `rc` prereleases stay monotonically ordered before their target final release.
 
 > **Release history note**: Prior to establishing the automated `v*` GitHub Release pipeline, RunNote tracked versions in `backend/pyproject.toml` (starting at `1.0.0` in PR #96) and deployed native server tarballs without Git tags or GitHub Releases. Historical entries below reflect real merged commits and PRs; formal Git tags and GitHub Releases begin with the first maintainer-authorized `v*` tag.
 

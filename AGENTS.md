@@ -268,7 +268,7 @@ infra/native/tests/caddy-instances.sh                                # 需 caddy
 
 ### 版本管理与正式发布（详见 `docs/102-release-pipeline.md`）
 
-- **唯一版本源与同步**：根目录 `VERSION` 是 Web / Backend / Android 的唯一版本源（支持 `MAJOR.MINOR.PATCH` 与 `-(alpha|beta|rc).N`）。修改版本一律通过 `python3 scripts/version.py set|bump|sync` 同步全部清单并运行 `python3 scripts/version.py check`，不要只手改单个文件；Android `versionCode` 由单调递增公式自动计算（`MAJOR*10_000_000 + MINOR*100_000 + PATCH*1_000 + STAGE_CODE`），保证预发布到正式版平滑升级。
+- **唯一版本源与同步**：根目录 `VERSION` 是 Web / Backend / Android 的唯一版本源（支持 `MAJOR.MINOR.PATCH` 与 `-(alpha|beta|rc).N`）。日常小更新使用 **patch**（`2.6.1`–`2.6.10` 等，上限 `99`）；向后兼容功能更新使用 **minor**（支持 `2.10.0`、`2.11.0` … 直至 `2.99.0`，**禁止把 `2.10.0` 写成 `2.1.0`，禁止补零如 `2.010.0`**）；**major** 仅用于真正的大版本/破坏性变更。修改版本一律通过 `python3 scripts/version.py set|bump|sync` 同步全部清单并运行 `python3 scripts/version.py check`，不要只手改单个文件；Android `versionCode` 由单调递增公式自动计算（`MAJOR*10_000_000 + MINOR*100_000 + PATCH*1_000 + STAGE_CODE`），保证 `2.6.10`、`2.7.0`、`2.10.0`、`2.99.0` 及预发布到正式版全部严格单调递增。
 - **日常开发绝不自动发布正式版本**：PR 合入与 `main` push 只触发 `.github/workflows/ci.yml`，绝不自动创建 Git tag 或 GitHub Release。正式发布仅在维护者显式授权并推送 `v*` 标签时由 `.github/workflows/release.yml` 执行。
 - **发布前强制核对**：建 `v*` 标签前须确认：① `python3 scripts/version.py validate-tag vX.Y.Z` 通过（版本一致且 `CHANGELOG.md` 已有精确日期节 `## [X.Y.Z] - YYYY-MM-DD`，含 Added / Changed / Fixed / Breaking / Upgrade notes）；② `main` 上 CI 全绿；③ 数据库迁移（单 head、升级需 `--migrate`）、API/客户端兼容（`MIN_MOBILE_APP_VERSION` 与生成契约）及配置示例（`.env.example` / `infra/native/env/*.env.example`）均已核对；④ GitHub Secrets 中 Android 签名与发布配置就绪（密钥材料绝不提交仓库）。
 - **不可覆盖原则**：绝不删除重推或覆盖已发布的 `v*` 标签、GitHub Release 或产物；任何发布后问题一律通过新的补丁版本（如 `vX.Y.(Z+1)`）修复。

@@ -63,8 +63,21 @@ def _make_fake_repo(root: Path, version: str = "2.7.0", min_mobile: str = "2.6.0
 class SemVerAndVersionCodeTests(unittest.TestCase):
     def test_valid_semver_and_prereleases(self):
         self.assertEqual(str(ver.parse_semver("2.7.0")), "2.7.0")
+        self.assertEqual(str(ver.parse_semver("2.10.0")), "2.10.0")
+        self.assertNotEqual(str(ver.parse_semver("2.10.0")), "2.1.0")
         self.assertFalse(ver.parse_semver("2.7.0").is_prerelease)
-        for sample in ("2.7.0-alpha.1", "2.7.0-beta.2", "2.7.0-rc.10", "0.1.0"):
+        for sample in (
+            "2.6.1",
+            "2.6.10",
+            "2.10.0",
+            "2.11.0",
+            "2.99.0",
+            "2.7.0-alpha.1",
+            "2.7.0-beta.2",
+            "2.10.0-rc.10",
+            "2.99.0-rc.1",
+            "0.1.0",
+        ):
             parsed = ver.parse_semver(sample)
             self.assertEqual(str(parsed), sample)
             self.assertEqual(parsed.is_prerelease, "-" in sample)
@@ -76,6 +89,9 @@ class SemVerAndVersionCodeTests(unittest.TestCase):
             "v2.7.0",
             "02.7.0",
             "2.07.0",
+            "2.010.0",
+            "2.6.010",
+            "2.06.1",
             "2.7.0-alpha.0",
             "2.7.0-alpha.01",
             "2.7.0-dev.1",
@@ -92,6 +108,7 @@ class SemVerAndVersionCodeTests(unittest.TestCase):
     def test_android_version_code_is_strictly_monotonic_across_prereleases_and_finals(self):
         legacy_2_6_0_code = 20600
         sequence = [
+            "2.1.0",
             "2.6.0",
             "2.6.1-alpha.1",
             "2.6.1-alpha.2",
@@ -99,19 +116,41 @@ class SemVerAndVersionCodeTests(unittest.TestCase):
             "2.6.1-rc.1",
             "2.6.1-rc.2",
             "2.6.1",
+            "2.6.2",
+            "2.6.9",
+            "2.6.10-alpha.1",
+            "2.6.10-beta.1",
+            "2.6.10-rc.1",
+            "2.6.10",
             "2.7.0-alpha.1",
             "2.7.0-beta.1",
             "2.7.0-rc.1",
             "2.7.0",
             "2.7.1-alpha.1",
             "2.7.1",
+            "2.9.9",
+            "2.9.10",
+            "2.10.0-alpha.1",
+            "2.10.0-beta.1",
+            "2.10.0-rc.1",
+            "2.10.0",
+            "2.11.0",
+            "2.99.0-alpha.1",
+            "2.99.0-rc.1",
+            "2.99.0",
+            "2.99.99",
             "3.0.0-alpha.1",
             "3.0.0",
             "209.99.99",
         ]
         parsed = [ver.parse_semver(v) for v in sequence]
         codes = [sv.android_version_code for sv in parsed]
-        self.assertGreater(codes[0], legacy_2_6_0_code)
+        self.assertGreater(ver.android_version_code("2.6.0"), legacy_2_6_0_code)
+        self.assertEqual(ver.android_version_code("2.6.1"), 20601999)
+        self.assertEqual(ver.android_version_code("2.6.10"), 20610999)
+        self.assertEqual(ver.android_version_code("2.7.0"), 20700999)
+        self.assertEqual(ver.android_version_code("2.10.0"), 21000999)
+        self.assertEqual(ver.android_version_code("2.99.0"), 29900999)
         self.assertLessEqual(codes[-1], 2_100_000_000)
         for prev_sv, curr_sv, prev_code, curr_code in zip(
             parsed, parsed[1:], codes, codes[1:], strict=False
@@ -124,12 +163,16 @@ class SemVerAndVersionCodeTests(unittest.TestCase):
             )
 
     def test_bump_transitions(self):
+        self.assertEqual(str(ver.compute_bump(ver.parse_semver("2.6.9"), "patch")), "2.6.10")
         self.assertEqual(str(ver.compute_bump(ver.parse_semver("2.7.0"), "patch")), "2.7.1")
         self.assertEqual(str(ver.compute_bump(ver.parse_semver("2.7.0"), "minor")), "2.8.0")
+        self.assertEqual(str(ver.compute_bump(ver.parse_semver("2.9.0"), "minor")), "2.10.0")
+        self.assertEqual(str(ver.compute_bump(ver.parse_semver("2.10.0"), "minor")), "2.11.0")
+        self.assertEqual(str(ver.compute_bump(ver.parse_semver("2.98.0"), "minor")), "2.99.0")
         self.assertEqual(str(ver.compute_bump(ver.parse_semver("2.7.0"), "major")), "3.0.0")
         self.assertEqual(str(ver.compute_bump(ver.parse_semver("2.7.0"), "alpha")), "2.7.1-alpha.1")
         self.assertEqual(
-            str(ver.compute_bump(ver.parse_semver("2.7.0"), "rc", "2.8.0")), "2.8.0-rc.1"
+            str(ver.compute_bump(ver.parse_semver("2.9.0"), "rc", "2.10.0")), "2.10.0-rc.1"
         )
         self.assertEqual(
             str(ver.compute_bump(ver.parse_semver("2.8.0-alpha.1"), "alpha")), "2.8.0-alpha.2"
@@ -141,6 +184,8 @@ class SemVerAndVersionCodeTests(unittest.TestCase):
             str(ver.compute_bump(ver.parse_semver("2.8.0-beta.1"), "rc")), "2.8.0-rc.1"
         )
         self.assertEqual(str(ver.compute_bump(ver.parse_semver("2.8.0-rc.1"), "final")), "2.8.0")
+        with self.assertRaises(ValueError):
+            ver.compute_bump(ver.parse_semver("2.99.0"), "minor")
         with self.assertRaises(ValueError):
             ver.compute_bump(ver.parse_semver("2.8.0-rc.1"), "beta")
         with self.assertRaises(ValueError):
@@ -187,16 +232,22 @@ class ConsistencyAndSyncTests(unittest.TestCase):
             )
             self.assertTrue(any("MIN_MOBILE_APP_VERSION" in e for e in ver.check_consistency(root)))
 
-    def test_sync_supports_prerelease_across_all_manifests(self):
+    def test_sync_supports_prerelease_and_multidigit_minor_patch_without_normalizing(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _make_fake_repo(root, "2.7.0")
-            rc = ver.parse_semver("2.8.0-rc.1")
-            ver.sync_versions(rc, root)
-            self.assertEqual(ver.check_consistency(root), [])
-            gradle = (root / "android/native/app/build.gradle").read_text(encoding="utf-8")
-            self.assertIn('versionName "2.8.0-rc.1"', gradle)
-            self.assertIn("versionCode 20800301", gradle)
+            for target, expected_code in (
+                ("2.6.10", 20610999),
+                ("2.8.0-rc.1", 20800301),
+                ("2.10.0", 21000999),
+                ("2.99.0", 29900999),
+            ):
+                ver.sync_versions(ver.parse_semver(target), root)
+                self.assertEqual((root / "VERSION").read_text(encoding="utf-8").strip(), target)
+                self.assertEqual(ver.check_consistency(root), [])
+                gradle = (root / "android/native/app/build.gradle").read_text(encoding="utf-8")
+                self.assertIn(f'versionName "{target}"', gradle)
+                self.assertIn(f"versionCode {expected_code}", gradle)
 
 
 class TagAndChangelogValidationTests(unittest.TestCase):

@@ -78,10 +78,16 @@ def test_version_tool_reports_no_drift():
     "valid_version",
     [
         "1.0.0",
+        "2.6.1",
+        "2.6.10",
         "2.7.0",
+        "2.10.0",
+        "2.11.0",
+        "2.99.0",
         "2.7.0-alpha.1",
         "2.7.0-beta.2",
-        "2.7.0-rc.1",
+        "2.10.0-rc.1",
+        "2.99.0-rc.1",
     ],
 )
 def test_a_version_accepts_semver_and_prereleases(tmp_path, valid_version):
@@ -96,6 +102,9 @@ def test_a_version_accepts_semver_and_prereleases(tmp_path, valid_version):
         "1.0",
         "v1.0.0",
         "01.0.0",
+        "2.010.0",
+        "2.6.010",
+        "2.06.1",
         "1.0.0-alpha.0",
         "1.0.0-alpha.01",
         "1.0.0-dev.1",
