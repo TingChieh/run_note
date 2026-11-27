@@ -1,5 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
-import { installActivities, loginRunner, sampleActivity, incompleteActivity } from '../fixtures/activities';
+import {
+  installActivities,
+  loginRunner,
+  sampleActivity,
+  incompleteActivity,
+  syntheticReplay,
+} from '../fixtures/activities';
 import { openGoalPanel } from '../fixtures/top-navigation';
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/v1/showcase/statistics/summary?**', (route) =>
@@ -37,15 +43,23 @@ test('detail keeps a compact overview beside a spacious route and stays consiste
     map = await page.getByRole('region', { name: '路线', exact: true }).boundingBox();
   expect(map!.x).toBeGreaterThan(metrics!.x + metrics!.width);
   expect(Math.abs(map!.y - metrics!.y)).toBeLessThan(2);
-  expect(metrics!.width).toBeLessThanOrEqual(320);
-  expect(map!.width).toBeGreaterThan(metrics!.width * 2);
-  expect(metrics!.height).toBeLessThanOrEqual(map!.height);
-  const cards = page.locator('.metric-panel .metrics'),
-    routeCanvas = page.locator('.route-map');
-  const cardBounds = await cards.boundingBox(),
-    canvasBounds = await routeCanvas.boundingBox();
-  expect(Math.abs(cardBounds!.y - canvasBounds!.y)).toBeLessThan(2);
-  expect(cardBounds!.height).toBeLessThanOrEqual(canvasBounds!.height);
+  expect(metrics!.width).toBeGreaterThanOrEqual(360);
+  expect(metrics!.width).toBeLessThanOrEqual(420);
+  expect(map!.width).toBeGreaterThan(metrics!.width * 1.5);
+  const routeCanvas = page.locator('.route-map');
+  const canvasBounds = await routeCanvas.boundingBox();
+  expect(canvasBounds!.height).toBeGreaterThanOrEqual(520);
+  expect(canvasBounds!.height).toBeLessThanOrEqual(580);
+  const paceSection = page.getByTestId('activity-pace-section');
+  await expect(paceSection).toBeVisible();
+  await expect(page.getByTestId('activity-pace-chart')).toBeVisible();
+  const paceBounds = await paceSection.boundingBox();
+  expect(paceBounds!.y).toBeGreaterThan(canvasBounds!.y + canvasBounds!.height);
+  await expect(page.getByTestId('activity-splits-bars')).toBeVisible();
+  const splitsDetails = page.getByTestId('activity-splits-details');
+  await expect(splitsDetails).toBeVisible();
+  // Delete lives inside the 更多 popover menu, never directly on the first screen.
+  await expect(page.getByRole('button', { name: '删除记录', exact: true })).toBeHidden();
   const sidebar = page.locator('.app-sidebar');
   expect(await sidebar.evaluate((el) => getComputedStyle(el).position)).toBe('fixed');
   // The bar's material depends on what is under it: compare like with like. Docked (scrolled to the top) it is a plain card; floating over the content it is the glass surface (the backdrop filter).
@@ -64,6 +78,9 @@ test('detail keeps a compact overview beside a spacious route and stays consiste
   await active.focus();
   expect(await active.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('solid');
   await capture(page, 'desktop');
+  await splitsDetails.locator('summary').click();
+  await expect(splitsDetails.locator('table')).toBeVisible();
+  await splitsDetails.locator('summary').click();
   await page.getByText('数据质量与指标说明', { exact: true }).focus();
   await page.keyboard.press('Enter');
   await expect(page.getByText('有效轨迹点', { exact: true })).toBeVisible();
@@ -87,7 +104,7 @@ test('sports detail fits phones with usable map, navigation and existing privacy
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const map = await page.locator('.route-map').boundingBox();
     expect(map!.height).toBeGreaterThanOrEqual(280);
-    expect(map!.height).toBeLessThanOrEqual(352);
+    expect(map!.height).toBeLessThanOrEqual(500);
   }
   await page.setViewportSize({ width: 390, height: 900 });
   await ready(page);
@@ -110,21 +127,20 @@ test('full device metrics and route stay compact on short desktops and narrow ph
   await loginRunner(page);
   await page.goto(`/activities/${sampleActivity.id}`);
   await ready(page);
-  const metrics = page.locator('.metric-panel .metrics');
-  await expect(metrics.locator(':scope > div')).toHaveCount(7);
-  await expect(metrics).toContainText('178 bpm');
+  const leaders = page.locator('.stub-leaders .leader-row');
+  await expect(leaders).toHaveCount(8);
+  await expect(page.getByRole('region', { name: '运动指标' })).toContainText('178 bpm');
+  await expect(page.getByRole('region', { name: '运动指标' })).toContainText('320 kcal');
+  await expect(page.getByRole('region', { name: '运动指标' })).toContainText('5734 步');
   for (const height of [900, 720]) {
     await page.setViewportSize({ width: 1440, height });
     await expect(page.getByRole('status').filter({ hasText: '正在加载底图' })).toHaveCount(0);
     await ready(page);
-    await expect
-      .poll(async () => (await page.locator('.detail-workspace').boundingBox())!.height)
-      .toBeLessThanOrEqual(560);
+    const stub = await page.getByRole('region', { name: '运动指标' }).boundingBox();
     const map = await page.locator('.route-map').boundingBox();
-    const cards = await metrics.boundingBox();
-    expect(map!.height).toBeGreaterThanOrEqual(320);
-    expect(map!.height).toBeLessThanOrEqual(384);
-    expect(cards!.height).toBeLessThanOrEqual(map!.height + 32);
+    expect(map!.x).toBeGreaterThan(stub!.x + stub!.width);
+    expect(map!.height).toBeGreaterThanOrEqual(520);
+    expect(map!.height).toBeLessThanOrEqual(580);
   }
   await page.locator('.detail-workspace').scrollIntoViewIfNeeded();
   await page
@@ -132,15 +148,11 @@ test('full device metrics and route stay compact on short desktops and narrow ph
     .screenshot({ path: testInfo.outputPath('compact-detail-desktop.png'), animations: 'disabled' });
   for (const width of [320, 390, 768, 1024]) {
     await page.setViewportSize({ width, height: 900 });
-    // The viewport change reflows asynchronously: wait for the first two cards to share a row.
-    await expect
-      .poll(async () => {
-        const first = await metrics.locator(':scope > div').nth(0).boundingBox();
-        const second = await metrics.locator(':scope > div').nth(1).boundingBox();
-        return Math.abs(first!.y - second!.y);
-      })
-      .toBeLessThan(2);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    const stub = await page.getByRole('region', { name: '运动指标' }).boundingBox();
+    const map = await page.locator('.route-map').boundingBox();
+    if (width < 1024) expect(map!.y).toBeGreaterThan(stub!.y);
+    else expect(map!.x).toBeGreaterThan(stub!.x + stub!.width);
   }
   await page.setViewportSize({ width: 390, height: 900 });
   await page.emulateMedia({ colorScheme: 'dark' });
@@ -347,4 +359,135 @@ test('the map library is fetched once the title is on screen, while the route is
   await expect.poll(() => mapLibrary.length).toBeGreaterThan(0);
   releaseRoute();
   await ready(page);
+});
+
+test('editorial receipt detail layout, more-menu delete, share dialog, chart and 4 viewports across light and dark', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (err) => errors.push(err.message));
+  await installActivities(page);
+  await loginRunner(page);
+  await page.goto(`/activities/${sampleActivity.id}`);
+  await ready(page);
+
+  await expect(page.locator('.editorial-page.detail-page')).toBeVisible();
+  // No colorful metric circle icons, no pill route tag, no narrative copy.
+  await expect(page.locator('.metric-icon')).toHaveCount(0);
+  await expect(page.locator('.route-tag')).toHaveCount(0);
+  await expect(page.getByText('每一步，都算数')).toHaveCount(0);
+  await expect(page.getByText('本次运动概览')).toHaveCount(0);
+  await expect(page.getByText('本次运动轨迹')).toHaveCount(0);
+
+  // Single receipt header + 64-88px primary distance figure + perforation + splits + pace chart.
+  await expect(page.locator('.receipt-header')).toHaveCount(1);
+  const figureSize = await page
+    .locator('.stub-distance-num')
+    .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  expect(figureSize).toBeGreaterThanOrEqual(64);
+  expect(figureSize).toBeLessThanOrEqual(88);
+  await expect(page.locator('.receipt-perforation').first()).toBeVisible();
+  await expect(page.getByTestId('activity-splits-bars')).toBeVisible();
+  await expect(page.getByTestId('activity-pace-chart')).toBeVisible();
+
+  // Delete is tucked inside 更多 menu and opens native confirmation dialog with Escape recovery.
+  const more = page.getByRole('button', { name: '更多', exact: true });
+  await expect(page.getByRole('button', { name: '删除记录', exact: true })).toBeHidden();
+  await more.click();
+  const moreMenu = page.getByRole('group', { name: '更多操作' });
+  await expect(moreMenu).toBeVisible();
+  await moreMenu.getByRole('button', { name: '删除记录', exact: true }).click();
+  const deleteDialog = page.getByRole('dialog', { name: '删除这条跑步记录？' });
+  await expect(deleteDialog).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(deleteDialog).toBeHidden();
+  await expect(more).toBeFocused();
+
+  // Share menu opens poster dialog with glass overlay boundary intact.
+  const share = page.getByRole('button', { name: '分享', exact: true });
+  await share.click();
+  await page.getByRole('button', { name: '生成分享图', exact: true }).click();
+  const posterDialog = page.getByRole('dialog', { name: '生成分享图' });
+  await expect(posterDialog).toBeVisible();
+  await expect(posterDialog).toHaveAttribute('data-glass-overlay', '');
+  await page.keyboard.press('Escape');
+  await expect(posterDialog).toBeHidden();
+  await expect(share).toBeFocused();
+
+  // P3: clicking 添加备注 opens the editor on notes and Escape/cancel returns focus to 添加备注.
+  const addNote = page.getByRole('button', { name: '添加备注', exact: true });
+  await addNote.click();
+  await expect(page.getByRole('textbox', { name: '备注' })).toBeFocused();
+  await page.getByRole('button', { name: '取消编辑', exact: true }).click();
+  await expect(addNote).toBeFocused();
+
+  // Visual matrix geometry check across 1440 / 768 / 390 / 320 in both light and dark themes.
+  for (const [width, height] of [
+    [1440, 900],
+    [768, 1024],
+    [390, 844],
+    [320, 640],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    for (const theme of ['light', 'dark'] as const) {
+      await page.evaluate((value) => {
+        localStorage.setItem('runnote-theme', value);
+        document.documentElement.dataset.theme = value;
+        window.dispatchEvent(new Event('runnote-theme-change'));
+      }, theme);
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      const stub = await page.getByRole('region', { name: '运动指标' }).boundingBox();
+      const map = await page.locator('.route-map').boundingBox();
+      const chart = await page.getByTestId('activity-pace-chart').boundingBox();
+      expect(stub!.width).toBeGreaterThan(200);
+      expect(map!.width).toBeGreaterThan(200);
+      expect(chart!.width).toBeGreaterThan(200);
+      expect(chart!.height).toBeGreaterThan(100);
+    }
+  }
+  expect(errors).toEqual([]);
+});
+
+test('pace chart stays in loading state while route or replay is pending and only shows missing-track copy when replay lacks usable samples', async ({
+  page,
+}) => {
+  const replayPattern = new RegExp(`/api/v1/(showcase/)?activities/${sampleActivity.id}/replay$`);
+  const missingCopy = '此记录缺少可靠时间轨迹，暂无法绘制配速曲线。';
+  await installActivities(page);
+  await loginRunner(page);
+
+  const releaseRoute = await hold(page, routePattern);
+  const releaseReplay = await hold(page, replayPattern);
+  await page.goto(`/activities/${sampleActivity.id}`);
+  await expect(page.getByRole('heading', { name: sampleActivity.title, level: 1 })).toBeVisible();
+
+  const paceSection = page.getByTestId('activity-pace-section');
+  // While /route is still delayed, show loading state and never flash the final missing-track message.
+  await expect(paceSection.getByText('正在读取配速曲线…')).toBeVisible();
+  await expect(paceSection.getByText(missingCopy)).toHaveCount(0);
+
+  // After /route resolves but while /replay is still pending, keep the loading state without flashing empty copy.
+  releaseRoute();
+  await ready(page);
+  await expect(paceSection.getByText('正在读取配速曲线…')).toBeVisible();
+  await expect(paceSection.getByText(missingCopy)).toHaveCount(0);
+
+  // Once /replay resolves with real samples, show the chart and the splits basis note inside <details>.
+  releaseReplay();
+  await expect(page.getByTestId('activity-pace-chart')).toBeVisible();
+  await expect(paceSection.getByText('正在读取配速曲线…')).toHaveCount(0);
+  const splitsDetails = page.getByTestId('activity-splits-details');
+  await splitsDetails.locator('summary').click();
+  await expect(splitsDetails).toContainText('每公里分段由前端按回放轨迹的距离与移动时间采样推导');
+  await expect(splitsDetails).toContainText('可能与服务端统计的总平均配速略有差异');
+
+  // When /replay genuinely returns without usable pace samples (simulated track), show the final empty state.
+  await page.route(replayPattern, (route) =>
+    route.fulfill({ json: { data: syntheticReplay('simulated'), error: null } }),
+  );
+  await page.reload();
+  await ready(page);
+  await expect(paceSection.getByText(missingCopy)).toBeVisible();
+  await expect(paceSection.getByText('正在读取配速曲线…')).toHaveCount(0);
 });

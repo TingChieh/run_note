@@ -166,7 +166,7 @@
   });
 </script>
 
-<section class="diary mt-4 rounded-xl border border-border bg-surface p-4" aria-labelledby={heading} aria-busy={busy}>
+<section class="diary section-hairline mt-8" aria-labelledby={heading} aria-busy={busy}>
   <header class="flex flex-wrap items-center justify-between gap-3">
     <h2 id={heading}>跑步日记</h2>
     {#if loaded && !editing && !confirming}
@@ -338,7 +338,7 @@
     width: 100%;
     min-height: 2.75rem;
     padding: var(--space-2) var(--space-3);
-    border: 1px solid var(--border);
+    border: 1px solid var(--control-border, var(--border));
     border-radius: var(--radius-control);
     background: var(--surface);
   }

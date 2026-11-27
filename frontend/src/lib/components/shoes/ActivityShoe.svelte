@@ -81,17 +81,17 @@
   });
 </script>
 
-<section class="mt-4 rounded-xl border border-border bg-surface p-4" aria-label="活动的跑鞋">
+<section class="section-hairline mt-8" aria-label="活动的跑鞋">
   {#if ready}
-    <div class="mb-2 flex flex-wrap items-start justify-between gap-2">
+    <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
       <div class="min-w-0">
-        <span class="block font-medium">跑鞋</span>
+        <span class="block text-base font-semibold">跑鞋</span>
         <span class="block break-all text-sm text-muted-foreground">
           {current?.name ?? '未绑定'}{current?.retired_on ? '（已退役）' : ''}
         </span>
       </div>
       <a
-        class="button-secondary button-compact"
+        class="button-text"
         href={view.href(
           current
             ? `/settings/shoes?${new URLSearchParams({ ...(current.retired_on ? { status: 'retired' } : {}), id: current.id })}`
@@ -104,7 +104,8 @@
         <label class="sr-only" for={selectId}>选择活动穿着的跑鞋</label>
         <select
           id={selectId}
-          class="min-h-11 w-full rounded-lg border border-border bg-surface px-3"
+          class="min-h-11 w-full rounded-lg border bg-surface px-3"
+          style:border-color="var(--control-border)"
           bind:value={choice}
           disabled={busy}
         >
