@@ -115,11 +115,27 @@
           </div>
           <div class="table-wrap" role="region" aria-label="常跑路线历次成绩表">
             <table>
-              <thead><tr><th scope="col">日期</th><th scope="col">标题</th><th scope="col" class="num">距离</th><th scope="col" class="num">用时</th><th scope="col" class="num">配速</th></tr></thead><tbody>
+              <colgroup>
+                <col class="col-date" />
+                <col class="col-title" />
+                <col class="col-distance" />
+                <col class="col-duration" />
+                <col class="col-pace" />
+              </colgroup>
+              <thead
+                ><tr
+                  ><th scope="col">日期</th><th scope="col">标题</th><th scope="col" class="num">距离</th><th
+                    scope="col"
+                    class="num">用时</th
+                  ><th scope="col" class="num">配速</th></tr
+                ></thead
+              ><tbody>
                 {#each data.runs as run (run.activity_id)}
                   <tr data-testid="route-run-row"
-                    ><td class="mono">{run.activity_date}</td><td
-                      ><a class="run-link" href={view.href(`/activities/${run.activity_id}`)}>{run.title || '未命名活动'}</a></td
+                    ><td class="mono">{run.activity_date}</td><td class="title-cell"
+                      ><a class="run-link" href={view.href(`/activities/${run.activity_id}`)}
+                        >{run.title || '未命名活动'}</a
+                      ></td
                     ><td class="num">{formatDistance(run.distance_m)}</td><td class="num"
                       >{run.duration_seconds === null
                         ? '—'
@@ -187,36 +203,63 @@
     margin-top: var(--space-4);
     overflow-x: auto;
   }
+  /* Fixed table layout keeps long titles wrapping in place instead of pushing numeric columns off screen. */
   table {
     width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
     text-align: left;
     font-size: var(--text-small);
     font-variant-numeric: tabular-nums;
   }
+  .col-date {
+    width: 14%;
+  }
+  .col-title {
+    width: auto;
+  }
+  .col-distance {
+    width: 14%;
+  }
+  .col-duration {
+    width: 13%;
+  }
+  .col-pace {
+    width: 15%;
+  }
   thead th {
-    padding: var(--space-2) var(--space-4) var(--space-2) 0;
+    padding: var(--space-2) var(--space-3) var(--space-2) 0;
     color: var(--muted-foreground);
     font-size: var(--text-caption);
     font-weight: var(--weight-medium);
     white-space: nowrap;
   }
   tbody td {
-    padding: var(--space-3) var(--space-4) var(--space-3) 0;
+    padding: var(--space-3) var(--space-3) var(--space-3) 0;
     border-top: 1px solid var(--border);
-    white-space: nowrap;
+    vertical-align: top;
   }
   .num {
     text-align: right;
+    white-space: nowrap;
   }
   thead th.num,
   tbody td.num {
     padding-right: 0;
-    padding-left: var(--space-4);
+    padding-left: var(--space-3);
+  }
+  .title-cell,
+  .title-cell .run-link,
+  .mono {
+    overflow-wrap: anywhere;
+  }
+  .title-cell {
+    white-space: normal;
   }
   .mono {
     font-family: var(--font-mono);
     color: var(--muted-foreground);
+    white-space: normal;
   }
   .run-link {
     color: var(--foreground);
@@ -248,6 +291,18 @@
       padding-top: var(--space-4);
       border-top: 1px solid var(--border);
     }
+    .col-date {
+      width: 17%;
+    }
+    .col-distance {
+      width: 19%;
+    }
+    .col-duration {
+      width: 17%;
+    }
+    .col-pace {
+      width: 20%;
+    }
   }
   @media (max-width: 479px) {
     .facts {
@@ -264,6 +319,31 @@
       padding-top: var(--space-3);
       margin-top: var(--space-3);
       border-top: 1px solid var(--border);
+    }
+    table {
+      font-size: var(--text-caption);
+    }
+    .col-date {
+      width: 22%;
+    }
+    .col-distance {
+      width: 19%;
+    }
+    .col-duration {
+      width: 18%;
+    }
+    .col-pace {
+      width: 20%;
+    }
+    thead th {
+      padding: var(--space-2) var(--space-1) var(--space-2) 0;
+    }
+    tbody td {
+      padding: var(--space-3) var(--space-1) var(--space-3) 0;
+    }
+    thead th.num,
+    tbody td.num {
+      padding-left: var(--space-1);
     }
   }
 </style>

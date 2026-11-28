@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { join } from 'node:path';
 import { loginRunner, installActivities } from '../fixtures/activities';
 import { installBasemaps } from '../fixtures/basemaps';
 
@@ -40,9 +41,14 @@ test('sorting asks the server and keeps the URL clean', async ({ page }) => {
   const requests = await fixture(page); await loginRunner(page);
   await page.goto('/routes');
   await expect(page.getByTestId('route-card').first()).toBeVisible();
+  const total = page.getByTestId('page-meta');
+  await expect(total).toHaveText('共 1 条常跑路线');
+  await expect(total, '结果数量变化通过实时区域播报').toHaveAttribute('aria-live', 'polite');
   await page.getByRole('button', { name: '最近跑过' }).click();
   await expect.poll(() => requests.some(url => url.searchParams.get('sort') === 'recent')).toBe(true);
   await expect(page).toHaveURL(/\/routes$/);
+  await expect(total).toHaveText('共 1 条常跑路线');
+  await expect(total).toHaveAttribute('aria-live', 'polite');
 });
 
 test('shows the empty state', async ({ page }) => {
@@ -141,5 +147,100 @@ for (const [width, height] of [[1440, 900], [768, 1024], [390, 844], [320, 640]]
       await expect(page.getByTestId('route-detail-ready')).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     });
+  }
+}
+
+// PR #169 follow-up: fixed table layout keeps long titles wrapping in place so 日期/距离/用时/配速 stay visible
+// without horizontal scrolling across 320/390/768/1440px in both light and dark themes.
+const sixCharTitle = '周末环湖晨跑';
+const longTitle = '沿江晨跑'.repeat(30);
+
+async function detailWithTitle(page: Page, title: string) {
+  const rows = runs.map((run, index) =>
+    index === 0
+      ? { ...run, title, distance_m: '12345.000', duration_seconds: '3723.000', avg_pace_seconds_per_km: '375.000' }
+      : { ...run, title },
+  );
+  await page.route(`**/api/v1/showcase/routes/groups/${id}`, (route) =>
+    route.fulfill({ json: { data: { ...item, runs: rows }, error: null } }),
+  );
+}
+
+for (const [slug, title] of [
+  ['six', sixCharTitle],
+  ['long120', longTitle],
+] as const) {
+  const label = slug === 'six' ? '六字标题' : '120 字标题';
+  for (const [width, height] of [
+    [320, 640],
+    [390, 844],
+    [768, 1024],
+    [1440, 900],
+  ] as const) {
+    for (const scheme of ['light', 'dark'] as const) {
+      test(`${label} keeps all run-table columns visible without horizontal scroll at ${width}x${height} (${scheme})`, async ({
+        page,
+      }) => {
+        await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
+        await page.setViewportSize({ width, height });
+        await fixture(page);
+        await detailWithTitle(page, title);
+        await loginRunner(page);
+        await page.goto(`/routes/${id}`);
+        await expect(page.getByTestId('route-detail-ready')).toBeVisible();
+        await expect(page.getByTestId('route-run-row')).toHaveCount(2);
+
+        const outDir = process.env.RUNNOTE_ROUTES_SCREENSHOTS;
+        if (outDir) {
+          await page.screenshot({
+            path: join(outDir, `route-table-${slug}-${width}-${scheme}.png`),
+            fullPage: true,
+            animations: 'disabled',
+          });
+        }
+
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+          '页面不产生横向滚动',
+        ).toBe(true);
+
+        const metrics = await page.locator('.table-wrap').evaluate((wrap) => {
+          const box = wrap.getBoundingClientRect();
+          const measure = (cell: Element) => {
+            const rect = cell.getBoundingClientRect();
+            return {
+              left: rect.left,
+              right: rect.right,
+              scrollWidth: cell.scrollWidth,
+              clientWidth: cell.clientWidth,
+              text: (cell.textContent ?? '').trim(),
+            };
+          };
+          return {
+            left: box.left,
+            right: box.right,
+            scrollWidth: wrap.scrollWidth,
+            clientWidth: wrap.clientWidth,
+            headers: [...wrap.querySelectorAll('thead th')].map(measure),
+            cells: [...wrap.querySelectorAll('tbody tr:first-child > td')].map(measure),
+          };
+        });
+
+        expect(metrics.headers).toHaveLength(5);
+        expect(metrics.cells).toHaveLength(5);
+        expect(metrics.scrollWidth, '表格容器不产生横向滚动').toBeLessThanOrEqual(metrics.clientWidth + 1);
+        for (const [index, cell] of metrics.cells.entries()) {
+          expect(cell.text.length, `第 ${index + 1} 列有内容`).toBeGreaterThan(0);
+          expect(cell.left, `第 ${index + 1} 列不越过表格左缘`).toBeGreaterThanOrEqual(metrics.left - 1);
+          expect(cell.right, `第 ${index + 1} 列不越过表格右缘`).toBeLessThanOrEqual(metrics.right + 1);
+          expect(cell.right, `第 ${index + 1} 列在视口内`).toBeLessThanOrEqual(width);
+          expect(cell.scrollWidth, `第 ${index + 1} 列文本完整可见`).toBeLessThanOrEqual(cell.clientWidth + 1);
+        }
+        for (const [index, header] of metrics.headers.entries()) {
+          expect(header.right, `表头第 ${index + 1} 列不越过表格右缘`).toBeLessThanOrEqual(metrics.right + 1);
+          expect(header.scrollWidth, `表头第 ${index + 1} 列完整可见`).toBeLessThanOrEqual(header.clientWidth + 1);
+        }
+      });
+    }
   }
 }

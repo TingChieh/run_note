@@ -34,6 +34,7 @@ Target next release: `2.7.0` (Android `versionCode`: `20700999`). No Git tag or 
   - Expanded `.gitignore` and `android/.gitignore` to block keystores, base64-encoded keystores, signing property files, and built APKs/AABs from being committed.
 
 ### Fixed
+- **Routes Detail Run Table & Follow-up** (#169 follow-up): Switched `/routes/[id]` run table to `table-layout: fixed` with responsive column widths and wrapping on the title/date columns so date, distance, duration, and pace stay visible without horizontal overflow across 320/390/768/1440px (including 6-char and 120-char titles); restored `aria-live="polite"` result-count announcements on `/routes`; restored `/settings` underline section-tab navigation coverage in `top-navigation.spec.ts`; updated stale design-system/settings docs that still described `/routes` sorting or `/settings` sections as glass segments; raised `frontend-ui` CI job `timeout-minutes` from 30 to 45.
 - **Mobile Safe-Area Layout** (#155):
   - Respected the bottom safe-area inset on pages where the mobile bottom tab bar is hidden.
 
