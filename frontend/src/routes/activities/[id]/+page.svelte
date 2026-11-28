@@ -120,6 +120,12 @@
         unit: pace.unit,
         missing: pace.number === '—',
       },
+      {
+        label: '平均心率',
+        value: activity.avg_heart_rate_bpm == null ? '—' : String(activity.avg_heart_rate_bpm),
+        unit: activity.avg_heart_rate_bpm == null ? '' : 'bpm',
+        missing: activity.avg_heart_rate_bpm == null,
+      },
       ...(activity.timer_seconds != null
         ? [
             {
@@ -129,12 +135,6 @@
             },
           ]
         : []),
-      {
-        label: '平均心率',
-        value: activity.avg_heart_rate_bpm == null ? '—' : String(activity.avg_heart_rate_bpm),
-        unit: activity.avg_heart_rate_bpm == null ? '' : 'bpm',
-        missing: activity.avg_heart_rate_bpm == null,
-      },
       {
         label: '热量',
         value: activity.calories_kcal == null ? '—' : String(activity.calories_kcal),
@@ -167,6 +167,7 @@
     editButton = $state<HTMLButtonElement | null>(null),
     addNoteButton = $state<HTMLButtonElement | null>(null);
   let mounted = $state(false),
+    isMobileDetail = $state(false),
     activityToken = 0,
     routeToken = 0,
     replayToken = 0;
@@ -351,8 +352,15 @@
   }
   onMount(() => {
     mounted = true;
+    const mobileQuery = window.matchMedia('(max-width: 799px)');
+    const syncViewport = () => {
+      isMobileDetail = mobileQuery.matches;
+    };
+    syncViewport();
+    mobileQuery.addEventListener('change', syncViewport);
     return () => {
       disposed = true;
+      mobileQuery.removeEventListener('change', syncViewport);
       activityToken++;
       routeToken++;
       replayToken++;
@@ -398,8 +406,8 @@
       </div>
     {/if}
 
-    <div class="detail-stage" class:switching data-testid="sport-hero" aria-busy={switching}>
-      <div class="detail-toolbar">
+    {#snippet detailToolbar()}
+      <div class="detail-toolbar" data-testid="detail-toolbar">
         <button type="button" class="back-crumb" onclick={goBack}>
           <svg
             width="18"
@@ -414,7 +422,7 @@
           >返回
         </button>
         <div class="detail-actions">
-          {#if activity.has_route}
+          {#if activity?.has_route}
             <ActivityShareMenu
               onposter={(from) => poster?.open(from)}
               onvideo={(from) => replay?.openExport(from)}
@@ -469,6 +477,12 @@
           {/if}
         </div>
       </div>
+    {/snippet}
+
+    <div class="detail-stage" class:switching data-testid="sport-hero" aria-busy={switching}>
+      {#if !isMobileDetail}
+        {@render detailToolbar()}
+      {/if}
 
       {#if view.manage}
         <ActivityActions
@@ -483,6 +497,66 @@
       {/if}
 
       <div class="detail-workspace">
+        <section class="route-panel" aria-labelledby="route-title">
+          <h2 id="route-title" class="sr-only">路线</h2>
+          {#if mapRoute}
+            <div class="route-stage" class:stale={!route}>
+              <RouteMap route={mapRoute} appearance="sheet">
+                {#snippet controls()}
+                  {#if activity?.has_route}
+                    <button
+                      type="button"
+                      class="button-secondary replay-trigger"
+                      disabled={!mounted}
+                      onclick={(e) => replay?.open(e.currentTarget)}
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="16"
+                        height="16"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        aria-hidden="true"
+                        ><circle cx="12" cy="12" r="9" /><path
+                          d="M10 8.5v7l5.5-3.5z"
+                          fill="currentColor"
+                          stroke="none"
+                        /></svg
+                      >动态回放
+                    </button>
+                  {/if}
+                {/snippet}
+              </RouteMap>
+              {#if !route && routeLoading}
+                <p class="route-swap-status" role="status">正在读取路线…</p>
+              {/if}
+            </div>
+          {:else if routeLoading}
+            <div class="route-placeholder">
+              <FeedbackState kind="loading" title="正在读取路线…" />
+            </div>
+          {:else if routeError}
+            <div class="route-placeholder">
+              <FeedbackState kind="error" title={routeError}>
+                <button type="button" onclick={() => void loadRoute(activity!.id)} class="button-secondary mt-3">
+                  重新读取路线
+                </button>
+              </FeedbackState>
+            </div>
+          {:else}
+            <div class="route-placeholder">
+              <FeedbackState kind="empty" title="此活动没有路线。">
+                <p>运动指标仍可查看，路线仅在记录包含轨迹时显示。</p>
+              </FeedbackState>
+            </div>
+          {/if}
+        </section>
+
+        {#if isMobileDetail}
+          {@render detailToolbar()}
+        {/if}
+
         <section class="receipt-sheet stub" aria-label="运动指标">
           <div class="receipt-header">
             <span>{receiptDate}</span>
@@ -556,63 +630,7 @@
           {/if}
         </section>
 
-        <div class="detail-main">
-          <section class="route-panel" aria-labelledby="route-title">
-            <h2 id="route-title" class="sr-only">路线</h2>
-            {#if mapRoute}
-              <div class="route-stage" class:stale={!route}>
-                <RouteMap route={mapRoute} appearance="sheet">
-                  {#snippet controls()}
-                    {#if activity?.has_route}
-                      <button
-                        type="button"
-                        class="button-secondary replay-trigger"
-                        disabled={!mounted}
-                        onclick={(e) => replay?.open(e.currentTarget)}
-                      >
-                        <svg
-                          viewBox="0 0 24 24"
-                          width="16"
-                          height="16"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="1.8"
-                          aria-hidden="true"
-                          ><circle cx="12" cy="12" r="9" /><path
-                            d="M10 8.5v7l5.5-3.5z"
-                            fill="currentColor"
-                            stroke="none"
-                          /></svg
-                        >动态回放
-                      </button>
-                    {/if}
-                  {/snippet}
-                </RouteMap>
-                {#if !route && routeLoading}
-                  <p class="route-swap-status" role="status">正在读取路线…</p>
-                {/if}
-              </div>
-            {:else if routeLoading}
-              <div class="route-placeholder">
-                <FeedbackState kind="loading" title="正在读取路线…" />
-              </div>
-            {:else if routeError}
-              <div class="route-placeholder">
-                <FeedbackState kind="error" title={routeError}>
-                  <button type="button" onclick={() => void loadRoute(activity!.id)} class="button-secondary mt-3">
-                    重新读取路线
-                  </button>
-                </FeedbackState>
-              </div>
-            {:else}
-              <div class="route-placeholder">
-                <FeedbackState kind="empty" title="此活动没有路线。">
-                  <p>运动指标仍可查看，路线仅在记录包含轨迹时显示。</p>
-                </FeedbackState>
-              </div>
-            {/if}
-          </section>
-
+        <div class="detail-pace">
           <ActivityPaceChart
             replay={replayData}
             loading={paceLoading}
@@ -691,6 +709,7 @@
 <style>
   .detail-page {
     min-width: 0;
+    overflow-x: clip;
   }
   .offline-strip {
     display: flex;
@@ -745,7 +764,10 @@
   .detail-workspace {
     display: grid;
     grid-template-columns: 25rem minmax(0, 1fr);
-    gap: var(--space-8);
+    grid-template-areas:
+      'stub map'
+      'stub pace';
+    gap: 0 var(--space-8);
     align-items: start;
     transition: opacity var(--motion-reveal);
   }
@@ -754,7 +776,12 @@
     transition-delay: 150ms;
   }
   .stub {
+    grid-area: stub;
     --perforation-ground: var(--background);
+  }
+  .detail-pace {
+    grid-area: pace;
+    min-width: 0;
   }
   .stub-title {
     font-size: var(--text-stat);
@@ -900,11 +927,9 @@
     margin-top: var(--space-1);
     min-height: 2.75rem;
   }
-  .detail-main,
   .route-panel {
+    grid-area: map;
     min-width: 0;
-  }
-  .route-panel {
     --route-map-height: 35rem;
   }
   .route-stage {
@@ -969,7 +994,7 @@
   @media (max-width: 1199px) {
     .detail-workspace {
       grid-template-columns: 22.5rem minmax(0, 1fr);
-      gap: var(--space-6);
+      gap: 0 var(--space-6);
     }
     .route-panel {
       --route-map-height: 30rem;
@@ -978,15 +1003,81 @@
   @media (max-width: 1023px) {
     .detail-workspace {
       grid-template-columns: minmax(0, 1fr);
+      grid-template-areas:
+        'stub'
+        'map'
+        'pace';
       gap: var(--space-6);
     }
     .route-panel {
       --route-map-height: 26rem;
     }
   }
-  @media (max-width: 639px) {
+  @media (max-width: 799px) {
+    /* Mobile (<800px): Map -> Toolbar -> Receipt Stub -> Pace Chart in both visual layout and keyboard Tab order. */
+    .detail-workspace {
+      grid-template-areas:
+        'map'
+        'toolbar'
+        'stub'
+        'pace';
+      gap: var(--space-4);
+    }
+    .detail-workspace .detail-toolbar {
+      grid-area: toolbar;
+      margin-bottom: 0;
+    }
     .route-panel {
-      --route-map-height: clamp(18.5rem, 46svh, 23rem);
+      --route-map-height: clamp(18.5rem, 42svh, 21.25rem);
+    }
+  }
+  @media (max-width: 639px) {
+    .route-stage > :global(.sheet),
+    .route-placeholder {
+      margin-inline: calc(-1 * clamp(1rem, 3vw, 3rem));
+      border-inline: 0;
+      border-radius: 0;
+    }
+    /* First 3 core metrics form a 3-column hairline summary trio above the remaining dotted leader rows. */
+    .stub-leaders {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      border-top: 1px solid var(--border);
+      padding-top: var(--space-3);
+      row-gap: 0;
+    }
+    .stub-leaders .leader-row:nth-child(-n + 3) {
+      display: flex;
+      flex-direction: column-reverse;
+      align-items: flex-start;
+      gap: var(--space-1);
+      padding: 0 var(--space-2) var(--space-3);
+    }
+    .stub-leaders .leader-row:nth-child(-n + 3)::before {
+      content: none;
+    }
+    .stub-leaders .leader-row:nth-child(1) {
+      padding-left: 0;
+    }
+    .stub-leaders .leader-row:nth-child(2),
+    .stub-leaders .leader-row:nth-child(3) {
+      border-left: 1px solid var(--border);
+    }
+    .stub-leaders .leader-row:nth-child(-n + 3) dt {
+      font-size: var(--text-caption);
+    }
+    .stub-leaders .leader-row:nth-child(-n + 3) dd {
+      font-size: var(--text-section);
+      line-height: var(--line-height-tight);
+      text-align: left;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .stub-leaders .leader-row:nth-child(n + 4) {
+      grid-column: 1 / -1;
+    }
+    .stub-leaders .leader-row:nth-child(4) {
+      padding-top: var(--space-3);
+      border-top: 1px solid var(--border);
     }
     .splits-bars li {
       grid-template-columns: 2rem 4.75rem minmax(0, 1fr);

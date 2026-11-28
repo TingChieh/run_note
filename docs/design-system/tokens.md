@@ -76,6 +76,11 @@
 | `--radius-header` | 1rem | 同左 | 已迁移页面的黄色页头（`.editorial-page .page-header`，内边距同时收紧为 clamp(1rem, 1.6vw, 1.375rem)） |
 | `--text-figure` | clamp(4rem, 6.2vw, 5.5rem) | 同左 | 单次跑步主数字（64→88px） |
 | `--text-period-hero` | clamp(3.5rem, 8.9vw, 8rem) | 同左 | 档案页周期主数字（数据汇总年度距离，56→128px） |
+| `--rec-bg` / `--rec-ink` | #fcfcf7 / #10251b | #161514 / #f6f4f1 | 移动端户外实时记录高对比表面与全墨色文字（对比度 15.7:1 / 16.6:1） |
+| `--text-rec-hero` / `--text-rec-hero-long` / `--text-rec-hero-xlong` | min(8.5rem, 31vw) / min(6rem, 21vw) / min(5rem, 18vw) | 同左 | 实时记录主距离及 ≥100 km / ≥1000 km 自适应降档 |
+| `--text-rec-sub` / `--text-rec-sub-narrow` | 3.25rem / clamp(2rem, 11vw, 2.5rem) | 同左 | 实时记录双列用时与平均配速（390px+ 为 52px，极窄屏/超 1 小时自动收紧） |
+| `--text-rec-unit` / `--text-rec-action` | 1.5rem / 1.375rem | 同左 | 实时记录距离单位与 76px 主操作按钮字号 |
+| `--line-height-rec` / `--tracking-rec` / `--tracking-rec-sub` | 0.9 / -0.04em / -0.02em | 同左 | 户外大号实时数字行高与紧字距 |
 
 `.editorial-page`（页面根元素）把 `--radius-control` 覆盖为 .625rem，并让该页内容区按钮不挂 Liquid Glass；全局 `--radius-control` 仍为 .75rem，直到所有页面迁移完成。
 
