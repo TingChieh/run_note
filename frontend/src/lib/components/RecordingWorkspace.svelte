@@ -2030,16 +2030,17 @@
   });
 </script>
 
+<div class="editorial-page recording-shell">
 <PageHeader title="实时记录">
   {#snippet actions()}
     <a class="button-secondary" href={view.href('/activities')}>跑步记录</a>
   {/snippet}
 </PageHeader>
 
-<div class="aux-stack">
+<div class="recording-stack">
   {#if pendingHandoffSession}
     <section
-      class="aux-panel recording-recovery"
+      class="section-rule recording-recovery"
       aria-labelledby="handoff-title"
       data-testid="recording-pending-handoff-panel"
     >
@@ -2073,7 +2074,7 @@
     </section>
   {:else if status === 'interrupted'}
     <section
-      class="aux-panel recording-recovery"
+      class="section-rule recording-recovery"
       aria-labelledby="recovery-title"
       data-testid="recording-recovery-panel"
     >
@@ -2119,7 +2120,7 @@
 
   {#if sessionRecoveryState === 'failed'}
     <section
-      class="aux-panel recording-recovery"
+      class="section-rule recording-recovery"
       aria-labelledby="recovery-error-title"
       data-testid="recording-recovery-error-panel"
     >
@@ -2226,18 +2227,18 @@
     </div>
   {/if}
 
-  <section class="aux-panel recording-panel" aria-labelledby="recording-heading" data-testid="recording-panel">
+  <section class="section-rule recording-panel" aria-labelledby="recording-heading" data-testid="recording-panel">
     <div class="recording-header-row">
       <h2 id="recording-heading">当前会话</h2>
       <div class="recording-badges">
-        <span class="status-badge" class:on={status === 'recording'} data-testid="recording-status-badge">
+        <span class="rec-status-item" class:on={status === 'recording'} data-testid="recording-status-badge">
           {statusBadgeText}
         </span>
-        <span class="status-badge" class:on={gpsStatus === 'good'} data-testid="recording-gps-badge">
+        <span class="rec-status-item" class:on={gpsStatus === 'good'} data-testid="recording-gps-badge">
           {gpsBadgeText}
         </span>
         <span
-          class="status-badge"
+          class="rec-status-item"
           class:on={pendingUploadCount === 0 && uploadItems.length > 0}
           data-testid="recording-upload-badge"
         >
@@ -2394,7 +2395,7 @@
     {/if}
   </section>
 
-  <section class="aux-panel settings-block" aria-labelledby="upload-queue-heading" data-testid="recording-upload-queue">
+  <section class="section-hairline recording-queue-section" aria-labelledby="upload-queue-heading" data-testid="recording-upload-queue">
     <div class="block-title-row">
       <h2 id="upload-queue-heading">本地上传队列</h2>
       {#if pendingUploadCount > 0}
@@ -2419,7 +2420,7 @@
             <div class="upload-item-main">
               <div class="upload-item-head">
                 <strong class="upload-item-title">{item.title}</strong>
-                <span class="status-badge" class:on={item.status === 'uploaded'}>
+                <span class="rec-status-item" class:on={item.status === 'uploaded'}>
                   {formatUploadStatus(item)}
                 </span>
               </div>
@@ -2499,10 +2500,12 @@
     </details>
   </section>
 </div>
+</div>
 
 <dialog
   bind:this={discardDialog}
   class="recording-dialog"
+  data-glass-overlay
   aria-labelledby="discard-dialog-title"
   data-testid="recording-discard-dialog"
 >
@@ -2530,6 +2533,7 @@
 <dialog
   bind:this={leaveDialog}
   class="recording-dialog"
+  data-glass-overlay
   aria-labelledby="leave-dialog-title"
   data-testid="recording-leave-dialog"
 >
@@ -2550,9 +2554,35 @@
 </dialog>
 
 <style>
+  .recording-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-6);
+    min-width: 0;
+  }
+  .recording-stack {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-8);
+    min-width: 0;
+  }
   .recording-panel {
     display: flex;
     flex-direction: column;
+    min-width: 0;
+  }
+  .recording-panel h2,
+  .recording-queue-section h2 {
+    margin: 0;
+    font-size: var(--text-section);
+    font-weight: var(--weight-semibold);
+    line-height: var(--line-height-heading);
+    letter-spacing: 0;
+  }
+  .recording-queue-section {
+    display: grid;
+    gap: var(--space-3);
+    min-width: 0;
   }
   .recording-header-row {
     display: flex;
@@ -2565,7 +2595,32 @@
   .recording-badges {
     display: flex;
     flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+  .rec-status-item {
+    display: inline-flex;
+    align-items: center;
     gap: var(--space-2);
+    color: var(--muted-foreground);
+    font-family: var(--font-mono);
+    font-size: var(--text-caption);
+    font-weight: var(--weight-medium);
+    font-variant-numeric: tabular-nums;
+  }
+  .rec-status-item::before {
+    content: '';
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 50%;
+    background: var(--control-border);
+    flex: none;
+  }
+  .rec-status-item.on {
+    color: var(--primary);
+    font-weight: var(--weight-semibold);
+  }
+  .rec-status-item.on::before {
+    background: var(--primary);
   }
   .recording-metrics-grid {
     display: grid;
@@ -2638,8 +2693,8 @@
     gap: var(--space-3);
     padding: var(--space-3);
     border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    background: var(--background);
+    border-radius: var(--radius-sheet);
+    background: var(--paper);
   }
   .upload-item-main {
     min-width: 0;
@@ -2657,6 +2712,7 @@
   }
   .upload-item-meta {
     margin-top: var(--space-1);
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     color: var(--muted-foreground);
     font-variant-numeric: tabular-nums;
@@ -2674,9 +2730,10 @@
   .recording-dialog {
     max-width: min(26rem, calc(100vw - 2rem));
     width: 100%;
-    padding: var(--space-5);
+    margin: auto;
+    padding: var(--space-6);
     border: 1px solid var(--border);
-    border-radius: var(--radius-card);
+    border-radius: var(--radius-control);
     background: var(--surface);
     color: var(--foreground);
   }

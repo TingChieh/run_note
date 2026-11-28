@@ -13,18 +13,18 @@
   <title>{pageTitle('隐私政策', page.data.site)}</title>
 </svelte:head>
 
-<div class="privacy-page">
-  <PageHeader title="隐私政策">
+<div class="editorial-page privacy-page">
+  <PageHeader title="隐私政策" meta={`生效日期：${EFFECTIVE_DATE}`}>
     {#snippet actions()}
       <a class="button-secondary" href="#data-deletion">账号与数据删除 →</a>
     {/snippet}
   </PageHeader>
 
-  <div class="aux-stack privacy-stack">
-    <section class="aux-panel settings-block" aria-labelledby="privacy-overview-title">
+  <div class="privacy-stack">
+    <section class="section-rule privacy-section" aria-labelledby="privacy-overview-title">
       <div class="block-title-row">
         <h2 id="privacy-overview-title">基本信息与联系方式</h2>
-        <span class="status-badge">生效日期：{EFFECTIVE_DATE}</span>
+        <span class="privacy-tag">生效日期：{EFFECTIVE_DATE}</span>
       </div>
       <p>
         本隐私政策说明个人项目 <strong>RunNote</strong>（包括 Web
@@ -50,7 +50,7 @@
       </p>
     </section>
 
-    <section class="aux-panel settings-block" aria-labelledby="privacy-data-collected-title">
+    <section class="section-hairline privacy-section" aria-labelledby="privacy-data-collected-title">
       <h2 id="privacy-data-collected-title">我们收集与处理的数据</h2>
 
       <div class="privacy-subsection">
@@ -123,7 +123,7 @@
       </div>
     </section>
 
-    <section class="aux-panel settings-block" aria-labelledby="privacy-purposes-title">
+    <section class="section-hairline privacy-section" aria-labelledby="privacy-purposes-title">
       <h2 id="privacy-purposes-title">我们如何使用这些数据</h2>
       <ul class="privacy-list">
         <li>
@@ -140,7 +140,7 @@
       </ul>
     </section>
 
-    <section class="aux-panel settings-block" aria-labelledby="privacy-sharing-title">
+    <section class="section-hairline privacy-section" aria-labelledby="privacy-sharing-title">
       <h2 id="privacy-sharing-title">数据共享与第三方服务</h2>
       <p>
         <strong>我们不出售你的个人数据，不投放第三方广告，也不向数据经纪商或广告网络共享你的数据。</strong>
@@ -178,7 +178,7 @@
       </ul>
     </section>
 
-    <section class="aux-panel settings-block" aria-labelledby="privacy-retention-title">
+    <section class="section-hairline privacy-section" aria-labelledby="privacy-retention-title">
       <h2 id="privacy-retention-title">存储、保存期限与备份</h2>
       <ul class="privacy-list">
         <li>
@@ -206,7 +206,7 @@
       </ul>
     </section>
 
-    <section class="aux-panel settings-block" aria-labelledby="privacy-security-title">
+    <section class="section-hairline privacy-section" aria-labelledby="privacy-security-title">
       <h2 id="privacy-security-title">安全保护措施</h2>
       <ul class="privacy-list">
         <li>传输安全：生产环境强制使用 HTTPS 加密传输，移动客户端校验服务端 TLS 证书，拒绝不安全连接。</li>
@@ -226,7 +226,7 @@
       </p>
     </section>
 
-    <section class="aux-panel settings-block" aria-labelledby="privacy-rights-title">
+    <section class="section-hairline privacy-section" aria-labelledby="privacy-rights-title">
       <h2 id="privacy-rights-title">你的权利与选择</h2>
       <ul class="privacy-list">
         <li>
@@ -257,13 +257,13 @@
 
     <section
       id="data-deletion"
-      class="aux-panel settings-block deletion-section"
+      class="section-rule privacy-section deletion-section"
       aria-labelledby="data-deletion-title"
       data-testid="data-deletion-section"
     >
       <div class="block-title-row">
         <h2 id="data-deletion-title">账号与数据删除申请</h2>
-        <span class="status-badge">邮件核验处理</span>
+        <span class="privacy-tag">邮件核验处理</span>
       </div>
       <p>
         RunNote 当前采用<strong>经身份核验的邮件申请流程</strong
@@ -344,7 +344,7 @@
       </div>
     </section>
 
-    <section class="aux-panel settings-block" aria-labelledby="privacy-misc-title">
+    <section class="section-hairline privacy-section" aria-labelledby="privacy-misc-title">
       <h2 id="privacy-misc-title">未成年人保护与政策变更</h2>
       <div class="privacy-subsection">
         <h3>未成年人</h3>
@@ -371,11 +371,30 @@
     min-width: 0;
   }
   .privacy-stack {
+    display: grid;
+    gap: var(--space-8);
     max-width: 56rem;
     width: 100%;
+    min-width: 0;
   }
-  .privacy-page section {
-    scroll-margin-top: var(--space-6);
+  .privacy-section {
+    display: grid;
+    gap: var(--space-4);
+    min-width: 0;
+    scroll-margin-top: calc(var(--top-navigation-height) + var(--top-navigation-offset) + var(--space-4));
+  }
+  .privacy-section h2 {
+    margin: 0;
+    font-size: var(--text-section);
+    font-weight: var(--weight-semibold);
+    line-height: var(--line-height-heading);
+    letter-spacing: 0;
+  }
+  .privacy-tag {
+    color: var(--muted-foreground);
+    font-family: var(--font-mono);
+    font-size: var(--text-caption);
+    font-variant-numeric: tabular-nums;
   }
   .privacy-page p,
   .privacy-list li {
@@ -421,6 +440,7 @@
     margin-top: var(--space-1);
     font-size: var(--text-small);
     font-weight: var(--weight-semibold);
+    font-variant-numeric: tabular-nums;
     overflow-wrap: anywhere;
   }
   .privacy-link {
@@ -428,23 +448,21 @@
     text-decoration: underline;
     text-underline-offset: 0.2em;
   }
-  .deletion-section {
-    border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
-  }
   .deletion-callout {
     display: grid;
     gap: var(--space-4);
     padding: var(--space-4);
     border: 1px solid var(--border);
-    border-radius: var(--radius-control);
-    background: color-mix(in srgb, var(--muted) 40%, var(--surface));
+    border-left: 3px solid var(--primary);
+    border-radius: var(--radius-sheet);
+    background: var(--paper);
   }
   .deletion-callout .privacy-meta-grid {
     padding: 0;
     border: 0;
   }
   .deletion-callout code {
-    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-family: var(--font-mono);
     font-size: var(--text-small);
     font-weight: var(--weight-semibold);
   }
