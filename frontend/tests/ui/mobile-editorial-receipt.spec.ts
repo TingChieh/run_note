@@ -172,6 +172,10 @@ async function installMockNativeRecorder(page: Page, options?: { failGetPoints?:
         emit();
       },
       async stopSession() {
+        if ((state as { failStopOnce?: boolean }).failStopOnce) {
+          (state as { failStopOnce?: boolean }).failStopOnce = false;
+          throw new Error('simulated stop failure');
+        }
         state.status = 'stopped';
         state.endedAtMs = Date.now();
         const ev = buildEvent();
@@ -231,6 +235,9 @@ async function installMockNativeRecorder(page: Page, options?: { failGetPoints?:
       },
       setFailGetPoints(flag: boolean) {
         state.failGetPoints = flag;
+      },
+      setFailStopOnce(flag: boolean) {
+        (state as { failStopOnce?: boolean }).failStopOnce = flag;
       },
       getPointsCallCount() {
         return state.getPointsCalls;
@@ -295,12 +302,51 @@ test('home: week-punch stays independent of browsed year, handles cross-year/mis
   await page.goto('/');
   await expect(page.getByTestId('week-punch')).toBeVisible();
 
-  // Week & streak appear above month & year on <800px.
-  const weekBox = (await page.locator('.goal-card[data-period="week"]').boundingBox())!;
-  const streakBox = (await page.locator('.goal-card[data-period="streak"]').boundingBox())!;
-  const yearBox = (await page.locator('.goal-card[data-period="year"]').boundingBox())!;
-  expect(weekBox.y).toBeLessThan(streakBox.y);
-  expect(streakBox.y).toBeLessThan(yearBox.y);
+  // Helper to verify GoalOverview DOM order, visual geometry, absence of duplicate IDs/hidden focusables, and keyboard Tab order.
+  async function assertCompactGoalOrder(label: string) {
+    const domOrder = await page
+      .locator('.goal-overview .goal-card')
+      .evaluateAll((cards) => cards.map((card) => card.getAttribute('data-period')));
+    expect(domOrder, `${label}: DOM order`).toEqual(['week', 'streak', 'month', 'year']);
+
+    const audit = await page.locator('.goal-overview').evaluate((root) => {
+      const ids = [...root.querySelectorAll('[id]')].map((el) => el.id);
+      const duplicateIds = ids.filter((id, idx) => ids.indexOf(id) !== idx);
+      const hiddenFocusables = [...root.querySelectorAll('a[href], button, input, select, textarea, [tabindex]')].filter(
+        (el) => {
+          if (el.hasAttribute('disabled') || el.closest('[inert]')) return false;
+          const tabIndex = el.getAttribute('tabindex');
+          if (tabIndex === '-1') return false;
+          const style = getComputedStyle(el);
+          return style.display === 'none' || style.visibility === 'hidden';
+        },
+      ).length;
+      return { duplicateIds, hiddenFocusables };
+    });
+    expect(audit, `${label}: no duplicate IDs or hidden focusables`).toEqual({ duplicateIds: [], hiddenFocusables: 0 });
+
+    const weekBox = (await page.locator('.goal-card[data-period="week"]').boundingBox())!;
+    const streakBox = (await page.locator('.goal-card[data-period="streak"]').boundingBox())!;
+    const monthBox = (await page.locator('.goal-card[data-period="month"]').boundingBox())!;
+    const yearBox = (await page.locator('.goal-card[data-period="year"]').boundingBox())!;
+    expect(weekBox.y, `${label}: week above streak`).toBeLessThan(streakBox.y);
+    expect(streakBox.y, `${label}: streak above month`).toBeLessThan(monthBox.y);
+    expect(monthBox.y, `${label}: month above year`).toBeLessThan(yearBox.y);
+
+    const weekEdit = page.locator('#overview-edit-week');
+    const monthEdit = page.locator('#overview-edit-month');
+    const yearEdit = page.locator('#overview-edit-year');
+    await expect(weekEdit).toBeEnabled();
+    await weekEdit.focus();
+    await expect(weekEdit, `${label}: focus starts on week`).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(monthEdit, `${label}: Tab moves week -> month`).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(yearEdit, `${label}: Tab moves month -> year`).toBeFocused();
+  }
+
+  // 390x844: Week -> Streak -> Month -> Year in DOM, visual geometry, and keyboard Tab order.
+  await assertCompactGoalOrder('home-390');
 
   // Proportional blocks on Mon (3.9km -> 5) & Wed (2.8km -> 4).
   const mon = page.locator('[data-testid="week-punch-day"][data-punch-date="2026-11-23"]');
@@ -321,13 +367,44 @@ test('home: week-punch stays independent of browsed year, handles cross-year/mis
   await expect(mon).toHaveAttribute('data-blocks', '5');
   await expect(wed).toHaveAttribute('data-blocks', '4');
 
-  // 320x640, 768x1024, 1440x900 regression checks.
+  // 320x640, 768x1024, 1440x900 regression checks + 768 compact order & 1440 4-column desktop order assertions.
   for (const [w, h, tag] of [
     [320, 640, 'home-320'],
     [768, 1024, 'home-768'],
     [1440, 900, 'home-1440'],
   ] as const) {
     await page.setViewportSize({ width: w, height: h });
+    if (w === 768) {
+      await assertCompactGoalOrder('home-768');
+    } else if (w === 1440) {
+      await expect
+        .poll(() =>
+          page
+            .locator('.goal-overview .goal-card')
+            .evaluateAll((cards) => cards.map((card) => card.getAttribute('data-period'))),
+        )
+        .toEqual(['year', 'month', 'week', 'streak']);
+      const desktopYearBox = (await page.locator('.goal-card[data-period="year"]').boundingBox())!;
+      const desktopMonthBox = (await page.locator('.goal-card[data-period="month"]').boundingBox())!;
+      const desktopWeekBox = (await page.locator('.goal-card[data-period="week"]').boundingBox())!;
+      const desktopStreakBox = (await page.locator('.goal-card[data-period="streak"]').boundingBox())!;
+      expect(desktopYearBox.x, 'home-1440: year left of month').toBeLessThan(desktopMonthBox.x);
+      expect(desktopMonthBox.x, 'home-1440: month left of week').toBeLessThan(desktopWeekBox.x);
+      expect(desktopWeekBox.x, 'home-1440: week left of streak').toBeLessThan(desktopStreakBox.x);
+      expect(Math.abs(desktopMonthBox.y - desktopYearBox.y)).toBeLessThanOrEqual(2);
+      expect(Math.abs(desktopWeekBox.y - desktopYearBox.y)).toBeLessThanOrEqual(2);
+      expect(Math.abs(desktopStreakBox.y - desktopYearBox.y)).toBeLessThanOrEqual(2);
+
+      const yearEdit = page.locator('#overview-edit-year');
+      const monthEdit = page.locator('#overview-edit-month');
+      const weekEdit = page.locator('#overview-edit-week');
+      await yearEdit.focus();
+      await expect(yearEdit, 'home-1440: focus starts on year').toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(monthEdit, 'home-1440: Tab moves year -> month').toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(weekEdit, 'home-1440: Tab moves month -> week').toBeFocused();
+    }
     for (const theme of ['light', 'dark'] as const) {
       await setTheme(page, theme);
       await expectNoOverflow(page, `${tag}-${theme}`);
@@ -682,6 +759,70 @@ test('recording flow: pre-run, native 7-decimal splits, bounded retries, 320x640
   await page.getByTestId('recording-pause-btn').click();
   await page.getByTestId('recording-discard-btn').click();
   await page.getByTestId('recording-discard-confirm-btn').click();
+
+  expect(errors).toEqual([]);
+});
+
+test('recording hold-to-finish failure does not swallow the next tap, and uniform-pace splits hide both fastest summary and table highlight', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (err) => errors.push(err.message));
+
+  await installActivities(page);
+  await installMockNativeRecorder(page);
+  await loginRunner(page);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/activities/record');
+  await page.getByTestId('recording-start-btn').click();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('记录中');
+
+  // Two full kilometres with spread 0.2s (< 0.5s threshold): neither summary nor table highlights fastest.
+  await page.evaluate(() => {
+    const win = window as unknown as Record<string, unknown>;
+    const mock = win.__mobileRecMock as {
+      setPointsAndEmit: (arg: unknown) => void;
+      setFailStopOnce: (v: boolean) => void;
+    };
+    const t0 = Date.now() - 620_000;
+    const degPerM = 1 / 111_195;
+    const pts: MockNativePoint[] = [
+      { lat: 31.23, lon: 121.47, recordedAtMs: t0, segmentIndex: 0, accuracyM: 6 },
+      { lat: 31.23 + 1000 * degPerM, lon: 121.47, recordedAtMs: t0 + 300_000, segmentIndex: 0, accuracyM: 6 },
+      { lat: 31.23 + 2000 * degPerM, lon: 121.47, recordedAtMs: t0 + 600_200, segmentIndex: 0, accuracyM: 6 },
+    ];
+    mock.setPointsAndEmit({ points: pts, previewDistanceM: 2000, activeDurationMs: 600_200, lastAccuracyM: 6 });
+    mock.setFailStopOnce(true);
+  });
+
+  await page.getByTestId('recording-pause-btn').click();
+  const stopBtn = page.getByTestId('recording-stop-btn');
+  await expect(stopBtn).toBeVisible();
+
+  // Hold for > 1.5s to trigger stopSession (which fails once and stays paused).
+  const box = (await stopBtn.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await expect(page.getByRole('alert')).toContainText('simulated stop failure', { timeout: 5000 });
+  await page.mouse.up();
+
+  // Hold release itself must stay paused without popping the confirmation dialog.
+  const finishDialog = page.getByTestId('recording-finish-dialog');
+  await expect(finishDialog).toBeHidden();
+  await expect(page.getByTestId('recording-status-badge')).toHaveText('已暂停');
+
+  // Next single tap (and keyboard activation) MUST open the confirmation dialog without being swallowed.
+  await stopBtn.click();
+  await expect(finishDialog).toBeVisible();
+
+  // Confirm finish: uniform-pace (<0.5s spread) omits both summary fastest row and table fastest badge.
+  await page.getByTestId('recording-finish-confirm-btn').click();
+  await expect(page.getByTestId('recording-done-receipt')).toBeVisible();
+  await expect(page.getByTestId('recording-done-fastest')).toHaveCount(0);
+  await expect(page.getByTestId('recording-done-splits').locator('li')).toHaveCount(2);
+  await expect(page.getByTestId('recording-done-splits').locator('li.fastest')).toHaveCount(0);
+  await expect(page.getByTestId('recording-done-splits').locator('.split-best')).toHaveCount(0);
 
   expect(errors).toEqual([]);
 });

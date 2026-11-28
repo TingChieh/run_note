@@ -464,35 +464,35 @@
         <nav class="underline-tabs chapter-tabs" aria-label="故事章节索引">
           <a
             href="#ch-first"
-            aria-current={activeChapter === 'first' ? 'page' : undefined}
+            aria-current={activeChapter === 'first' ? 'location' : undefined}
             onclick={() => focusChapter('first')}
           >
             01 第一跑
           </a>
           <a
             href="#ch-longest"
-            aria-current={activeChapter === 'longest' ? 'page' : undefined}
+            aria-current={activeChapter === 'longest' ? 'location' : undefined}
             onclick={() => focusChapter('longest')}
           >
             02 最长路线
           </a>
           <a
             href="#ch-best"
-            aria-current={activeChapter === 'best' ? 'page' : undefined}
+            aria-current={activeChapter === 'best' ? 'location' : undefined}
             onclick={() => focusChapter('best')}
           >
             03 最佳表现
           </a>
           <a
             href="#ch-cities"
-            aria-current={activeChapter === 'cities' ? 'page' : undefined}
+            aria-current={activeChapter === 'cities' ? 'location' : undefined}
             onclick={() => focusChapter('cities')}
           >
             04 探索城市
           </a>
           <a
             href="#ch-frequent"
-            aria-current={activeChapter === 'frequent' ? 'page' : undefined}
+            aria-current={activeChapter === 'frequent' ? 'location' : undefined}
             onclick={() => focusChapter('frequent')}
           >
             05 最常跑路线

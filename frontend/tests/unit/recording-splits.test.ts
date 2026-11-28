@@ -37,6 +37,66 @@ function trackFromLegs(
 }
 
 describe('recording-splits', () => {
+  it('handles empty, single-point, invalid, stationary, and short (<100m) tracks safely', () => {
+    // Empty track
+    expect(extractRecordedSplits([])).toEqual([]);
+    expect(findFastestFullSplit([])).toBeNull();
+    expect(summarizeLiveSplit([], 0)).toEqual({
+      currentKm: 1,
+      completedKmCount: 0,
+      lastCompletedKm: null,
+      lastCompletedPaceSecondsPerKm: null,
+    });
+    expect(summarizeLiveSplit([], Number.NaN).currentKm).toBe(1);
+    expect(summarizeLiveSplit([], -50).currentKm).toBe(1);
+
+    // Single valid point
+    const singlePoint: RecordedTrackPoint[] = [
+      { lat: 31.23, lon: 121.47, recordedAtMs: 1_764_112_500_000, segmentIndex: 0 },
+    ];
+    expect(extractRecordedSplits(singlePoint)).toEqual([]);
+    expect(summarizeLiveSplit(singlePoint, 10)).toEqual({
+      currentKm: 1,
+      completedKmCount: 0,
+      lastCompletedKm: null,
+      lastCompletedPaceSecondsPerKm: null,
+    });
+
+    // Invalid points filtered out leaving < 2 valid points
+    const invalidPoints: RecordedTrackPoint[] = [
+      { lat: Number.NaN, lon: 121.47, recordedAtMs: 1_764_112_500_000, segmentIndex: 0 },
+      { lat: 95, lon: 121.47, recordedAtMs: 1_764_112_510_000, segmentIndex: 0 },
+      { lat: 31.23, lon: 200, recordedAtMs: 1_764_112_520_000, segmentIndex: 0 },
+      { lat: 31.23, lon: 121.47, recordedAtMs: 0, segmentIndex: 0 },
+      { lat: 31.23, lon: 121.47, recordedAtMs: 1_764_112_530_000, segmentIndex: -1 },
+      { lat: 31.23, lon: 121.47, recordedAtMs: 1_764_112_540_000, segmentIndex: 0 },
+    ];
+    expect(extractRecordedSplits(invalidPoints)).toEqual([]);
+
+    // Stationary-only track (0m moved)
+    const stationary = trackFromLegs([{ distanceM: 0, durationS: 120, steps: 4 }]);
+    expect(extractRecordedSplits(stationary)).toEqual([]);
+
+    // Short tracks below MIN_PARTIAL_SPLIT_M (100m) produce no split noise
+    for (const shortM of [50, 99]) {
+      const shortTrack = trackFromLegs([{ distanceM: shortM, durationS: 30 }]);
+      expect(extractRecordedSplits(shortTrack)).toEqual([]);
+      expect(summarizeLiveSplit(shortTrack, shortM)).toEqual({
+        currentKm: 1,
+        completedKmCount: 0,
+        lastCompletedKm: null,
+        lastCompletedPaceSecondsPerKm: null,
+      });
+    }
+
+    // Partial-only track (>= 100m and < 1000m): preview row only, no fastest full split
+    const partialOnly = trackFromLegs([{ distanceM: 400, durationS: 120 }]);
+    const partialSplits = extractRecordedSplits(partialOnly);
+    expect(partialSplits).toHaveLength(1);
+    expect(partialSplits[0]).toMatchObject({ label: '0.4', isFullKm: false, fastest: false });
+    expect(findFastestFullSplit(partialSplits)).toBeNull();
+  });
+
   it('keeps stationary dwell time strictly in the split where it occurred', () => {
     // km 1: run 800m in 240s, stand still for 60s at 800m, then run 400m (crossing 1000m) in 120s (300s/km).
     // Expected km 1 time: 240 + 60 + (200/400)*120 = 360s (6:00/km).
@@ -112,7 +172,7 @@ describe('recording-splits', () => {
     expect(fastest?.isFullKm).toBe(true);
   });
 
-  it('does not award fastest to a partial tail when there is only 1 full kilometre', () => {
+  it('does not award fastest to a partial tail or summary when there is only 1 full kilometre', () => {
     const points = trackFromLegs([
       { distanceM: 1000, durationS: 330 },
       { distanceM: 250, durationS: 60 }, // 4:00/km partial sprint
@@ -120,7 +180,30 @@ describe('recording-splits', () => {
     const splits = extractRecordedSplits(points);
     expect(splits[0]).toMatchObject({ isFullKm: true, fastest: false });
     expect(splits[1]).toMatchObject({ isFullKm: false, fastest: false });
-    expect(findFastestFullSplit(splits)?.label).toBe('1');
+    expect(findFastestFullSplit(splits)).toBeNull();
+  });
+
+  it('keeps fastest summary and table highlight unified when full-km spread is < 0.5s vs >= 0.5s', () => {
+    // Spread 0.3s (< 0.5s threshold): neither table nor summary marks a fastest split.
+    const uniformPoints = trackFromLegs([
+      { distanceM: 1000, durationS: 300.0 },
+      { distanceM: 1000, durationS: 300.3 },
+    ]);
+    const uniformSplits = extractRecordedSplits(uniformPoints);
+    expect(uniformSplits).toHaveLength(2);
+    expect(uniformSplits.every((row) => !row.fastest)).toBe(true);
+    expect(findFastestFullSplit(uniformSplits)).toBeNull();
+
+    // Spread 0.6s (>= 0.5s threshold): both table and summary mark the exact same fastest split.
+    const distinctPoints = trackFromLegs([
+      { distanceM: 1000, durationS: 300.6 },
+      { distanceM: 1000, durationS: 300.0 },
+    ]);
+    const distinctSplits = extractRecordedSplits(distinctPoints);
+    expect(distinctSplits).toHaveLength(2);
+    expect(distinctSplits[0].fastest).toBe(false);
+    expect(distinctSplits[1].fastest).toBe(true);
+    expect(findFastestFullSplit(distinctSplits)).toBe(distinctSplits[1]);
   });
 
   it('summarizes live split only when points genuinely complete a full km (including 7-decimal rounding)', () => {

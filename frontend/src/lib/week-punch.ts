@@ -79,8 +79,7 @@ function readDistanceM(
 }
 
 function formatKmShort(distanceM: number): string {
-  const km = distanceM / 1000;
-  return km >= 10 ? km.toFixed(1) : km.toFixed(1);
+  return (distanceM / 1000).toFixed(1);
 }
 
 /**

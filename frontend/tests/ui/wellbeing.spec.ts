@@ -20,8 +20,8 @@ const sleep = async (page: Page, hours: number, minutes: number) => {
   await page.getByRole('slider', { name: '睡眠小时' }).fill(String(hours));
   await page.getByRole('slider', { name: '睡眠分钟' }).fill(String(minutes));
 };
-/** Adds one dose through the day form: a pill count at a time today. */
-async function addDose(page: Page, { pills = '1', time = '08:00', name = '示例药物' } = {}) {
+/** Adds one dose through the day form: a pill count at a time today. Defaults to 00:01 so tests pass at any hour in Asia/Shanghai. */
+async function addDose(page: Page, { pills = '1', time = '00:01', name = '示例药物' } = {}) {
   await page.getByTestId('wellbeing-add-dose').click();
   const form = page.getByTestId('wellbeing-dose-form');
   // A medicine already in the list is picked; a new one is typed under "其他药物" (or straight away when the list is empty).
@@ -156,11 +156,11 @@ test('a stale editor is told about the newer save instead of overwriting it', as
 
 test('several doses of one medicine on the same day can be added, edited and deleted', async ({ page }) => {
   await open(page);
-  await addDose(page, { pills: '1', time: '08:00' });
-  await addDose(page, { pills: '1.5', time: '09:30' });
+  await addDose(page, { pills: '1', time: '00:01' });
+  await addDose(page, { pills: '1.5', time: '00:02' });
   await expect(page.getByTestId('wellbeing-dose')).toHaveCount(2);
   await expect(page.getByTestId('wellbeing-dose').first()).toContainText('1 颗');
-  await expect(page.getByTestId('wellbeing-dose').first()).toContainText('08:00');
+  await expect(page.getByTestId('wellbeing-dose').first()).toContainText('00:01');
   await expect(page.getByTestId('wellbeing-dose').nth(1)).toContainText('1.5 颗');
   await page.getByRole('button', { name: '编辑 示例药物 服药记录' }).first().click();
   await page.getByTestId('wellbeing-dose-form').getByLabel('备注（可选）').fill('饭后');
@@ -209,8 +209,8 @@ test('the dose editor pops up and retracts, and "其他药物" turns into a fiel
 test('the medication widget lists doses from the top down, each as a capsule', async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 900 }); // a narrow widget
   await open(page);
-  await addDose(page, { pills: '1', time: '08:00' });
-  await addDose(page, { pills: '2', time: '09:30' });
+  await addDose(page, { pills: '1', time: '00:01' });
+  await addDose(page, { pills: '2', time: '00:02' });
   const tile = page.locator('[data-metric="dose"]');
   const header = (await tile.locator('header').boundingBox())!;
   const rows = tile.getByTestId('wellbeing-dose');
@@ -348,7 +348,7 @@ for (const width of [361, 1440]) {
 
 test('an existing dose can be edited with a side effect added, and the edit is accepted', async ({ page }) => {
   await open(page);
-  await addDose(page, { pills: '1', time: '08:00' });
+  await addDose(page, { pills: '1', time: '00:01' });
   await page.getByRole('button', { name: '编辑 示例药物 服药记录' }).click();
   const form = page.getByTestId('wellbeing-dose-form');
   await form.getByTestId('wellbeing-dose-meds').getByRole('button', { name: '示例药物', exact: true }).click();
@@ -2272,7 +2272,7 @@ test('disabled wellbeing hides navigation and redirects both private addresses',
     expect(redirect.status()).toBe(303);
     expect(redirect.headers().location).toBe('/dashboard');
     await page.goto('/wellbeing');
-    await expect(page).toHaveURL(/^http:\/\/127\.0\.0\.1:5191\/([?].*)?$/);
+    await expect(page).toHaveURL(/^http:\/\/127\.0\.0\.1:\d+\/([?].*)?$/);
     await page.goto('/workspace/wellbeing');
     await expect(page).toHaveURL(/\/workspace\/dashboard$/);
     await page.evaluate(async field => {

@@ -2968,7 +2968,7 @@
       color: var(--foreground);
     }
   }
-  .underline-tabs > :is(a[aria-current='page'], button[aria-pressed='true']) {
+  .underline-tabs > :is(a[aria-current='page'], a[aria-current='location'], button[aria-pressed='true']) {
     border-bottom-color: var(--rule);
     color: var(--foreground);
     font-weight: var(--weight-semibold);
@@ -3079,7 +3079,7 @@
     background: var(--desk);
   }
   @media (forced-colors: active) {
-    .underline-tabs > :is(a[aria-current='page'], button[aria-pressed='true']) {
+    .underline-tabs > :is(a[aria-current='page'], a[aria-current='location'], button[aria-pressed='true']) {
       border-bottom-color: Highlight;
     }
   }

@@ -65,9 +65,18 @@
     streakLoading = $state(true),
     streakError = $state('');
   let active = false;
+  let isCompactOrder = $state(false);
   let goalLoading = $state(true),
     goalError = $state('');
   let goalToken = 0;
+
+  type OverviewSlot = GoalPeriod | 'streak';
+  const slotOrder = $derived<readonly OverviewSlot[]>(
+    isCompactOrder ? ['week', 'streak', 'month', 'year'] : ['year', 'month', 'week', 'streak'],
+  );
+  function cardForPeriod(period: GoalPeriod): Card {
+    return cards.find((card) => card.period === period)!;
+  }
 
   // Week-punch daily distances are cached per calendar year independently of the dashboard's browsed year.
   let weekYearDays = $state<Record<number, readonly CalendarDay[]>>({});
@@ -226,6 +235,12 @@
   }
   onMount(() => {
     active = true;
+    const compactQuery = window.matchMedia('(max-width: 799px)');
+    const syncCompactOrder = () => {
+      isCompactOrder = compactQuery.matches;
+    };
+    syncCompactOrder();
+    compactQuery.addEventListener('change', syncCompactOrder);
     void readTargets();
     cards.forEach((card) => {
       void load(card);
@@ -239,113 +254,115 @@
     return () => {
       active = false;
       ++goalToken;
+      compactQuery.removeEventListener('change', syncCompactOrder);
       window.removeEventListener('focus', focused);
       window.removeEventListener('runnote-goals-changed', readTargets);
     };
   });
 </script>
 
-<!-- One ledger table (brand.md §6.6): a row per period, then the streak row; hairlines instead of cards. -->
+<!-- One ledger table (brand.md §6.6): DOM, keyboard, and screen-reader order match visual order at every breakpoint
+     (<800px: week -> streak -> month -> year; >=800px: year -> month -> week -> streak). -->
 <section aria-label="运动目标" class="goal-overview section-hairline" class:even={!goalError}>
   <div class="section-head goal-head"><h2>运动目标</h2><span class="section-meta">竖线 = 按日期此刻应到的位置</span></div>
   {#if goalError}<FeedbackState kind="error" title={goalError}><button class="button-secondary" onclick={() => void readTargets()}>重试目标设置</button></FeedbackState>{/if}
-  <div class="goal-rows">
-    {#each cards as card (card.period)}
-      {@const totals = card.current ? goalTotals(card.current, card.target) : null}
-      {@const delta = card.current && card.previous ? (Number(card.current.distance_m) - Number(card.previous.distance_m)) / 1000 : null}
-      {@const elapsed = periodElapsed(card.period, user.timezone)}
-      <article class="goal-card" data-period={card.period} aria-busy={card.loading || goalLoading || !!card.saving}>
-        <form onsubmit={(event) => save(card, event)}>
-          <div class="goal-heading">
-            <h3>{card.title}</h3>
-            {#if !readonly}
-              <div class="goal-actions rn-goal-actions">
-                <div class="goal-save-reveal" class:is-open={card.editing} inert={!card.editing} aria-hidden={!card.editing}>
-                  <div class="goal-save-clip">
-                    <button
-                      type="submit"
-                      class="button-secondary goal-edit"
-                      disabled={!card.editing || card.saving}
-                      aria-label={`保存${card.title}`}>{card.saving ? '…' : '保存'}</button
-                    >
-                  </div>
+  {#snippet goalCard(card: Card)}
+    {@const totals = card.current ? goalTotals(card.current, card.target) : null}
+    {@const delta = card.current && card.previous ? (Number(card.current.distance_m) - Number(card.previous.distance_m)) / 1000 : null}
+    {@const elapsed = periodElapsed(card.period, user.timezone)}
+    <article class="goal-card" data-period={card.period} aria-busy={card.loading || goalLoading || !!card.saving}>
+      <form onsubmit={(event) => save(card, event)}>
+        <div class="goal-heading">
+          <h3>{card.title}</h3>
+          {#if !readonly}
+            <div class="goal-actions rn-goal-actions">
+              <div class="goal-save-reveal" class:is-open={card.editing} inert={!card.editing} aria-hidden={!card.editing}>
+                <div class="goal-save-clip">
+                  <button
+                    type="submit"
+                    class="button-secondary goal-edit"
+                    disabled={!card.editing || card.saving}
+                    aria-label={`保存${card.title}`}>{card.saving ? '…' : '保存'}</button
+                  >
                 </div>
-                <button
-                  id={`overview-edit-${card.period}`}
-                  class="button-secondary goal-edit"
-                  type="button"
-                  disabled={goalLoading || !!goalError || card.saving}
-                  aria-label={`${card.editing ? '取消' : card.target === null ? '设置' : '调整'}${card.title}`}
-                  aria-expanded={card.editing}
-                  onclick={() => void edit(card, !card.editing)}
-                  >{card.editing ? '取消' : card.target === null ? '设置' : '调整'}</button
-                >
               </div>
+              <button
+                id={`overview-edit-${card.period}`}
+                class="button-secondary goal-edit"
+                type="button"
+                disabled={goalLoading || !!goalError || card.saving}
+                aria-label={`${card.editing ? '取消' : card.target === null ? '设置' : '调整'}${card.title}`}
+                aria-expanded={card.editing}
+                onclick={() => void edit(card, !card.editing)}
+                >{card.editing ? '取消' : card.target === null ? '设置' : '调整'}</button
+              >
+            </div>
+          {/if}
+        </div>
+        {#snippet targetValue()}
+          {#if card.editing}
+            <span class="goal-target"
+              >/<label class="sr-only" for={`overview-${card.period}`}>{card.title}距离（km）</label><input
+                transition:goalInputPop
+                id={`overview-${card.period}`}
+                inputmode="decimal"
+                bind:value={card.input}
+                disabled={card.saving}
+                aria-describedby={`overview-confirmed-${card.period}${card.feedback ? ` overview-feedback-${card.period}` : ''}`}
+                onkeydown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void edit(card, false);
+                  }
+                }}
+              /> km</span
+            >
+            <span class="sr-only" id={`overview-confirmed-${card.period}`}
+              >已保存目标：/ {card.target === null ? '未设置' : `${number(card.target)} km`}</span
+            >
+          {:else}
+            <span class="goal-readonly">/ {card.target === null ? '未设置' : `${number(card.target)} km`}</span>
+          {/if}
+        {/snippet}
+        {#if card.editing || (!card.loading && card.current && totals)}
+          <p class="goal-value">
+            <strong data-testid={`${card.period}-km`}>{totals ? number(totals.km) : '—'}</strong>{@render targetValue()}
+          </p>
+        {/if}
+        {#if card.loading}
+          <FeedbackState kind="loading" title="正在读取目标进度…" />
+        {:else if card.current && totals}
+          <div class="goal-progress">
+            <progress value={totals.percent ?? 0} max="100" aria-label={`${card.title}进度`}>
+              {totals.percent === null ? '未设置' : `${Math.round(totals.percent)}%`}
+            </progress>
+            {#if card.target !== null}
+              <span class="goal-pace" style:left={`${elapsed * 100}%`} aria-hidden="true"></span>
+              <span class="sr-only">按日期此刻应完成 {Math.round(elapsed * 100)}%</span>
             {/if}
           </div>
-          {#snippet targetValue()}
-            {#if card.editing}
-              <span class="goal-target"
-                >/<label class="sr-only" for={`overview-${card.period}`}>{card.title}距离（km）</label><input
-                  transition:goalInputPop
-                  id={`overview-${card.period}`}
-                  inputmode="decimal"
-                  bind:value={card.input}
-                  disabled={card.saving}
-                  aria-describedby={`overview-confirmed-${card.period}${card.feedback ? ` overview-feedback-${card.period}` : ''}`}
-                  onkeydown={(event) => {
-                    if (event.key === 'Escape') {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      void edit(card, false);
-                    }
-                  }}
-                /> km</span
-              >
-              <span class="sr-only" id={`overview-confirmed-${card.period}`}
-                >已保存目标：/ {card.target === null ? '未设置' : `${number(card.target)} km`}</span
-              >
-            {:else}
-              <span class="goal-readonly">/ {card.target === null ? '未设置' : `${number(card.target)} km`}</span>
-            {/if}
-          {/snippet}
-          {#if card.editing || (!card.loading && card.current && totals)}
-            <p class="goal-value">
-              <strong data-testid={`${card.period}-km`}>{totals ? number(totals.km) : '—'}</strong>{@render targetValue()}
-            </p>
-          {/if}
-          {#if card.loading}
-            <FeedbackState kind="loading" title="正在读取目标进度…" />
-          {:else if card.current && totals}
-            <div class="goal-progress">
-              <progress value={totals.percent ?? 0} max="100" aria-label={`${card.title}进度`}>
-                {totals.percent === null ? '未设置' : `${Math.round(totals.percent)}%`}
-              </progress>
-              {#if card.target !== null}
-                <span class="goal-pace" style:left={`${elapsed * 100}%`} aria-hidden="true"></span>
-                <span class="sr-only">按日期此刻应完成 {Math.round(elapsed * 100)}%</span>
-              {/if}
-            </div>
-            <div class="goal-facts">
-              <span>
-                {totals.count} 次 · {totals.hours === null ? '耗时未知' : `${number(totals.hours)}h`}{card.current.missing_duration_count > 0 && totals.hours !== null ? ' 已知' : ''}
+          <div class="goal-facts">
+            <span>
+              {totals.count} 次 · {totals.hours === null ? '耗时未知' : `${number(totals.hours)}h`}{card.current.missing_duration_count > 0 && totals.hours !== null ? ' 已知' : ''}
+            </span>
+            {#if delta !== null}
+              <span class="goal-comparison" class:down={delta < 0}>
+                {delta < 0 ? '−' : delta > 0 ? '+' : '±'}{number(Math.abs(delta))} km <span>比{comparisons[card.period]}</span>
               </span>
-              {#if delta !== null}
-                <span class="goal-comparison" class:down={delta < 0}>
-                  {delta < 0 ? '−' : delta > 0 ? '+' : '±'}{number(Math.abs(delta))} km <span>比{comparisons[card.period]}</span>
-                </span>
-              {/if}
-            </div>
-          {/if}
-          {#if card.error}
-            <FeedbackState kind="error" title={card.error}>
-              <button type="button" class="button-secondary" disabled={card.saving} onclick={() => void load(card)} aria-label={`重试${card.title}`}>重试</button>
-            </FeedbackState>
-          {/if}
-          {#if card.feedback}<p class="goal-feedback" id={`overview-feedback-${card.period}`} role="alert">{card.feedback}</p>{/if}
-        </form>
-      </article>
-    {/each}
+            {/if}
+          </div>
+        {/if}
+        {#if card.error}
+          <FeedbackState kind="error" title={card.error}>
+            <button type="button" class="button-secondary" disabled={card.saving} onclick={() => void load(card)} aria-label={`重试${card.title}`}>重试</button>
+          </FeedbackState>
+        {/if}
+        {#if card.feedback}<p class="goal-feedback" id={`overview-feedback-${card.period}`} role="alert">{card.feedback}</p>{/if}
+      </form>
+    </article>
+  {/snippet}
+  {#snippet streakCard()}
     <section class="goal-card streak-card" data-period="streak" aria-label="连续记录" aria-busy={streakLoading}>
       <div class="goal-heading"><h3>连续记录</h3></div>
       {#if streakLoading}
@@ -410,6 +427,15 @@
         <p class="goal-facts streak-best">最长 {streaks.longest_days} 天 / {streaks.longest_weeks} 周</p>
       {/if}
     </section>
+  {/snippet}
+  <div class="goal-rows">
+    {#each slotOrder as slot (slot)}
+      {#if slot === 'streak'}
+        {@render streakCard()}
+      {:else}
+        {@render goalCard(cardForPeriod(slot))}
+      {/if}
+    {/each}
   </div>
 </section>
 
@@ -701,26 +727,6 @@
     .goal-card :global(.feedback),
     .goal-feedback {
       grid-column: 1 / -1;
-    }
-  }
-  /* Mobile & compact tablet (<800px): prioritize weekly goal and current-week streak above monthly/yearly goals
-     without reordering DOM so wide screens preserve the canonical 4-column ledger. */
-  @media (max-width: 799px) {
-    .goal-card[data-period='week'] {
-      order: 1;
-      border-top: 0;
-    }
-    .goal-card[data-period='streak'] {
-      order: 2;
-      border-top: 1px solid var(--border);
-    }
-    .goal-card[data-period='month'] {
-      order: 3;
-      border-top: 1px solid var(--border);
-    }
-    .goal-card[data-period='year'] {
-      order: 4;
-      border-top: 1px solid var(--border);
     }
   }
   /* Phones (<640px): stacked punch-block rhythm replaces the compact date strip, and goal editors get full row width. */

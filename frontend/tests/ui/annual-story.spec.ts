@@ -41,9 +41,21 @@ test('all six story beats, sticky stage sync, city focus, animation controls and
   await expect(page.getByTestId('story-chapter-cities')).toContainText('桐溪市');
   await expect(page.getByTestId('story-chapter-frequent')).toContainText('29');
 
-  // Sticky stage sync via chapter quick buttons and city click.
+  // Sticky stage sync via chapter quick buttons and city click; chapter anchors use aria-current="location".
+  const chapterNav = page.getByRole('navigation', { name: '故事章节索引' });
+  const ch1 = chapterNav.getByRole('link', { name: '01 第一跑' });
+  const ch2 = chapterNav.getByRole('link', { name: '02 最长路线' });
+  await expect(ch1).toHaveAttribute('aria-current', 'location');
+  await expect(chapterNav.locator('a[aria-current="page"]')).toHaveCount(0);
+  await expect(ch1).not.toHaveCSS('border-bottom-color', 'rgba(0, 0, 0, 0)');
+  await expect(ch1).toHaveCSS('font-weight', '600');
+
   await page.getByTestId('story-sticky-stage').getByRole('button', { name: '02' }).click();
   await expect(page.getByTestId('story-sticky-stage')).toContainText('桐溪秋日河滨半程挑战');
+  await expect(ch2).toHaveAttribute('aria-current', 'location');
+  await expect(ch1).not.toHaveAttribute('aria-current', 'location');
+  await expect(ch2).not.toHaveCSS('border-bottom-color', 'rgba(0, 0, 0, 0)');
+  await expect(ch2).toHaveCSS('font-weight', '600');
 
   await page
     .getByTestId('story-chapter-cities')
