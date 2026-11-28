@@ -375,6 +375,33 @@ class CertPinVerificationTests(unittest.TestCase):
         Signer #1 certificate SHA-1 digest: 0123456789abcdef0123456789abcdef01234567
         """
     )
+    SAMPLE_V3_DIGEST = "8c3ea62a1b9843f177fb6d15dfbcb06ea419f87bc7d0ee32a9d08f20698f637c"
+    SAMPLE_V3_COLON = (
+        "8C:3E:A6:2A:1B:98:43:F1:77:FB:6D:15:DF:BC:B0:6E:"
+        "A4:19:F8:7B:C7:D0:EE:32:A9:D0:8F:20:69:8F:63:7C"
+    )
+    SAMPLE_V3_PUBKEY_DIGEST = "e7bc21138ab5241cd48cfba4749366ff90e0d0946ffc5c215206bdd32cc933fa"
+    SAMPLE_V3_APKSIGNER = textwrap.dedent(
+        f"""\
+        Verifies
+        Verified using v1 scheme (JAR signing): false
+        Verified using v2 scheme (APK Signature Scheme v2): false
+        Verified using v3 scheme (APK Signature Scheme v3): true
+        Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+        Verified using v3.2 scheme (APK Signature Scheme v3.2): false
+        Verified using v4 scheme (APK Signature Scheme v4): false
+        Verified for SourceStamp: false
+        V3.0 Signer: certificate DN: CN=RunNote, OU=Android, O=RunNote, L=Unknown, ST=Unknown, C=CN
+        V3.0 Signer: certificate SHA-256 digest: {SAMPLE_V3_DIGEST}
+        V3.0 Signer: certificate SHA-1 digest: 9bd751ad8849d1f9f90fdb3ad6f057ebb7cf4398
+        V3.0 Signer: certificate MD5 digest: 8a2c85bc31db06546d8d7f7b6e4a9862
+        V3.0 Signer: key algorithm: RSA
+        V3.0 Signer: key size (bits): 4096
+        V3.0 Signer: public key SHA-256 digest: {SAMPLE_V3_PUBKEY_DIGEST}
+        V3.0 Signer: public key SHA-1 digest: c157a443a246b126a69ee0dddf962ee78f3c1bfb
+        V3.0 Signer: public key MD5 digest: c15d787c6d4bcf32a0491dbe6aa93bf0
+        """
+    )
 
     def test_verify_cert_pin_accepts_colon_and_hex_formats(self):
         self.assertEqual(
@@ -386,14 +413,111 @@ class CertPinVerificationTests(unittest.TestCase):
             self.SAMPLE_DIGEST,
         )
 
+    def test_verify_cert_pin_accepts_v3_only_output_with_hex_and_colon_pins(self):
+        self.assertEqual(
+            ver.verify_cert_pin(self.SAMPLE_V3_APKSIGNER, self.SAMPLE_V3_DIGEST),
+            self.SAMPLE_V3_DIGEST,
+        )
+        self.assertEqual(
+            ver.verify_cert_pin(self.SAMPLE_V3_APKSIGNER, self.SAMPLE_V3_COLON),
+            self.SAMPLE_V3_DIGEST,
+        )
+        v31_output = self.SAMPLE_V3_APKSIGNER.replace("V3.0 Signer:", "V3.1 Signer:")
+        self.assertEqual(
+            ver.verify_cert_pin(v31_output, self.SAMPLE_V3_COLON),
+            self.SAMPLE_V3_DIGEST,
+        )
+
+    def test_verify_cert_pin_accepts_duplicate_v2_and_v3_lines_for_same_cert(self):
+        dual_scheme_output = textwrap.dedent(
+            f"""\
+            Verifies
+            Verified using v2 scheme (APK Signature Scheme v2): true
+            Verified using v3 scheme (APK Signature Scheme v3): true
+            Signer #1 certificate SHA-256 digest: {self.SAMPLE_V3_DIGEST}
+            Signer #1 public key SHA-256 digest: {self.SAMPLE_V3_PUBKEY_DIGEST}
+            V3.0 Signer: certificate SHA-256 digest: {self.SAMPLE_V3_COLON}
+            V3.0 Signer: public key SHA-256 digest: {self.SAMPLE_V3_PUBKEY_DIGEST}
+            """
+        )
+        self.assertEqual(
+            ver.verify_cert_pin(dual_scheme_output, self.SAMPLE_V3_DIGEST),
+            self.SAMPLE_V3_DIGEST,
+        )
+        self.assertEqual(
+            ver.verify_cert_pin(dual_scheme_output, self.SAMPLE_V3_COLON),
+            self.SAMPLE_V3_DIGEST,
+        )
+
+    def test_verify_cert_pin_rejects_multiple_distinct_cert_digests(self):
+        v2_and_v3_distinct = textwrap.dedent(
+            f"""\
+            Verifies
+            Signer #1 certificate SHA-256 digest: {self.SAMPLE_DIGEST}
+            V3.0 Signer: certificate SHA-256 digest: {self.SAMPLE_V3_DIGEST}
+            """
+        )
+        with self.assertRaises(ValueError) as ctx:
+            ver.verify_cert_pin(v2_and_v3_distinct, self.SAMPLE_V3_DIGEST)
+        self.assertIn("2 distinct digests", str(ctx.exception))
+
+        two_v2_signers = textwrap.dedent(
+            f"""\
+            Verifies
+            Signer #1 certificate SHA-256 digest: {self.SAMPLE_DIGEST}
+            Signer #2 certificate SHA-256 digest: {self.SAMPLE_V3_DIGEST}
+            """
+        )
+        with self.assertRaises(ValueError):
+            ver.verify_cert_pin(two_v2_signers, self.SAMPLE_DIGEST)
+
+        two_v3_signers = textwrap.dedent(
+            f"""\
+            Verifies
+            V3.0 Signer: certificate SHA-256 digest: {self.SAMPLE_DIGEST}
+            V3.1 Signer: certificate SHA-256 digest: {self.SAMPLE_V3_DIGEST}
+            """
+        )
+        with self.assertRaises(ValueError):
+            ver.verify_cert_pin(two_v3_signers, self.SAMPLE_V3_DIGEST)
+
     def test_verify_cert_pin_rejects_mismatch_malformed_and_missing(self):
         wrong = "0" * 64
         with self.assertRaises(ValueError):
             ver.verify_cert_pin(self.SAMPLE_APKSIGNER, wrong)
         with self.assertRaises(ValueError):
-            ver.verify_cert_pin(self.SAMPLE_APKSIGNER, "not-a-sha256")
+            ver.verify_cert_pin(self.SAMPLE_V3_APKSIGNER, wrong)
         with self.assertRaises(ValueError):
+            ver.verify_cert_pin(self.SAMPLE_APKSIGNER, "not-a-sha256")
+        with self.assertRaises(ValueError) as missing_ctx:
             ver.verify_cert_pin("Verifies\nNo digest line\n", self.SAMPLE_DIGEST)
+        self.assertIn("V3.x Signer:", str(missing_ctx.exception))
+        self.assertIn("Signer #N", str(missing_ctx.exception))
+
+        for bad_output in (
+            "Verifies\nV3.0 Signer: certificate SHA-256 digest: not-a-sha256\n",
+            "Verifies\nV3.0 Signer: certificate SHA-256 digest: deadbeef\n",
+            "Verifies\nV3.0 Signer: certificate SHA-256 digest:   \n",
+            (
+                f"Signer #1 certificate SHA-256 digest: {self.SAMPLE_DIGEST}\n"
+                "V3.0 Signer: certificate SHA-256 digest: malformed!\n"
+            ),
+        ):
+            with self.assertRaises(ValueError, msg=f"should reject {bad_output!r}"):
+                ver.verify_cert_pin(bad_output, self.SAMPLE_DIGEST)
+
+    def test_verify_cert_pin_ignores_public_key_sha256_lines(self):
+        pubkey_only = textwrap.dedent(
+            f"""\
+            Verifies
+            Signer #1 public key SHA-256 digest: {self.SAMPLE_V3_PUBKEY_DIGEST}
+            V3.0 Signer: public key SHA-256 digest: {self.SAMPLE_V3_PUBKEY_DIGEST}
+            """
+        )
+        with self.assertRaises(ValueError):
+            ver.verify_cert_pin(pubkey_only, self.SAMPLE_V3_PUBKEY_DIGEST)
+        with self.assertRaises(ValueError):
+            ver.verify_cert_pin(self.SAMPLE_V3_APKSIGNER, self.SAMPLE_V3_PUBKEY_DIGEST)
 
     def test_cli_verify_cert_pin_exit_codes(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -419,6 +543,18 @@ class CertPinVerificationTests(unittest.TestCase):
                 ]
             )
             self.assertEqual(rc_bad, 1)
+            v3_file = Path(tmp) / "apksigner_v3.txt"
+            v3_file.write_text(self.SAMPLE_V3_APKSIGNER, encoding="utf-8")
+            rc_v3_ok = ver.main(
+                [
+                    "verify-cert-pin",
+                    "--expected",
+                    self.SAMPLE_V3_COLON,
+                    "--input-file",
+                    str(v3_file),
+                ]
+            )
+            self.assertEqual(rc_v3_ok, 0)
 
 
 class WorkflowAndIgnorePolicyTests(unittest.TestCase):
