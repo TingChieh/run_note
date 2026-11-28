@@ -381,7 +381,7 @@
                 class:is-future={day.kind === 'future'}
                 class:is-nodist={day.kind === 'active-nodist'}
                 data-testid="week-punch-day"
-                data-date={day.date}
+                data-punch-date={day.date}
                 data-kind={day.kind}
                 data-blocks={day.blocks}
                 data-active-dot={day.showActiveDot ? 'true' : 'false'}

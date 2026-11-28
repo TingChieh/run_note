@@ -303,8 +303,8 @@ test('home: week-punch stays independent of browsed year, handles cross-year/mis
   expect(streakBox.y).toBeLessThan(yearBox.y);
 
   // Proportional blocks on Mon (3.9km -> 5) & Wed (2.8km -> 4).
-  const mon = page.locator('[data-testid="week-punch-day"][data-date="2026-11-23"]');
-  const wed = page.locator('[data-testid="week-punch-day"][data-date="2026-11-25"]');
+  const mon = page.locator('[data-testid="week-punch-day"][data-punch-date="2026-11-23"]');
+  const wed = page.locator('[data-testid="week-punch-day"][data-punch-date="2026-11-25"]');
   await expect(mon).toHaveAttribute('data-blocks', '5');
   await expect(wed).toHaveAttribute('data-blocks', '4');
 
@@ -387,7 +387,7 @@ test('home: week-punch stays independent of browsed year, handles cross-year/mis
   await page.goto('/');
   await expect(page.getByTestId('week-punch')).toBeVisible();
   for (const date of ['2025-12-29', '2025-12-31', '2026-01-01']) {
-    const day = page.locator(`[data-testid="week-punch-day"][data-date="${date}"]`);
+    const day = page.locator(`[data-testid="week-punch-day"][data-punch-date="${date}"]`);
     await expect(day).toHaveAttribute('data-blocks', '0');
     await expect(day).toHaveAttribute('data-active-dot', 'true');
     await expect(day.getByTestId('week-punch-active-dot')).toBeVisible();
