@@ -216,7 +216,7 @@
     width: 17%;
   }
   .col-title {
-    width: 27%;
+    width: auto;
   }
   .col-distance {
     width: 19%;
@@ -310,17 +310,14 @@
     .col-date {
       width: 22%;
     }
-    .col-title {
-      width: 23%;
-    }
     .col-distance {
       width: 19%;
     }
     .col-duration {
-      width: 17%;
+      width: 18%;
     }
     .col-pace {
-      width: 19%;
+      width: 20%;
     }
     table {
       font-size: var(--text-caption);
