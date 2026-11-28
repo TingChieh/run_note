@@ -40,6 +40,7 @@ export default defineConfig({
     'settings-hub.spec.ts',
     'running-diary.spec.ts',
     'companion-phase3.spec.ts',
+    'mobile-editorial-receipt.spec.ts',
   ],
   workers: 1,
   use: { baseURL: `http://127.0.0.1:${webPort}`, channel: 'chrome', viewport: { width: 1440, height: 1000 } },

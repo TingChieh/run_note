@@ -474,8 +474,8 @@
     min-height: 2.75rem;
   }
   dialog {
-    width: min(100% - var(--space-6), 42rem);
-    max-height: calc(100dvh - var(--space-6));
+    width: min(100% - var(--space-6) - var(--safe-left) - var(--safe-right), 42rem);
+    max-height: calc(100dvh - var(--space-6) - var(--safe-top) - var(--safe-bottom));
     margin: auto;
     padding: var(--space-6);
     border: 1px solid var(--border);
@@ -536,16 +536,16 @@
     display: grid;
     place-items: center;
     padding: var(--space-3);
-    background: var(--background);
+    background: var(--desk);
     border: 1px solid var(--border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sheet);
   }
   .preview img {
     width: auto;
     max-height: 52dvh;
     max-width: 100%;
     height: auto;
-    border-radius: var(--radius-field);
+    border-radius: var(--radius-sheet);
     border: 1px solid var(--border);
   }
   .actions {
@@ -557,6 +557,7 @@
   }
   .text-field {
     width: auto;
+    border-color: var(--control-border);
   }
   .hint {
     margin-top: var(--space-2);
@@ -619,13 +620,14 @@
       justify-self: center;
     }
     dialog {
-      padding: var(--space-4);
+      padding: var(--space-4) var(--space-4) calc(var(--space-4) + var(--safe-bottom));
     }
     .style-tabs {
       width: 100%;
     }
     .style-tabs button {
       flex: 1;
+      min-height: 2.75rem;
     }
   }
   @media (forced-colors: active) {

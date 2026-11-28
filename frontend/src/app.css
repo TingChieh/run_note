@@ -95,6 +95,8 @@
   --control-border: #7c8e82;
   --receipt-ink: #1e2c22;
   --receipt-mark: #e0ab00;
+  --rec-bg: #fcfcf7;
+  --rec-ink: #10251b;
   /* Wellbeing journal: one hue per measure, so a dial is recognised by colour as well as by icon. Hue never says good or bad. */
   --well-mood: #7a6bd6;
   --well-anxiety: #d9692f;
@@ -152,6 +154,13 @@
   /* Editorial Receipt figures: one run's distance (64→88px) and a period's primary number on archive pages (56→128px). */
   --text-figure: clamp(4rem, 6.2vw, 5.5rem);
   --text-period-hero: clamp(3.5rem, 8.9vw, 8rem);
+  --text-rec-hero: min(8.5rem, 31vw);
+  --text-rec-hero-long: min(6rem, 21vw);
+  --text-rec-hero-xlong: min(5rem, 18vw);
+  --text-rec-sub: 3.25rem;
+  --text-rec-sub-narrow: clamp(2rem, 11vw, 2.5rem);
+  --text-rec-unit: 1.5rem;
+  --text-rec-action: 1.375rem;
   --text-recap-unit: clamp(1.125rem, 2vw, 1.75rem);
   --text-recap-ledger: clamp(1.375rem, 2.2vw, 1.95rem);
   /* Deck cards are inline-size containers, so these shrink with the card and stop at the scale. */
@@ -160,6 +169,7 @@
   --text-stat-fluid: clamp(1.375rem, 14.5cqi, var(--text-stat));
   /* Page h1 is 28px (brand.md §4): the page's primary number, not its title, is the largest thing on screen. */
   --text-sport-title: var(--text-stat);
+  --line-height-rec: 0.9;
   --line-height-solid: 1;
   --line-height-hero: 1.02;
   --line-height-tight: 1.15;
@@ -168,6 +178,8 @@
   --line-height-body: 1.65;
   --tracking-title: 0;
   --tracking-heading: 0;
+  --tracking-rec: -0.04em;
+  --tracking-rec-sub: -0.02em;
   --tracking-tight: -0.03em;
   --tracking-caps: 0.12em;
   --weight-regular: 400;
@@ -2004,6 +2016,8 @@
   --control-border: #827d77;
   --receipt-ink: #1c1b19;
   --receipt-mark: #f5c519;
+  --rec-bg: #161514;
+  --rec-ink: #f6f4f1;
   --well-mood: #b3a8ff;
   --well-anxiety: #ffab80;
   --well-energy: #ffd75e;
@@ -2839,6 +2853,23 @@
     background: var(--paper);
     overflow-x: clip;
   }
+  .receipt-sheet.receipt-serrated {
+    border-bottom: 0;
+    border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+    margin-bottom: 0.75rem;
+  }
+  .receipt-sheet.receipt-serrated::after {
+    content: '';
+    position: absolute;
+    left: -1px;
+    right: -1px;
+    bottom: -0.75rem;
+    height: 0.75rem;
+    background:
+      linear-gradient(-45deg, transparent 0.5rem, var(--paper) 0) 0 0 / 1rem 0.75rem repeat-x,
+      linear-gradient(45deg, transparent 0.5rem, var(--paper) 0) 0 0 / 1rem 0.75rem repeat-x;
+    pointer-events: none;
+  }
   .receipt-header {
     display: flex;
     flex-wrap: wrap;
@@ -3004,7 +3035,9 @@
   /* Status strip (brand.md §6.10): 3px left rule, soft ground, one actionable sentence. */
   .status-strip {
     padding: var(--space-3) var(--space-4);
+    border: 0;
     border-left: 3px solid var(--warning);
+    border-radius: 0;
     background: var(--warning-soft);
     color: var(--foreground);
     font-size: var(--text-small);
@@ -3012,10 +3045,38 @@
   .status-strip[data-tone='error'] {
     border-left-color: var(--error);
     background: var(--error-soft);
+    color: var(--foreground);
   }
   .status-strip[data-tone='success'] {
     border-left-color: var(--success);
     background: var(--success-soft);
+    color: var(--foreground);
+  }
+  /* Mobile outdoor recording & post-run receipt shell surfaces (brand.md §6.9, §8). */
+  @media (max-width: 799px) {
+    .sport-theme.app-shell:has([data-recording-immersive]) {
+      background: var(--rec-bg);
+      color: var(--rec-ink);
+    }
+    .sport-theme.app-shell:has([data-recording-immersive]) .page-content {
+      padding-top: calc(var(--safe-top) + var(--space-2));
+      padding-bottom: calc(var(--space-3) + var(--safe-bottom));
+      display: flex;
+      flex-direction: column;
+    }
+    .sport-theme.app-shell:has([data-recording-immersive]) .page-reveal {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    .sport-theme.app-shell:has([data-recording-immersive]) [data-testid='offline-banner'],
+    .sport-theme.app-shell:has([data-recording-immersive]) .app-footer,
+    body:has([data-recording-immersive]) .glass-tuner {
+      display: none;
+    }
+  }
+  .sport-theme.app-shell:has([data-recording-done]) {
+    background: var(--desk);
   }
   @media (forced-colors: active) {
     .underline-tabs > :is(a[aria-current='page'], button[aria-pressed='true']) {

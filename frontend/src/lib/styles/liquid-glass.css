@@ -62,9 +62,9 @@
 /* Important material properties unify scoped Svelte and third-party controls. */
 .sport-theme
   :is(
-    button:where(:not(.wall-card)):where(:not(.footprint-chip)):where(:not(.settings-tabs > button)):not(
-        .rn-menu-option
-      ):not(.rn-select-toggle):not([data-date]),
+    button:where(:not(.wall-card)):where(:not(.footprint-chip)):where(:not(.settings-tabs > button)):where(
+        :not(.underline-tabs > button)
+      ):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]),
     a.button-primary,
     a.button-secondary
   ):where(:not(.editorial-page *), [data-glass-overlay] *) {
@@ -94,9 +94,9 @@
 /* Attribution buttons use a background image for their icon. */
 .sport-theme
   :is(
-    button:where(:not(.wall-card)):where(:not(.footprint-chip)):where(:not(.settings-tabs > button)):not(
-        .rn-menu-option
-      ):not(.rn-select-toggle):not(.maplibregl-ctrl-attrib-button):not([data-date]),
+    button:where(:not(.wall-card)):where(:not(.footprint-chip)):where(:not(.settings-tabs > button)):where(
+        :not(.underline-tabs > button)
+      ):not(.rn-menu-option):not(.rn-select-toggle):not(.maplibregl-ctrl-attrib-button):not([data-date]),
     a.button-primary,
     a.button-secondary
   ):where(:not(.editorial-page *), [data-glass-overlay] *):where(:not(.rn-glass-control)) {
@@ -243,9 +243,9 @@
   }
   .sport-theme
     :is(
-      button:where(:not(.wall-card)):where(:not(.footprint-chip)):where(:not(.settings-tabs > button)):not(
-          .history-card
-        ):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]),
+      button:where(:not(.wall-card)):where(:not(.footprint-chip)):where(:not(.settings-tabs > button)):where(
+          :not(.underline-tabs > button)
+        ):not(.history-card):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]),
       a.button-primary,
       a.button-secondary
     ):where(:not(.editorial-page *), [data-glass-overlay] *) {
@@ -270,9 +270,9 @@
   @media (hover: hover) {
     .sport-theme
       :is(
-        button:where(:not(.wall-card)):where(:not(.footprint-chip)):where(:not(.settings-tabs > button)):not(
-            .rn-menu-option
-          ):not(.rn-select-toggle):not(.rn-switch):not([data-date]),
+        button:where(:not(.wall-card)):where(:not(.footprint-chip)):where(:not(.settings-tabs > button)):where(
+            :not(.underline-tabs > button)
+          ):not(.rn-menu-option):not(.rn-select-toggle):not(.rn-switch):not([data-date]),
         a.button-primary,
         a.button-secondary
       ):where(:not(.editorial-page *), [data-glass-overlay] *):where(:not(.rn-glass-control)):not(:disabled):not(
@@ -467,9 +467,9 @@
 @media (prefers-reduced-motion: reduce) {
   .sport-theme
     :is(
-      button:where(:not(.wall-card)):where(:not(.footprint-chip)):where(:not(.settings-tabs > button)):not(
-          .rn-menu-option
-        ):not(.rn-select-toggle):not([data-date]),
+      button:where(:not(.wall-card)):where(:not(.footprint-chip)):where(:not(.settings-tabs > button)):where(
+          :not(.underline-tabs > button)
+        ):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]),
       a.button-primary,
       a.button-secondary
     ):where(:not(.editorial-page *), [data-glass-overlay] *) {
@@ -485,9 +485,9 @@
   }
   .sport-theme
     :is(
-      button:where(:not(.wall-card)):where(:not(.footprint-chip)):where(:not(.settings-tabs > button)):not(
-          .rn-menu-option
-        ):not(.rn-select-toggle):not([data-date]),
+      button:where(:not(.wall-card)):where(:not(.footprint-chip)):where(:not(.settings-tabs > button)):where(
+          :not(.underline-tabs > button)
+        ):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]),
       a.button-primary,
       a.button-secondary
     ):where(:not(.editorial-page *), [data-glass-overlay] *) {
@@ -496,9 +496,9 @@
   }
   .sport-theme
     :is(
-      button:where(:not(.wall-card)):where(:not(.footprint-chip)):where(:not(.settings-tabs > button)):not(
-          .rn-menu-option
-        ):not(.rn-select-toggle):not(.maplibregl-ctrl-attrib-button):not([data-date]),
+      button:where(:not(.wall-card)):where(:not(.footprint-chip)):where(:not(.settings-tabs > button)):where(
+          :not(.underline-tabs > button)
+        ):not(.rn-menu-option):not(.rn-select-toggle):not(.maplibregl-ctrl-attrib-button):not([data-date]),
       a.button-primary,
       a.button-secondary
     ):where(:not(.editorial-page *), [data-glass-overlay] *) {
@@ -506,17 +506,17 @@
   }
   .sport-theme
     :is(
-      button:where(:not(.wall-card)):where(:not(.footprint-chip)):where(:not(.settings-tabs > button)):not(
-          .rn-menu-option
-        ):not(.rn-select-toggle):not([data-date]),
+      button:where(:not(.wall-card)):where(:not(.footprint-chip)):where(:not(.settings-tabs > button)):where(
+          :not(.underline-tabs > button)
+        ):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]),
       a.button-primary,
       a.button-secondary
     ):where(:not(.editorial-page *), [data-glass-overlay] *),
   .sport-theme
     :is(
-      button:where(:not(.wall-card)):where(:not(.footprint-chip)):where(:not(.settings-tabs > button)):not(
-          .rn-menu-option
-        ):not(.rn-select-toggle):not([data-date]),
+      button:where(:not(.wall-card)):where(:not(.footprint-chip)):where(:not(.settings-tabs > button)):where(
+          :not(.underline-tabs > button)
+        ):not(.rn-menu-option):not(.rn-select-toggle):not([data-date]),
       a.button-primary,
       a.button-secondary
     ):where(:not(.editorial-page *), [data-glass-overlay] *):not(:disabled):not([aria-disabled='true']):hover {

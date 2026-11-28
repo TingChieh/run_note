@@ -386,7 +386,7 @@
 
   .story-dialog {
     width: min(92vw, 56rem);
-    max-height: 92dvh;
+    max-height: calc(100dvh - 1.5rem - var(--safe-top) - var(--safe-bottom));
     margin: auto;
     padding: 0;
     border: 1px solid var(--border);
@@ -396,10 +396,15 @@
     box-shadow: var(--shadow-popover);
     overflow: hidden;
   }
+  .story-dialog[open] {
+    display: flex;
+    flex-direction: column;
+  }
   .story-dialog::backdrop {
     background: var(--surface-backdrop);
   }
   .dialog-head {
+    flex: none;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -408,17 +413,24 @@
     border-bottom: 1px solid var(--border);
   }
   .dialog-head h2 {
+    min-width: 0;
     font-size: var(--text-card);
     font-weight: var(--weight-semibold);
     line-height: var(--line-height-heading);
   }
+  .dialog-head .button-secondary {
+    flex: none;
+    min-height: 2.75rem;
+  }
   .dialog-body {
+    flex: 1 1 auto;
+    min-height: 0;
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(16rem, 20rem);
     gap: var(--space-6);
     padding: var(--space-6);
-    max-height: calc(92dvh - 5rem);
     overflow-y: auto;
+    overscroll-behavior: contain;
   }
   .dialog-stage {
     display: grid;
@@ -480,17 +492,67 @@
     display: grid;
     gap: var(--space-2);
   }
+  .dialog-actions .button-primary,
+  .dialog-actions .button-secondary {
+    min-height: 2.75rem;
+  }
 
   @media (max-width: 767px) {
     .keepsake-dock {
       grid-template-columns: 1fr;
     }
+    .story-dialog {
+      width: min(calc(100vw - 1rem - var(--safe-left) - var(--safe-right)), 34rem);
+      max-height: calc(100dvh - 1rem - var(--safe-top) - var(--safe-bottom));
+    }
+    .dialog-head {
+      gap: var(--space-2);
+      padding: var(--space-3) var(--space-4);
+    }
+    .dialog-head h2 {
+      font-size: var(--text-body);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .dialog-body {
-      grid-template-columns: 1fr;
-      padding: var(--space-4);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-3);
+      padding: var(--space-3) var(--space-4) 0;
+    }
+    .dialog-stage {
+      flex: none;
+      min-height: 0;
+      padding: var(--space-2);
+      overflow: hidden;
     }
     .poster-preview-img {
-      width: min(100%, 14rem);
+      width: calc(min(26dvh, 11.5rem) * 9 / 16);
+      height: min(26dvh, 11.5rem);
+      max-width: 100%;
+      object-fit: contain;
+    }
+    .dialog-controls {
+      flex: 1 0 auto;
+      gap: var(--space-3);
+    }
+    .toggle-row {
+      padding: var(--space-2) 0;
+      border: 0;
+      border-bottom: 1px solid var(--border);
+      border-radius: 0;
+      background: transparent;
+    }
+    .dialog-actions {
+      position: sticky;
+      bottom: 0;
+      z-index: 2;
+      grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+      margin-inline: calc(-1 * var(--space-4));
+      padding: var(--space-3) var(--space-4) calc(var(--space-3) + var(--safe-bottom));
+      border-top: 1px solid var(--border);
+      background: var(--surface);
     }
   }
 </style>
