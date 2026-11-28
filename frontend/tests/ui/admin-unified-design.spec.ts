@@ -124,7 +124,16 @@ for (const width of [375, 390, 1440]) {
     await expect(page.locator('#main')).toHaveClass(/auth-content/);
     await expect(page.getByRole('heading', { name: '登录', exact: true })).toBeVisible();
     await expect(page.getByLabel('邮箱', { exact: true })).toBeVisible();
-    await expect(page.getByLabel('密码', { exact: true })).toBeVisible();
+    const passwordInput = page.getByLabel('密码', { exact: true });
+    await expect(passwordInput).toBeVisible();
+    const toggleBtn = page.getByRole('button', { name: '显示密码', exact: true });
+    await expect(toggleBtn).toBeVisible();
+    const toggleBox = (await toggleBtn.boundingBox())!;
+    expect(toggleBox.height, `显示密码按钮高度 >= 44px (${width}px)`).toBeGreaterThanOrEqual(44);
+    expect(toggleBox.width, `显示密码按钮宽度 >= 44px (${width}px)`).toBeGreaterThanOrEqual(44);
+    await toggleBtn.click();
+    await expect(passwordInput).toHaveAttribute('type', 'text');
+    await expect(page.getByRole('button', { name: '隐藏密码', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByRole('button', { name: '登录', exact: true })).toBeEnabled();
     await expect(page.locator('#app-navigation')).toHaveCount(0);
     if (width < 800) {

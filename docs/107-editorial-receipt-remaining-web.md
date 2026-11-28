@@ -26,7 +26,7 @@
 | `/ai`、`/workspace/ai` | `routes/ai/+page.svelte` | 已迁移（PR #170） | `.editorial-page`、节线双栏工作台（移除 `.aux-panel` 24px 卡）、发丝线会话列表、等宽额度文本、`.status-strip` 提示与免责、`AssistantConsentCard` 圆点状态、`AssistantBlocks` 4px 块卡与 `TrendChart appearance="receipt"` |
 | `/wellbeing`、`/workspace/wellbeing` | `routes/wellbeing/+page.svelte` | 部分迁移 + 显式保留（PR #170） | 页头、5 分区 `.underline-tabs`、趋势/总结头部 `.section-rule` + `.underline-tabs`、历史日历/备注 `--paper`/`--radius-sheet`、导出 `.section-hairline`；保留 `--well-*` 色彩、圆环控件与 `SaveBar` 浮动玻璃 |
 | `/admin`（已登录） | `routes/admin/+page.svelte` | 已迁移（本 PR） | `.editorial-page`、紧凑 `PageHeader`（移除叙述性 `description`）、`.section-rule` 管理入口网格；同步更新 `admin-unified-design.spec.ts` |
-| `/admin`（未登录） | `AuthForm.svelte` | 已迁移（本 PR） | `.editorial-page.auth-card`（`--paper` / `--radius-sheet` / 2px 顶线）、`--header-tint` 介绍带、44px `.text-field`、10px 扁平按钮；保留全部校验、聚焦与水合保护 |
+| `/admin`（未登录） | `AuthForm.svelte` | 已迁移（本 PR） | `.auth-card`（位于 `.editorial-page` 之外以保留登录按钮液态玻璃契约；`--paper` / `--radius-sheet` / 2px 顶线）、`--header-tint` 介绍带、44px `.text-field` 与 44px 显示密码按钮；保留全部校验、聚焦与水合保护 |
 | `/admin/users` | `routes/admin/users/+page.svelte` | 已合规（无需改动） | 已由 PR #164 / #167（`docs/106`）迁移，本轮四视口明暗视觉 QA 0 溢出复核通过 |
 | `/admin/users/[id]/activities` 及 `[activityId]` | `AdminActivityPage.svelte` | 已迁移（本 PR） | `.editorial-page`、紧凑 `PageHeader`、`.status-strip` 只读提示、`.section-rule` 发丝线列表、详情页 `MetricSummary appearance="receipt"` + `RouteMap appearance="sheet"` + 发丝线心率与备注 |
 | `/shared/[token]`、`/public/activities/[id]` | `PublicActivityPage.svelte` | 已合规（无需改动） | 已由 PR #161（`docs/103`）完成 `.editorial-page.public-detail-page`、`PageHeader meta`、`.section-rule` 与 `MetricSummary appearance="receipt"` 迁移 |

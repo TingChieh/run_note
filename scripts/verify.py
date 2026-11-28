@@ -208,6 +208,20 @@ def plan(
                     ],
                     FRONTEND,
                 ),
+                Step(
+                    "frontend",
+                    "synthetic-API browser UI (extended)",
+                    [
+                        "pnpm",
+                        "exec",
+                        "playwright",
+                        "test",
+                        "--config",
+                        "playwright.ui-extended.config.ts",
+                        "--reporter=line",
+                    ],
+                    FRONTEND,
+                ),
             ]
         else:
             notes.append(("frontend", "build + browser UI", "only with --full"))

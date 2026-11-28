@@ -69,7 +69,7 @@
       <p id="password-help" class="auth-help">12–128 个字符。密码不会保存在浏览器本地存储中。</p>
       <button
         type="button"
-        class="button-secondary button-compact"
+        class="button-secondary button-compact auth-password-toggle"
         aria-pressed={showPassword}
         disabled={busy}
         onclick={() => {
@@ -145,6 +145,12 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-2);
+  }
+  .auth-password-toggle {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+    padding: 0.5rem 0.75rem;
+    flex-shrink: 0;
   }
   .auth-help {
     margin: 0;

@@ -203,21 +203,11 @@ export function extractRecordedSplits(points: readonly RecordedTrackPoint[]): Re
 
 /**
  * Returns the fastest completed full-kilometre split for receipt summary lines.
- * Returns `null` when fewer than 1 full kilometre has a valid pace.
+ * Mirrors the table highlight (`row.fastest`): returns `null` when fewer than 2 full kilometres
+ * have a valid pace or when the full-kilometre pace spread is < 0.5 s.
  */
 export function findFastestFullSplit(splits: readonly RecordedKmSplit[]): RecordedKmSplit | null {
-  const fullValid = splits.filter((row) => row.isFullKm && row.paceSecondsPerKm !== null);
-  if (fullValid.length === 0) return null;
-  const marked = fullValid.find((row) => row.fastest);
-  if (marked) return marked;
-  if (fullValid.length === 1) return fullValid[0];
-  let best = fullValid[0];
-  for (let i = 1; i < fullValid.length; i += 1) {
-    if (fullValid[i].paceSecondsPerKm! < best.paceSecondsPerKm!) {
-      best = fullValid[i];
-    }
-  }
-  return best;
+  return splits.find((row) => row.isFullKm && row.paceSecondsPerKm !== null && row.fastest) ?? null;
 }
 
 /**

@@ -1,5 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { loginRunner } from '../fixtures/activities.ts';
+import { installBasemaps } from '../fixtures/basemaps.ts';
+
+test.beforeEach(async ({ page }) => {
+  await installBasemaps(page);
+});
 
 const runners = [
   { user_id:'00000000-0000-4000-8000-000000000001',avatar_version:null,username:'runner_one',display_name:'合成甲',distance_m:3000,count:1,week_m:3000,month_m:3000,year_m:5000 },

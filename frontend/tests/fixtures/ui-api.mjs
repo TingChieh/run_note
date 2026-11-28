@@ -361,7 +361,7 @@ createServer(async (req, res) => {
     const payload = JSON.parse(body);
     const found = accounts.find(item => item.email === payload.email || item.is_admin && payload.email === 'runner@example.com');
     if (!found?.is_active || !found.is_admin && found.password !== payload.password) return send(null,401,'邮箱或密码不正确');
-    if (found.is_admin) { Object.assign(user, {display_name:'晨跑者',bio:'',profile_is_public:false,together_allowed: false, together_enabled: false, wellbeing_allowed:true,wellbeing_enabled:true}); Object.assign(found,user); Object.assign(goals,{week:null,month:null,year:null}); wellbeing.reset(); shoes.reset(); aiAssistant.reset(); }
+    if (found.is_admin) { Object.assign(user, {display_name:'晨跑者',timezone:'Asia/Shanghai',bio:'',profile_is_public:false,together_allowed: false, together_enabled: false, wellbeing_allowed:true,wellbeing_enabled:true}); Object.assign(found,user); Object.assign(goals,{week:null,month:null,year:null}); wellbeing.reset(); shoes.reset(); aiAssistant.reset(); }
     const session = found.is_admin ? 'ui-runner' : randomUUID(); sessions.set(session, found.id);
     res.setHeader('Set-Cookie', `run_session=${session}; Path=/; HttpOnly; SameSite=Lax`); return send({ user: clean(found) });
   }

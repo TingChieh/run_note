@@ -423,6 +423,44 @@
     }
   }
 
+  let finishHoldReleaseCleanup: (() => void) | null = null;
+  let finishHoldResetTimer: number | null = null;
+
+  function clearFinishHoldTriggered() {
+    finishHoldTriggered = false;
+    if (finishHoldResetTimer !== null) {
+      window.clearTimeout(finishHoldResetTimer);
+      finishHoldResetTimer = null;
+    }
+    if (finishHoldReleaseCleanup) {
+      finishHoldReleaseCleanup();
+      finishHoldReleaseCleanup = null;
+    }
+  }
+
+  function armFinishHoldReleaseReset() {
+    clearFinishHoldTriggered();
+    finishHoldTriggered = true;
+    const onRelease = () => {
+      if (finishHoldReleaseCleanup) {
+        finishHoldReleaseCleanup();
+        finishHoldReleaseCleanup = null;
+      }
+      // Clear on the next macrotask so any click belonging to this hold release is still suppressed,
+      // while a suppressed click on a disabled button never leaves a stale flag behind.
+      finishHoldResetTimer = window.setTimeout(() => {
+        finishHoldResetTimer = null;
+        finishHoldTriggered = false;
+      }, 0);
+    };
+    window.addEventListener('pointerup', onRelease, { once: true });
+    window.addEventListener('pointercancel', onRelease, { once: true });
+    finishHoldReleaseCleanup = () => {
+      window.removeEventListener('pointerup', onRelease);
+      window.removeEventListener('pointercancel', onRelease);
+    };
+  }
+
   function cancelFinishHold() {
     if (finishHoldRafId !== null) {
       window.cancelAnimationFrame(finishHoldRafId);
@@ -436,7 +474,7 @@
     if (actionBusy || !isMobileViewport || status !== 'paused') return;
     if (event.button !== 0 && event.pointerType === 'mouse') return;
     cancelFinishHold();
-    finishHoldTriggered = false;
+    clearFinishHoldTriggered();
     finishHoldActive = true;
     finishHoldStartMs = performance.now();
     const step = (now: number) => {
@@ -448,7 +486,7 @@
       finishHoldProgress = progress;
       if (progress >= 1) {
         cancelFinishHold();
-        finishHoldTriggered = true;
+        armFinishHoldReleaseReset();
         void handleStopAndSave();
         return;
       }
@@ -458,11 +496,11 @@
   }
 
   function handleStopButtonClick() {
-    if (actionBusy) return;
     if (finishHoldTriggered) {
-      finishHoldTriggered = false;
+      clearFinishHoldTriggered();
       return;
     }
+    if (actionBusy) return;
     if (isMobileViewport && status === 'paused') {
       // WCAG 2.5.1 single-pointer / keyboard accessible alternative to 1.5s hold.
       finishDialog?.showModal();
@@ -624,6 +662,7 @@
     webLastFixMs = null;
     screenLocked = false;
     cancelFinishHold();
+    clearFinishHoldTriggered();
     resetNativeLivePoints();
   }
 
@@ -2155,6 +2194,7 @@
       if (!isMobileViewport) {
         screenLocked = false;
         cancelFinishHold();
+        clearFinishHoldTriggered();
       }
     };
     syncMobileViewport();
@@ -2304,6 +2344,7 @@
     return () => {
       disposed = true;
       cancelFinishHold();
+      clearFinishHoldTriggered();
       mobileQuery.removeEventListener('change', syncMobileViewport);
       if (activeRecoveryTimeoutId !== null) {
         window.clearTimeout(activeRecoveryTimeoutId);

@@ -17,7 +17,7 @@ verify = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(verify)
 
 # Commands in these jobs that check the code (setup steps such as installs are not compared).
-JOBS = ("backend", "frontend", "frontend-ui", "infra")
+JOBS = ("backend", "frontend", "frontend-ui", "frontend-ui-extended", "infra")
 CHECKS = re.compile(
     r"^(\.venv/bin/(ruff|pytest)|pnpm (test|check|build|exec playwright)|shellcheck|"
     r"backend/\.venv/bin/python -m unittest)\b"
