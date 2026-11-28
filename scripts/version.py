@@ -65,7 +65,8 @@ CHANGELOG_HEADING_RE = re.compile(r"^## \[([^\]]+)\](?:\s*-\s*(.+))?\s*$")
 STRICT_DATE_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", re.ASCII)
 CERT_SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$", re.ASCII)
 APKSIGNER_SHA256_RE = re.compile(
-    r"^Signer #1 certificate SHA-256 digest:\s*([0-9A-Fa-f:\-\s]+)\s*$",
+    r"^(?:Signer #[1-9][0-9]*|V3\.[0-9]+ Signer:)[ \t]+"
+    r"certificate SHA-256 digest:[ \t]*([^\r\n]*)\r?$",
     re.MULTILINE | re.ASCII,
 )
 MIN_MOBILE_RE = re.compile(r'^MIN_MOBILE_APP_VERSION\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
@@ -597,14 +598,29 @@ def normalize_cert_sha256(raw: str) -> str:
 
 
 def extract_apksigner_sha256(apksigner_output: str) -> str:
-    """Extract and normalize Signer #1 SHA-256 digest from `apksigner verify --print-certs`."""
-    matches = APKSIGNER_SHA256_RE.findall(apksigner_output)
-    if len(matches) != 1:
+    """Extract and normalize the signing certificate SHA-256 digest from apksigner output.
+
+    Supports both v1/v2-style (``Signer #N certificate SHA-256 digest: ...``) and
+    v3-style (``V3.x Signer: certificate SHA-256 digest: ...``) lines from
+    ``apksigner verify --print-certs``. Duplicate lines for the same certificate
+    across schemes are accepted as one unique digest; zero digest lines, malformed
+    digests, or multiple distinct certificates raise ``ValueError``.
+    """
+    raw_matches = APKSIGNER_SHA256_RE.findall(apksigner_output)
+    if not raw_matches:
         raise ValueError(
-            "expected exactly 1 'Signer #1 certificate SHA-256 digest' line in apksigner output, "
-            f"found {len(matches)}"
+            "expected at least 1 signing certificate SHA-256 digest line "
+            "('Signer #N certificate SHA-256 digest: ...' or "
+            "'V3.x Signer: certificate SHA-256 digest: ...') in apksigner output, "
+            "found 0"
         )
-    return normalize_cert_sha256(matches[0])
+    digests = list(dict.fromkeys(normalize_cert_sha256(raw) for raw in raw_matches))
+    if len(digests) != 1:
+        raise ValueError(
+            "expected exactly 1 unique signing certificate SHA-256 digest in apksigner output, "
+            f"found {len(digests)} distinct digests ({', '.join(digests)})"
+        )
+    return digests[0]
 
 
 def verify_cert_pin(apksigner_output: str, expected_pin: str) -> str:
