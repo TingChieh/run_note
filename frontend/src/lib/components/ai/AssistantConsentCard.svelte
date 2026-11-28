@@ -93,8 +93,9 @@
     gap: var(--space-4);
     padding: var(--space-6);
     border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    background: var(--surface);
+    border-top: 2px solid var(--rule);
+    border-radius: var(--radius-sheet);
+    background: var(--paper);
   }
   .consent-card.compact {
     padding: var(--space-4);
@@ -120,17 +121,22 @@
     margin-bottom: var(--space-2);
   }
   .consent-badge {
-    padding: 0.15rem 0.65rem;
-    border-radius: var(--radius-pill);
-    background: var(--warning-soft);
-    border: 1px solid var(--warning-border);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
     color: var(--warning);
-    font-size: var(--text-caption);
+    font-size: var(--text-small);
     font-weight: var(--weight-semibold);
   }
+  .consent-badge::before {
+    content: '';
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: currentColor;
+    flex: none;
+  }
   .consent-badge.active {
-    background: var(--success-soft);
-    border-color: var(--success-border);
     color: var(--success);
   }
   .consent-grid {
@@ -149,13 +155,13 @@
   .consent-box {
     padding: var(--space-4);
     border: 1px solid var(--border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sheet);
     background: var(--background);
     font-size: var(--text-small);
     line-height: var(--line-height-body);
   }
   .consent-never {
-    background: var(--muted);
+    background: var(--recap-well);
   }
   ul {
     margin: 0;
@@ -170,7 +176,7 @@
     align-items: flex-start;
     gap: var(--space-3);
     padding: var(--space-3) var(--space-4);
-    border: 1px solid var(--border);
+    border: 1px solid var(--control-border);
     border-radius: var(--radius-control);
     background: var(--background);
     font-size: var(--text-small);
@@ -201,6 +207,7 @@
     color: var(--muted-foreground);
     font-size: var(--text-small);
     line-height: var(--line-height-body);
+    font-variant-numeric: tabular-nums;
     flex: 1 1 18rem;
   }
   .consent-revoke {

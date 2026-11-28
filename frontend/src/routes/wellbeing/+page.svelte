@@ -42,13 +42,14 @@
 </script>
 
 <svelte:head><title>{pageTitle('身心健康', page.data.site)}</title></svelte:head>
-<PageHeader title="身心健康" description="记录每天的情绪、睡眠、服药和身体反应，方便自己观察变化。这里只做记录，不提供诊断或用药建议。">
-  {#snippet footer()}
-    <div class="settings-tabs wellbeing-tabs" role="group" aria-label="身心健康分区">
+<div class="editorial-page wellbeing-head">
+  <PageHeader title="身心健康" meta="仅作个人记录，不提供诊断或用药建议" />
+  <div class="wellbeing-tabs-bar">
+    <div class="underline-tabs wellbeing-tabs" role="group" aria-label="身心健康分区">
       {#each TABS as item (item.id)}<button type="button" aria-pressed={tab === item.id} onclick={() => choose(item.id)} data-testid={`wellbeing-tab-${item.id}`}>{item.label}</button>{/each}
     </div>
-  {/snippet}
-</PageHeader>
+  </div>
+</div>
 <div class="wellbeing-page" data-testid="wellbeing-page">
   <!-- The old section slides out while the new one slides in over it (same grid cell), so the page never blinks empty. -->
   <div class="stage">
@@ -69,13 +70,18 @@
 </div>
 
 <style>
+  .wellbeing-head { min-width: 0; }
+  .wellbeing-tabs-bar { margin-top: var(--space-4); border-bottom: 1px solid var(--border); }
+  .wellbeing-tabs { width: 100%; max-width: 100%; scrollbar-width: none; }
+  .wellbeing-tabs::-webkit-scrollbar { display: none; }
+  .wellbeing-tabs > :global(button) { margin-bottom: -1px; white-space: nowrap; }
+  @media (max-width: 479px) {
+    .wellbeing-tabs > :global(button) { flex: 1 1 0; min-width: 0; padding-inline: var(--space-1); }
+  }
   .wellbeing-page { display: grid; gap: var(--space-6); min-width: 0; margin-top: var(--space-6); }
-  /* Four short labels share the width on phones instead of hiding the last one behind a sideways scroll. */
   .stage { display: grid; min-width: 0; overflow-x: clip; }
   .pane { grid-area: 1 / 1; min-width: 0; }
-  .wellbeing-tabs { overflow-x: visible; }
-  .wellbeing-tabs > :global(button) { flex: 1 1 0; min-width: 0; padding-inline: var(--space-2); white-space: nowrap; }
-  .privacy { color: var(--muted-foreground); font-size: var(--text-small); line-height: var(--line-height-body); }
+  .privacy { color: var(--muted-foreground); font-size: var(--text-small); line-height: var(--line-height-body); padding-top: var(--space-4); border-top: 1px solid var(--border); }
   .privacy summary { cursor: pointer; color: var(--primary); font-weight: var(--weight-medium); }
   .privacy p { margin-top: var(--space-2); max-width: 48rem; }
 </style>

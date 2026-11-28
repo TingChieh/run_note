@@ -898,16 +898,16 @@
 {/snippet}
 
 {#if contextLoading}
-  <div class="mt-4"><PageSkeleton title="正在加载 AI 助手…" /></div>
+  <div class="section-rule"><PageSkeleton title="正在加载 AI 助手…" /></div>
 {:else if contextError && !context}
-  <div class="aux-panel mt-4">
+  <div class="section-rule">
     <FeedbackState kind="error" title={contextError}>
       <button type="button" class="button-secondary" onclick={() => void loadContext(false)}>重试读取</button>
     </FeedbackState>
   </div>
 {:else if context}
-  <div class="assistant-layout" class:sidebar-collapsed={sidebarCollapsed} data-testid="ai-assistant-workbench">
-    <aside bind:this={sidebarEl} class="history-sidebar aux-panel" aria-label="历史会话">
+  <div class="section-rule assistant-layout" class:sidebar-collapsed={sidebarCollapsed} data-testid="ai-assistant-workbench">
+    <aside bind:this={sidebarEl} class="history-sidebar" aria-label="历史会话">
       <div class="sidebar-header">
         <h2>历史会话</h2>
         <button
@@ -922,7 +922,7 @@
       {@render historyPanelContent('sidebar')}
     </aside>
 
-    <section class="chat-shell aux-panel" aria-label="AI 跑步助手对话">
+    <section class="chat-shell" aria-label="AI 跑步助手对话">
       <div class="chat-toolbar">
         <div class="toolbar-left">
           <button
@@ -973,7 +973,7 @@
       {/if}
 
       {#if unavailableReason}
-        <div class="unavailable-banner" role="note" data-testid="ai-unavailable-banner">
+        <div class="status-strip unavailable-banner" data-tone="warning" role="note" data-testid="ai-unavailable-banner">
           <p>{unavailableReason}</p>
           <div class="unavailable-links">
             <a class="button-secondary button-compact" href={view.href('/dashboard')}>数据汇总</a>
@@ -1207,6 +1207,7 @@
   <dialog
     bind:this={historyDialog}
     class="sheet-dialog"
+    data-glass-overlay
     aria-labelledby="mobile-history-title"
     onclose={() => { historyDialogOpen = false; }}
   >
@@ -1224,6 +1225,7 @@
   <dialog
     bind:this={consentDialog}
     class="sheet-dialog consent-dialog"
+    data-glass-overlay
     aria-labelledby="consent-dialog-title"
     onclose={() => { consentDialogOpen = false; }}
   >
@@ -1263,8 +1265,7 @@
   .assistant-layout {
     display: grid;
     grid-template-columns: 18rem minmax(0, 1fr);
-    gap: var(--space-4);
-    margin-top: var(--space-4);
+    gap: var(--space-6);
     align-items: start;
     min-width: 0;
   }
@@ -1278,6 +1279,8 @@
     display: grid;
     gap: var(--space-3);
     min-width: 0;
+    padding-right: var(--space-6);
+    border-right: 1px solid var(--border);
     max-height: calc(100dvh - 8rem);
     overflow-y: auto;
     position: sticky;
@@ -1318,7 +1321,8 @@
     padding: 0;
     list-style: none;
     display: grid;
-    gap: var(--space-2);
+    gap: 0;
+    border-top: 1px solid var(--border);
   }
   .conv-item {
     display: grid;
@@ -1326,9 +1330,11 @@
     align-items: center;
     gap: var(--space-1);
     padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-control);
-    background: var(--background);
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-left: 3px solid transparent;
+    border-radius: 0;
+    background: transparent;
     min-width: 0;
     transition:
       border-color var(--transition-control),
@@ -1340,13 +1346,12 @@
   }
   @media (hover: hover) {
     .conv-item:not(.active):not(:has(.rename-form)):hover {
-      border-color: var(--control-hover-border);
-      background: var(--surface);
+      background: var(--recap-well);
     }
   }
   .conv-item.active {
-    border-color: var(--primary);
-    background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+    border-left-color: var(--primary);
+    background: var(--recap-well);
   }
   .conv-open {
     display: grid;
@@ -1356,7 +1361,7 @@
     text-align: left;
     background: transparent;
     border: 0;
-    border-radius: calc(var(--radius-control) - 0.125rem);
+    border-radius: 0;
     padding: var(--space-1);
     color: var(--foreground);
     cursor: pointer;
@@ -1384,8 +1389,12 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .conv-item.active .conv-title {
+    font-weight: var(--weight-semibold);
+  }
   .conv-time {
     color: var(--muted-foreground);
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     font-variant-numeric: tabular-nums;
   }
@@ -1443,11 +1452,8 @@
     max-width: min(24rem, 100%);
   }
   .quota-pill {
-    padding: 0.25rem 0.65rem;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--border);
-    background: var(--background);
     color: var(--muted-foreground);
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     font-variant-numeric: tabular-nums;
   }
@@ -1457,13 +1463,6 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
-    padding: var(--space-3) var(--space-4);
-    border: 1px solid var(--warning-border);
-    border-radius: var(--radius-control);
-    background: var(--warning-soft);
-    color: var(--warning);
-    font-size: var(--text-small);
-    line-height: var(--line-height-body);
   }
   .unavailable-banner p {
     margin: 0;
@@ -1484,7 +1483,7 @@
   .empty-stage {
     display: grid;
     gap: var(--space-4);
-    padding: var(--space-4) 0;
+    padding: var(--space-2) 0;
   }
   .empty-stage h2 {
     margin: 0;
@@ -1503,16 +1502,16 @@
     gap: var(--space-1);
     text-align: left;
     padding: var(--space-3) var(--space-4);
-    border: 1px solid var(--border);
+    border: 1px solid var(--control-border);
     border-radius: var(--radius-control);
-    background: var(--background);
+    background: var(--paper);
     color: var(--foreground);
     cursor: pointer;
     transition: border-color var(--transition-control), background-color var(--transition-control);
   }
   .prompt-pill:hover:enabled {
     border-color: var(--primary);
-    background: color-mix(in srgb, var(--primary) 6%, var(--surface));
+    background: var(--recap-well);
   }
   .prompt-pill:disabled {
     opacity: 0.5;
@@ -1540,9 +1539,10 @@
   .user-bubble {
     max-width: min(44rem, 100%);
     padding: var(--space-3) var(--space-4);
-    border-radius: var(--radius-card);
-    background: var(--primary-soft);
-    border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
+    border-radius: var(--radius-sheet);
+    background: var(--recap-well);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--primary);
     color: var(--foreground);
     font-size: var(--text-body);
     line-height: var(--line-height-body);
@@ -1559,15 +1559,16 @@
     min-width: 0;
     padding: var(--space-4);
     border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    background: var(--surface);
+    border-radius: var(--radius-sheet);
+    background: var(--paper);
   }
   .progress-strip {
     display: grid;
     gap: var(--space-2);
     padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-field);
-    background: var(--muted);
+    border-left: 3px solid var(--primary);
+    border-radius: 0;
+    background: var(--recap-well);
     font-size: var(--text-small);
     color: var(--muted-foreground);
   }
@@ -1584,10 +1585,11 @@
     gap: var(--space-2);
   }
   .tool-chips li {
-    padding: 0.15rem 0.55rem;
-    border-radius: var(--radius-pill);
+    padding: 0.15rem 0.5rem;
+    border-radius: var(--radius-sheet);
     border: 1px solid var(--border);
-    background: var(--surface);
+    background: var(--background);
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     font-variant-numeric: tabular-nums;
   }
@@ -1613,6 +1615,8 @@
     list-style: disc;
     display: grid;
     gap: 0.15rem;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
   }
   .streaming-placeholder,
   .msg-meta-note {
@@ -1627,8 +1631,8 @@
     gap: var(--space-2);
   }
   .msg-tag {
-    padding: 0.1rem 0.5rem;
-    border-radius: var(--radius-pill);
+    padding: 0.1rem 0.45rem;
+    border-radius: var(--radius-sheet);
     font-size: var(--text-caption);
     font-weight: var(--weight-medium);
   }
@@ -1641,11 +1645,12 @@
     color: var(--error);
   }
   .msg-tag.muted {
-    background: var(--muted);
+    background: var(--recap-well);
     color: var(--muted-foreground);
   }
   .msg-time {
     color: var(--muted-foreground);
+    font-family: var(--font-mono);
     font-size: var(--text-caption);
     font-variant-numeric: tabular-nums;
   }
@@ -1702,7 +1707,7 @@
     margin: auto;
     padding: var(--space-4);
     border: 1px solid var(--border);
-    border-radius: var(--radius-card);
+    border-radius: var(--radius-control);
     background: var(--surface);
     color: var(--foreground);
   }
@@ -1717,7 +1722,9 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
+    padding-bottom: var(--space-3);
     margin-bottom: var(--space-3);
+    border-bottom: 1px solid var(--border);
   }
   .dialog-head h2 {
     margin: 0;
